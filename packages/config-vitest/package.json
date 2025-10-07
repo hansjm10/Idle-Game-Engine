@@ -1,0 +1,14 @@
+{
+  "name": "@idle-engine/config-vitest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    }
+  },
+  "peerDependencies": {
+    "vitest": "^3.0.0"
+  }
+}

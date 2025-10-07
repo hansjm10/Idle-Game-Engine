@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "lint": "eslint 'src/**/*.ts'",
-    "test": "vitest"
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "express": "^5.1.0",
@@ -18,6 +19,8 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@idle-engine/config-eslint": "workspace:*",
+    "@idle-engine/config-vitest": "workspace:*",
     "@types/express": "^5.0.3",
     "@types/morgan": "^1.9.10",
     "@types/node": "^24.7.0",

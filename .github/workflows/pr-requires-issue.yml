@@ -1,0 +1,29 @@
+name: Verify PR Issue Link
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+jobs:
+  require-issue-reference:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Ensure closing keyword present
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr?.body ?? '';
+            const pattern = /\b(closes?|fix(e[ds])?|resolve[sd]?)\s+#\d+\b/i;
+            if (!pattern.test(body)) {
+              core.setFailed(
+                'Please reference an issue with a closing keyword (e.g., "Fixes #123").'
+              );
+            }

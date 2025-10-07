@@ -9,10 +9,13 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "lint": "eslint 'src/**/*.ts'",
-    "test": "vitest"
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {},
   "devDependencies": {
+    "@idle-engine/config-eslint": "workspace:*",
+    "@idle-engine/config-vitest": "workspace:*",
     "eslint": "^9.37.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",

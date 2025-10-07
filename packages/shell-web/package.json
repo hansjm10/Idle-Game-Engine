@@ -15,11 +15,15 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@idle-engine/config-eslint": "workspace:*",
+    "@idle-engine/config-vitest": "workspace:*",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
     "@vitejs/plugin-react": "^5.0.4",
     "eslint": "^9.37.0",
     "typescript": "^5.9.3",
-    "vite": "^7.1.9"
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4",
+    "jsdom": "^25.0.1"
   }
 }
