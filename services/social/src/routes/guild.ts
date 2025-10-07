@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
 const createGuildSchema = z.object({
@@ -6,16 +6,16 @@ const createGuildSchema = z.object({
   description: z.string().max(140).optional()
 });
 
-const guildRouter = Router();
+const guildRouter: ReturnType<typeof Router> = Router();
 
-guildRouter.get('/mine', (req, res) => {
+guildRouter.get('/mine', (req: Request, res: Response) => {
   res.json({
     guild: null,
     userId: req.user?.id ?? 'anonymous'
   });
 });
 
-guildRouter.post('/', (req, res) => {
+guildRouter.post('/', (req: Request, res: Response) => {
   const parsed = createGuildSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });

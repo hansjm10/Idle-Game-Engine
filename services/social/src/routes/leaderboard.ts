@@ -1,15 +1,15 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
 const submitSchema = z.object({
   leaderboardId: z.string().min(1),
   score: z.number().nonnegative(),
-  metadata: z.record(z.string()).optional()
+  metadata: z.record(z.string(), z.string()).optional()
 });
 
-const leaderboardRouter = Router();
+const leaderboardRouter: ReturnType<typeof Router> = Router();
 
-leaderboardRouter.get('/:leaderboardId', (req, res) => {
+leaderboardRouter.get('/:leaderboardId', (req: Request, res: Response) => {
   const { leaderboardId } = req.params;
   res.json({
     leaderboardId,
@@ -24,7 +24,7 @@ leaderboardRouter.get('/:leaderboardId', (req, res) => {
   });
 });
 
-leaderboardRouter.post('/submit', (req, res) => {
+leaderboardRouter.post('/submit', (req: Request, res: Response) => {
   const parsed = submitSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
