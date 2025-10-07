@@ -7,6 +7,13 @@ This plan converts the design document into actionable engineering work. It span
 - Deterministic behaviours over features: correctness, profiling hooks, and observability trump new content until the engine core is trusted.
 - Shared tooling: linting, testing, and content validation are centralized so packages stay consistent as the monorepo grows.
 - Incremental delivery: every workstream maintains mergeable branches with behind-feature flags.
+- Single-responsibility pull requests: each task below is expected to ship in its own PR so reviews stay focused and staging remains incremental.
+
+### Immediate Next Steps (Phase 0 Priorities)
+- [ ] Publish a GitHub Actions pipeline that runs `pnpm install`, `pnpm lint`, and `pnpm test` across the monorepo to mirror lefthook checks.
+- [ ] Update the social-service Docker image to install dependencies with pnpm (or ship an npm-compatible lockfile) so `docker-compose build` succeeds.
+- [ ] Provide a Keycloak realm bootstrap (import script or seed container) so the social service can acquire JWKS during local development.
+- [ ] Land minimal Vitest coverage for the tick accumulator and social route validators to protect the current skeleton while Phase 1 expands.
 
 ## 2. Workstreams Overview
 | Workstream | Goal | Execution Notes | Dependent On |
@@ -103,9 +110,11 @@ This plan converts the design document into actionable engineering work. It span
 
 ### Social Services
 - [ ] Provision Keycloak realm via script (client, realm, scopes, roles).
+- [ ] Update container builds to use pnpm (or include a production lockfile) so Docker images compile without manual tweaks.
 - [ ] Add persistence layer abstraction (start with in-memory, plan for Postgres).
 - [ ] Implement leaderboard ranking logic with deterministic tie-breaking.
 - [ ] Add guild roster endpoints (join/leave/invite) with rate limits.
+- [ ] Add Vitest coverage for the auth middleware and stubbed leaderboard/guild routes.
 - [ ] Instrument endpoints with request metrics and anomaly alerts.
 
 ### Delivery & Ops

@@ -1,0 +1,149 @@
+name: Enforce Issue Closures
+
+on:
+  issues:
+    types:
+      - closed
+
+jobs:
+  require-pr:
+    name: Ensure issue closed via PR
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Validate closing PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            if (issue.pull_request) {
+              // Ignore pull requests closing themselves.
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const events = await github.paginate(
+              github.rest.issues.listEventsForTimeline,
+              {
+                owner,
+                repo,
+                issue_number: issue.number,
+                per_page: 100,
+                mediaType: {
+                  previews: ['mockingbird']
+                }
+              }
+            );
+
+            const referencingPullNumbers = Array.from(
+              new Set(
+                events
+                  .filter((event) => event.event === 'cross-referenced')
+                  .map((event) => {
+                    const sourceIssue = event.source?.issue;
+                    const prData = sourceIssue?.pull_request;
+                    if (!sourceIssue || !prData) {
+                      return null;
+                    }
+
+                    const repositoryUrl = sourceIssue.repository_url ?? '';
+                    const [, referenceOwner, referenceRepo] = repositoryUrl.match(
+                      /^https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)$/i
+                    ) ?? [null, owner, repo];
+
+                    if (referenceOwner !== owner || referenceRepo !== repo) {
+                      return null;
+                    }
+
+                    return sourceIssue.number;
+                  })
+                  .filter((number) => typeof number === 'number')
+              )
+            );
+
+            const closingEvent = [...events]
+              .reverse()
+              .find((event) => event.event === 'closed');
+            const closingCommitId =
+              closingEvent && typeof closingEvent.commit_id === 'string'
+                ? closingEvent.commit_id.toLowerCase()
+                : null;
+            const closedAt = new Date(
+              issue.closed_at ?? closingEvent?.created_at ?? Date.now()
+            );
+            const TIME_TOLERANCE_MS = 60 * 1000;
+
+            const mergedPulls = [];
+
+            for (const pull_number of referencingPullNumbers) {
+              try {
+                const pull = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number
+                });
+
+                if (!pull.data.merged_at) {
+                  continue;
+                }
+
+                const mergeCommitSha =
+                  pull.data.merge_commit_sha?.toLowerCase() ?? null;
+                const headSha = pull.data.head?.sha?.toLowerCase() ?? null;
+                const mergedAt = new Date(pull.data.merged_at);
+                const timeDiff = Math.abs(closedAt.getTime() - mergedAt.getTime());
+
+                const commitMatches =
+                  closingCommitId &&
+                  [mergeCommitSha, headSha].some(
+                    (sha) =>
+                      typeof sha === 'string' && sha.length > 0 && sha === closingCommitId
+                  );
+
+                const temporalMatch =
+                  !closingCommitId &&
+                  closedAt.getTime() >= mergedAt.getTime() &&
+                  timeDiff <= TIME_TOLERANCE_MS;
+
+                if (commitMatches || temporalMatch) {
+                  mergedPulls.push(pull.data);
+                  break;
+                }
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : JSON.stringify(error);
+                core.warning(
+                  `Failed to load PR #${pull_number} while validating issue #${issue.number}: ${message}`
+                );
+              }
+            }
+
+            if (mergedPulls.length === 0) {
+              core.info(`No merged PR found for issue #${issue.number}; reopening.`);
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: 'open'
+              });
+
+              const commentBody = [
+                "🔄 Reopening: every issue should be closed via a merged pull request.",
+                "",
+                `Please link a PR using a closing keyword (e.g., \`Fixes #${issue.number}\`) so the issue can be auto-closed.`
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: commentBody
+              });
+
+              core.setFailed('Issue closed without a merged PR reference.');
+            }
