@@ -40,17 +40,54 @@ jobs:
               }
             );
 
-            const mergedPulls = events.filter((event) => {
-              if (event.event !== 'cross-referenced') {
-                return false;
+            const referencingPullNumbers = Array.from(
+              new Set(
+                events
+                  .filter((event) => event.event === 'cross-referenced')
+                  .map((event) => {
+                    const sourceIssue = event.source?.issue;
+                    const prData = sourceIssue?.pull_request;
+                    if (!sourceIssue || !prData) {
+                      return null;
+                    }
+
+                    const repositoryUrl = sourceIssue.repository_url ?? '';
+                    const [, referenceOwner, referenceRepo] = repositoryUrl.match(
+                      /^https:\/\/api\.github\.com\/repos\/([^/]+)\/([^/]+)$/i
+                    ) ?? [null, owner, repo];
+
+                    if (referenceOwner !== owner || referenceRepo !== repo) {
+                      return null;
+                    }
+
+                    return sourceIssue.number;
+                  })
+                  .filter((number) => typeof number === 'number')
+              )
+            );
+
+            const mergedPulls = [];
+
+            for (const pull_number of referencingPullNumbers) {
+              try {
+                const pull = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number
+                });
+
+                if (pull.data.merged_at) {
+                  mergedPulls.push(pull.data);
+                  break;
+                }
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : JSON.stringify(error);
+                core.warning(
+                  `Failed to load PR #${pull_number} while validating issue #${issue.number}: ${message}`
+                );
               }
-              const sourceIssue = event.source?.issue;
-              const prData = sourceIssue?.pull_request;
-              if (!sourceIssue || !prData) {
-                return false;
-              }
-              return sourceIssue.state === 'closed' && Boolean(prData.merged_at);
-            });
+            }
 
             if (mergedPulls.length === 0) {
               core.info(`No merged PR found for issue #${issue.number}; reopening.`);
