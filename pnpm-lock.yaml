@@ -15,12 +15,36 @@ importers:
         specifier: ^8.46.0
         version: 8.46.0(eslint@9.37.0)(typescript@5.9.3)
 
+  packages/config-eslint:
+    dependencies:
+      '@eslint/js':
+        specifier: ^9.17.0
+        version: 9.37.0
+      eslint:
+        specifier: ^9.0.0
+        version: 9.37.0
+      typescript-eslint:
+        specifier: ^8.18.0
+        version: 8.46.0(eslint@9.37.0)(typescript@5.9.3)
+
+  packages/config-vitest:
+    dependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@24.7.0)
+
   packages/content-sample:
     dependencies:
       '@idle-engine/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@idle-engine/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../config-vitest
       eslint:
         specifier: ^9.37.0
         version: 9.37.0
@@ -33,6 +57,12 @@ importers:
 
   packages/core:
     devDependencies:
+      '@idle-engine/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../config-vitest
       eslint:
         specifier: ^9.37.0
         version: 9.37.0
@@ -58,6 +88,12 @@ importers:
         specifier: ^19.2.0
         version: 19.2.0(react@19.2.0)
     devDependencies:
+      '@idle-engine/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../config-vitest
       '@types/react':
         specifier: ^19.2.2
         version: 19.2.2
@@ -95,6 +131,12 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12
     devDependencies:
+      '@idle-engine/config-eslint':
+        specifier: workspace:*
+        version: link:../../packages/config-eslint
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../../packages/config-vitest
       '@types/express':
         specifier: ^5.0.3
         version: 5.0.3
