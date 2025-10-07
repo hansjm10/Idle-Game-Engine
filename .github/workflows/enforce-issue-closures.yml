@@ -66,6 +66,18 @@ jobs:
               )
             );
 
+            const closingEvent = [...events]
+              .reverse()
+              .find((event) => event.event === 'closed');
+            const closingCommitId =
+              closingEvent && typeof closingEvent.commit_id === 'string'
+                ? closingEvent.commit_id.toLowerCase()
+                : null;
+            const closedAt = new Date(
+              issue.closed_at ?? closingEvent?.created_at ?? Date.now()
+            );
+            const TIME_TOLERANCE_MS = 60 * 1000;
+
             const mergedPulls = [];
 
             for (const pull_number of referencingPullNumbers) {
@@ -76,7 +88,29 @@ jobs:
                   pull_number
                 });
 
-                if (pull.data.merged_at) {
+                if (!pull.data.merged_at) {
+                  continue;
+                }
+
+                const mergeCommitSha =
+                  pull.data.merge_commit_sha?.toLowerCase() ?? null;
+                const headSha = pull.data.head?.sha?.toLowerCase() ?? null;
+                const mergedAt = new Date(pull.data.merged_at);
+                const timeDiff = Math.abs(closedAt.getTime() - mergedAt.getTime());
+
+                const commitMatches =
+                  closingCommitId &&
+                  [mergeCommitSha, headSha].some(
+                    (sha) =>
+                      typeof sha === 'string' && sha.length > 0 && sha === closingCommitId
+                  );
+
+                const temporalMatch =
+                  !closingCommitId &&
+                  closedAt.getTime() >= mergedAt.getTime() &&
+                  timeDiff <= TIME_TOLERANCE_MS;
+
+                if (commitMatches || temporalMatch) {
                   mergedPulls.push(pull.data);
                   break;
                 }
@@ -101,7 +135,7 @@ jobs:
               const commentBody = [
                 "🔄 Reopening: every issue should be closed via a merged pull request.",
                 "",
-                "Please link a PR using a closing keyword (e.g., `Fixes #${issue.number}`) so the issue can be auto-closed."
+                `Please link a PR using a closing keyword (e.g., \`Fixes #${issue.number}\`) so the issue can be auto-closed.`
               ].join('\n');
 
               await github.rest.issues.createComment({
