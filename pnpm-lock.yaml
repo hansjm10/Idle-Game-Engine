@@ -112,6 +112,9 @@ importers:
       vite:
         specifier: ^7.1.9
         version: 7.1.9(@types/node@24.7.0)
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@24.7.0)
 
   services/social:
     dependencies:
