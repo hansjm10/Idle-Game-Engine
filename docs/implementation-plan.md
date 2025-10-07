@@ -24,6 +24,7 @@ This plan converts the design document into actionable engineering work. It span
 - Finalize coding standards: ESLint/Prettier config, Vitest setup, commit hooks.
 - Confirm Node/Pnpm versions and add `.nvmrc`/toolchain docs.
 - Implement CI skeleton (GitHub Actions or similar): install, lint, build smoke.
+- Automate project hygiene: auto-add new issues to the prototype board and fail PRs that lack closing keywords.
 - Risk: Tooling drift across packages. Mitigation: shared config packages.
 
 ### Phase 1 – Runtime Skeleton (Weeks 1-3)
