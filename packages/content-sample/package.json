@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "eslint 'src/**/*.ts'",
-    "test": "vitest"
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@idle-engine/core": "workspace:*"
