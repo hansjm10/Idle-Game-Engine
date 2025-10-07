@@ -1,0 +1,19 @@
+{
+  "name": "@idle-engine/content-sample",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@idle-engine/core": "workspace:*"
+  },
+  "devDependencies": {
+    "eslint": "^9.37.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
