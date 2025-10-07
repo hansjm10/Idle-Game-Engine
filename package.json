@@ -6,6 +6,7 @@
     "build": "pnpm -r run build",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
+    "test:ci": "pnpm -r run test:ci",
     "dev": "pnpm --filter shell-web run dev"
   },
   "devDependencies": {
