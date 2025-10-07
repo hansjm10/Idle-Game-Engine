@@ -45,7 +45,7 @@ const config = tseslint.config(
     }
   },
   {
-    files: ['**/*.test.ts', '**/*.test.tsx'],
+    files: ['**/*.{test,spec}.ts', '**/*.{test,spec}.tsx'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off'
     }
