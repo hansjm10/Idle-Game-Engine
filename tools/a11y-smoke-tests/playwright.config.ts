@@ -25,7 +25,8 @@ export default defineConfig({
     command: webServerCommand,
     port: PORT,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000
+    timeout: 120_000,
+    cwd: '../..'
   },
   projects: [
     {
