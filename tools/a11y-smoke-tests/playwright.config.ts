@@ -1,3 +1,6 @@
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
+
 import { defineConfig } from '@playwright/test';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
