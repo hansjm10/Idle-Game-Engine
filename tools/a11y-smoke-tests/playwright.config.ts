@@ -12,11 +12,8 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 
 const MONOREPO_ROOT = resolve(__dirname, '../..');
 
-const webServerCommand = [
-  'pnpm --filter @idle-engine/core run build',
-  'pnpm --filter @idle-engine/shell-web run build',
-  `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PORT} --strictPort`
-].join(' && ');
+// In CI, packages are already built by the 'Build' step, so we only need to run the preview server
+const webServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PORT} --strictPort`;
 
 export default defineConfig({
   testDir: './tests',
@@ -31,10 +28,12 @@ export default defineConfig({
   },
   webServer: {
     command: webServerCommand,
-    port: PORT,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    cwd: MONOREPO_ROOT
+    cwd: MONOREPO_ROOT,
+    stdout: 'pipe',
+    stderr: 'pipe'
   },
   projects: [
     {
