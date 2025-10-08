@@ -16,8 +16,8 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const MONOREPO_ROOT = resolve(__dirname, '../..');
 
 // In CI, packages are already built by the 'Build' step, so we only need to run the preview server
-// Use 0.0.0.0 to bind to all interfaces, making it accessible from 127.0.0.1
-const webServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --host 0.0.0.0 --port ${PORT} --strictPort`;
+// Bind to 127.0.0.1 for consistent localhost access across environments
+const webServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PORT} --strictPort`;
 
 export default defineConfig({
   testDir: './tests',
