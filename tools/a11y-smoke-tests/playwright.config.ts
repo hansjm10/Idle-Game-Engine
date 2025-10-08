@@ -29,13 +29,12 @@ export default defineConfig({
   },
   webServer: {
     command: webServerCommand,
-    url: BASE_URL,
+    port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     cwd: MONOREPO_ROOT,
     stdout: 'pipe',
-    stderr: 'pipe',
-    ignoreHTTPSErrors: true
+    stderr: 'pipe'
   },
   projects: [
     {
