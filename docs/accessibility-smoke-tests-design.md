@@ -35,7 +35,7 @@ Issue: #5 &mdash; Tooling & QA Workstream
 - Add a new workspace package `tools/a11y-smoke-tests` (referenced by `pnpm-workspace.yaml`):
   - `package.json` scripts:
     - `build` (noop placeholder for consistency).
-    - `test` → `playwright test`.
+    - `test` → `node ./scripts/run-playwright.cjs`, which forwards flags to `playwright test` while rejecting the `--ui` inspector mode.
     - `test:ci` → `cross-env CI=1 playwright test --reporter=line`.
     - `postinstall` → `node ./scripts/install-playwright.cjs`, which skips work when cached browsers already exist and otherwise invokes `pnpm exec playwright install`, adding `--with-deps` only when running on Linux CI so cross-platform local installs stay compatible. The script should detect `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` (or similar) and short-circuit cleanly so offline or air-gapped environments do not fail installs.
   - Dependencies: `@playwright/test`, `@axe-core/playwright`, `cross-env`, `typescript`, `ts-node` (for config), and shared ESLint config if linting is enabled later.
@@ -61,7 +61,6 @@ Issue: #5 &mdash; Tooling & QA Workstream
   - Add `"test:a11y": "pnpm --filter ./tools/a11y-smoke-tests run test"` (or use the package name once defined).
   - Ensure `"test:ci"` runs unit suites and the smoke test without double-invoking Playwright (e.g., leave the root script as `pnpm -r run test:ci` so each workspace contributes once, or orchestrate the phases via a small Node helper script if sequential execution is preferred).
   - Document the expected runtime impact before enabling the pre-commit hook so contributors understand how to temporarily opt out (`LEFTHOOK=0`) if the smoke suite blocks urgent commits; adjust the plan after collecting timing data from the first implementation pass.
-- Document a local shortcut: `pnpm test:a11y --ui` (Playwright UI) for debugging.
 - In the existing GitHub Actions pipeline (`.github/workflows/ci.yml`), keep the current `pnpm test:ci` step so unit tests and the smoke suite run together (the new workspace's `test:ci` script will execute automatically). If additional visibility is desired, add a follow-up step that invokes `pnpm test:a11y` explicitly.
   1. `pnpm install --frozen-lockfile` (already present in the workflow).
   2. `pnpm test:ci` (the recursive run covers unit tests and the accessibility suite once the new package lands).

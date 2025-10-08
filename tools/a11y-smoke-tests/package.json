@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node -e \"console.log('No build step for a11y smoke tests')\"",
-    "test": "playwright test",
+    "test": "node ./scripts/run-playwright.cjs",
     "test:ci": "cross-env CI=1 playwright test --reporter=line",
     "postinstall": "node ./scripts/install-playwright.cjs"
   },
