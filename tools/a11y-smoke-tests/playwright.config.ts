@@ -1,8 +1,16 @@
 import { defineConfig } from '@playwright/test';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const HOST = '127.0.0.1';
 const PORT = 4173;
 const BASE_URL = `http://${HOST}:${PORT}`;
+
+const MONOREPO_ROOT = resolve(__dirname, '../..');
 
 const webServerCommand = [
   'pnpm --filter @idle-engine/core run build',
@@ -26,7 +34,7 @@ export default defineConfig({
     port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    cwd: '../..'
+    cwd: MONOREPO_ROOT
   },
   projects: [
     {
