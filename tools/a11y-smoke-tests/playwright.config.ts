@@ -32,7 +32,7 @@ export default defineConfig({
   },
   webServer: {
     command: webServerCommand,
-    port: PORT,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     cwd: MONOREPO_ROOT,
