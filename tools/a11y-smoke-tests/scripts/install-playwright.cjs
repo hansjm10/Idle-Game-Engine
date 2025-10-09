@@ -19,10 +19,6 @@ if (isCI && process.platform === 'linux') {
 try {
   execSync(args.join(' '), { stdio: 'inherit' });
 } catch (error) {
-  if (error.status === 0) {
-    process.exit(0);
-  }
-
   console.warn('Playwright browser install failed. If browsers are already available locally, this warning can be ignored.');
   process.exit(error.status ?? 1);
 }
