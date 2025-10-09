@@ -1,0 +1,20 @@
+{
+  "name": "@idle-engine/a11y-smoke-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node -e \"console.log('No build step for a11y smoke tests')\"",
+    "test": "node ./scripts/run-playwright.cjs",
+    "test:ci": "cross-env CI=1 playwright test --reporter=line",
+    "postinstall": "node ./scripts/install-playwright.cjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "cross-env": "^7.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

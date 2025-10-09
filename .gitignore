@@ -24,3 +24,9 @@ yarn-error.log*
 
 # Coverage
 coverage/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+artifacts/accessibility/
