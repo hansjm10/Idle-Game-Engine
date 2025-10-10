@@ -7,6 +7,8 @@ import type {
 import { CommandPriority } from './command.js';
 import type {
   ImmutableArrayBufferSnapshot,
+  ImmutableMapSnapshot,
+  ImmutableSetSnapshot,
   ImmutableSharedArrayBufferSnapshot,
 } from './immutable-snapshots.js';
 
@@ -23,7 +25,7 @@ const PRIORITY_ORDER: readonly CommandPriority[] = [
  * Commands are cloned on enqueue to preserve determinism and to prevent
  * call-sites from mutating queued payloads.
  */
-type SnapshotQueueEntry = CommandQueueEntry<CommandSnapshot>;
+type SnapshotQueueEntry = CommandQueueEntry<CommandSnapshot<unknown>>;
 
 export class CommandQueue {
   private readonly lanes: Map<CommandPriority, SnapshotQueueEntry[]> = new Map([
@@ -42,7 +44,7 @@ export class CommandQueue {
     }
 
     const entry: SnapshotQueueEntry = {
-      command: cloneCommand(command),
+      command: cloneCommand(command) as CommandSnapshot<unknown>,
       sequence: this.nextSequence++,
     };
 
@@ -67,7 +69,7 @@ export class CommandQueue {
     this.totalSize += 1;
   }
 
-  dequeueAll(): CommandSnapshot[] {
+  dequeueAll(): CommandSnapshot<unknown>[] {
     if (this.totalSize === 0) {
       return [];
     }
@@ -200,37 +202,49 @@ function enforceImmutable(node: unknown, seen: WeakMap<object, unknown>): unknow
   return makeImmutableObject(node as Record<PropertyKey, unknown>, seen);
 }
 
-function makeImmutableMap(
-  source: Map<unknown, unknown>,
+function makeImmutableMap<K, V>(
+  source: Map<K, V>,
   seen: WeakMap<object, unknown>,
-): Map<unknown, unknown> {
-  const safeMap = new Map();
-  const proxy = new Proxy(safeMap, createMapMutationGuard());
+): ImmutableMapSnapshot<ImmutablePayload<K>, ImmutablePayload<V>> {
+  const safeMap = new Map<ImmutablePayload<K>, ImmutablePayload<V>>();
+  const proxy = new Proxy(
+    safeMap,
+    createMapMutationGuard<ImmutablePayload<K>, ImmutablePayload<V>>(),
+  );
   seen.set(source, proxy);
 
   for (const [key, value] of source.entries()) {
-    const immutableKey = enforceImmutable(key, seen);
-    const immutableValue = enforceImmutable(value, seen);
+    const immutableKey = enforceImmutable(key, seen) as ImmutablePayload<K>;
+    const immutableValue = enforceImmutable(
+      value,
+      seen,
+    ) as ImmutablePayload<V>;
     safeMap.set(immutableKey, immutableValue);
   }
 
-  return proxy;
+  return proxy as ImmutableMapSnapshot<
+    ImmutablePayload<K>,
+    ImmutablePayload<V>
+  >;
 }
 
-function makeImmutableSet(
-  source: Set<unknown>,
+function makeImmutableSet<T>(
+  source: Set<T>,
   seen: WeakMap<object, unknown>,
-): Set<unknown> {
-  const safeSet = new Set();
-  const proxy = new Proxy(safeSet, createSetMutationGuard());
+): ImmutableSetSnapshot<ImmutablePayload<T>> {
+  const safeSet = new Set<ImmutablePayload<T>>();
+  const proxy = new Proxy(
+    safeSet,
+    createSetMutationGuard<ImmutablePayload<T>>(),
+  );
   seen.set(source, proxy);
 
   for (const item of source.values()) {
-    const immutableItem = enforceImmutable(item, seen);
+    const immutableItem = enforceImmutable(item, seen) as ImmutablePayload<T>;
     safeSet.add(immutableItem);
   }
 
-  return proxy;
+  return proxy as ImmutableSetSnapshot<ImmutablePayload<T>>;
 }
 
 function makeImmutableDate(
@@ -327,7 +341,7 @@ function makeImmutableView(
   return proxy;
 }
 
-function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
+function createMapMutationGuard<K, V>(): ProxyHandler<Map<K, V>> {
   return {
     get(target, prop, receiver) {
       if (prop === 'valueOf') {
@@ -337,7 +351,7 @@ function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
       if (prop === 'forEach') {
         const original = target.forEach;
         return (
-          callback: Parameters<Map<unknown, unknown>['forEach']>[0],
+          callback: Parameters<Map<K, V>['forEach']>[0],
           thisArg?: unknown,
         ) => {
           if (typeof callback !== 'function') {
@@ -373,7 +387,7 @@ function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
   };
 }
 
-function createSetMutationGuard(): ProxyHandler<Set<unknown>> {
+function createSetMutationGuard<V>(): ProxyHandler<Set<V>> {
   return {
     get(target, prop, receiver) {
       if (prop === 'valueOf') {
@@ -383,7 +397,7 @@ function createSetMutationGuard(): ProxyHandler<Set<unknown>> {
       if (prop === 'forEach') {
         const original = target.forEach;
         return (
-          callback: Parameters<Set<unknown>['forEach']>[0],
+          callback: Parameters<Set<V>['forEach']>[0],
           thisArg?: unknown,
         ) => {
           if (typeof callback !== 'function') {
@@ -484,7 +498,7 @@ function createViewGuard(
         TYPED_ARRAY_CALLBACK_METHODS.has(prop) &&
         !isDataView
       ) {
-        const original = (target as Record<PropertyKey, unknown>)[prop];
+        const original = Reflect.get(target as object, prop, receiver);
         if (typeof original === 'function') {
           const originalInvoker = original as (
             this: typeof target,
@@ -690,7 +704,9 @@ function sharedArrayBufferToArrayBuffer(buffer: SharedArrayBuffer): ArrayBuffer 
   return clone;
 }
 
-function cloneCommand(command: Command): CommandSnapshot {
+function cloneCommand<TPayload>(
+  command: Command<TPayload>,
+): CommandSnapshot<TPayload> {
   const snapshot = cloneStructured(command);
   return deepFreezeInPlace(snapshot);
 }

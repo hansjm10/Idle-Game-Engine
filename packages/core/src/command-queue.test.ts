@@ -161,8 +161,9 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
-      snapshot.payload;
+    const snapshotPayload = snapshot.payload as CommandSnapshotPayload<
+      typeof payload
+    >;
 
     expect(() => snapshotPayload.map.set('other', 1)).toThrow(TypeError);
 
@@ -203,8 +204,9 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
-      snapshot.payload;
+    const snapshotPayload = snapshot.payload as CommandSnapshotPayload<
+      typeof payload
+    >;
 
     let observedMap: unknown;
     snapshotPayload.map.forEach((_value, _key, mapRef) => {
@@ -249,7 +251,7 @@ describe('CommandQueue', () => {
 
     let reduceArrayRef: unknown;
     const reduceResult = typedProxy.reduce(
-      (acc, value, index, arrayRef) => {
+      (acc, value, _index, arrayRef) => {
         reduceArrayRef = arrayRef;
         return acc + value;
       },
@@ -259,7 +261,7 @@ describe('CommandQueue', () => {
     expect(reduceResult).toBe(12);
 
     let mapArrayRef: unknown;
-    const mapped = typedProxy.map((value, index, arrayRef) => {
+    const mapped = typedProxy.map((value, _index, arrayRef) => {
       mapArrayRef = arrayRef;
       return value * 2;
     });
@@ -294,8 +296,9 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
-      snapshot.payload;
+    const snapshotPayload = snapshot.payload as CommandSnapshotPayload<
+      typeof payload
+    >;
 
     const mapProxy = snapshotPayload.map;
     const leakedMap = mapProxy.valueOf();
@@ -339,8 +342,9 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
-      snapshot.payload;
+    const snapshotPayload = snapshot.payload as CommandSnapshotPayload<
+      typeof payload
+    >;
 
     const immutableBuffer = snapshotPayload.buffer;
     expect(Object.prototype.toString.call(immutableBuffer)).toBe(

@@ -8,7 +8,11 @@
  */
 import type {
   ImmutableArrayBufferSnapshot,
+  ImmutableMapSnapshot,
+  ImmutableSetSnapshot,
   ImmutableSharedArrayBufferSnapshot,
+  ImmutableTypedArraySnapshot,
+  TypedArray,
 } from './immutable-snapshots.js';
 
 export interface Command<TPayload = unknown> {
@@ -41,16 +45,22 @@ export type ImmutablePayload<T> = T extends ImmutablePrimitive
       : T extends SharedArrayBuffer
         ? ImmutableSharedArrayBufferSnapshot
         : T extends Map<infer K, infer V>
-          ? ReadonlyMap<ImmutablePayload<K>, ImmutablePayload<V>>
+          ? ImmutableMapSnapshot<ImmutablePayload<K>, ImmutablePayload<V>>
           : T extends Set<infer V>
-            ? ReadonlySet<ImmutablePayload<V>>
+            ? ImmutableSetSnapshot<ImmutablePayload<V>>
             : T extends Array<infer U>
               ? ImmutableArrayLike<U>
               : T extends ReadonlyArray<infer U>
                 ? ImmutableArrayLike<U>
-                : T extends object
-                  ? { readonly [K in keyof T]: ImmutablePayload<T[K]> }
-                  : T;
+                : T extends TypedArray
+                  ? ImmutableTypedArraySnapshot<T>
+                  : T extends DataView
+                    ? DataView
+                    : T extends ArrayBufferView
+                      ? T
+                      : T extends object
+                        ? { readonly [K in keyof T]: ImmutablePayload<T[K]> }
+                        : T;
 
 export type CommandSnapshot<TPayload = unknown> = ImmutablePayload<
   Command<TPayload>
@@ -74,7 +84,7 @@ export enum CommandPriority {
  *
  * Sequence numbers provide a deterministic tie breaker when timestamps match.
  */
-export interface CommandQueueEntry<TCommand extends Command = Command> {
+export interface CommandQueueEntry<TCommand = Command> {
   readonly command: TCommand;
   readonly sequence: number;
 }
