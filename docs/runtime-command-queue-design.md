@@ -292,6 +292,7 @@ export class CommandQueue {
   ];
 
   private nextSequence = 0;
+  private totalSize = 0;
 
   /**
    * Enqueue a command for execution in the next tick.
@@ -303,8 +304,12 @@ export class CommandQueue {
       throw new Error(`Invalid priority: ${command.priority}`);
     }
 
+    // Snapshot the command so later mutations (object pooling, payload reuse)
+    // cannot alter what eventually executes.
+    const storedCommand = cloneCommand(command);
+
     const entry: CommandQueueEntry = {
-      command,
+      command: storedCommand,
       sequence: this.nextSequence++
     };
 
@@ -325,6 +330,7 @@ export class CommandQueue {
       }
     }
     queue.splice(lo, 0, entry);
+    this.totalSize++;
   }
 
   dequeueAll(): Command[] {
@@ -332,10 +338,12 @@ export class CommandQueue {
     for (const priority of CommandQueue.PRIORITY_ORDER) {
       const queue = this.queues.get(priority);
       if (queue && queue.length > 0) {
+        const laneLength = queue.length;
         for (const entry of queue) {
           result.push(entry.command);
         }
         queue.length = 0; // Clear the lane after draining
+        this.totalSize -= laneLength;
       }
     }
     return result;
@@ -343,21 +351,28 @@ export class CommandQueue {
 
   clear(): void {
     for (const queue of this.queues.values()) {
+      this.totalSize -= queue.length;
       queue.length = 0;
     }
+    this.totalSize = 0;
   }
 
   get size(): number {
-    let total = 0;
-    for (const queue of this.queues.values()) {
-      total += queue.length;
-    }
-    return total;
+    return this.totalSize;
   }
+}
+
+function cloneCommand(command: Command): Command {
+  const snapshot = structuredClone(command);
+  // Freeze in development to catch accidental mutation of the snapshot.
+  if (process.env.NODE_ENV !== 'production') {
+    deepFreezeInPlace(snapshot);
+  }
+  return snapshot;
 }
 ```
 
-Pre-seeding the per-priority lanes and iterating with `PRIORITY_ORDER` keeps dequeue operations deterministic, while the binary-search insertion guarantees FIFO behavior within a lane based on `timestamp` with a monotonic sequence fallback for ties. This prevents cross-thread enqueue races from reordering commands that share the same priority.
+Pre-seeding the per-priority lanes and iterating with `PRIORITY_ORDER` keeps dequeue operations deterministic, while the binary-search insertion guarantees FIFO behavior within a lane based on `timestamp` with a monotonic sequence fallback for ties. Cloning each command on enqueue ensures callers cannot mutate queued payloads after submission, preserving determinism for both live execution and recorded logs. This, combined with the sequence counter, prevents cross-thread enqueue races from reordering commands that share the same priority.
 
 ### 4.3 Step Field Population
 
@@ -392,7 +407,7 @@ self.onmessage = (event) => {
     commandQueue.enqueue({
       ...event.data.command,
       priority: CommandPriority.PLAYER,
-      timestamp: event.data.command.timestamp ?? performance.now(),
+      timestamp: performance.now(), // Overwrite caller-supplied timestamp
       step: nextExecutableStep // <-- Stamp with the tick that will execute the command
     });
   }
@@ -407,6 +422,8 @@ stamped for the following tick, so `command.step` always matches the tick that
 actually executes them.
 
 **Why Worker Stamps It**: The main thread doesn't have access to `currentStep` (it lives in the Worker). Only the Worker runtime knows the current tick number, so stamping happens at enqueue time in the Worker's message handler.
+
+The handler *also* replaces any caller-provided timestamp with the Worker's `performance.now()` reading so hostile callers cannot backdate commands to reorder the queue.
 
 **2. System-Generated Commands (inside Worker)**
 
@@ -1011,19 +1028,32 @@ export class WorkerBridgeImpl implements WorkerBridge {
 The Worker runtime receives messages from the main thread and **must treat all external messages as PLAYER priority**:
 
 ```typescript
+const runtimeClock = createMonotonicClock();
+
 // Worker message handler - CRITICAL SECURITY BOUNDARY
 self.onmessage = (event) => {
   if (event.data.type === 'COMMAND') {
-    // SECURITY: All commands from main thread (postMessage) are PLAYER priority
-    // Never trust event.data.source - compromised UI could send 'SYSTEM'
+    // SECURITY: All commands from main thread (postMessage) are PLAYER priority.
+    // The Worker never trusts caller-provided metadata (source, timestamp, etc).
     commandQueue.enqueue({
       ...event.data.command,
       priority: CommandPriority.PLAYER, // Always PLAYER from external source
-      timestamp: event.data.command.timestamp ?? performance.now(),
+      timestamp: runtimeClock.now(), // Stamp inside the Worker to prevent tampering
       step: nextExecutableStep // Stamp with the tick that will execute the command
     });
   }
 };
+
+function createMonotonicClock() {
+  let last = 0;
+  return {
+    now(): number {
+      const raw = performance.now();
+      last = raw > last ? raw : last + 0.0001;
+      return last;
+    }
+  };
+}
 ```
 
 **Internal Command Enqueueing** (within Worker):
@@ -1065,9 +1095,9 @@ function executePrestigeReset(currentStep: number, layer: number) {
    - **Untrusted**: Any message from main thread (includes UI, dev tools, injected scripts)
    - **Trusted**: Code executing within the Worker context
 
-2. **Priority Assignment**:
-   - Messages from `postMessage()` → **Always PLAYER priority** (ignores `event.data.source`)
-   - Internal `commandQueue.enqueue()` calls → Use specified priority (trusted code)
+2. **Priority & Timestamp Assignment**:
+   - Messages from `postMessage()` → **Always PLAYER priority** and receive a Worker-stamped timestamp that advances monotonically
+   - Internal `commandQueue.enqueue()` calls → Use specified priority (trusted code) and can supply their own timestamp/ordering metadata
 
 3. **Attack Prevention**:
    ```typescript
@@ -1079,8 +1109,9 @@ function executePrestigeReset(currentStep: number, layer: number) {
    });
 
    // ✓ Runtime handles safely:
-   // - Ignores event.data.source
+   // - Ignores event.data.source and event.data.command.timestamp
    // - Forces priority = PLAYER
+   // - Replaces timestamp with Worker-owned monotonic clock
    // - Command executes with normal player permissions
    ```
 
@@ -1399,6 +1430,7 @@ export class CommandRecorder {
     return exportedLog as CommandLog;
   }
 
+  // runtimeContext is optional; when omitted replay runs against ephemeral queue/state
   replay(log: CommandLog, dispatcher: CommandDispatcher, runtimeContext?: RuntimeReplayContext): void {
     // Clone the snapshot to get a mutable working copy
     const mutableState = cloneDeep(log.startState);
@@ -1413,7 +1445,14 @@ export class CommandRecorder {
 
     // Sandbox command enqueueing so replay cannot mutate the live queue, while
     // still verifying that every follow-up enqueue is present in the recorded log.
-    const queue = runtimeContext?.commandQueue ?? commandQueue;
+    const queue =
+      runtimeContext?.commandQueue ??
+      new CommandQueue(); // Isolated queue for replay when no runtime context is supplied
+
+    if (queue.size > 0) {
+      telemetry.recordError('ReplayQueueNotEmpty', { pending: queue.size });
+      throw new Error('Command queue must be empty before replay begins.');
+    }
     const sandboxedEnqueues: Command[] = [];
     const originalEnqueue = queue.enqueue.bind(queue);
 
@@ -1500,9 +1539,9 @@ export class CommandRecorder {
         if (previousNextStep !== undefined) {
           runtimeContext?.setNextExecutableStep?.(previousNextStep);
         }
-      } else if (finalStep >= 0) {
-        runtimeContext?.setCurrentStep?.(finalStep + 1);
-        runtimeContext?.setNextExecutableStep?.(finalStep + 1);
+      } else if (finalStep >= 0 && runtimeContext) {
+        runtimeContext.setCurrentStep?.(finalStep + 1);
+        runtimeContext.setNextExecutableStep?.(finalStep + 1);
       }
     }
   }
@@ -1515,6 +1554,8 @@ export class CommandRecorder {
     this.lastRecordedStep = -1;
   }
 }
+
+When a replay runs without a `RuntimeReplayContext`, the recorder provisions a throwaway `CommandQueue` so that handler enqueues are still sandboxed and validated without touching the live runtime state. Tooling and tests can therefore replay logs in isolation, while embedding runtimes can opt into sharing their real queue by supplying the context.
 
 // Recording always stores frozen clones so later mutations (payload pooling,
 // handler-side adjustments, dev tools poking) cannot corrupt the captured
@@ -1577,12 +1618,105 @@ function commandsEqual(a: Command, b: Command): boolean {
     a.type === b.type &&
     a.priority === b.priority &&
     a.step === b.step &&
-    deepEqual(a.payload, b.payload)
+    payloadsMatch(a.payload, b.payload)
   );
 }
 
-// Use a lightweight deep-equality helper (e.g., fast-deep-equal)
-declare function deepEqual<T>(left: T, right: T): boolean;
+function payloadsMatch(left: unknown, right: unknown, seen = new WeakMap<any, any>()): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (typeof left !== typeof right) {
+    return false;
+  }
+
+  if (!left || !right || typeof left !== 'object') {
+    return left === right;
+  }
+
+  const existing = seen.get(left);
+  if (existing) {
+    return existing === right;
+  }
+  seen.set(left, right);
+
+  if (left instanceof Map && right instanceof Map) {
+    if (left.size !== right.size) {
+      return false;
+    }
+    const rightEntries = Array.from(right.entries());
+    return Array.from(left.entries()).every(([lk, lv], index) => {
+      const [rk, rv] = rightEntries[index];
+      return payloadsMatch(lk, rk, seen) && payloadsMatch(lv, rv, seen);
+    });
+  }
+
+  if (left instanceof Set && right instanceof Set) {
+    if (left.size !== right.size) {
+      return false;
+    }
+    const rightValues = Array.from(right.values());
+    return Array.from(left.values()).every((lv, index) =>
+      payloadsMatch(lv, rightValues[index], seen)
+    );
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) {
+      return false;
+    }
+    for (let i = 0; i < left.length; i++) {
+      if (!payloadsMatch(left[i], right[i], seen)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (ArrayBuffer.isView(left) && ArrayBuffer.isView(right)) {
+    if (left.byteLength !== right.byteLength) {
+      return false;
+    }
+    const leftBytes = new Uint8Array(left.buffer, left.byteOffset, left.byteLength);
+    const rightBytes = new Uint8Array(right.buffer, right.byteOffset, right.byteLength);
+    for (let i = 0; i < leftBytes.length; i++) {
+      if (leftBytes[i] !== rightBytes[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (left instanceof Date && right instanceof Date) {
+    return left.getTime() === right.getTime();
+  }
+
+  const leftKeys = Object.keys(left as Record<string, unknown>);
+  const rightKeys = Object.keys(right as Record<string, unknown>);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) {
+      return false;
+    }
+    if (!payloadsMatch(
+      (left as Record<string, unknown>)[key],
+      (right as Record<string, unknown>)[key],
+      seen
+    )) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// payloadsMatch walks the payload graph, respecting Map/Set order and
+// accounting for shared references via the WeakMap. This avoids depending on
+// generic deep-equality helpers that ignore structured-clone-only types.
 
 /**
  * Freeze an object in-place, making plain objects/arrays immutable.
@@ -1651,35 +1785,166 @@ function deepFreezeInPlace<T>(obj: T): T {
  * Restore game state from a snapshot.
  * The snapshot is cloned to ensure the original remains immutable.
  *
- * IMPORTANT: This function replaces gameState properties completely to avoid
- * leaving obsolete keys from pre-reset/migration state. Object.assign would
- * merge properties, causing replayed runs to diverge from original state.
- */
+ * IMPORTANT: This function mutates existing gameState containers in place so any
+ * references held by systems (e.g., const entities = gameState.entities) remain
+ * valid after replay. Keys that no longer exist in the snapshot are removed,
+ * and Maps/Sets/Arrays/objects are reconciled in place instead of being replaced.
+*/
 function restoreState(snapshot: StateSnapshot): void {
-  // The snapshot is already cloned by the caller (replay method)
+  const mutableSnapshot = cloneDeep(snapshot); // Preserves graph aliasing
+  reconcileValue(gameState, mutableSnapshot, new WeakMap());
+}
 
-  // Clear all existing properties first
-  for (const key of Object.keys(gameState)) {
-    delete (gameState as any)[key];
+function reconcileValue(current: any, next: any, seen: WeakMap<object, any>): any {
+  if (!next || typeof next !== 'object') {
+    return next;
   }
 
-  // Copy all snapshot properties to gameState
-  for (const key of Object.keys(snapshot)) {
-    (gameState as any)[key] = (snapshot as any)[key];
+  if (seen.has(next)) {
+    return seen.get(next);
   }
 
-  // Alternative approach for typed state structures:
-  // If gameState has a known structure with Maps/Sets, explicitly reconstruct:
-  /*
-  gameState.resources = new Map(snapshot.resources);
-  gameState.entities = new Map(snapshot.entities);
-  gameState.unlocks = new Set(snapshot.unlocks);
-  gameState.progression = { ...snapshot.progression };
-  // etc. - exhaustively assign all root properties
-  */
+  if (next instanceof Map) {
+    const map = current instanceof Map ? current : new Map();
+    seen.set(next, map);
+
+    const existingEntries =
+      current instanceof Map ? Array.from(current.entries()) : [];
+    const matchedEntryIndices = new Set<number>();
+
+    map.clear();
+    for (const [key, value] of next.entries()) {
+      const existingEntry = findMatchingMapEntry(
+        existingEntries,
+        key,
+        matchedEntryIndices
+      );
+      const resolvedKey =
+        existingEntry !== undefined
+          ? existingEntry[0]
+          : reconcileValue(undefined, key, seen);
+      const resolvedValue = reconcileValue(
+        existingEntry?.[1],
+        value,
+        seen
+      );
+      map.set(resolvedKey, resolvedValue);
+    }
+    return map;
+  }
+
+  if (next instanceof Set) {
+    const set = current instanceof Set ? current : new Set();
+    seen.set(next, set);
+
+    const existingItems = current instanceof Set ? Array.from(current.values()) : [];
+    const matchedItemIndices = new Set<number>();
+
+    set.clear();
+    for (const item of next.values()) {
+      const existingItem = findMatchingSetItem(existingItems, item, matchedItemIndices);
+      const resolvedItem = reconcileValue(existingItem ?? undefined, item, seen);
+      set.add(resolvedItem);
+    }
+    return set;
+  }
+
+  if (Array.isArray(next)) {
+    const array = Array.isArray(current) ? current : [];
+    seen.set(next, array);
+    array.length = next.length;
+    for (let i = 0; i < next.length; i++) {
+      array[i] = reconcileValue(array[i], next[i], seen);
+    }
+    return array;
+  }
+
+  if (ArrayBuffer.isView(next)) {
+    const ctor = next.constructor as {
+      new(buffer: ArrayBufferLike): typeof next;
+    };
+    return new ctor(next);
+  }
+
+  if (next instanceof Date) {
+    return new Date(next.getTime());
+  }
+
+  if (isPlainObject(next)) {
+    const target = isPlainObject(current) ? current : {};
+    seen.set(next, target);
+
+    for (const key of Object.keys(target)) {
+      if (!(key in next)) {
+        delete target[key];
+      }
+    }
+
+    for (const [key, value] of Object.entries(next)) {
+      target[key] = reconcileValue(target[key], value, seen);
+    }
+
+    return target;
+  }
+
+  // Fall back to structuredClone for rare structured types (RegExp, URL, etc.)
+  const clone = structuredClone(next);
+  if (typeof clone === 'object' && clone !== null) {
+    seen.set(next, clone);
+  }
+  return clone;
+}
+
+function isPlainObject(value: unknown): value is Record<string, any> {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function findMatchingMapEntry(
+  entries: Array<[any, any]>,
+  candidateKey: any,
+  matchedIndices: Set<number>
+): [any, any] | undefined {
+  for (let i = 0; i < entries.length; i++) {
+    if (matchedIndices.has(i)) {
+      continue;
+    }
+    const [existingKey] = entries[i];
+    if (
+      Object.is(existingKey, candidateKey) ||
+      payloadsMatch(existingKey, candidateKey)
+    ) {
+      matchedIndices.add(i);
+      return entries[i];
+    }
+  }
+  return undefined;
+}
+
+function findMatchingSetItem(
+  items: any[],
+  candidate: any,
+  matchedIndices: Set<number>
+): any | undefined {
+  for (let i = 0; i < items.length; i++) {
+    if (matchedIndices.has(i)) {
+      continue;
+    }
+    const existing = items[i];
+    if (Object.is(existing, candidate) || payloadsMatch(existing, candidate)) {
+      matchedIndices.add(i);
+      return existing;
+    }
+  }
+  return undefined;
 }
 
 ```
+
+The reconciliation logic deliberately keeps previously shared references alive. For example, if a system cached `const entities = gameState.entities`, that Map instance survives replay; each entry is reconciled in place so cached entity objects continue to reference the same containers after restoration. The `WeakMap` registry ensures every object from the snapshot maps back to exactly one runtime object, so cycles and cross-links are recreated faithfully. This protects long-lived references inside the runtime while still guaranteeing the restored state matches the recorded snapshot exactly.
 
 The replay sandbox guarantees that log-driven execution never leaks additional
 commands into the live runtime. Any handler that attempts to enqueue during
@@ -1746,6 +2011,7 @@ sessionRecorder.replay(log, dispatcher);
 **Solution**:
   - `CommandRecorder.replay()` calls handlers **directly** via `dispatcher.getHandler()`, bypassing event system
   - Replay temporarily swaps `commandQueue.enqueue` with a sandbox that records attempted follow-up commands; each queued command is matched against the remaining log entries so the tool can surface telemetry and fail fast when the capture is incomplete or divergent
+  - When no runtime context is provided, replay still captures follow-up enqueues by routing them through a fresh, isolated `CommandQueue`, so tests and tooling remain decoupled from the live runtime
 - Missing handlers are surfaced via `telemetry.recordError('ReplayUnknownCommandType', …)` so replay drift cannot go unnoticed
 - Alternatively: use separate replay-only dispatcher with no recording subscriptions
 - Documentation updated to show both patterns
@@ -2028,10 +2294,13 @@ private dropLowestPriority(): void {
     }
 
     const dropped = queue.shift(); // Remove oldest command in lowest-priority lane
+    if (dropped) {
+      this.totalSize--;
+    }
     telemetry.recordWarning('CommandDropped', {
-      type: dropped!.type,
+      type: dropped!.command.type,
       priority,
-      timestamp: dropped!.timestamp
+      timestamp: dropped!.command.timestamp
     });
     return;
   }
@@ -2042,7 +2311,9 @@ This strategy always removes the oldest command from the lowest-priority lane,
 so overflows resolve deterministically across live sessions and replays. If all
 lanes are empty the method is a no-op, ensuring the enqueue path cannot throw.
 Each drop is surfaced via telemetry with enough metadata to trace automation or
-attack patterns that saturate the queue.
+attack patterns that saturate the queue. Because the queue maintains a running
+`totalSize` counter (see Section 4.2), the overflow check stays O(1) regardless
+of how many commands are currently buffered.
 
 ### 9.2 Batch Processing Optimization
 
