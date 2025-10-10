@@ -2138,50 +2138,42 @@ replay(log: CommandLog, dispatcher: CommandDispatcher): void {
 - Each snapshot lives in its own memory space
 
 **Freezing is Secondary Protection**:
-- `Object.freeze()` prevents mutation of plain objects/arrays
-- Helps catch accidental bugs in development
-- Does NOT work on Map/Set/TypedArray
+- `deepFreezeInPlace()` walks the snapshot and returns a read-only graph
+- Plain objects/arrays are cloned and `Object.freeze()` is applied
+- Map/Set/Date/TypedArray instances are wrapped in proxies whose mutators (`set`, `add`, `setFullYear`, `copyWithin`, `subarray`, etc.) throw `TypeError`
+- Typed array `buffer` accessors expose cloned `ArrayBuffer` instances, and standalone `ArrayBuffer`/`SharedArrayBuffer` payloads are cloned in place to keep brand-correct data isolated from the live runtime
+- `RegExp` payloads are rehydrated via `new RegExp(source, flags)` so `.exec()`/`.test()` continue to behave like native instances without sharing mutable references
 
-**Map/Set Limitations**:
+**Immutable Collections Example**:
 ```typescript
-const map = new Map([['a', { value: 1 }]]);
-deepFreezeInPlace(map);
+const payload = deepFreezeInPlace({
+  map: new Map([['a', { value: 1 }]]),
+  set: new Set([1, 2]),
+  date: new Date('2025-01-01T00:00:00.000Z'),
+  typed: new Uint8Array([5, 6]),
+});
 
-// ✗ Map methods still work (Object.freeze doesn't prevent this!)
-map.set('b', 2);      // Succeeds (Map itself is not frozen)
-map.delete('a');      // Succeeds
+// Mutations throw in development/test builds
+expect(() => payload.map.set('b', 2)).toThrow(TypeError);
+expect(() => (payload.map.get('a') as { value: number }).value = 2).toThrow(TypeError);
+expect(() => payload.set.add(3)).toThrow(TypeError);
+expect(() => payload.date.setFullYear(2030)).toThrow(TypeError);
+expect(() => {
+  payload.typed[0] = 9;
+}).toThrow(TypeError);
+expect(() => payload.typed.set([7], 1)).toThrow(TypeError);
 
-// ✓ But nested objects ARE frozen
-map.get('a').value = 2; // Throws: Cannot assign to read-only property
-
-// ✓ Cloning provides real isolation
-const clone = structuredClone(map);
-clone.set('b', 2);    // Succeeds on clone
-map.has('b');         // false (original unaffected)
-```
-
-**TypedArray Limitations**:
-```typescript
-const state = { buffer: new Uint8Array([1, 2, 3]) };
-deepFreezeInPlace(state); // Skips TypedArrays (Object.freeze would throw)
-
-// ✗ TypedArray can still be mutated
-state.buffer[0] = 99;    // Succeeds (cannot freeze TypedArrays)
-state.buffer[0];         // 99 (mutation succeeded)
-
-// ✓ But cloning provides isolation
-const clone = structuredClone(state);
-clone.buffer[0] = 88;    // Mutate clone
-
-// Original and clone are independent
-clone.buffer[0];         // 88 (clone mutated)
-state.buffer[0];         // 99 (original unchanged by clone mutation)
+// Derived views remain immutable
+const subView = payload.typed.subarray(0, 1);
+expect(() => {
+  subView[0] = 42;
+}).toThrow(TypeError);
 ```
 
 **Defense Strategy**:
 1. **Isolation via cloning**: Snapshots are independent (always works)
-2. **Freezing plain objects**: Catches accidental mutations (partial coverage)
-3. **Code discipline**: Don't mutate Map/Set/TypedArray in snapshots (enforced by review)
+2. **Runtime guards**: Development/test builds apply `deepFreezeInPlace()` and throw on any mutation attempt
+3. **Production performance**: Release builds skip the proxy layer but still rely on cloning to isolate snapshots
 
 **Clone-Freeze-Clone Pattern**:
 ```
@@ -2194,8 +2186,8 @@ Live State → Clone → Freeze → Store (recorder.startState)
 
 Each step maintains:
 - **Isolation**: Clones are independent (via `structuredClone()`)
-- **Partial immutability**: Plain objects/arrays frozen; Map/Set/TypedArray cannot be frozen
-- **Cloneability**: No proxies, plain data only (compatible with `structuredClone()`)
+- **Development immutability**: `deepFreezeInPlace()` injects read-only guards for Map/Set/Date/TypedArray during dev/test to surface accidental mutations early
+- **Production cloneability**: Release builds omit the proxy layer, keeping snapshots plain-data and `structuredClone()` compatible for recording/replay
 
 **State Serialization Constraints**:
 
@@ -2204,9 +2196,11 @@ For deterministic replay to work, game state must be **cloneable via `structured
 1. **Supported Types**:
    - **Plain objects and arrays** (cloneable + freezable)
    - **Primitives** (string, number, boolean, null, undefined)
-   - **Date objects** (cloneable + freezable)
-   - **Map and Set collections** (cloneable, but NOT freezable - remain mutable)
-   - **Typed arrays** (Uint8Array, etc.) (cloneable, but NOT freezable - would throw)
+   - **Date objects** (cloneable + mutation-guarded proxies in development)
+   - **Map and Set collections** (cloneable + mutation-guarded proxies in development)
+   - **Typed arrays** (Uint8Array, etc.) (cloneable + mutation-guarded proxies for values and subviews in development)
+   - **ArrayBuffer / SharedArrayBuffer** (snapshot clones preserve `byteLength` and contents without exposing the live runtime buffers)
+   - **RegExp** (cloned with `source`/`flags` and `lastIndex` preserved so replay stays deterministic)
    - **Cyclic references** (handled by `structuredClone()` and `deepFreezeInPlace()`)
 
 2. **Unsupported Types** (will cause cloning failures):
@@ -2237,7 +2231,7 @@ For deterministic replay to work, game state must be **cloneable via `structured
 
 4. **Cyclic State Handling**:
    ```typescript
-   // Cycles are safe for freezing (WeakSet prevents infinite recursion)
+   // Cycles are safe for freezing (WeakMap caches preserve referential identity)
    const parent = { children: [] };
    const child = { parent };
    parent.children.push(child);
@@ -2247,40 +2241,32 @@ For deterministic replay to work, game state must be **cloneable via `structured
 
 5. **Map/Set/TypedArray Handling**:
    ```typescript
-   const state = {
+   const state = deepFreezeInPlace({
      items: new Map([['a', { value: 1 }]]),
      ids: new Set(['x', 'y']),
-     buffer: new Uint8Array([1, 2, 3])
-   };
+     buffer: new Uint8Array([1, 2, 3]),
+   });
 
-   deepFreezeInPlace(state);
+   expect(() => state.items.set('b', 2)).toThrow(TypeError);
+   expect(() => state.ids.add('z')).toThrow(TypeError);
+   expect(() => {
+     state.buffer[0] = 99;
+   }).toThrow(TypeError);
+   expect(() => state.buffer.set([7], 1)).toThrow(TypeError);
 
-   // ✗ Map/Set are NOT frozen (Object.freeze limitation)
-   state.items.set('b', 2);  // Succeeds (Map methods work)
-   state.ids.add('z');       // Succeeds (Set methods work)
+   const sub = state.buffer.subarray(0, 1);
+   expect(() => {
+     sub[0] = 42;
+   }).toThrow(TypeError);
 
-   // ✗ TypedArrays are NOT frozen (would throw if we tried)
-   state.buffer[0] = 99;     // Succeeds (cannot freeze TypedArrays)
-
-   // ✓ But nested objects ARE frozen
-   state.items.get('a').value = 2; // Throws: read-only property
-
-   // ✓ Cloning provides true isolation (primary defense)
-   const clone = structuredClone(state);
-   clone.items.set('c', 3);
-   clone.ids.add('w');
-   clone.buffer[0] = 88;
-
-   // Original is unaffected by clone mutations
-   state.items.has('c');  // false
-   state.ids.has('w');    // false
-   state.buffer[0];       // Still 99 (or 1 if never mutated)
+   // Nested data remains deeply frozen
+   expect(() => (state.items.get('a') as { value: number }).value = 2).toThrow(TypeError);
    ```
 
-   **Important**: The recorder relies primarily on **cloning for isolation**, not freezing. Map/Set/TypedArray in snapshots should not be mutated (enforced by code review), but the architecture remains safe because:
-   - Each `export()` clones the snapshot
-   - Each `replay()` clones the snapshot
-   - Mutations affect only the clone, never the original
+   **Important**: Development and test builds surface incorrect mutations immediately via the proxy layer. Production builds still rely on cloning for isolation (the snapshot handed to the queue is a unique copy), but skip proxy creation to stay within the tick budget.
+   - Each `export()` clones the frozen snapshot before serialisation
+   - Each `replay()` clones the stored snapshot before mutating anything
+   - Mutations always target a clone, never the source snapshot
 
 This enables:
 - **Deterministic testing**: Record player session, replay in CI to verify no regressions

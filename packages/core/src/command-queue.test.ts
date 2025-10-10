@@ -136,4 +136,84 @@ describe('CommandQueue', () => {
     expect(queue.size).toBe(0);
     expect(queue.dequeueAll()).toEqual([]);
   });
+
+  it('prevents mutation of complex payload structures', () => {
+    const queue = new CommandQueue();
+
+    const payload = {
+      map: new Map<string, unknown>([
+        [
+          'items',
+          {
+            set: new Set<number>([1, 2]),
+          },
+        ],
+      ]),
+      date: new Date('2025-01-01T00:00:00.000Z'),
+      typed: new Uint8Array([5, 6, 7]),
+    };
+
+    queue.enqueue(
+      createCommand({
+        type: 'complex',
+        payload,
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const snapshotPayload = snapshot.payload as typeof payload;
+
+    expect(() => snapshotPayload.map.set('other', 1)).toThrow(TypeError);
+
+    const snapshotSet = (snapshotPayload.map.get('items') as { set: Set<number> }).set;
+    expect(() => snapshotSet.add(3)).toThrow(TypeError);
+
+    expect(() => snapshotPayload.date.setFullYear(2030)).toThrow(TypeError);
+
+    const typedView = snapshotPayload.typed;
+    expect(() => {
+      typedView[0] = 42;
+    }).toThrow(TypeError);
+    expect(() => typedView.set([9], 1)).toThrow(TypeError);
+
+    const subView = typedView.subarray(0, 2);
+    expect(() => {
+      subView[0] = 99;
+    }).toThrow(TypeError);
+
+    expect(Array.from(typedView)).toEqual([5, 6, 7]);
+  });
+
+  it('preserves callable behavior for non-plain objects', () => {
+    const queue = new CommandQueue();
+
+    const payload = {
+      buffer: new ArrayBuffer(8),
+      shared:
+        typeof SharedArrayBuffer === 'function'
+          ? new SharedArrayBuffer(16)
+          : undefined,
+      regex: /queue-(\d+)/g,
+    };
+
+    queue.enqueue(
+      createCommand({
+        type: 'non-plain',
+        payload,
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const snapshotPayload = snapshot.payload as typeof payload;
+
+    expect(snapshotPayload.buffer.byteLength).toBe(8);
+    expect(() => new Uint8Array(snapshotPayload.buffer)[0]).not.toThrow();
+
+    if (snapshotPayload.shared) {
+      expect(snapshotPayload.shared.byteLength).toBe(16);
+    }
+
+    const result = snapshotPayload.regex.exec('queue-42');
+    expect(result?.[1]).toBe('42');
+  });
 });

@@ -93,56 +93,342 @@ export class CommandQueue {
   }
 }
 
+const MAP_MUTATORS = new Set<PropertyKey>(['set', 'delete', 'clear']);
+const SET_MUTATORS = new Set<PropertyKey>(['add', 'delete', 'clear']);
+const DATE_MUTATOR_PREFIX = /^set/;
+const TYPED_ARRAY_MUTATORS = new Set<PropertyKey>([
+  'copyWithin',
+  'fill',
+  'reverse',
+  'set',
+  'sort',
+]);
+const DATAVIEW_MUTATORS = new Set<PropertyKey>([
+  'setInt8',
+  'setUint8',
+  'setInt16',
+  'setUint16',
+  'setInt32',
+  'setUint32',
+  'setBigInt64',
+  'setBigUint64',
+  'setFloat32',
+  'setFloat64',
+]);
+
+type SharedArrayBufferCtor = new (byteLength: number) => SharedArrayBuffer;
+
+const sharedArrayBufferCtor = (globalThis as {
+  SharedArrayBuffer?: SharedArrayBufferCtor;
+}).SharedArrayBuffer;
+
 /**
- * Freeze plain objects/arrays in-place while handling cycles, Maps, and Sets.
- * Typed arrays are left mutable in accordance with docs/runtime-command-queue-design.md §3.1.
+ * Produce a deeply immutable snapshot of a structured cloned value. The returned
+ * graph maintains referential identity while replacing Maps/Sets/Dates/TypedArrays
+ * with read-only proxies that throw on mutation.
  */
 export function deepFreezeInPlace<T>(value: T): T {
-  const seen = new WeakSet<object>();
+  const seen = new WeakMap<object, unknown>();
+  return enforceImmutable(value, seen) as T;
+}
 
-  const freeze = (node: unknown): void => {
-    if (!node || typeof node !== 'object') {
-      return;
-    }
+function enforceImmutable(node: unknown, seen: WeakMap<object, unknown>): unknown {
+  if (!node || typeof node !== 'object') {
+    return node;
+  }
 
-    const objectNode = node as Record<PropertyKey, unknown>;
-    if (seen.has(objectNode)) {
-      return;
-    }
-    seen.add(objectNode);
+  const cached = seen.get(node as object);
+  if (cached) {
+    return cached;
+  }
 
-    if (ArrayBuffer.isView(objectNode)) {
-      // TypedArrays cannot be frozen; rely on cloning for isolation (see design doc §3.1).
-      return;
-    }
+  if (node instanceof Map) {
+    return makeImmutableMap(node, seen);
+  }
 
-    Object.freeze(objectNode);
+  if (node instanceof Set) {
+    return makeImmutableSet(node, seen);
+  }
 
-    if (objectNode instanceof Map) {
-      for (const [key, mapValue] of objectNode.entries()) {
-        freeze(key);
-        freeze(mapValue);
+  if (node instanceof Date) {
+    return makeImmutableDate(node, seen);
+  }
+
+  if (node instanceof ArrayBuffer) {
+    return makeImmutableArrayBuffer(node, seen);
+  }
+
+  if (
+    typeof sharedArrayBufferCtor === 'function' &&
+    node instanceof sharedArrayBufferCtor
+  ) {
+    return makeImmutableSharedArrayBuffer(node, seen);
+  }
+
+  if (node instanceof RegExp) {
+    return makeImmutableRegExp(node, seen);
+  }
+
+  if (ArrayBuffer.isView(node)) {
+    return makeImmutableView(node as ArrayBufferView, seen);
+  }
+
+  return makeImmutableObject(node as Record<PropertyKey, unknown>, seen);
+}
+
+function makeImmutableMap(
+  source: Map<unknown, unknown>,
+  seen: WeakMap<object, unknown>,
+): Map<unknown, unknown> {
+  const safeMap = new Map();
+  const proxy = new Proxy(safeMap, createMapMutationGuard());
+  seen.set(source, proxy);
+
+  for (const [key, value] of source.entries()) {
+    const immutableKey = enforceImmutable(key, seen);
+    const immutableValue = enforceImmutable(value, seen);
+    safeMap.set(immutableKey, immutableValue);
+  }
+
+  return proxy;
+}
+
+function makeImmutableSet(
+  source: Set<unknown>,
+  seen: WeakMap<object, unknown>,
+): Set<unknown> {
+  const safeSet = new Set();
+  const proxy = new Proxy(safeSet, createSetMutationGuard());
+  seen.set(source, proxy);
+
+  for (const item of source.values()) {
+    const immutableItem = enforceImmutable(item, seen);
+    safeSet.add(immutableItem);
+  }
+
+  return proxy;
+}
+
+function makeImmutableDate(
+  source: Date,
+  seen: WeakMap<object, unknown>,
+): Date {
+  const safeDate = new Date(source.getTime());
+  const proxy = new Proxy(safeDate, {
+    get(target, prop, receiver) {
+      if (typeof prop === 'string' && DATE_MUTATOR_PREFIX.test(prop)) {
+        return () => {
+          throw new TypeError('Cannot mutate immutable Date snapshot');
+        };
       }
-      return;
-    }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set() {
+      throw new TypeError('Cannot mutate immutable Date snapshot');
+    },
+    defineProperty() {
+      throw new TypeError('Cannot mutate immutable Date snapshot');
+    },
+    deleteProperty() {
+      throw new TypeError('Cannot mutate immutable Date snapshot');
+    },
+  });
+  seen.set(source, proxy);
+  return proxy;
+}
 
-    if (objectNode instanceof Set) {
-      for (const item of objectNode.values()) {
-        freeze(item);
+function makeImmutableArrayBuffer(
+  source: ArrayBuffer,
+  seen: WeakMap<object, unknown>,
+): ArrayBuffer {
+  const clone = source.slice(0);
+  Object.freeze(clone);
+  seen.set(source, clone);
+  return clone;
+}
+
+function makeImmutableSharedArrayBuffer(
+  source: SharedArrayBuffer,
+  seen: WeakMap<object, unknown>,
+): SharedArrayBuffer {
+  if (typeof sharedArrayBufferCtor !== 'function') {
+    throw new Error('SharedArrayBuffer is not supported in this environment.');
+  }
+
+  const clone = new sharedArrayBufferCtor(source.byteLength);
+  new Uint8Array(clone).set(new Uint8Array(source));
+  Object.freeze(clone);
+  seen.set(source, clone);
+  return clone;
+}
+
+function makeImmutableRegExp(
+  source: RegExp,
+  seen: WeakMap<object, unknown>,
+): RegExp {
+  const clone = new RegExp(source.source, source.flags);
+  clone.lastIndex = source.lastIndex;
+  seen.set(source, clone);
+  return clone;
+}
+
+function makeImmutableView(
+  source: ArrayBufferView,
+  seen: WeakMap<object, unknown>,
+): ArrayBufferView {
+  let safeView: ArrayBufferView;
+
+  if (source instanceof DataView) {
+    const bufferClone = source.buffer.slice(
+      source.byteOffset,
+      source.byteOffset + source.byteLength,
+    );
+    safeView = new DataView(bufferClone, 0, source.byteLength);
+  } else {
+    const TypedArrayCtor = source.constructor as {
+      new (
+        input:
+          | ArrayBufferLike
+          | ArrayBufferView
+          | ArrayLike<unknown>
+          | Iterable<unknown>,
+      ): ArrayBufferView;
+    };
+    safeView = new TypedArrayCtor(source);
+  }
+
+  const proxy = new Proxy(safeView, createViewGuard(source, seen));
+  seen.set(source, proxy);
+  return proxy;
+}
+
+function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
+  return {
+    get(target, prop, receiver) {
+      if (MAP_MUTATORS.has(prop)) {
+        return () => {
+          throw new TypeError('Cannot mutate immutable Map snapshot');
+        };
       }
-      return;
-    }
-
-    for (const name of Object.getOwnPropertyNames(objectNode)) {
-      freeze(objectNode[name]);
-    }
-    for (const symbol of Object.getOwnPropertySymbols(objectNode)) {
-      freeze(objectNode[symbol]);
-    }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set() {
+      throw new TypeError('Cannot mutate immutable Map snapshot');
+    },
+    defineProperty() {
+      throw new TypeError('Cannot mutate immutable Map snapshot');
+    },
+    deleteProperty() {
+      throw new TypeError('Cannot mutate immutable Map snapshot');
+    },
   };
+}
 
-  freeze(value);
-  return value;
+function createSetMutationGuard(): ProxyHandler<Set<unknown>> {
+  return {
+    get(target, prop, receiver) {
+      if (SET_MUTATORS.has(prop)) {
+        return () => {
+          throw new TypeError('Cannot mutate immutable Set snapshot');
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set() {
+      throw new TypeError('Cannot mutate immutable Set snapshot');
+    },
+    defineProperty() {
+      throw new TypeError('Cannot mutate immutable Set snapshot');
+    },
+    deleteProperty() {
+      throw new TypeError('Cannot mutate immutable Set snapshot');
+    },
+  };
+}
+
+function makeImmutableObject(
+  source: Record<PropertyKey, unknown>,
+  seen: WeakMap<object, unknown>,
+): Record<PropertyKey, unknown> {
+  const proto = Object.getPrototypeOf(source);
+  const clone = Array.isArray(source)
+    ? []
+    : Object.create(proto === null ? null : proto);
+
+  seen.set(source, clone);
+
+  const keys: Array<PropertyKey> = [
+    ...Object.getOwnPropertyNames(source),
+    ...Object.getOwnPropertySymbols(source),
+  ];
+
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(source, key);
+    if (!descriptor) continue;
+
+    if ('value' in descriptor) {
+      descriptor.value = enforceImmutable(descriptor.value, seen);
+    }
+
+    Object.defineProperty(clone, key, descriptor);
+  }
+
+  Object.freeze(clone);
+  return clone;
+}
+
+function createViewGuard(
+  source: ArrayBufferView,
+  seen: WeakMap<object, unknown>,
+): ProxyHandler<ArrayBufferView> {
+  const isDataView = source instanceof DataView;
+  const typeName = isDataView
+    ? 'DataView'
+    : source.constructor.name || 'TypedArray';
+
+  return {
+    get(target, prop, receiver) {
+      if (prop === 'buffer') {
+        return target.buffer.slice(0);
+      }
+
+      if (!isDataView && prop === 'subarray') {
+        return (...args: unknown[]) => {
+          const typedTarget = target as unknown as {
+            subarray: (...params: unknown[]) => ArrayBufferView;
+          };
+          const result = typedTarget.subarray(...args);
+          return makeImmutableView(result, seen);
+        };
+      }
+
+      if (typeof prop === 'string') {
+        if (
+          (isDataView && DATAVIEW_MUTATORS.has(prop)) ||
+          (!isDataView && TYPED_ARRAY_MUTATORS.has(prop))
+        ) {
+          return () => {
+            throw new TypeError(`Cannot mutate immutable ${typeName} snapshot`);
+          };
+        }
+      }
+
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set() {
+      throw new TypeError(`Cannot mutate immutable ${typeName} snapshot`);
+    },
+    defineProperty() {
+      throw new TypeError(`Cannot mutate immutable ${typeName} snapshot`);
+    },
+    deleteProperty() {
+      throw new TypeError(`Cannot mutate immutable ${typeName} snapshot`);
+    },
+  };
 }
 
 function cloneCommand(command: Command): Command {
@@ -152,7 +438,7 @@ function cloneCommand(command: Command): Command {
       ?.NODE_ENV === 'production';
 
   if (!isProduction) {
-    deepFreezeInPlace(snapshot);
+    return deepFreezeInPlace(snapshot);
   }
 
   return snapshot;
