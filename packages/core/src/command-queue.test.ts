@@ -184,6 +184,45 @@ describe('CommandQueue', () => {
     expect(Array.from(typedView)).toEqual([5, 6, 7]);
   });
 
+  it('prevents escape via valueOf helpers', () => {
+    const queue = new CommandQueue();
+
+    const payload = {
+      map: new Map<string, { set: Set<number> }>([
+        ['items', { set: new Set<number>([1, 2]) }],
+      ]),
+      typed: new Uint8Array([5, 6, 7]),
+    };
+
+    queue.enqueue(
+      createCommand({
+        type: 'valueof-escape',
+        payload,
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const snapshotPayload = snapshot.payload as typeof payload;
+
+    const mapProxy = snapshotPayload.map;
+    const leakedMap = mapProxy.valueOf();
+    expect(leakedMap).toBe(mapProxy);
+    expect(() => leakedMap.set('escape', 1)).toThrow(TypeError);
+
+    const nestedSet = snapshotPayload.map.get('items')?.set;
+    expect(nestedSet).toBeDefined();
+    const leakedSet = nestedSet!.valueOf();
+    expect(leakedSet).toBe(nestedSet);
+    expect(() => leakedSet.add(3)).toThrow(TypeError);
+
+    const typedProxy = snapshotPayload.typed;
+    const leakedTyped = typedProxy.valueOf();
+    expect(leakedTyped).toBe(typedProxy);
+    expect(() => {
+      leakedTyped[0] = 42;
+    }).toThrow(TypeError);
+  });
+
   it('preserves callable behavior for non-plain objects', () => {
     const queue = new CommandQueue();
 

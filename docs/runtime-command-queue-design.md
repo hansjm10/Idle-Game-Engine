@@ -2266,6 +2266,7 @@ For deterministic replay to work, game state must be **cloneable via `structured
    **Important**: Development and test builds surface incorrect mutations immediately via the proxy layer. Production builds still rely on cloning for isolation (the snapshot handed to the queue is a unique copy), but skip proxy creation to stay within the tick budget.
    - Each `export()` clones the frozen snapshot before serialisation
    - Each `replay()` clones the stored snapshot before mutating anything
+   - Proxy guards block escape hatches such as `valueOf()` so callers cannot peel back the immutable wrappers and reach the mutable backing instances
    - Mutations always target a clone, never the source snapshot
 
 This enables:

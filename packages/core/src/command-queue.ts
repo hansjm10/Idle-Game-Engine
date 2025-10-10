@@ -306,6 +306,10 @@ function makeImmutableView(
 function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
   return {
     get(target, prop, receiver) {
+      if (prop === 'valueOf') {
+        return () => receiver;
+      }
+
       if (MAP_MUTATORS.has(prop)) {
         return () => {
           throw new TypeError('Cannot mutate immutable Map snapshot');
@@ -329,6 +333,10 @@ function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
 function createSetMutationGuard(): ProxyHandler<Set<unknown>> {
   return {
     get(target, prop, receiver) {
+      if (prop === 'valueOf') {
+        return () => receiver;
+      }
+
       if (SET_MUTATORS.has(prop)) {
         return () => {
           throw new TypeError('Cannot mutate immutable Set snapshot');
@@ -393,6 +401,10 @@ function createViewGuard(
     get(target, prop, receiver) {
       if (prop === 'buffer') {
         return target.buffer.slice(0);
+      }
+
+      if (prop === 'valueOf') {
+        return () => receiver;
       }
 
       if (!isDataView && prop === 'subarray') {
