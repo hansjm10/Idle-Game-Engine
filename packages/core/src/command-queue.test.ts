@@ -185,6 +185,97 @@ describe('CommandQueue', () => {
     expect(Array.from(typedView)).toEqual([5, 6, 7]);
   });
 
+  it('prevents mutation via callback-provided containers', () => {
+    const queue = new CommandQueue();
+
+    const payload = {
+      map: new Map<string, { set: Set<number> }>([
+        ['items', { set: new Set<number>([1, 2]) }],
+      ]),
+      typed: new Uint8Array([3, 4, 5]),
+    };
+
+    queue.enqueue(
+      createCommand({
+        type: 'callback-leak',
+        payload,
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
+      snapshot.payload;
+
+    let observedMap: unknown;
+    snapshotPayload.map.forEach((_value, _key, mapRef) => {
+      observedMap = mapRef;
+    });
+    expect(observedMap).toBe(snapshotPayload.map);
+
+    expect(() =>
+      snapshotPayload.map.forEach((_value, _key, mapRef) => {
+        (mapRef as unknown as Map<string, unknown>).set('escape', 1);
+      }),
+    ).toThrow(TypeError);
+
+    const nestedSet = snapshotPayload.map.get('items')?.set;
+    expect(nestedSet).toBeDefined();
+    const setProxy = nestedSet!;
+
+    let observedSet: unknown;
+    setProxy.forEach((_value, _dup, setRef) => {
+      observedSet = setRef;
+    });
+    expect(observedSet).toBe(setProxy);
+
+    expect(() =>
+      setProxy.forEach((_value, _dup, setRef) => {
+        (setRef as unknown as Set<number>).add(3);
+      }),
+    ).toThrow(TypeError);
+
+    let observedTypedArray: unknown;
+    const typedProxy = snapshotPayload.typed;
+    typedProxy.forEach((_value, _index, arrayRef) => {
+      observedTypedArray = arrayRef;
+    });
+    expect(observedTypedArray).toBe(typedProxy);
+
+    expect(() =>
+      typedProxy.forEach((_value, index, arrayRef) => {
+        (arrayRef as unknown as Uint8Array)[index] = 42;
+      }),
+    ).toThrow(TypeError);
+
+    let reduceArrayRef: unknown;
+    const reduceResult = typedProxy.reduce(
+      (acc, value, index, arrayRef) => {
+        reduceArrayRef = arrayRef;
+        return acc + value;
+      },
+      0,
+    );
+    expect(reduceArrayRef).toBe(typedProxy);
+    expect(reduceResult).toBe(12);
+
+    let mapArrayRef: unknown;
+    const mapped = typedProxy.map((value, index, arrayRef) => {
+      mapArrayRef = arrayRef;
+      return value * 2;
+    });
+    expect(mapArrayRef).toBe(typedProxy);
+    expect(Array.from(mapped)).toEqual([6, 8, 10]);
+
+    expect(() =>
+      typedProxy.map((_value, index, arrayRef) => {
+        (arrayRef as unknown as Uint8Array)[index] = 7;
+        return _value;
+      }),
+    ).toThrow(TypeError);
+
+    expect(Array.from(typedProxy)).toEqual([3, 4, 5]);
+  });
+
   it('prevents escape via valueOf helpers', () => {
     const queue = new CommandQueue();
 

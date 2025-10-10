@@ -234,6 +234,10 @@ parent.id = 'new'; // Throws: Cannot assign to read only property
 child.parent.id = 'new'; // Throws: Same object is frozen
 ```
 
+### Callback Safety for Snapshots
+
+Iteration helpers such as `Map.prototype.forEach`, `Set.prototype.forEach`, and typed-array traversal methods (`forEach`, `map`, `reduce`, etc.) are wrapped so that the container reference exposed to callbacks is always the immutable proxy. Attempted mutation through the callback-provided collection triggers the same runtime `TypeError` as direct mutation. This prevents accidental leaks where consumers capture the callback argument and call mutating APIs (`set`, `add`, `set()` on typed arrays) on the underlying mutable structure.
+
 ### Performance Implications
 
 1. **Clone Cost**: `structuredClone()` has O(n) cost where n = object graph size

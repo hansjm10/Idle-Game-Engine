@@ -114,6 +114,19 @@ const TYPED_ARRAY_MUTATORS = new Set<PropertyKey>([
   'set',
   'sort',
 ]);
+const TYPED_ARRAY_CALLBACK_METHODS = new Set<PropertyKey>([
+  'every',
+  'filter',
+  'find',
+  'findIndex',
+  'findLast',
+  'findLastIndex',
+  'forEach',
+  'map',
+  'reduce',
+  'reduceRight',
+  'some',
+]);
 const DATAVIEW_MUTATORS = new Set<PropertyKey>([
   'setInt8',
   'setUint8',
@@ -321,6 +334,25 @@ function createMapMutationGuard(): ProxyHandler<Map<unknown, unknown>> {
         return () => receiver;
       }
 
+      if (prop === 'forEach') {
+        const original = target.forEach;
+        return (
+          callback: Parameters<Map<unknown, unknown>['forEach']>[0],
+          thisArg?: unknown,
+        ) => {
+          if (typeof callback !== 'function') {
+            return original.call(target, callback as never, thisArg);
+          }
+          return original.call(
+            target,
+            (value, key) => {
+              callback.call(thisArg, value, key, receiver);
+            },
+            thisArg,
+          );
+        };
+      }
+
       if (MAP_MUTATORS.has(prop)) {
         return () => {
           throw new TypeError('Cannot mutate immutable Map snapshot');
@@ -346,6 +378,25 @@ function createSetMutationGuard(): ProxyHandler<Set<unknown>> {
     get(target, prop, receiver) {
       if (prop === 'valueOf') {
         return () => receiver;
+      }
+
+      if (prop === 'forEach') {
+        const original = target.forEach;
+        return (
+          callback: Parameters<Set<unknown>['forEach']>[0],
+          thisArg?: unknown,
+        ) => {
+          if (typeof callback !== 'function') {
+            return original.call(target, callback as never, thisArg);
+          }
+          return original.call(
+            target,
+            (value, sameValue) => {
+              callback.call(thisArg, value, sameValue, receiver);
+            },
+            thisArg,
+          );
+        };
       }
 
       if (SET_MUTATORS.has(prop)) {
@@ -426,6 +477,40 @@ function createViewGuard(
 
       if (prop === 'valueOf') {
         return () => receiver;
+      }
+
+      if (
+        typeof prop === 'string' &&
+        TYPED_ARRAY_CALLBACK_METHODS.has(prop) &&
+        !isDataView
+      ) {
+        const original = (target as Record<PropertyKey, unknown>)[prop];
+        if (typeof original === 'function') {
+          const originalInvoker = original as (
+            this: typeof target,
+            ...callbackArgs: unknown[]
+          ) => unknown;
+          return (...args: unknown[]) => {
+            const [callback, ...rest] = args;
+            if (typeof callback !== 'function') {
+              return originalInvoker.call(target, callback, ...rest);
+            }
+            const wrappedCallback = function (
+              this: unknown,
+              ...callbackArgs: unknown[]
+            ) {
+              if (callbackArgs.length > 0) {
+                callbackArgs[callbackArgs.length - 1] = receiver;
+              }
+              const actualCallback = callback as (
+                this: unknown,
+                ...innerArgs: unknown[]
+              ) => unknown;
+              return actualCallback.apply(this, callbackArgs);
+            };
+            return originalInvoker.call(target, wrappedCallback, ...rest);
+          };
+        }
       }
 
       if (!isDataView && prop === 'subarray') {
