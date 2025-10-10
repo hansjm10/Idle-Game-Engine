@@ -498,11 +498,11 @@ function createViewGuard(
         TYPED_ARRAY_CALLBACK_METHODS.has(prop) &&
         !isDataView
       ) {
-        const original = Reflect.get(target as object, prop, receiver);
-        if (typeof original === 'function') {
-          const originalInvoker = original as (
-            this: typeof target,
-            ...callbackArgs: unknown[]
+          const original = Reflect.get(target as object, prop, receiver);
+          if (typeof original === 'function') {
+            const originalInvoker = original as (
+              this: typeof target,
+              ...callbackArgs: unknown[]
           ) => unknown;
           return (...args: unknown[]) => {
             const [callback, ...rest] = args;
@@ -522,7 +522,14 @@ function createViewGuard(
               ) => unknown;
               return actualCallback.apply(this, callbackArgs);
             };
-            return originalInvoker.call(target, wrappedCallback, ...rest);
+            const result = originalInvoker.call(target, wrappedCallback, ...rest);
+            if (
+              ArrayBuffer.isView(result) &&
+              !(result instanceof DataView)
+            ) {
+              return makeImmutableView(result as ArrayBufferView, seen);
+            }
+            return result;
           };
         }
       }

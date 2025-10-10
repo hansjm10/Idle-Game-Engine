@@ -238,6 +238,8 @@ child.parent.id = 'new'; // Throws: Same object is frozen
 
 Iteration helpers such as `Map.prototype.forEach`, `Set.prototype.forEach`, and typed-array traversal methods (`forEach`, `map`, `reduce`, etc.) are wrapped so that the container reference exposed to callbacks is always the immutable proxy. Attempted mutation through the callback-provided collection triggers the same runtime `TypeError` as direct mutation. This prevents accidental leaks where consumers capture the callback argument and call mutating APIs (`set`, `add`, `set()` on typed arrays) on the underlying mutable structure.
 
+Helpers that synthesize new typed-array instances (`map`, `filter`, `subarray`, etc.) also route their return values back through the snapshot factory before handing them to the caller. The clone that is produced is immediately wrapped in the same mutation guards, so even if a consumer chains traversal helpers (`snapshot.typed.map(...).filter(...)`) the intermediate results continue to enforce immutability.
+
 ### Performance Implications
 
 1. **Clone Cost**: `structuredClone()` has O(n) cost where n = object graph size

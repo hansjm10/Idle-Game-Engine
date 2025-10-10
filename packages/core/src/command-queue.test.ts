@@ -449,4 +449,39 @@ describe('CommandQueue', () => {
       11, 12, 13, 14, 15, 16,
     ]);
   });
+
+  it('returns immutable snapshots from typed array map and filter helpers', () => {
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'typed-map-filter',
+        payload: {
+          typed: new Uint8Array([1, 2, 3, 4]),
+        },
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const typedProxy = (
+      snapshot.payload as CommandSnapshotPayload<{ typed: Uint8Array }>
+    ).typed;
+
+    const mapped = typedProxy.map((value, index, arrayRef) => {
+      expect(arrayRef).toBe(typedProxy);
+      return value * 2;
+    });
+    expect(mapped).not.toBe(typedProxy);
+    expect(Array.from(mapped)).toEqual([2, 4, 6, 8]);
+    expect(() => mapped.set([99], 0)).toThrow(TypeError);
+
+    const filtered = typedProxy.filter((value, index, arrayRef) => {
+      expect(arrayRef).toBe(typedProxy);
+      return index % 2 === 0;
+    });
+    expect(Array.from(filtered)).toEqual([1, 3]);
+    expect(() => {
+      filtered[0] = 42;
+    }).toThrow(TypeError);
+  });
 });
