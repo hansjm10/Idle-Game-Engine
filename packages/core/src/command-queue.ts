@@ -1,5 +1,14 @@
-import type { Command, CommandQueueEntry } from './command.js';
+import type {
+  Command,
+  CommandQueueEntry,
+  CommandSnapshot,
+  ImmutablePayload,
+} from './command.js';
 import { CommandPriority } from './command.js';
+import type {
+  ImmutableArrayBufferSnapshot,
+  ImmutableSharedArrayBufferSnapshot,
+} from './immutable-snapshots.js';
 
 const PRIORITY_ORDER: readonly CommandPriority[] = [
   CommandPriority.SYSTEM,
@@ -14,8 +23,10 @@ const PRIORITY_ORDER: readonly CommandPriority[] = [
  * Commands are cloned on enqueue to preserve determinism and to prevent
  * call-sites from mutating queued payloads.
  */
+type SnapshotQueueEntry = CommandQueueEntry<CommandSnapshot>;
+
 export class CommandQueue {
-  private readonly lanes: Map<CommandPriority, CommandQueueEntry[]> = new Map([
+  private readonly lanes: Map<CommandPriority, SnapshotQueueEntry[]> = new Map([
     [CommandPriority.SYSTEM, []],
     [CommandPriority.PLAYER, []],
     [CommandPriority.AUTOMATION, []],
@@ -30,7 +41,7 @@ export class CommandQueue {
       throw new Error(`Invalid command priority: ${command.priority}`);
     }
 
-    const entry: CommandQueueEntry = {
+    const entry: SnapshotQueueEntry = {
       command: cloneCommand(command),
       sequence: this.nextSequence++,
     };
@@ -56,12 +67,12 @@ export class CommandQueue {
     this.totalSize += 1;
   }
 
-  dequeueAll(): Command[] {
+  dequeueAll(): CommandSnapshot[] {
     if (this.totalSize === 0) {
       return [];
     }
 
-    const drained: Command[] = [];
+    const drained: CommandSnapshot[] = [];
     for (const priority of PRIORITY_ORDER) {
       const queue = this.lanes.get(priority);
       if (!queue || queue.length === 0) {
@@ -127,9 +138,9 @@ const sharedArrayBufferCtor = (globalThis as {
  * graph maintains referential identity while replacing Maps/Sets/Dates/TypedArrays
  * with read-only proxies that throw on mutation.
  */
-export function deepFreezeInPlace<T>(value: T): T {
+export function deepFreezeInPlace<T>(value: T): ImmutablePayload<T> {
   const seen = new WeakMap<object, unknown>();
-  return enforceImmutable(value, seen) as T;
+  return enforceImmutable(value, seen) as ImmutablePayload<T>;
 }
 
 function enforceImmutable(node: unknown, seen: WeakMap<object, unknown>): unknown {
@@ -241,26 +252,26 @@ function makeImmutableDate(
 function makeImmutableArrayBuffer(
   source: ArrayBuffer,
   seen: WeakMap<object, unknown>,
-): ArrayBuffer {
+): ImmutableArrayBufferSnapshot {
   const clone = source.slice(0);
-  Object.freeze(clone);
-  seen.set(source, clone);
-  return clone;
+  const snapshot = createImmutableArrayBufferSnapshot(clone);
+  seen.set(source, snapshot);
+  return snapshot;
 }
 
 function makeImmutableSharedArrayBuffer(
   source: SharedArrayBuffer,
   seen: WeakMap<object, unknown>,
-): SharedArrayBuffer {
+): ImmutableSharedArrayBufferSnapshot {
   if (typeof sharedArrayBufferCtor !== 'function') {
     throw new Error('SharedArrayBuffer is not supported in this environment.');
   }
 
   const clone = new sharedArrayBufferCtor(source.byteLength);
   new Uint8Array(clone).set(new Uint8Array(source));
-  Object.freeze(clone);
-  seen.set(source, clone);
-  return clone;
+  const snapshot = createImmutableSharedArrayBufferSnapshot(clone);
+  seen.set(source, snapshot);
+  return snapshot;
 }
 
 function makeImmutableRegExp(
@@ -400,7 +411,17 @@ function createViewGuard(
   return {
     get(target, prop, receiver) {
       if (prop === 'buffer') {
-        return target.buffer.slice(0);
+        const buffer = target.buffer;
+        if (buffer instanceof ArrayBuffer) {
+          return makeImmutableArrayBuffer(buffer, seen);
+        }
+        if (
+          typeof sharedArrayBufferCtor === 'function' &&
+          buffer instanceof sharedArrayBufferCtor
+        ) {
+          return makeImmutableSharedArrayBuffer(buffer, seen);
+        }
+        return buffer;
       }
 
       if (prop === 'valueOf') {
@@ -443,17 +464,150 @@ function createViewGuard(
   };
 }
 
-function cloneCommand(command: Command): Command {
-  const snapshot = cloneStructured(command);
-  const isProduction =
-    (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
-      ?.NODE_ENV === 'production';
+function createImmutableArrayBufferSnapshot(
+  buffer: ArrayBuffer,
+): ImmutableArrayBufferSnapshot {
+  const backing = buffer;
+  const snapshot: ImmutableArrayBufferSnapshot = {
+    get byteLength() {
+      return backing.byteLength;
+    },
+    slice(begin?: number, end?: number) {
+      const sliced = backing.slice(begin ?? 0, end ?? backing.byteLength);
+      return createImmutableArrayBufferSnapshot(sliced);
+    },
+    toArrayBuffer() {
+      return backing.slice(0);
+    },
+    toDataView() {
+      return new DataView(backing.slice(0));
+    },
+    toUint8Array() {
+      return new Uint8Array(backing.slice(0));
+    },
+    valueOf() {
+      return backing.slice(0);
+    },
+    [Symbol.toStringTag]: 'ImmutableArrayBufferSnapshot',
+  };
 
-  if (!isProduction) {
-    return deepFreezeInPlace(snapshot);
+  return Object.freeze(snapshot);
+}
+
+function createImmutableSharedArrayBufferSnapshot(
+  buffer: SharedArrayBuffer,
+): ImmutableSharedArrayBufferSnapshot {
+  if (typeof sharedArrayBufferCtor !== 'function') {
+    throw new Error('SharedArrayBuffer is not supported in this environment.');
   }
 
-  return snapshot;
+  const backing = buffer;
+  const snapshot: ImmutableSharedArrayBufferSnapshot = {
+    get byteLength() {
+      return backing.byteLength;
+    },
+    slice(begin?: number, end?: number) {
+      const sliced = sliceSharedArrayBuffer(backing, begin, end);
+      return createImmutableSharedArrayBufferSnapshot(sliced);
+    },
+    toSharedArrayBuffer() {
+      return cloneSharedArrayBuffer(backing);
+    },
+    toArrayBuffer() {
+      return sharedArrayBufferToArrayBuffer(backing);
+    },
+    toDataView() {
+      return new DataView(sharedArrayBufferToArrayBuffer(backing));
+    },
+    toUint8Array() {
+      return new Uint8Array(sharedArrayBufferToArrayBuffer(backing));
+    },
+    valueOf() {
+      return this.toSharedArrayBuffer();
+    },
+    [Symbol.toStringTag]: 'ImmutableSharedArrayBufferSnapshot',
+  };
+
+  return Object.freeze(snapshot);
+}
+
+function sliceSharedArrayBuffer(
+  buffer: SharedArrayBuffer,
+  begin?: number,
+  end?: number,
+): SharedArrayBuffer {
+  if (typeof sharedArrayBufferCtor !== 'function') {
+    throw new Error('SharedArrayBuffer is not supported in this environment.');
+  }
+
+  const { start, finish } = normalizeSliceRange(
+    begin,
+    end,
+    buffer.byteLength,
+  );
+  const clone = new sharedArrayBufferCtor(finish - start);
+  const sourceView = new Uint8Array(buffer, start, finish - start);
+  const targetView = new Uint8Array(clone);
+  targetView.set(sourceView);
+  return clone;
+}
+
+function normalizeSliceRange(
+  begin: number | undefined,
+  end: number | undefined,
+  length: number,
+): { start: number; finish: number } {
+  const start = normalizeSliceIndex(begin, length, 0);
+  const finish = normalizeSliceIndex(end, length, length);
+  return {
+    start,
+    finish: Math.max(finish, start),
+  };
+}
+
+function normalizeSliceIndex(
+  index: number | undefined,
+  length: number,
+  defaultValue: number,
+): number {
+  if (index === undefined) {
+    return defaultValue;
+  }
+  const numeric = Number(index);
+  if (Number.isNaN(numeric)) {
+    return defaultValue;
+  }
+  if (!Number.isFinite(numeric)) {
+    return numeric < 0 ? 0 : length;
+  }
+  const integer = Math.trunc(numeric);
+  if (integer < 0) {
+    return Math.max(length + integer, 0);
+  }
+  return Math.min(integer, length);
+}
+
+function cloneSharedArrayBuffer(
+  buffer: SharedArrayBuffer,
+): SharedArrayBuffer {
+  if (typeof sharedArrayBufferCtor !== 'function') {
+    throw new Error('SharedArrayBuffer is not supported in this environment.');
+  }
+  const clone = new sharedArrayBufferCtor(buffer.byteLength);
+  new Uint8Array(clone).set(new Uint8Array(buffer));
+  return clone;
+}
+
+function sharedArrayBufferToArrayBuffer(buffer: SharedArrayBuffer): ArrayBuffer {
+  const view = new Uint8Array(buffer);
+  const clone = new ArrayBuffer(view.byteLength);
+  new Uint8Array(clone).set(view);
+  return clone;
+}
+
+function cloneCommand(command: Command): CommandSnapshot {
+  const snapshot = cloneStructured(command);
+  return deepFreezeInPlace(snapshot);
 }
 
 function cloneStructured<T>(value: T): T {

@@ -61,5 +61,16 @@ export class IdleEngineRuntime {
   }
 }
 
-export { Command, CommandPriority, CommandQueueEntry } from './command.js';
+export {
+  Command,
+  CommandPriority,
+  CommandQueueEntry,
+  CommandSnapshot,
+  CommandSnapshotPayload,
+  ImmutablePayload,
+} from './command.js';
 export { CommandQueue, deepFreezeInPlace } from './command-queue.js';
+export type {
+  ImmutableArrayBufferSnapshot,
+  ImmutableSharedArrayBufferSnapshot,
+} from './immutable-snapshots.js';

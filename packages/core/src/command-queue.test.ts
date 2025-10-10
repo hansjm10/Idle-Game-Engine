@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Command } from './command.js';
+import type { Command, CommandSnapshotPayload } from './command.js';
 import { CommandPriority } from './command.js';
 import { CommandQueue } from './command-queue.js';
 
@@ -161,7 +161,8 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload = snapshot.payload as typeof payload;
+    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
+      snapshot.payload;
 
     expect(() => snapshotPayload.map.set('other', 1)).toThrow(TypeError);
 
@@ -202,7 +203,8 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload = snapshot.payload as typeof payload;
+    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
+      snapshot.payload;
 
     const mapProxy = snapshotPayload.map;
     const leakedMap = mapProxy.valueOf();
@@ -226,8 +228,11 @@ describe('CommandQueue', () => {
   it('preserves callable behavior for non-plain objects', () => {
     const queue = new CommandQueue();
 
+    const buffer = new ArrayBuffer(8);
+    new Uint8Array(buffer).set([1, 2, 3, 4, 5, 6, 7, 8]);
+
     const payload = {
-      buffer: new ArrayBuffer(8),
+      buffer,
       shared:
         typeof SharedArrayBuffer === 'function'
           ? new SharedArrayBuffer(16)
@@ -243,16 +248,110 @@ describe('CommandQueue', () => {
     );
 
     const [snapshot] = queue.dequeueAll();
-    const snapshotPayload = snapshot.payload as typeof payload;
+    const snapshotPayload: CommandSnapshotPayload<typeof payload> =
+      snapshot.payload;
 
-    expect(snapshotPayload.buffer.byteLength).toBe(8);
-    expect(() => new Uint8Array(snapshotPayload.buffer)[0]).not.toThrow();
+    const immutableBuffer = snapshotPayload.buffer;
+    expect(Object.prototype.toString.call(immutableBuffer)).toBe(
+      '[object ImmutableArrayBufferSnapshot]',
+    );
+    expect(immutableBuffer.byteLength).toBe(8);
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8,
+    ]);
 
     if (snapshotPayload.shared) {
+      expect(
+        Object.prototype.toString.call(snapshotPayload.shared),
+      ).toBe('[object ImmutableSharedArrayBufferSnapshot]');
       expect(snapshotPayload.shared.byteLength).toBe(16);
     }
 
     const result = snapshotPayload.regex.exec('queue-42');
     expect(result?.[1]).toBe('42');
+  });
+
+  it('prevents mutation of ArrayBuffer payload snapshots', () => {
+    const queue = new CommandQueue();
+
+    const buffer = new ArrayBuffer(4);
+    new Uint8Array(buffer).set([7, 8, 9, 10]);
+
+    queue.enqueue(
+      createCommand({
+        type: 'array-buffer',
+        payload: { buffer },
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const immutableBuffer = (snapshot.payload as CommandSnapshotPayload<{
+      buffer: ArrayBuffer;
+    }>).buffer;
+
+    expect(immutableBuffer.byteLength).toBe(4);
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([7, 8, 9, 10]);
+
+    const firstLeak = immutableBuffer.toArrayBuffer();
+    new Uint8Array(firstLeak)[0] = 42;
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([7, 8, 9, 10]);
+
+    const secondLeak = immutableBuffer.valueOf();
+    new Uint8Array(secondLeak)[1] = 99;
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([7, 8, 9, 10]);
+
+    const slice = immutableBuffer.slice(1, 3);
+    expect(Array.from(slice.toUint8Array())).toEqual([8, 9]);
+
+    const nanSlice = immutableBuffer.slice(NaN, NaN);
+    expect(nanSlice.byteLength).toBe(0);
+  });
+
+  it('prevents mutation of SharedArrayBuffer payload snapshots', () => {
+    if (typeof SharedArrayBuffer !== 'function') {
+      return;
+    }
+
+    const queue = new CommandQueue();
+
+    const buffer = new SharedArrayBuffer(6);
+    new Uint8Array(buffer).set([11, 12, 13, 14, 15, 16]);
+
+    queue.enqueue(
+      createCommand({
+        type: 'shared-array-buffer',
+        payload: { buffer },
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const immutableBuffer = (snapshot.payload as CommandSnapshotPayload<{
+      buffer: SharedArrayBuffer;
+    }>).buffer;
+
+    expect(immutableBuffer.byteLength).toBe(6);
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([
+      11, 12, 13, 14, 15, 16,
+    ]);
+
+    const leakedArrayBuffer = immutableBuffer.toArrayBuffer();
+    new Uint8Array(leakedArrayBuffer)[0] = 0;
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([
+      11, 12, 13, 14, 15, 16,
+    ]);
+
+    const leakedShared = immutableBuffer.toSharedArrayBuffer();
+    new Uint8Array(leakedShared)[1] = 55;
+    expect(Array.from(immutableBuffer.toUint8Array())).toEqual([
+      11, 12, 13, 14, 15, 16,
+    ]);
+
+    const slice = immutableBuffer.slice(-3);
+    expect(Array.from(slice.toUint8Array())).toEqual([14, 15, 16]);
+
+    const nanSlice = immutableBuffer.slice(NaN);
+    expect(Array.from(nanSlice.toUint8Array())).toEqual([
+      11, 12, 13, 14, 15, 16,
+    ]);
   });
 });

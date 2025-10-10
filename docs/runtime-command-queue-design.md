@@ -264,6 +264,45 @@ export interface Command<TPayload = unknown> {
   readonly step: number; // Simulation tick that will execute the command
 }
 
+type ImmutablePrimitive =
+  | string
+  | number
+  | bigint
+  | boolean
+  | symbol
+  | null
+  | undefined;
+
+type ImmutableFunction = (...args: unknown[]) => unknown;
+
+type ImmutableArrayLike<T> = readonly ImmutablePayload<T>[];
+
+export type ImmutablePayload<T> = T extends ImmutablePrimitive
+  ? T
+  : T extends ImmutableFunction
+    ? T
+    : T extends ArrayBuffer
+      ? ImmutableArrayBufferSnapshot
+      : T extends SharedArrayBuffer
+        ? ImmutableSharedArrayBufferSnapshot
+        : T extends Map<infer K, infer V>
+          ? ReadonlyMap<ImmutablePayload<K>, ImmutablePayload<V>>
+          : T extends Set<infer V>
+            ? ReadonlySet<ImmutablePayload<V>>
+            : T extends Array<infer U>
+              ? ImmutableArrayLike<U>
+              : T extends ReadonlyArray<infer U>
+                ? ImmutableArrayLike<U>
+                : T extends object
+                  ? { readonly [K in keyof T]: ImmutablePayload<T[K]> }
+                  : T;
+
+export type CommandSnapshot<TPayload = unknown> = ImmutablePayload<
+  Command<TPayload>
+>;
+
+export type CommandSnapshotPayload<TPayload> = ImmutablePayload<TPayload>;
+
 export enum CommandPriority {
   SYSTEM = 0,    // Engine-generated (migrations, prestige resets)
   PLAYER = 1,    // Direct user input (purchase, toggle)
@@ -276,13 +315,16 @@ export enum CommandPriority {
 The queue maintains separate lanes per priority with FIFO ordering within each lane:
 
 ```typescript
-interface CommandQueueEntry {
-  readonly command: Command;
+interface CommandQueueEntry<TCommand extends Command = Command> {
+  readonly command: TCommand;
   readonly sequence: number; // Tie-breaker when timestamps match
 }
 
 export class CommandQueue {
-  private readonly queues: Map<CommandPriority, CommandQueueEntry[]> = new Map([
+  private readonly queues: Map<
+    CommandPriority,
+    CommandQueueEntry<CommandSnapshot>[]
+  > = new Map([
     [CommandPriority.SYSTEM, []],
     [CommandPriority.PLAYER, []],
     [CommandPriority.AUTOMATION, []]
@@ -310,7 +352,7 @@ export class CommandQueue {
     // cannot alter what eventually executes.
     const storedCommand = cloneCommand(command);
 
-    const entry: CommandQueueEntry = {
+    const entry: CommandQueueEntry<CommandSnapshot> = {
       command: storedCommand,
       sequence: this.nextSequence++
     };
@@ -335,8 +377,8 @@ export class CommandQueue {
     this.totalSize++;
   }
 
-  dequeueAll(): Command[] {
-    const result: Command[] = [];
+  dequeueAll(): CommandSnapshot[] {
+    const result: CommandSnapshot[] = [];
     for (const priority of CommandQueue.PRIORITY_ORDER) {
       const queue = this.queues.get(priority);
       if (queue && queue.length > 0) {
@@ -364,17 +406,15 @@ export class CommandQueue {
   }
 }
 
-function cloneCommand(command: Command): Command {
+function cloneCommand(command: Command): CommandSnapshot {
   const snapshot = structuredClone(command);
-  // Freeze in development to catch accidental mutation of the snapshot.
-  if (process.env.NODE_ENV !== 'production') {
-    deepFreezeInPlace(snapshot);
-  }
-  return snapshot;
+  return deepFreezeInPlace(snapshot);
 }
 ```
 
 Pre-seeding the per-priority lanes and iterating with `PRIORITY_ORDER` keeps dequeue operations deterministic, while the binary-search insertion guarantees FIFO behavior within a lane based on `timestamp` with a monotonic sequence fallback for ties. Cloning each command on enqueue ensures callers cannot mutate queued payloads after submission, preserving determinism for both live execution and recorded logs. This, combined with the sequence counter, prevents cross-thread enqueue races from reordering commands that share the same priority.
+
+Snapshots surfaced by `dequeueAll()` expose payloads through `CommandSnapshotPayload<T>`; when a payload contains `ArrayBuffer` or `SharedArrayBuffer` instances the accessor yields immutable facades. Call sites must request writable copies with helpers like `toArrayBuffer()` or `toSharedArrayBuffer()` before mutating the data, ensuring replay logs never leak live runtime buffers.
 
 ### 4.3 Step Field Population
 
@@ -2141,7 +2181,7 @@ replay(log: CommandLog, dispatcher: CommandDispatcher): void {
 - `deepFreezeInPlace()` walks the snapshot and returns a read-only graph
 - Plain objects/arrays are cloned and `Object.freeze()` is applied
 - Map/Set/Date/TypedArray instances are wrapped in proxies whose mutators (`set`, `add`, `setFullYear`, `copyWithin`, `subarray`, etc.) throw `TypeError`
-- Typed array `buffer` accessors expose cloned `ArrayBuffer` instances, and standalone `ArrayBuffer`/`SharedArrayBuffer` payloads are cloned in place to keep brand-correct data isolated from the live runtime
+- Typed array `buffer` accessors surface immutable buffer snapshots that only hand out cloned copies, and standalone `ArrayBuffer`/`SharedArrayBuffer` payloads are wrapped in the same facades so the live runtime memory is never directly exposed
 - `RegExp` payloads are rehydrated via `new RegExp(source, flags)` so `.exec()`/`.test()` continue to behave like native instances without sharing mutable references
 
 **Immutable Collections Example**:
@@ -2170,10 +2210,28 @@ expect(() => {
 }).toThrow(TypeError);
 ```
 
+**Buffer Snapshot Facade**:
+```typescript
+const command = deepFreezeInPlace({
+  buffer: new ArrayBuffer(4),
+});
+
+const immutable = command.buffer; // → ImmutableArrayBufferSnapshot
+
+// Read accessors always return fresh copies
+const copy = immutable.toUint8Array();
+copy[0] = 99; // Safe - mutating the copy leaves the snapshot intact
+
+// Attempting to obtain a writable view requires opting into a copy first
+const runtimeBuffer = immutable.toArrayBuffer(); // New ArrayBuffer instance
+```
+
+Shared memory snapshots use the same pattern via `ImmutableSharedArrayBufferSnapshot`, ensuring readers must copy before mutating while preserving the original contents for deterministic replay.
+
 **Defense Strategy**:
 1. **Isolation via cloning**: Snapshots are independent (always works)
-2. **Runtime guards**: Development/test builds apply `deepFreezeInPlace()` and throw on any mutation attempt
-3. **Production performance**: Release builds skip the proxy layer but still rely on cloning to isolate snapshots
+2. **Immutable snapshots**: `deepFreezeInPlace()` always returns read-only graphs whose mutation attempts surface as `TypeError`
+3. **Deterministic APIs**: ArrayBuffer snapshots require explicit copy helpers, producing identical behavior in development and production
 
 **Clone-Freeze-Clone Pattern**:
 ```
@@ -2199,7 +2257,7 @@ For deterministic replay to work, game state must be **cloneable via `structured
    - **Date objects** (cloneable + mutation-guarded proxies in development)
    - **Map and Set collections** (cloneable + mutation-guarded proxies in development)
    - **Typed arrays** (Uint8Array, etc.) (cloneable + mutation-guarded proxies for values and subviews in development)
-   - **ArrayBuffer / SharedArrayBuffer** (snapshot clones preserve `byteLength` and contents without exposing the live runtime buffers)
+   - **ArrayBuffer / SharedArrayBuffer** (snapshots expose immutable facades that provide explicit copy helpers without leaking the live runtime buffers)
    - **RegExp** (cloned with `source`/`flags` and `lastIndex` preserved so replay stays deterministic)
    - **Cyclic references** (handled by `structuredClone()` and `deepFreezeInPlace()`)
 
