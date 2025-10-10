@@ -2187,7 +2187,7 @@ replay(log: CommandLog, dispatcher: CommandDispatcher): void {
 - `deepFreezeInPlace()` walks the snapshot and returns a read-only graph
 - Plain objects/arrays are cloned and `Object.freeze()` is applied
 - Map/Set/Date/TypedArray instances are wrapped in proxies whose mutators (`set`, `add`, `setFullYear`, `copyWithin`, `subarray`, etc.) throw `TypeError`
-- Typed array `buffer` accessors surface immutable buffer snapshots that only hand out cloned copies, and standalone `ArrayBuffer`/`SharedArrayBuffer` payloads are wrapped in the same facades so the live runtime memory is never directly exposed
+- Typed array `buffer` accessors surface immutable buffer snapshots that only hand out cloned copies, and standalone `ArrayBuffer`/`SharedArrayBuffer` payloads are wrapped in the same facades so the live runtime memory is never directly exposed. The `ImmutableTypedArraySnapshot` TypeScript surface removes mutating helpers and narrows `.buffer` to those immutable facades so call sites must explicitly request writable copies before mutating.
 - `RegExp` payloads are rehydrated via `new RegExp(source, flags)` so `.exec()`/`.test()` continue to behave like native instances without sharing mutable references
 
 **Immutable Collections Example**:

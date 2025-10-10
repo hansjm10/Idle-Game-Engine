@@ -484,4 +484,69 @@ describe('CommandQueue', () => {
       filtered[0] = 42;
     }).toThrow(TypeError);
   });
+
+  it('exposes typed array buffer facades that require explicit copying', () => {
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'typed-buffer',
+        payload: {
+          typed: new Uint16Array([10, 20, 30, 40]),
+        },
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const typedProxy = (
+      snapshot.payload as CommandSnapshotPayload<{ typed: Uint16Array }>
+    ).typed;
+
+    const bufferFacade = typedProxy.buffer;
+    expect(Object.prototype.toString.call(bufferFacade)).toBe(
+      '[object ImmutableArrayBufferSnapshot]',
+    );
+    expect(Array.from(typedProxy)).toEqual([10, 20, 30, 40]);
+    expect(Array.from(bufferFacade.toUint8Array())).toEqual([
+      10, 0, 20, 0, 30, 0, 40, 0,
+    ]);
+
+    const mutableCopy = bufferFacade.toArrayBuffer();
+    new Uint8Array(mutableCopy)[0] = 123;
+    expect(Array.from(typedProxy)).toEqual([10, 20, 30, 40]);
+
+    // Mutators are removed from the TypeScript surface; attempting to access them should be a type error.
+    // @ts-expect-error Mutating helpers are absent on immutable snapshots
+    void typedProxy.set;
+    // @ts-expect-error Buffer facades are not directly ArrayBuffer instances
+    const directBuffer: ArrayBuffer = typedProxy.buffer;
+    void directBuffer;
+
+    if (typeof SharedArrayBuffer === 'function') {
+      const shared = new SharedArrayBuffer(8);
+      new Uint16Array(shared).set([1, 2, 3, 4]);
+
+      queue.enqueue(
+        createCommand({
+          type: 'shared-typed-buffer',
+          payload: {
+            typed: new Uint16Array(shared),
+          },
+        }),
+      );
+
+      const [sharedSnapshot] = queue.dequeueAll();
+      const sharedProxy = (
+        sharedSnapshot.payload as CommandSnapshotPayload<{ typed: Uint16Array }>
+      ).typed;
+
+      const sharedBufferFacade = sharedProxy.buffer;
+      expect(Object.prototype.toString.call(sharedBufferFacade)).toBe(
+        '[object ImmutableSharedArrayBufferSnapshot]',
+      );
+      const sharedCopy = sharedBufferFacade.toSharedArrayBuffer();
+      new Uint8Array(sharedCopy)[0] = 255;
+      expect(Array.from(sharedProxy)).toEqual([1, 2, 3, 4]);
+    }
+  });
 });

@@ -10,6 +10,7 @@ import type {
   ImmutableMapSnapshot,
   ImmutableSetSnapshot,
   ImmutableSharedArrayBufferSnapshot,
+  TypedArray,
 } from './immutable-snapshots.js';
 
 const PRIORITY_ORDER: readonly CommandPriority[] = [
@@ -324,16 +325,37 @@ function makeImmutableView(
     );
     safeView = new DataView(bufferClone, 0, source.byteLength);
   } else {
-    const TypedArrayCtor = source.constructor as {
+    const typedSource = source as TypedArray;
+    const TypedArrayCtor = typedSource.constructor as {
+      new (
+        buffer: ArrayBufferLike,
+        byteOffset?: number,
+        length?: number,
+      ): ArrayBufferView;
       new (
         input:
-          | ArrayBufferLike
           | ArrayBufferView
           | ArrayLike<unknown>
           | Iterable<unknown>,
       ): ArrayBufferView;
     };
-    safeView = new TypedArrayCtor(source);
+    if (
+      typeof sharedArrayBufferCtor === 'function' &&
+      typedSource.buffer instanceof sharedArrayBufferCtor
+    ) {
+      const sharedClone = cloneSharedArrayBuffer(typedSource.buffer);
+      safeView = new TypedArrayCtor(
+        sharedClone,
+        typedSource.byteOffset,
+        typedSource.length,
+      );
+    } else {
+      const arrayClone = typedSource.buffer.slice(
+        typedSource.byteOffset,
+        typedSource.byteOffset + typedSource.byteLength,
+      );
+      safeView = new TypedArrayCtor(arrayClone);
+    }
   }
 
   const proxy = new Proxy(safeView, createViewGuard(source, seen));
