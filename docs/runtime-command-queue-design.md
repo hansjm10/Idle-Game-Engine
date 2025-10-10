@@ -259,7 +259,7 @@ export interface Command<TPayload = unknown> {
   readonly priority: CommandPriority;
   readonly payload: TPayload;
   readonly timestamp: number; // For ordering within same priority
-  readonly step: number; // Originating tick step for deterministic replay
+  readonly step: number; // Simulation tick that will execute the command
 }
 
 export enum CommandPriority {
@@ -274,8 +274,13 @@ export enum CommandPriority {
 The queue maintains separate lanes per priority with FIFO ordering within each lane:
 
 ```typescript
+interface CommandQueueEntry {
+  readonly command: Command;
+  readonly sequence: number; // Tie-breaker when timestamps match
+}
+
 export class CommandQueue {
-  private readonly queues: Map<CommandPriority, Command[]> = new Map([
+  private readonly queues: Map<CommandPriority, CommandQueueEntry[]> = new Map([
     [CommandPriority.SYSTEM, []],
     [CommandPriority.PLAYER, []],
     [CommandPriority.AUTOMATION, []]
@@ -286,16 +291,40 @@ export class CommandQueue {
     CommandPriority.AUTOMATION
   ];
 
+  private nextSequence = 0;
+
   /**
    * Enqueue a command for execution in the next tick.
-   * The step field must be populated by the caller with the current tick step.
+   * The step field must already contain the simulation tick that will execute it.
    */
   enqueue(command: Command): void {
     const queue = this.queues.get(command.priority);
     if (!queue) {
       throw new Error(`Invalid priority: ${command.priority}`);
     }
-    queue.push(command);
+
+    const entry: CommandQueueEntry = {
+      command,
+      sequence: this.nextSequence++
+    };
+
+    // Deterministic insertion by timestamp, then sequence for ties.
+    let lo = 0;
+    let hi = queue.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const other = queue[mid];
+      if (
+        other.command.timestamp < entry.command.timestamp ||
+        (other.command.timestamp === entry.command.timestamp &&
+          other.sequence < entry.sequence)
+      ) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    queue.splice(lo, 0, entry);
   }
 
   dequeueAll(): Command[] {
@@ -303,8 +332,10 @@ export class CommandQueue {
     for (const priority of CommandQueue.PRIORITY_ORDER) {
       const queue = this.queues.get(priority);
       if (queue && queue.length > 0) {
-        result.push(...queue);
-        queue.length = 0; // Clear the queue
+        for (const entry of queue) {
+          result.push(entry.command);
+        }
+        queue.length = 0; // Clear the lane after draining
       }
     }
     return result;
@@ -326,17 +357,17 @@ export class CommandQueue {
 }
 ```
 
-Pre-seeding the per-priority lanes and iterating with `PRIORITY_ORDER` keeps dequeue operations deterministic regardless of which priority enqueues the first command, avoiding accidental lane reordering when using native `Map` iteration.
+Pre-seeding the per-priority lanes and iterating with `PRIORITY_ORDER` keeps dequeue operations deterministic, while the binary-search insertion guarantees FIFO behavior within a lane based on `timestamp` with a monotonic sequence fallback for ties. This prevents cross-thread enqueue races from reordering commands that share the same priority.
 
 ### 4.3 Step Field Population
 
-**Critical Design Pattern**: The `step` field on each command MUST be populated with the current tick step at the time the command is **enqueued**, not when it's created or executed.
+**Critical Design Pattern**: The `step` field stores the **simulation tick that will execute the command**. The queuing site is responsible for stamping the step as the command crosses into the queue so that handlers receive the correct execution context during live play and replay.
 
 #### Step Stamping Locations
 
 **1. UI Commands (from Main Thread)**
 
-Commands sent from the presentation layer do **not** include the step field. The Worker runtime stamps it when enqueueing:
+Commands sent from the presentation layer do **not** include the step field. The Worker runtime stamps it using the next execution step before adding the command to the queue:
 
 ```typescript
 // Main thread - WorkerBridgeImpl.sendCommand()
@@ -352,6 +383,9 @@ sendCommand<T>(type: string, payload: T): void {
   });
 }
 
+let currentStep = 0;
+let nextExecutableStep = 0; // updated inside the tick loop
+
 // Worker runtime - onmessage handler
 self.onmessage = (event) => {
   if (event.data.type === 'COMMAND') {
@@ -359,39 +393,46 @@ self.onmessage = (event) => {
       ...event.data.command,
       priority: CommandPriority.PLAYER,
       timestamp: event.data.command.timestamp ?? performance.now(),
-      step: currentStep // <-- STAMPED HERE with Worker's current tick step
+      step: nextExecutableStep // <-- Stamp with the tick that will execute the command
     });
   }
 };
 ```
 
+**Stamping Window**: `nextExecutableStep` is set to the current tick immediately
+before the runtime captures the batch (`dequeueAll()`), then advanced to
+`currentStep + 1` as soon as the batch is secured. Commands that arrive after
+the batch capture—including those enqueued from within handlers—are therefore
+stamped for the following tick, so `command.step` always matches the tick that
+actually executes them.
+
 **Why Worker Stamps It**: The main thread doesn't have access to `currentStep` (it lives in the Worker). Only the Worker runtime knows the current tick number, so stamping happens at enqueue time in the Worker's message handler.
 
 **2. System-Generated Commands (inside Worker)**
 
-Systems running inside the Worker have access to `context.step` during their `tick()` method and stamp it directly:
+Systems running inside the Worker have access to `context.step` (the tick that is currently executing **now**). Because their commands run on the **next** tick, they must stamp `context.step + 1`:
 
 ```typescript
 class ProductionSystem implements System {
-  tick(context: TickContext): void {
-    const production = calculateProduction(gameState, context.deltaMs);
+  tick(state: ReadonlyGameState, context: TickContext): void {
+    const production = calculateProduction(state, context.deltaMs);
 
     commandQueue.enqueue({
       type: 'APPLY_PRODUCTION',
       priority: CommandPriority.SYSTEM,
       payload: { resources: production },
       timestamp: performance.now(),
-      step: context.step // <-- STAMPED HERE from TickContext
+      step: context.step + 1 // <-- Executed next tick, so stamp with step+1
     });
   }
 }
 ```
 
-**Why Systems Stamp It**: Systems receive `context.step` as a parameter, representing the current tick. Commands enqueued during tick N will execute in tick N+1, but they carry the step value from when they were created (tick N) for logging and debugging purposes.
+**Why Systems Stamp It**: `context.step` reflects the tick that is executing right now. Because queued commands run at the start of the *next* tick, the system stamps `context.step + 1` so handlers observe the correct execution tick regardless of whether they are running live or under replay.
 
 **3. Engine Commands (inside Worker)**
 
-Engine-level code (migrations, resets, etc.) must accept `currentStep` as a parameter or access it from a shared context:
+Engine-level code (migrations, resets, etc.) must stamp commands with the tick they will execute on. When invoked during tick `currentStep`, the command will execute on `currentStep + 1`:
 
 ```typescript
 // Option A: Accept currentStep parameter
@@ -401,7 +442,7 @@ function executePrestigeReset(currentStep: number, layer: number) {
     priority: CommandPriority.SYSTEM,
     payload: { layer },
     timestamp: performance.now(),
-    step: currentStep // <-- STAMPED HERE from parameter
+    step: currentStep + 1 // <-- Executed next tick
   });
 }
 
@@ -412,7 +453,7 @@ function executeMigration() {
     priority: CommandPriority.SYSTEM,
     payload: { fromVersion: '1.0', toVersion: '1.1' },
     timestamp: performance.now(),
-    step: currentStep // <-- STAMPED HERE from Worker global
+    step: currentStep + 1 // <-- Executed next tick
   });
 }
 ```
@@ -424,28 +465,33 @@ function executeMigration() {
 │ Tick N                                                      │
 ├─────────────────────────────────────────────────────────────┤
 │ 1. currentStep = N                                          │
-│ 2. Execute queued commands (all have step < N)             │
-│ 3. Systems tick():                                          │
-│    - ProductionSystem creates cmd with step=N              │
-│    - AutomationSystem creates cmd with step=N              │
-│ 4. Commands enqueued for execution in tick N+1             │
+│ 2. Capture commands for step N (dequeueAll)                │
+│    - Immediately set nextExecutableStep = N+1              │
+│ 3. Execute queued commands (all have step = N)             │
+│    - Handlers see ctx.step = cmd.step = N                  │
+│    - Follow-on enqueues are stamped with step = N+1        │
+│ 4. Systems tick() with context.step = N                    │
+│    - Each system enqueues commands stamped with step = N+1 │
 │ 5. currentStep++ (becomes N+1)                             │
+│    - nextExecutableStep ← currentStep (now N+1)            │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Tick N+1                                                    │
 ├─────────────────────────────────────────────────────────────┤
 │ 1. currentStep = N+1                                        │
-│ 2. Execute queued commands (all have step=N)               │
-│    - Handlers see ctx.step = cmd.step = N                  │
-│    - Commands from tick N execute with context.step=N      │
-│ 3. Systems tick() with context.step=N+1                    │
-│    - New commands created with step=N+1                    │
-│ 4. currentStep++ (becomes N+2)                             │
+│ 2. Capture commands for step N+1 (dequeueAll)              │
+│    - Immediately set nextExecutableStep = N+2              │
+│ 3. Execute queued commands (all have step = N+1)           │
+│    - Includes UI commands posted after tick N              │
+│ 4. Systems tick() with context.step = N+1                  │
+│    - Enqueue commands stamped with step = N+2              │
+│ 5. currentStep++ (becomes N+2)                             │
+│    - nextExecutableStep ← currentStep (now N+2)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Key Insight**: Commands created during tick N are stamped with `step=N` and execute in tick N+1. During execution, handlers see `ctx.step = N` (from the command), **NOT** N+1. This ensures replay matches live execution exactly.
+**Key Insight**: `command.step` always matches the simulation tick that will execute the command. Systems add `+1` because their work executes on the next tick, while the Worker stamps external commands with `nextExecutableStep` (which is ready to run on the upcoming tick). This keeps live execution and replay perfectly aligned.
 
 #### Replay Behavior
 
@@ -464,14 +510,15 @@ for (const cmd of log.commands) {
 }
 ```
 
-This ensures all commands from tick N see `ctx.step = N` during replay, matching the behavior from live play.
+This ensures every command sees the same `ctx.step` value during live execution and replay for the tick in which it actually mutates state.
 
 ### 4.4 Command Execution Flow
 
 Commands are processed at the start of each tick step, before system execution:
 
 ```typescript
-let currentStep = 0; // Global step counter for ExecutionContext
+let currentStep = 0;        // Tick currently executing
+let nextExecutableStep = 0; // Step used to stamp externally-enqueued commands
 
 function runTick(deltaMs: number) {
   accumulator += deltaMs;
@@ -479,21 +526,83 @@ function runTick(deltaMs: number) {
   accumulator -= steps * FIXED_STEP_MS;
 
   for (let i = 0; i < steps; i++) {
+    // Accept commands for the current step until we capture the batch
+    nextExecutableStep = currentStep;
     const commands = commandQueue.dequeueAll();
+
+    // Once the batch is captured, advance stamping to the next step.
+    // Any commands enqueued by handlers or telemetry during execution
+    // will now target the step that actually runs them.
+    nextExecutableStep = currentStep + 1;
+
     for (const cmd of commands) {
+      if (cmd.step !== currentStep) {
+        telemetry.recordError('CommandStepMismatch', {
+          expectedStep: currentStep,
+          commandStep: cmd.step,
+          type: cmd.type
+        });
+        continue; // Skip mis-stamped command to preserve determinism
+      }
+
       commandDispatcher.execute(cmd); // Apply state mutations using cmd.step
     }
 
-    automationSystem.tick();
-    productionSystem.tick();
-    progressionSystem.tick();
-    eventSystem.tick();
+    const systemContext: TickContext = {
+      step: currentStep,
+      deltaMs: FIXED_STEP_MS
+    };
+
+    const stateView =
+      process.env.NODE_ENV === 'development'
+        ? createReadOnlyProxy(gameState)
+        : gameState;
+
+    automationSystem.tick(stateView, systemContext);
+    productionSystem.tick(stateView, systemContext);
+    progressionSystem.tick(stateView, systemContext);
+    eventSystem.tick(stateView, systemContext);
     telemetry.recordTick();
 
-    currentStep++; // Increment after each tick step
+    currentStep++;                    // Move to the next simulation step
+    nextExecutableStep = currentStep; // Commands arriving before the next dequeue target the new step
   }
 }
 ```
+
+The two-phase `nextExecutableStep` update is deliberate: we briefly set it to
+`currentStep` so any commands that slipped in before the batch capture keep
+their intended execution tick, then immediately advance it to `currentStep + 1`
+before handlers run. Commands that enqueue additional work during execution are
+therefore stamped for the following tick, guaranteeing their `cmd.step` matches
+the tick that will actually execute them.
+
+The runtime validates this invariant explicitly. A command whose `step` does not
+match the tick that is currently executing is treated as a logic error: the
+dispatcher skips it and emits a `CommandStepMismatch` telemetry record. This
+protects replay determinism by preventing a mis-stamped command from mutating
+state on the wrong tick during live execution or replay.
+
+Before systems run, the runtime constructs a shared `TickContext` object and
+passes it to every system. At minimum the context includes the `step` that just
+executed and the fixed `deltaMs`, so systems have the information they need to
+stamp follow-up commands with `context.step + 1` and to perform time-based
+calculations deterministically.
+
+```typescript
+interface TickContext {
+  readonly step: number;    // Tick that just executed
+  readonly deltaMs: number; // Fixed step duration in milliseconds
+}
+
+type ReadonlyGameState = DeepReadonly<GameState>; // Utility type from shared runtime typings
+
+interface System {
+  tick(state: ReadonlyGameState, context: TickContext): void;
+}
+```
+
+Each system receives a read-only view of `gameState` alongside the tick metadata. In development builds `state` is a proxy that throws on mutation; in production it is the live object reference. Systems must treat the argument as immutable in both cases.
 
 **Critical Constraint**: Systems MUST NOT mutate state directly during `tick()`. Instead, they analyze current state and enqueue commands that will be executed in the **next** tick step. This ensures:
 1. All mutations flow through the command queue and are captured by `CommandRecorder`
@@ -504,23 +613,23 @@ Example of correct system implementation:
 
 ```typescript
 class AutomationSystem implements System {
-  tick(context: TickContext): void {
+  tick(state: ReadonlyGameState, context: TickContext): void {
     // ✓ CORRECT: Read state, enqueue commands for next tick
-    const affordable = findAffordableUpgrades(gameState);
+    const affordable = findAffordableUpgrades(state);
     for (const upgrade of affordable) {
       commandQueue.enqueue({
         type: 'PURCHASE_UPGRADE',
         priority: CommandPriority.AUTOMATION,
         payload: { upgradeId: upgrade.id },
         timestamp: performance.now(),
-        step: context.step // Stamp with current tick step
+        step: context.step + 1 // Stamp with the tick that will execute the command
       });
     }
   }
 }
 
 class ProductionSystem implements System {
-  tick(context: TickContext): void {
+  tick(state: ReadonlyGameState, context: TickContext): void {
     // ✗ WRONG: Direct state mutation bypasses command queue
     // gameState.resources.energy += productionRate;
 
@@ -529,10 +638,10 @@ class ProductionSystem implements System {
       type: 'APPLY_PRODUCTION',
       priority: CommandPriority.SYSTEM,
       payload: {
-        resources: calculateProduction(gameState, context.deltaMs)
+        resources: calculateProduction(state, context.deltaMs)
       },
       timestamp: performance.now(),
-      step: context.step // Stamp with current tick step
+      step: context.step + 1 // Stamp with the tick that will execute the command
     });
   }
 }
@@ -541,8 +650,19 @@ class ProductionSystem implements System {
 **Enforcement**: The runtime provides read-only state proxies to systems. Direct mutation of the top-level state surface throws an error in development mode. Nested objects returned from `Map`/`Set` accessors are **not yet wrapped**; until that work lands, the example below should be interpreted as guarding only the first layer of state. A follow-up task will extend the proxy to decorate collection accessors so values are also read-only.
 
 ```typescript
+const proxyCache = new WeakMap<object, any>();
+
 function createReadOnlyProxy<T extends object>(target: T, path = 'state'): T {
-  return new Proxy(target, {
+  if (!target || typeof target !== 'object') {
+    return target;
+  }
+
+  const cached = proxyCache.get(target);
+  if (cached) {
+    return cached;
+  }
+
+  const proxy = new Proxy(target, {
     get(obj, prop) {
       const value = (obj as any)[prop];
 
@@ -581,6 +701,9 @@ function createReadOnlyProxy<T extends object>(target: T, path = 'state'): T {
       return false;
     }
   });
+
+  proxyCache.set(target, proxy);
+  return proxy as T;
 }
 
 // Usage in tick loop
@@ -589,6 +712,8 @@ automationSystem.tick(readOnlyState, context);
 ```
 
 This proxy intercepts mutations at the **top level** and on **nested plain objects**:
+
+The WeakMap cache ensures each underlying object maps to a single proxy instance, so identity checks (e.g., `child.parent === parent`) still succeed in development builds even with cyclic graphs.
 
 ```typescript
 // Top-level property mutations throw in development mode:
@@ -630,23 +755,23 @@ This approach provides:
    ```typescript
    // ✓ CORRECT: Deterministic - same state always produces same commands
    class ProductionSystem implements System {
-     tick(context: TickContext): void {
-       const production = calculateProduction(gameState, context.deltaMs);
+     tick(state: ReadonlyGameState, context: TickContext): void {
+       const production = calculateProduction(state, context.deltaMs);
        if (production.energy > 0) {
-         commandQueue.enqueue({
-           type: 'APPLY_PRODUCTION',
-           priority: CommandPriority.SYSTEM,
-           payload: { energy: production.energy },
-           timestamp: performance.now(),
-           step: context.step // Stamp with current tick step
-         });
-       }
-     }
-   }
+          commandQueue.enqueue({
+            type: 'APPLY_PRODUCTION',
+            priority: CommandPriority.SYSTEM,
+            payload: { energy: production.energy },
+            timestamp: performance.now(),
+            step: context.step + 1 // Executed on the next tick
+          });
+        }
+      }
+    }
 
    // ✗ WRONG: Non-deterministic - uses timestamp or random values
    class BadSystem implements System {
-     tick(context: TickContext): void {
+     tick(state: ReadonlyGameState, context: TickContext): void {
        if (Math.random() > 0.5) { // Non-deterministic!
          commandQueue.enqueue({ /* ... */ });
        }
@@ -895,7 +1020,7 @@ self.onmessage = (event) => {
       ...event.data.command,
       priority: CommandPriority.PLAYER, // Always PLAYER from external source
       timestamp: event.data.command.timestamp ?? performance.now(),
-      step: currentStep // Stamp with current tick step when enqueueing
+      step: nextExecutableStep // Stamp with the tick that will execute the command
     });
   }
 };
@@ -908,8 +1033,8 @@ Systems and engine code running **inside the Worker** can enqueue with elevated 
 ```typescript
 // ProductionSystem (runs inside Worker)
 class ProductionSystem implements System {
-  tick(context: TickContext): void {
-    const production = calculateProduction(gameState, context.deltaMs);
+  tick(state: ReadonlyGameState, context: TickContext): void {
+    const production = calculateProduction(state, context.deltaMs);
 
     // Direct enqueue with SYSTEM priority (safe - code runs in Worker)
     commandQueue.enqueue({
@@ -917,7 +1042,7 @@ class ProductionSystem implements System {
       priority: CommandPriority.SYSTEM, // OK - internal code
       payload: { resources: production },
       timestamp: performance.now(),
-      step: context.step // Stamp with current tick step
+      step: context.step + 1 // Executed next tick
     });
   }
 }
@@ -929,7 +1054,7 @@ function executePrestigeReset(currentStep: number, layer: number) {
     priority: CommandPriority.SYSTEM, // OK - internal code
     payload: { layer },
     timestamp: performance.now(),
-    step: currentStep // Stamp with current tick step
+    step: currentStep + 1 // Executed next tick
   });
 }
 ```
@@ -1053,8 +1178,8 @@ Automation systems run **inside the Worker** and can enqueue commands directly:
 ```typescript
 // Inside Worker - Automation System
 class AutoBuySystem implements System {
-  tick(context: TickContext): void {
-    const affordable = findAffordableUpgrades(gameState);
+  tick(state: ReadonlyGameState, context: TickContext): void {
+    const affordable = findAffordableUpgrades(state);
 
     for (const upgrade of affordable) {
       commandQueue.enqueue({
@@ -1062,7 +1187,7 @@ class AutoBuySystem implements System {
         priority: CommandPriority.AUTOMATION, // Direct priority assignment
         payload: { upgradeId: upgrade.id },
         timestamp: performance.now(),
-        step: context.step // Stamp with current tick step
+        step: context.step + 1 // Executed next tick
       });
     }
   }
@@ -1096,7 +1221,7 @@ This design ensures:
    ```
 
 2. **Lifecycle Guarantees**:
-   - **Construction**: `new CommandRecorder(state)` performs `deepFreeze(cloneDeep(state))` immediately
+  - **Construction**: `new CommandRecorder(state)` performs `deepFreeze(cloneDeep(state))` immediately and snapshots the active RNG seed (via `getCurrentRNGSeed()` or an explicit override)
    - **Recording**: `record(cmd)` appends to internal array, does not touch snapshot
    - **Export**: `export()` returns frozen log containing the original snapshot + recorded commands
    - **Replay**: `replay(log)` restores `log.startState`, then executes `log.commands` in order
@@ -1183,14 +1308,18 @@ This design ensures:
    gameState = resetToInitial(); // State reset
    recorder.record(cmd2); // cmd2 assumes reset state, but snapshot is pre-reset
 
-   // ✓ CORRECT: Create new recorder after reset
-   const recorder1 = new CommandRecorder(initialState);
-   recorder1.record(cmd1);
+// ✓ CORRECT: Reinitialize recorder after reset
+const recorder = new CommandRecorder(initialState);
+recorder.record(cmd1);
 
-   gameState = resetToInitial();
-   const recorder2 = new CommandRecorder(gameState); // New snapshot for new session
-   recorder2.record(cmd2);
-   ```
+gameState = resetToInitial();
+recorder.clear(gameState); // Refresh snapshot so new commands replay correctly
+recorder.record(cmd2);
+```
+
+`clear(nextState)` always clones and freezes the new baseline before recording resumes, preventing stale snapshots from leaking across sessions.
+
+> **Seed overrides**: Tests or tooling that drive a specific PRNG stream can provide `new CommandRecorder(state, { seed })` or `recorder.clear(nextState, { seed })`. When omitted, the recorder falls back to the runtime's `getCurrentRNGSeed()` helper.
 
 5. **Tooling Implications**:
    - **Dev Tools**: Recorder starts when dev panel opens, captures state at that moment
@@ -1207,32 +1336,62 @@ export interface CommandLog {
   readonly commands: readonly Command[];
   readonly metadata: {
     readonly recordedAt: number;
-    readonly seed?: number; // RNG seed for deterministic replay
+    readonly seed?: number; // Active RNG seed captured at record time
+    readonly lastStep: number; // Highest step observed while recording (-1 when nothing executed)
   };
 }
 
+export interface RuntimeReplayContext {
+  readonly commandQueue: CommandQueue;
+  getCurrentStep?(): number;
+  getNextExecutableStep?(): number;
+  setCurrentStep?(step: number): void;
+  setNextExecutableStep?(step: number): void;
+}
+
+// The runtime exposes the current deterministic PRNG seed via `getCurrentRNGSeed()`.
+// Tests or tooling can override the captured value by supplying `{ seed }` to the
+// recorder constructor or `clear()` helper.
+
+// metadata.lastStep allows the runtime to realign its current/next step counters
+// after replay so that subsequent ticks tick from the same position as the
+// original session.
+
 export class CommandRecorder {
   private readonly recorded: Command[] = [];
-  private readonly startState: StateSnapshot; // Stored as cloneable, plain data
+  private startState: StateSnapshot; // Stored as cloneable, plain data
+  private rngSeed: number | undefined;
+  private lastRecordedStep = -1;
 
-  constructor(currentState: GameState) {
+  constructor(currentState: GameState, options?: { seed?: number }) {
     // Clone state immediately (cloneable, not frozen)
     this.startState = cloneDeep(currentState);
     // Freeze the clone to prevent accidental mutation
     deepFreezeInPlace(this.startState);
+    // Capture the RNG seed so replay can restore identical randomness
+    this.rngSeed = options?.seed ?? getCurrentRNGSeed?.();
   }
 
   record(command: Command): void {
-    this.recorded.push(command);
+    const snapshot = cloneDeep(command);   // Defensively copy the command
+    deepFreezeInPlace(snapshot);           // Freeze to catch accidental mutation in dev
+    this.recorded.push(snapshot);
+    this.lastRecordedStep = Math.max(this.lastRecordedStep, command.step);
   }
 
   export(): CommandLog {
+    const lastStep = this.lastRecordedStep;
+
     // Return defensive copy - clone the snapshot again for export
     const exportedLog = {
       version: '0.1.0',
       startState: cloneDeep(this.startState), // Fresh clone (unfrozen)
-      commands: [...this.recorded],
-      metadata: { recordedAt: Date.now() }
+      commands: this.recorded.map(cloneDeep), // New clones so log remains isolated
+      metadata: {
+        recordedAt: Date.now(),
+        seed: this.rngSeed,
+        lastStep
+      }
     };
 
     // Freeze the exported log to prevent mutation
@@ -1252,36 +1411,119 @@ export class CommandRecorder {
       setRNGSeed(log.metadata.seed);
     }
 
-    // Re-execute all commands using their ORIGINAL step values
-    for (const cmd of log.commands) {
-      // Build execution context with the ORIGINAL step from the command
-      // This ensures all commands from the same tick see the same ctx.step
-      const context: ExecutionContext = {
-        step: cmd.step, // Use stored step, NOT an incrementing counter
-        timestamp: cmd.timestamp,
-        priority: cmd.priority
-      };
+    // Sandbox command enqueueing so replay cannot mutate the live queue, while
+    // still verifying that every follow-up enqueue is present in the recorded log.
+    const queue = runtimeContext?.commandQueue ?? commandQueue;
+    const sandboxedEnqueues: Command[] = [];
+    const originalEnqueue = queue.enqueue.bind(queue);
 
-      // Execute via dispatcher's handler directly to avoid re-recording
-      const handler = dispatcher.getHandler(cmd.type);
-      if (handler) {
-        try {
-          handler(cmd.payload, context);
-        } catch (err) {
-          telemetry.recordError('ReplayExecutionFailed', {
+    const recordedFinalStep = log.metadata.lastStep ?? -1;
+    const derivedFinalStep =
+      log.commands.length > 0
+        ? log.commands.reduce((max, cmd) => Math.max(max, cmd.step), -1)
+        : -1;
+    const finalStep = recordedFinalStep >= 0 ? recordedFinalStep : derivedFinalStep;
+    const previousStep = runtimeContext?.getCurrentStep?.();
+    const previousNextStep = runtimeContext?.getNextExecutableStep?.();
+    let replayFailed = true;
+
+    // Track which future commands have already been matched to handler enqueues.
+    const matchedFutureCommandIndices = new Set<number>();
+
+    (queue as any).enqueue = (cmd: Command) => {
+      const snapshot = cloneDeep(cmd);
+      deepFreezeInPlace(snapshot);
+      sandboxedEnqueues.push(snapshot);
+    };
+
+    try {
+      for (let i = 0; i < log.commands.length; i++) {
+        const cmd = log.commands[i];
+
+        const context: ExecutionContext = {
+          step: cmd.step, // Use stored step, NOT an incrementing counter
+          timestamp: cmd.timestamp,
+          priority: cmd.priority
+        };
+
+        const handler = dispatcher.getHandler(cmd.type);
+        if (!handler) {
+          telemetry.recordError('ReplayUnknownCommandType', {
             type: cmd.type,
-            step: cmd.step,
-            error: err instanceof Error ? err.message : String(err)
+            step: cmd.step
           });
+        } else {
+          try {
+            handler(cmd.payload, context);
+          } catch (err) {
+            telemetry.recordError('ReplayExecutionFailed', {
+              type: cmd.type,
+              step: cmd.step,
+              error: err instanceof Error ? err.message : String(err)
+            });
+          }
         }
+
+        if (sandboxedEnqueues.length > 0) {
+          for (const queued of sandboxedEnqueues) {
+            const matchIndex = findMatchingFutureCommandIndex(
+              log.commands,
+              queued,
+              i + 1,
+              matchedFutureCommandIndices
+            );
+
+            if (matchIndex === -1) {
+              telemetry.recordError('ReplayMissingFollowupCommand', {
+                type: queued.type,
+                step: queued.step
+              });
+              throw new Error(
+                'Replay log is missing a command that was enqueued during handler execution.'
+              );
+            }
+
+            matchedFutureCommandIndices.add(matchIndex);
+          }
+
+          sandboxedEnqueues.length = 0;
+        }
+      }
+
+      replayFailed = false;
+    } finally {
+      (queue as any).enqueue = originalEnqueue;
+      if (replayFailed) {
+        if (previousStep !== undefined) {
+          runtimeContext?.setCurrentStep?.(previousStep);
+        }
+        if (previousNextStep !== undefined) {
+          runtimeContext?.setNextExecutableStep?.(previousNextStep);
+        }
+      } else if (finalStep >= 0) {
+        runtimeContext?.setCurrentStep?.(finalStep + 1);
+        runtimeContext?.setNextExecutableStep?.(finalStep + 1);
       }
     }
   }
 
-  clear(): void {
+  clear(nextState: GameState, options?: { seed?: number }): void {
     this.recorded.length = 0;
+    this.startState = cloneDeep(nextState);
+    deepFreezeInPlace(this.startState);
+    this.rngSeed = options?.seed ?? getCurrentRNGSeed?.();
+    this.lastRecordedStep = -1;
   }
 }
+
+// Recording always stores frozen clones so later mutations (payload pooling,
+// handler-side adjustments, dev tools poking) cannot corrupt the captured
+// history. Exporting clones the array again, keeping each log immutable and
+// isolated from future recordings.
+
+declare const getCurrentRNGSeed:
+  | (() => number | undefined)
+  | undefined; // Provided by RNG module; may be undefined in tests
 
 // Utility functions
 function cloneDeep<T>(obj: T): T {
@@ -1308,6 +1550,39 @@ function seededRandom(): number {
   t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
+
+/**
+ * Locate the first future command in the log that matches the queued command.
+ * Timestamps are intentionally ignored because replays run at different wall-clock times.
+ */
+function findMatchingFutureCommandIndex(
+  commands: readonly Command[],
+  candidate: Command,
+  startIndex: number,
+  claimedIndices: Set<number>
+): number {
+  for (let i = startIndex; i < commands.length; i++) {
+    if (claimedIndices.has(i)) {
+      continue;
+    }
+    if (commandsEqual(commands[i], candidate)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function commandsEqual(a: Command, b: Command): boolean {
+  return (
+    a.type === b.type &&
+    a.priority === b.priority &&
+    a.step === b.step &&
+    deepEqual(a.payload, b.payload)
+  );
+}
+
+// Use a lightweight deep-equality helper (e.g., fast-deep-equal)
+declare function deepEqual<T>(left: T, right: T): boolean;
 
 /**
  * Freeze an object in-place, making plain objects/arrays immutable.
@@ -1406,13 +1681,24 @@ function restoreState(snapshot: StateSnapshot): void {
 
 ```
 
+The replay sandbox guarantees that log-driven execution never leaks additional
+commands into the live runtime. Any handler that attempts to enqueue during
+replay indicates the log is missing an entry; the method emits telemetry and
+throws immediately so the bad capture cannot advance unnoticed.
+
+When a `RuntimeReplayContext` is supplied, the recorder snapshots the current
+`currentStep`/`nextExecutableStep` values, runs the replay, and then sets both
+counters to `log.metadata.lastStep + 1` so the live runtime resumes from the
+correct tick. If the replay aborts early, the original counter values are
+restored to avoid leaving the runtime in a mismatched state.
+
 ### 8.3 Deterministic Replay Guarantees
 
 **Critical Design Decisions**: The replay implementation addresses three determinism requirements:
 
 #### 1. Step Counter Preservation
 
-**Problem**: Commands must preserve their originating tick step. Multiple commands executed within the same tick must all see the same `ctx.step` value, both during live play and replay.
+**Problem**: Commands must preserve the execution tick they target. Multiple commands executed within the same tick must all see the same `ctx.step` value, both during live play and replay.
 
 **Example Failure** (incorrect approach with auto-increment):
 ```typescript
@@ -1433,11 +1719,11 @@ const applyProductionHandler = (payload, ctx: ExecutionContext) => {
 ```
 
 **Solution**:
-- Each `Command` includes a `step` field storing its originating tick number
-- During live play: commands are stamped with `currentStep` when enqueued (tick N)
-- During live execution: `CommandDispatcher.execute()` uses `cmd.step` for `ctx.step` (still N, not N+1)
-- During replay: `CommandRecorder.replay()` uses `cmd.step` directly for `ctx.step` (N)
-- This ensures all commands from tick N see `ctx.step = N` in both live play and replay
+- Each `Command` includes a `step` field storing the simulation step that will execute it
+- During live play: systems stamp `context.step + 1` and the Worker stamps `nextExecutableStep`
+- During live execution: `CommandDispatcher.execute()` feeds `cmd.step` into the handler context
+- During replay: `CommandRecorder.replay()` uses `cmd.step` directly for `ctx.step`
+- This ensures all commands executed on tick N see `ctx.step = N` in both live play and replay
 
 #### 2. Recording Loop Prevention
 
@@ -1458,13 +1744,15 @@ sessionRecorder.replay(log, dispatcher);
 ```
 
 **Solution**:
-- `CommandRecorder.replay()` calls handlers **directly** via `dispatcher.getHandler()`, bypassing event system
+  - `CommandRecorder.replay()` calls handlers **directly** via `dispatcher.getHandler()`, bypassing event system
+  - Replay temporarily swaps `commandQueue.enqueue` with a sandbox that records attempted follow-up commands; each queued command is matched against the remaining log entries so the tool can surface telemetry and fail fast when the capture is incomplete or divergent
+- Missing handlers are surfaced via `telemetry.recordError('ReplayUnknownCommandType', …)` so replay drift cannot go unnoticed
 - Alternatively: use separate replay-only dispatcher with no recording subscriptions
 - Documentation updated to show both patterns
 
 #### 3. RNG Seed Restoration
 
-**Problem**: `CommandLog.metadata.seed` is exported but never restored during replay. Handlers using randomness diverge.
+**Problem**: Without capturing and restoring the active RNG seed, handlers that rely on randomness diverge between live play and replay.
 
 **Example Failure**:
 ```typescript
@@ -1481,6 +1769,7 @@ const enemyDropHandler = (payload, ctx) => {
 ```
 
 **Solution**:
+- `CommandRecorder` snapshots the current RNG seed at construction/export time (or accepts an explicit override) so `log.metadata.seed` is always populated
 - `CommandRecorder.replay()` checks `log.metadata.seed` and calls `setRNGSeed(seed)` before executing commands
 - Handlers **must** use `seededRandom()` instead of `Math.random()` for determinism
 - Alternative: restrict handlers to pure deterministic logic only (no randomness)
@@ -1493,9 +1782,10 @@ const enemyDropHandler = (payload, ctx) => {
 
 **1. Recording Start (Constructor)**
 ```typescript
-constructor(currentState: GameState) {
+constructor(currentState: GameState, options?: { seed?: number }) {
   this.startState = cloneDeep(currentState); // Clone to isolate from live state
   deepFreezeInPlace(this.startState);        // Freeze to prevent accidental mutation
+  this.rngSeed = options?.seed ?? getCurrentRNGSeed?.();
 }
 ```
 
@@ -1509,7 +1799,10 @@ export(): CommandLog {
   const exportedLog = {
     startState: cloneDeep(this.startState), // Clone the frozen snapshot
     commands: [...this.recorded],
-    // ...
+    metadata: {
+      recordedAt: Date.now(),
+      seed: this.rngSeed
+    }
   };
 
   deepFreezeInPlace(exportedLog); // Freeze the exported log
@@ -1530,13 +1823,19 @@ replay(log: CommandLog, dispatcher: CommandDispatcher): void {
   // Re-execute commands using their original step values
   for (const cmd of log.commands) {
     const handler = dispatcher.getHandler(cmd.type);
-    if (handler) {
-      handler(cmd.payload, {
-        step: cmd.step, // Use stored step from command
-        timestamp: cmd.timestamp,
-        priority: cmd.priority
+    if (!handler) {
+      telemetry.recordError('ReplayUnknownCommandType', {
+        type: cmd.type,
+        step: cmd.step
       });
+      continue;
     }
+
+    handler(cmd.payload, {
+      step: cmd.step, // Use stored step from command
+      timestamp: cmd.timestamp,
+      priority: cmd.priority
+    });
   }
 }
 ```
@@ -1715,12 +2014,35 @@ const MAX_QUEUE_SIZE = 10000; // Configurable per deployment
 enqueue(command: Command): void {
   if (this.size >= MAX_QUEUE_SIZE) {
     telemetry.recordWarning('CommandQueueOverflow', { size: this.size });
-    // Drop oldest automation commands first
+    // Drop deterministically before accepting the new command
     this.dropLowestPriority();
   }
   // ... proceed with enqueue
 }
+
+private dropLowestPriority(): void {
+  for (const priority of [...CommandQueue.PRIORITY_ORDER].reverse()) {
+    const queue = this.queues.get(priority);
+    if (!queue || queue.length === 0) {
+      continue;
+    }
+
+    const dropped = queue.shift(); // Remove oldest command in lowest-priority lane
+    telemetry.recordWarning('CommandDropped', {
+      type: dropped!.type,
+      priority,
+      timestamp: dropped!.timestamp
+    });
+    return;
+  }
+}
 ```
+
+This strategy always removes the oldest command from the lowest-priority lane,
+so overflows resolve deterministically across live sessions and replays. If all
+lanes are empty the method is a no-op, ensuring the enqueue path cannot throw.
+Each drop is surfaced via telemetry with enough metadata to trace automation or
+attack patterns that saturate the queue.
 
 ### 9.2 Batch Processing Optimization
 
@@ -2014,7 +2336,7 @@ The command queue is complete when:
 
 1. Should automation commands be throttled per-tick to prevent starvation of player commands?
 2. How do we handle command conflicts (e.g., prestige reset invalidating pending purchases)?
-3. Should command logs include RNG seed for full deterministic replay of stochastic events?
+3. Do subsystems that own independent PRNG streams need to surface their seeds alongside the main runtime seed for full determinism?
 
 ## 16. References
 
