@@ -1,0 +1,139 @@
+import { describe, expect, it } from 'vitest';
+
+import type { Command } from './command.js';
+import { CommandPriority } from './command.js';
+import { CommandQueue } from './command-queue.js';
+
+const baseCommand: Command = {
+  type: 'BASE',
+  priority: CommandPriority.PLAYER,
+  payload: {},
+  timestamp: 0,
+  step: 0,
+};
+
+function createCommand(
+  overrides: Partial<Command> & Pick<Command, 'type'>,
+): Command {
+  return {
+    ...baseCommand,
+    ...overrides,
+    payload: overrides.payload ?? {},
+    timestamp: overrides.timestamp ?? baseCommand.timestamp,
+    step: overrides.step ?? baseCommand.step,
+    priority: overrides.priority ?? baseCommand.priority,
+  };
+}
+
+describe('CommandQueue', () => {
+  it('dequeues commands in priority order', () => {
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'automation',
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 3,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'player',
+        priority: CommandPriority.PLAYER,
+        timestamp: 2,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'system',
+        priority: CommandPriority.SYSTEM,
+        timestamp: 1,
+      }),
+    );
+
+    const drained = queue.dequeueAll();
+    expect(drained.map((cmd) => cmd.type)).toEqual([
+      'system',
+      'player',
+      'automation',
+    ]);
+    expect(queue.size).toBe(0);
+  });
+
+  it('preserves FIFO ordering within a priority lane', () => {
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'player-1',
+        priority: CommandPriority.PLAYER,
+        timestamp: 10,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'player-2',
+        priority: CommandPriority.PLAYER,
+        timestamp: 20,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'player-3',
+        priority: CommandPriority.PLAYER,
+        timestamp: 20,
+      }),
+    );
+
+    const drained = queue.dequeueAll();
+    expect(drained.map((cmd) => cmd.type)).toEqual([
+      'player-1',
+      'player-2',
+      'player-3',
+    ]);
+  });
+
+  it('clones enqueued commands to prevent caller mutation', () => {
+    const queue = new CommandQueue();
+
+    const command = createCommand({
+      type: 'player',
+      priority: CommandPriority.PLAYER,
+      payload: { value: 1 },
+      timestamp: 0,
+    });
+
+    queue.enqueue(command);
+
+    // Mutate the original command after enqueue; queue snapshot must remain stable.
+    (command.payload as { value: number }).value = 42;
+
+    const [drained] = queue.dequeueAll();
+    expect((drained.payload as { value: number }).value).toBe(1);
+
+    // Frozen snapshot should throw when mutated in tests (non-production environment).
+    expect(() => {
+      (drained.payload as { value: number }).value = 99;
+    }).toThrow(TypeError);
+  });
+
+  it('tracks size across enqueue, dequeueAll, and clear', () => {
+    const queue = new CommandQueue();
+
+    expect(queue.size).toBe(0);
+
+    queue.enqueue(createCommand({ type: 'a' }));
+    queue.enqueue(createCommand({ type: 'b' }));
+    expect(queue.size).toBe(2);
+
+    queue.dequeueAll();
+    expect(queue.size).toBe(0);
+
+    queue.enqueue(createCommand({ type: 'c' }));
+    expect(queue.size).toBe(1);
+
+    queue.clear();
+    expect(queue.size).toBe(0);
+    expect(queue.dequeueAll()).toEqual([]);
+  });
+});

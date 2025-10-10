@@ -60,3 +60,6 @@ export class IdleEngineRuntime {
     }
   }
 }
+
+export { Command, CommandPriority, CommandQueueEntry } from './command.js';
+export { CommandQueue, deepFreezeInPlace } from './command-queue.js';

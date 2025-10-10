@@ -5,6 +5,8 @@
 **Status:** Design
 **Last Updated:** 2025-10-09
 
+> **Execution Order:** Tackle the subissues derived from this document sequentially. Each one must be completed and reviewed before starting the next to keep the workstream focused and in sync.
+
 ## 1. Overview
 
 The command queue is a core runtime component that enables deterministic, replayable game state mutations. It decouples user input, automation systems, and server-confirmed actions from immediate execution, allowing the runtime to process all state changes within the fixed-step tick loop described in the engine design.
@@ -1360,6 +1362,14 @@ recorder.record(cmd2);
 
 ### 8.2 Implementation
 
+To avoid ambiguity when we wire this into the runtime, we will introduce a concrete alias alongside the queue implementation:
+
+```typescript
+export type StateSnapshot = DeepReadonly<GameState>;
+```
+
+`StateSnapshot` represents the exact shape produced by `structuredClone(gameState)`—all fields are recursively read-only and restricted to structured-clone-friendly types. The alias will live in the shared runtime typings so both the recorder and replay utilities consume the same definition. If additional serialization constraints emerge (e.g., stripping out non-cloneable dev-only fields), the alias should be updated to wrap an explicit `SerializableGameState` interface, but the contract remains: snapshots must be safe to clone, freeze, and ship across worker boundaries.
+
 ```typescript
 export interface CommandLog {
   readonly version: string;
@@ -1943,6 +1953,15 @@ function findMatchingSetItem(
 }
 
 ```
+
+#### Supporting Utilities
+
+Several helper modules are assumed in the pseudocode above. They must exist (or be stubbed) before the queue work ships:
+
+- **`telemetry` facade**: Provides `recordError(event, data)`, `recordWarning(event, data)`, `recordProgress(event, data)`, and `recordTick()`; all methods must be fire-and-forget and safe in worker, browser, and Node test environments.
+- **Monotonic clock**: `createMonotonicClock()` wraps `performance.now()` but guarantees strictly increasing values even if the host clock stalls. In Node, import `performance` from `perf_hooks` so replay/tests run without polyfills.
+- **Deterministic RNG hooks**: `getCurrentRNGSeed(): number | undefined`, `setRNGSeed(seed: number): void`, and `seededRandom(): number` live in the runtime RNG module. Command handlers that rely on randomness must consume `seededRandom()`; direct `Math.random()` usage is prohibited once the queue lands.
+- **`structuredClone` availability**: Browser runtimes already expose it; Node tests must run on a version that includes the API or ship a ponyfill with equivalent semantics.
 
 The reconciliation logic deliberately keeps previously shared references alive. For example, if a system cached `const entities = gameState.entities`, that Map instance survives replay; each entry is reconciled in place so cached entity objects continue to reference the same containers after restoration. The `WeakMap` registry ensures every object from the snapshot maps back to exactly one runtime object, so cycles and cross-links are recreated faithfully. This protects long-lived references inside the runtime while still guaranteeing the restored state matches the recorded snapshot exactly.
 
@@ -2603,11 +2622,11 @@ The command queue is complete when:
 - **Rollback**: Store command checkpoints for efficient undo/redo
 - **Compression**: Delta-encode command logs for reduced storage/bandwidth
 
-## 15. Open Questions
+## 15. Resolved Decisions
 
-1. Should automation commands be throttled per-tick to prevent starvation of player commands?
-2. How do we handle command conflicts (e.g., prestige reset invalidating pending purchases)?
-3. Do subsystems that own independent PRNG streams need to surface their seeds alongside the main runtime seed for full determinism?
+- **Automation throttling**: No per-tick throttle in the initial release. We rely on `MAX_QUEUE_SIZE`, per-priority depth telemetry, and `CommandQueueOverflow`/`CommandDropped` signals to surface runaway automation. If telemetry shows chronic starvation, we will introduce targeted throttles as a follow-up enhancement.
+- **Command conflicts**: Handlers must revalidate state at execution time and gracefully no-op when their preconditions are invalidated (emitting `telemetry.recordWarning('CommandConflict', …)`). Destructive operations such as prestige reset must flush or invalidate dependent state via their handlers; the queue itself remains FIFO and does not perform speculative reordering.
+- **Multiple RNG streams**: Yes. Each subsystem that owns an independent PRNG must register with the runtime RNG module so the recorder can capture and restore every active seed. The RNG helper will expose `registerRNGStream(id, getSeed, setSeed)` to supplement the existing global seed capture.
 
 ## 16. References
 
