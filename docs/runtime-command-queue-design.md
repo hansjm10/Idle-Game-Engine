@@ -2004,7 +2004,7 @@ function findMatchingSetItem(
 
 Several helper modules are assumed in the pseudocode above. They must exist (or be stubbed) before the queue work ships:
 
-- **`telemetry` facade**: Provides `recordError(event, data)`, `recordWarning(event, data)`, `recordProgress(event, data)`, and `recordTick()`; all methods must be fire-and-forget and safe in worker, browser, and Node test environments.
+- **`telemetry` facade**: Provides `recordError(event, data)`, `recordWarning(event, data)`, `recordProgress(event, data)`, and `recordTick()`; all methods must be fire-and-forget and safe in worker, browser, and Node test environments. If a provided facade throws, the default wrapper logs the failure via `console.error` to avoid cascading crashes.
 - **Monotonic clock**: `createMonotonicClock()` wraps `performance.now()` but guarantees strictly increasing values even if the host clock stalls. In Node, import `performance` from `perf_hooks` so replay/tests run without polyfills.
 - **Deterministic RNG hooks**: `getCurrentRNGSeed(): number | undefined`, `setRNGSeed(seed: number): void`, and `seededRandom(): number` live in the runtime RNG module. Command handlers that rely on randomness must consume `seededRandom()`; direct `Math.random()` usage is prohibited once the queue lands.
 - **`structuredClone` availability**: Browser runtimes already expose it; Node tests must run on a version that includes the API or ship a ponyfill with equivalent semantics.
