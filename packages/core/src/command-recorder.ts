@@ -60,6 +60,16 @@ const TYPED_ARRAY_CTOR_NAMES = new Set([
   'BigUint64Array',
 ]);
 
+interface DataViewSnapshot {
+  readonly buffer: ArrayBufferLike;
+  readonly byteOffset: number;
+  readonly byteLength: number;
+  getUint8(index: number): number;
+  setUint8(index: number, value: number): void;
+}
+
+type ArrayBufferViewSnapshot = DataViewSnapshot | TypedArray;
+
 function getConstructorName(value: object): string | undefined {
   const directCtor = (value as { constructor?: { name?: string } }).constructor;
   if (typeof directCtor === 'function' && directCtor.name) {
@@ -72,7 +82,7 @@ function getConstructorName(value: object): string | undefined {
   return undefined;
 }
 
-function isDataViewLike(value: unknown): value is DataView {
+function isDataViewLike(value: unknown): value is DataViewSnapshot {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -93,11 +103,11 @@ function isTypedArrayLike(value: unknown): value is TypedArray {
   return ctorName !== undefined && TYPED_ARRAY_CTOR_NAMES.has(ctorName);
 }
 
-function isArrayBufferViewLike(value: unknown): value is ArrayBufferView {
+function isArrayBufferViewLike(value: unknown): value is ArrayBufferViewSnapshot {
   return isDataViewLike(value) || isTypedArrayLike(value);
 }
 
-function copyDataViewContents(target: DataView, source: DataView): void {
+function copyDataViewContents(target: DataViewSnapshot, source: DataViewSnapshot): void {
   if (ArrayBuffer.isView(target) && ArrayBuffer.isView(source)) {
     const targetBytes = new Uint8Array(
       target.buffer,
@@ -156,8 +166,8 @@ function copyTypedArrayContents(target: TypedArray, source: TypedArray): void {
 }
 
 function canReuseDataView(
-  current: DataView,
-  next: DataView,
+  current: DataViewSnapshot,
+  next: DataViewSnapshot,
 ): boolean {
   try {
     return current.byteLength === next.byteLength;
@@ -498,42 +508,46 @@ function cloneSnapshotInternal(
     return clone;
   }
 
-  if (isArrayBufferViewLike(value)) {
-    if (isDataViewLike(value)) {
-      if (ArrayBuffer.isView(value)) {
-        const bufferClone = cloneSnapshotInternal(
-          value.buffer,
-          seen,
-        ) as ArrayBufferLike;
-        const view = new DataView(
-          bufferClone,
-          value.byteOffset,
-          value.byteLength,
-        );
-        seen.set(value, view);
-        return view;
-      }
-
-      const fallbackBuffer = new ArrayBuffer(value.byteLength);
-      const fallbackView = new DataView(
-        fallbackBuffer,
-        0,
-        value.byteLength,
+  if (isDataViewLike(value)) {
+    // The immutable proxy strips typed-array identity, so we fall back to `any`
+    // to peek at runtime-only properties before cloning.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dataView = value as any;
+    if (ArrayBuffer.isView(dataView)) {
+      const bufferClone = cloneSnapshotInternal(
+        dataView.buffer,
+        seen,
+      ) as ArrayBufferLike;
+      const view = new DataView(
+        bufferClone,
+        dataView.byteOffset,
+        dataView.byteLength,
       );
-      for (let i = 0; i < value.byteLength; i += 1) {
-        fallbackView.setUint8(i, value.getUint8(i));
-      }
-      seen.set(value, fallbackView);
-      return fallbackView;
+      seen.set(dataView, view);
+      return view;
     }
 
-    const typed = value as unknown as TypedArray;
+    const fallbackBuffer = new ArrayBuffer(dataView.byteLength);
+    const fallbackView = new DataView(
+      fallbackBuffer,
+      0,
+      dataView.byteLength,
+    );
+    for (let i = 0; i < dataView.byteLength; i += 1) {
+      fallbackView.setUint8(i, dataView.getUint8(i));
+    }
+    seen.set(dataView, fallbackView);
+    return fallbackView;
+  }
+
+  if (isTypedArrayLike(value)) {
+    const typed = value as TypedArray;
     const ctor = typed.constructor as {
       new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
       new(length: number): TypedArray;
     };
     let clone: TypedArray;
-    if (ArrayBuffer.isView(value)) {
+    if (ArrayBuffer.isView(typed)) {
       const bufferClone = cloneSnapshotInternal(
         typed.buffer,
         seen,
@@ -546,7 +560,7 @@ function cloneSnapshotInternal(
         clone[i] = typed[i];
       }
     }
-    seen.set(value as object, clone);
+    seen.set(typed as object, clone);
     return clone;
   }
 
@@ -654,6 +668,12 @@ function cloneStructured<T>(value: T): T {
     );
   }
 
+  if (containsSymbolProperties(value)) {
+    return cloneSnapshotToMutable(
+      value as ImmutablePayload<T>,
+    );
+  }
+
   try {
     return structuredCloneGlobal(value);
   } catch (error) {
@@ -674,6 +694,82 @@ function isStructuredCloneDataError(error: unknown): boolean {
     return false;
   }
   return error.name === 'DataCloneError';
+}
+
+function containsSymbolProperties(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+): boolean {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const objectValue = value as object;
+  if (seen.has(objectValue)) {
+    return false;
+  }
+  seen.add(objectValue);
+
+  if (value instanceof Map) {
+    for (const [key, entryValue] of value.entries()) {
+      if (containsSymbolProperties(key, seen)) {
+        return true;
+      }
+      if (containsSymbolProperties(entryValue, seen)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (value instanceof Set) {
+    for (const entry of value.values()) {
+      if (containsSymbolProperties(entry, seen)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (containsSymbolProperties(item, seen)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (
+    ArrayBuffer.isView(value) ||
+    value instanceof ArrayBuffer ||
+    value instanceof Date ||
+    value instanceof RegExp
+  ) {
+    return false;
+  }
+
+  const keys = Reflect.ownKeys(
+    value as Record<PropertyKey, unknown>,
+  );
+  if (keys.some((key) => typeof key === 'symbol')) {
+    return true;
+  }
+
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      value as Record<PropertyKey, unknown>,
+      key,
+    );
+    if (!descriptor || !('value' in descriptor)) {
+      continue;
+    }
+    if (containsSymbolProperties(descriptor.value, seen)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function findMatchingFutureCommandIndex(
@@ -704,6 +800,67 @@ function commandsEqual(
     left.timestamp === right.timestamp &&
     payloadsMatch(left.payload, right.payload)
   );
+}
+
+function getArrayBufferViewBytes(view: ArrayBufferViewSnapshot): Uint8Array {
+  const baseView = view as {
+    buffer?: unknown;
+    byteOffset: number;
+    byteLength: number;
+    getUint8?(index: number): number;
+    [index: number]: unknown;
+  };
+
+  if (ArrayBuffer.isView(view)) {
+    return new Uint8Array(
+      baseView.buffer as ArrayBufferLike,
+      baseView.byteOffset,
+      baseView.byteLength,
+    );
+  }
+
+  const maybeBuffer = baseView.buffer;
+
+  if (isImmutableArrayBufferSnapshot(maybeBuffer)) {
+    const bytes = maybeBuffer.toUint8Array();
+    return bytes.subarray(
+      baseView.byteOffset,
+      baseView.byteOffset + baseView.byteLength,
+    );
+  }
+
+  if (isImmutableSharedArrayBufferSnapshot(maybeBuffer)) {
+    const bytes = maybeBuffer.toUint8Array();
+    return bytes.subarray(
+      baseView.byteOffset,
+      baseView.byteOffset + baseView.byteLength,
+    );
+  }
+
+  if (isDataViewLike(view)) {
+    const copy = new Uint8Array(baseView.byteLength);
+    for (let i = 0; i < copy.length; i += 1) {
+      const reader = baseView.getUint8;
+      copy[i] = typeof reader === 'function' ? reader.call(view, i) : 0;
+    }
+    return copy;
+  }
+
+  const bytes = new Uint8Array(baseView.byteLength);
+  for (let i = 0; i < bytes.length; i += 1) {
+    const value = baseView[i];
+    if (typeof value === 'number') {
+      bytes[i] = value & 0xff;
+      continue;
+    }
+    if (typeof value === 'bigint') {
+      bytes[i] = Number(value & BigInt(0xff));
+      continue;
+    }
+    const numeric = Number(value);
+    bytes[i] = Number.isNaN(numeric) ? 0 : numeric & 0xff;
+  }
+  return bytes;
 }
 
 function payloadsMatch(
@@ -765,20 +922,12 @@ function payloadsMatch(
     return true;
   }
 
-  if (ArrayBuffer.isView(left) && ArrayBuffer.isView(right)) {
+  if (isArrayBufferViewLike(left) && isArrayBufferViewLike(right)) {
     if (left.byteLength !== right.byteLength) {
       return false;
     }
-    const leftBytes = new Uint8Array(
-      left.buffer,
-      left.byteOffset,
-      left.byteLength,
-    );
-    const rightBytes = new Uint8Array(
-      right.buffer,
-      right.byteOffset,
-      right.byteLength,
-    );
+    const leftBytes = getArrayBufferViewBytes(left);
+    const rightBytes = getArrayBufferViewBytes(right);
     for (let i = 0; i < leftBytes.length; i += 1) {
       if (leftBytes[i] !== rightBytes[i]) {
         return false;
@@ -898,71 +1047,77 @@ function reconcileValue(
     return array;
   }
 
-  if (isArrayBufferViewLike(next)) {
-    let resolvedView: DataView | TypedArray;
+  if (isDataViewLike(next)) {
+    // Immutable DataView proxies lose their native type at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nextView = next as any;
+    let resolvedView: DataViewSnapshot;
+    if (
+      isDataViewLike(current) &&
+      canReuseDataView(current as DataViewSnapshot, nextView)
+    ) {
+      const currentView = current as DataViewSnapshot;
+      copyDataViewContents(currentView, nextView);
+      resolvedView = currentView;
+    } else if (ArrayBuffer.isView(nextView)) {
+      const clonedBuffer = cloneSnapshotInternal(
+        nextView.buffer,
+        seen,
+      ) as ArrayBufferLike;
+      resolvedView = new DataView(
+        clonedBuffer,
+        nextView.byteOffset,
+        nextView.byteLength,
+      );
+    } else {
+      const fallbackBuffer = new ArrayBuffer(nextView.byteLength);
+      const fallbackView = new DataView(
+        fallbackBuffer,
+        0,
+        nextView.byteLength,
+      );
+      for (let i = 0; i < nextView.byteLength; i += 1) {
+        fallbackView.setUint8(i, nextView.getUint8(i));
+      }
+      resolvedView = fallbackView;
+    }
 
-    if (isDataViewLike(next)) {
-      if (
-        isDataViewLike(current) &&
-        canReuseDataView(current as DataView, next)
-      ) {
-        const currentView = current as DataView;
-        copyDataViewContents(currentView, next);
-        resolvedView = currentView;
-      } else if (ArrayBuffer.isView(next)) {
+    seen.set(objectNext, resolvedView);
+    return resolvedView;
+  }
+
+  if (isTypedArrayLike(next)) {
+    const typed = next as TypedArray;
+    let resolvedView: TypedArray;
+    if (
+      isTypedArrayLike(current) &&
+      canReuseTypedArray(current as TypedArray, typed)
+    ) {
+      const currentTyped = current as TypedArray;
+      copyTypedArrayContents(currentTyped, typed);
+      resolvedView = currentTyped;
+    } else {
+      const ctor = typed.constructor as {
+        new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+        new(length: number): TypedArray;
+      };
+      if (ArrayBuffer.isView(typed)) {
         const clonedBuffer = cloneSnapshotInternal(
-          next.buffer,
+          typed.buffer,
           seen,
         ) as ArrayBufferLike;
-        resolvedView = new DataView(
+        resolvedView = new ctor(
           clonedBuffer,
-          next.byteOffset,
-          next.byteLength,
+          typed.byteOffset,
+          typed.length,
         );
       } else {
-        const fallbackBuffer = new ArrayBuffer(next.byteLength);
-        const fallbackView = new DataView(
-          fallbackBuffer,
-          0,
-          next.byteLength,
-        );
-        for (let i = 0; i < next.byteLength; i += 1) {
-          fallbackView.setUint8(i, next.getUint8(i));
+        const length = getTypedArrayLength(typed);
+        const clone = new ctor(length);
+        for (let i = 0; i < length; i += 1) {
+          clone[i] = typed[i];
         }
-        resolvedView = fallbackView;
-      }
-    } else {
-      const typed = next as unknown as TypedArray;
-      if (
-        isTypedArrayLike(current) &&
-        canReuseTypedArray(current as TypedArray, typed)
-      ) {
-        const currentTyped = current as TypedArray;
-        copyTypedArrayContents(currentTyped, typed);
-        resolvedView = currentTyped;
-      } else {
-        const ctor = typed.constructor as {
-          new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
-          new(length: number): TypedArray;
-        };
-        if (ArrayBuffer.isView(next)) {
-          const clonedBuffer = cloneSnapshotInternal(
-            typed.buffer,
-            seen,
-          ) as ArrayBufferLike;
-          resolvedView = new ctor(
-            clonedBuffer,
-            typed.byteOffset,
-            typed.length,
-          );
-        } else {
-          const length = getTypedArrayLength(typed);
-          const clone = new ctor(length);
-          for (let i = 0; i < length; i += 1) {
-            clone[i] = typed[i];
-          }
-          resolvedView = clone;
-        }
+        resolvedView = clone;
       }
     }
 
@@ -978,14 +1133,20 @@ function reconcileValue(
     const target = isPlainObject(current) ? current : {};
     seen.set(objectNext, target);
 
-    for (const key of Object.keys(target)) {
-      if (!(key in next)) {
-        delete target[key];
+    const targetObject = target as Record<PropertyKey, unknown>;
+    const nextObject = next as Record<PropertyKey, unknown>;
+
+    for (const key of Reflect.ownKeys(targetObject)) {
+      if (!Reflect.has(nextObject, key)) {
+        Reflect.deleteProperty(targetObject, key);
       }
     }
 
-    for (const [key, value] of Object.entries(next)) {
-      target[key] = reconcileValue(target[key], value, seen);
+    for (const key of Reflect.ownKeys(nextObject)) {
+      const currentValue = Reflect.get(targetObject, key);
+      const nextValue = Reflect.get(nextObject, key);
+      const reconciled = reconcileValue(currentValue, nextValue, seen);
+      Reflect.set(targetObject, key, reconciled);
     }
 
     return target;

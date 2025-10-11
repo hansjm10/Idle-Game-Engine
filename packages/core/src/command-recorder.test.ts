@@ -185,6 +185,35 @@ describe('CommandRecorder', () => {
     expect(state.totals.produced).toBe(5);
   });
 
+  it('reconciles symbol-keyed properties on plain objects', () => {
+    const FLAGS = Symbol.for('flags');
+    const EXTRA = Symbol('extra');
+    const state = setGameState({
+      meta: {
+        [FLAGS]: { stealth: true },
+      },
+    });
+    const recorder = new CommandRecorder(state);
+    const snapshot = recorder.export().startState;
+    const snapshotMeta = snapshot.meta as Record<PropertyKey, unknown>;
+    expect(Reflect.has(snapshotMeta, FLAGS)).toBe(true);
+
+    const meta = state.meta as Record<PropertyKey, unknown>;
+    const mutatedFlags = { stealth: false };
+    Reflect.set(meta, FLAGS, mutatedFlags);
+    Reflect.set(meta, EXTRA, 'temporary');
+
+    const restored = restoreState(state, snapshot);
+    expect(restored.meta).toBe(state.meta);
+
+    const restoredMeta = restored.meta as Record<PropertyKey, unknown>;
+    expect(Reflect.has(restoredMeta, FLAGS)).toBe(true);
+    const flags = Reflect.get(restoredMeta, FLAGS) as { stealth: boolean };
+    expect(flags.stealth).toBe(true);
+    expect(mutatedFlags.stealth).toBe(true);
+    expect(Reflect.has(restoredMeta, EXTRA)).toBe(false);
+  });
+
   it('preserves map/set references when restoring snapshots', () => {
     const entities = new Map<string, { tags: Set<string> }>([
       ['alpha', { tags: new Set(['a']) }],

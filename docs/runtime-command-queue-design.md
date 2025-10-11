@@ -1749,12 +1749,12 @@ function payloadsMatch(left: unknown, right: unknown, seen = new WeakMap<any, an
     return true;
   }
 
-  if (ArrayBuffer.isView(left) && ArrayBuffer.isView(right)) {
+  if (isArrayBufferViewLike(left) && isArrayBufferViewLike(right)) {
     if (left.byteLength !== right.byteLength) {
       return false;
     }
-    const leftBytes = new Uint8Array(left.buffer, left.byteOffset, left.byteLength);
-    const rightBytes = new Uint8Array(right.buffer, right.byteOffset, right.byteLength);
+    const leftBytes = getArrayBufferViewBytes(left);   // unwraps immutable proxies
+    const rightBytes = getArrayBufferViewBytes(right); // and compares raw bytes
     for (let i = 0; i < leftBytes.length; i++) {
       if (leftBytes[i] !== rightBytes[i]) {
         return false;
@@ -1790,8 +1790,10 @@ function payloadsMatch(left: unknown, right: unknown, seen = new WeakMap<any, an
 }
 
 // payloadsMatch walks the payload graph, respecting Map/Set order and
-// accounting for shared references via the WeakMap. This avoids depending on
-// generic deep-equality helpers that ignore structured-clone-only types.
+// accounting for shared references via the WeakMap. ArrayBuffer/DataView proxies
+// produced by deepFreezeInPlace go through getArrayBufferViewBytes so byte
+// mismatches are still detected. This avoids relying on generic deep-equality
+// helpers that ignore structured-clone-only types.
 
 /**
  * Freeze an object in-place, making plain objects/arrays immutable.
