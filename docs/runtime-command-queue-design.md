@@ -884,7 +884,7 @@ export interface ExecutionContext {
 export type CommandHandler<T = unknown> = (
   payload: T,
   context: ExecutionContext
-) => void;
+) => void | Promise<void>;
 
 export class CommandDispatcher {
   private readonly handlers = new Map<string, CommandHandler>();
@@ -919,7 +919,15 @@ export class CommandDispatcher {
     };
 
     try {
-      handler(command.payload, context);
+      const result = handler(command.payload, context);
+      if (isPromiseLike(result)) {
+        result.catch((err) => {
+          telemetry.recordError('CommandExecutionFailed', {
+            type: command.type,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        });
+      }
     } catch (err) {
       telemetry.recordError('CommandExecutionFailed', {
         type: command.type,
@@ -928,7 +936,17 @@ export class CommandDispatcher {
     }
   }
 }
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as PromiseLike<T>).then === 'function'
+  );
+}
 ```
+
+Handlers may return either `void` or a `Promise<void>`. The dispatcher treats promise rejections the same as synchronous exceptions so that telemetry captures failures consistently.
 
 ## 5. Command Types (Initial Set)
 

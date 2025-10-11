@@ -77,6 +77,31 @@ describe('CommandDispatcher', () => {
     );
   });
 
+  it('records telemetry when async handler rejects', async () => {
+    const dispatcher = new CommandDispatcher();
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    dispatcher.register('ASYNC_FAIL', () => Promise.reject(new Error('boom')));
+
+    dispatcher.execute({ ...baseCommand, type: 'ASYNC_FAIL' });
+
+    await Promise.resolve();
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'CommandExecutionFailed',
+      {
+        type: 'ASYNC_FAIL',
+        error: 'boom',
+      },
+    );
+  });
+
   it('exposes registered handlers via forEachHandler', () => {
     const dispatcher = new CommandDispatcher();
     const handlerA = vi.fn();

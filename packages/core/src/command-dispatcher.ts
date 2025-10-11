@@ -11,7 +11,7 @@ export interface ExecutionContext {
 export type CommandHandler<TPayload = unknown> = (
   payload: TPayload,
   context: ExecutionContext,
-) => void;
+) => void | Promise<void>;
 
 export class CommandDispatcher {
   private readonly handlers = new Map<string, CommandHandler>();
@@ -46,7 +46,15 @@ export class CommandDispatcher {
     };
 
     try {
-      handler(command.payload, context);
+      const result = handler(command.payload, context);
+      if (isPromiseLike(result)) {
+        result.catch((error) => {
+          telemetry.recordError('CommandExecutionFailed', {
+            type: command.type,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
     } catch (error) {
       telemetry.recordError('CommandExecutionFailed', {
         type: command.type,
@@ -54,4 +62,12 @@ export class CommandDispatcher {
       });
     }
   }
+}
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as PromiseLike<T>).then === 'function'
+  );
 }
