@@ -1,46 +1,83 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  telemetry,
-  type TelemetryEventData,
-  type TelemetryFacade,
-  resetTelemetry,
-  setTelemetry,
-} from './telemetry.js';
+import type { TelemetryEventData, TelemetryFacade } from './telemetry.js';
+import { resetTelemetry, setTelemetry, telemetry } from './telemetry.js';
 
-class StatefulTelemetry implements TelemetryFacade {
-  readonly errors: Array<{ event: string; data: TelemetryEventData | undefined }> =
-    [];
+describe('telemetry facade', () => {
+  afterEach(() => {
+    resetTelemetry();
+  });
 
-  recordError(event: string, data?: TelemetryEventData): void {
-    this.errors.push({ event, data });
-  }
+  it('preserves facade context when invoking delegated methods', () => {
+    class StatefulTelemetryFacade implements TelemetryFacade {
+      history: string[] = [];
+      lastProgressData?: TelemetryEventData;
 
-  recordWarning(): void {
-    throw new Error('recordWarning should not be invoked in this test.');
-  }
+      constructor(private readonly label: string) {}
 
-  recordProgress(): void {
-    throw new Error('recordProgress should not be invoked in this test.');
-  }
+      private note(kind: string, event?: string) {
+        this.history.push(
+          event ? `${this.label}:${kind}:${event}` : `${this.label}:${kind}`,
+        );
+      }
 
-  recordTick(): void {
-    throw new Error('recordTick should not be invoked in this test.');
-  }
-}
+      recordError(event: string): void {
+        this.note('error', event);
+      }
 
-afterEach(() => {
-  resetTelemetry();
-});
+      recordWarning(event: string, _data?: TelemetryEventData): void {
+        this.note('warning', event);
+      }
 
-describe('telemetry', () => {
-  it('preserves facade context when invoking recorders', () => {
-    const facade = new StatefulTelemetry();
+      recordProgress(event: string, data?: TelemetryEventData): void {
+        this.note('progress', event);
+        this.lastProgressData = data;
+      }
+
+      recordTick(): void {
+        this.note('tick');
+      }
+    }
+
+    const facade = new StatefulTelemetryFacade('custom');
     setTelemetry(facade);
 
-    const data: TelemetryEventData = Object.freeze({ detail: 42 });
-    telemetry.recordError('TestEvent', data);
+    const progressData = { milestone: 'alpha' };
 
-    expect(facade.errors).toEqual([{ event: 'TestEvent', data }]);
+    telemetry.recordError('failure');
+    telemetry.recordWarning('unstable');
+    telemetry.recordProgress('milestone', progressData);
+    telemetry.recordTick();
+
+    expect(facade.history).toEqual([
+      'custom:error:failure',
+      'custom:warning:unstable',
+      'custom:progress:milestone',
+      'custom:tick',
+    ]);
+    expect(facade.lastProgressData).toBe(progressData);
+  });
+
+  it('logs a console error when delegated invocation fails', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const thrown = new Error('telemetry facade failed');
+
+    const faultyFacade: TelemetryFacade = {
+      recordError: vi.fn(() => {
+        throw thrown;
+      }),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+
+    setTelemetry(faultyFacade);
+
+    try {
+      telemetry.recordError('failure');
+      expect(errorSpy).toHaveBeenCalledWith('[telemetry] invocation failed', thrown);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

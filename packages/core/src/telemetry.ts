@@ -47,14 +47,17 @@ export function resetTelemetry(): void {
   activeTelemetry = consoleTelemetry;
 }
 
-function invokeSafely(
+function invokeSafely<TMethod extends keyof TelemetryFacade>(
   facade: TelemetryFacade,
-  method: keyof TelemetryFacade,
-  ...args: unknown[]
+  method: TMethod,
+  ...args: Parameters<TelemetryFacade[TMethod]>
 ): void {
   try {
-    const fn = facade[method] as (...fnArgs: unknown[]) => void;
-    fn.apply(facade, args);
+    (
+      facade[method] as (
+        ...fnArgs: Parameters<TelemetryFacade[TMethod]>
+      ) => ReturnType<TelemetryFacade[TMethod]>
+    ).call(facade, ...args);
   } catch (error) {
     console.error('[telemetry] invocation failed', error);
   }
