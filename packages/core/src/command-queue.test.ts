@@ -549,4 +549,55 @@ describe('CommandQueue', () => {
       expect(Array.from(sharedProxy)).toEqual([1, 2, 3, 4]);
     }
   });
+
+  it('throws when enqueuing a command with an unknown priority', () => {
+    const queue = new CommandQueue();
+
+    expect(() =>
+      queue.enqueue({
+        ...baseCommand,
+        priority: 99 as CommandPriority,
+      }),
+    ).toThrow('Invalid command priority: 99');
+  });
+
+  it('handles dequeueUpToStep boundary conditions', () => {
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'negative',
+        step: -1,
+        timestamp: 1,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'zero',
+        step: 0,
+        timestamp: 2,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'future',
+        step: 2,
+        timestamp: 3,
+      }),
+    );
+
+    const negative = queue.dequeueUpToStep(-1);
+    expect(negative.map((command) => command.step)).toEqual([-1]);
+    expect(queue.size).toBe(2);
+
+    const zero = queue.dequeueUpToStep(0);
+    expect(zero.map((command) => command.step)).toEqual([0]);
+    expect(queue.size).toBe(1);
+
+    const allRemaining = queue.dequeueUpToStep(Number.MAX_SAFE_INTEGER);
+    expect(allRemaining.map((command) => command.step)).toEqual([2]);
+    expect(queue.size).toBe(0);
+
+    expect(queue.dequeueUpToStep(10)).toEqual([]);
+  });
 });

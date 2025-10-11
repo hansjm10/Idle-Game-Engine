@@ -65,23 +65,46 @@ export class CommandQueue {
   }
 
   dequeueAll(): CommandSnapshot<unknown>[] {
+    return this.dequeueUpToStep(Number.POSITIVE_INFINITY);
+  }
+
+  dequeueUpToStep(step: number): CommandSnapshot<unknown>[] {
     if (this.totalSize === 0) {
       return [];
     }
 
     const drained: CommandSnapshot[] = [];
+    let drainedCount = 0;
+
     for (const priority of COMMAND_PRIORITY_ORDER) {
       const queue = this.lanes.get(priority);
       if (!queue || queue.length === 0) {
         continue;
       }
 
-      for (const entry of queue) {
-        drained.push(entry.command);
+      let writeIndex = 0;
+      for (let readIndex = 0; readIndex < queue.length; readIndex += 1) {
+        const entry = queue[readIndex]!;
+        if (entry.command.step <= step) {
+          drained.push(entry.command);
+          drainedCount += 1;
+          continue;
+        }
+
+        if (writeIndex !== readIndex) {
+          queue[writeIndex] = entry;
+        }
+        writeIndex += 1;
       }
-      this.totalSize -= queue.length;
-      queue.length = 0; // Clear lane deterministically.
+
+      if (writeIndex === 0) {
+        queue.length = 0;
+      } else if (writeIndex < queue.length) {
+        queue.length = writeIndex;
+      }
     }
+
+    this.totalSize -= drainedCount;
     return drained;
   }
 
