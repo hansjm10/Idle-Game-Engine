@@ -18,6 +18,7 @@ import {
 } from './command-recorder.js';
 import {
   clearGameState,
+  getGameState,
   setGameState,
 } from './runtime-state.js';
 import {
@@ -237,6 +238,26 @@ describe('CommandRecorder', () => {
 
     restored.main[0] = 42;
     expect(restored.mirror[0]).toBe(42);
+  });
+
+  it('reconciles typed arrays in place during replay', () => {
+    const state = setGameState({
+      buf: new Uint8Array([1, 2]),
+    });
+    const bytes = state.buf;
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+
+    const log = recorder.export();
+
+    bytes[0] = 99;
+
+    recorder.replay(log, dispatcher);
+
+    const liveState = getGameState<typeof state>();
+    expect(liveState).toBe(state);
+    expect(liveState.buf).toBe(bytes);
+    expect(Array.from(bytes)).toEqual([1, 2]);
   });
 
   it('validates sandboxed enqueues against recorded commands', () => {

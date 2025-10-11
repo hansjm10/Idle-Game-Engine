@@ -97,6 +97,90 @@ function isArrayBufferViewLike(value: unknown): value is ArrayBufferView {
   return isDataViewLike(value) || isTypedArrayLike(value);
 }
 
+function copyDataViewContents(target: DataView, source: DataView): void {
+  if (ArrayBuffer.isView(target) && ArrayBuffer.isView(source)) {
+    const targetBytes = new Uint8Array(
+      target.buffer,
+      target.byteOffset,
+      target.byteLength,
+    );
+    targetBytes.set(
+      new Uint8Array(
+        source.buffer,
+        source.byteOffset,
+        source.byteLength,
+      ),
+    );
+    return;
+  }
+
+  const byteLength = source.byteLength;
+  for (let i = 0; i < byteLength; i += 1) {
+    target.setUint8(i, source.getUint8(i));
+  }
+}
+
+function copyTypedArrayContents(target: TypedArray, source: TypedArray): void {
+  const maybeSet = (target as {
+    set?(
+      data: ArrayLike<number | bigint>,
+      offset?: number,
+    ): void;
+  }).set;
+
+  if (typeof maybeSet === 'function') {
+    try {
+      maybeSet.call(
+        target,
+        source as unknown as ArrayLike<number | bigint>,
+        0,
+      );
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof TypeError) &&
+        !(error instanceof RangeError)
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  const length = getTypedArrayLength(target);
+  for (let i = 0; i < length; i += 1) {
+    (target as Record<number, unknown>)[i] = (source as Record<
+      number,
+      unknown
+    >)[i];
+  }
+}
+
+function canReuseDataView(
+  current: DataView,
+  next: DataView,
+): boolean {
+  try {
+    return current.byteLength === next.byteLength;
+  } catch (error) {
+    if (!(error instanceof TypeError)) {
+      throw error;
+    }
+    return false;
+  }
+}
+
+function canReuseTypedArray(
+  current: TypedArray,
+  next: TypedArray,
+): boolean {
+  const currentCtorName = getConstructorName(current as object);
+  const nextCtorName = getConstructorName(next as object);
+  if (!currentCtorName || currentCtorName !== nextCtorName) {
+    return false;
+  }
+  return getTypedArrayLength(current) === getTypedArrayLength(next);
+}
+
 function getTypedArrayLength(typed: TypedArray): number {
   try {
     const directLength = (typed as { length?: number }).length;
@@ -818,7 +902,14 @@ function reconcileValue(
     let resolvedView: DataView | TypedArray;
 
     if (isDataViewLike(next)) {
-      if (ArrayBuffer.isView(next)) {
+      if (
+        isDataViewLike(current) &&
+        canReuseDataView(current as DataView, next)
+      ) {
+        const currentView = current as DataView;
+        copyDataViewContents(currentView, next);
+        resolvedView = currentView;
+      } else if (ArrayBuffer.isView(next)) {
         const clonedBuffer = cloneSnapshotInternal(
           next.buffer,
           seen,
@@ -842,27 +933,36 @@ function reconcileValue(
       }
     } else {
       const typed = next as unknown as TypedArray;
-      const ctor = typed.constructor as {
-        new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
-        new(length: number): TypedArray;
-      };
-      if (ArrayBuffer.isView(next)) {
-        const clonedBuffer = cloneSnapshotInternal(
-          typed.buffer,
-          seen,
-        ) as ArrayBufferLike;
-        resolvedView = new ctor(
-          clonedBuffer,
-          typed.byteOffset,
-          typed.length,
-        );
+      if (
+        isTypedArrayLike(current) &&
+        canReuseTypedArray(current as TypedArray, typed)
+      ) {
+        const currentTyped = current as TypedArray;
+        copyTypedArrayContents(currentTyped, typed);
+        resolvedView = currentTyped;
       } else {
-        const length = getTypedArrayLength(typed);
-        const clone = new ctor(length);
-        for (let i = 0; i < length; i += 1) {
-          clone[i] = typed[i];
+        const ctor = typed.constructor as {
+          new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+          new(length: number): TypedArray;
+        };
+        if (ArrayBuffer.isView(next)) {
+          const clonedBuffer = cloneSnapshotInternal(
+            typed.buffer,
+            seen,
+          ) as ArrayBufferLike;
+          resolvedView = new ctor(
+            clonedBuffer,
+            typed.byteOffset,
+            typed.length,
+          );
+        } else {
+          const length = getTypedArrayLength(typed);
+          const clone = new ctor(length);
+          for (let i = 0; i < length; i += 1) {
+            clone[i] = typed[i];
+          }
+          resolvedView = clone;
         }
-        resolvedView = clone;
       }
     }
 
