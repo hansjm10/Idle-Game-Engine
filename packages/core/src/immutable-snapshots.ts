@@ -1,0 +1,177 @@
+export interface ImmutableArrayBufferSnapshot {
+  readonly byteLength: number;
+  slice(
+    begin?: number,
+    end?: number,
+  ): ImmutableArrayBufferSnapshot;
+  toArrayBuffer(): ArrayBuffer;
+  toDataView(): DataView;
+  toUint8Array(): Uint8Array;
+  valueOf(): ArrayBuffer;
+  readonly [Symbol.toStringTag]: 'ImmutableArrayBufferSnapshot';
+}
+
+export interface ImmutableSharedArrayBufferSnapshot {
+  readonly byteLength: number;
+  slice(
+    begin?: number,
+    end?: number,
+  ): ImmutableSharedArrayBufferSnapshot;
+  toSharedArrayBuffer(): SharedArrayBuffer;
+  toArrayBuffer(): ArrayBuffer;
+  toDataView(): DataView;
+  toUint8Array(): Uint8Array;
+  valueOf(): SharedArrayBuffer;
+  readonly [Symbol.toStringTag]: 'ImmutableSharedArrayBufferSnapshot';
+}
+
+export type ImmutableMapSnapshot<K, V> = Map<K, V> & {
+  valueOf(): ImmutableMapSnapshot<K, V>;
+  forEach(
+    callbackfn: (
+      value: V,
+      key: K,
+      map: ImmutableMapSnapshot<K, V>,
+    ) => void,
+    thisArg?: unknown,
+  ): void;
+  set(key: unknown, value: unknown): never;
+  delete(key: unknown): never;
+  clear(): never;
+};
+
+export type ImmutableSetSnapshot<V> = Set<V> & {
+  valueOf(): ImmutableSetSnapshot<V>;
+  forEach(
+    callbackfn: (
+      value: V,
+      value2: V,
+      set: ImmutableSetSnapshot<V>,
+    ) => void,
+    thisArg?: unknown,
+  ): void;
+  add(value: unknown): never;
+  delete(value: unknown): never;
+  clear(): never;
+};
+
+export type TypedArray =
+  | Int8Array
+  | Uint8Array
+  | Uint8ClampedArray
+  | Int16Array
+  | Uint16Array
+  | Int32Array
+  | Uint32Array
+  | Float32Array
+  | Float64Array
+  | BigInt64Array
+  | BigUint64Array;
+
+type TypedArrayValue<TArray extends TypedArray> =
+  TArray extends ArrayLike<infer TValue> ? TValue : never;
+
+type TypedArrayMutatorKeys =
+  | 'copyWithin'
+  | 'fill'
+  | 'reverse'
+  | 'set'
+  | 'sort';
+
+type TypedArrayCallbackKeys =
+  | 'forEach'
+  | 'map'
+  | 'filter'
+  | 'reduce'
+  | 'reduceRight'
+  | 'subarray';
+
+export type ImmutableTypedArraySnapshot<TArray extends TypedArray> = Omit<
+  TArray,
+  TypedArrayMutatorKeys | TypedArrayCallbackKeys | 'buffer'
+> & {
+  readonly buffer:
+    | ImmutableArrayBufferSnapshot
+    | ImmutableSharedArrayBufferSnapshot;
+  valueOf(): ImmutableTypedArraySnapshot<TArray>;
+  subarray(
+    begin?: number,
+    end?: number,
+  ): ImmutableTypedArraySnapshot<TArray>;
+  filter(
+    callbackfn: (
+      value: TypedArrayValue<TArray>,
+      index: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => unknown,
+    thisArg?: unknown,
+  ): ImmutableTypedArraySnapshot<TArray>;
+  map(
+    callbackfn: (
+      value: TypedArrayValue<TArray>,
+      index: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => TypedArrayValue<TArray>,
+    thisArg?: unknown,
+  ): ImmutableTypedArraySnapshot<TArray>;
+  forEach(
+    callbackfn: (
+      value: TypedArrayValue<TArray>,
+      index: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => void,
+    thisArg?: unknown,
+  ): void;
+  reduceRight(
+    callbackfn: (
+      previousValue: TypedArrayValue<TArray>,
+      currentValue: TypedArrayValue<TArray>,
+      currentIndex: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => TypedArrayValue<TArray>,
+  ): TypedArrayValue<TArray>;
+  reduceRight(
+    callbackfn: (
+      previousValue: TypedArrayValue<TArray>,
+      currentValue: TypedArrayValue<TArray>,
+      currentIndex: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => TypedArrayValue<TArray>,
+    initialValue: TypedArrayValue<TArray>,
+  ): TypedArrayValue<TArray>;
+  reduceRight<U>(
+    callbackfn: (
+      previousValue: U,
+      currentValue: TypedArrayValue<TArray>,
+      currentIndex: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => U,
+    initialValue: U,
+  ): U;
+  reduce(
+    callbackfn: (
+      previousValue: TypedArrayValue<TArray>,
+      currentValue: TypedArrayValue<TArray>,
+      currentIndex: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => TypedArrayValue<TArray>,
+  ): TypedArrayValue<TArray>;
+  reduce(
+    callbackfn: (
+      previousValue: TypedArrayValue<TArray>,
+      currentValue: TypedArrayValue<TArray>,
+      currentIndex: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => TypedArrayValue<TArray>,
+    initialValue: TypedArrayValue<TArray>,
+  ): TypedArrayValue<TArray>;
+  reduce<U>(
+    callbackfn: (
+      previousValue: U,
+      currentValue: TypedArrayValue<TArray>,
+      currentIndex: number,
+      array: ImmutableTypedArraySnapshot<TArray>,
+    ) => U,
+    initialValue: U,
+  ): U;
+};
