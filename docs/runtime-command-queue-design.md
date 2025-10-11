@@ -3,7 +3,7 @@
 **Issue:** #6
 **Workstream:** Runtime Core
 **Status:** Design
-**Last Updated:** 2025-10-09
+**Last Updated:** 2025-10-11
 
 > **Execution Order:** Tackle the subissues derived from this document sequentially. Each one must be completed and reviewed before starting the next to keep the workstream focused and in sync.
 
@@ -2656,16 +2656,16 @@ describe('Command Replay', () => {
 The command queue implementation follows this sequence (aligned with Phase 1 - Runtime Skeleton):
 
 ### 12.1 Week 1 Tasks
-- [ ] Implement `CommandQueue` data structure with priority lanes
-- [ ] Implement `CommandDispatcher` with handler registration
-- [ ] Add command types and payload interfaces for resource operations
-- [ ] Write unit tests for queue ordering and priority resolution
+- [x] Implement `CommandQueue` data structure with priority lanes
+- [x] Implement `CommandDispatcher` with handler registration
+- [x] Add command types and payload interfaces for resource operations
+- [x] Write unit tests for queue ordering and priority resolution (`packages/core/src/command-queue.test.ts:553`)
 
 ### 12.2 Week 2 Tasks
 - [ ] Integrate command queue into tick loop (update `IdleEngineRuntime`)
 - [ ] Implement command handlers for purchase/toggle operations
 - [ ] Add Worker bridge message handler for incoming commands
-- [ ] Write integration tests for end-to-end command flow
+- [x] Write integration tests for end-to-end command flow (`packages/core/src/index.test.ts:193`, `packages/shell-web/src/runtime.worker.test.ts:136`)
 
 ### 12.3 Week 3 Tasks
 - [ ] Implement `CommandRecorder` for debugging/replay
@@ -2703,3 +2703,10 @@ The command queue is complete when:
 - [Game Programming Patterns: Event Queue](https://gameprogrammingpatterns.com/event-queue.html)
 - Idle Engine Design Document (Section 9.1 - Tick Pseudocode)
 - Implementation Plan (Section 4 - Runtime Core Tasks)
+
+## Appendix A – 2025-10-11 Update Summary
+
+- Added spiral-of-death clamp and accumulator carry-over coverage to the runtime tick loop (`packages/core/src/index.test.ts:193`).
+- Documented system execution order, error handling, and deferred enqueue behaviour via new runtime tests; exceptions now log `SystemExecutionFailed` telemetry instead of stopping the tick (`packages/core/src/index.ts:120`, `packages/core/src/index.test.ts:210`, `packages/core/src/index.test.ts:252`, `packages/core/src/index.test.ts:293`).
+- Strengthened priority guarantees by mixing command priorities inside runtime ticks and capturing queue boundary scenarios (`packages/core/src/index.test.ts:327`, `packages/core/src/command-queue.test.ts:553`).
+- Validated monotonic clock behaviour within the worker bridge when the host clock stalls (`packages/shell-web/src/runtime.worker.test.ts:136`).
