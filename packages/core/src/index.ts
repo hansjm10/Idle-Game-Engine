@@ -1,3 +1,8 @@
+import type { Command } from './command.js';
+import { CommandDispatcher } from './command-dispatcher.js';
+import { CommandQueue } from './command-queue.js';
+import { telemetry } from './telemetry.js';
+
 export interface TickContext {
   readonly deltaMs: number;
   readonly step: number;
@@ -13,28 +18,57 @@ export interface EngineOptions {
   readonly maxStepsPerFrame?: number;
 }
 
+export interface RuntimeDependencies {
+  readonly commandQueue?: CommandQueue;
+  readonly commandDispatcher?: CommandDispatcher;
+}
+
+export type IdleEngineRuntimeOptions = EngineOptions & RuntimeDependencies;
+
 const DEFAULT_STEP_MS = 100;
 const DEFAULT_MAX_STEPS = 50;
 
 /**
- * Minimal runtime skeleton implementing the deterministic tick accumulator
- * described in the design document. Actual systems register through
- * `addSystem` and execute in insertion order.
+ * Runtime implementation that integrates the command queue and dispatcher with
+ * the deterministic fixed-step tick loop described in
+ * docs/runtime-command-queue-design.md §4.3.
  */
 export class IdleEngineRuntime {
   private readonly systems: System[] = [];
   private accumulator = 0;
   private readonly stepSizeMs: number;
   private readonly maxStepsPerFrame: number;
-  private stepCounter = 0;
+  private readonly commandQueue: CommandQueue;
+  private readonly commandDispatcher: CommandDispatcher;
+  private currentStep = 0;
+  private nextExecutableStep = 0;
 
-  constructor(options: EngineOptions = {}) {
+  constructor(options: IdleEngineRuntimeOptions = {}) {
     this.stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
     this.maxStepsPerFrame = options.maxStepsPerFrame ?? DEFAULT_MAX_STEPS;
+    this.commandQueue = options.commandQueue ?? new CommandQueue();
+    this.commandDispatcher =
+      options.commandDispatcher ?? new CommandDispatcher();
   }
 
   addSystem(system: System): void {
     this.systems.push(system);
+  }
+
+  getCommandQueue(): CommandQueue {
+    return this.commandQueue;
+  }
+
+  getCommandDispatcher(): CommandDispatcher {
+    return this.commandDispatcher;
+  }
+
+  getCurrentStep(): number {
+    return this.currentStep;
+  }
+
+  getNextExecutableStep(): number {
+    return this.nextExecutableStep;
   }
 
   /**
@@ -42,21 +76,53 @@ export class IdleEngineRuntime {
    * steps to avoid spiral of death scenarios.
    */
   tick(deltaMs: number): void {
-    if (deltaMs <= 0) return;
+    if (deltaMs <= 0) {
+      return;
+    }
+
     this.accumulator += deltaMs;
     const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
     const steps = Math.min(availableSteps, this.maxStepsPerFrame);
+
+    if (steps === 0) {
+      return;
+    }
+
     this.accumulator -= steps * this.stepSizeMs;
 
     for (let i = 0; i < steps; i += 1) {
-      const ctx: TickContext = {
-        deltaMs: this.stepSizeMs,
-        step: this.stepCounter,
-      };
-      this.stepCounter += 1;
-      for (const system of this.systems) {
-        system.tick(ctx);
+      // Accept commands for the current step until the batch is captured.
+      this.nextExecutableStep = this.currentStep;
+      const commands = this.commandQueue.dequeueAll();
+
+      // Commands enqueued during execution target the next tick.
+      this.nextExecutableStep = this.currentStep + 1;
+
+      for (const command of commands) {
+        if (command.step !== this.currentStep) {
+          telemetry.recordError('CommandStepMismatch', {
+            expectedStep: this.currentStep,
+            commandStep: command.step,
+            type: command.type,
+          });
+          continue;
+        }
+
+        this.commandDispatcher.execute(command as Command);
       }
+
+      const context: TickContext = {
+        deltaMs: this.stepSizeMs,
+        step: this.currentStep,
+      };
+
+      for (const system of this.systems) {
+        system.tick(context);
+      }
+
+      this.currentStep += 1;
+      this.nextExecutableStep = this.currentStep;
+      telemetry.recordTick();
     }
   }
 }
