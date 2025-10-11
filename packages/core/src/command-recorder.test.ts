@@ -110,6 +110,17 @@ describe('CommandRecorder', () => {
     expect(() => stateMap.set('energy', 1)).toThrow(TypeError);
   });
 
+  it('supports constructing from exported immutable snapshots', () => {
+    const state = setGameState({
+      resources: new Map<string, number>([['energy', 1]]),
+      tags: new Set(['alpha']),
+    });
+    const recorder = new CommandRecorder(state);
+
+    const log = recorder.export();
+    expect(() => new CommandRecorder(log.startState)).not.toThrow();
+  });
+
   it('clears recorded commands and refreshes snapshot/seed', () => {
     const state = setGameState({
       resources: { energy: 0 },

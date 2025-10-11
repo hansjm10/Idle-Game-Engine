@@ -8,6 +8,7 @@ import type { ImmutablePayload } from './command.js';
 import type {
   ImmutableArrayBufferSnapshot,
   ImmutableSharedArrayBufferSnapshot,
+  TypedArray,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
 import {
@@ -49,14 +50,12 @@ export class CommandRecorder {
   private readonly recorded: FrozenCommand[] = [];
   private readonly recordedClones: Command[] = [];
   private startState: StateSnapshot;
-  private startStateClone: unknown;
   private rngSeed: number | undefined;
   private lastRecordedStep = -1;
 
   constructor(currentState: unknown, options?: { seed?: number }) {
     const startClone = cloneStructured(currentState);
-    this.startStateClone = startClone;
-    this.startState = freezeSnapshot(cloneStructured(startClone));
+    this.startState = freezeSnapshot(startClone);
     this.rngSeed = options?.seed ?? getCurrentRNGSeed();
   }
 
@@ -73,7 +72,7 @@ export class CommandRecorder {
   export(): CommandLog {
     const exportedLog = {
       version: COMMAND_LOG_VERSION,
-      startState: cloneStructured(this.startStateClone),
+      startState: cloneSnapshotToMutable(this.startState),
       commands: this.recordedClones.map(cloneStructured),
       metadata: {
         recordedAt: Date.now(),
@@ -211,8 +210,7 @@ export class CommandRecorder {
     this.recorded.length = 0;
     this.recordedClones.length = 0;
     const startClone = cloneStructured(nextState);
-    this.startStateClone = startClone;
-    this.startState = freezeSnapshot(cloneStructured(startClone));
+    this.startState = freezeSnapshot(startClone);
     this.rngSeed = options?.seed ?? getCurrentRNGSeed();
     this.lastRecordedStep = -1;
   }
@@ -245,7 +243,7 @@ export function restoreState<TState>(
     target,
     mutableSnapshot,
     new WeakMap<object, unknown>(),
-  );
+  ) as TState;
 
   if (maybeSnapshot === undefined) {
     if (reconciled !== target) {
@@ -338,33 +336,21 @@ function cloneSnapshotInternal(
       return view;
     }
 
-    const typed = value as ArrayBufferView & {
-      constructor: new (
-        buffer: ArrayBufferLike,
-        byteOffset?: number,
-        length?: number,
-      ) => ArrayBufferView;
-    };
-
+    const typed = value as TypedArray;
     const bufferClone = cloneSnapshotInternal(
       typed.buffer,
       seen,
     ) as ArrayBufferLike;
-    const ctor = typed.constructor;
-    const length =
-      typeof (typed as { length?: number }).length === 'number'
-        ? (typed as { length: number }).length
-        : undefined;
-    const clone =
-      length !== undefined
-        ? new ctor(bufferClone, typed.byteOffset, length)
-        : new ctor(bufferClone, typed.byteOffset);
+    const ctor = typed.constructor as {
+      new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+    };
+    const clone = new ctor(bufferClone, typed.byteOffset, typed.length);
     seen.set(value as object, clone);
     return clone;
   }
 
   if (value instanceof Map) {
-    const clone = new Map();
+    const clone = new Map<unknown, unknown>();
     seen.set(value as object, clone);
     for (const [key, entryValue] of value.entries()) {
       clone.set(
@@ -376,7 +362,7 @@ function cloneSnapshotInternal(
   }
 
   if (value instanceof Set) {
-    const clone = new Set();
+    const clone = new Set<unknown>();
     seen.set(value as object, clone);
     for (const entry of value.values()) {
       clone.add(cloneSnapshotInternal(entry, seen));
@@ -467,7 +453,26 @@ function cloneStructured<T>(value: T): T {
     );
   }
 
-  return structuredCloneGlobal(value);
+  try {
+    return structuredCloneGlobal(value);
+  } catch (error) {
+    if (isStructuredCloneDataError(error)) {
+      return cloneSnapshotToMutable(
+        value as ImmutablePayload<T>,
+      );
+    }
+    throw error;
+  }
+}
+
+function isStructuredCloneDataError(error: unknown): boolean {
+  if (
+    typeof DOMException === 'undefined' ||
+    !(error instanceof DOMException)
+  ) {
+    return false;
+  }
+  return error.name === 'DataCloneError';
 }
 
 function findMatchingFutureCommandIndex(
@@ -502,7 +507,7 @@ function commandsEqual(
 function payloadsMatch(
   left: unknown,
   right: unknown,
-  seen: WeakMap<any, any> = new WeakMap(),
+  seen: WeakMap<object, unknown> = new WeakMap(),
 ): boolean {
   if (Object.is(left, right)) {
     return true;
@@ -516,11 +521,11 @@ function payloadsMatch(
     return left === right;
   }
 
-  const existing = seen.get(left);
-  if (existing) {
-    return existing === right;
+  const objectLeft = left as object;
+  if (seen.has(objectLeft)) {
+    return seen.get(objectLeft) === right;
   }
-  seen.set(left, right);
+  seen.set(objectLeft, right);
 
   if (left instanceof Map && right instanceof Map) {
     if (left.size !== right.size) {
@@ -610,21 +615,23 @@ function payloadsMatch(
 }
 
 function reconcileValue(
-  current: any,
-  next: any,
+  current: unknown,
+  next: unknown,
   seen: WeakMap<object, unknown>,
-): any {
+): unknown {
   if (!next || typeof next !== 'object') {
     return next;
   }
 
-  if (seen.has(next)) {
-    return seen.get(next);
+  const objectNext = next as object;
+
+  if (seen.has(objectNext)) {
+    return seen.get(objectNext);
   }
 
   if (next instanceof Map) {
     const map = current instanceof Map ? current : new Map();
-    seen.set(next, map);
+    seen.set(objectNext, map);
 
     const existingEntries =
       current instanceof Map ? Array.from(current.entries()) : [];
@@ -654,7 +661,7 @@ function reconcileValue(
 
   if (next instanceof Set) {
     const set = current instanceof Set ? current : new Set();
-    seen.set(next, set);
+    seen.set(objectNext, set);
 
     const existingItems =
       current instanceof Set ? Array.from(current.values()) : [];
@@ -680,7 +687,7 @@ function reconcileValue(
 
   if (Array.isArray(next)) {
     const array = Array.isArray(current) ? current : [];
-    seen.set(next, array);
+    seen.set(objectNext, array);
     array.length = next.length;
     for (let i = 0; i < next.length; i += 1) {
       array[i] = reconcileValue(array[i], next[i], seen);
@@ -689,16 +696,25 @@ function reconcileValue(
   }
 
   if (ArrayBuffer.isView(next)) {
-    if (typeof (next as { slice?: () => unknown }).slice === 'function') {
-      return (next as { slice: () => unknown }).slice();
+    if (next instanceof DataView) {
+      return new DataView(
+        next.buffer.slice(next.byteOffset, next.byteOffset + next.byteLength),
+      );
     }
 
-    const ctor = next.constructor as {
-      new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): any;
+    const typed = next as TypedArray;
+    if (typeof typed.slice === 'function') {
+      return typed.slice();
+    }
+
+    const ctor = typed.constructor as {
+      new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
     };
-    return new ctor(
-      next.buffer.slice(next.byteOffset, next.byteOffset + next.byteLength),
-    );
+    const clonedBuffer = cloneSnapshotInternal(
+      typed.buffer,
+      seen,
+    ) as ArrayBufferLike;
+    return new ctor(clonedBuffer, typed.byteOffset, typed.length);
   }
 
   if (next instanceof Date) {
@@ -707,7 +723,7 @@ function reconcileValue(
 
   if (isPlainObject(next)) {
     const target = isPlainObject(current) ? current : {};
-    seen.set(next, target);
+    seen.set(objectNext, target);
 
     for (const key of Object.keys(target)) {
       if (!(key in next)) {
@@ -724,7 +740,7 @@ function reconcileValue(
 
   const clone = cloneStructured(next);
   if (typeof clone === 'object' && clone !== null) {
-    seen.set(next, clone);
+    seen.set(objectNext, clone);
   }
   return clone;
 }
@@ -738,10 +754,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function findMatchingMapEntry(
-  entries: Array<[any, any]>,
-  candidateKey: any,
+  entries: Array<[unknown, unknown]>,
+  candidateKey: unknown,
   matchedIndices: Set<number>,
-): [any, any] | undefined {
+): [unknown, unknown] | undefined {
   for (let i = 0; i < entries.length; i += 1) {
     if (matchedIndices.has(i)) {
       continue;
@@ -759,10 +775,10 @@ function findMatchingMapEntry(
 }
 
 function findMatchingSetItem(
-  items: any[],
-  candidate: any,
+  items: unknown[],
+  candidate: unknown,
   matchedIndices: Set<number>,
-): any | undefined {
+): unknown | undefined {
   for (let i = 0; i < items.length; i += 1) {
     if (matchedIndices.has(i)) {
       continue;
