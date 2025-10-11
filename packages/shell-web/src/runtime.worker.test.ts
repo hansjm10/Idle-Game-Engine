@@ -132,4 +132,39 @@ describe('runtime.worker integration', () => {
     expect(context.close).toHaveBeenCalledTimes(1);
     expect(scheduledTick).toBeNull();
   });
+
+  it('creates monotonic timestamps when the clock stalls', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    const fixedTime = 100;
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => fixedTime,
+      scheduleTick,
+    });
+
+    harness.handleMessage({
+      type: 'COMMAND',
+      command: { type: 'A', payload: {} },
+    });
+    harness.handleMessage({
+      type: 'COMMAND',
+      command: { type: 'B', payload: {} },
+    });
+
+    const queue = harness.runtime.getCommandQueue();
+    const commands = queue.dequeueAll();
+
+    expect(commands).toHaveLength(2);
+    expect(commands[0]!.timestamp).toBe(100);
+    expect(commands[1]!.timestamp).toBeCloseTo(100.0001, 6);
+  });
 });

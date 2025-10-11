@@ -118,7 +118,14 @@ export class IdleEngineRuntime {
       };
 
       for (const system of this.systems) {
-        system.tick(context);
+        try {
+          system.tick(context);
+        } catch (error) {
+          telemetry.recordError('SystemExecutionFailed', {
+            systemId: system.id,
+            error: error instanceof Error ? error : new Error(String(error)),
+          });
+        }
       }
 
       this.currentStep += 1;

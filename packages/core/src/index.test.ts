@@ -175,4 +175,241 @@ describe('IdleEngineRuntime', () => {
     ]);
     expect(queue.size).toBe(0);
   });
+
+  it('clamps execution to maxStepsPerFrame to prevent spiral of death', () => {
+    const { runtime, queue, dispatcher } = createRuntime({
+      maxStepsPerFrame: 3,
+    });
+    const executed: number[] = [];
+
+    dispatcher.register('TEST', (_, ctx) => {
+      executed.push(ctx.step);
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      queue.enqueue({
+        type: 'TEST',
+        priority: CommandPriority.PLAYER,
+        payload: {},
+        timestamp: i,
+        step: i,
+      });
+    }
+
+    runtime.tick(100);
+    expect(executed).toEqual([0, 1, 2]);
+    expect(runtime.getCurrentStep()).toBe(3);
+    expect(queue.size).toBe(7);
+
+    runtime.tick(100);
+    expect(executed).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(runtime.getCurrentStep()).toBe(6);
+    expect(queue.size).toBe(4);
+  });
+
+  it('executes systems during each tick with the correct context', () => {
+    const { runtime } = createRuntime();
+    const executedSteps: number[] = [];
+    const observedDelta: number[] = [];
+
+    runtime.addSystem({
+      id: 'system',
+      tick: (context) => {
+        executedSteps.push(context.step);
+        observedDelta.push(context.deltaMs);
+      },
+    });
+
+    runtime.tick(20);
+
+    expect(executedSteps).toEqual([0, 1]);
+    expect(observedDelta).toEqual([10, 10]);
+  });
+
+  it('executes systems in registration order for each step', () => {
+    const { runtime } = createRuntime();
+    const order: string[] = [];
+
+    runtime.addSystem({
+      id: 'a',
+      tick: (context) => {
+        order.push(`a:${context.step}`);
+      },
+    });
+
+    runtime.addSystem({
+      id: 'b',
+      tick: (context) => {
+        order.push(`b:${context.step}`);
+      },
+    });
+
+    runtime.tick(20);
+
+    expect(order).toEqual(['a:0', 'b:0', 'a:1', 'b:1']);
+  });
+
+  it('continues executing remaining systems when a system throws', () => {
+    const { runtime } = createRuntime();
+    const systemA = vi.fn(() => {
+      throw new Error('boom');
+    });
+    const systemB = vi.fn();
+
+    const errors: Array<{ event: string; data?: unknown }> = [];
+    const telemetry: TelemetryFacade = {
+      recordError(event, data) {
+        errors.push({ event, data });
+      },
+      recordWarning() {},
+      recordProgress() {},
+      recordTick() {},
+    };
+
+    setTelemetry(telemetry);
+
+    runtime.addSystem({ id: 'a', tick: systemA });
+    runtime.addSystem({ id: 'b', tick: systemB });
+
+    try {
+      expect(() => runtime.tick(10)).not.toThrow();
+    } finally {
+      resetTelemetry();
+    }
+
+    expect(systemA).toHaveBeenCalledTimes(1);
+    expect(systemB).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([
+      {
+        event: 'SystemExecutionFailed',
+        data: {
+          systemId: 'a',
+          error: expect.any(Error),
+        },
+      },
+    ]);
+  });
+
+  it('allows systems to enqueue commands for subsequent steps', () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+    const executed: string[] = [];
+
+    dispatcher.register<{ id: string }>('TEST', (payload) => {
+      executed.push(payload.id);
+    });
+
+    runtime.addSystem({
+      id: 'enqueuer',
+      tick: (context) => {
+        queue.enqueue({
+          type: 'TEST',
+          priority: CommandPriority.PLAYER,
+          payload: { id: `step-${context.step}` },
+          timestamp: context.step,
+          step: context.step + 1,
+        });
+      },
+    });
+
+    runtime.tick(10);
+    expect(executed).toEqual([]);
+
+    runtime.tick(10);
+    expect(executed).toEqual(['step-0']);
+
+    runtime.tick(10);
+    expect(executed).toEqual(['step-0', 'step-1']);
+  });
+
+  it('commands enqueued during execution target the next step', () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+    const executionOrder: string[] = [];
+
+    dispatcher.register('PARENT', () => {
+      executionOrder.push('parent');
+      queue.enqueue({
+        type: 'CHILD',
+        priority: CommandPriority.PLAYER,
+        payload: {},
+        timestamp: 1,
+        step: runtime.getNextExecutableStep(),
+      });
+    });
+
+    dispatcher.register('CHILD', () => {
+      executionOrder.push('child');
+    });
+
+    queue.enqueue({
+      type: 'PARENT',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+    });
+
+    runtime.tick(10);
+    expect(executionOrder).toEqual(['parent']);
+
+    runtime.tick(10);
+    expect(executionOrder).toEqual(['parent', 'child']);
+  });
+
+  it('accumulates fractional time across multiple ticks', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10 });
+
+    runtime.tick(7);
+    expect(runtime.getCurrentStep()).toBe(0);
+
+    runtime.tick(5);
+    expect(runtime.getCurrentStep()).toBe(1);
+
+    runtime.tick(9);
+    expect(runtime.getCurrentStep()).toBe(2);
+  });
+
+  it('handles zero and negative deltaMs safely', () => {
+    const { runtime } = createRuntime();
+
+    runtime.tick(0);
+    expect(runtime.getCurrentStep()).toBe(0);
+
+    runtime.tick(-100);
+    expect(runtime.getCurrentStep()).toBe(0);
+  });
+
+  it('executes commands in strict priority order during a single tick', () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+    const executionOrder: string[] = [];
+
+    dispatcher.register<{ id: string }>('TEST', (payload) => {
+      executionOrder.push(payload.id);
+    });
+
+    queue.enqueue({
+      type: 'TEST',
+      priority: CommandPriority.AUTOMATION,
+      payload: { id: 'automation' },
+      timestamp: 1,
+      step: 0,
+    });
+    queue.enqueue({
+      type: 'TEST',
+      priority: CommandPriority.SYSTEM,
+      payload: { id: 'system' },
+      timestamp: 2,
+      step: 0,
+    });
+    queue.enqueue({
+      type: 'TEST',
+      priority: CommandPriority.PLAYER,
+      payload: { id: 'player' },
+      timestamp: 3,
+      step: 0,
+    });
+
+    runtime.tick(10);
+
+    expect(executionOrder).toEqual(['system', 'player', 'automation']);
+  });
 });
