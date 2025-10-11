@@ -71,15 +71,43 @@ describe('CommandRecorder', () => {
     expect(log.version).toBe('0.1.0');
     expect(log.commands).toHaveLength(1);
     expect(log.metadata.lastStep).toBe(command.step);
-    expect(log.metadata.seed).toBeUndefined();
-    expect(log.commands[0]).not.toBe(command);
-    expect(log.commands[0].payload).toEqual({ amount: 5 });
-    expect(Object.isFrozen(log.commands[0].payload)).toBe(true);
+   expect(log.metadata.seed).toBeUndefined();
+   expect(log.commands[0]).not.toBe(command);
+   expect(log.commands[0].payload).toEqual({ amount: 5 });
+    expect(() => {
+      (log.commands[0].payload as unknown as { amount: number }).amount = 10;
+    }).toThrow(TypeError);
     expect((log.commands[0].payload as { amount: number }).amount).toBe(5);
 
     const secondExport = recorder.export();
     expect(secondExport).not.toBe(log);
     expect(secondExport.commands[0]).not.toBe(log.commands[0]);
+  });
+
+  it('guards against mutating map snapshots within exported logs', () => {
+    const state = setGameState({
+      resources: new Map<string, number>([['energy', 0]]),
+    });
+    const recorder = new CommandRecorder(state);
+
+    recorder.record(
+      createCommand({
+        payload: {
+          map: new Map<string, number>([['alpha', 1]]),
+        },
+      }),
+    );
+
+    const log = recorder.export();
+
+    const payloadMap = log.commands[0].payload.map as unknown as Map<
+      string,
+      number
+    >;
+    expect(() => payloadMap.set('beta', 2)).toThrow(TypeError);
+
+    const stateMap = log.startState.resources as unknown as Map<string, number>;
+    expect(() => stateMap.set('energy', 1)).toThrow(TypeError);
   });
 
   it('clears recorded commands and refreshes snapshot/seed', () => {

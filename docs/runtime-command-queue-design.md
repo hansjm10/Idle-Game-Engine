@@ -2125,7 +2125,7 @@ const enemyDropHandler = (payload, ctx) => {
 
 ### 8.4 Freeze/Clone/Restore Lifecycle
 
-**Key Insight**: We separate "freezing for safety" from "cloning for replay". Frozen snapshots remain cloneable because they're plain data, not proxies.
+**Key Insight**: We separate "freezing for safety" from "cloning for replay". `deepFreezeInPlace()` wraps Maps/Sets/TypedArrays in guard proxies that throw on mutation while still presenting structured-clone-compatible views, so snapshots stay immutable yet cloneable.
 
 #### Lifecycle Stages
 
@@ -2133,14 +2133,14 @@ const enemyDropHandler = (payload, ctx) => {
 ```typescript
 constructor(currentState: GameState, options?: { seed?: number }) {
   this.startState = cloneDeep(currentState); // Clone to isolate from live state
-  deepFreezeInPlace(this.startState);        // Freeze to prevent accidental mutation
+  deepFreezeInPlace(this.startState);        // Wrap in immutable guard proxies
   this.rngSeed = options?.seed ?? getCurrentRNGSeed?.();
 }
 ```
 
 - **Clone first**: `structuredClone()` creates independent copy
-- **Freeze second**: `Object.freeze()` makes the clone immutable
-- **Result**: `this.startState` is frozen but still cloneable (no proxies)
+- **Freeze second**: `deepFreezeInPlace()` guards all nested collections/arrays
+- **Result**: `this.startState` is frozen but still cloneable through the guard proxies
 
 **2. Export (Creating Command Log)**
 ```typescript
@@ -2154,13 +2154,13 @@ export(): CommandLog {
     }
   };
 
-  deepFreezeInPlace(exportedLog); // Freeze the exported log
+  deepFreezeInPlace(exportedLog); // Freeze the exported log via guard proxies
   return exportedLog;
 }
 ```
 
-- **Clone**: `structuredClone()` can clone frozen objects (they're plain data)
-- **Freeze**: Exported log is frozen to prevent external mutation
+- **Clone**: `structuredClone()` clones the wrapped snapshots without mutating the live state
+- **Freeze**: Guard proxies reject external mutation attempts
 - **Result**: Multiple exports are independent, immutable snapshots
 
 **3. Replay (Restoring State)**

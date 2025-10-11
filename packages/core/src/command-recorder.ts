@@ -3,8 +3,12 @@ import type {
   CommandDispatcher,
   ExecutionContext,
 } from './command-dispatcher.js';
-import { CommandQueue } from './command-queue.js';
+import { CommandQueue, deepFreezeInPlace } from './command-queue.js';
 import type { ImmutablePayload } from './command.js';
+import type {
+  ImmutableArrayBufferSnapshot,
+  ImmutableSharedArrayBufferSnapshot,
+} from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
 import {
   getCurrentRNGSeed,
@@ -35,30 +39,42 @@ export interface RuntimeReplayContext {
 
 const COMMAND_LOG_VERSION = '0.1.0';
 
+const sharedArrayBufferCtor = (globalThis as {
+  SharedArrayBuffer?: typeof SharedArrayBuffer;
+}).SharedArrayBuffer;
+
 type FrozenCommand = CommandSnapshot;
 
 export class CommandRecorder {
   private readonly recorded: FrozenCommand[] = [];
+  private readonly recordedClones: Command[] = [];
   private startState: StateSnapshot;
+  private startStateClone: unknown;
   private rngSeed: number | undefined;
   private lastRecordedStep = -1;
 
   constructor(currentState: unknown, options?: { seed?: number }) {
-    this.startState = freezeSnapshot(cloneStructured(currentState));
+    const startClone = cloneStructured(currentState);
+    this.startStateClone = startClone;
+    this.startState = freezeSnapshot(cloneStructured(startClone));
     this.rngSeed = options?.seed ?? getCurrentRNGSeed();
   }
 
   record(command: Command): void {
-    const snapshot = freezeSnapshot(cloneStructured(command)) as FrozenCommand;
+    const rawClone = cloneStructured(command);
+    const snapshot = freezeSnapshot(
+      cloneStructured(rawClone),
+    ) as FrozenCommand;
     this.recorded.push(snapshot);
+    this.recordedClones.push(rawClone);
     this.lastRecordedStep = Math.max(this.lastRecordedStep, command.step);
   }
 
   export(): CommandLog {
-    const exportedLog: CommandLog = {
+    const exportedLog = {
       version: COMMAND_LOG_VERSION,
-      startState: cloneStructured(this.startState),
-      commands: this.recorded.map(cloneStructured),
+      startState: cloneStructured(this.startStateClone),
+      commands: this.recordedClones.map(cloneStructured),
       metadata: {
         recordedAt: Date.now(),
         seed: this.rngSeed,
@@ -66,8 +82,7 @@ export class CommandRecorder {
       },
     };
 
-    deepFreezeInPlace(exportedLog);
-    return exportedLog;
+    return deepFreezeInPlace(exportedLog) as CommandLog;
   }
 
   replay(
@@ -75,7 +90,7 @@ export class CommandRecorder {
     dispatcher: CommandDispatcher,
     runtimeContext?: RuntimeReplayContext,
   ): void {
-    const mutableState = cloneStructured(log.startState);
+    const mutableState = cloneSnapshotToMutable(log.startState);
     restoreState(mutableState);
 
     if (log.metadata.seed !== undefined) {
@@ -194,7 +209,10 @@ export class CommandRecorder {
 
   clear(nextState: unknown, options?: { seed?: number }): void {
     this.recorded.length = 0;
-    this.startState = freezeSnapshot(cloneStructured(nextState));
+    this.recordedClones.length = 0;
+    const startClone = cloneStructured(nextState);
+    this.startStateClone = startClone;
+    this.startState = freezeSnapshot(cloneStructured(startClone));
     this.rngSeed = options?.seed ?? getCurrentRNGSeed();
     this.lastRecordedStep = -1;
   }
@@ -222,7 +240,7 @@ export function restoreState<TState>(
     snapshot = maybeSnapshot;
   }
 
-  const mutableSnapshot = cloneStructured(snapshot);
+  const mutableSnapshot = cloneSnapshotToMutable(snapshot);
   const reconciled = reconcileValue(
     target,
     mutableSnapshot,
@@ -242,57 +260,200 @@ function freezeSnapshot<T>(value: T): StateSnapshot<T> {
   return deepFreezeInPlace(value);
 }
 
-function deepFreezeInPlace<T>(obj: T, seen: WeakSet<object> = new WeakSet()): T {
-  if (!obj || typeof obj !== 'object') {
-    return obj;
+function cloneSnapshotToMutable<T>(
+  value: ImmutablePayload<T>,
+  seen: WeakMap<object, unknown> = new WeakMap(),
+): T {
+  return cloneSnapshotInternal(value, seen) as T;
+}
+
+function cloneSnapshotInternal(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): unknown {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+    return value;
   }
 
-  if (seen.has(obj as object)) {
-    return obj;
+  if (typeof value === 'function') {
+    return value;
   }
 
-  seen.add(obj as object);
-
-  if (ArrayBuffer.isView(obj)) {
-    return obj;
+  const cached = seen.get(value as object);
+  if (cached) {
+    return cached;
   }
 
-  Object.freeze(obj);
+  if (isImmutableArrayBufferSnapshot(value)) {
+    const buffer = value.toArrayBuffer();
+    seen.set(value as object, buffer);
+    return buffer;
+  }
 
-  if (obj instanceof Map) {
-    for (const [key, value] of obj.entries()) {
-      deepFreezeInPlace(key, seen);
-      deepFreezeInPlace(value, seen);
+  if (isImmutableSharedArrayBufferSnapshot(value)) {
+    const clone =
+      typeof value.toSharedArrayBuffer === 'function'
+        ? value.toSharedArrayBuffer()
+        : value.toArrayBuffer();
+    seen.set(value as object, clone);
+    return clone;
+  }
+
+  if (value instanceof ArrayBuffer) {
+    const clone = value.slice(0);
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (
+    typeof sharedArrayBufferCtor === 'function' &&
+    value instanceof sharedArrayBufferCtor
+  ) {
+    const clone = cloneSharedArrayBuffer(value);
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (value instanceof Date) {
+    const clone = new Date(value.getTime());
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (value instanceof RegExp) {
+    const clone = new RegExp(value.source, value.flags);
+    clone.lastIndex = value.lastIndex;
+    seen.set(value, clone);
+    return clone;
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    if (value instanceof DataView) {
+      const bufferClone = cloneSnapshotInternal(
+        value.buffer,
+        seen,
+      ) as ArrayBufferLike;
+      const view = new DataView(bufferClone, value.byteOffset, value.byteLength);
+      seen.set(value, view);
+      return view;
     }
-    return obj;
-  }
 
-  if (obj instanceof Set) {
-    for (const value of obj.values()) {
-      deepFreezeInPlace(value, seen);
-    }
-    return obj;
-  }
+    const typed = value as ArrayBufferView & {
+      constructor: new (
+        buffer: ArrayBufferLike,
+        byteOffset?: number,
+        length?: number,
+      ) => ArrayBufferView;
+    };
 
-  if (Array.isArray(obj)) {
-    for (const value of obj) {
-      deepFreezeInPlace(value, seen);
-    }
-    return obj;
-  }
-
-  const keys: Array<PropertyKey> = [
-    ...Object.getOwnPropertyNames(obj),
-    ...Object.getOwnPropertySymbols(obj),
-  ];
-  for (const key of keys) {
-    deepFreezeInPlace(
-      (obj as Record<PropertyKey, unknown>)[key],
+    const bufferClone = cloneSnapshotInternal(
+      typed.buffer,
       seen,
-    );
+    ) as ArrayBufferLike;
+    const ctor = typed.constructor;
+    const length =
+      typeof (typed as { length?: number }).length === 'number'
+        ? (typed as { length: number }).length
+        : undefined;
+    const clone =
+      length !== undefined
+        ? new ctor(bufferClone, typed.byteOffset, length)
+        : new ctor(bufferClone, typed.byteOffset);
+    seen.set(value as object, clone);
+    return clone;
   }
 
-  return obj;
+  if (value instanceof Map) {
+    const clone = new Map();
+    seen.set(value as object, clone);
+    for (const [key, entryValue] of value.entries()) {
+      clone.set(
+        cloneSnapshotInternal(key, seen),
+        cloneSnapshotInternal(entryValue, seen),
+      );
+    }
+    return clone;
+  }
+
+  if (value instanceof Set) {
+    const clone = new Set();
+    seen.set(value as object, clone);
+    for (const entry of value.values()) {
+      clone.add(cloneSnapshotInternal(entry, seen));
+    }
+    return clone;
+  }
+
+  if (Array.isArray(value)) {
+    const clone: unknown[] = [];
+    seen.set(value as object, clone);
+    for (const item of value) {
+      clone.push(cloneSnapshotInternal(item, seen));
+    }
+    return clone;
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  const clone =
+    proto === null ? Object.create(null) : Object.create(proto);
+  seen.set(value as object, clone);
+
+  const keys: PropertyKey[] = [
+    ...Object.getOwnPropertyNames(value),
+    ...Object.getOwnPropertySymbols(value),
+  ];
+
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor) {
+      continue;
+    }
+
+    if ('value' in descriptor) {
+      descriptor.value = cloneSnapshotInternal(descriptor.value, seen);
+    }
+
+    Object.defineProperty(clone, key, descriptor);
+  }
+
+  return clone;
+}
+
+function cloneSharedArrayBuffer(
+  buffer: SharedArrayBuffer,
+): SharedArrayBuffer {
+  if (typeof sharedArrayBufferCtor !== 'function') {
+    throw new Error('SharedArrayBuffer is not supported in this environment.');
+  }
+
+  const clone = new sharedArrayBufferCtor(buffer.byteLength);
+  new Uint8Array(clone).set(new Uint8Array(buffer));
+  return clone;
+}
+
+function isImmutableArrayBufferSnapshot(
+  value: unknown,
+): value is ImmutableArrayBufferSnapshot {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as ImmutableArrayBufferSnapshot).toArrayBuffer === 'function' &&
+    (value as { [Symbol.toStringTag]?: unknown })[Symbol.toStringTag] ===
+      'ImmutableArrayBufferSnapshot'
+  );
+}
+
+function isImmutableSharedArrayBufferSnapshot(
+  value: unknown,
+): value is ImmutableSharedArrayBufferSnapshot {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as ImmutableSharedArrayBufferSnapshot).toSharedArrayBuffer ===
+      'function' &&
+    (value as { [Symbol.toStringTag]?: unknown })[Symbol.toStringTag] ===
+      'ImmutableSharedArrayBufferSnapshot'
+  );
 }
 
 function cloneStructured<T>(value: T): T {
