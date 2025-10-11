@@ -384,6 +384,21 @@ describe('CommandRecorder', () => {
     expect(getCurrentRNGSeed()).toBe(9876);
   });
 
+  it('captures RNG seed set after construction', () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+
+    setRNGSeed(5555);
+    recorder.record(createCommand());
+
+    const log = recorder.export();
+    expect(log.metadata.seed).toBe(5555);
+
+    setRNGSeed(9999);
+    recorder.replay(log, new CommandDispatcher());
+    expect(getCurrentRNGSeed()).toBe(5555);
+  });
+
   it('records telemetry when handler throws during replay', () => {
     const state = setGameState({ value: 0 });
     const recorder = new CommandRecorder(state);

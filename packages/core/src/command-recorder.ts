@@ -128,14 +128,25 @@ export class CommandRecorder {
   private startState: StateSnapshot;
   private rngSeed: number | undefined;
   private lastRecordedStep = -1;
+  private refreshSeedSnapshot(): void {
+    if (this.rngSeed !== undefined) {
+      return;
+    }
+    const currentSeed = getCurrentRNGSeed();
+    if (currentSeed !== undefined) {
+      this.rngSeed = currentSeed;
+    }
+  }
 
   constructor(currentState: unknown, options?: { seed?: number }) {
     const startClone = cloneStructured(currentState);
     this.startState = freezeSnapshot(startClone);
-    this.rngSeed = options?.seed ?? getCurrentRNGSeed();
+    this.rngSeed = options?.seed;
+    this.refreshSeedSnapshot();
   }
 
   record(command: Command): void {
+    this.refreshSeedSnapshot();
     const rawClone = cloneStructured(command);
     const snapshot = freezeSnapshot(
       cloneStructured(rawClone),
@@ -146,6 +157,7 @@ export class CommandRecorder {
   }
 
   export(): CommandLog {
+    this.refreshSeedSnapshot();
     const exportedLog = {
       version: COMMAND_LOG_VERSION,
       startState: cloneSnapshotToMutable(this.startState),
@@ -287,7 +299,8 @@ export class CommandRecorder {
     this.recordedClones.length = 0;
     const startClone = cloneStructured(nextState);
     this.startState = freezeSnapshot(startClone);
-    this.rngSeed = options?.seed ?? getCurrentRNGSeed();
+    this.rngSeed = options?.seed;
+    this.refreshSeedSnapshot();
     this.lastRecordedStep = -1;
   }
 }
