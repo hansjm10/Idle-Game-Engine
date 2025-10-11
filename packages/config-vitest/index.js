@@ -1,4 +1,5 @@
 import { defineConfig, mergeConfig } from 'vitest/config';
+import { LLMReporter } from 'vitest-llm-reporter';
 
 const BASE_CONFIG = defineConfig({
   test: {
@@ -8,6 +9,12 @@ const BASE_CONFIG = defineConfig({
     passWithNoTests: true,
     watchExclude: ['**/dist/**', '**/node_modules/**'],
     clearMocks: true,
+    reporters: [
+      'default',
+      new LLMReporter({
+        streaming: false
+      })
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
