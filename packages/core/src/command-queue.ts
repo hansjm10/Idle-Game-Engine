@@ -4,7 +4,7 @@ import type {
   CommandSnapshot,
   ImmutablePayload,
 } from './command.js';
-import { CommandPriority } from './command.js';
+import { CommandPriority, COMMAND_PRIORITY_ORDER } from './command.js';
 import type {
   ImmutableArrayBufferSnapshot,
   ImmutableMapSnapshot,
@@ -12,12 +12,6 @@ import type {
   ImmutableSharedArrayBufferSnapshot,
   TypedArray,
 } from './immutable-snapshots.js';
-
-const PRIORITY_ORDER: readonly CommandPriority[] = [
-  CommandPriority.SYSTEM,
-  CommandPriority.PLAYER,
-  CommandPriority.AUTOMATION,
-];
 
 /**
  * Queue implementation that maintains per-priority FIFO lanes as documented in
@@ -76,7 +70,7 @@ export class CommandQueue {
     }
 
     const drained: CommandSnapshot[] = [];
-    for (const priority of PRIORITY_ORDER) {
+    for (const priority of COMMAND_PRIORITY_ORDER) {
       const queue = this.lanes.get(priority);
       if (!queue || queue.length === 0) {
         continue;
