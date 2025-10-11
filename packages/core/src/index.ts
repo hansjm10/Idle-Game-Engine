@@ -64,13 +64,39 @@ export class IdleEngineRuntime {
 export {
   Command,
   CommandPriority,
+  COMMAND_PRIORITY_ORDER,
   CommandQueueEntry,
   CommandSnapshot,
   CommandSnapshotPayload,
   ImmutablePayload,
+  RUNTIME_COMMAND_TYPES,
+  type RuntimeCommandType,
+  type PurchaseGeneratorPayload,
+  type ToggleGeneratorPayload,
+  type CollectResourcePayload,
+  type PrestigeResetPayload,
+  type OfflineCatchupPayload,
+  type MigrationStep,
+  type ApplyMigrationPayload,
+  type RuntimeCommandPayloads,
+  type RuntimeCommand,
+  type CommandAuthorizationPolicy,
+  COMMAND_AUTHORIZATIONS,
 } from './command.js';
 export { CommandQueue, deepFreezeInPlace } from './command-queue.js';
+export {
+  CommandDispatcher,
+  type CommandHandler,
+  type ExecutionContext,
+} from './command-dispatcher.js';
 export type {
   ImmutableArrayBufferSnapshot,
   ImmutableSharedArrayBufferSnapshot,
 } from './immutable-snapshots.js';
+export {
+  telemetry,
+  type TelemetryEventData,
+  type TelemetryFacade,
+  resetTelemetry,
+  setTelemetry,
+} from './telemetry.js';

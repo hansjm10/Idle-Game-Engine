@@ -80,6 +80,16 @@ export enum CommandPriority {
 }
 
 /**
+ * Shared execution order across queue and dispatcher. Lower enum values run
+ * first per docs/runtime-command-queue-design.md §6.
+ */
+export const COMMAND_PRIORITY_ORDER: readonly CommandPriority[] = Object.freeze([
+  CommandPriority.SYSTEM,
+  CommandPriority.PLAYER,
+  CommandPriority.AUTOMATION,
+]);
+
+/**
  * Local representation of a command snapshot stored in the queue.
  *
  * Sequence numbers provide a deterministic tie breaker when timestamps match.
@@ -88,3 +98,151 @@ export interface CommandQueueEntry<TCommand = Command> {
   readonly command: TCommand;
   readonly sequence: number;
 }
+
+/**
+ * Identifier strings for the initial runtime command set documented in
+ * docs/runtime-command-queue-design.md §5.
+ */
+export const RUNTIME_COMMAND_TYPES = Object.freeze({
+  PURCHASE_GENERATOR: 'PURCHASE_GENERATOR',
+  TOGGLE_GENERATOR: 'TOGGLE_GENERATOR',
+  COLLECT_RESOURCE: 'COLLECT_RESOURCE',
+  PRESTIGE_RESET: 'PRESTIGE_RESET',
+  OFFLINE_CATCHUP: 'OFFLINE_CATCHUP',
+  APPLY_MIGRATION: 'APPLY_MIGRATION',
+} as const);
+
+export type RuntimeCommandType =
+  (typeof RUNTIME_COMMAND_TYPES)[keyof typeof RUNTIME_COMMAND_TYPES];
+
+/**
+ * Player purchases a generator (docs/runtime-command-queue-design.md §5.1).
+ */
+export interface PurchaseGeneratorPayload {
+  readonly generatorId: string;
+  readonly count: number;
+}
+
+/**
+ * Automation toggles a generator (docs/runtime-command-queue-design.md §5.1).
+ */
+export interface ToggleGeneratorPayload {
+  readonly generatorId: string;
+  readonly enabled: boolean;
+}
+
+/**
+ * Manual resource collection (docs/runtime-command-queue-design.md §5.1).
+ */
+export interface CollectResourcePayload {
+  readonly resourceId: string;
+  readonly amount: number;
+}
+
+/**
+ * Player prestige reset request (docs/runtime-command-queue-design.md §5.2).
+ */
+export interface PrestigeResetPayload {
+  readonly layer: number;
+  readonly confirmationToken?: string;
+}
+
+/**
+ * Offline catch-up adjustment payload (docs/runtime-command-queue-design.md §5.3).
+ */
+export interface OfflineCatchupPayload {
+  readonly elapsedMs: number;
+  readonly resourceDeltas: Record<string, number>;
+}
+
+/**
+ * Future migration step metadata shape lives with the save migration pipeline.
+ * We model it as an opaque record for now per docs/runtime-command-queue-design.md §5.3.
+ */
+export type MigrationStep = Readonly<Record<string, unknown>>;
+
+/**
+ * Save migration payload (docs/runtime-command-queue-design.md §5.3).
+ */
+export interface ApplyMigrationPayload {
+  readonly fromVersion: string;
+  readonly toVersion: string;
+  readonly transformations: readonly MigrationStep[];
+}
+
+/**
+ * Mapping between runtime command identifiers and their strongly typed payloads.
+ */
+export interface RuntimeCommandPayloads {
+  readonly PURCHASE_GENERATOR: PurchaseGeneratorPayload;
+  readonly TOGGLE_GENERATOR: ToggleGeneratorPayload;
+  readonly COLLECT_RESOURCE: CollectResourcePayload;
+  readonly PRESTIGE_RESET: PrestigeResetPayload;
+  readonly OFFLINE_CATCHUP: OfflineCatchupPayload;
+  readonly APPLY_MIGRATION: ApplyMigrationPayload;
+}
+
+/**
+ * Runtime command shape tied to a specific payload contract.
+ */
+export type RuntimeCommand<TType extends RuntimeCommandType = RuntimeCommandType> =
+  Command<RuntimeCommandPayloads[TType]> & {
+    readonly type: TType;
+  };
+
+/**
+ * Authorization policy for each command type, derived from
+ * docs/runtime-command-queue-design.md §§4.5 & 6.
+ */
+export interface CommandAuthorizationPolicy {
+  readonly type: RuntimeCommandType;
+  readonly allowedPriorities: readonly CommandPriority[];
+  /**
+   * Narrative used by handler docs/tests to explain why the restriction exists.
+   */
+  readonly rationale: string;
+}
+
+export const COMMAND_AUTHORIZATIONS: Readonly<
+  Record<RuntimeCommandType, CommandAuthorizationPolicy>
+> = Object.freeze({
+  PURCHASE_GENERATOR: {
+    type: RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Purchases are gated by resource costs; any priority may attempt them.',
+  },
+  TOGGLE_GENERATOR: {
+    type: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Generator toggles can originate from automation, player, or system flows.',
+  },
+  COLLECT_RESOURCE: {
+    type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Manual and automation-driven collection share the same execution path.',
+  },
+  PRESTIGE_RESET: {
+    type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+    allowedPriorities: Object.freeze([
+      CommandPriority.SYSTEM,
+      CommandPriority.PLAYER,
+    ]),
+    rationale:
+      'Automation may not trigger prestige; only player/system contexts are permitted.',
+  },
+  OFFLINE_CATCHUP: {
+    type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    allowedPriorities: Object.freeze([CommandPriority.SYSTEM]),
+    rationale:
+      'Offline reconciliation is engine-driven and restricted to system authority.',
+  },
+  APPLY_MIGRATION: {
+    type: RUNTIME_COMMAND_TYPES.APPLY_MIGRATION,
+    allowedPriorities: Object.freeze([CommandPriority.SYSTEM]),
+    rationale:
+      'Schema migrations run exclusively under system authority for integrity.',
+  },
+});

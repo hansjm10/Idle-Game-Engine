@@ -33,14 +33,14 @@ describe('CommandQueue', () => {
       createCommand({
         type: 'automation',
         priority: CommandPriority.AUTOMATION,
-        timestamp: 3,
+        timestamp: 1,
       }),
     );
     queue.enqueue(
       createCommand({
         type: 'player',
         priority: CommandPriority.PLAYER,
-        timestamp: 2,
+        timestamp: 1,
       }),
     );
     queue.enqueue(

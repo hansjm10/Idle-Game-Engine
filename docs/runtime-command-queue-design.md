@@ -884,7 +884,7 @@ export interface ExecutionContext {
 export type CommandHandler<T = unknown> = (
   payload: T,
   context: ExecutionContext
-) => void;
+) => void | Promise<void>;
 
 export class CommandDispatcher {
   private readonly handlers = new Map<string, CommandHandler>();
@@ -919,7 +919,15 @@ export class CommandDispatcher {
     };
 
     try {
-      handler(command.payload, context);
+      const result = handler(command.payload, context);
+      if (isPromiseLike(result)) {
+        result.catch((err) => {
+          telemetry.recordError('CommandExecutionFailed', {
+            type: command.type,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        });
+      }
     } catch (err) {
       telemetry.recordError('CommandExecutionFailed', {
         type: command.type,
@@ -928,7 +936,17 @@ export class CommandDispatcher {
     }
   }
 }
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as PromiseLike<T>).then === 'function'
+  );
+}
 ```
+
+Handlers may return either `void` or a `Promise<void>`. The dispatcher treats promise rejections the same as synchronous exceptions so that telemetry captures failures consistently.
 
 ## 5. Command Types (Initial Set)
 
@@ -2004,7 +2022,7 @@ function findMatchingSetItem(
 
 Several helper modules are assumed in the pseudocode above. They must exist (or be stubbed) before the queue work ships:
 
-- **`telemetry` facade**: Provides `recordError(event, data)`, `recordWarning(event, data)`, `recordProgress(event, data)`, and `recordTick()`; all methods must be fire-and-forget and safe in worker, browser, and Node test environments.
+- **`telemetry` facade**: Provides `recordError(event, data)`, `recordWarning(event, data)`, `recordProgress(event, data)`, and `recordTick()`; all methods must be fire-and-forget and safe in worker, browser, and Node test environments. If a provided facade throws, the default wrapper logs the failure via `console.error` to avoid cascading crashes.
 - **Monotonic clock**: `createMonotonicClock()` wraps `performance.now()` but guarantees strictly increasing values even if the host clock stalls. In Node, import `performance` from `perf_hooks` so replay/tests run without polyfills.
 - **Deterministic RNG hooks**: `getCurrentRNGSeed(): number | undefined`, `setRNGSeed(seed: number): void`, and `seededRandom(): number` live in the runtime RNG module. Command handlers that rely on randomness must consume `seededRandom()`; direct `Math.random()` usage is prohibited once the queue lands.
 - **`structuredClone` availability**: Browser runtimes already expose it; Node tests must run on a version that includes the API or ship a ponyfill with equivalent semantics.
