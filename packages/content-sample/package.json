@@ -17,6 +17,7 @@
     "@idle-engine/config-vitest": "workspace:*",
     "eslint": "^9.37.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vitest-llm-reporter": "^1.2.0"
   }
 }

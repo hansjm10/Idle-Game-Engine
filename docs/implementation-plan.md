@@ -80,7 +80,7 @@ This plan converts the design document into actionable engineering work. It span
 
 ### Tooling & QA
 - [ ] Create `@idle-engine/config-eslint` package consumed by all workspaces.
-- [ ] Add `@idle-engine/config-vitest` shared test setup (jsdom/node).
+- [ ] Add `@idle-engine/config-vitest` shared test setup (jsdom/node) with AI-friendly reporting via `vitest-llm-reporter`.
 - [ ] Configure Husky/lefthook for pre-commit lint/test runner.
 - [ ] Introduce GitHub Actions pipeline (install → lint → test → build matrix).
 - [ ] Add automated accessibility smoke tests (axe-core/Playwright) wired into CI.
