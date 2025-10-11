@@ -26,16 +26,16 @@ let activeTelemetry: TelemetryFacade = consoleTelemetry;
 
 export const telemetry: TelemetryFacade = {
   recordError(event, data) {
-    invokeSafely(activeTelemetry.recordError, event, data);
+    invokeSafely(activeTelemetry, 'recordError', event, data);
   },
   recordWarning(event, data) {
-    invokeSafely(activeTelemetry.recordWarning, event, data);
+    invokeSafely(activeTelemetry, 'recordWarning', event, data);
   },
   recordProgress(event, data) {
-    invokeSafely(activeTelemetry.recordProgress, event, data);
+    invokeSafely(activeTelemetry, 'recordProgress', event, data);
   },
   recordTick() {
-    invokeSafely(activeTelemetry.recordTick);
+    invokeSafely(activeTelemetry, 'recordTick');
   },
 };
 
@@ -48,11 +48,13 @@ export function resetTelemetry(): void {
 }
 
 function invokeSafely(
-  fn: TelemetryFacade[keyof TelemetryFacade],
+  facade: TelemetryFacade,
+  method: keyof TelemetryFacade,
   ...args: unknown[]
 ): void {
   try {
-    (fn as (...fnArgs: unknown[]) => void)(...args);
+    const fn = facade[method] as (...fnArgs: unknown[]) => void;
+    fn.apply(facade, args);
   } catch (error) {
     console.error('[telemetry] invocation failed', error);
   }
