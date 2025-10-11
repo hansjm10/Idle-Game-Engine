@@ -1668,7 +1668,7 @@ function seededRandom(): number {
 
 /**
  * Locate the first future command in the log that matches the queued command.
- * Timestamps are intentionally ignored because replays run at different wall-clock times.
+ * Replay asserts deterministic timestamps so handlers that stamp commands must be pure.
  */
 function findMatchingFutureCommandIndex(
   commands: readonly Command[],
@@ -1692,6 +1692,7 @@ function commandsEqual(a: Command, b: Command): boolean {
     a.type === b.type &&
     a.priority === b.priority &&
     a.step === b.step &&
+    a.timestamp === b.timestamp &&
     payloadsMatch(a.payload, b.payload)
   );
 }

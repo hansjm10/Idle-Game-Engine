@@ -617,6 +617,7 @@ function commandsEqual(
     left.type === right.type &&
     left.priority === right.priority &&
     left.step === right.step &&
+    left.timestamp === right.timestamp &&
     payloadsMatch(left.payload, right.payload)
   );
 }
