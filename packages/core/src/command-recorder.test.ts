@@ -208,6 +208,37 @@ describe('CommandRecorder', () => {
     expect(state.list).toEqual(['alpha']);
   });
 
+  it('preserves typed array aliases when restoring snapshots', () => {
+    const buffer = new ArrayBuffer(8);
+    const shared = new Uint8Array(buffer);
+    shared.set([1, 2, 3, 4]);
+
+    const view = new DataView(buffer);
+    const state = setGameState({
+      main: shared,
+      mirror: shared,
+      view,
+      viewAlias: view,
+    });
+    const recorder = new CommandRecorder(state);
+    const snapshot = recorder.export().startState;
+
+    shared.fill(9);
+    state.mirror = new Uint8Array(new ArrayBuffer(8));
+    state.view = new DataView(new ArrayBuffer(8));
+    state.viewAlias = state.view;
+
+    const restored = restoreState(state, snapshot);
+
+    expect(restored.main).toBe(restored.mirror);
+    expect(Array.from(restored.main)).toEqual([1, 2, 3, 4, 0, 0, 0, 0]);
+    expect(restored.view).toBe(restored.viewAlias);
+    expect(restored.view.getUint8(0)).toBe(1);
+
+    restored.main[0] = 42;
+    expect(restored.mirror[0]).toBe(42);
+  });
+
   it('validates sandboxed enqueues against recorded commands', () => {
     const state = setGameState({ counter: 0 });
     const recorder = new CommandRecorder(state);

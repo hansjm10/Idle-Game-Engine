@@ -46,6 +46,82 @@ const sharedArrayBufferCtor = (globalThis as {
 
 type FrozenCommand = CommandSnapshot;
 
+const TYPED_ARRAY_CTOR_NAMES = new Set([
+  'Int8Array',
+  'Uint8Array',
+  'Uint8ClampedArray',
+  'Int16Array',
+  'Uint16Array',
+  'Int32Array',
+  'Uint32Array',
+  'Float32Array',
+  'Float64Array',
+  'BigInt64Array',
+  'BigUint64Array',
+]);
+
+function getConstructorName(value: object): string | undefined {
+  const directCtor = (value as { constructor?: { name?: string } }).constructor;
+  if (typeof directCtor === 'function' && directCtor.name) {
+    return directCtor.name;
+  }
+  const prototypeCtor = Object.getPrototypeOf(value)?.constructor;
+  if (typeof prototypeCtor === 'function' && prototypeCtor.name) {
+    return prototypeCtor.name;
+  }
+  return undefined;
+}
+
+function isDataViewLike(value: unknown): value is DataView {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  if (value instanceof DataView) {
+    return true;
+  }
+  return getConstructorName(value) === 'DataView';
+}
+
+function isTypedArrayLike(value: unknown): value is TypedArray {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+    return true;
+  }
+  const ctorName = getConstructorName(value);
+  return ctorName !== undefined && TYPED_ARRAY_CTOR_NAMES.has(ctorName);
+}
+
+function isArrayBufferViewLike(value: unknown): value is ArrayBufferView {
+  return isDataViewLike(value) || isTypedArrayLike(value);
+}
+
+function getTypedArrayLength(typed: TypedArray): number {
+  try {
+    const directLength = (typed as { length?: number }).length;
+    if (typeof directLength === 'number' && Number.isFinite(directLength)) {
+      return directLength;
+    }
+  } catch (error) {
+    if (!(error instanceof TypeError)) {
+      throw error;
+    }
+  }
+
+  let maxIndex = -1;
+  for (const key of Object.keys(typed as unknown as Record<string, unknown>)) {
+    const index = Number(key);
+    if (Number.isInteger(index) && index >= 0) {
+      if (index > maxIndex) {
+        maxIndex = index;
+      }
+    }
+  }
+
+  return maxIndex + 1;
+}
+
 export class CommandRecorder {
   private readonly recorded: FrozenCommand[] = [];
   private readonly recordedClones: Command[] = [];
@@ -325,26 +401,54 @@ function cloneSnapshotInternal(
     return clone;
   }
 
-  if (ArrayBuffer.isView(value)) {
-    if (value instanceof DataView) {
-      const bufferClone = cloneSnapshotInternal(
-        value.buffer,
-        seen,
-      ) as ArrayBufferLike;
-      const view = new DataView(bufferClone, value.byteOffset, value.byteLength);
-      seen.set(value, view);
-      return view;
+  if (isArrayBufferViewLike(value)) {
+    if (isDataViewLike(value)) {
+      if (ArrayBuffer.isView(value)) {
+        const bufferClone = cloneSnapshotInternal(
+          value.buffer,
+          seen,
+        ) as ArrayBufferLike;
+        const view = new DataView(
+          bufferClone,
+          value.byteOffset,
+          value.byteLength,
+        );
+        seen.set(value, view);
+        return view;
+      }
+
+      const fallbackBuffer = new ArrayBuffer(value.byteLength);
+      const fallbackView = new DataView(
+        fallbackBuffer,
+        0,
+        value.byteLength,
+      );
+      for (let i = 0; i < value.byteLength; i += 1) {
+        fallbackView.setUint8(i, value.getUint8(i));
+      }
+      seen.set(value, fallbackView);
+      return fallbackView;
     }
 
-    const typed = value as TypedArray;
-    const bufferClone = cloneSnapshotInternal(
-      typed.buffer,
-      seen,
-    ) as ArrayBufferLike;
+    const typed = value as unknown as TypedArray;
     const ctor = typed.constructor as {
       new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+      new(length: number): TypedArray;
     };
-    const clone = new ctor(bufferClone, typed.byteOffset, typed.length);
+    let clone: TypedArray;
+    if (ArrayBuffer.isView(value)) {
+      const bufferClone = cloneSnapshotInternal(
+        typed.buffer,
+        seen,
+      ) as ArrayBufferLike;
+      clone = new ctor(bufferClone, typed.byteOffset, typed.length);
+    } else {
+      const length = getTypedArrayLength(typed);
+      clone = new ctor(length);
+      for (let i = 0; i < length; i += 1) {
+        clone[i] = typed[i];
+      }
+    }
     seen.set(value as object, clone);
     return clone;
   }
@@ -696,26 +800,60 @@ function reconcileValue(
     return array;
   }
 
-  if (ArrayBuffer.isView(next)) {
-    if (next instanceof DataView) {
-      return new DataView(
-        next.buffer.slice(next.byteOffset, next.byteOffset + next.byteLength),
-      );
+  if (isArrayBufferViewLike(next)) {
+    let resolvedView: DataView | TypedArray;
+
+    if (isDataViewLike(next)) {
+      if (ArrayBuffer.isView(next)) {
+        const clonedBuffer = cloneSnapshotInternal(
+          next.buffer,
+          seen,
+        ) as ArrayBufferLike;
+        resolvedView = new DataView(
+          clonedBuffer,
+          next.byteOffset,
+          next.byteLength,
+        );
+      } else {
+        const fallbackBuffer = new ArrayBuffer(next.byteLength);
+        const fallbackView = new DataView(
+          fallbackBuffer,
+          0,
+          next.byteLength,
+        );
+        for (let i = 0; i < next.byteLength; i += 1) {
+          fallbackView.setUint8(i, next.getUint8(i));
+        }
+        resolvedView = fallbackView;
+      }
+    } else {
+      const typed = next as unknown as TypedArray;
+      const ctor = typed.constructor as {
+        new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+        new(length: number): TypedArray;
+      };
+      if (ArrayBuffer.isView(next)) {
+        const clonedBuffer = cloneSnapshotInternal(
+          typed.buffer,
+          seen,
+        ) as ArrayBufferLike;
+        resolvedView = new ctor(
+          clonedBuffer,
+          typed.byteOffset,
+          typed.length,
+        );
+      } else {
+        const length = getTypedArrayLength(typed);
+        const clone = new ctor(length);
+        for (let i = 0; i < length; i += 1) {
+          clone[i] = typed[i];
+        }
+        resolvedView = clone;
+      }
     }
 
-    const typed = next as TypedArray;
-    if (typeof typed.slice === 'function') {
-      return typed.slice();
-    }
-
-    const ctor = typed.constructor as {
-      new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
-    };
-    const clonedBuffer = cloneSnapshotInternal(
-      typed.buffer,
-      seen,
-    ) as ArrayBufferLike;
-    return new ctor(clonedBuffer, typed.byteOffset, typed.length);
+    seen.set(objectNext, resolvedView);
+    return resolvedView;
   }
 
   if (next instanceof Date) {
