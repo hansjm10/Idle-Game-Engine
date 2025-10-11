@@ -93,7 +93,8 @@ export class IdleEngineRuntime {
     for (let i = 0; i < steps; i += 1) {
       // Accept commands for the current step until the batch is captured.
       this.nextExecutableStep = this.currentStep;
-      const commands = this.commandQueue.dequeueAll();
+      const commands =
+        this.commandQueue.dequeueUpToStep(this.currentStep);
 
       // Commands enqueued during execution target the next tick.
       this.nextExecutableStep = this.currentStep + 1;

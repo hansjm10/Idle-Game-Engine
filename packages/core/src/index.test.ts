@@ -81,7 +81,7 @@ describe('IdleEngineRuntime', () => {
         priority: CommandPriority.PLAYER,
         payload: {},
         timestamp: 1,
-        step: 5,
+        step: -1,
       });
 
       runtime.tick(10);
@@ -91,7 +91,7 @@ describe('IdleEngineRuntime', () => {
         {
           event: 'CommandStepMismatch',
           data: {
-            commandStep: 5,
+            commandStep: -1,
             expectedStep: 0,
             type: 'TEST',
           },
@@ -124,5 +124,55 @@ describe('IdleEngineRuntime', () => {
 
     expect(observedDuringHandler).toBe(1);
     expect(runtime.getNextExecutableStep()).toBe(1);
+  });
+
+  it('executes future-step commands on their scheduled ticks', () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+    const executed: Array<{ step: number; id: string }> = [];
+
+    dispatcher.register<{ id: string }>('TEST', (payload, ctx) => {
+      executed.push({ step: ctx.step, id: payload.id });
+    });
+
+    queue.enqueue({
+      type: 'TEST',
+      priority: CommandPriority.PLAYER,
+      payload: { id: 'step-0' },
+      timestamp: 1,
+      step: 0,
+    });
+    queue.enqueue({
+      type: 'TEST',
+      priority: CommandPriority.PLAYER,
+      payload: { id: 'step-1' },
+      timestamp: 2,
+      step: 1,
+    });
+    queue.enqueue({
+      type: 'TEST',
+      priority: CommandPriority.PLAYER,
+      payload: { id: 'step-2' },
+      timestamp: 3,
+      step: 2,
+    });
+
+    runtime.tick(10);
+    expect(executed).toEqual([{ step: 0, id: 'step-0' }]);
+    expect(queue.size).toBe(2);
+
+    runtime.tick(10);
+    expect(executed).toEqual([
+      { step: 0, id: 'step-0' },
+      { step: 1, id: 'step-1' },
+    ]);
+    expect(queue.size).toBe(1);
+
+    runtime.tick(10);
+    expect(executed).toEqual([
+      { step: 0, id: 'step-0' },
+      { step: 1, id: 'step-1' },
+      { step: 2, id: 'step-2' },
+    ]);
+    expect(queue.size).toBe(0);
   });
 });
