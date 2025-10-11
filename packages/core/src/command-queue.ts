@@ -533,6 +533,13 @@ function createViewGuard(
       }
 
       if (
+        isDataView &&
+        (prop === 'byteOffset' || prop === 'byteLength')
+      ) {
+        return Reflect.get(target, prop, target);
+      }
+
+      if (
         typeof prop === 'string' &&
         TYPED_ARRAY_CALLBACK_METHODS.has(prop) &&
         !isDataView

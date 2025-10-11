@@ -163,10 +163,28 @@ export {
   type CommandHandler,
   type ExecutionContext,
 } from './command-dispatcher.js';
+export {
+  CommandRecorder,
+  restoreState,
+  type CommandLog,
+  type RuntimeReplayContext,
+  type StateSnapshot,
+} from './command-recorder.js';
 export type {
   ImmutableArrayBufferSnapshot,
   ImmutableSharedArrayBufferSnapshot,
 } from './immutable-snapshots.js';
+export {
+  getCurrentRNGSeed,
+  setRNGSeed,
+  seededRandom,
+  resetRNG,
+} from './rng.js';
+export {
+  getGameState,
+  setGameState,
+  clearGameState,
+} from './runtime-state.js';
 export {
   telemetry,
   type TelemetryEventData,
