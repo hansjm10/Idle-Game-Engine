@@ -644,10 +644,11 @@ function reconcileValue(
         key,
         matchedEntryIndices,
       );
-      const resolvedKey =
-        existingEntry !== undefined
-          ? existingEntry[0]
-          : reconcileValue(undefined, key, seen);
+      const resolvedKey = reconcileValue(
+        existingEntry?.[0],
+        key,
+        seen,
+      );
       const resolvedValue = reconcileValue(
         existingEntry?.[1],
         value,
