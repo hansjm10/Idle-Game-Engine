@@ -64,7 +64,7 @@ ArrayBuffers and typed arrays:
 ```ts
 interface ResourceStateBuffers {
   readonly ids: readonly string[];
-  readonly indexById: ReadonlyMap<string, number>;
+  readonly indexById: ImmutableMapSnapshot<string, number>;
   readonly amounts: Float64Array;
   readonly capacities: Float64Array;
   readonly incomePerSecond: Float64Array;
@@ -72,11 +72,13 @@ interface ResourceStateBuffers {
   readonly netPerSecond: Float64Array;
   readonly tickDelta: Float64Array;
   readonly flags: Uint8Array;
+  readonly dirtyIndexScratch: Uint32Array;
 }
 ```
 
 - `ids`: canonical resource ordering derived from the active content pack.
-- `indexById`: Map for O(1) lookup; remains immutable after initialization.
+- `indexById`: `ImmutableMapSnapshot` for O(1) lookup that throws on any attempt
+  to mutate it post-initialization.
 - `amounts`: current balances (double precision for cumulative accuracy).
 - `capacities`: hard caps enforced on mutation; populated from definitions and
   upgrade modifiers.
@@ -90,14 +92,22 @@ interface ResourceStateBuffers {
   `VISIBLE = 1 << 0`, `UNLOCKED = 1 << 1`, and `DIRTY_THIS_TICK = 1 << 2`.
   Mutations always set (`|=`) the dirty bit; it never toggles or clears itself
   mid-tick.
+- `dirtyIndexScratch`: reusable scratch space sized to `resourceCount`. The data
+  structure stores a compact list of mutated indices for the current tick
+  without allocating new arrays.
 
 All numeric buffers share a single `ArrayBuffer` per numeric width to improve
 serialization locality while keeping independent views disjoint. The Float64
-views (`amounts`, `capacities`, `netPerSecond`, `tickDelta`) are carved out of a
-single backing buffer sized as
-`Float64Array.BYTES_PER_ELEMENT * 4 * resourceCount`, and each typed array is
-constructed with an offset stride (`amounts` at offset 0, `capacities` at
-`1 * stride`, etc.). The Uint8 flags array uses its own `ArrayBuffer`.
+views (`amounts`, `capacities`, `incomePerSecond`, `expensePerSecond`,
+`netPerSecond`, `tickDelta`) are carved out of a single backing buffer sized as
+`Float64Array.BYTES_PER_ELEMENT * 6 * resourceCount`. Each typed array is
+constructed with an offset stride (`amounts` at offset `0`, `capacities` at
+`1 * stride`, etc.). The `dirtyIndexScratch` array uses a dedicated
+`ArrayBuffer`, as do the Uint8 flag bits.
+
+`ImmutableMapSnapshot` is already provided by `packages/core/src/immutable-snapshots.ts`
+and proxies mutation methods so the lookup table cannot be altered after the
+state is created.
 
 ### 5.2 Runtime API Surface
 
@@ -108,6 +118,7 @@ query helpers:
 interface ResourceState {
   readonly buffers: ResourceStateBuffers;
   getIndex(id: string): number | undefined;
+  requireIndex(id: string): number;
   getAmount(index: number): number;
   getCapacity(index: number): number;
   getNetPerSecond(index: number): number;
@@ -122,6 +133,7 @@ interface ResourceState {
   applyExpense(index: number, amountPerSecond: number): void;
   finalizeTick(deltaMs: number): void;
   resetPerTickAccumulators(): void;
+  clearDirtyScratch(): void;
   snapshot(): ResourceStateSnapshot;
   exportForSave(): SerializedResourceState;
 }
@@ -129,11 +141,22 @@ interface ResourceState {
 
 - Mutation helpers return the actual delta applied to support downstream
   bookkeeping.
+- `requireIndex(id)` wraps `getIndex` with an invariant check that throws and
+  emits telemetry when presented with an unknown id. Index-based helpers call
+  an internal `assertValidIndex(index)` guard so typed arrays never absorb
+  silent out-of-bounds writes.
 - `finalizeTick(deltaMs)` converts accumulated per-second rates into tick
   deltas, clamps amounts to capacities/zero, recomputes `netPerSecond`, and sets
   the dirty flag.
 - `resetPerTickAccumulators()` clears `incomePerSecond`, `expensePerSecond`, and
   `tickDelta` after a snapshot publish.
+- `clearDirtyScratch()` resets the `dirtyIndexScratch` length counter once a
+  snapshot consumer has emitted the accumulated deltas.
+
+The façade tracks the active length in a `dirtyIndexCount` field; the valid
+portion of `dirtyIndexScratch` lives in `[0, dirtyIndexCount)`. Mutations append
+indices only when the dirty bit transitions from clear to set, guaranteeing that
+each index appears at most once per tick without extra allocations.
 
 ### 5.3 Initialization & Lifecycle
 
@@ -152,7 +175,11 @@ that:
    `Number.POSITIVE_INFINITY` as `null` to avoid lossy JSON round-trips.
 3. Initializes `flags` with `VISIBLE | UNLOCKED` for starting resources and
    zero for locked ones.
-4. Freezes `ids`/`indexById` to prevent mutation after creation.
+4. Wraps `ids` in `Object.freeze` and converts the `indexById` lookup table into
+   an `ImmutableMapSnapshot` via the existing `enforceImmutable(...)` helper so
+   any attempt to mutate it throws at runtime.
+5. Seeds the `dirtyIndexScratch` array with a sentinel length counter of `0`
+   (tracked separately inside the façade) so the first mutation appends in-place.
 
 On content reload or save restore, callers reuse the factory with definitions
 and then hydrate numeric buffers from persisted data. The runtime stores the
@@ -161,19 +188,23 @@ and then hydrate numeric buffers from persisted data. The runtime stores the
 
 ### 5.4 Mutation Semantics
 
-- **Additions:** `addAmount` increases `amounts[index]`, optionally clamping to
-  capacity. Negative input throws to catch misuse; callers use `spendAmount`
-  for decrements. The applied delta is accumulated into `tickDelta[index]` and
-  the dirty bit is set.
+- **Additions:** `addAmount` increases `amounts[index]`, clamping to capacity by
+  default unless the optional `clamp` argument is explicitly set to `false`.
+  Negative input throws to catch misuse; callers use `spendAmount` for
+  decrements. The applied delta is accumulated into `tickDelta[index]`,
+  the dirty bit is set, and the index is appended to `dirtyIndexScratch` the
+  first time it is mutated within the current tick.
 - **Spending:** `spendAmount` verifies `amounts[index] >= amount` before
   subtracting. It returns `true/false` to signal insufficient resources and
   never allows negative balances. Successful spends subtract from both
   `amounts[index]` and `tickDelta[index]`. When spending fails, telemetry records
-  a `ResourceSpendFailed` event with the offending command/system id.
+  a `ResourceSpendFailed` event with the offending command/system id and the
+  guard throws if the caller attempts to subtract a negative amount.
 - **Per-second accumulation:** Systems call `applyIncome` / `applyExpense`
   during their tick. Each helper adds to (`+=`) `incomePerSecond[index]` and
   `expensePerSecond[index]`, allowing multiple systems to compose within a
-  single frame. Both helpers set the dirty bit.
+  single frame. Both helpers set the dirty bit and record the index in the
+  scratch list if it was not already marked dirty.
 - **Capacity updates:** `setCapacity` updates the `capacities` buffer, clamps
   the current amount if it now exceeds the cap (recording that clamp as a delta
   in `tickDelta`) and returns the applied cap so command handlers can publish
@@ -181,8 +212,15 @@ and then hydrate numeric buffers from persisted data. The runtime stores the
 - **Visibility/unlock:** `grantVisibility` and `unlock` set bits inside the
   flag buffer and mark the resource dirty so the UI is notified.
 
-Dirty tracking (flag bit `0b100`) is cleared when the snapshot builder consumes
-the resource during delta publication.
+Dirty tracking (flag bit `0b100`) is cleared inside `snapshot()` prior to
+wrapping the arrays in immutable proxies. Clearing the bit at this point keeps
+the underlying buffers mutable while guaranteeing the published snapshot remains
+immutable.
+
+Every index-based helper calls `assertValidIndex(index)`, which verifies
+`index >= 0 && index < resourceCount`, logs a `ResourceIndexViolation` telemetry
+event, and throws when the guard fails. Command handlers invoke `requireIndex`
+so the guard fires at lookup time rather than after a mutation attempt.
 
 ### 5.5 Snapshot & Persistence
 
@@ -190,7 +228,8 @@ the resource during delta publication.
   - `ids` (frozen array)
   - Immutable typed-array wrappers (leveraging `ImmutableTypedArraySnapshot`
     from `immutable-snapshots.ts`)
-  - A compact list of dirty indices for the current tick
+  - A compact list of dirty indices for the current tick derived from the
+    populated prefix of `dirtyIndexScratch`
   - Flag bits encoded as a read-only `Uint8Array` snapshot
 - `exportForSave()` returns a POJO suitable for persistence:
 
@@ -205,13 +244,22 @@ interface SerializedResourceState {
 ```
 
 Offline catch-up consumes `SerializedResourceState`, rehydrates the typed arrays,
-and continues deterministic execution.
+and continues deterministic execution. The save payload intentionally omits
+per-second income/expense data because they are tick-scoped diagnostics; the
+runtime zeros those buffers on restore and regenerates fresh rates during the
+next tick.
+
+The snapshot builder iterates the `dirtyIndexScratch` prefix, emitting deltas
+and clearing the `DIRTY_THIS_TICK` bit for each index before the immutable
+wrappers are created. After publication, `clearDirtyScratch()` resets the prefix
+length to zero so the next tick starts with an empty slate.
 
 ### 5.6 Integration Points
 
 - **Command handlers:** `COLLECT_RESOURCE` routes through `addAmount`,
   `PURCHASE_GENERATOR` and future `APPLY_MODIFIER` commands use `spendAmount`
-  and `setCapacity`. All handlers include resource ids to translate into indices.
+  and `setCapacity`. All handlers include resource ids to translate into indices
+  via `requireIndex`, ensuring invalid content references surface as telemetry.
 - **Systems:** Production, automation, and prestige systems receive the shared
   `ResourceState` instance on registration. Each system operates on indices
   rather than ids for tight loops; helper utilities resolve ids only during
@@ -246,6 +294,8 @@ and continues deterministic execution.
   - Duplicate ids throw during initialization.
   - Capacity enforcement and telemetry emission on attempted overflows.
   - Spending failure paths leave balances untouched.
+  - `requireIndex` and `assertValidIndex` telemetry + throw on unknown ids or
+    out-of-range indices.
   - `finalizeTick` converts rates into clamped deltas given various `deltaMs`.
   - Dirty index tracking only flags mutated resources per tick.
   - `exportForSave()` serializes uncapped capacities as `null` and rehydrates to
@@ -255,9 +305,11 @@ and continues deterministic execution.
 
 ## 7. Risks & Mitigations
 
-- **Precision drift:** Using `Float64Array` mitigates cumulative rounding error
-  common in idle economies. Future balance tuning may switch to fixed-point
-  arithmetic if we observe drift.
+- **Precision drift & magnitude ceiling:** Using `Float64Array` mitigates
+  cumulative rounding error common in idle economies, but values above `2^53`
+  lose integer precision. Balance tuning will monitor growth curves and, when
+  definitions demand it, graduate to a fixed-point or logarithmic representation
+  captured in a follow-up design doc.
 - **Serialization cost:** Large typed arrays can inflate save size. Mitigate by
   delta-encoding saves or compressing offline, tracked in a follow-up issue.
 - **Content churn:** New resources require reinitialization. Mitigate by
@@ -266,18 +318,25 @@ and continues deterministic execution.
   buffers would require atomics. Out of scope now; document invariants so future
   work can extend safely.
 
-## 8. Open Questions
+## 8. Decisions & Clarifications
 
-- Do we need separate buffers for prestige currencies or can they reuse the same
-  `ResourceState` with tagging?
-- Should income/expense rates reset each tick or accumulate as rolling averages
-  for analytics?
-- What telemetry format best serves the diagnostics overlay (per-resource stats
-  vs. aggregated totals)?
-- How should we expose localized resource names for UI deltas without leaking
-  mutable references?
+- **Prestige currencies:** Prestige and primary currencies share the same
+  `ResourceState`. Content packs tag prestige entries in their definitions, and
+  the runtime stores that metadata alongside the immutable `ids` array so
+  systems can branch without duplicating buffers.
+- **Income/expense accumulation:** `applyIncome` / `applyExpense` reset to zero
+  each tick via `resetPerTickAccumulators`. Rolling averages are calculated by
+  analytics code that consumes successive snapshots instead of mutating the core
+  buffers.
+- **Telemetry format:** Mutations emit structured telemetry events with
+  `{resourceId, operation, amountBefore, amountAfter}` payloads. An optional
+  diagnostics system aggregates these into per-second summaries for dashboards
+  without coupling the storage layer to presentation concerns.
+- **Localized labels:** Snapshots expose resource ids only; UI and localization
+  layers resolve display names via the content pack metadata. This avoids sharing
+  mutable strings or translation maps across module boundaries.
 
-Resolved clarifications:
+Additional resolved clarifications:
 
 - The factory rejects duplicate resource ids up front, ensuring deterministic
   indexing.
@@ -291,5 +350,8 @@ Resolved clarifications:
 - Struct-of-arrays `ResourceState` module checked into `packages/core`.
 - Deterministic initialization from sample content definitions.
 - Mutation helpers enforce caps and prevent negative balances.
+- `requireIndex`/`assertValidIndex` guard invalid lookups with telemetry and
+  exceptions.
 - Snapshot API returns immutable data compatible with `CommandRecorder`.
+- Dirty index scratch list powers delta publications without heap churn.
 - Unit tests cover initialization, mutation, and snapshot behaviors.
