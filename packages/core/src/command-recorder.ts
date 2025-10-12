@@ -881,6 +881,7 @@ function payloadsMatch(
   }
 
   const objectLeft = left as object;
+  const objectRight = right as object;
   if (seen.has(objectLeft)) {
     return seen.get(objectLeft) === right;
   }
@@ -940,21 +941,21 @@ function payloadsMatch(
     return left.getTime() === right.getTime();
   }
 
-  const leftKeys = Object.keys(left as Record<string, unknown>);
-  const rightKeys = Object.keys(right as Record<string, unknown>);
+  const leftKeys = Reflect.ownKeys(objectLeft);
+  const rightKeys = Reflect.ownKeys(objectRight);
 
   if (leftKeys.length !== rightKeys.length) {
     return false;
   }
 
   for (const key of leftKeys) {
-    if (!Object.prototype.hasOwnProperty.call(right, key)) {
+    if (!Object.prototype.hasOwnProperty.call(objectRight, key)) {
       return false;
     }
     if (
       !payloadsMatch(
-        (left as Record<string, unknown>)[key],
-        (right as Record<string, unknown>)[key],
+        Reflect.get(objectLeft, key),
+        Reflect.get(objectRight, key),
         seen,
       )
     ) {
