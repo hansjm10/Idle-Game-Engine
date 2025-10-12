@@ -102,6 +102,38 @@ describe('CommandDispatcher', () => {
     );
   });
 
+  it('skips execution and records telemetry when authorization fails', () => {
+    const dispatcher = new CommandDispatcher();
+    const handler = vi.fn();
+
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    dispatcher.register('PRESTIGE_RESET', handler);
+
+    dispatcher.execute({
+      ...baseCommand,
+      type: 'PRESTIGE_RESET',
+      priority: CommandPriority.AUTOMATION,
+    });
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'AutomationPrestigeBlocked',
+      expect.objectContaining({
+        type: 'PRESTIGE_RESET',
+        attemptedPriority: CommandPriority.AUTOMATION,
+        phase: 'live',
+        reason: 'dispatcher',
+      }),
+    );
+  });
+
   it('exposes registered handlers via forEachHandler', () => {
     const dispatcher = new CommandDispatcher();
     const handlerA = vi.fn();
