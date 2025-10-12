@@ -119,8 +119,10 @@ interface ResourceStateBuffers {
   dirty list minimal heading into publish.
 - `dirtyTolerance`: per-resource tolerance ceiling (defaults to
   `DIRTY_EPSILON_CEILING`). When a resource definition supplies
-  `dirtyTolerance`, the factory writes the normalized value (`>= DIRTY_EPSILON_ABSOLUTE`)
-  into this buffer and `epsilonEquals` reads it instead of the global ceiling.
+  `dirtyTolerance`, the factory writes the normalized value (clamped to
+  `>= DIRTY_EPSILON_ABSOLUTE` and `<= DIRTY_EPSILON_OVERRIDE_MAX`) into this buffer
+  and `epsilonEquals` reads it instead of the default ceiling so prestige-scale
+  resources can relax their tolerance without mutating global constants.
 - `publish`: pair of `ResourcePublishBuffers` used in a ping-pong pattern. Each
   buffer owns read-only copies of amounts, caps, per-second diagnostics,
   deltas, flags, tolerance ceilings, and the filtered list of dirty indices that back the most
@@ -176,22 +178,25 @@ return Math.abs(a - b) <= tolerance;
 ```
 
 `toleranceCeiling` resolves per resource from the mutable `dirtyTolerance`
-buffer (defaulting to `DIRTY_EPSILON_CEILING`), ensuring the epsilon never
-exceeds the ceiling stored for that index.
+buffer (defaulting to `DIRTY_EPSILON_CEILING` but allowed to grow up to
+`DIRTY_EPSILON_OVERRIDE_MAX`), ensuring the epsilon never exceeds the ceiling
+stored for that index.
 
 Default constants:
 
 - `DIRTY_EPSILON_ABSOLUTE = 1e-9` collapses near-zero jitter.
 - `DIRTY_EPSILON_RELATIVE = 1e-9` scales tolerance in proportion to value size.
-- `DIRTY_EPSILON_CEILING = 1e-3` prevents late-game magnitudes from masking
-  legitimate deltas by capping the tolerated drift to sub-unit changes.
+- `DIRTY_EPSILON_CEILING = 1e-3` serves as the default per-resource ceiling.
+- `DIRTY_EPSILON_OVERRIDE_MAX = 5e-2` bounds definition-supplied overrides so they
+  can relax tolerance for prestige-scale resources without letting massive deltas
+  slip through unchecked.
 
 If specific resources require looser tolerances (e.g., prestige currencies with
 huge exponential growth), the content definition may optionally supply a
 `dirtyTolerance` override that the factory stores alongside the resource index;
-`epsilonEquals` then reads the per-resource ceiling. Telemetry records the raw
-comparisons whenever the ceiling is hit so balancing can adjust the
-configuration before release.
+`epsilonEquals` then reads the per-resource ceiling (capped only by
+`DIRTY_EPSILON_OVERRIDE_MAX`). Telemetry records the raw comparisons whenever the
+override saturates so balancing can adjust the configuration before release.
 
 `ImmutableMapSnapshot` is already provided by `packages/core/src/immutable-snapshots.ts`
 and proxies mutation methods so the lookup table cannot be altered after the
@@ -256,17 +261,21 @@ interface ResourceState {
   capacity clamping during save restore or migrations. The helper is not part of
   the public façade and is only callable from privileged modules in the same
   file so gameplay code must go through `addAmount`.
-- `finalizeTick(deltaMs)` converts accumulated per-second rates into tick
-  deltas, clamps amounts to capacities/zero, recomputes `netPerSecond`, and
-  relies on `markDirty` + `unmarkIfClean` to ensure only indices with meaningful
-  divergence remain dirty at the end of the tick (cancelling incomes/expenses do
-  not surface spurious deltas). The conversion uses
-  `deltaSeconds = deltaMs / 1_000`, computes `incomeDelta = incomePerSecond *
-  deltaSeconds`, `expenseDelta = expensePerSecond * deltaSeconds`, and applies
-  `appliedDelta = incomeDelta - expenseDelta`. When
-  `epsilonEquals(appliedDelta, 0)` succeeds we treat the delta as zero to avoid
-  jitter from floating point noise, keeping deterministic behaviour across
-  engines.
+  - `finalizeTick(deltaMs)` converts accumulated per-second rates into a proposed
+    delta, clamps amounts to capacities/zero, recomputes `netPerSecond`, and relies
+    on `markDirty` + `unmarkIfClean` to ensure only indices with meaningful
+    divergence remain dirty at the end of the tick (cancelling incomes/expenses do
+    not surface spurious deltas). The conversion uses
+    `deltaSeconds = deltaMs / 1_000`, computes `incomeDelta =
+    incomePerSecond * deltaSeconds`, `expenseDelta = expensePerSecond * deltaSeconds`,
+    and derives a tentative `appliedDelta = incomeDelta - expenseDelta`. After
+    clamping the live amount into `[0, capacity]`, we recompute the
+    `actualDelta = clampedAmount - previousAmount` and accumulate that value into
+    `tickDelta`. When `epsilonEquals(actualDelta, 0)` succeeds we treat the delta
+    as zero (including clearing any stale `tickDelta` entry) to avoid jitter from
+    floating point noise, keeping deterministic behaviour across engines. Dirty
+    bookkeeping and telemetry always use `actualDelta` so resources that hit their
+    cap/zero do not remain in the dirty set indefinitely.
 - `resetPerTickAccumulators()` clears the live `incomePerSecond`,
   `expensePerSecond`, and `tickDelta` arrays after publish while leaving the
   publish buffers untouched thanks to the ping-pong double buffering.
@@ -296,21 +305,27 @@ that:
    is preserved and surfaces deterministically in presentation. The content pack
    compiler guarantees a stable array order; the factory verifies uniqueness by
    inserting ids into a `Set` and throws on duplicates.
-2. Allocates typed arrays sized to the resource count, pre-filling `amounts`
-   with `startAmount`, `capacities` with either `definition.capacity` (future) or
-   `Number.POSITIVE_INFINITY` when absent, and mirroring those values into both
-   publish buffers so the initial snapshot requires no additional copying. The
-   retainers track the active publish buffer index (`0` at bootstrap) and mark
-   the standby buffer ready for the next tick, clearing each publish buffer's
-   `dirtyCount` to `0`. The save serializer treats
-   `Number.POSITIVE_INFINITY` as `null` to avoid lossy JSON round-trips.
+2. Allocates typed arrays sized to the resource count. Initialization passes
+   each definition through `sanitizeInitialResourceValues`, which clamps
+   `startAmount` into `[0, capacity]`, rejects `NaN`/non-finite input with a
+   telemetry event and thrown error, and logs + clamps negative values to `0` or
+   overshoot values down to the capacity. The sanitized amounts populate both
+   the live `amounts` array and the mirrored publish buffers. Capacities default
+   to `Number.POSITIVE_INFINITY` when unspecified (and populate both publish
+   views) so the initial snapshot requires no additional copying. The retainers
+   track the active publish buffer index (`0` at bootstrap) and mark the standby
+   buffer ready for the next tick, clearing each publish buffer's `dirtyCount` to
+   `0`. The save serializer treats `Number.POSITIVE_INFINITY` as `null` to avoid
+   lossy JSON round-trips.
 3. Initializes `flags` with `VISIBLE | UNLOCKED` for starting resources and
    zero for locked ones.
 4. Populates `dirtyTolerance[index]` with the sanitized tolerance from the
    definition (if provided) or `DIRTY_EPSILON_CEILING`. Sanitization clamps the
-   tolerance between `DIRTY_EPSILON_ABSOLUTE` and `DIRTY_EPSILON_CEILING`, and
+   tolerance between `DIRTY_EPSILON_ABSOLUTE` and `DIRTY_EPSILON_OVERRIDE_MAX`, and
    each publish buffer stores the same scalar so comparison logic receives a
-   per-resource ceiling regardless of which buffer is active.
+   per-resource ceiling regardless of which buffer is active. Overrides that land
+   above the default ceiling but within the max let prestige-scale resources relax
+   their noise floor deterministically.
 5. Wraps `ids` in `Object.freeze` and converts the `indexById` lookup table into
    an `ImmutableMapSnapshot` via the existing `enforceImmutable(...)` helper so
    any attempt to mutate it throws at runtime.
@@ -373,9 +388,11 @@ relevant upgrades reapply.
   flag buffer and mark the resource dirty so the UI is notified.
 
 Dirty tracking (flag bit `0b100`) is cleared inside `snapshot({ mode: 'publish' })`
-only after the live values and flag bits have been copied into the publish
-buffers. Clearing the bit at this point keeps the underlying live buffers
-mutable while guaranteeing the published snapshot remains immutable.
+  only after the live values and flag bits have been copied into the publish
+  buffers. The same loop clears the bit in both the live flag array (so subsequent
+  mutations have to re-mark the resource) and the publish copy (by masking the bit
+  before exposure). Clearing the bit at this point keeps the underlying live
+  buffers mutable while guaranteeing the published snapshot remains immutable.
 
 Every index-based helper calls `assertValidIndex(index)`, which verifies
 `index >= 0 && index < resourceCount`, logs a `ResourceIndexViolation` telemetry
@@ -501,7 +518,8 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
    duplicate-id guarding, snapshot generation (including `null` persistence for
    uncapped capacities), income/expense publish mirroring, and rehydration from
    persisted saves. Include cases for per-resource `dirtyTolerance` overrides
-   reaching the ceiling and telemetry emission when the cap is hit.
+   saturating `DIRTY_EPSILON_OVERRIDE_MAX` and telemetry emission when the cap is
+   hit.
 5. Update command handlers (future issue) to depend on `ResourceState`.
 6. Extend documentation (`docs/runtime-command-queue-design.md`) with references
    to the new storage contract after implementation lands.
@@ -509,8 +527,11 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
 ## 6. Testing Strategy
 
 - Unit tests verifying:
-  - Deterministic index ordering from unordered definitions.
+  - Deterministic preservation of the definition-supplied resource order (stable
+    indices when the content array itself is stable).
   - Duplicate ids throw during initialization.
+  - Initial amount sanitization clamps into `[0, capacity]`, rejects non-finite
+    values with telemetry + throw, and logs whenever a clamp occurs.
   - Capacity enforcement (including accepting `Infinity`) and telemetry emission
     on attempted overflows.
   - Spending failure paths leave balances untouched.
@@ -520,7 +541,8 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
     and suppresses changes whenever `epsilonEquals(appliedDelta, 0)` succeeds.
   - `applyIncome` / `applyExpense` reject negative, `NaN`, or infinite inputs
     with telemetry and throw.
-  - `dirtyTolerance` overrides clamp to the allowed range, influence
+  - `dirtyTolerance` overrides clamp to the allowed range (`DIRTY_EPSILON_ABSOLUTE`
+    → `DIRTY_EPSILON_OVERRIDE_MAX`), influence
     `epsilonEquals`, surface telemetry when ceilings are reached, and round-trip
     through publish/recorder snapshots without allocation churn.
   - Zero-value income/expense submissions, or opposing submissions that land
@@ -593,9 +615,9 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
   mutable strings or translation maps across module boundaries.
 - **Dirty tolerance configuration:** Content packs may provide an optional
   `dirtyTolerance` per resource; the factory normalizes the value into
-  `dirtyTolerance[index]`, the publish buffers mirror it, and telemetry fires
-  when runtime changes push comparisons up against the ceiling so designers can
-  right-size the tolerance.
+  `dirtyTolerance[index]` (clamped only by `DIRTY_EPSILON_OVERRIDE_MAX`), the
+  publish buffers mirror it, and telemetry fires when runtime changes push
+  comparisons up against the ceiling so designers can right-size the tolerance.
 
 Additional resolved clarifications:
 
