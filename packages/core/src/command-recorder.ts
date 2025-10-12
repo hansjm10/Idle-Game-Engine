@@ -302,7 +302,39 @@ export class CommandRecorder {
     const previousStep = runtimeContext?.getCurrentStep?.();
     const previousNextStep = runtimeContext?.getNextExecutableStep?.();
     let replayFailed = true;
+    let stateAdvanced = false;
+    let finalizationComplete = false;
     const matchedFutureCommandIndices = new Set<number>();
+
+    const revertRuntimeContext = (): void => {
+      if (!runtimeContext) {
+        return;
+      }
+      if (previousStep !== undefined) {
+        runtimeContext.setCurrentStep?.(previousStep);
+      }
+      if (previousNextStep !== undefined) {
+        runtimeContext.setNextExecutableStep?.(previousNextStep);
+      }
+      stateAdvanced = false;
+    };
+
+    const recordReplayFailure = (
+      command: FrozenCommand,
+      error: unknown,
+    ): void => {
+      replayFailed = true;
+      telemetry.recordError('ReplayExecutionFailed', {
+        type: command.type,
+        step: command.step,
+        error:
+          error instanceof Error ? error.message : String(error),
+      });
+
+      if (finalizationComplete && stateAdvanced) {
+        revertRuntimeContext();
+      }
+    };
 
     (queue as CommandQueue & {
       enqueue: (command: Command) => void;
@@ -331,14 +363,14 @@ export class CommandRecorder {
           });
         } else {
           try {
-            handler(cmd.payload, context);
+            const result = handler(cmd.payload, context);
+            if (isPromiseLike(result)) {
+              result.catch((error: unknown) => {
+                recordReplayFailure(cmd, error);
+              });
+            }
           } catch (error) {
-            telemetry.recordError('ReplayExecutionFailed', {
-              type: cmd.type,
-              step: cmd.step,
-              error:
-                error instanceof Error ? error.message : String(error),
-            });
+            recordReplayFailure(cmd, error);
           }
         }
 
@@ -375,16 +407,13 @@ export class CommandRecorder {
       }).enqueue = originalEnqueue;
 
       if (replayFailed) {
-        if (previousStep !== undefined) {
-          runtimeContext?.setCurrentStep?.(previousStep);
-        }
-        if (previousNextStep !== undefined) {
-          runtimeContext?.setNextExecutableStep?.(previousNextStep);
-        }
+        revertRuntimeContext();
       } else if (finalStep >= 0 && runtimeContext) {
         runtimeContext.setCurrentStep?.(finalStep + 1);
         runtimeContext.setNextExecutableStep?.(finalStep + 1);
+        stateAdvanced = true;
       }
+      finalizationComplete = true;
     }
   }
 
@@ -397,6 +426,14 @@ export class CommandRecorder {
     this.refreshSeedSnapshot();
     this.lastRecordedStep = -1;
   }
+}
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as PromiseLike<T>).then === 'function'
+  );
 }
 
 export function restoreState<TState>(

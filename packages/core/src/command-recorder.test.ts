@@ -479,4 +479,52 @@ describe('CommandRecorder', () => {
       expect.objectContaining({ type: 'FAIL' }),
     );
   });
+
+  it('records telemetry when handler rejects asynchronously during replay', async () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+    const commandQueue = new CommandQueue();
+
+    dispatcher.register('ASYNC_FAIL', () =>
+      Promise.reject(new Error('boom')),
+    );
+
+    recorder.record(
+      createCommand({
+        type: 'ASYNC_FAIL',
+        step: 2,
+      }),
+    );
+
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    const setCurrentStep = vi.fn();
+    const setNextExecutableStep = vi.fn();
+
+    recorder.replay(recorder.export(), dispatcher, {
+      commandQueue,
+      getCurrentStep: () => 10,
+      getNextExecutableStep: () => 11,
+      setCurrentStep,
+      setNextExecutableStep,
+    });
+
+    await Promise.resolve();
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ReplayExecutionFailed',
+      expect.objectContaining({ type: 'ASYNC_FAIL' }),
+    );
+    expect(setCurrentStep).toHaveBeenCalledWith(3);
+    expect(setCurrentStep).toHaveBeenLastCalledWith(10);
+    expect(setNextExecutableStep).toHaveBeenCalledWith(3);
+    expect(setNextExecutableStep).toHaveBeenLastCalledWith(11);
+  });
 });
