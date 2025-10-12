@@ -140,10 +140,11 @@ interface ResourceStateBuffers {
   1. Zero `targetPublish.tickDelta` only for indices recorded in either the
      previous publish's dirty list or the current tick's scratch union
      (see §5.5) to avoid `O(resourceCount)` work when the dirty set is small.
-  2. Iterate `sourcePublish.dirtyIndices.subarray(0, sourcePublish.dirtyCount)`
-     and copy the corresponding slots (amounts, caps, rates, flags, tolerance) from
-     `sourcePublish` into the inactive buffer so everything that moved last tick is
-     already correct while leaving `tickDelta` at zero.
+  2. Iterate the prefix of `sourcePublish.dirtyIndices` up to
+     `sourcePublish.dirtyCount` and copy the corresponding slots (amounts, caps,
+     rates, flags, tolerance) from `sourcePublish` into the inactive buffer so
+     everything that moved last tick is already correct while leaving
+     `tickDelta` at zero.
   3. Apply the current tick's dirty updates (see §5.5).
   Resources that stay clean for two consecutive ticks never move, keeping the
   copy cost proportional to the union of the previous and current dirty sets
@@ -160,6 +161,17 @@ interface ResourceStateBuffers {
   densely packed. During publish passes the map may temporarily hold the sentinel
   value `-2` (`SCRATCH_VISITED`) while unioned loops are running; the loop restores
   the entry to `-1` before exiting so steady-state semantics remain unchanged.
+- `definitionDigest`: frozen record `{ ids, version, hash }` cached alongside the
+  immutable id array so save systems can quickly confirm compatibility prior to
+  hydration.
+
+```ts
+interface ResourceDefinitionDigest {
+  readonly ids: readonly string[];
+  readonly version: number;
+  readonly hash: string;
+}
+```
 
 All live numeric buffers share a single `ArrayBuffer` per numeric width to
 improve serialization locality while keeping independent views disjoint. The
@@ -236,9 +248,11 @@ interface ResourceState {
   applyExpense(index: number, amountPerSecond: number): void;
   finalizeTick(deltaMs: number): void;
   resetPerTickAccumulators(): void;
+  forceClearDirtyState(): void;
   clearDirtyScratch(): void;
   snapshot(options?: { mode?: 'publish' | 'recorder' }): ResourceStateSnapshot;
   exportForSave(): SerializedResourceState;
+  getDefinitionDigest(): ResourceDefinitionDigest;
 }
 ```
 
@@ -311,10 +325,17 @@ interface ResourceState {
   consume.
 - `clearDirtyScratch()` clears residual dirty metadata and associated flag bits
   after authoritative calls to `snapshot({ mode: 'publish' })` complete (the
-  snapshot path itself resets the scratch length to zero). This helper exists for
-  test harnesses, migration tools, or debugging consoles that intentionally skip
-  the publish path. Production code relies on `snapshot({ mode: 'publish' })`
-  instead of calling `clearDirtyScratch()` directly.
+  snapshot path itself resets the scratch length to zero). For rare flows that
+  intentionally skip publish (e.g. deterministic test harnesses comparing
+  recorder snapshots) the module exposes `forceClearDirtyState()` which performs
+  the same scratch reset *and* clears `incomePerSecond`, `expensePerSecond`, and
+  `tickDelta` under an internal "publish skipped" guard. Callers must invoke
+  `forceClearDirtyState()` instead of `resetPerTickAccumulators()` in that
+  scenario so rate accumulators do not desynchronise. Production code relies on
+  `snapshot({ mode: 'publish' })` instead of calling either helper directly.
+- `getDefinitionDigest()` returns the frozen `{ ids, version, hash }` payload
+  recorded during initialization so save serializers can embed it and hydration
+  routines can check compatibility before replaying data.
 - `snapshot(options)` defaults to `{ mode: 'publish' }`. Callers opt into
   recorder mode explicitly so accidental captures do not skip the publish reset.
 
@@ -362,26 +383,35 @@ that:
 6. Seeds the `dirtyIndexScratch` array with a sentinel length counter of `0`
    (tracked separately inside the façade) and fills `dirtyIndexPositions` with
    `-1` so the first mutation appends in-place without additional setup.
+7. Emits a `ResourceDefinitionDigest` record `{ ids, version, hash }` so save
+   restores can verify content compatibility before hydrating. When hydrating a
+   save the runtime invokes `reconcileSaveAgainstDefinitions(savedIds, defs)`
+   which produces a mapping from save index → live index, reports removed/added
+   ids, and throws if a referenced id no longer exists. Mismatches surface
+   telemetry (`ResourceHydrationMismatch`) and fail fast instead of silently
+   dropping data; future migrations can hook into this reconciliation step to map
+   old ids onto new ones.
 
   On content reload or save restore, callers reuse the factory with definitions
-  and then hydrate numeric buffers from persisted data. Hydration writes restored
-  amount/capacity values and flag bits into both the live and publish typed
-  arrays, zeros `incomePerSecond`, `expensePerSecond`, `netPerSecond`, and
-  `tickDelta` in both views, and clears the dirty scratch counter so the next
-  `snapshot({ mode: 'publish' })` immediately reflects the restored state without
-  forcing a full-tick recomputation. Until the first post-restore tick runs the UI
-  should expect rate diagnostics to read as zero; the follow-up finalize recomputes
-  rates deterministically. The runtime stores the `ResourceState` inside the
-  broader game state object managed by `setGameState(...)`; systems recompute
-  per-second rates on the very next tick using the hydrated amounts. Save restore
-  and migration utilities invoke the internal `writeAmountDirect` helper during
-  this process so they can place values that temporarily exceed caps before the
-  relevant upgrades reapply. Immediately after hydration the engine reapplies
-  content-defined capacities/upgrades and only then schedules the next
-  `finalizeTick`. This ordering ensures overshoot values survive long enough for
-  upgrade modifiers to recreate the higher caps; if no modifier reinstates a wider
-  cap before finalize executes, the clamp (and corresponding telemetry) makes the
-  data loss explicit to designers.
+  and then hydrate numeric buffers from persisted data. `reconcileSaveAgainstDefinitions`
+  drives the process: it verifies payload array lengths, produces a remapping from
+  save indices to live indices, and rejects any out-of-band data. Hydration iterates
+  the remapping, writes restored amount/capacity values and flag bits into both the
+  live and publish typed arrays, zeros `incomePerSecond`, `expensePerSecond`,
+  `netPerSecond`, and `tickDelta` in both views, and clears the dirty scratch counter
+  so the next `snapshot({ mode: 'publish' })` immediately reflects the restored state
+  without forcing a full-tick recomputation. Until the first post-restore tick runs
+  the UI should expect rate diagnostics to read as zero; the follow-up finalize
+  recomputes rates deterministically. The runtime stores the `ResourceState` inside
+  the broader game state object managed by `setGameState(...)`; systems recompute
+  per-second rates on the very next tick using the hydrated amounts. Save restore and
+  migration utilities invoke the internal `writeAmountDirect` helper during this
+  process so they can place values that temporarily exceed caps before the relevant
+  upgrades reapply. Immediately after hydration the engine reapplies content-defined
+  capacities/upgrades and only then schedules the next `finalizeTick`. This ordering
+  ensures overshoot values survive long enough for upgrade modifiers to recreate the
+  higher caps; if no modifier reinstates a wider cap before finalize executes, the
+  clamp (and corresponding telemetry) makes the data loss explicit to designers.
 
 ### 5.4 Mutation Semantics
 
@@ -438,43 +468,29 @@ so the guard fires at lookup time rather than after a mutation attempt.
 
 ### 5.5 Snapshot & Persistence
 
-- `snapshot({ mode: 'publish' })` returns an immutable view
+- `snapshot({ mode: 'publish' })` returns a *read-only-by-contract* view
     (`ResourceStateSnapshot`) containing:
       - `ids` (frozen array).
-      - Read-only typed-array proxies that expose the publish buffer selected for
-        this frame. The helper (`createImmutableTypedArrayView`) will ship in
-        `packages/core/src/immutable-snapshots.ts`; it wraps an existing typed array
-        with the shared guard tables so every mutator (`set`, `copyWithin`, `fill`,
-        `reverse`, `sort`, `setPrototypeOf`, `defineProperty`, etc.) throws while
-        indexed reads remain zero-copy. The proxy also denies access to `.buffer`,
-        `.byteOffset`, `.byteLength`, and view-producing helpers such as `subarray`,
-        `slice`, `with`, `toReversed`, and `toSorted` by returning new immutable
-        proxies, ensuring callers cannot peel off writable views. Snapshot code
-        requests the helper once per publish buffer slice and caches the proxy so
-        repeated snapshots do not allocate. When the presentation bridge needs to
-        marshal data across the worker boundary it operates directly on the
-        underlying `targetPublish` typed arrays *before* they are wrapped in proxies,
-        emitting a `ResourcePublishEnvelope` with either plain arrays or transferable
-        buffers. The immutable proxy layer is applied only to the snapshot object that
-        escapes the module, so transport code never has to unwrap a guarded view.
-        - Guard semantics are centralized in a `TypedArrayGuardTable`: `get` delegates
-          numeric indices and structural reads to the underlying view, `set` throws an
-          `ImmutableTypedArrayError`, `defineProperty` rejects any descriptor whose key
-          is not a canonical numeric index already present, `setPrototypeOf` always
-          throws, `getOwnPropertyDescriptor` returns the underlying descriptor but
-          forces `writable = false`, `preventExtensions` delegates (typed arrays are
-          already non-extensible), `ownKeys` mirrors the backing view's keys, and
-          methods that would otherwise allocate derived views (`subarray`, `slice`,
-          `with`, `toReversed`, `toSorted`, `entries`, `keys`, `values`) wrap their
-          return values in the same guard so lazily derived views inherit immutability.
-          `.buffer`, `.byteOffset`, and `.byteLength` getters expose the primitive
-          scalars but never the raw `ArrayBuffer`. Tests exercise every trap to assert
-          conformance with the ECMAScript TypedArray proxy invariants and to guard
-          against future regression.
-      - A compact list of dirty indices for the current tick sourced from
-        `targetPublish.dirtyIndices.subarray(0, targetPublish.dirtyCount)`. The
-        subarray is wrapped in the same read-only helper so callers cannot mutate
-        the underlying array.
+      - Direct references to the publish buffer's typed arrays. To keep cache-friendly
+        hot reads intact we still hand out the live views, but the runtime installs a
+        lightweight `createImmutableTypedArrayView(...)` wrapper over each view in
+        non-production builds. The wrapper traps mutators, forwards safe reads, and
+        throws when a consumer attempts to write. Production builds may disable the
+        guard by clearing `SNAPSHOT_GUARDS`, but tests and development builds force it
+        on by default so accidental mutations cannot corrupt determinism. The flag now
+        supports three modes: `'auto'` (default; enabled for `NODE_ENV !== 'production'`),
+        `'force-on'`, and `'force-off'`, giving automation harnesses explicit control.
+        Guarded views share their backing buffer with the publish arrays so the check
+        costs a single proxy allocation per field rather than deep cloning; structured
+        cloning paths use recorder mode instead.
+      - The typed arrays surface only to same-thread consumers. Cross-thread transport
+        happens through the `ResourcePublishTransport` (see below); attempting to
+        `postMessage` a `ResourceStateSnapshot` is unsupported and intentionally
+        undocumented in the runtime API.
+      - A compact list of dirty indices for the current tick. Consumers read the
+        shared `Uint32Array` prefix `[0, dirtyCount)` and must ignore unused
+        capacity beyond that point; the array remains read-only by contract just
+        like the other typed views.
       - Flag bits encoded as a read-only `Uint8Array` snapshot sourced from
         `targetPublish.flags`.
     The publish snapshot type is therefore:
@@ -482,21 +498,25 @@ so the guard fires at lookup time rather than after a mutation attempt.
     ```ts
     interface ResourceStateSnapshot {
       readonly ids: readonly string[];
-      readonly amounts: ReadonlyTypedArray<Float64Array>;
-      readonly capacities: ReadonlyTypedArray<Float64Array>;
-      readonly incomePerSecond: ReadonlyTypedArray<Float64Array>;
-      readonly expensePerSecond: ReadonlyTypedArray<Float64Array>;
-      readonly netPerSecond: ReadonlyTypedArray<Float64Array>;
-      readonly tickDelta: ReadonlyTypedArray<Float64Array>;
-      readonly flags: ReadonlyTypedArray<Uint8Array>;
-      readonly dirtyTolerance: ReadonlyTypedArray<Float64Array>;
-      readonly dirtyIndices: ReadonlyTypedArray<Uint32Array>;
+      readonly amounts: Float64Array;
+      readonly capacities: Float64Array;
+      readonly incomePerSecond: Float64Array;
+      readonly expensePerSecond: Float64Array;
+      readonly netPerSecond: Float64Array;
+      readonly tickDelta: Float64Array;
+      readonly flags: Uint8Array;
+      readonly dirtyTolerance: Float64Array;
+      readonly dirtyIndices: Uint32Array;
       readonly dirtyCount: number;
     }
     ```
-    `ReadonlyTypedArray<T>` represents the proxy wrapper returned by
-    `createImmutableTypedArrayView`. Recorder mode returns the same interface, but
-    the arrays are deep-cloned and own their backing buffers.
+    The TypeScript surface marks these arrays as `readonly` to call out the contract.
+    In `'auto'`/`'force-on'` guard modes the runtime swaps each typed array reference
+    for the immutable proxy returned by `createImmutableTypedArrayView(...)`, keeping
+    the same underlying buffer while disallowing writes in development and test
+    environments. Recorder mode returns the same interface, but the arrays are
+    deep-cloned and own their backing buffers regardless of guard configuration so
+    structured cloning cannot observe shared state.
 - `snapshot({ mode: 'recorder' })` returns the same shape but clones its data
   into ephemeral typed arrays owned by the recorder call site (amount, capacity,
   income, expense, net, tick delta, flags, tolerance). This mode does not touch dirty
@@ -516,8 +536,8 @@ interface SerializedResourceState {
   readonly ids: readonly string[];
   readonly amounts: readonly number[];
   readonly capacities: readonly (number | null)[];
-  readonly unlocked: readonly boolean[];
-  readonly visible: readonly boolean[];
+  readonly unlocked?: readonly boolean[];
+  readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
 }
 ```
@@ -529,14 +549,14 @@ the runtime zeros those buffers (both live and publish views) on restore and
 regenerates fresh rates during the next tick.
 
   `flags` mirrors the raw bit mask so future toggle bits survive round-trips even
-  when older clients do not understand them; the dedicated `unlocked` and
-  `visible` arrays remain for ergonomic access in content tooling.
-  During rehydration the module trusts the bit field as the single source of truth:
-  it reconstitutes `flags` first, then recomputes the convenience arrays so the
-  emitted snapshot always reflects the authoritative bits. Tooling that persists
-  saves must therefore keep the arrays in sync with the bit mask or omit them
-  entirely (they are optional in the serializer) and rely on runtime-derived
-  projections.
+  when older clients do not understand them. The optional `unlocked` and
+  `visible` arrays remain for ergonomic access in content tooling; when provided
+  they must stay in sync with the bit mask. `reconcileSaveAgainstDefinitions`
+  validates that every array matches the `ids.length` (`flags.length` must also
+  match) and throws `ResourceSaveLengthMismatch` when they do not; telemetry
+  captures the offending metadata. During rehydration the module trusts `flags`
+  as the single source of truth, rebuilding the convenience arrays from the mask
+  so the emitted snapshot always reflects the authoritative bits.
 
 Consumers should continue to respect the dirty index list when emitting deltas,
  and because the publish path zeros `targetPublish.tickDelta` only for the
@@ -559,8 +579,8 @@ just the slots that may have diverged while `targetPublish` sat idle:
      is ready for the copy stage without allocating additional sets or arrays. No
      concatenation or temporary buffers are required and the work remains
      proportional to the dirty set.
-  2. Compute `previousDirtyCount = sourcePublish.dirtyCount` and iterate
-     `sourcePublish.dirtyIndices.subarray(0, previousDirtyCount)`, copying the
+  2. Compute `previousDirtyCount = sourcePublish.dirtyCount` and iterate the
+     prefix `sourcePublish.dirtyIndices[0..previousDirtyCount)`, copying the
      corresponding amount/capacity/rate/flag entries from `sourcePublish` into
      `targetPublish` while leaving their `tickDelta` at zero. This guarantees the
      inactive buffer matches the authoritative snapshot for everything that
@@ -609,30 +629,47 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
     either the full snapshot (initial load) or a delta referencing dirty indices
     with updated `amount`, `capacity`, per-second rates, `netPerSecond`, and
     `visibility` flags. Before calling `worker.postMessage` the bridge converts
-    the immutable typed-array views into a `ResourcePublishEnvelope` that carries
-    either plain JavaScript arrays or transferable `ArrayBuffer`s so the payload
-    survives structured cloning; on the UI thread this envelope is rehydrated into
-    lightweight typed arrays for diff application.
-    The envelope contract is stable and versioned:
+    the immutable typed-array views into a `ResourcePublishTransport` built from
+    a pooled set of transferable slabs sized exactly to `dirtyCount`. Each field
+    is copied with a tight `Float64Array`/`Uint8Array` whose length equals the
+    number of dirty indices, meaning the transport cost grows with the delta
+    rather than `resourceCount`. Slabs come from a `TransportBufferPool` so the
+    runtime reuses `ArrayBuffer`s across frames; the pool guarantees buffers are
+    detached only after the worker acknowledges receipt.
+    The transport contract is versioned (`version: 2`) and self-describing:
 
     ```ts
-    interface ResourcePublishEnvelope {
-      readonly version: 1;
+    type TransportComponent =
+      | 'amounts'
+      | 'capacities'
+      | 'incomePerSecond'
+      | 'expensePerSecond'
+      | 'netPerSecond'
+      | 'tickDelta'
+      | 'flags'
+      | 'dirtyTolerance';
+
+    interface TransportBufferDescriptor {
+      readonly component: TransportComponent;
+      readonly ctor: 'Float64Array' | 'Uint8Array';
+      readonly buffer: ArrayBuffer;
+      readonly byteOffset: number;
+      readonly length: number;
+    }
+
+    interface ResourcePublishTransport {
+      readonly version: 2;
       readonly ids: readonly string[];
-      readonly dirtyIndices: readonly number[];
-      readonly amounts: ArrayBuffer | readonly number[];
-      readonly capacities: ArrayBuffer | readonly number[];
-      readonly incomePerSecond: ArrayBuffer | readonly number[];
-      readonly expensePerSecond: ArrayBuffer | readonly number[];
-      readonly netPerSecond: ArrayBuffer | readonly number[];
-      readonly tickDelta: ArrayBuffer | readonly number[];
-      readonly flags: ArrayBuffer | readonly number[];
-      readonly dirtyTolerance: ArrayBuffer | readonly number[];
+      readonly dirtyIndices: Uint32Array;
+      readonly buffers: readonly TransportBufferDescriptor[];
     }
     ```
 
-    When running in the main thread the bridge prefers plain arrays for ease of
-    inspection; worker transports use transferable buffers to avoid copies.
+    Every descriptor includes the typed-array constructor string, length, and
+    byte offset so consumers can rebuild deterministic views without hard-coded
+    assumptions. Single-threaded presentation (no worker) still goes through the
+    transport builder, but instead of transferring the buffers we hand the pooled
+    typed arrays directly to the UI diff routine, keeping the zero-copy path.
 - **Command recorder:** The recorder uses `snapshot({ mode: 'recorder' })`
   before/after command execution to capture deterministic replays; this mode
   deep-clones the live view so structured cloning succeeds without disturbing
@@ -643,17 +680,22 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
 1. Scaffold `packages/core/src/resource-state.ts` with the buffer structs,
    factory, and façade.
 2. Wire the module into existing exports (`packages/core/src/index.ts`).
-3. Add `createImmutableTypedArrayView` (and associated proxy helpers) to
-   `packages/core/src/immutable-snapshots.ts`, plus tests that assert all mutator
-   traps fire and `.buffer` access returns immutable wrappers.
-4. Add Vitest coverage for initialization, mutation semantics, dirty tracking,
+3. Add an opt-in snapshot guard helper to `packages/core/src/immutable-snapshots.ts`
+   that wraps typed arrays in write-throwing proxies when `SNAPSHOT_GUARDS` is enabled,
+   plus tests covering both the fast path (direct views) and the guarded debug path.
+4. Implement the pooled buffer transport (`TransportBufferPool`) and bridge
+   utilities that build `ResourcePublishTransport` payloads proportional to the
+   dirty set, including worker/non-worker code paths and metadata reconstruction.
+5. Add reconciliation helpers (`reconcileSaveAgainstDefinitions`, definition
+   digest emission) and expose `forceClearDirtyState()` for test-only reset flows.
+6. Add Vitest coverage for initialization, mutation semantics, dirty tracking,
    duplicate-id guarding, snapshot generation (including `null` persistence for
    uncapped capacities), income/expense publish mirroring, and rehydration from
    persisted saves. Include cases for per-resource `dirtyTolerance` overrides
    saturating `DIRTY_EPSILON_OVERRIDE_MAX` and telemetry emission when the cap is
    hit.
-5. Update command handlers (future issue) to depend on `ResourceState`.
-6. Extend documentation (`docs/runtime-command-queue-design.md`) with references
+7. Update command handlers (future issue) to depend on `ResourceState`.
+8. Extend documentation (`docs/runtime-command-queue-design.md`) with references
    to the new storage contract after implementation lands.
 
 ## 6. Testing Strategy
@@ -681,23 +723,33 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
     within the epsilon band, do not mark resources dirty and rate changes still
     propagate into the publish buffers when `epsilonEquals` fails.
   - `dirtyIndexPositions` keeps tail swaps O(1) and is reset after publish.
-  - `snapshot({ mode: 'publish' })` resets the dirty scratch counter while leaving
-    the published delta accessible and read-only through the double-buffered
-    proxies, guaranteeing the snapshot emitted on the previous publish remains
-    unchanged and documenting that older snapshots require cloning.
-  - `snapshot({ mode: 'recorder' })` leaves dirty tracking and live buffers
-    untouched while returning a deep-clone suitable for structured cloning.
-  - Dirty index tracking only flags mutated resources per tick.
-  - Alternating add/spend sequences that mathematically cancel within the
-    epsilon drop out of `dirtyIndexScratch` before publish.
-  - Publish snapshots copy only the union of the previous and current dirty
-    indices; clean resources do not trigger full-buffer clones.
-  - Publish tick deltas are zeroed for indices that revert to their previous
-    state before publish.
-  - `exportForSave()` serializes uncapped capacities as `null` and rehydrates to
-    `Number.POSITIVE_INFINITY`.
-  - Rehydration from saves updates both live and publish buffers so the first
-    publish after restore reflects the persisted values.
+- `snapshot({ mode: 'publish' })` resets the dirty scratch counter while leaving
+  the published delta accessible and read-only through the double-buffered
+  proxies, guaranteeing the snapshot emitted on the previous publish remains
+  unchanged and documenting that older snapshots require cloning.
+- Immutable snapshot guards throw in development/test builds and can be toggled
+  with `SNAPSHOT_GUARDS` in production builds.
+- `snapshot({ mode: 'recorder' })` leaves dirty tracking and live buffers
+  untouched while returning a deep-clone suitable for structured cloning.
+- Dirty index tracking only flags mutated resources per tick.
+- Alternating add/spend sequences that mathematically cancel within the
+  epsilon drop out of `dirtyIndexScratch` before publish.
+- Publish snapshots copy only the union of the previous and current dirty
+  indices; clean resources do not trigger full-buffer clones.
+- Publish tick deltas are zeroed for indices that revert to their previous
+  state before publish.
+- `ResourcePublishTransport` payloads only include `dirtyCount` elements per
+  field, reuse pooled buffers, and reconstruct correctly on both worker and
+  main-thread consumers (including constructor metadata validation).
+- `forceClearDirtyState()` clears rate accumulators and scratch metadata without
+  requiring a publish, and `resetPerTickAccumulators()` still throws when called
+  before publish.
+- `exportForSave()` serializes uncapped capacities as `null` and rehydrates to
+  `Number.POSITIVE_INFINITY`.
+- Rehydration from saves updates both live and publish buffers so the first
+  publish after restore reflects the persisted values.
+- Save reconciliation rejects mismatched ids/lengths and emits telemetry when
+  definitions drift.
 - Snapshot tests ensuring immutable wrappers block mutation attempts (including
   `.buffer` access and bulk mutators).
 - Property-based tests (future follow-up) around additive/subtractive symmetry.
@@ -750,6 +802,9 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
   `dirtyTolerance[index]` (clamped only by `DIRTY_EPSILON_OVERRIDE_MAX`), the
   publish buffers mirror it, and telemetry fires when runtime changes push
   comparisons up against the ceiling so designers can right-size the tolerance.
+- **Snapshot guard defaults:** `SNAPSHOT_GUARDS='auto'` enables immutable proxies
+  in development and test builds automatically; production builds can override to
+  `'force-on'` (hardened) or `'force-off'` (maximum throughput).
 
 Additional resolved clarifications:
 
@@ -794,9 +849,11 @@ Additional resolved clarifications:
 - Snapshot API returns immutable data compatible with `CommandRecorder`, and
   the engine guarantees the most recent publish snapshot remains immutable; any
   consumer that retains older snapshots must clone them explicitly.
-- Snapshots expose zero-copy, read-only typed array views through the new proxy
-  helper, including income/expense rates, and the proxies block `.buffer` access
-  and mutator methods while reusing the shared guard tables.
+- Snapshots expose zero-copy typed array views (read-only by contract) and honour
+  the optional `SNAPSHOT_GUARDS` debug flag that wraps the arrays in write-throwing
+  proxies without impacting the default fast path.
+- `SNAPSHOT_GUARDS` defaults to enabled in development/test environments and can
+  be explicitly toggled for production builds.
 - Dirty index scratch list and `dirtyIndexPositions` map power delta publications
   without heap churn while keeping removals O(1).
 - Snapshot comparison and dirty tracking both honour `epsilonEquals`, ensuring
@@ -808,6 +865,12 @@ Additional resolved clarifications:
 - Publish mode replays the previous publish's dirty indices into the inactive
   buffer, zeros their tick deltas, and then applies the current tick's dirty
   updates so clean resources never incur full-buffer copies when buffers swap.
+- `ResourcePublishTransport` payloads contain metadata describing each typed
+  array and send only `dirtyCount` elements per field via a pooled buffer strategy.
+- `reconcileSaveAgainstDefinitions` validates save payloads, enforces id parity,
+  and reports mismatches instead of silently dropping data.
+- `forceClearDirtyState()` provides an explicit non-publish reset path for tests
+  while production flows continue to rely on publish.
 - Save rehydration updates both live and publish buffers so the next publish
   reflects persisted state without a warm-up tick.
 - Unit tests cover initialization, mutation, and snapshot behaviors.
