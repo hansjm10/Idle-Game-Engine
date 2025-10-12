@@ -86,13 +86,18 @@ interface ResourceStateBuffers {
   recomputing `income - expense` during reads.
 - `tickDelta`: tracks the signed delta applied during the current tick, enabling
   compact state diffs for the presentation layer and recorder.
-- `flags`: bit field storing boolean metadata (`VISIBLE`, `UNLOCKED`,
-  `DIRTY_THIS_TICK`). The low bit toggles when any mutation occurs so snapshot
-  builders can skip untouched entries.
+- `flags`: bit field storing boolean metadata. Bits are allocated as
+  `VISIBLE = 1 << 0`, `UNLOCKED = 1 << 1`, and `DIRTY_THIS_TICK = 1 << 2`.
+  Mutations always set (`|=`) the dirty bit; it never toggles or clears itself
+  mid-tick.
 
-All numeric buffers share a single `ArrayBuffer` per numeric type to improve
-serialization locality. For example, `amounts`, `capacities`, and
-`tickDelta` reside in a shared `ArrayBuffer` sized as `Float64Array.BYTES_PER_ELEMENT * resourceCount`.
+All numeric buffers share a single `ArrayBuffer` per numeric width to improve
+serialization locality while keeping independent views disjoint. The Float64
+views (`amounts`, `capacities`, `netPerSecond`, `tickDelta`) are carved out of a
+single backing buffer sized as
+`Float64Array.BYTES_PER_ELEMENT * 4 * resourceCount`, and each typed array is
+constructed with an offset stride (`amounts` at offset 0, `capacities` at
+`1 * stride`, etc.). The Uint8 flags array uses its own `ArrayBuffer`.
 
 ### 5.2 Runtime API Surface
 
@@ -135,11 +140,16 @@ interface ResourceState {
 Provide a factory `createResourceState(defs: readonly ResourceDefinition[])`
 that:
 
-1. Sorts incoming definitions deterministically (`localeCompare` on `id`) to
-   guarantee consistent indexing across devices and replays.
+1. Sorts incoming definitions deterministically using a locale-independent
+   comparator:
+   ```ts
+   defs.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+   ```
+   Duplicate ids throw during this phase so content packs fail fast.
 2. Allocates typed arrays sized to the resource count, pre-filling `amounts`
    with `startAmount`, `capacities` with either `definition.capacity` (future) or
-   `Number.POSITIVE_INFINITY` when absent.
+   `Number.POSITIVE_INFINITY` when absent. The save serializer treats
+   `Number.POSITIVE_INFINITY` as `null` to avoid lossy JSON round-trips.
 3. Initializes `flags` with `VISIBLE | UNLOCKED` for starting resources and
    zero for locked ones.
 4. Freezes `ids`/`indexById` to prevent mutation after creation.
@@ -153,18 +163,21 @@ and then hydrate numeric buffers from persisted data. The runtime stores the
 
 - **Additions:** `addAmount` increases `amounts[index]`, optionally clamping to
   capacity. Negative input throws to catch misuse; callers use `spendAmount`
-  for decrements.
+  for decrements. The applied delta is accumulated into `tickDelta[index]` and
+  the dirty bit is set.
 - **Spending:** `spendAmount` verifies `amounts[index] >= amount` before
   subtracting. It returns `true/false` to signal insufficient resources and
-  never allows negative balances. When spending fails, telemetry records a
-  `ResourceSpendFailed` event with the offending command/system id.
+  never allows negative balances. Successful spends subtract from both
+  `amounts[index]` and `tickDelta[index]`. When spending fails, telemetry records
+  a `ResourceSpendFailed` event with the offending command/system id.
 - **Per-second accumulation:** Systems call `applyIncome` / `applyExpense`
-  during their tick. Each helper writes into `incomePerSecond` and
-  `expensePerSecond`, marking the dirty flag. These values remain raw rates until
-  `finalizeTick` converts them into deltas using `deltaMs / 1000`.
+  during their tick. Each helper adds to (`+=`) `incomePerSecond[index]` and
+  `expensePerSecond[index]`, allowing multiple systems to compose within a
+  single frame. Both helpers set the dirty bit.
 - **Capacity updates:** `setCapacity` updates the `capacities` buffer, clamps
-  the current amount if it now exceeds the cap, and returns the applied cap so
-  command handlers can publish diffs.
+  the current amount if it now exceeds the cap (recording that clamp as a delta
+  in `tickDelta`) and returns the applied cap so command handlers can publish
+  diffs.
 - **Visibility/unlock:** `grantVisibility` and `unlock` set bits inside the
   flag buffer and mark the resource dirty so the UI is notified.
 
@@ -185,7 +198,7 @@ the resource during delta publication.
 interface SerializedResourceState {
   readonly ids: readonly string[];
   readonly amounts: readonly number[];
-  readonly capacities: readonly number[];
+  readonly capacities: readonly (number | null)[];
   readonly unlocked: readonly boolean[];
   readonly visible: readonly boolean[];
 }
@@ -220,7 +233,8 @@ and continues deterministic execution.
    factory, and façade.
 2. Wire the module into existing exports (`packages/core/src/index.ts`).
 3. Add Vitest coverage for initialization, mutation semantics, dirty tracking,
-   and snapshot generation.
+   duplicate-id guarding, and snapshot generation (including `null` persistence
+   for uncapped capacities).
 4. Update command handlers (future issue) to depend on `ResourceState`.
 5. Extend documentation (`docs/runtime-command-queue-design.md`) with references
    to the new storage contract after implementation lands.
@@ -229,10 +243,13 @@ and continues deterministic execution.
 
 - Unit tests verifying:
   - Deterministic index ordering from unordered definitions.
+  - Duplicate ids throw during initialization.
   - Capacity enforcement and telemetry emission on attempted overflows.
   - Spending failure paths leave balances untouched.
   - `finalizeTick` converts rates into clamped deltas given various `deltaMs`.
   - Dirty index tracking only flags mutated resources per tick.
+  - `exportForSave()` serializes uncapped capacities as `null` and rehydrates to
+    `Number.POSITIVE_INFINITY`.
 - Snapshot tests ensuring immutable wrappers block mutation attempts.
 - Property-based tests (future follow-up) around additive/subtractive symmetry.
 
@@ -260,6 +277,15 @@ and continues deterministic execution.
 - How should we expose localized resource names for UI deltas without leaking
   mutable references?
 
+Resolved clarifications:
+
+- The factory rejects duplicate resource ids up front, ensuring deterministic
+  indexing.
+- The tick loop calls `finalizeTick` after systems finish mutating rates and
+  balances, emits a snapshot, and then invokes `resetPerTickAccumulators`
+  immediately after the publish so subsequent reads observe cleared per-tick
+  state.
+
 ## 9. Acceptance Criteria
 
 - Struct-of-arrays `ResourceState` module checked into `packages/core`.
@@ -267,4 +293,3 @@ and continues deterministic execution.
 - Mutation helpers enforce caps and prevent negative balances.
 - Snapshot API returns immutable data compatible with `CommandRecorder`.
 - Unit tests cover initialization, mutation, and snapshot behaviors.
-
