@@ -78,6 +78,8 @@ interface ResourceStateBuffers {
   // Most recent published snapshot views (double-buffered)
   readonly publishAmounts: Float64Array;
   readonly publishCapacities: Float64Array;
+  readonly publishIncomePerSecond: Float64Array;
+  readonly publishExpensePerSecond: Float64Array;
   readonly publishNetPerSecond: Float64Array;
   readonly publishTickDelta: Float64Array;
   readonly publishFlags: Uint8Array;
@@ -94,7 +96,9 @@ interface ResourceStateBuffers {
 - `capacities`: hard caps enforced on mutation; populated from definitions and
   upgrade modifiers.
 - `incomePerSecond` / `expensePerSecond`: running totals populated by systems
-  each tick to support production diagnostics and UI stat panels.
+  each tick to support production diagnostics and UI stat panels. These values
+  are mirrored into the publish buffers before `resetPerTickAccumulators` clears
+  the live arrays so rate changes survive the publish/reset cycle.
 - `netPerSecond`: derived buffer updated at the end of each tick to avoid
   recomputing `income - expense` during reads.
 - `tickDelta`: tracks the signed delta applied during the current tick, enabling
@@ -105,8 +109,9 @@ interface ResourceStateBuffers {
   (amount, capacity, visibility, or net rates). Follow-up operations that restore
   parity with the published state clear the bit via `unmarkIfClean`, keeping the
   dirty list minimal heading into publish.
-- `publishAmounts` / `publishCapacities` / `publishNetPerSecond` /
-  `publishTickDelta`: read-only copies of the live buffers used to serve the most
+- `publishAmounts` / `publishCapacities` / `publishIncomePerSecond` /
+  `publishExpensePerSecond` / `publishNetPerSecond` / `publishTickDelta`:
+  read-only copies of the live buffers used to serve the most
   recent snapshot. Only dirty indices are copied into these arrays during
   `snapshot({ mode: 'publish' })`, guaranteeing consumers never observe later
   mutations.
@@ -128,12 +133,13 @@ Float64 views (`amounts`, `capacities`, `incomePerSecond`, `expensePerSecond`,
 `netPerSecond`, `tickDelta`) are carved out of a backing buffer sized as
 `Float64Array.BYTES_PER_ELEMENT * 6 * resourceCount`. The publish buffers reuse
 a second Float64 `ArrayBuffer` sized for the copied views
-(`publishAmounts`, `publishCapacities`, `publishNetPerSecond`,
-`publishTickDelta`) so the live buffers can reset without invalidating the
-latest snapshot. Each typed array is constructed with an offset stride
-(`amounts` at offset `0`, `capacities` at `1 * stride`, etc.). The
-`dirtyIndexScratch` array uses a dedicated `ArrayBuffer`, as do the Uint8 flag
-bits (`flags` for live state, `publishFlags` for the published mirror).
+(`publishAmounts`, `publishCapacities`, `publishIncomePerSecond`,
+`publishExpensePerSecond`, `publishNetPerSecond`, `publishTickDelta`) so the
+live buffers can reset without invalidating the latest snapshot. Each typed
+array is constructed with an offset stride (`amounts` at offset `0`,
+`capacities` at `1 * stride`, etc.). The `dirtyIndexScratch` array uses a
+dedicated `ArrayBuffer`, as do the Uint8 flag bits (`flags` for live state,
+`publishFlags` for the published mirror).
 
 `ImmutableMapSnapshot` is already provided by `packages/core/src/immutable-snapshots.ts`
 and proxies mutation methods so the lookup table cannot be altered after the
@@ -178,10 +184,10 @@ interface ResourceState {
 - A private `markDirty(index: number)` helper ensures each index is tracked only
   once per tick by checking the dirty bit before pushing into the scratch list.
   The helper is invoked only after confirming the live state diverges from the
-  most recent publish snapshot (amount, capacity, flags, or net). If a later
-  mutation restores parity with the published state, `unmarkIfClean(index)` swaps
-  the index out of the scratch list and clears the dirty bit so zero-delta work
-  never leaks into the publish pipeline.
+  most recent publish snapshot (amount, capacity, income, expense, net, or
+  flags). If a later mutation restores parity with the published state,
+  `unmarkIfClean(index)` swaps the index out of the scratch list and clears the
+  dirty bit so zero-delta work never leaks into the publish pipeline.
 - `finalizeTick(deltaMs)` converts accumulated per-second rates into tick
   deltas, clamps amounts to capacities/zero, recomputes `netPerSecond`, and
   relies on `markDirty` + `unmarkIfClean` to ensure only indices with meaningful
@@ -189,7 +195,8 @@ interface ResourceState {
   not surface spurious deltas).
 - `resetPerTickAccumulators()` clears the live `incomePerSecond`,
   `expensePerSecond`, and `tickDelta` arrays after publish while leaving the
-  mirrored publish buffers untouched.
+  mirrored publish buffers untouched thanks to the double-buffered publish
+  arrays.
 - `clearDirtyScratch()` clears residual dirty metadata and associated flag bits
   after authoritative calls to `snapshot({ mode: 'publish' })` complete (the
   snapshot path itself resets the scratch length to zero). This helper exists for
@@ -219,7 +226,10 @@ that:
 2. Allocates typed arrays sized to the resource count, pre-filling `amounts`
    with `startAmount`, `capacities` with either `definition.capacity` (future) or
    `Number.POSITIVE_INFINITY` when absent, and mirroring those values into the
-   publish buffers so the initial snapshot requires no additional copying. The
+   publish buffers (`publishAmounts`, `publishCapacities`,
+   `publishIncomePerSecond`, `publishExpensePerSecond`, `publishNetPerSecond`,
+   `publishTickDelta`) so the initial snapshot requires no additional copying.
+   The
    save serializer treats `Number.POSITIVE_INFINITY` as `null` to avoid lossy
    JSON round-trips.
 3. Initializes `flags` with `VISIBLE | UNLOCKED` for starting resources and
@@ -231,7 +241,11 @@ that:
    (tracked separately inside the façade) so the first mutation appends in-place.
 
 On content reload or save restore, callers reuse the factory with definitions
-and then hydrate numeric buffers from persisted data. The runtime stores the
+and then hydrate numeric buffers from persisted data. Hydration writes restored
+amount/capacity/net values into both the live and publish typed arrays, resets
+income/expense/tick deltas to `0` in both views, and clears the dirty scratch
+counter so the next `snapshot({ mode: 'publish' })` immediately reflects the
+restored state without forcing a full-tick recomputation. The runtime stores the
 `ResourceState` inside the broader game state object managed by
 `setGameState(...)`.
 
@@ -257,13 +271,17 @@ and then hydrate numeric buffers from persisted data. The runtime stores the
   during their tick. Each helper adds to (`+=`) `incomePerSecond[index]` and
   `expensePerSecond[index]`, allowing multiple systems to compose within a
   single frame. Helpers ignore zero-valued inputs and mark the resource dirty
-  only when the accumulator changes from its previous value. If opposing calls
-  cancel each other within the same tick, `unmarkIfClean` clears the dirty flag.
+  only when the accumulator changes from its previous value compared to the
+  publish buffers. If opposing calls cancel each other within the same tick,
+  `unmarkIfClean` clears the dirty flag and the publish arrays retain the prior
+  rates.
 - **Capacity updates:** `setCapacity` validates the requested capacity (must be
-  finite and `>= 0`) before writing into the buffer. Invalid values log telemetry
-  and throw. On success the helper clamps the current amount if it now exceeds
-  the cap (recording that clamp as a delta in `tickDelta`), calls `markDirty`, and
-  returns the applied cap so command handlers can publish diffs.
+  `>= 0`, not `NaN`; `Infinity` is permitted to represent uncapped resources)
+  before writing into the buffer. Invalid values log telemetry and throw. On
+  success the helper clamps the current amount if it now exceeds the cap
+  (recording that clamp as a delta in `tickDelta`), calls `markDirty`, mirrors the
+  cap into the publish buffer, and returns the applied cap so command handlers
+  can publish diffs.
 - **Visibility/unlock:** `grantVisibility` and `unlock` set bits inside the
   flag buffer and mark the resource dirty so the UI is notified.
 
@@ -283,27 +301,32 @@ so the guard fires at lookup time rather than after a mutation attempt.
   (`ResourceStateSnapshot`) containing:
   - `ids` (frozen array)
   - Read-only typed-array proxies that expose the double-buffered publish views
-    (`publishAmounts`, `publishCapacities`, `publishNetPerSecond`,
-    `publishTickDelta`, `publishFlags`). A dedicated helper
+    (`publishAmounts`, `publishCapacities`, `publishIncomePerSecond`,
+    `publishExpensePerSecond`, `publishNetPerSecond`, `publishTickDelta`,
+    `publishFlags`). A dedicated helper
     (`createReadOnlyTypedArrayView`) wraps each publish array so mutator traps
     throw, ensuring consumers see a stable frame even while the live buffers are
     reset for the next tick.
   - A compact list of dirty indices for the current tick derived from the
     populated prefix of `dirtyIndexScratch`. During publish the runtime walks the
     prefix, revalidates each index against the publish buffers (amount, capacity,
-    net, flags), and skips any entries that have reverted to their prior values.
+    income, expense, net, flags), and skips any entries that have reverted to
+    their prior values.
     Skipped indices have their `publishTickDelta` zeroed and their dirty bit
     cleared immediately. Surviving indices copy into `dirtyIndexPublish`, receive
-    the filtered `publishTickDelta`/flag updates, and keep the dirty bit set until
-    the copy completes. The publish path then clears the bit, exposes
+    the filtered `publishAmounts`/`publishCapacities`/
+    `publishIncomePerSecond`/`publishExpensePerSecond`/`publishNetPerSecond`/
+    `publishTickDelta`/flag updates, and keep the dirty bit set until the copy
+    completes. The publish path then clears the bit, exposes
     `dirtyIndexPublish.subarray(0, filteredCount)` via the read-only wrapper, and
     resets the scratch counter so subsequent mutations do not trample the
     published delta.
   - Flag bits encoded as a read-only `Uint8Array` snapshot sourced from
     `publishFlags`.
 - `snapshot({ mode: 'recorder' })` returns the same shape but clones its data
-  into ephemeral typed arrays owned by the recorder call site. This mode does not
-  touch dirty bookkeeping, publish mirrors, or per-tick accumulators, allowing
+  into ephemeral typed arrays owned by the recorder call site (amount, capacity,
+  income, expense, net, tick delta, flags). This mode does not touch dirty
+  bookkeeping, publish mirrors, or per-tick accumulators, allowing
   pre/post-command captures without interfering with the presentation pipeline.
 - `exportForSave()` returns a POJO suitable for persistence:
 
@@ -320,8 +343,8 @@ interface SerializedResourceState {
 Offline catch-up consumes `SerializedResourceState`, rehydrates the live typed
 arrays, and continues deterministic execution. The save payload intentionally
 omits per-second income/expense data because they are tick-scoped diagnostics;
-the runtime zeros those buffers on restore and regenerates fresh rates during the
-next tick.
+the runtime zeros those buffers (both live and publish views) on restore and
+regenerates fresh rates during the next tick.
 
 Consumers always read deltas through the dirty index list. The publish step
 zeros `publishTickDelta` for cleared indices and leaves untouched entries with
@@ -353,7 +376,8 @@ buffers and flag bits without emitting a snapshot.
   totals for diagnostics dashboards.
 - **Presentation bridge:** When publishing state to the UI, the runtime emits
   either the full snapshot (initial load) or a delta referencing dirty indices
-  with updated `amount`, `capacity`, `netPerSecond`, and `visibility` flags.
+  with updated `amount`, `capacity`, per-second rates, `netPerSecond`, and
+  `visibility` flags.
 - **Command recorder:** The recorder uses `snapshot({ mode: 'recorder' })`
   before/after command execution to capture deterministic replays; this mode
   deep-clones the live view so structured cloning succeeds without disturbing
@@ -365,8 +389,9 @@ buffers and flag bits without emitting a snapshot.
    factory, and façade.
 2. Wire the module into existing exports (`packages/core/src/index.ts`).
 3. Add Vitest coverage for initialization, mutation semantics, dirty tracking,
-   duplicate-id guarding, and snapshot generation (including `null` persistence
-   for uncapped capacities).
+   duplicate-id guarding, snapshot generation (including `null` persistence for
+   uncapped capacities), income/expense publish mirroring, and rehydration from
+   persisted saves.
 4. Update command handlers (future issue) to depend on `ResourceState`.
 5. Extend documentation (`docs/runtime-command-queue-design.md`) with references
    to the new storage contract after implementation lands.
@@ -376,12 +401,14 @@ buffers and flag bits without emitting a snapshot.
 - Unit tests verifying:
   - Deterministic index ordering from unordered definitions.
   - Duplicate ids throw during initialization.
-  - Capacity enforcement and telemetry emission on attempted overflows.
+  - Capacity enforcement (including accepting `Infinity`) and telemetry emission
+    on attempted overflows.
   - Spending failure paths leave balances untouched.
   - `requireIndex` and `assertValidIndex` telemetry + throw on unknown ids or
     out-of-range indices.
   - `finalizeTick` converts rates into clamped deltas given various `deltaMs`.
-  - Zero-value income/expense submissions do not mark resources dirty.
+  - Zero-value income/expense submissions do not mark resources dirty and rate
+    changes propagate into the publish buffers.
   - `snapshot({ mode: 'publish' })` resets the dirty scratch counter while leaving
     the published delta accessible and read-only through the double-buffered
     proxies.
@@ -390,6 +417,8 @@ buffers and flag bits without emitting a snapshot.
   - Dirty index tracking only flags mutated resources per tick.
   - `exportForSave()` serializes uncapped capacities as `null` and rehydrates to
     `Number.POSITIVE_INFINITY`.
+  - Rehydration from saves updates both live and publish buffers so the first
+    publish after restore reflects the persisted values.
 - Snapshot tests ensuring immutable wrappers block mutation attempts.
 - Property-based tests (future follow-up) around additive/subtractive symmetry.
 
@@ -440,16 +469,23 @@ Additional resolved clarifications:
   balances, emits a snapshot, and then invokes `resetPerTickAccumulators`
   immediately after the publish so subsequent reads observe cleared per-tick
   state.
+- `setCapacity` accepts `Infinity` to re-establish uncapped resources while
+  continuing to reject `NaN` and negatives.
+- Save rehydration writes values into both live and publish buffers and clears
+  dirty scratch state before the next tick processes.
 
 ## 9. Acceptance Criteria
 
 - Struct-of-arrays `ResourceState` module checked into `packages/core`.
 - Deterministic initialization from sample content definitions.
-- Mutation helpers enforce caps and prevent negative balances.
+- Mutation helpers enforce caps, permit `Infinity` for uncapped resources, and
+  prevent negative balances.
 - `requireIndex`/`assertValidIndex` guard invalid lookups with telemetry and
   exceptions.
 - Snapshot API returns immutable data compatible with `CommandRecorder`.
 - Snapshots expose zero-copy, read-only typed array views through the new proxy
-  helper.
+  helper, including income/expense rates.
 - Dirty index scratch list powers delta publications without heap churn.
+- Save rehydration updates both live and publish buffers so the next publish
+  reflects persisted state without a warm-up tick.
 - Unit tests cover initialization, mutation, and snapshot behaviors.
