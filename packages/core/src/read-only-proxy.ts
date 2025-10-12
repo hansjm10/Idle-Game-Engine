@@ -47,9 +47,9 @@ function formatCollectionValuePath(path: string): string {
 }
 
 function wrapIterator<T>(
-  iterator: Iterator<T>,
+  iterator: IterableIterator<T>,
   wrapValue: (value: T) => T,
-): Iterator<T> {
+): IterableIterator<T> {
   return {
     next() {
       const result = iterator.next();
@@ -82,7 +82,7 @@ function wrapIterator<T>(
     [Symbol.iterator]() {
       return this;
     },
-  };
+  } as IterableIterator<T>;
 }
 
 function wrapIfObject<T>(value: T, path: string): T {
@@ -125,14 +125,14 @@ function wrapMapMethod(
 
   if (prop === 'values') {
     return (...args: unknown[]) => {
-      const iterator = Reflect.apply(original, map, args) as Iterator<unknown>;
+      const iterator = Reflect.apply(original, map, args) as IterableIterator<unknown>;
       return wrapIterator(iterator, (value) => wrapIfObject(value, formatCollectionValuePath(path)));
     };
   }
 
   if (prop === 'entries' || prop === Symbol.iterator) {
     return (...args: unknown[]) => {
-      const iterator = Reflect.apply(original, map, args) as Iterator<[unknown, unknown]>;
+      const iterator = Reflect.apply(original, map, args) as IterableIterator<[unknown, unknown]>;
       return wrapIterator(iterator, ([key, value]) => {
         const proxiedValue = wrapIfObject(value, formatMapEntryPath(path, key));
         return [key, proxiedValue] as [unknown, unknown];
@@ -167,14 +167,14 @@ function wrapSetMethod(
 
   if (prop === 'values' || prop === 'keys' || prop === Symbol.iterator) {
     return (...args: unknown[]) => {
-      const iterator = Reflect.apply(original, set, args) as Iterator<unknown>;
+      const iterator = Reflect.apply(original, set, args) as IterableIterator<unknown>;
       return wrapIterator(iterator, (value) => wrapIfObject(value, formatCollectionValuePath(path)));
     };
   }
 
   if (prop === 'entries') {
     return (...args: unknown[]) => {
-      const iterator = Reflect.apply(original, set, args) as Iterator<[unknown, unknown]>;
+      const iterator = Reflect.apply(original, set, args) as IterableIterator<[unknown, unknown]>;
       return wrapIterator(iterator, ([first]) => {
         const proxiedValue = wrapIfObject(first, formatCollectionValuePath(path));
         return [proxiedValue, proxiedValue] as [unknown, unknown];
@@ -205,11 +205,12 @@ export function createReadOnlyProxy<T>(target: T, path = 'state'): T {
         typeof value === 'function' &&
         (obj instanceof Map || obj instanceof Set)
       ) {
+        const method = value as (...args: unknown[]) => unknown;
         if (obj instanceof Map) {
-          return wrapMapMethod(obj, prop, value, path, receiver);
+          return wrapMapMethod(obj, prop, method, path, receiver);
         }
 
-        return wrapSetMethod(obj, prop, value, path, receiver);
+        return wrapSetMethod(obj, prop, method, path, receiver);
       }
 
       if (value && typeof value === 'object') {
