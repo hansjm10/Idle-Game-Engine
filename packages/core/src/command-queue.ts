@@ -60,7 +60,17 @@ export class CommandQueue {
         maxSize: this.maxSize,
         priority: command.priority,
       });
-      this.dropLowestPriority();
+      const dropped = this.dropLowestPriorityUpTo(command.priority);
+      if (!dropped) {
+        telemetry.recordWarning('CommandRejected', {
+          type: command.type,
+          priority: command.priority,
+          timestamp: command.timestamp,
+          size: this.totalSize,
+          maxSize: this.maxSize,
+        });
+        return;
+      }
     }
 
     const entry: SnapshotQueueEntry = {
@@ -148,9 +158,12 @@ export class CommandQueue {
     return this.totalSize;
   }
 
-  private dropLowestPriority(): void {
+  private dropLowestPriorityUpTo(maxPriority: CommandPriority): boolean {
     for (let index = COMMAND_PRIORITY_ORDER.length - 1; index >= 0; index -= 1) {
       const priority = COMMAND_PRIORITY_ORDER[index]!;
+      if (priority < maxPriority) {
+        continue;
+      }
       const queue = this.lanes.get(priority);
       if (!queue || queue.length === 0) {
         continue;
@@ -167,8 +180,9 @@ export class CommandQueue {
         priority,
         timestamp: dropped.command.timestamp,
       });
-      return;
+      return true;
     }
+    return false;
   }
 }
 

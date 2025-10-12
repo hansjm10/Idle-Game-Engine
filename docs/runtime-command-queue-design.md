@@ -2378,15 +2378,30 @@ const MAX_QUEUE_SIZE = 10000; // Configurable per deployment
 
 enqueue(command: Command): void {
   if (this.size >= MAX_QUEUE_SIZE) {
-    telemetry.recordWarning('CommandQueueOverflow', { size: this.size });
-    // Drop deterministically before accepting the new command
-    this.dropLowestPriority();
+    telemetry.recordWarning('CommandQueueOverflow', {
+      size: this.size,
+      maxSize: MAX_QUEUE_SIZE,
+      priority: command.priority
+    });
+    // Only evict commands at priorities <= the incoming request
+    const dropped = this.dropLowestPriorityUpTo(command.priority);
+    if (!dropped) {
+      telemetry.recordWarning('CommandRejected', {
+        type: command.type,
+        priority: command.priority,
+        timestamp: command.timestamp
+      });
+      return;
+    }
   }
   // ... proceed with enqueue
 }
 
-private dropLowestPriority(): void {
+private dropLowestPriorityUpTo(maxPriority: CommandPriority): boolean {
   for (const priority of [...CommandQueue.PRIORITY_ORDER].reverse()) {
+    if (priority < maxPriority) {
+      continue;
+    }
     const queue = this.queues.get(priority);
     if (!queue || queue.length === 0) {
       continue;
@@ -2401,18 +2416,21 @@ private dropLowestPriority(): void {
       priority,
       timestamp: dropped!.command.timestamp
     });
-    return;
+    return true;
   }
+  return false;
 }
 ```
 
-This strategy always removes the oldest command from the lowest-priority lane,
-so overflows resolve deterministically across live sessions and replays. If all
-lanes are empty the method is a no-op, ensuring the enqueue path cannot throw.
-Each drop is surfaced via telemetry with enough metadata to trace automation or
-attack patterns that saturate the queue. Because the queue maintains a running
-`totalSize` counter (see Section 4.2), the overflow check stays O(1) regardless
-of how many commands are currently buffered.
+This strategy removes the oldest command from the lowest-priority lane at or
+below the incoming priority, preserving deterministic behavior while keeping
+higher-priority queues intact. If no eligible command can be evicted the
+incoming enqueue is rejected and surfaced via `CommandRejected` telemetry, which
+lets orchestration layers detect starvation scenarios. Each eviction still emits
+`CommandDropped` with enough metadata to trace automation or attack patterns
+that saturate the queue. Because the queue maintains a running `totalSize`
+counter (see Section 4.2), the overflow check stays O(1) regardless of how many
+commands are currently buffered.
 
 ### 9.2 Batch Processing Optimization
 
