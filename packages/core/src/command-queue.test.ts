@@ -1,8 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import type { Command, CommandSnapshotPayload } from './command.js';
 import { CommandPriority } from './command.js';
 import { CommandQueue } from './command-queue.js';
+import {
+  resetTelemetry,
+  setTelemetry,
+  type TelemetryFacade,
+} from './telemetry.js';
 
 const baseCommand: Command = {
   type: 'BASE',
@@ -26,6 +37,11 @@ function createCommand(
 }
 
 describe('CommandQueue', () => {
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
   it('dequeues commands in priority order', () => {
     const queue = new CommandQueue();
 
@@ -276,6 +292,182 @@ describe('CommandQueue', () => {
     ).toThrow(TypeError);
 
     expect(Array.from(typedProxy)).toEqual([3, 4, 5]);
+  });
+
+  it('drops lowest-priority commands when capacity is exceeded', () => {
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    const queue = new CommandQueue({ maxSize: 2 });
+
+    queue.enqueue(
+      createCommand({
+        type: 'system-1',
+        priority: CommandPriority.SYSTEM,
+        timestamp: 1,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'automation-1',
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 2,
+      }),
+    );
+
+    queue.enqueue(
+      createCommand({
+        type: 'player-1',
+        priority: CommandPriority.PLAYER,
+        timestamp: 3,
+      }),
+    );
+
+    expect(queue.size).toBe(2);
+    expect(queue.dequeueAll().map((cmd) => cmd.type)).toEqual([
+      'system-1',
+      'player-1',
+    ]);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledTimes(2);
+    expect(telemetryStub.recordWarning).toHaveBeenNthCalledWith(
+      1,
+      'CommandQueueOverflow',
+      expect.objectContaining({
+        size: 2,
+        maxSize: 2,
+        priority: CommandPriority.PLAYER,
+      }),
+    );
+    expect(telemetryStub.recordWarning).toHaveBeenNthCalledWith(
+      2,
+      'CommandDropped',
+      {
+        type: 'automation-1',
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 2,
+      },
+    );
+  });
+
+  it('rejects lower-priority commands when the queue is full of higher-priority entries', () => {
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    const queue = new CommandQueue({ maxSize: 2 });
+
+    queue.enqueue(
+      createCommand({
+        type: 'system-1',
+        priority: CommandPriority.SYSTEM,
+        timestamp: 1,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'player-1',
+        priority: CommandPriority.PLAYER,
+        timestamp: 2,
+      }),
+    );
+
+    queue.enqueue(
+      createCommand({
+        type: 'automation-1',
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 3,
+      }),
+    );
+
+    expect(queue.size).toBe(2);
+    expect(queue.dequeueAll().map((cmd) => cmd.type)).toEqual([
+      'system-1',
+      'player-1',
+    ]);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledTimes(2);
+    expect(telemetryStub.recordWarning).toHaveBeenNthCalledWith(
+      1,
+      'CommandQueueOverflow',
+      expect.objectContaining({
+        size: 2,
+        maxSize: 2,
+        priority: CommandPriority.AUTOMATION,
+      }),
+    );
+    expect(telemetryStub.recordWarning).toHaveBeenNthCalledWith(
+      2,
+      'CommandRejected',
+      {
+        type: 'automation-1',
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 3,
+        size: 2,
+        maxSize: 2,
+      },
+    );
+  });
+
+  it('exhausts higher-priority lanes last when dropping on overflow', () => {
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    const queue = new CommandQueue({ maxSize: 2 });
+
+    queue.enqueue(
+      createCommand({
+        type: 'system-1',
+        priority: CommandPriority.SYSTEM,
+        timestamp: 1,
+      }),
+    );
+    queue.enqueue(
+      createCommand({
+        type: 'player-1',
+        priority: CommandPriority.PLAYER,
+        timestamp: 2,
+      }),
+    );
+
+    queue.enqueue(
+      createCommand({
+        type: 'system-2',
+        priority: CommandPriority.SYSTEM,
+        timestamp: 3,
+      }),
+    );
+
+    expect(queue.size).toBe(2);
+    expect(queue.dequeueAll().map((cmd) => cmd.type)).toEqual([
+      'system-1',
+      'system-2',
+    ]);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledTimes(2);
+    expect(telemetryStub.recordWarning).toHaveBeenNthCalledWith(
+      2,
+      'CommandDropped',
+      {
+        type: 'player-1',
+        priority: CommandPriority.PLAYER,
+        timestamp: 2,
+      },
+    );
   });
 
   it('prevents escape via valueOf helpers', () => {

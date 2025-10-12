@@ -9,8 +9,17 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const HOST = '127.0.0.1';
-const PORT = 4173;
+const DEFAULT_PREVIEW_HOST = 'localhost';
+// Ignore host values that bind to "all interfaces" because browsers cannot connect to them directly.
+const configuredHost = process.env.PLAYWRIGHT_PREVIEW_HOST ?? process.env.HOST;
+const HOST =
+  configuredHost &&
+  configuredHost !== '0.0.0.0' &&
+  configuredHost !== '::' &&
+  configuredHost !== '[::]'
+    ? configuredHost
+    : DEFAULT_PREVIEW_HOST;
+const PORT = Number.parseInt(process.env.PLAYWRIGHT_PREVIEW_PORT ?? '4173', 10);
 const BASE_URL = `http://${HOST}:${PORT}`;
 
 const MONOREPO_ROOT = resolve(__dirname, '../..');

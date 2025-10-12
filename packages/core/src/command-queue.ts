@@ -12,6 +12,7 @@ import type {
   ImmutableSharedArrayBufferSnapshot,
   TypedArray,
 } from './immutable-snapshots.js';
+import { telemetry } from './telemetry.js';
 
 /**
  * Queue implementation that maintains per-priority FIFO lanes as documented in
@@ -22,6 +23,12 @@ import type {
  */
 type SnapshotQueueEntry = CommandQueueEntry<CommandSnapshot<unknown>>;
 
+export const DEFAULT_MAX_QUEUE_SIZE = 10_000;
+
+export interface CommandQueueOptions {
+  readonly maxSize?: number;
+}
+
 export class CommandQueue {
   private readonly lanes: Map<CommandPriority, SnapshotQueueEntry[]> = new Map([
     [CommandPriority.SYSTEM, []],
@@ -31,11 +38,39 @@ export class CommandQueue {
 
   private nextSequence = 0;
   private totalSize = 0;
+  private readonly maxSize: number;
+
+  constructor(options: CommandQueueOptions = {}) {
+    const configuredSize = options.maxSize ?? DEFAULT_MAX_QUEUE_SIZE;
+    if (!Number.isFinite(configuredSize) || configuredSize <= 0) {
+      throw new Error('maxSize must be a positive finite number');
+    }
+    this.maxSize = configuredSize;
+  }
 
   enqueue(command: Command): void {
     const queue = this.lanes.get(command.priority);
     if (!queue) {
       throw new Error(`Invalid command priority: ${command.priority}`);
+    }
+
+    if (this.totalSize >= this.maxSize) {
+      telemetry.recordWarning('CommandQueueOverflow', {
+        size: this.totalSize,
+        maxSize: this.maxSize,
+        priority: command.priority,
+      });
+      const dropped = this.dropLowestPriorityUpTo(command.priority);
+      if (!dropped) {
+        telemetry.recordWarning('CommandRejected', {
+          type: command.type,
+          priority: command.priority,
+          timestamp: command.timestamp,
+          size: this.totalSize,
+          maxSize: this.maxSize,
+        });
+        return;
+      }
     }
 
     const entry: SnapshotQueueEntry = {
@@ -121,6 +156,33 @@ export class CommandQueue {
 
   get size(): number {
     return this.totalSize;
+  }
+
+  private dropLowestPriorityUpTo(maxPriority: CommandPriority): boolean {
+    for (let index = COMMAND_PRIORITY_ORDER.length - 1; index >= 0; index -= 1) {
+      const priority = COMMAND_PRIORITY_ORDER[index]!;
+      if (priority < maxPriority) {
+        continue;
+      }
+      const queue = this.lanes.get(priority);
+      if (!queue || queue.length === 0) {
+        continue;
+      }
+
+      const dropped = queue.shift();
+      if (!dropped) {
+        continue;
+      }
+
+      this.totalSize -= 1;
+      telemetry.recordWarning('CommandDropped', {
+        type: dropped.command.type,
+        priority,
+        timestamp: dropped.command.timestamp,
+      });
+      return true;
+    }
+    return false;
   }
 }
 
