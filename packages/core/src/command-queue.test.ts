@@ -109,6 +109,80 @@ describe('CommandQueue', () => {
     ]);
   });
 
+  it('maintains priority ordering across high-volume enqueues', () => {
+    const queue = new CommandQueue();
+    const priorities = [
+      CommandPriority.SYSTEM,
+      CommandPriority.PLAYER,
+      CommandPriority.AUTOMATION,
+    ] as const;
+
+    const expectedTypes: Record<CommandPriority, string[]> = {
+      [CommandPriority.SYSTEM]: [],
+      [CommandPriority.PLAYER]: [],
+      [CommandPriority.AUTOMATION]: [],
+    };
+    const labelFor = (priority: CommandPriority) => {
+      switch (priority) {
+        case CommandPriority.SYSTEM:
+          return 'system';
+        case CommandPriority.PLAYER:
+          return 'player';
+        case CommandPriority.AUTOMATION:
+          return 'automation';
+        default:
+          return 'unknown';
+      }
+    };
+
+    const perPriority = 600;
+    for (let index = 0; index < perPriority; index += 1) {
+      for (const priority of priorities) {
+        const label = labelFor(priority);
+        const type = `${label}-${index}`;
+        queue.enqueue(
+          createCommand({
+            type,
+            priority,
+            // Interleave timestamps and steps to mirror real runtime conditions.
+            timestamp: Math.floor(index / 10),
+            step: index % 5,
+          }),
+        );
+
+        expectedTypes[priority].push(type);
+      }
+    }
+
+    const drained = queue.dequeueAll();
+    expect(drained).toHaveLength(perPriority * priorities.length);
+    expect(queue.size).toBe(0);
+
+    const drainedPriorities = drained.map((command) => command.priority);
+    expect(drainedPriorities).toEqual([
+      ...new Array(perPriority).fill(CommandPriority.SYSTEM),
+      ...new Array(perPriority).fill(CommandPriority.PLAYER),
+      ...new Array(perPriority).fill(CommandPriority.AUTOMATION),
+    ]);
+
+    for (const priority of priorities) {
+      const drainedForPriority = drained.filter(
+        (command) => command.priority === priority,
+      );
+
+      const drainedTypes = drainedForPriority.map(
+        (command) => command.type,
+      );
+      expect(drainedTypes).toEqual(expectedTypes[priority]);
+
+      for (let i = 1; i < drainedForPriority.length; i += 1) {
+        const previous = drainedForPriority[i - 1]!;
+        const current = drainedForPriority[i]!;
+        expect(previous.timestamp).toBeLessThanOrEqual(current.timestamp);
+      }
+    }
+  });
+
   it('clones enqueued commands to prevent caller mutation', () => {
     const queue = new CommandQueue();
 
