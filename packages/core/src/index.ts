@@ -157,6 +157,10 @@ export {
   type CommandAuthorizationPolicy,
   COMMAND_AUTHORIZATIONS,
 } from './command.js';
+export {
+  authorizeCommand,
+  DEFAULT_UNAUTHORIZED_EVENT,
+} from './command-authorization.js';
 export { CommandQueue, deepFreezeInPlace } from './command-queue.js';
 export {
   CommandDispatcher,
@@ -192,3 +196,4 @@ export {
   resetTelemetry,
   setTelemetry,
 } from './telemetry.js';
+export { createReadOnlyProxy } from './read-only-proxy.js';

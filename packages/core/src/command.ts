@@ -201,6 +201,10 @@ export interface CommandAuthorizationPolicy {
    * Narrative used by handler docs/tests to explain why the restriction exists.
    */
   readonly rationale: string;
+  /**
+   * Telemetry event fired when a command is rejected for violating this policy.
+   */
+  readonly unauthorizedEvent?: string;
 }
 
 export const COMMAND_AUTHORIZATIONS: Readonly<
@@ -232,17 +236,20 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     ]),
     rationale:
       'Automation may not trigger prestige; only player/system contexts are permitted.',
+    unauthorizedEvent: 'AutomationPrestigeBlocked',
   },
   OFFLINE_CATCHUP: {
     type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
     allowedPriorities: Object.freeze([CommandPriority.SYSTEM]),
     rationale:
       'Offline reconciliation is engine-driven and restricted to system authority.',
+    unauthorizedEvent: 'UnauthorizedSystemCommand',
   },
   APPLY_MIGRATION: {
     type: RUNTIME_COMMAND_TYPES.APPLY_MIGRATION,
     allowedPriorities: Object.freeze([CommandPriority.SYSTEM]),
     rationale:
       'Schema migrations run exclusively under system authority for integrity.',
+    unauthorizedEvent: 'UnauthorizedSystemCommand',
   },
 });

@@ -1,5 +1,6 @@
 import type { Command } from './command.js';
 import type { CommandPriority } from './command.js';
+import { authorizeCommand } from './command-authorization.js';
 import { telemetry } from './telemetry.js';
 
 export interface ExecutionContext {
@@ -36,6 +37,10 @@ export class CommandDispatcher {
     const handler = this.handlers.get(command.type);
     if (!handler) {
       telemetry.recordError('UnknownCommandType', { type: command.type });
+      return;
+    }
+
+    if (!authorizeCommand(command, { phase: 'live', reason: 'dispatcher' })) {
       return;
     }
 

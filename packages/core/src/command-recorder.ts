@@ -1,3 +1,4 @@
+import { authorizeCommand } from './command-authorization.js';
 import type { Command, CommandSnapshot } from './command.js';
 import type {
   CommandDispatcher,
@@ -391,6 +392,15 @@ export class CommandRecorder {
             step: cmd.step,
           });
         } else {
+          if (
+            !authorizeCommand(cmd as Command, {
+              phase: 'replay',
+              reason: 'replay',
+            })
+          ) {
+            continue;
+          }
+
           try {
             const result = handler(cmd.payload, context);
             if (isPromiseLike(result)) {

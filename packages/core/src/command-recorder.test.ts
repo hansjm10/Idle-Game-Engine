@@ -556,6 +556,43 @@ describe('CommandRecorder', () => {
     expect(getCurrentRNGSeed()).toBe(2222);
   });
 
+  it('skips unauthorized commands during replay and records telemetry', () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+    const handler = vi.fn();
+
+    dispatcher.register('PRESTIGE_RESET', handler);
+
+    recorder.record(
+      createCommand({
+        type: 'PRESTIGE_RESET',
+        priority: CommandPriority.AUTOMATION,
+      }),
+    );
+
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    recorder.replay(recorder.export(), dispatcher);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'AutomationPrestigeBlocked',
+      expect.objectContaining({
+        type: 'PRESTIGE_RESET',
+        attemptedPriority: CommandPriority.AUTOMATION,
+        phase: 'replay',
+        reason: 'replay',
+      }),
+    );
+  });
+
   it('emits replay progress telemetry in batches', () => {
     const state = setGameState({ value: 0 });
     const recorder = new CommandRecorder(state);

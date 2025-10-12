@@ -5,6 +5,7 @@ import type {
   ImmutablePayload,
 } from './command.js';
 import { CommandPriority, COMMAND_PRIORITY_ORDER } from './command.js';
+import { authorizeCommand } from './command-authorization.js';
 import type {
   ImmutableArrayBufferSnapshot,
   ImmutableMapSnapshot,
@@ -49,6 +50,10 @@ export class CommandQueue {
   }
 
   enqueue(command: Command): void {
+    if (!authorizeCommand(command, { phase: 'live', reason: 'queue' })) {
+      return;
+    }
+
     const queue = this.lanes.get(command.priority);
     if (!queue) {
       throw new Error(`Invalid command priority: ${command.priority}`);

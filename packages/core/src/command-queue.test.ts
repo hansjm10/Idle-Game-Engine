@@ -7,7 +7,7 @@ import {
 } from 'vitest';
 
 import type { Command, CommandSnapshotPayload } from './command.js';
-import { CommandPriority } from './command.js';
+import { CommandPriority, COMMAND_AUTHORIZATIONS } from './command.js';
 import { CommandQueue } from './command-queue.js';
 import {
   resetTelemetry,
@@ -791,5 +791,81 @@ describe('CommandQueue', () => {
     expect(queue.size).toBe(0);
 
     expect(queue.dequeueUpToStep(10)).toEqual([]);
+  });
+
+  it('rejects automation attempts to trigger prestige reset', () => {
+    const warnings: Array<{ event: string; data?: unknown }> = [];
+
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning(event, data) {
+        warnings.push({ event, data });
+      },
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'PRESTIGE_RESET',
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 100,
+        step: 0,
+      }),
+    );
+
+    expect(queue.size).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.event).toBe('AutomationPrestigeBlocked');
+    expect(warnings[0]?.data).toEqual(
+      expect.objectContaining({
+        type: 'PRESTIGE_RESET',
+        attemptedPriority: CommandPriority.AUTOMATION,
+        allowedPriorities: COMMAND_AUTHORIZATIONS.PRESTIGE_RESET.allowedPriorities,
+        phase: 'live',
+        reason: 'queue',
+      }),
+    );
+  });
+
+  it('rejects system-only commands from non-system priorities', () => {
+    const warnings: Array<{ event: string; data?: unknown }> = [];
+
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning(event, data) {
+        warnings.push({ event, data });
+      },
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    const queue = new CommandQueue();
+
+    queue.enqueue(
+      createCommand({
+        type: 'OFFLINE_CATCHUP',
+        priority: CommandPriority.PLAYER,
+        timestamp: 50,
+        step: 0,
+      }),
+    );
+
+    expect(queue.size).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.event).toBe('UnauthorizedSystemCommand');
+    expect(warnings[0]?.data).toEqual(
+      expect.objectContaining({
+        type: 'OFFLINE_CATCHUP',
+        attemptedPriority: CommandPriority.PLAYER,
+        allowedPriorities: COMMAND_AUTHORIZATIONS.OFFLINE_CATCHUP.allowedPriorities,
+        phase: 'live',
+        reason: 'queue',
+      }),
+    );
   });
 });
