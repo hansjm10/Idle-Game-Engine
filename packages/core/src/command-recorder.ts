@@ -13,6 +13,7 @@ import type {
 import { telemetry } from './telemetry.js';
 import {
   getCurrentRNGSeed,
+  resetRNG,
   setRNGSeed,
 } from './rng.js';
 import { getGameState, setGameState } from './runtime-state.js';
@@ -274,7 +275,24 @@ export class CommandRecorder {
     const mutableState = cloneSnapshotToMutable(log.startState);
     restoreState(mutableState);
 
-    if (log.metadata.seed !== undefined) {
+    const hasReplaySeed = log.metadata.seed !== undefined;
+    const previousSeed = hasReplaySeed
+      ? getCurrentRNGSeed()
+      : undefined;
+    let seedRestored = false;
+    const restoreReplaySeed = (): void => {
+      if (!hasReplaySeed || seedRestored) {
+        return;
+      }
+      if (previousSeed === undefined) {
+        resetRNG();
+      } else {
+        setRNGSeed(previousSeed);
+      }
+      seedRestored = true;
+    };
+
+    if (hasReplaySeed) {
       setRNGSeed(log.metadata.seed);
     }
 
@@ -284,6 +302,7 @@ export class CommandRecorder {
 
     if (queue.size > 0) {
       telemetry.recordError('ReplayQueueNotEmpty', { pending: queue.size });
+      restoreReplaySeed();
       throw new Error('Command queue must be empty before replay begins.');
     }
 
@@ -307,6 +326,9 @@ export class CommandRecorder {
     const matchedFutureCommandIndices = new Set<number>();
 
     const revertRuntimeContext = (): void => {
+      if (hasReplaySeed) {
+        restoreReplaySeed();
+      }
       if (!runtimeContext) {
         return;
       }
@@ -331,8 +353,12 @@ export class CommandRecorder {
           error instanceof Error ? error.message : String(error),
       });
 
-      if (finalizationComplete && stateAdvanced) {
-        revertRuntimeContext();
+      if (finalizationComplete) {
+        if (stateAdvanced) {
+          revertRuntimeContext();
+        } else {
+          restoreReplaySeed();
+        }
       }
     };
 

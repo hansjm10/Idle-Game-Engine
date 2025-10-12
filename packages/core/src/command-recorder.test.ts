@@ -449,6 +449,27 @@ describe('CommandRecorder', () => {
     expect(getCurrentRNGSeed()).toBe(5555);
   });
 
+  it('restores RNG seed when replay fails before completion', () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    setRNGSeed(1111);
+    recorder.record(createCommand());
+    const log = recorder.export();
+
+    queue.enqueue(createCommand({ step: 1 }));
+
+    setRNGSeed(2222);
+
+    expect(() =>
+      recorder.replay(log, dispatcher, { commandQueue: queue }),
+    ).toThrowError(/Command queue must be empty/);
+
+    expect(getCurrentRNGSeed()).toBe(2222);
+  });
+
   it('records telemetry when handler throws during replay', () => {
     const state = setGameState({ value: 0 });
     const recorder = new CommandRecorder(state);
@@ -490,12 +511,16 @@ describe('CommandRecorder', () => {
       Promise.reject(new Error('boom')),
     );
 
+    setRNGSeed(1111);
     recorder.record(
       createCommand({
         type: 'ASYNC_FAIL',
         step: 2,
       }),
     );
+    const log = recorder.export();
+
+    setRNGSeed(2222);
 
     const telemetryStub: TelemetryFacade = {
       recordError: vi.fn(),
@@ -508,13 +533,15 @@ describe('CommandRecorder', () => {
     const setCurrentStep = vi.fn();
     const setNextExecutableStep = vi.fn();
 
-    recorder.replay(recorder.export(), dispatcher, {
+    recorder.replay(log, dispatcher, {
       commandQueue,
       getCurrentStep: () => 10,
       getNextExecutableStep: () => 11,
       setCurrentStep,
       setNextExecutableStep,
     });
+
+    expect(getCurrentRNGSeed()).toBe(1111);
 
     await Promise.resolve();
 
@@ -526,5 +553,6 @@ describe('CommandRecorder', () => {
     expect(setCurrentStep).toHaveBeenLastCalledWith(10);
     expect(setNextExecutableStep).toHaveBeenCalledWith(3);
     expect(setNextExecutableStep).toHaveBeenLastCalledWith(11);
+    expect(getCurrentRNGSeed()).toBe(2222);
   });
 });
