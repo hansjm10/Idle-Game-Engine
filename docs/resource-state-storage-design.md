@@ -156,12 +156,14 @@ interface ResourceStateBuffers {
 All live numeric buffers share a single `ArrayBuffer` per numeric width to
 improve serialization locality while keeping independent views disjoint. The
 Float64 views (`amounts`, `capacities`, `incomePerSecond`, `expensePerSecond`,
-`netPerSecond`, `tickDelta`) are carved out of a backing buffer sized as
-`Float64Array.BYTES_PER_ELEMENT * 6 * resourceCount`. Each publish buffer owns
-its own Float64 `ArrayBuffer` sized for the copied views so the runtime can flip
-between `publish[0]` and `publish[1]` without invalidating previously issued
-snapshots. Typed arrays are constructed with an offset stride
-(`amounts` at offset `0`, `capacities` at `1 * stride`, etc.). The scratch and
+`netPerSecond`, `tickDelta`, `dirtyTolerance`) are carved out of a backing buffer
+sized as `Float64Array.BYTES_PER_ELEMENT * 7 * resourceCount`. Each publish
+buffer owns its own Float64 `ArrayBuffer` sized for the copied views (covering
+all seven slices) so the runtime can flip
+  between `publish[0]` and `publish[1]` without invalidating previously issued
+  snapshots. Typed arrays are constructed with an offset stride where
+  `stride = resourceCount * Float64Array.BYTES_PER_ELEMENT`
+  (`amounts` at offset `0`, `capacities` at `1 * stride`, etc.). The scratch and
 position maps use dedicated `ArrayBuffer`s, as do the Uint8 flag bits for both
 live and publish views.
 
@@ -187,9 +189,10 @@ Default constants:
 - `DIRTY_EPSILON_ABSOLUTE = 1e-9` collapses near-zero jitter.
 - `DIRTY_EPSILON_RELATIVE = 1e-9` scales tolerance in proportion to value size.
 - `DIRTY_EPSILON_CEILING = 1e-3` serves as the default per-resource ceiling.
-- `DIRTY_EPSILON_OVERRIDE_MAX = 5e-2` bounds definition-supplied overrides so they
+- `DIRTY_EPSILON_OVERRIDE_MAX = 5e-1` bounds definition-supplied overrides so they
   can relax tolerance for prestige-scale resources without letting massive deltas
-  slip through unchecked.
+  slip through unchecked while still covering magnitude ranges up to
+  approximately `1e15` without keeping resources perpetually dirty.
 
 If specific resources require looser tolerances (e.g., prestige currencies with
 huge exponential growth), the content definition may optionally supply a
@@ -271,11 +274,12 @@ interface ResourceState {
     and derives a tentative `appliedDelta = incomeDelta - expenseDelta`. After
     clamping the live amount into `[0, capacity]`, we recompute the
     `actualDelta = clampedAmount - previousAmount` and accumulate that value into
-    `tickDelta`. When `epsilonEquals(actualDelta, 0)` succeeds we treat the delta
-    as zero (including clearing any stale `tickDelta` entry) to avoid jitter from
-    floating point noise, keeping deterministic behaviour across engines. Dirty
-    bookkeeping and telemetry always use `actualDelta` so resources that hit their
-    cap/zero do not remain in the dirty set indefinitely.
+    `tickDelta`. When the *combined* tick delta (`tickDelta[index] + actualDelta`)
+    falls within the epsilon band we zero the entry; we never clear an existing
+    non-zero `tickDelta` unless the total reconciles to ~0 so earlier frame work
+    (e.g., capacity adjustments or direct grants) survives the finalize pass.
+    Dirty bookkeeping and telemetry always use `actualDelta` so resources that hit
+    their cap/zero do not remain in the dirty set indefinitely.
 - `resetPerTickAccumulators()` clears the live `incomePerSecond`,
   `expensePerSecond`, and `tickDelta` arrays after publish while leaving the
   publish buffers untouched thanks to the ping-pong double buffering.
@@ -336,12 +340,14 @@ that:
 On content reload or save restore, callers reuse the factory with definitions
 and then hydrate numeric buffers from persisted data. Hydration writes restored
 amount/capacity values and flag bits into both the live and publish typed
-arrays, zeros `incomePerSecond`, `expensePerSecond`, `netPerSecond`, and
-`tickDelta` in both views, and clears the dirty scratch counter so the next
-`snapshot({ mode: 'publish' })` immediately reflects the restored state without
-forcing a full-tick recomputation. The runtime stores the `ResourceState` inside
-the broader game state object managed by `setGameState(...)`; systems recompute
-per-second rates on the very next tick using the hydrated amounts. Save restore
+  arrays, zeros `incomePerSecond`, `expensePerSecond`, `netPerSecond`, and
+  `tickDelta` in both views, and clears the dirty scratch counter so the next
+  `snapshot({ mode: 'publish' })` immediately reflects the restored state without
+  forcing a full-tick recomputation. Until the first post-restore tick runs the UI
+  should expect rate diagnostics to read as zero; the follow-up finalize recomputes
+  rates deterministically. The runtime stores the `ResourceState` inside the
+  broader game state object managed by `setGameState(...)`; systems recompute
+  per-second rates on the very next tick using the hydrated amounts. Save restore
 and migration utilities invoke the internal `writeAmountDirect` helper during
 this process so they can place values that temporarily exceed caps before the
 relevant upgrades reapply.
@@ -404,15 +410,17 @@ so the guard fires at lookup time rather than after a mutation attempt.
 - `snapshot({ mode: 'publish' })` returns an immutable view
   (`ResourceStateSnapshot`) containing:
   - `ids` (frozen array).
-  - Read-only typed-array proxies that expose the publish buffer selected for
-    this frame. The helper (`createImmutableTypedArrayView`) ships in
-    `packages/core/src/immutable-snapshots.ts`; it wraps an existing typed array
-    with the shared guard tables so every mutator (`set`, `copyWithin`, `fill`,
-    `reverse`, `sort`, `setPrototypeOf`, `defineProperty`, etc.) throws while
-    indexed reads remain zero-copy. The proxy also denies access to `.buffer`,
-    `.byteOffset`, and `.byteLength`, returning immutable wrappers when callers
-    inspect them. Snapshot code requests the helper once per publish buffer
-    slice and caches the proxy so repeated snapshots do not allocate.
+- Read-only typed-array proxies that expose the publish buffer selected for
+  this frame. The helper (`createImmutableTypedArrayView`) ships in
+  `packages/core/src/immutable-snapshots.ts`; it wraps an existing typed array
+  with the shared guard tables so every mutator (`set`, `copyWithin`, `fill`,
+  `reverse`, `sort`, `setPrototypeOf`, `defineProperty`, etc.) throws while
+  indexed reads remain zero-copy. The proxy also denies access to `.buffer`,
+  `.byteOffset`, `.byteLength`, and view-producing helpers such as `subarray`,
+  `slice`, `with`, `toReversed`, and `toSorted` by returning new immutable
+  proxies, ensuring callers cannot peel off writable views. Snapshot code
+  requests the helper once per publish buffer slice and caches the proxy so
+  repeated snapshots do not allocate.
   - A compact list of dirty indices for the current tick sourced from
     `targetPublish.dirtyIndices.subarray(0, targetPublish.dirtyCount)`. The
     subarray is wrapped in the same read-only helper so callers cannot mutate
@@ -424,6 +432,11 @@ so the guard fires at lookup time rather than after a mutation attempt.
   income, expense, net, tick delta, flags, tolerance). This mode does not touch dirty
   bookkeeping, publish mirrors, or per-tick accumulators, allowing
   pre/post-command captures without interfering with the presentation pipeline.
+  The full-clone approach is `O(resourceCount)` per capture; for now we accept the
+  overhead because command executions are infrequent in deterministic tests. If the
+  workload proves heavier, future work can explore reusing the inactive publish
+  buffer with reference counting or capturing only the dirty indices plus a shared
+  frozen baseline.
 - `exportForSave()` returns a POJO suitable for persistence:
 
 ```ts
