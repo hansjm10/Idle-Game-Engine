@@ -555,4 +555,44 @@ describe('CommandRecorder', () => {
     expect(setNextExecutableStep).toHaveBeenLastCalledWith(11);
     expect(getCurrentRNGSeed()).toBe(2222);
   });
+
+  it('emits replay progress telemetry in batches', () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+
+    dispatcher.register('NO_OP', () => {});
+
+    for (let index = 0; index < 1500; index += 1) {
+      recorder.record(
+        createCommand({
+          type: 'NO_OP',
+          step: index,
+          timestamp: index,
+        }),
+      );
+    }
+
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    recorder.replay(recorder.export(), dispatcher);
+
+    expect(telemetryStub.recordProgress).toHaveBeenCalledTimes(2);
+    expect(telemetryStub.recordProgress).toHaveBeenNthCalledWith(
+      1,
+      'CommandReplay',
+      { processed: 1000 },
+    );
+    expect(telemetryStub.recordProgress).toHaveBeenNthCalledWith(
+      2,
+      'CommandReplay',
+      { processed: 1500 },
+    );
+  });
 });

@@ -40,6 +40,7 @@ export interface RuntimeReplayContext {
 }
 
 const COMMAND_LOG_VERSION = '0.1.0';
+const REPLAY_TELEMETRY_BATCH_SIZE = 1000;
 
 const sharedArrayBufferCtor = (globalThis as {
   SharedArrayBuffer?: typeof SharedArrayBuffer;
@@ -324,6 +325,7 @@ export class CommandRecorder {
     let stateAdvanced = false;
     let finalizationComplete = false;
     const matchedFutureCommandIndices = new Set<number>();
+    let processedSinceLastTelemetry = 0;
 
     const revertRuntimeContext = (): void => {
       if (hasReplaySeed) {
@@ -374,6 +376,7 @@ export class CommandRecorder {
     try {
       for (let i = 0; i < log.commands.length; i += 1) {
         const cmd = log.commands[i];
+        processedSinceLastTelemetry += 1;
 
         const context: ExecutionContext = {
           step: cmd.step,
@@ -424,6 +427,17 @@ export class CommandRecorder {
 
           sandboxedEnqueues.length = 0;
         }
+
+        if (processedSinceLastTelemetry >= REPLAY_TELEMETRY_BATCH_SIZE) {
+          telemetry.recordProgress('CommandReplay', { processed: i + 1 });
+          processedSinceLastTelemetry = 0;
+        }
+      }
+
+      if (processedSinceLastTelemetry > 0) {
+        telemetry.recordProgress('CommandReplay', {
+          processed: log.commands.length,
+        });
       }
 
       replayFailed = false;
