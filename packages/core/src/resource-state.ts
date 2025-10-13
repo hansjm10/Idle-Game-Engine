@@ -1491,7 +1491,7 @@ function wrapSnapshotArray<TArray extends Float64Array | Uint8Array | Uint32Arra
   array: TArray,
 ): TArray {
   return shouldGuardSnapshots()
-    ? (createImmutableTypedArrayView(array) as TArray)
+    ? (createImmutableTypedArrayView(array) as unknown as TArray)
     : array;
 }
 

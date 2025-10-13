@@ -370,15 +370,19 @@ export function createImmutableTypedArrayView<
   const buffer = view.buffer;
   const sharedBufferSnapshot =
     sharedArrayBufferCtor && buffer instanceof sharedArrayBufferCtor
-      ? createImmutableSharedArrayBufferSnapshot(buffer)
+      ? createImmutableSharedArrayBufferSnapshot(
+          buffer as SharedArrayBuffer,
+        )
       : undefined;
   const arrayBufferSnapshot =
-    sharedBufferSnapshot ?? createImmutableArrayBufferSnapshot(buffer);
+    sharedBufferSnapshot === undefined
+      ? createImmutableArrayBufferSnapshot(buffer as ArrayBuffer)
+      : undefined;
 
   return new Proxy(view, {
     get(target, property, receiver) {
       if (property === 'buffer') {
-        return sharedBufferSnapshot ?? arrayBufferSnapshot;
+        return sharedBufferSnapshot ?? arrayBufferSnapshot!;
       }
 
       if (property === 'valueOf') {
@@ -470,5 +474,5 @@ export function createImmutableTypedArrayView<
     setPrototypeOf() {
       throw new TypeError(MUTATION_ERROR_MESSAGE);
     },
-  }) as ImmutableTypedArraySnapshot<TArray>;
+  }) as unknown as ImmutableTypedArraySnapshot<TArray>;
 }
