@@ -751,6 +751,40 @@ describe('CommandQueue', () => {
     }).toThrow(TypeError);
   });
 
+  it('keeps typed array constructors constructable on immutable snapshots', () => {
+    const queue = new CommandQueue();
+
+    const typed = new Uint16Array([1, 2, 3]);
+
+    queue.enqueue(
+      createCommand({
+        type: 'typed-constructor',
+        payload: {
+          typed,
+        },
+      }),
+    );
+
+    const [snapshot] = queue.dequeueAll();
+    const typedProxy = (
+      snapshot.payload as CommandSnapshotPayload<{ typed: Uint16Array }>
+    ).typed;
+
+    const SnapshotCtor = typedProxy.constructor as {
+      new (length: number): Uint16Array;
+    };
+
+    expect(typeof SnapshotCtor).toBe('function');
+
+    let constructed: Uint16Array | undefined;
+    expect(() => {
+      constructed = new SnapshotCtor(typed.length);
+    }).not.toThrow();
+
+    expect(constructed).toBeInstanceOf(Uint16Array);
+    expect(constructed?.length).toBe(typed.length);
+  });
+
   it('exposes typed array buffer facades that require explicit copying', () => {
     const queue = new CommandQueue();
 

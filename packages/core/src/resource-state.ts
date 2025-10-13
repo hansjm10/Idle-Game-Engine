@@ -1,4 +1,7 @@
-import type { ImmutableMapSnapshot } from './immutable-snapshots.js';
+import {
+  createImmutableTypedArrayView,
+  type ImmutableMapSnapshot,
+} from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
 
 const DIRTY_EPSILON_ABSOLUTE = 1e-9;
@@ -1487,7 +1490,9 @@ function computeStableDigest(ids: readonly string[]): string {
 function wrapSnapshotArray<TArray extends Float64Array | Uint8Array | Uint32Array>(
   array: TArray,
 ): TArray {
-  return shouldGuardSnapshots() ? createImmutableTypedArrayView(array) : array;
+  return shouldGuardSnapshots()
+    ? (createImmutableTypedArrayView(array) as unknown as TArray)
+    : array;
 }
 
 function shouldGuardSnapshots(): boolean {
@@ -1524,42 +1529,4 @@ function getNodeEnv(): string | undefined {
     };
   };
   return globalObject.process?.env?.NODE_ENV;
-}
-
-function createImmutableTypedArrayView<TArray extends Float64Array | Uint8Array | Uint32Array>(
-  array: TArray,
-): TArray {
-  const mutationError =
-    'ResourceState snapshots are read-only. Clone the array before mutating.';
-
-  return new Proxy(array, {
-    set() {
-      throw new Error(mutationError);
-    },
-    defineProperty() {
-      throw new Error(mutationError);
-    },
-    deleteProperty() {
-      throw new Error(mutationError);
-    },
-    setPrototypeOf() {
-      throw new Error(mutationError);
-    },
-    get(target, property, receiver) {
-      if (
-        property === 'copyWithin' ||
-        property === 'fill' ||
-        property === 'reverse' ||
-        property === 'set' ||
-        property === 'sort'
-      ) {
-        return () => {
-          throw new Error(mutationError);
-        };
-      }
-
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
 }

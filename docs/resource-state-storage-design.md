@@ -705,6 +705,9 @@ harnesses that need to force-reset live buffers without emitting a snapshot.
 3. Add an opt-in snapshot guard helper to `packages/core/src/immutable-snapshots.ts`
    that wraps typed arrays in write-throwing proxies when `SNAPSHOT_GUARDS` is enabled,
    plus tests covering both the fast path (direct views) and the guarded debug path.
+   Constructor references must remain passthrough so call sites can continue to
+   instantiate typed views via `new snapshot.typed.constructor(length)` without
+   tripping the guard.
 4. Implement the pooled buffer transport (`TransportBufferPool`) and bridge
    utilities that build `ResourcePublishTransport` payloads proportional to the
    dirty set, including worker/non-worker code paths and metadata reconstruction.

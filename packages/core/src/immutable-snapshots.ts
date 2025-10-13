@@ -175,3 +175,304 @@ export type ImmutableTypedArraySnapshot<TArray extends TypedArray> = Omit<
     initialValue: U,
   ): U;
 };
+
+const TYPED_ARRAY_MUTATORS = new Set<PropertyKey>([
+  'copyWithin',
+  'fill',
+  'reverse',
+  'set',
+  'sort',
+]);
+
+const TYPED_ARRAY_CALLBACK_METHODS = new Set<PropertyKey>([
+  'every',
+  'filter',
+  'find',
+  'findIndex',
+  'findLast',
+  'findLastIndex',
+  'forEach',
+  'map',
+  'reduce',
+  'reduceRight',
+  'some',
+]);
+
+const typedArrayPrototype = Object.getPrototypeOf(
+  Int8Array.prototype,
+) as Record<PropertyKey, unknown> | null;
+
+const sharedArrayBufferCtor = (globalThis as {
+  SharedArrayBuffer?: new (byteLength: number) => SharedArrayBuffer;
+}).SharedArrayBuffer;
+
+const MUTATION_ERROR_MESSAGE =
+  'Immutable typed array snapshots are read-only. Clone the array before mutating.';
+
+function createImmutableArrayBufferSnapshot(
+  buffer: ArrayBuffer,
+): ImmutableArrayBufferSnapshot {
+  return {
+    get byteLength() {
+      return buffer.byteLength;
+    },
+    slice(begin?: number, end?: number) {
+      const sliced = buffer.slice(
+        begin ?? 0,
+        end ?? buffer.byteLength,
+      );
+      return createImmutableArrayBufferSnapshot(sliced);
+    },
+    toArrayBuffer() {
+      return buffer.slice(0);
+    },
+    toDataView() {
+      return new DataView(buffer.slice(0));
+    },
+    toUint8Array() {
+      return new Uint8Array(buffer.slice(0));
+    },
+    valueOf() {
+      return buffer.slice(0);
+    },
+    [Symbol.toStringTag]: 'ImmutableArrayBufferSnapshot',
+  };
+}
+
+function cloneSharedArrayBuffer(
+  buffer: SharedArrayBuffer,
+): SharedArrayBuffer {
+  if (!sharedArrayBufferCtor) {
+    throw new TypeError('SharedArrayBuffer is not supported in this environment');
+  }
+
+  const clone = new sharedArrayBufferCtor(buffer.byteLength);
+  const source = new Uint8Array(buffer);
+  new Uint8Array(clone).set(source);
+  return clone;
+}
+
+function computeSliceBounds(
+  length: number,
+  begin?: number,
+  end?: number,
+): [number, number] {
+  const start =
+    begin === undefined
+      ? 0
+      : begin < 0
+        ? Math.max(length + begin, 0)
+        : Math.min(begin, length);
+  const rawEnd =
+    end === undefined
+      ? length
+      : end < 0
+        ? Math.max(length + end, 0)
+        : Math.min(end, length);
+  const finish = Math.max(0, Math.min(rawEnd, length));
+  return [start, Math.max(start, finish)];
+}
+
+function createImmutableSharedArrayBufferSnapshot(
+  buffer: SharedArrayBuffer,
+): ImmutableSharedArrayBufferSnapshot {
+  if (!sharedArrayBufferCtor) {
+    throw new TypeError('SharedArrayBuffer is not supported in this environment');
+  }
+
+  return {
+    get byteLength() {
+      return buffer.byteLength;
+    },
+    slice(begin?: number, end?: number) {
+      const [start, finish] = computeSliceBounds(
+        buffer.byteLength,
+        begin,
+        end,
+      );
+      const clone = new sharedArrayBufferCtor(finish - start);
+      const source = new Uint8Array(buffer, start, finish - start);
+      new Uint8Array(clone).set(source);
+      return createImmutableSharedArrayBufferSnapshot(clone);
+    },
+    toSharedArrayBuffer() {
+      return cloneSharedArrayBuffer(buffer);
+    },
+    toArrayBuffer() {
+      const copy = new ArrayBuffer(buffer.byteLength);
+      new Uint8Array(copy).set(new Uint8Array(buffer));
+      return copy;
+    },
+    toDataView() {
+      const copy = new ArrayBuffer(buffer.byteLength);
+      new Uint8Array(copy).set(new Uint8Array(buffer));
+      return new DataView(copy);
+    },
+    toUint8Array() {
+      const copy = new Uint8Array(buffer.byteLength);
+      copy.set(new Uint8Array(buffer));
+      return copy;
+    },
+    valueOf() {
+      return cloneSharedArrayBuffer(buffer);
+    },
+    [Symbol.toStringTag]: 'ImmutableSharedArrayBufferSnapshot',
+  };
+}
+
+function ensureCallbackUsesReceiver(
+  receiver: ArrayBufferView,
+  callback: (...args: unknown[]) => unknown,
+) {
+  return function (
+    this: unknown,
+    ...callbackArgs: unknown[]
+  ): unknown {
+    if (callbackArgs.length > 0) {
+      callbackArgs[callbackArgs.length - 1] = receiver;
+    }
+    return callback.apply(this, callbackArgs);
+  };
+}
+
+function wrapMethodResult(
+  result: unknown,
+  target?: ArrayBufferView,
+  receiver?: ArrayBufferView,
+): unknown {
+  if (target && result === target && receiver) {
+    return receiver;
+  }
+  if (
+    ArrayBuffer.isView(result) &&
+    !(result instanceof DataView)
+  ) {
+    return createImmutableTypedArrayView(result as TypedArray);
+  }
+  return result;
+}
+
+function isTypedArrayPrototypeProperty(
+  property: PropertyKey,
+): boolean {
+  if (!typedArrayPrototype) {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(
+    typedArrayPrototype,
+    property,
+  );
+}
+
+export function createImmutableTypedArrayView<
+  TArray extends TypedArray,
+>(view: TArray): ImmutableTypedArraySnapshot<TArray> {
+  const buffer = view.buffer;
+  const sharedBufferSnapshot =
+    sharedArrayBufferCtor && buffer instanceof sharedArrayBufferCtor
+      ? createImmutableSharedArrayBufferSnapshot(
+          buffer as SharedArrayBuffer,
+        )
+      : undefined;
+  const arrayBufferSnapshot =
+    sharedBufferSnapshot === undefined
+      ? createImmutableArrayBufferSnapshot(buffer as ArrayBuffer)
+      : undefined;
+
+  return new Proxy(view, {
+    get(target, property, receiver) {
+      if (property === 'buffer') {
+        return sharedBufferSnapshot ?? arrayBufferSnapshot!;
+      }
+
+      if (property === 'valueOf') {
+        return () => receiver;
+      }
+
+      if (
+        typeof property === 'string' &&
+        TYPED_ARRAY_MUTATORS.has(property)
+      ) {
+        return () => {
+          throw new TypeError(MUTATION_ERROR_MESSAGE);
+        };
+      }
+
+      if (
+        typeof property === 'string' &&
+        property === 'subarray'
+      ) {
+        return (...args: unknown[]) => {
+          const typedTarget = target as unknown as {
+            subarray: (...params: unknown[]) => TypedArray;
+          };
+          const result = typedTarget.subarray(...args);
+          return createImmutableTypedArrayView(result);
+        };
+      }
+
+      if (
+        typeof property === 'string' &&
+        TYPED_ARRAY_CALLBACK_METHODS.has(property)
+      ) {
+        const original = Reflect.get(target as object, property, target);
+        if (typeof original === 'function') {
+          return (...args: unknown[]) => {
+            if (args.length > 0 && typeof args[0] === 'function') {
+              const [callback, ...rest] = args;
+              const wrapped = ensureCallbackUsesReceiver(
+                receiver as ArrayBufferView,
+                callback as (...innerArgs: unknown[]) => unknown,
+              );
+              const result = (original as (...params: unknown[]) => unknown).apply(
+                target,
+                [wrapped, ...rest],
+              );
+              return wrapMethodResult(result, target, receiver as ArrayBufferView);
+            }
+            const result = (original as (...params: unknown[]) => unknown).apply(
+              target,
+              args,
+            );
+            return wrapMethodResult(result, target, receiver as ArrayBufferView);
+          };
+        }
+      }
+
+      const value = Reflect.get(target, property, receiver);
+
+      if (typeof value === 'function') {
+        if (property === 'constructor') {
+          return value;
+        }
+        if (
+          isTypedArrayPrototypeProperty(property) ||
+          ArrayBuffer.isView(target)
+        ) {
+          return (...args: unknown[]) => {
+            const result = (value as (...params: unknown[]) => unknown).apply(
+              target,
+              args,
+            );
+            return wrapMethodResult(result, target, receiver as ArrayBufferView);
+          };
+        }
+        return value.bind(target);
+      }
+
+      return value;
+    },
+    set() {
+      throw new TypeError(MUTATION_ERROR_MESSAGE);
+    },
+    defineProperty() {
+      throw new TypeError(MUTATION_ERROR_MESSAGE);
+    },
+    deleteProperty() {
+      throw new TypeError(MUTATION_ERROR_MESSAGE);
+    },
+    setPrototypeOf() {
+      throw new TypeError(MUTATION_ERROR_MESSAGE);
+    },
+  }) as unknown as ImmutableTypedArraySnapshot<TArray>;
+}
