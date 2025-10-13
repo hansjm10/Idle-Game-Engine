@@ -210,6 +210,7 @@ export function buildResourcePublishTransport(
   });
 
   const dirtyIndices = dirtyLease.array;
+  const dirtyIndicesBuffer = requireArrayBuffer(dirtyIndices.buffer);
 
   const transport: ResourcePublishTransport = {
     version: TRANSPORT_VERSION,
@@ -221,7 +222,7 @@ export function buildResourcePublishTransport(
   const transferables =
     mode === 'transfer'
       ? dedupeBuffers([
-          dirtyIndices.buffer,
+          dirtyIndicesBuffer,
           ...descriptors.map((descriptor) => descriptor.buffer),
         ])
       : [];
@@ -229,19 +230,17 @@ export function buildResourcePublishTransport(
   const release = (releaseOptions?: ResourcePublishTransportReleaseOptions) => {
     const releaseTick = releaseOptions?.tick;
     const buffers = releaseOptions?.buffers ?? {};
-    const dirtyIndicesBuffer = releaseOptions?.dirtyIndicesBuffer;
+    const dirtyIndicesOverride = releaseOptions?.dirtyIndicesBuffer;
 
-    const releaseContext = (component: string, buffer?: ArrayBuffer): LeaseReleaseContext => ({
+    const releaseContext = (buffer?: ArrayBuffer): LeaseReleaseContext => ({
       owner,
       tick: releaseTick,
       buffer,
     });
 
-    dirtyLease.release(releaseContext('dirtyIndices', dirtyIndicesBuffer));
+    dirtyLease.release(releaseContext(dirtyIndicesOverride));
     for (const entry of componentLeases) {
-      entry.lease.release(
-        releaseContext(entry.component, buffers[entry.component]),
-      );
+      entry.lease.release(releaseContext(buffers[entry.component]));
     }
   };
 
@@ -346,13 +345,21 @@ function createDescriptor(
   component: TransportComponent,
   view: Float64Array | Uint8Array,
 ): TransportBufferDescriptor {
+  const buffer = requireArrayBuffer(view.buffer);
   return {
     component,
     ctor: view.constructor.name as TransportConstructorName,
-    buffer: view.buffer,
+    buffer,
     byteOffset: view.byteOffset,
     length: view.length,
   };
+}
+
+function requireArrayBuffer(buffer: ArrayBufferLike): ArrayBuffer {
+  if (buffer instanceof ArrayBuffer) {
+    return buffer;
+  }
+  throw new TypeError('Resource publish transport requires ArrayBuffer-backed views.');
 }
 
 function dedupeBuffers(buffers: readonly ArrayBuffer[]): ArrayBuffer[] {
