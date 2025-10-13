@@ -159,6 +159,108 @@ describe('ResourceState', () => {
     }).toThrowError(/read-only/);
   });
 
+  it('blocks buffer-backed mutation attempts when guards are enabled', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 0, capacity: 10 },
+    ]);
+    const energy = state.requireIndex('energy');
+    state.addAmount(energy, 4);
+
+    const snapshot = state.snapshot();
+    const bufferWrapper = (snapshot.amounts as unknown as {
+      buffer: unknown;
+    }).buffer as {
+      toArrayBuffer?: () => ArrayBuffer;
+      valueOf?: () => ArrayBuffer | SharedArrayBuffer;
+    };
+
+    expect(typeof bufferWrapper).toBe('object');
+    expect(bufferWrapper).not.toBeInstanceOf(ArrayBuffer);
+    if (typeof SharedArrayBuffer !== 'undefined') {
+      expect(bufferWrapper).not.toBeInstanceOf(SharedArrayBuffer);
+    }
+
+    expect(bufferWrapper?.toArrayBuffer).toBeInstanceOf(Function);
+    expect(bufferWrapper?.valueOf).toBeInstanceOf(Function);
+    const clone = bufferWrapper?.toArrayBuffer?.();
+    expect(clone).toBeInstanceOf(ArrayBuffer);
+
+    const copy = bufferWrapper.valueOf?.();
+    expect(copy).toBeDefined();
+    expect(
+      copy instanceof ArrayBuffer ||
+        (typeof SharedArrayBuffer !== 'undefined' && copy instanceof SharedArrayBuffer),
+    ).toBe(true);
+
+    const mirror = new Float64Array(copy as ArrayBufferLike);
+    mirror[energy] = 99;
+    expect(snapshot.amounts[energy]).toBe(4);
+  });
+
+  it('allows disabling snapshot guards via SNAPSHOT_GUARDS=force-off', () => {
+    const originalMode = process.env.SNAPSHOT_GUARDS;
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.SNAPSHOT_GUARDS = 'force-off';
+    process.env.NODE_ENV = 'production';
+
+    try {
+      const state = createResourceState([
+        { id: 'energy', startAmount: 0, capacity: 10 },
+      ]);
+      const energy = state.requireIndex('energy');
+      state.addAmount(energy, 2);
+
+      const snapshot = state.snapshot();
+      expect(() => {
+        (snapshot.amounts as unknown as Float64Array)[energy] = 42;
+      }).not.toThrow();
+    } finally {
+      if (originalMode === undefined) {
+        delete process.env.SNAPSHOT_GUARDS;
+      } else {
+        process.env.SNAPSHOT_GUARDS = originalMode;
+      }
+
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    }
+  });
+
+  it('forces guards on in production when SNAPSHOT_GUARDS=force-on', () => {
+    const originalMode = process.env.SNAPSHOT_GUARDS;
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.SNAPSHOT_GUARDS = 'force-on';
+    process.env.NODE_ENV = 'production';
+
+    try {
+      const state = createResourceState([
+        { id: 'energy', startAmount: 0, capacity: 10 },
+      ]);
+      const energy = state.requireIndex('energy');
+      state.addAmount(energy, 1);
+
+      const snapshot = state.snapshot();
+      expect(() => {
+        (snapshot.amounts as unknown as Float64Array)[energy] = 13;
+      }).toThrowError(/read-only/);
+    } finally {
+      if (originalMode === undefined) {
+        delete process.env.SNAPSHOT_GUARDS;
+      } else {
+        process.env.SNAPSHOT_GUARDS = originalMode;
+      }
+
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    }
+  });
+
   it('forceClearDirtyState clears scratch metadata without publish', () => {
     const state = createResourceState([
       { id: 'energy', startAmount: 0, capacity: 10 },
