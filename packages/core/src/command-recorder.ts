@@ -6,10 +6,12 @@ import type {
 } from './command-dispatcher.js';
 import { CommandQueue, deepFreezeInPlace } from './command-queue.js';
 import type { ImmutablePayload } from './command.js';
-import type {
-  ImmutableArrayBufferSnapshot,
-  ImmutableSharedArrayBufferSnapshot,
-  TypedArray,
+import {
+  isImmutableTypedArraySnapshot,
+  type ImmutableArrayBufferSnapshot,
+  type ImmutableSharedArrayBufferSnapshot,
+  type ImmutableTypedArraySnapshot,
+  type TypedArray,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
 import {
@@ -634,12 +636,20 @@ function cloneSnapshotInternal(
       new(length: number): TypedArray;
     };
     let clone: TypedArray;
-    if (ArrayBuffer.isView(typed)) {
+    const isSnapshot = isImmutableTypedArraySnapshot(typed);
+    if (ArrayBuffer.isView(typed) || isSnapshot) {
+      const source = isSnapshot
+        ? (typed as ImmutableTypedArraySnapshot<TypedArray>)
+        : typed;
       const bufferClone = cloneSnapshotInternal(
-        typed.buffer,
+        source.buffer,
         seen,
       ) as ArrayBufferLike;
-      clone = new ctor(bufferClone, typed.byteOffset, typed.length);
+      clone = new ctor(
+        bufferClone,
+        (source as unknown as TypedArray).byteOffset,
+        getTypedArrayLength(source as unknown as TypedArray),
+      );
     } else {
       const length = getTypedArrayLength(typed);
       clone = new ctor(length);
@@ -829,6 +839,7 @@ function containsSymbolProperties(
 
   if (
     ArrayBuffer.isView(value) ||
+    isImmutableTypedArraySnapshot(value) ||
     value instanceof ArrayBuffer ||
     value instanceof Date ||
     value instanceof RegExp
@@ -1198,6 +1209,17 @@ function reconcileValue(
           clonedBuffer,
           typed.byteOffset,
           typed.length,
+        );
+      } else if (isImmutableTypedArraySnapshot(typed)) {
+        const source = typed as ImmutableTypedArraySnapshot<TypedArray>;
+        const clonedBuffer = cloneSnapshotInternal(
+          source.buffer,
+          seen,
+        ) as ArrayBufferLike;
+        resolvedView = new ctor(
+          clonedBuffer,
+          (source as unknown as TypedArray).byteOffset,
+          getTypedArrayLength(source as unknown as TypedArray),
         );
       } else {
         const length = getTypedArrayLength(typed);

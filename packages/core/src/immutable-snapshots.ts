@@ -206,13 +206,32 @@ const sharedArrayBufferCtor = (globalThis as {
   SharedArrayBuffer?: new (byteLength: number) => SharedArrayBuffer;
 }).SharedArrayBuffer;
 
+const arrayBufferSnapshotCache = new WeakMap<
+  ArrayBuffer,
+  ImmutableArrayBufferSnapshot
+>();
+
+const sharedArrayBufferSnapshotCache = sharedArrayBufferCtor
+  ? new WeakMap<
+      SharedArrayBuffer,
+      ImmutableSharedArrayBufferSnapshot
+    >()
+  : undefined;
+
+const immutableTypedArraySnapshots = new WeakSet<object>();
+
 const MUTATION_ERROR_MESSAGE =
   'Immutable typed array snapshots are read-only. Clone the array before mutating.';
 
 function createImmutableArrayBufferSnapshot(
   buffer: ArrayBuffer,
 ): ImmutableArrayBufferSnapshot {
-  return {
+  const cached = arrayBufferSnapshotCache.get(buffer);
+  if (cached) {
+    return cached;
+  }
+
+  const snapshot: ImmutableArrayBufferSnapshot = {
     get byteLength() {
       return buffer.byteLength;
     },
@@ -237,6 +256,9 @@ function createImmutableArrayBufferSnapshot(
     },
     [Symbol.toStringTag]: 'ImmutableArrayBufferSnapshot',
   };
+
+  arrayBufferSnapshotCache.set(buffer, snapshot);
+  return snapshot;
 }
 
 function cloneSharedArrayBuffer(
@@ -276,11 +298,16 @@ function computeSliceBounds(
 function createImmutableSharedArrayBufferSnapshot(
   buffer: SharedArrayBuffer,
 ): ImmutableSharedArrayBufferSnapshot {
+  const cached = sharedArrayBufferSnapshotCache?.get(buffer);
+  if (cached) {
+    return cached;
+  }
+
   if (!sharedArrayBufferCtor) {
     throw new TypeError('SharedArrayBuffer is not supported in this environment');
   }
 
-  return {
+  const snapshot: ImmutableSharedArrayBufferSnapshot = {
     get byteLength() {
       return buffer.byteLength;
     },
@@ -318,6 +345,9 @@ function createImmutableSharedArrayBufferSnapshot(
     },
     [Symbol.toStringTag]: 'ImmutableSharedArrayBufferSnapshot',
   };
+
+  sharedArrayBufferSnapshotCache?.set(buffer, snapshot);
+  return snapshot;
 }
 
 function ensureCallbackUsesReceiver(
@@ -379,7 +409,7 @@ export function createImmutableTypedArrayView<
       ? createImmutableArrayBufferSnapshot(buffer as ArrayBuffer)
       : undefined;
 
-  return new Proxy(view, {
+  const proxy = new Proxy(view, {
     get(target, property, receiver) {
       if (property === 'buffer') {
         return sharedBufferSnapshot ?? arrayBufferSnapshot!;
@@ -439,28 +469,28 @@ export function createImmutableTypedArrayView<
         }
       }
 
-      const value = Reflect.get(target, property, receiver);
+      const resolved = Reflect.get(target as ArrayBufferView, property);
 
-      if (typeof value === 'function') {
+      if (typeof resolved === 'function') {
         if (property === 'constructor') {
-          return value;
+          return resolved;
         }
         if (
           isTypedArrayPrototypeProperty(property) ||
           ArrayBuffer.isView(target)
         ) {
           return (...args: unknown[]) => {
-            const result = (value as (...params: unknown[]) => unknown).apply(
+            const result = (resolved as (...params: unknown[]) => unknown).apply(
               target,
               args,
             );
             return wrapMethodResult(result, target, receiver as ArrayBufferView);
           };
         }
-        return value.bind(target);
+        return resolved.bind(target);
       }
 
-      return value;
+      return resolved;
     },
     set() {
       throw new TypeError(MUTATION_ERROR_MESSAGE);
@@ -475,4 +505,18 @@ export function createImmutableTypedArrayView<
       throw new TypeError(MUTATION_ERROR_MESSAGE);
     },
   }) as unknown as ImmutableTypedArraySnapshot<TArray>;
+
+  immutableTypedArraySnapshots.add(proxy as object);
+
+  return proxy;
+}
+
+export function isImmutableTypedArraySnapshot(
+  value: unknown,
+): value is ImmutableTypedArraySnapshot<TypedArray> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    immutableTypedArraySnapshots.has(value as object)
+  );
 }
