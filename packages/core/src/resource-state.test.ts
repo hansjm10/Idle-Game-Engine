@@ -100,10 +100,18 @@ describe('ResourceState', () => {
     const postSpend = state.snapshot();
     expect(postSpend.amounts[energy]).toBe(7);
     expect(postSpend.dirtyCount).toBe(1);
-    expect(state.spendAmount(energy, 50)).toBe(false);
+    const context = {
+      commandId: 'PURCHASE_GENERATOR',
+      systemId: 'TestSystem',
+    };
+    expect(state.spendAmount(energy, 50, context)).toBe(false);
     expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
-      'ResourceSpendInsufficient',
-      expect.objectContaining({ index: energy }),
+      'ResourceSpendFailed',
+      expect.objectContaining({
+        index: energy,
+        commandId: context.commandId,
+        systemId: context.systemId,
+      }),
     );
 
     const cleanSnapshot = state.snapshot();

@@ -107,6 +107,11 @@ export interface SerializedResourceState {
   readonly flags: readonly number[];
 }
 
+export interface ResourceSpendAttemptContext {
+  readonly commandId?: string;
+  readonly systemId?: string;
+}
+
 export interface ResourceState {
   getIndex(id: string): number | undefined;
   requireIndex(id: string): number;
@@ -119,7 +124,11 @@ export interface ResourceState {
   unlock(index: number): void;
   setCapacity(index: number, capacity: number): number;
   addAmount(index: number, amount: number): number;
-  spendAmount(index: number, amount: number): boolean;
+  spendAmount(
+    index: number,
+    amount: number,
+    context?: ResourceSpendAttemptContext,
+  ): boolean;
   applyIncome(index: number, amountPerSecond: number): void;
   applyExpense(index: number, amountPerSecond: number): void;
   finalizeTick(deltaMs: number): void;
@@ -290,7 +299,7 @@ function sanitizeDefinitions(
     readonly dirtyTolerance: number;
   }[];
 } {
-  const sanitized = definitions.map((definition, index) => {
+  const sanitized = definitions.map((definition, _index) => {
     const rawStartAmount = definition.startAmount ?? 0;
     const rawCapacity = definition.capacity ?? Number.POSITIVE_INFINITY;
     const unlocked = definition.unlocked ?? true;
@@ -471,7 +480,8 @@ function createResourceStateFacade(
     },
     setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
     addAmount: (index, amount) => addAmount(internal, index, amount),
-    spendAmount: (index, amount) => spendAmount(internal, index, amount),
+    spendAmount: (index, amount, context) =>
+      spendAmount(internal, index, amount, context),
     applyIncome: (index, amountPerSecond) =>
       applyRate(internal, index, amountPerSecond, 'income'),
     applyExpense: (index, amountPerSecond) =>
@@ -615,6 +625,7 @@ function spendAmount(
   internal: ResourceStateInternal,
   index: number,
   amount: number,
+  context?: ResourceSpendAttemptContext,
 ): boolean {
   assertValidIndex(internal, index);
   if (!Number.isFinite(amount)) {
@@ -640,10 +651,12 @@ function spendAmount(
   const { buffers } = internal;
   const currentAmount = buffers.amounts[index];
   if (currentAmount < amount) {
-    telemetry.recordWarning('ResourceSpendInsufficient', {
+    telemetry.recordWarning('ResourceSpendFailed', {
       index,
       amount,
       available: currentAmount,
+      commandId: context?.commandId,
+      systemId: context?.systemId,
     });
     return false;
   }
@@ -1345,6 +1358,7 @@ function accumulateTickDelta(
     index,
     resolved,
     internal.buffers.publish[internal.activePublishIndex].tickDelta[index],
+    'tickDelta',
   );
 }
 

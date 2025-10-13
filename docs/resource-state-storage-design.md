@@ -250,7 +250,11 @@ interface ResourceState {
   unlock(index: number): void;
   setCapacity(index: number, capacity: number): number;
   addAmount(index: number, amount: number): number;
-  spendAmount(index: number, amount: number): boolean;
+  spendAmount(
+    index: number,
+    amount: number,
+    context?: ResourceSpendAttemptContext,
+  ): boolean;
   applyIncome(index: number, amountPerSecond: number): void;
   applyExpense(index: number, amountPerSecond: number): void;
   finalizeTick(deltaMs: number): void;
@@ -439,7 +443,7 @@ that:
   calls `unmarkIfClean` once the live values satisfy `epsilonEquals` with the
   publish buffer, dropping the index from the scratch list. When spending fails,
   telemetry records a `ResourceSpendFailed` event with the offending
-  command/system id and the guard throws if the caller attempts to subtract a
+  command/system id (when supplied via `ResourceSpendAttemptContext`) and the guard throws if the caller attempts to subtract a
   negative amount.
 - **Per-second accumulation:** Systems call `applyIncome` / `applyExpense`
   during their tick. Inputs must be finite (`Number.isFinite`) and non-negative;
@@ -546,6 +550,11 @@ interface SerializedResourceState {
   readonly unlocked?: readonly boolean[];
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
+}
+
+interface ResourceSpendAttemptContext {
+  readonly commandId?: string;
+  readonly systemId?: string;
 }
 ```
 

@@ -193,6 +193,7 @@ export {
   createResourceState,
   type ResourceDefinition,
   type ResourceDefinitionDigest,
+  type ResourceSpendAttemptContext,
   type ResourceState,
   type ResourceStateSnapshot,
   type SerializedResourceState,
