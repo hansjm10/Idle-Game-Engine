@@ -15,6 +15,7 @@ import {
   CommandRecorder,
   restoreState,
   type CommandLog,
+  type StateSnapshot,
 } from './command-recorder.js';
 import {
   clearGameState,
@@ -31,6 +32,10 @@ import {
   setTelemetry,
   type TelemetryFacade,
 } from './telemetry.js';
+import {
+  createImmutableTypedArrayView,
+  isImmutableTypedArraySnapshot,
+} from './immutable-snapshots.js';
 
 function createCommand(
   overrides: Partial<Command> = {},
@@ -267,6 +272,34 @@ describe('CommandRecorder', () => {
 
     restored.main[0] = 42;
     expect(restored.mirror[0]).toBe(42);
+  });
+
+  it('preserves shared buffers for distinct typed array views when restoring snapshots', () => {
+    const buffer = new ArrayBuffer(16);
+    const source = new Uint32Array(buffer);
+    source.set([1, 2, 3, 4]);
+
+    const snapshot = {
+      a: createImmutableTypedArrayView(new Uint32Array(buffer, 0, 2)),
+      b: createImmutableTypedArrayView(new Uint32Array(buffer, 8, 2)),
+    } as StateSnapshot<{ a: Uint32Array; b: Uint32Array }>;
+
+    expect(isImmutableTypedArraySnapshot(snapshot.a)).toBe(true);
+    expect(isImmutableTypedArraySnapshot(snapshot.b)).toBe(true);
+
+    const restored = restoreState(
+      {} as { a: Uint32Array; b: Uint32Array },
+      snapshot,
+    );
+
+    expect(restored.a.buffer).toBe(restored.b.buffer);
+    expect(restored.a.byteOffset).toBe(0);
+    expect(restored.b.byteOffset).toBe(8);
+    expect(Array.from(restored.a)).toEqual([1, 2]);
+    expect(Array.from(restored.b)).toEqual([3, 4]);
+
+    restored.b[0] = 99;
+    expect(new Uint32Array(restored.a.buffer)[2]).toBe(99);
   });
 
   it('reconciles typed arrays in place during replay', () => {
