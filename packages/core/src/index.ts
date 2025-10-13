@@ -190,6 +190,15 @@ export {
   clearGameState,
 } from './runtime-state.js';
 export {
+  createResourceState,
+  type ResourceDefinition,
+  type ResourceDefinitionDigest,
+  type ResourceSpendAttemptContext,
+  type ResourceState,
+  type ResourceStateSnapshot,
+  type SerializedResourceState,
+} from './resource-state.js';
+export {
   telemetry,
   type TelemetryEventData,
   type TelemetryFacade,

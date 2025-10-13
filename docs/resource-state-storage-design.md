@@ -199,6 +199,10 @@ const tolerance = Math.max(
 return Math.abs(a - b) <= tolerance;
 ```
 
+Comparisons short-circuit when operands are already identical (including
+matching `Infinity` sentinels) so resources that return to their prior state do
+not remain marked dirty after reconciliation.
+
 `toleranceCeiling` resolves per resource from the mutable `dirtyTolerance`
 buffer (defaulting to `DIRTY_EPSILON_CEILING` but allowed to grow up to
 `DIRTY_EPSILON_OVERRIDE_MAX`), ensuring the epsilon never exceeds the ceiling
@@ -220,6 +224,9 @@ huge exponential growth), the content definition may optionally supply a
 `epsilonEquals` then reads the per-resource ceiling (capped only by
 `DIRTY_EPSILON_OVERRIDE_MAX`). Telemetry records the raw comparisons whenever the
 override saturates so balancing can adjust the configuration before release.
+When this occurs the runtime emits `ResourceDirtyToleranceSaturated` with
+`{ resourceId, field, difference, toleranceCeiling, relativeTolerance, magnitude }`
+so analytics and balancing pipelines have the full context.
 
 `ImmutableMapSnapshot` is already provided by `packages/core/src/immutable-snapshots.ts`
 and proxies mutation methods so the lookup table cannot be altered after the
@@ -243,7 +250,11 @@ interface ResourceState {
   unlock(index: number): void;
   setCapacity(index: number, capacity: number): number;
   addAmount(index: number, amount: number): number;
-  spendAmount(index: number, amount: number): boolean;
+  spendAmount(
+    index: number,
+    amount: number,
+    context?: ResourceSpendAttemptContext,
+  ): boolean;
   applyIncome(index: number, amountPerSecond: number): void;
   applyExpense(index: number, amountPerSecond: number): void;
   finalizeTick(deltaMs: number): void;
@@ -292,7 +303,10 @@ interface ResourceState {
 - Internal maintenance code uses `writeAmountDirect(index, amount)` to bypass
   capacity clamping during save restore or migrations. The helper is not part of
   the public façade and is only callable from privileged modules in the same
-  file so gameplay code must go through `addAmount`.
+  file so gameplay code must go through `addAmount`. For tooling, the module
+  exposes an opt-in escape hatch `__unsafeWriteAmountDirect(state, index, amount)`
+  that routes through the same helper; callers are expected to guard their inputs
+  and remain confined to hydration/migration flows.
   - `finalizeTick(deltaMs)` converts accumulated per-second rates into a proposed
     delta, clamps amounts to capacities/zero, recomputes `netPerSecond`, and relies
     on `markDirty` + `unmarkIfClean` to ensure only indices with meaningful
@@ -432,7 +446,7 @@ that:
   calls `unmarkIfClean` once the live values satisfy `epsilonEquals` with the
   publish buffer, dropping the index from the scratch list. When spending fails,
   telemetry records a `ResourceSpendFailed` event with the offending
-  command/system id and the guard throws if the caller attempts to subtract a
+  command/system id (when supplied via `ResourceSpendAttemptContext`) and the guard throws if the caller attempts to subtract a
   negative amount.
 - **Per-second accumulation:** Systems call `applyIncome` / `applyExpense`
   during their tick. Inputs must be finite (`Number.isFinite`) and non-negative;
@@ -540,6 +554,11 @@ interface SerializedResourceState {
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
 }
+
+interface ResourceSpendAttemptContext {
+  readonly commandId?: string;
+  readonly systemId?: string;
+}
 ```
 
 Offline catch-up consumes `SerializedResourceState`, rehydrates the live typed
@@ -596,7 +615,10 @@ just the slots that may have diverged while `targetPublish` sat idle:
      mutates it, so the comparison normally short-circuits unless a tooling action
      explicitly updates the buffer. The flag copy masks out the engine-only
      `DIRTY_THIS_TICK` bit so consumers never observe internal bookkeeping. Slots that
-     converge clear their `tickDelta` and skip the dirty list.
+     converge leave the live `tickDelta` untouched so recorder snapshots captured
+     immediately after publish still observe the accumulated delta; they simply skip
+     the dirty list. `resetPerTickAccumulators()` (or `forceClearDirtyState()`) remains
+     responsible for clearing the live accumulator once consumers finish reading it.
 
 For each surviving index we write it into
 `targetPublish.dirtyIndices[targetPublish.dirtyCount++]` and mark
