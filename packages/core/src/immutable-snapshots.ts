@@ -438,6 +438,9 @@ export function createImmutableTypedArrayView<
       const value = Reflect.get(target, property, receiver);
 
       if (typeof value === 'function') {
+        if (property === 'constructor') {
+          return value;
+        }
         if (
           isTypedArrayPrototypeProperty(property) ||
           ArrayBuffer.isView(target)
