@@ -13,6 +13,8 @@ const FLAG_DIRTY_THIS_TICK = 1 << 2;
 const SCRATCH_UNSET = -1;
 const SCRATCH_VISITED = -2;
 
+const TELEMETRY_DIRTY_TOLERANCE_SATURATED = 'ResourceDirtyToleranceSaturated';
+
 const SNAPSHOT_GUARD_ENV_KEY = 'SNAPSHOT_GUARDS';
 
 type SnapshotGuardMode = 'auto' | 'force-on' | 'force-off';
@@ -21,6 +23,21 @@ const enum PublishGuardState {
   Idle = 0,
   Finalized = 1,
   Published = 2,
+}
+
+type ResourceFloatField =
+  | 'amount'
+  | 'capacity'
+  | 'incomePerSecond'
+  | 'expensePerSecond'
+  | 'netPerSecond'
+  | 'tickDelta'
+  | 'flags';
+
+interface EpsilonTelemetryContext {
+  readonly resourceId: string;
+  readonly field: ResourceFloatField;
+  readonly hasOverride: boolean;
 }
 
 export interface ResourceDefinition {
@@ -522,6 +539,7 @@ function setCapacity(
       (publish) => publish.capacities,
       index,
       nextCapacity,
+      'capacity',
     );
   }
 
@@ -535,6 +553,7 @@ function setCapacity(
       (publish) => publish.amounts,
       index,
       clampedAmount,
+      'amount',
     );
     accumulateTickDelta(internal, index, delta);
   }
@@ -586,6 +605,7 @@ function addAmount(
     (publish) => publish.amounts,
     index,
     clampedAmount,
+    'amount',
   );
   accumulateTickDelta(internal, index, appliedDelta);
   return appliedDelta;
@@ -635,6 +655,7 @@ function spendAmount(
     (publish) => publish.amounts,
     index,
     nextAmount,
+    'amount',
   );
   accumulateTickDelta(internal, index, -amount);
   return true;
@@ -665,6 +686,8 @@ function applyRate(
 
   const { buffers } = internal;
   const target = field === 'income' ? buffers.incomePerSecond : buffers.expensePerSecond;
+  const fieldName: ResourceFloatField =
+    field === 'income' ? 'incomePerSecond' : 'expensePerSecond';
 
   const nextValue = target[index] + amountPerSecond;
   writeFloatField(
@@ -676,6 +699,7 @@ function applyRate(
         : publish.expensePerSecond,
     index,
     nextValue,
+    fieldName,
   );
 }
 
@@ -713,6 +737,7 @@ function finalizeTick(
         (publish) => publish.amounts,
         index,
         nextAmount,
+        'amount',
       );
     }
 
@@ -727,6 +752,7 @@ function finalizeTick(
       (publish) => publish.netPerSecond,
       index,
       net,
+      'netPerSecond',
     );
   }
 
@@ -928,12 +954,24 @@ function isIndexDirtyAgainstPublish(
   const tolerance = internal.buffers.dirtyTolerance[index];
   const { buffers } = internal;
 
-  if (!epsilonEquals(buffers.amounts[index], source.amounts[index], tolerance)) {
+  if (
+    !epsilonEquals(
+      buffers.amounts[index],
+      source.amounts[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'amount', tolerance),
+    )
+  ) {
     return true;
   }
 
   if (
-    !epsilonEquals(buffers.capacities[index], source.capacities[index], tolerance)
+    !epsilonEquals(
+      buffers.capacities[index],
+      source.capacities[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'capacity', tolerance),
+    )
   ) {
     return true;
   }
@@ -943,6 +981,7 @@ function isIndexDirtyAgainstPublish(
       buffers.incomePerSecond[index],
       source.incomePerSecond[index],
       tolerance,
+      createEpsilonContext(internal, index, 'incomePerSecond', tolerance),
     )
   ) {
     return true;
@@ -953,19 +992,30 @@ function isIndexDirtyAgainstPublish(
       buffers.expensePerSecond[index],
       source.expensePerSecond[index],
       tolerance,
+      createEpsilonContext(internal, index, 'expensePerSecond', tolerance),
     )
   ) {
     return true;
   }
 
   if (
-    !epsilonEquals(buffers.netPerSecond[index], source.netPerSecond[index], tolerance)
+    !epsilonEquals(
+      buffers.netPerSecond[index],
+      source.netPerSecond[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'netPerSecond', tolerance),
+    )
   ) {
     return true;
   }
 
   if (
-    !epsilonEquals(buffers.tickDelta[index], source.tickDelta[index], tolerance)
+    !epsilonEquals(
+      buffers.tickDelta[index],
+      source.tickDelta[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'tickDelta', tolerance),
+    )
   ) {
     return true;
   }
@@ -1050,6 +1100,7 @@ function writeFloatField(
   selectPublishField: FloatFieldSelector,
   index: number,
   nextValue: number,
+  fieldName: ResourceFloatField,
 ): void {
   const currentValue = field[index];
   if (Object.is(currentValue, nextValue)) {
@@ -1062,6 +1113,7 @@ function writeFloatField(
     index,
     nextValue,
     selectPublishField(internal.buffers.publish[internal.activePublishIndex])[index],
+    fieldName,
   );
 }
 
@@ -1089,7 +1141,26 @@ function setFlagField(
     index,
     next & ~FLAG_DIRTY_THIS_TICK,
     publishFlags & ~FLAG_DIRTY_THIS_TICK,
+    'flags',
   );
+}
+
+function createEpsilonContext(
+  internal: ResourceStateInternal,
+  index: number,
+  field: ResourceFloatField,
+  tolerance: number,
+): EpsilonTelemetryContext | undefined {
+  const resourceId = internal.buffers.ids[index];
+  if (resourceId === undefined) {
+    return undefined;
+  }
+
+  return {
+    resourceId,
+    field,
+    hasOverride: !Object.is(tolerance, DIRTY_EPSILON_CEILING),
+  };
 }
 
 function reconcileDirtyState(
@@ -1097,8 +1168,17 @@ function reconcileDirtyState(
   index: number,
   liveValue: number,
   publishedValue: number,
+  field: ResourceFloatField,
 ): void {
-  if (!epsilonEquals(liveValue, publishedValue, internal.buffers.dirtyTolerance[index])) {
+  const tolerance = internal.buffers.dirtyTolerance[index];
+  if (
+    !epsilonEquals(
+      liveValue,
+      publishedValue,
+      tolerance,
+      createEpsilonContext(internal, index, field, tolerance),
+    )
+  ) {
     markDirty(internal, index);
     return;
   }
@@ -1154,12 +1234,24 @@ function isIndexClean(
   const tolerance = internal.buffers.dirtyTolerance[index];
   const { buffers } = internal;
 
-  if (!epsilonEquals(buffers.amounts[index], source.amounts[index], tolerance)) {
+  if (
+    !epsilonEquals(
+      buffers.amounts[index],
+      source.amounts[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'amount', tolerance),
+    )
+  ) {
     return false;
   }
 
   if (
-    !epsilonEquals(buffers.capacities[index], source.capacities[index], tolerance)
+    !epsilonEquals(
+      buffers.capacities[index],
+      source.capacities[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'capacity', tolerance),
+    )
   ) {
     return false;
   }
@@ -1169,6 +1261,7 @@ function isIndexClean(
       buffers.incomePerSecond[index],
       source.incomePerSecond[index],
       tolerance,
+      createEpsilonContext(internal, index, 'incomePerSecond', tolerance),
     )
   ) {
     return false;
@@ -1179,19 +1272,30 @@ function isIndexClean(
       buffers.expensePerSecond[index],
       source.expensePerSecond[index],
       tolerance,
+      createEpsilonContext(internal, index, 'expensePerSecond', tolerance),
     )
   ) {
     return false;
   }
 
   if (
-    !epsilonEquals(buffers.netPerSecond[index], source.netPerSecond[index], tolerance)
+    !epsilonEquals(
+      buffers.netPerSecond[index],
+      source.netPerSecond[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'netPerSecond', tolerance),
+    )
   ) {
     return false;
   }
 
   if (
-    !epsilonEquals(buffers.tickDelta[index], source.tickDelta[index], tolerance)
+    !epsilonEquals(
+      buffers.tickDelta[index],
+      source.tickDelta[index],
+      tolerance,
+      createEpsilonContext(internal, index, 'tickDelta', tolerance),
+    )
   ) {
     return false;
   }
@@ -1260,13 +1364,42 @@ function epsilonEquals(
   a: number,
   b: number,
   toleranceCeiling: number,
+  context?: EpsilonTelemetryContext,
 ): boolean {
+  if (Object.is(a, b)) {
+    return true;
+  }
+
+  const difference = Math.abs(a - b);
+  if (Number.isNaN(difference)) {
+    return false;
+  }
+
   const magnitude = Math.max(Math.abs(a), Math.abs(b));
+  const relativeTolerance = DIRTY_EPSILON_RELATIVE * magnitude;
+  const clampedRelative = Math.min(toleranceCeiling, relativeTolerance);
   const tolerance = Math.max(
     DIRTY_EPSILON_ABSOLUTE,
-    Math.min(toleranceCeiling, DIRTY_EPSILON_RELATIVE * magnitude),
+    clampedRelative,
   );
-  return Math.abs(a - b) <= tolerance;
+
+  if (
+    context?.hasOverride &&
+    Number.isFinite(relativeTolerance) &&
+    Number.isFinite(toleranceCeiling) &&
+    relativeTolerance > toleranceCeiling
+  ) {
+    telemetry.recordWarning(TELEMETRY_DIRTY_TOLERANCE_SATURATED, {
+      resourceId: context.resourceId,
+      field: context.field,
+      difference,
+      toleranceCeiling,
+      relativeTolerance,
+      magnitude,
+    });
+  }
+
+  return difference <= tolerance;
 }
 
 function createDefinitionDigest(

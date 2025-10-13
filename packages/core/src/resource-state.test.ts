@@ -180,4 +180,35 @@ describe('ResourceState', () => {
       expect.objectContaining({ id: 'missing' }),
     );
   });
+
+  it('clears dirty tracking for uncapped resources that revert to their prior state', () => {
+    const state = createResourceState([
+      { id: 'energy', capacity: null, startAmount: 0 },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    state.addAmount(energy, 50);
+    state.spendAmount(energy, 50);
+
+    const snapshot = state.snapshot();
+    expect(snapshot.dirtyCount).toBe(0);
+  });
+
+  it('records telemetry when dirty tolerance overrides saturate the relative epsilon', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 1_000_000, dirtyTolerance: 1e-6 },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    state.addAmount(energy, 1e-3);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'ResourceDirtyToleranceSaturated',
+      expect.objectContaining({
+        resourceId: 'energy',
+        field: 'amount',
+        toleranceCeiling: 1e-6,
+      }),
+    );
+  });
 });

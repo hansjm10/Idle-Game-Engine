@@ -199,6 +199,10 @@ const tolerance = Math.max(
 return Math.abs(a - b) <= tolerance;
 ```
 
+Comparisons short-circuit when operands are already identical (including
+matching `Infinity` sentinels) so resources that return to their prior state do
+not remain marked dirty after reconciliation.
+
 `toleranceCeiling` resolves per resource from the mutable `dirtyTolerance`
 buffer (defaulting to `DIRTY_EPSILON_CEILING` but allowed to grow up to
 `DIRTY_EPSILON_OVERRIDE_MAX`), ensuring the epsilon never exceeds the ceiling
@@ -220,6 +224,9 @@ huge exponential growth), the content definition may optionally supply a
 `epsilonEquals` then reads the per-resource ceiling (capped only by
 `DIRTY_EPSILON_OVERRIDE_MAX`). Telemetry records the raw comparisons whenever the
 override saturates so balancing can adjust the configuration before release.
+When this occurs the runtime emits `ResourceDirtyToleranceSaturated` with
+`{ resourceId, field, difference, toleranceCeiling, relativeTolerance, magnitude }`
+so analytics and balancing pipelines have the full context.
 
 `ImmutableMapSnapshot` is already provided by `packages/core/src/immutable-snapshots.ts`
 and proxies mutation methods so the lookup table cannot be altered after the
