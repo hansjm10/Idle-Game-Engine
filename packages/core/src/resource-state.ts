@@ -140,6 +140,8 @@ export interface ResourceState {
   getDefinitionDigest(): ResourceDefinitionDigest;
 }
 
+const resourceStateInternals = new WeakMap<ResourceState, ResourceStateInternal>();
+
 interface PublishSnapshotOptions {
   readonly mode?: 'publish' | 'recorder';
 }
@@ -238,7 +240,24 @@ export function createResourceState(
     definitionDigest: createDefinitionDigest(immutableIds),
   };
 
-  return createResourceStateFacade(internal);
+  const facade = createResourceStateFacade(internal);
+  resourceStateInternals.set(facade, internal);
+  return facade;
+}
+
+/** @internal */
+export function __unsafeWriteAmountDirect(
+  state: ResourceState,
+  index: number,
+  amount: number,
+): void {
+  const internal = resourceStateInternals.get(state);
+  if (internal === undefined) {
+    telemetry.recordError('ResourceStateInternalUnavailable');
+    throw new Error('ResourceState internals are unavailable for the provided instance.');
+  }
+
+  writeAmountDirect(internal, index, amount);
 }
 
 function initializeBuffers(
@@ -353,7 +372,7 @@ function sanitizeDefinitions(
       amount = sanitizedCapacity;
     }
 
-    const tolerance = clampDirtyTolerance(dirtyTolerance);
+    const tolerance = clampDirtyTolerance(dirtyTolerance, definition.id);
 
     const initialFlags =
       (visible ? FLAG_VISIBLE : 0) |
@@ -373,7 +392,7 @@ function sanitizeDefinitions(
   };
 }
 
-function clampDirtyTolerance(value: number): number {
+function clampDirtyTolerance(value: number, resourceId: string): number {
   if (!Number.isFinite(value)) {
     return DIRTY_EPSILON_CEILING;
   }
@@ -384,6 +403,7 @@ function clampDirtyTolerance(value: number): number {
 
   if (value > DIRTY_EPSILON_OVERRIDE_MAX) {
     telemetry.recordWarning('ResourceDirtyToleranceClamped', {
+      resourceId,
       value,
     });
     return DIRTY_EPSILON_OVERRIDE_MAX;
@@ -676,6 +696,31 @@ function spendAmount(
 
 type RateField = 'income' | 'expense';
 
+function writeAmountDirect(
+  internal: ResourceStateInternal,
+  index: number,
+  amount: number,
+): void {
+  assertValidIndex(internal, index);
+
+  if (!Number.isFinite(amount)) {
+    telemetry.recordError('ResourceWriteAmountDirectNonFinite', {
+      index,
+      amount,
+    });
+    throw new Error('writeAmountDirect requires a finite amount.');
+  }
+
+  writeFloatField(
+    internal,
+    internal.buffers.amounts,
+    (publish) => publish.amounts,
+    index,
+    amount,
+    'amount',
+  );
+}
+
 function applyRate(
   internal: ResourceStateInternal,
   index: number,
@@ -952,8 +997,6 @@ function processCurrentDirtyIndices(
       target.dirtyIndices[nextDirtyCount] = index;
       nextDirtyCount += 1;
     }
-
-    internal.buffers.tickDelta[index] = 0;
   }
 
   return nextDirtyCount;

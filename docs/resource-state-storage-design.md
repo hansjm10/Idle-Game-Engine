@@ -303,7 +303,10 @@ interface ResourceState {
 - Internal maintenance code uses `writeAmountDirect(index, amount)` to bypass
   capacity clamping during save restore or migrations. The helper is not part of
   the public façade and is only callable from privileged modules in the same
-  file so gameplay code must go through `addAmount`.
+  file so gameplay code must go through `addAmount`. For tooling, the module
+  exposes an opt-in escape hatch `__unsafeWriteAmountDirect(state, index, amount)`
+  that routes through the same helper; callers are expected to guard their inputs
+  and remain confined to hydration/migration flows.
   - `finalizeTick(deltaMs)` converts accumulated per-second rates into a proposed
     delta, clamps amounts to capacities/zero, recomputes `netPerSecond`, and relies
     on `markDirty` + `unmarkIfClean` to ensure only indices with meaningful
@@ -612,7 +615,10 @@ just the slots that may have diverged while `targetPublish` sat idle:
      mutates it, so the comparison normally short-circuits unless a tooling action
      explicitly updates the buffer. The flag copy masks out the engine-only
      `DIRTY_THIS_TICK` bit so consumers never observe internal bookkeeping. Slots that
-     converge clear their `tickDelta` and skip the dirty list.
+     converge leave the live `tickDelta` untouched so recorder snapshots captured
+     immediately after publish still observe the accumulated delta; they simply skip
+     the dirty list. `resetPerTickAccumulators()` (or `forceClearDirtyState()`) remains
+     responsible for clearing the live accumulator once consumers finish reading it.
 
 For each surviving index we write it into
 `targetPublish.dirtyIndices[targetPublish.dirtyCount++]` and mark
