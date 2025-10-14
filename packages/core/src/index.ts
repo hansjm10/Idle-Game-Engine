@@ -191,8 +191,10 @@ export {
 } from './runtime-state.js';
 export {
   createResourceState,
+  reconcileSaveAgainstDefinitions,
   type ResourceDefinition,
   type ResourceDefinitionDigest,
+  type ResourceDefinitionReconciliation,
   type ResourceSpendAttemptContext,
   type ResourceState,
   type ResourceStateSnapshot,

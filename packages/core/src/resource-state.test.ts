@@ -9,7 +9,9 @@ import {
 
 import {
   createResourceState,
+  reconcileSaveAgainstDefinitions,
   type ResourceDefinition,
+  type SerializedResourceState,
   __unsafeWriteAmountDirect,
 } from './resource-state.js';
 import {
@@ -269,6 +271,13 @@ describe('ResourceState', () => {
     state.addAmount(energy, 3);
 
     state.forceClearDirtyState();
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'ResourceForceClearDirtyState',
+      expect.objectContaining({
+        dirtyCountBefore: 1,
+        publishGuardState: 'idle',
+      }),
+    );
     const recorderSnapshot = state.snapshot({ mode: 'recorder' });
     expect(recorderSnapshot.dirtyCount).toBe(0);
     expect(recorderSnapshot.tickDelta[energy]).toBe(0);
@@ -370,5 +379,143 @@ describe('ResourceState', () => {
     expect(publishSnapshot.dirtyIndices[0]).toBe(energy);
     expect(publishSnapshot.amounts[energy]).toBe(25);
     expect(publishSnapshot.tickDelta[energy]).toBe(0);
+  });
+
+  it('includes definition digest in exported save payloads', () => {
+    const state = createResourceState([
+      { id: 'energy' },
+      { id: 'crystal' },
+    ]);
+
+    const save = state.exportForSave();
+    expect(save.definitionDigest).toEqual(state.getDefinitionDigest());
+  });
+
+  it('reconciles matching save payloads against unchanged definitions', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    const result = reconcileSaveAgainstDefinitions(save, definitions);
+    expect(Array.from(result.remap)).toEqual([0, 1]);
+    expect(result.addedIds).toHaveLength(0);
+    expect(result.removedIds).toHaveLength(0);
+    expect(result.digestsMatch).toBe(true);
+    expect(telemetryStub.recordError).not.toHaveBeenCalledWith(
+      'ResourceHydrationMismatch',
+      expect.anything(),
+    );
+  });
+
+  it('reconciles save payloads when definitions reorder without divergence', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    const reordered: ResourceDefinition[] = [
+      { id: 'crystal' },
+      { id: 'energy' },
+    ];
+
+    const result = reconcileSaveAgainstDefinitions(save, reordered);
+    expect(Array.from(result.remap)).toEqual([1, 0]);
+    expect(result.addedIds).toHaveLength(0);
+    expect(result.removedIds).toHaveLength(0);
+    expect(result.digestsMatch).toBe(false);
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'ResourceHydrationMismatch',
+      expect.objectContaining({
+        reason: 'digest-mismatch',
+      }),
+    );
+    expect(telemetryStub.recordError).not.toHaveBeenCalledWith(
+      'ResourceHydrationMismatch',
+      expect.anything(),
+    );
+  });
+
+  it('throws when save ids diverge from definitions', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    const incompatible: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'alloy' },
+    ];
+
+    expect(() =>
+      reconcileSaveAgainstDefinitions(save, incompatible),
+    ).toThrowError(/incompatible/);
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceHydrationMismatch',
+      expect.objectContaining({
+        addedIds: ['alloy'],
+        removedIds: ['crystal'],
+      }),
+    );
+  });
+
+  it('throws when serialized arrays have mismatched lengths', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    const truncated = {
+      ...save,
+      amounts: save.amounts.slice(0, 1),
+    } as SerializedResourceState;
+
+    expect(() =>
+      reconcileSaveAgainstDefinitions(truncated, definitions),
+    ).toThrowError(/length/);
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceSaveLengthMismatch',
+      expect.objectContaining({
+        field: 'amounts',
+        expected: 2,
+        actual: 1,
+      }),
+    );
+  });
+
+  it('throws when serialized amounts contain invalid data', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    const invalid = {
+      ...save,
+      amounts: [Number.NaN, ...save.amounts.slice(1)],
+    } as SerializedResourceState;
+
+    expect(() =>
+      reconcileSaveAgainstDefinitions(invalid, definitions),
+    ).toThrowError(/amounts/);
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceHydrationInvalidData',
+      expect.objectContaining({
+        reason: 'invalid-amount',
+        index: 0,
+      }),
+    );
   });
 });
