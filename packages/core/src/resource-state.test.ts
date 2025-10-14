@@ -753,7 +753,7 @@ describe('ResourceState', () => {
       state.getAmount(relaxedIndex),
       12,
     );
-    expect(recorderSnapshot.tickDelta[relaxedIndex]).toBe(0);
+    expect(recorderSnapshot.tickDelta[relaxedIndex]).toBeCloseTo(5e-3, 6);
 
     expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
       'ResourceDirtyToleranceSaturated',
@@ -763,6 +763,25 @@ describe('ResourceState', () => {
         toleranceCeiling: 1e-2,
       }),
     );
+  });
+
+  it('accumulates tick deltas across sub-tolerance increments when overrides apply', () => {
+    const state = createResourceState([
+      { id: 'relaxed', capacity: Number.POSITIVE_INFINITY, dirtyTolerance: 1e-2 },
+    ]);
+    const relaxed = state.requireIndex('relaxed');
+
+    state.addAmount(relaxed, 6e-3);
+    const recorderSnapshot = state.snapshot({ mode: 'recorder' });
+    expect(recorderSnapshot.dirtyCount).toBe(0);
+    expect(recorderSnapshot.tickDelta[relaxed]).toBeCloseTo(6e-3, 12);
+
+    state.addAmount(relaxed, 6e-3);
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.dirtyCount).toBe(1);
+    expect(publishSnapshot.dirtyIndices[0]).toBe(relaxed);
+    expect(publishSnapshot.tickDelta[relaxed]).toBeCloseTo(1.2e-2, 9);
+    expect(publishSnapshot.amounts[relaxed]).toBeCloseTo(1.2e-2, 9);
   });
 
   it('drops reverted indices from dirty tracking via tail swaps', () => {
