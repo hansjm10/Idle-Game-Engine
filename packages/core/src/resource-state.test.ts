@@ -586,4 +586,276 @@ describe('ResourceState', () => {
 
     expect(telemetryStub.recordError).not.toHaveBeenCalled();
   });
+
+  it('preserves definition order and stable index mapping', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'alpha', startAmount: 1 },
+      { id: 'beta', startAmount: 2 },
+      { id: 'gamma', startAmount: 3 },
+    ];
+
+    const state = createResourceState(definitions);
+    expect(state.getDefinitionDigest().ids).toEqual(['alpha', 'beta', 'gamma']);
+    expect(state.getIndex('alpha')).toBe(0);
+    expect(state.getIndex('gamma')).toBe(2);
+
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(Array.from(publishSnapshot.ids)).toEqual(['alpha', 'beta', 'gamma']);
+  });
+
+  it('rejects resource definitions with non-finite start amounts', () => {
+    expect(() =>
+      createResourceState([
+        { id: 'bad-nan', startAmount: Number.NaN },
+      ]),
+    ).toThrowError(/non-finite startAmount/);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceDefinitionInvalidStartAmount',
+      expect.objectContaining({ id: 'bad-nan' }),
+    );
+
+    const recordErrorMock = telemetryStub.recordError as unknown as ReturnType<typeof vi.fn>;
+    recordErrorMock.mockClear();
+    expect(() =>
+      createResourceState([
+        { id: 'bad-infinity', startAmount: Number.POSITIVE_INFINITY },
+      ]),
+    ).toThrowError(/non-finite startAmount/);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceDefinitionInvalidStartAmount',
+      expect.objectContaining({ id: 'bad-infinity' }),
+    );
+  });
+
+  it('accepts infinite capacities, clamps overflow, and validates capacity input', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 15, capacity: null },
+    ]);
+    const energy = state.requireIndex('energy');
+    expect(state.getCapacity(energy)).toBe(Number.POSITIVE_INFINITY);
+
+    state.setCapacity(energy, 10);
+    expect(state.getCapacity(energy)).toBe(10);
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.amounts[energy]).toBe(10);
+    expect(publishSnapshot.tickDelta[energy]).toBe(-5);
+
+    expect(() => state.setCapacity(energy, Number.NaN)).toThrowError(/Capacity must be/);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceCapacityInvalidInput',
+      expect.objectContaining({ index: energy, value: Number.NaN }),
+    );
+  });
+
+  it('emits telemetry when index-based helpers receive out-of-range indices', () => {
+    const state = createResourceState([{ id: 'energy' }]);
+    expect(() => state.getAmount(5)).toThrowError(/out of bounds/);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceIndexViolation',
+      expect.objectContaining({ index: 5 }),
+    );
+  });
+
+  it('rejects invalid rate submissions with telemetry metadata', () => {
+    const state = createResourceState([{ id: 'energy' }]);
+    const energy = state.requireIndex('energy');
+
+    expect(() => state.applyIncome(energy, Number.POSITIVE_INFINITY)).toThrowError(
+      /finite, non-negative value/,
+    );
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceRateInvalidInput',
+      expect.objectContaining({
+        field: 'income',
+        index: energy,
+        amountPerSecond: Number.POSITIVE_INFINITY,
+      }),
+    );
+
+    const recordErrorMock = telemetryStub.recordError as unknown as ReturnType<typeof vi.fn>;
+    recordErrorMock.mockClear();
+    expect(() => state.applyExpense(energy, -1)).toThrowError(/finite, non-negative value/);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceRateInvalidInput',
+      expect.objectContaining({
+        field: 'expense',
+        index: energy,
+        amountPerSecond: -1,
+      }),
+    );
+  });
+
+  it('ignores zero-valued income and expense submissions to avoid dirty churn', () => {
+    const state = createResourceState([{ id: 'energy' }]);
+    const energy = state.requireIndex('energy');
+
+    state.applyIncome(energy, 0);
+    state.applyExpense(energy, 0);
+
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.dirtyCount).toBe(0);
+  });
+
+  it('suppresses finalizeTick deltas that fall below the epsilon tolerance', () => {
+    const state = createResourceState([
+      { id: 'energy', capacity: Number.POSITIVE_INFINITY },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    state.applyIncome(energy, 1);
+    state.applyExpense(energy, 1 - 5e-7);
+    state.finalizeTick(1);
+
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.tickDelta[energy]).toBe(0);
+    expect(state.getAmount(energy)).toBeCloseTo(5e-10, 15);
+  });
+
+  it('ignores sub-epsilon amount adjustments while retaining live state', () => {
+    const state = createResourceState([
+      { id: 'energy', capacity: Number.POSITIVE_INFINITY },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    const applied = state.addAmount(energy, 5e-10);
+    expect(applied).toBeCloseTo(5e-10, 15);
+    expect(state.getAmount(energy)).toBeCloseTo(5e-10, 15);
+
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.dirtyCount).toBe(0);
+    expect(publishSnapshot.tickDelta[energy]).toBe(0);
+    expect(publishSnapshot.amounts[energy]).toBe(0);
+  });
+
+  it('respects dirty tolerance overrides and surfaces saturation telemetry', () => {
+    const state = createResourceState([
+      { id: 'default', startAmount: 1e8, capacity: null },
+      { id: 'relaxed', startAmount: 1e8, capacity: null, dirtyTolerance: 1e-2 },
+    ]);
+    const defaultIndex = state.requireIndex('default');
+    const relaxedIndex = state.requireIndex('relaxed');
+
+    state.addAmount(defaultIndex, 5e-3);
+    state.addAmount(relaxedIndex, 5e-3);
+
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.dirtyCount).toBe(1);
+    expect(Array.from(publishSnapshot.dirtyIndices.slice(0, publishSnapshot.dirtyCount))).toEqual([
+      defaultIndex,
+    ]);
+    expect(publishSnapshot.amounts[relaxedIndex]).toBeCloseTo(1e8, 9);
+    expect(publishSnapshot.tickDelta[relaxedIndex]).toBe(0);
+    expect(publishSnapshot.dirtyTolerance[relaxedIndex]).toBeCloseTo(1e-2, 12);
+
+    const recorderSnapshot = state.snapshot({ mode: 'recorder' });
+    expect(recorderSnapshot.dirtyTolerance[relaxedIndex]).toBeCloseTo(1e-2, 12);
+    expect(recorderSnapshot.amounts[relaxedIndex]).toBeCloseTo(
+      state.getAmount(relaxedIndex),
+      12,
+    );
+    expect(recorderSnapshot.tickDelta[relaxedIndex]).toBeCloseTo(5e-3, 6);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'ResourceDirtyToleranceSaturated',
+      expect.objectContaining({
+        resourceId: 'relaxed',
+        field: 'amount',
+        toleranceCeiling: 1e-2,
+      }),
+    );
+  });
+
+  it('accumulates tick deltas across sub-tolerance increments when overrides apply', () => {
+    const state = createResourceState([
+      { id: 'relaxed', capacity: Number.POSITIVE_INFINITY, dirtyTolerance: 1e-2 },
+    ]);
+    const relaxed = state.requireIndex('relaxed');
+
+    state.addAmount(relaxed, 6e-3);
+    const recorderSnapshot = state.snapshot({ mode: 'recorder' });
+    expect(recorderSnapshot.dirtyCount).toBe(0);
+    expect(recorderSnapshot.tickDelta[relaxed]).toBeCloseTo(6e-3, 12);
+
+    state.addAmount(relaxed, 6e-3);
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.dirtyCount).toBe(1);
+    expect(publishSnapshot.dirtyIndices[0]).toBe(relaxed);
+    expect(publishSnapshot.tickDelta[relaxed]).toBeCloseTo(1.2e-2, 9);
+    expect(publishSnapshot.amounts[relaxed]).toBeCloseTo(1.2e-2, 9);
+  });
+
+  it('drops reverted indices from dirty tracking via tail swaps', () => {
+    const state = createResourceState([
+      { id: 'alpha', capacity: 100 },
+      { id: 'beta', capacity: 100 },
+    ]);
+    const alpha = state.requireIndex('alpha');
+    const beta = state.requireIndex('beta');
+
+    state.addAmount(alpha, 10);
+    state.addAmount(beta, 3);
+    state.spendAmount(alpha, 10);
+
+    const recorderSnapshot = state.snapshot({ mode: 'recorder' });
+    expect(recorderSnapshot.dirtyCount).toBe(1);
+    expect(recorderSnapshot.dirtyIndices[0]).toBe(beta);
+
+    const publishSnapshot = state.snapshot({ mode: 'publish' });
+    expect(publishSnapshot.dirtyCount).toBe(1);
+    expect(publishSnapshot.dirtyIndices[0]).toBe(beta);
+  });
+
+  it('ping-pongs publish buffers while zeroing reverted tick deltas and preserving prior snapshots', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 10, capacity: 50 },
+      { id: 'crystal', startAmount: 5, capacity: 50 },
+    ]);
+    const energy = state.requireIndex('energy');
+    const crystal = state.requireIndex('crystal');
+
+    state.addAmount(energy, 5);
+    const firstPublish = state.snapshot({ mode: 'publish' });
+    expect(firstPublish.dirtyCount).toBe(1);
+    expect(firstPublish.dirtyIndices[0]).toBe(energy);
+    expect(firstPublish.tickDelta[energy]).toBe(5);
+
+    state.addAmount(energy, 5);
+    state.spendAmount(energy, 5);
+    state.addAmount(crystal, 2);
+
+    const secondPublish = state.snapshot({ mode: 'publish' });
+    expect(secondPublish.dirtyCount).toBe(1);
+    expect(secondPublish.dirtyIndices[0]).toBe(crystal);
+    expect(secondPublish.tickDelta[energy]).toBe(0);
+    expect(secondPublish.amounts[energy]).toBe(15);
+    expect(firstPublish.tickDelta[energy]).toBe(5);
+    expect(firstPublish.amounts[energy]).toBe(15);
+  });
+
+  it('rejects serialized saves with duplicate ids and reports telemetry', () => {
+    const state = createResourceState([{ id: 'energy' }]);
+    const save = state.exportForSave();
+
+    const duplicate: SerializedResourceState = {
+      ...save,
+      definitionDigest: undefined,
+      ids: ['energy', 'energy'],
+      amounts: [...save.amounts, save.amounts[0]],
+      capacities: [...save.capacities, save.capacities[0]],
+      flags: [...save.flags, save.flags[0]],
+      unlocked: save.unlocked ? [...save.unlocked, save.unlocked[0]] : undefined,
+      visible: save.visible ? [...save.visible, save.visible[0]] : undefined,
+    };
+
+    expect(() =>
+      reconcileSaveAgainstDefinitions(duplicate, [{ id: 'energy' }]),
+    ).toThrowError(/appears multiple times/);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceHydrationInvalidData',
+      expect.objectContaining({
+        reason: 'duplicate-id',
+        id: 'energy',
+      }),
+    );
+  });
 });

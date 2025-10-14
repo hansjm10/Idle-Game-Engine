@@ -47,6 +47,10 @@ interface EpsilonTelemetryContext {
   readonly hasOverride: boolean;
 }
 
+interface EpsilonEqualsOptions {
+  readonly floorToleranceOverride?: boolean;
+}
+
 export interface ResourceDefinition {
   readonly id: string;
   readonly startAmount?: number;
@@ -1726,7 +1730,16 @@ function accumulateTickDelta(
   const previous = buffers.tickDelta[index];
   const next = previous + delta;
   const tolerance = buffers.dirtyTolerance[index];
-  const resolved = epsilonEquals(next, 0, tolerance) ? 0 : next;
+  const context = createEpsilonContext(internal, index, 'tickDelta', tolerance);
+  const resolved = epsilonEquals(
+    next,
+    0,
+    tolerance,
+    context,
+    { floorToleranceOverride: false },
+  )
+    ? 0
+    : next;
 
   if (Object.is(previous, resolved)) {
     return;
@@ -1759,6 +1772,7 @@ function epsilonEquals(
   b: number,
   toleranceCeiling: number,
   context?: EpsilonTelemetryContext,
+  options?: EpsilonEqualsOptions,
 ): boolean {
   if (Object.is(a, b)) {
     return true;
@@ -1776,6 +1790,11 @@ function epsilonEquals(
     DIRTY_EPSILON_ABSOLUTE,
     clampedRelative,
   );
+  const hasOverride = context?.hasOverride === true;
+  const shouldFloorOverride = options?.floorToleranceOverride ?? hasOverride;
+  const effectiveTolerance = shouldFloorOverride
+    ? Math.max(tolerance, toleranceCeiling)
+    : tolerance;
 
   if (
     context?.hasOverride &&
@@ -1793,7 +1812,7 @@ function epsilonEquals(
     });
   }
 
-  return difference <= tolerance;
+  return difference <= effectiveTolerance;
 }
 
 function createDefinitionDigest(
