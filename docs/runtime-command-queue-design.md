@@ -1291,10 +1291,10 @@ function executePrestigeReset(currentStep: number, layer: number) {
     // (Purchases are gated by resource cost, not priority)
 
     const generator = registry.getGenerator(payload.generatorId);
-    const costIndex = resources.requireIndex(generator.cost.resourceId);
-    const totalCost = generator.cost.amount * payload.count;
+    const totalCost = generator.cost * payload.count;
+    const energyIndex = resources.requireIndex('energy'); // Sample pack purchases spend energy
 
-    const spendSucceeded = resources.spendAmount(costIndex, totalCost, {
+    const spendSucceeded = resources.spendAmount(energyIndex, totalCost, {
       commandId: 'PURCHASE_GENERATOR',
       systemId:
         ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined
@@ -2592,16 +2592,16 @@ const resourceIndexById = useMemo(() => {
   return new Map(resources.ids.map((id, index) => [id, index]));
 }, [resources.ids]);
 
-const canAffordGenerator = (resourceId: string, cost: number) => {
-  const index = resourceIndexById.get(resourceId);
-  return index !== undefined && resources.amounts[index] >= cost;
+const canAffordGenerator = (cost: number) => {
+  const energyIndex = resourceIndexById.get('energy');
+  return energyIndex !== undefined && resources.amounts[energyIndex] >= cost;
 };
 
 const buyGenerator = (payload: PurchaseGeneratorPayload) => {
   const generator = registry.getGenerator(payload.generatorId);
-  const totalCost = generator.cost.amount * payload.count;
+  const totalCost = generator.cost * payload.count;
 
-  if (!canAffordGenerator(generator.cost.resourceId, totalCost)) {
+  if (!canAffordGenerator(totalCost)) {
     showError('Insufficient resources');
     return; // Don't enqueue invalid command
   }
@@ -2619,10 +2619,10 @@ const purchaseGeneratorHandler: CommandHandler<PurchaseGeneratorPayload> = (
   ctx,
 ) => {
   const generator = registry.getGenerator(payload.generatorId);
-  const costIndex = resources.requireIndex(generator.cost.resourceId);
-  const totalCost = generator.cost.amount * payload.count;
+  const totalCost = generator.cost * payload.count;
+  const energyIndex = resources.requireIndex('energy');
 
-  const spendSucceeded = resources.spendAmount(costIndex, totalCost, {
+  const spendSucceeded = resources.spendAmount(energyIndex, totalCost, {
     commandId: 'PURCHASE_GENERATOR',
     systemId:
       ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined,
