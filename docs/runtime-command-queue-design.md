@@ -980,7 +980,7 @@ dispatcher.register<CollectResourcePayload>(
 
 Key invariants for handlers:
 
-- **Index acquisition**: `requireIndex(id)` throws and emits `ResourceIndexViolation` telemetry when handed an unknown id, preventing silent array misuse.
+- **Index acquisition**: `requireIndex(id)` throws after recording a `ResourceUnknownId` telemetry event when handed an unknown id, preventing silent array misuse.
 - **Mutation helpers**: `addAmount`, `spendAmount`, `setCapacity`, `grantVisibility`, `unlock`, `applyIncome`, and `applyExpense` clamp values, flip dirty bits, and emit telemetry (`ResourceSpendFailed`, `ResourceCapacityInvalidInput`, `ResourceAddAmountNegativeInput`, `ResourceDirtyToleranceSaturated`) when callers violate invariants. Failed spends return `false` and leave balances untouched; pass a `ResourceSpendAttemptContext` so telemetry ties failures back to the originating command or system.
 - **Dirty propagation**: Successful mutations mark indices dirty. The façade maintains `dirtyIndexScratch`, `dirtyIndexPositions`, and per-resource tolerances so publish snaps only copy the union of previous/current dirty sets (§5.6).
 
@@ -1290,12 +1290,11 @@ function executePrestigeReset(currentStep: number, layer: number) {
     // All priorities can purchase - no authorization check needed
     // (Purchases are gated by resource cost, not priority)
 
-    const cost = registry.getGeneratorCost(payload.generatorId, payload.count);
-    // Domain helper returns { resourceId, amount }
-    const costIndex = resources.requireIndex(cost.resourceId);
     const generator = registry.getGenerator(payload.generatorId);
+    const costIndex = resources.requireIndex(generator.cost.resourceId);
+    const totalCost = generator.cost.amount * payload.count;
 
-    const spendSucceeded = resources.spendAmount(costIndex, cost.amount, {
+    const spendSucceeded = resources.spendAmount(costIndex, totalCost, {
       commandId: 'PURCHASE_GENERATOR',
       systemId:
         ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined
@@ -1304,7 +1303,7 @@ function executePrestigeReset(currentStep: number, layer: number) {
     if (!spendSucceeded) {
       telemetry.recordWarning('InsufficientResources', {
         generatorId: payload.generatorId,
-        cost: cost.amount,
+        cost: totalCost,
         priority: ctx.priority
       });
       return; // Command rejected, no state mutation
@@ -2599,8 +2598,10 @@ const canAffordGenerator = (resourceId: string, cost: number) => {
 };
 
 const buyGenerator = (payload: PurchaseGeneratorPayload) => {
-  const { resourceId, amount } = getGeneratorCost(payload); // UI helper
-  if (!canAffordGenerator(resourceId, amount)) {
+  const generator = registry.getGenerator(payload.generatorId);
+  const totalCost = generator.cost.amount * payload.count;
+
+  if (!canAffordGenerator(generator.cost.resourceId, totalCost)) {
     showError('Insufficient resources');
     return; // Don't enqueue invalid command
   }
@@ -2617,10 +2618,11 @@ const purchaseGeneratorHandler: CommandHandler<PurchaseGeneratorPayload> = (
   payload,
   ctx,
 ) => {
-  const cost = registry.getGeneratorCost(payload.generatorId, payload.count);
-  const costIndex = resources.requireIndex(cost.resourceId);
+  const generator = registry.getGenerator(payload.generatorId);
+  const costIndex = resources.requireIndex(generator.cost.resourceId);
+  const totalCost = generator.cost.amount * payload.count;
 
-  const spendSucceeded = resources.spendAmount(costIndex, cost.amount, {
+  const spendSucceeded = resources.spendAmount(costIndex, totalCost, {
     commandId: 'PURCHASE_GENERATOR',
     systemId:
       ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined,
@@ -2629,14 +2631,13 @@ const purchaseGeneratorHandler: CommandHandler<PurchaseGeneratorPayload> = (
   if (!spendSucceeded) {
     telemetry.recordWarning('InsufficientResources', {
       generatorId: payload.generatorId,
-      cost: cost.amount,
+      cost: totalCost,
       priority: ctx.priority,
       step: ctx.step,
     });
     return; // Command rejected, no state mutation
   }
 
-  const generator = registry.getGenerator(payload.generatorId);
   generator.owned += payload.count;
 };
 ```
