@@ -739,15 +739,12 @@ describe('ResourceState', () => {
     state.addAmount(relaxedIndex, 5e-3);
 
     const publishSnapshot = state.snapshot({ mode: 'publish' });
-    expect(publishSnapshot.dirtyCount).toBe(2);
+    expect(publishSnapshot.dirtyCount).toBe(1);
     expect(Array.from(publishSnapshot.dirtyIndices.slice(0, publishSnapshot.dirtyCount))).toEqual([
       defaultIndex,
-      relaxedIndex,
     ]);
-    expect(publishSnapshot.amounts[relaxedIndex]).toBeCloseTo(
-      state.getAmount(relaxedIndex),
-      9,
-    );
+    expect(publishSnapshot.amounts[relaxedIndex]).toBeCloseTo(1e8, 9);
+    expect(publishSnapshot.tickDelta[relaxedIndex]).toBe(0);
     expect(publishSnapshot.dirtyTolerance[relaxedIndex]).toBeCloseTo(1e-2, 12);
 
     const recorderSnapshot = state.snapshot({ mode: 'recorder' });
@@ -756,6 +753,7 @@ describe('ResourceState', () => {
       state.getAmount(relaxedIndex),
       12,
     );
+    expect(recorderSnapshot.tickDelta[relaxedIndex]).toBe(0);
 
     expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
       'ResourceDirtyToleranceSaturated',

@@ -1726,7 +1726,14 @@ function accumulateTickDelta(
   const previous = buffers.tickDelta[index];
   const next = previous + delta;
   const tolerance = buffers.dirtyTolerance[index];
-  const resolved = epsilonEquals(next, 0, tolerance) ? 0 : next;
+  const resolved = epsilonEquals(
+    next,
+    0,
+    tolerance,
+    createEpsilonContext(internal, index, 'tickDelta', tolerance),
+  )
+    ? 0
+    : next;
 
   if (Object.is(previous, resolved)) {
     return;
@@ -1776,6 +1783,10 @@ function epsilonEquals(
     DIRTY_EPSILON_ABSOLUTE,
     clampedRelative,
   );
+  const hasOverride = context?.hasOverride === true;
+  const effectiveTolerance = hasOverride
+    ? Math.max(tolerance, toleranceCeiling)
+    : tolerance;
 
   if (
     context?.hasOverride &&
@@ -1793,7 +1804,7 @@ function epsilonEquals(
     });
   }
 
-  return difference <= tolerance;
+  return difference <= effectiveTolerance;
 }
 
 function createDefinitionDigest(
