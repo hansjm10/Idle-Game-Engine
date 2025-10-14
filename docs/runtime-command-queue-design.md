@@ -696,7 +696,10 @@ class AutomationSystem implements System {
 class ProductionSystem implements System {
   tick(state: ReadonlyGameState, context: TickContext): void {
     // ✗ WRONG: Direct state mutation bypasses command queue
-    // gameState.resources.energy += productionRate;
+    // resourceState.addAmount(
+    //   resourceState.requireIndex('energy'),
+    //   productionRate,
+    // );
 
     // ✓ CORRECT: Enqueue production command
     commandQueue.enqueue({
@@ -948,6 +951,82 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
 
 Handlers may return either `void` or a `Promise<void>`. The dispatcher treats promise rejections the same as synchronous exceptions so that telemetry captures failures consistently.
 
+### 4.6 ResourceState Integration
+
+Command handlers no longer mutate `gameState.resources` directly. They depend on the `ResourceState` façade exported from `@idle-engine/core` (`createResourceState`, `ResourceState`, `ResourceStateSnapshot`; see [Resource State Storage Design §5.2](resource-state-storage-design.md#52-runtime-api-surface) and §5.6). The façade centralises index lookups, dirty tracking, and telemetry so handlers follow a consistent pattern:
+
+```typescript
+import { type ResourceState } from '@idle-engine/core';
+
+const resources: ResourceState = runtimeResources;
+
+dispatcher.register<CollectResourcePayload>(
+  'COLLECT_RESOURCE',
+  (payload, ctx) => {
+    const index = resources.requireIndex(payload.resourceId);
+    const applied = resources.addAmount(index, payload.amount);
+    if (applied !== payload.amount) {
+      telemetry.recordWarning('ResourceCollectClamped', {
+        command: 'COLLECT_RESOURCE',
+        resourceId: payload.resourceId,
+        requested: payload.amount,
+        applied,
+        step: ctx.step,
+      });
+    }
+  },
+);
+```
+
+Key invariants for handlers:
+
+- **Index acquisition**: `requireIndex(id)` throws and emits `ResourceIndexViolation` telemetry when handed an unknown id, preventing silent array misuse.
+- **Mutation helpers**: `addAmount`, `spendAmount`, `setCapacity`, `grantVisibility`, `unlock`, `applyIncome`, and `applyExpense` clamp values, flip dirty bits, and emit telemetry (`ResourceSpendFailed`, `ResourceCapacityInvalidInput`, `ResourceAddAmountNegativeInput`, `ResourceDirtyToleranceSaturated`) when callers violate invariants. Failed spends return `false` and leave balances untouched; pass a `ResourceSpendAttemptContext` so telemetry ties failures back to the originating command or system.
+- **Dirty propagation**: Successful mutations mark indices dirty. The façade maintains `dirtyIndexScratch`, `dirtyIndexPositions`, and per-resource tolerances so publish snaps only copy the union of previous/current dirty sets (§5.6).
+
+After `CommandDispatcher.execute` drains the tick, the runtime coordinates the publish/reset sequence with the façade:
+
+1. **Finalize**: Once systems finish queuing per-second rates, call `resourceState.finalizeTick(context.deltaMs)` so accumulated income/expense rolls into balances and `netPerSecond` updates deterministically (§5.2).
+2. **Snapshot**: Capture `resourceState.snapshot({ mode: 'publish' })`; the result is immutable-by-contract and exposes the active publish buffers (ids, amounts, capacities, per-second rates, `tickDelta`, flags, tolerance, and `dirtyIndices`).
+3. **Transport**: Feed the snapshot into `buildResourcePublishTransport(snapshot, pool, { mode: 'share'|'transfer', tick })` or use `createResourcePublishTransport(resourceState, pool, options)`. The helper allocates slabs from `TransportBufferPool`, copies only the dirty prefix, and returns `{ transport, transferables, release }`.
+4. **Publish/Reset**: Post `transport` to the shell worker (optionally transferring buffers). After the shell consumes the frame, call `resourceState.resetPerTickAccumulators()` to zero per-second totals; tests may use `forceClearDirtyState()` when they need a full reset without publishing.
+
+The cross-module flow looks like:
+
+```
+┌─────────────────────────────┐
+│ CommandDispatcher.execute() │
+└┬────────────────────────────┘
+ │ ctx.step / ctx.priority
+ ▼
+┌─────────────────────────────┐
+│ Command handler             │
+│ - requireIndex(id)          │
+│ - add/spend/set             │
+│ - optional spend context    │
+└┬────────────────────────────┘
+ │ ResourceState facade
+ ▼
+┌─────────────────────────────┐
+│ ResourceState               │
+│ - clamps + telemetry        │
+│ - marks dirty indices       │
+└┬────────────────────────────┘
+ │ snapshot({ mode: 'publish' })
+ ▼
+┌─────────────────────────────┐
+│ buildResourcePublishTransport│
+│ + TransportBufferPool       │
+└┬────────────────────────────┘
+ │ postMessage / transferables
+ ▼
+┌─────────────────────────────┐
+│ Shell UI consumes deltas    │
+└─────────────────────────────┘
+```
+
+Telemetry guards remain active in both live play and replay. When replay executes a command log, handlers still call into the same `ResourceState` instance; failed invariants produce identical telemetry, and the publish pipeline stays deterministic because dirty tracking is data-driven rather than frame-order dependent.
+
 ## 5. Command Types (Initial Set)
 
 For the prototype milestone, we define commands for core interactions:
@@ -1183,41 +1262,56 @@ function executePrestigeReset(currentStep: number, layer: number) {
 
 4. **Authorization via Priority**: Command handlers use `context.priority` to enforce permissions:
    ```typescript
-   // System-only commands check priority
-   const grantResourcesHandler = (
-     payload: GrantResourcesPayload,
-     ctx: ExecutionContext
-   ) => {
-     // Only SYSTEM priority can execute this command
-     if (ctx.priority !== CommandPriority.SYSTEM) {
-       telemetry.recordWarning('UnauthorizedSystemCommand', {
-         payload,
-         attemptedPriority: ctx.priority
-       });
-       return; // Reject - only system commands allowed
-     }
+  const resources: ResourceState = runtimeResources; // Created via createResourceState(...)
 
-     gameState.resources[payload.resourceId] += payload.amount;
-   };
+  // System-only commands check priority
+  const grantResourcesHandler = (
+    payload: GrantResourcesPayload,
+    ctx: ExecutionContext
+  ) => {
+    // Only SYSTEM priority can execute this command
+    if (ctx.priority !== CommandPriority.SYSTEM) {
+      telemetry.recordWarning('UnauthorizedSystemCommand', {
+        payload,
+        attemptedPriority: ctx.priority
+      });
+      return; // Reject - only system commands allowed
+    }
 
-   // Most commands accept any priority (SYSTEM, PLAYER, or AUTOMATION)
-   const purchaseGeneratorHandler = (
-     payload: PurchaseGeneratorPayload,
-     ctx: ExecutionContext
-   ) => {
-     // All priorities can purchase - no authorization check needed
-     // (Purchases are gated by resource cost, not priority)
+    const index = resources.requireIndex(payload.resourceId);
+    resources.addAmount(index, payload.amount); // Marks dirty + clamps internally
+  };
 
-     const generator = registry.getGenerator(payload.generatorId);
-     const cost = generator.cost;
+  // Most commands accept any priority (SYSTEM, PLAYER, or AUTOMATION)
+  const purchaseGeneratorHandler = (
+    payload: PurchaseGeneratorPayload,
+    ctx: ExecutionContext
+  ) => {
+    // All priorities can purchase - no authorization check needed
+    // (Purchases are gated by resource cost, not priority)
 
-     if (gameState.resources.energy < cost) {
-       return; // Insufficient resources
-     }
+    const cost = registry.getGeneratorCost(payload.generatorId, payload.count);
+    // Domain helper returns { resourceId, amount }
+    const costIndex = resources.requireIndex(cost.resourceId);
+    const generator = registry.getGenerator(payload.generatorId);
 
-     gameState.resources.energy -= cost;
-     generator.owned += payload.count;
-   };
+    const spendSucceeded = resources.spendAmount(costIndex, cost.amount, {
+      commandId: 'PURCHASE_GENERATOR',
+      systemId:
+        ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined
+    });
+
+    if (!spendSucceeded) {
+      telemetry.recordWarning('InsufficientResources', {
+        generatorId: payload.generatorId,
+        cost: cost.amount,
+        priority: ctx.priority
+      });
+      return; // Command rejected, no state mutation
+    }
+
+    generator.owned += payload.count;
+  };
 
    // Some commands restrict based on priority
    const prestigeResetHandler = (
@@ -2062,12 +2156,14 @@ restored to avoid leaving the runtime in a mismatched state.
 **Example Failure** (incorrect approach with auto-increment):
 ```typescript
 // Handler that gates behavior per step
+// resources: ResourceState captured from runtime setup
 const applyProductionHandler = (payload, ctx: ExecutionContext) => {
   // Only apply once per step (prevent double-application)
   if (lastProductionStep === ctx.step) return;
   lastProductionStep = ctx.step;
 
-  gameState.resources.energy += payload.amount;
+  const energyIndex = resources.requireIndex('energy');
+  resources.addAmount(energyIndex, payload.amount);
 };
 
 // Live play tick 100: cmd1.step=100, cmd2.step=100, cmd3.step=100
@@ -2489,21 +2585,27 @@ execute(command: Command): void {
 
 ### 10.2 Validation Before Enqueue
 
-The presentation layer performs optimistic validation before sending commands:
+The presentation layer performs optimistic validation before sending commands. UI code works against the latest `ResourceStateSnapshot` rebuilt from the worker's `ResourcePublishTransport` payload:
 
 ```typescript
 // In React hook
-const canAffordGenerator = (id: string, cost: number) => {
-  return gameState.resources['energy'] >= cost;
+const resourceIndexById = useMemo(() => {
+  return new Map(resources.ids.map((id, index) => [id, index]));
+}, [resources.ids]);
+
+const canAffordGenerator = (resourceId: string, cost: number) => {
+  const index = resourceIndexById.get(resourceId);
+  return index !== undefined && resources.amounts[index] >= cost;
 };
 
-const buyGenerator = (id: string, cost: number) => {
-  if (!canAffordGenerator(id, cost)) {
+const buyGenerator = (payload: PurchaseGeneratorPayload) => {
+  const { resourceId, amount } = getGeneratorCost(payload); // UI helper
+  if (!canAffordGenerator(resourceId, amount)) {
     showError('Insufficient resources');
     return; // Don't enqueue invalid command
   }
 
-  workerBridge.sendCommand({ ... });
+  workerBridge.sendCommand('PURCHASE_GENERATOR', payload);
 };
 ```
 
@@ -2511,16 +2613,30 @@ The runtime performs authoritative validation during execution:
 
 ```typescript
 // In command handler
-const purchaseGeneratorHandler = (payload: PurchaseGeneratorPayload) => {
-  const generator = registry.getGenerator(payload.generatorId);
-  const resource = registry.getResource(generator.costResource);
+const purchaseGeneratorHandler: CommandHandler<PurchaseGeneratorPayload> = (
+  payload,
+  ctx,
+) => {
+  const cost = registry.getGeneratorCost(payload.generatorId, payload.count);
+  const costIndex = resources.requireIndex(cost.resourceId);
 
-  if (resource.amount < generator.cost) {
-    telemetry.recordWarning('InsufficientResources', payload);
+  const spendSucceeded = resources.spendAmount(costIndex, cost.amount, {
+    commandId: 'PURCHASE_GENERATOR',
+    systemId:
+      ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined,
+  });
+
+  if (!spendSucceeded) {
+    telemetry.recordWarning('InsufficientResources', {
+      generatorId: payload.generatorId,
+      cost: cost.amount,
+      priority: ctx.priority,
+      step: ctx.step,
+    });
     return; // Command rejected, no state mutation
   }
 
-  resource.amount -= generator.cost;
+  const generator = registry.getGenerator(payload.generatorId);
   generator.owned += payload.count;
 };
 ```
