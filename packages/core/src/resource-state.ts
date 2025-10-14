@@ -1206,15 +1206,16 @@ export function reconcileSaveAgainstDefinitions(
   }
 
   validateSerializedIds(serialized.ids);
-  const definitionDigest = serialized.definitionDigest;
-  if (definitionDigest == null) {
-    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+  if (serialized.definitionDigest == null) {
+    telemetry.recordWarning(TELEMETRY_HYDRATION_INVALID_DATA, {
       reason: 'missing-digest',
       ids: serialized.ids,
+      recovery: 'reconstructed',
     });
-    throw new Error('Serialized resource digest is missing.');
   }
 
+  const definitionDigest =
+    serialized.definitionDigest ?? createDefinitionDigest(serialized.ids);
   validateDefinitionDigest(definitionDigest, serialized.ids);
   validateSerializedValues(serialized, expectedLength);
 
@@ -1255,7 +1256,7 @@ export function reconcileSaveAgainstDefinitions(
     definitionDigest.hash === expectedDigest.hash &&
     definitionDigest.version === expectedDigest.version;
 
-  if (removedIds.length > 0 || addedIds.length > 0) {
+  if (removedIds.length > 0) {
     telemetry.recordError(TELEMETRY_HYDRATION_MISMATCH, {
       addedIds,
       removedIds,
@@ -1265,6 +1266,16 @@ export function reconcileSaveAgainstDefinitions(
     throw new Error(
       'Serialized resource definitions are incompatible with live definitions.',
     );
+  }
+
+  if (addedIds.length > 0) {
+    telemetry.recordProgress(TELEMETRY_HYDRATION_MISMATCH, {
+      addedIds,
+      removedIds,
+      expectedDigest,
+      receivedDigest: definitionDigest,
+      reason: 'definitions-added',
+    });
   }
 
   if (!digestsMatch) {

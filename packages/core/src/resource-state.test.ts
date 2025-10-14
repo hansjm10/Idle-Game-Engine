@@ -466,6 +466,40 @@ describe('ResourceState', () => {
     );
   });
 
+  it('allows hydration when definitions introduce new resources', () => {
+    const savedDefinitions: ResourceDefinition[] = [{ id: 'energy' }];
+    const state = createResourceState(savedDefinitions);
+    const save = state.exportForSave();
+
+    const expandedDefinitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+
+    const reconciliation = reconcileSaveAgainstDefinitions(
+      save,
+      expandedDefinitions,
+    );
+
+    expect(Array.from(reconciliation.remap)).toEqual([0]);
+    expect(reconciliation.addedIds).toEqual(['crystal']);
+    expect(reconciliation.removedIds).toEqual([]);
+    expect(reconciliation.digestsMatch).toBe(false);
+
+    expect(telemetryStub.recordError).not.toHaveBeenCalledWith(
+      'ResourceHydrationMismatch',
+      expect.anything(),
+    );
+
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'ResourceHydrationMismatch',
+      expect.objectContaining({
+        addedIds: ['crystal'],
+        reason: 'definitions-added',
+      }),
+    );
+  });
+
   it('throws when serialized arrays have mismatched lengths', () => {
     const definitions: ResourceDefinition[] = [
       { id: 'energy' },
@@ -519,7 +553,7 @@ describe('ResourceState', () => {
     );
   });
 
-  it('records telemetry and throws when serialized save omits definition digest', () => {
+  it('reconstructs definition digest when serialized save omits it', () => {
     const definitions: ResourceDefinition[] = [
       { id: 'energy' },
       { id: 'crystal' },
@@ -531,19 +565,25 @@ describe('ResourceState', () => {
       definitionDigest?: SerializedResourceState['definitionDigest'];
     };
 
-    expect(() =>
-      reconcileSaveAgainstDefinitions(
-        withoutDigest as SerializedResourceState,
-        definitions,
-      ),
-    ).toThrowError(/digest is missing/i);
+    const reconciliation = reconcileSaveAgainstDefinitions(
+      withoutDigest as SerializedResourceState,
+      definitions,
+    );
 
-    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+    expect(reconciliation.remap).toEqual([0, 1]);
+    expect(reconciliation.addedIds).toEqual([]);
+    expect(reconciliation.removedIds).toEqual([]);
+    expect(reconciliation.digestsMatch).toBe(true);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
       'ResourceHydrationInvalidData',
       expect.objectContaining({
         reason: 'missing-digest',
         ids: save.ids,
+        recovery: 'reconstructed',
       }),
     );
+
+    expect(telemetryStub.recordError).not.toHaveBeenCalled();
   });
 });
