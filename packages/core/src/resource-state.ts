@@ -17,6 +17,10 @@ const SCRATCH_UNSET = -1;
 const SCRATCH_VISITED = -2;
 
 const TELEMETRY_DIRTY_TOLERANCE_SATURATED = 'ResourceDirtyToleranceSaturated';
+const TELEMETRY_FORCE_CLEAR = 'ResourceForceClearDirtyState';
+const TELEMETRY_SAVE_LENGTH_MISMATCH = 'ResourceSaveLengthMismatch';
+const TELEMETRY_HYDRATION_MISMATCH = 'ResourceHydrationMismatch';
+const TELEMETRY_HYDRATION_INVALID_DATA = 'ResourceHydrationInvalidData';
 
 const SNAPSHOT_GUARD_ENV_KEY = 'SNAPSHOT_GUARDS';
 
@@ -56,6 +60,13 @@ export interface ResourceDefinitionDigest {
   readonly ids: readonly string[];
   readonly version: number;
   readonly hash: string;
+}
+
+export interface ResourceDefinitionReconciliation {
+  readonly remap: readonly number[];
+  readonly addedIds: readonly string[];
+  readonly removedIds: readonly string[];
+  readonly digestsMatch: boolean;
 }
 
 export interface ResourcePublishBuffers {
@@ -108,6 +119,7 @@ export interface SerializedResourceState {
   readonly unlocked?: readonly boolean[];
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
+  readonly definitionDigest?: ResourceDefinitionDigest;
 }
 
 export interface ResourceSpendAttemptContext {
@@ -845,11 +857,32 @@ function clearDirtyScratch(internal: ResourceStateInternal): void {
 }
 
 function forceClearDirtyState(internal: ResourceStateInternal): void {
+  const previousDirtyCount = internal.dirtyIndexCount;
+  const previousGuardState = internal.publishGuardState;
+
   clearDirtyScratch(internal);
   internal.buffers.incomePerSecond.fill(0);
   internal.buffers.expensePerSecond.fill(0);
   internal.buffers.tickDelta.fill(0);
   internal.publishGuardState = PublishGuardState.Idle;
+
+  telemetry.recordProgress(TELEMETRY_FORCE_CLEAR, {
+    dirtyCountBefore: previousDirtyCount,
+    publishGuardState: describePublishGuardState(previousGuardState),
+  });
+}
+
+function describePublishGuardState(state: PublishGuardState): 'idle' | 'finalized' | 'published' {
+  switch (state) {
+    case PublishGuardState.Idle:
+      return 'idle';
+    case PublishGuardState.Finalized:
+      return 'finalized';
+    case PublishGuardState.Published:
+      return 'published';
+    default:
+      return 'idle';
+  }
 }
 
 function snapshot(
@@ -1150,7 +1183,308 @@ function exportForSave(
     unlocked,
     visible,
     flags,
+    definitionDigest: internal.definitionDigest,
   };
+}
+
+export function reconcileSaveAgainstDefinitions(
+  serialized: SerializedResourceState,
+  definitions: readonly ResourceDefinition[],
+): ResourceDefinitionReconciliation {
+  const expectedLength = serialized.ids.length;
+
+  assertSerializedArrayLength('amounts', serialized.amounts.length, expectedLength);
+  assertSerializedArrayLength('capacities', serialized.capacities.length, expectedLength);
+  assertSerializedArrayLength('flags', serialized.flags.length, expectedLength);
+
+  if (serialized.unlocked !== undefined) {
+    assertSerializedArrayLength('unlocked', serialized.unlocked.length, expectedLength);
+  }
+
+  if (serialized.visible !== undefined) {
+    assertSerializedArrayLength('visible', serialized.visible.length, expectedLength);
+  }
+
+  validateSerializedIds(serialized.ids);
+  if (serialized.definitionDigest == null) {
+    telemetry.recordWarning(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'missing-digest',
+      ids: serialized.ids,
+      recovery: 'reconstructed',
+    });
+  }
+
+  const definitionDigest =
+    serialized.definitionDigest ?? createDefinitionDigest(serialized.ids);
+  validateDefinitionDigest(definitionDigest, serialized.ids);
+  validateSerializedValues(serialized, expectedLength);
+
+  const { liveIds, indexById } = buildDefinitionIndex(definitions);
+  const remap: number[] = [];
+  const removedIds: string[] = [];
+  const savedIds = new Set<string>();
+  const firstIndexById = new Map<string, number>();
+
+  for (let index = 0; index < expectedLength; index += 1) {
+    const id = serialized.ids[index];
+    const firstIndex = firstIndexById.get(id);
+    if (firstIndex !== undefined) {
+      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+        reason: 'duplicate-id',
+        id,
+        firstIndex,
+        duplicateIndex: index,
+      });
+      throw new Error(`Serialized resource id "${id}" appears multiple times.`);
+    }
+
+    savedIds.add(id);
+    firstIndexById.set(id, index);
+
+    const liveIndex = indexById.get(id);
+    if (liveIndex === undefined) {
+      removedIds.push(id);
+      continue;
+    }
+
+    remap.push(liveIndex);
+  }
+
+  const addedIds = liveIds.filter((id) => !savedIds.has(id));
+  const expectedDigest = createDefinitionDigest(liveIds);
+  const digestsMatch =
+    definitionDigest.hash === expectedDigest.hash &&
+    definitionDigest.version === expectedDigest.version;
+
+  if (removedIds.length > 0) {
+    telemetry.recordError(TELEMETRY_HYDRATION_MISMATCH, {
+      addedIds,
+      removedIds,
+      expectedDigest,
+      receivedDigest: definitionDigest,
+    });
+    throw new Error(
+      'Serialized resource definitions are incompatible with live definitions.',
+    );
+  }
+
+  if (addedIds.length > 0) {
+    telemetry.recordProgress(TELEMETRY_HYDRATION_MISMATCH, {
+      addedIds,
+      removedIds,
+      expectedDigest,
+      receivedDigest: definitionDigest,
+      reason: 'definitions-added',
+    });
+  }
+
+  if (!digestsMatch) {
+    telemetry.recordProgress(TELEMETRY_HYDRATION_MISMATCH, {
+      addedIds,
+      removedIds,
+      expectedDigest,
+      receivedDigest: definitionDigest,
+      reason: 'digest-mismatch',
+    });
+  }
+
+  return {
+    remap: Object.freeze(remap),
+    addedIds: Object.freeze(addedIds),
+    removedIds: Object.freeze(removedIds),
+    digestsMatch,
+  };
+}
+
+function assertSerializedArrayLength(
+  field: string,
+  actual: number,
+  expected: number,
+): void {
+  if (actual === expected) {
+    return;
+  }
+
+  telemetry.recordError(TELEMETRY_SAVE_LENGTH_MISMATCH, {
+    field,
+    expected,
+    actual,
+  });
+  throw new Error(
+    `Serialized resource state field "${field}" length (${actual}) does not match ids length (${expected}).`,
+  );
+}
+
+function validateSerializedIds(ids: readonly string[]): void {
+  for (let index = 0; index < ids.length; index += 1) {
+    const id = ids[index];
+    if (typeof id !== 'string' || id.length === 0) {
+      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+        reason: 'invalid-id',
+        index,
+        value: id,
+      });
+      throw new Error('Serialized resource ids must be non-empty strings.');
+    }
+  }
+}
+
+function validateDefinitionDigest(
+  digest: ResourceDefinitionDigest,
+  ids: readonly string[],
+): void {
+  if (!Number.isInteger(digest.version) || digest.version < 0) {
+    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'invalid-digest-version',
+      version: digest.version,
+    });
+    throw new Error('Serialized resource digest has an invalid version.');
+  }
+
+  if (digest.version !== ids.length) {
+    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'digest-version-mismatch',
+      version: digest.version,
+      idsLength: ids.length,
+    });
+    throw new Error('Serialized resource digest version does not match saved ids length.');
+  }
+
+  if (!arraysEqual(digest.ids, ids)) {
+    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'digest-ids-mismatch',
+      digestIds: digest.ids,
+      ids,
+    });
+    throw new Error('Serialized resource digest ids diverge from the saved ids.');
+  }
+}
+
+function validateSerializedValues(
+  serialized: SerializedResourceState,
+  expectedLength: number,
+): void {
+  for (let index = 0; index < expectedLength; index += 1) {
+    const amount = serialized.amounts[index];
+    if (!Number.isFinite(amount)) {
+      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+        reason: 'invalid-amount',
+        index,
+        value: amount,
+      });
+      throw new Error('Serialized resource amounts must be finite numbers.');
+    }
+
+    const capacity = serialized.capacities[index];
+    if (
+      capacity !== null &&
+      (!Number.isFinite(capacity) || capacity < 0)
+    ) {
+      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+        reason: 'invalid-capacity',
+        index,
+        value: capacity,
+      });
+      throw new Error(
+        'Serialized resource capacities must be null or finite, non-negative numbers.',
+      );
+    }
+
+    const flag = serialized.flags[index];
+    if (!Number.isInteger(flag) || flag < 0 || flag > 0xff) {
+      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+        reason: 'invalid-flag',
+        index,
+        value: flag,
+      });
+      throw new Error('Serialized resource flags must be integers between 0 and 255.');
+    }
+
+    if (serialized.unlocked !== undefined) {
+      const unlockedValue = serialized.unlocked[index];
+      if (typeof unlockedValue !== 'boolean') {
+        telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+          reason: 'invalid-unlocked',
+          index,
+          value: unlockedValue,
+        });
+        throw new Error(
+          'Serialized resource unlocked values must be boolean when provided.',
+        );
+      }
+    }
+
+    if (serialized.visible !== undefined) {
+      const visibleValue = serialized.visible[index];
+      if (typeof visibleValue !== 'boolean') {
+        telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+          reason: 'invalid-visible',
+          index,
+          value: visibleValue,
+        });
+        throw new Error(
+          'Serialized resource visible values must be boolean when provided.',
+        );
+      }
+    }
+  }
+}
+
+function buildDefinitionIndex(
+  definitions: readonly ResourceDefinition[],
+): {
+  readonly liveIds: readonly string[];
+  readonly indexById: Map<string, number>;
+} {
+  const liveIds: string[] = new Array(definitions.length);
+  const indexById = new Map<string, number>();
+  const seenIds = new Set<string>();
+
+  for (let index = 0; index < definitions.length; index += 1) {
+    const definition = definitions[index];
+    const id = definition?.id;
+
+    if (!id) {
+      telemetry.recordError('ResourceDefinitionMissingId', {
+        index,
+      });
+      throw new Error(`Resource definition at index ${index} is missing an id.`);
+    }
+
+    if (seenIds.has(id)) {
+      telemetry.recordError('ResourceDefinitionDuplicateId', {
+        id,
+      });
+      throw new Error(`Resource definition with id "${id}" is duplicated.`);
+    }
+
+    seenIds.add(id);
+    liveIds[index] = id;
+    indexById.set(id, index);
+  }
+
+  return {
+    liveIds,
+    indexById,
+  };
+}
+
+function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function writeFloatField(
