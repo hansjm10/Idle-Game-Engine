@@ -199,6 +199,23 @@ export {
   type SerializedResourceState,
 } from './resource-state.js';
 export {
+  TransportBufferPool,
+  type LeaseReleaseContext,
+  type TransportBufferLease,
+  type TransportBufferPoolOptions,
+} from './transport-buffer-pool.js';
+export {
+  buildResourcePublishTransport,
+  createResourcePublishTransport,
+  type ResourcePublishTransport,
+  type ResourcePublishTransportBuildOptions,
+  type ResourcePublishTransportBuildResult,
+  type ResourcePublishTransportReleaseOptions,
+  type TransportBufferDescriptor,
+  type TransportComponent,
+  type TransportConstructorName,
+} from './resource-publish-transport.js';
+export {
   telemetry,
   type TelemetryEventData,
   type TelemetryFacade,
