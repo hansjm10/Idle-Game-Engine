@@ -518,4 +518,32 @@ describe('ResourceState', () => {
       }),
     );
   });
+
+  it('records telemetry and throws when serialized save omits definition digest', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    const { definitionDigest: _discard, ...withoutDigest } = save as {
+      definitionDigest?: SerializedResourceState['definitionDigest'];
+    };
+
+    expect(() =>
+      reconcileSaveAgainstDefinitions(
+        withoutDigest as SerializedResourceState,
+        definitions,
+      ),
+    ).toThrowError(/digest is missing/i);
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceHydrationInvalidData',
+      expect.objectContaining({
+        reason: 'missing-digest',
+        ids: save.ids,
+      }),
+    );
+  });
 });

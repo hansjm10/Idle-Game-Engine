@@ -119,7 +119,7 @@ export interface SerializedResourceState {
   readonly unlocked?: readonly boolean[];
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
-  readonly definitionDigest: ResourceDefinitionDigest;
+  readonly definitionDigest?: ResourceDefinitionDigest;
 }
 
 export interface ResourceSpendAttemptContext {
@@ -1206,7 +1206,16 @@ export function reconcileSaveAgainstDefinitions(
   }
 
   validateSerializedIds(serialized.ids);
-  validateDefinitionDigest(serialized.definitionDigest, serialized.ids);
+  const definitionDigest = serialized.definitionDigest;
+  if (definitionDigest == null) {
+    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'missing-digest',
+      ids: serialized.ids,
+    });
+    throw new Error('Serialized resource digest is missing.');
+  }
+
+  validateDefinitionDigest(definitionDigest, serialized.ids);
   validateSerializedValues(serialized, expectedLength);
 
   const { liveIds, indexById } = buildDefinitionIndex(definitions);
@@ -1243,15 +1252,15 @@ export function reconcileSaveAgainstDefinitions(
   const addedIds = liveIds.filter((id) => !savedIds.has(id));
   const expectedDigest = createDefinitionDigest(liveIds);
   const digestsMatch =
-    serialized.definitionDigest.hash === expectedDigest.hash &&
-    serialized.definitionDigest.version === expectedDigest.version;
+    definitionDigest.hash === expectedDigest.hash &&
+    definitionDigest.version === expectedDigest.version;
 
   if (removedIds.length > 0 || addedIds.length > 0) {
     telemetry.recordError(TELEMETRY_HYDRATION_MISMATCH, {
       addedIds,
       removedIds,
       expectedDigest,
-      receivedDigest: serialized.definitionDigest,
+      receivedDigest: definitionDigest,
     });
     throw new Error(
       'Serialized resource definitions are incompatible with live definitions.',
@@ -1263,7 +1272,7 @@ export function reconcileSaveAgainstDefinitions(
       addedIds,
       removedIds,
       expectedDigest,
-      receivedDigest: serialized.definitionDigest,
+      receivedDigest: definitionDigest,
       reason: 'digest-mismatch',
     });
   }
