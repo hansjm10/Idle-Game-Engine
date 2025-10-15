@@ -201,6 +201,13 @@ export {
   type SerializedResourceState,
 } from './resource-state.js';
 export {
+  registerResourceCommandHandlers,
+  type ResourceCommandHandlerOptions,
+  type GeneratorPurchaseEvaluator,
+  type GeneratorPurchaseQuote,
+  type GeneratorResourceCost,
+} from './resource-command-handlers.js';
+export {
   TransportBufferPool,
   type LeaseReleaseContext,
   type TransportBufferLease,
