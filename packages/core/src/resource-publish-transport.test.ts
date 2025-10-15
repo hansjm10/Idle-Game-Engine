@@ -10,6 +10,8 @@ import {
 import { createResourceState } from './resource-state.js';
 import { TransportBufferPool } from './transport-buffer-pool.js';
 import { resetTelemetry } from './telemetry.js';
+import { EventBus } from './events/event-bus.js';
+import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
 
 describe('resource publish transport', () => {
   afterEach(() => {
@@ -39,6 +41,7 @@ describe('resource publish transport', () => {
 
     const { transport } = result;
     expect(transport.version).toBe(2);
+    expect(transport.events).toBeUndefined();
     expect(Array.from(transport.dirtyIndices)).toEqual([
       snapshot.dirtyIndices[0],
       snapshot.dirtyIndices[1],
@@ -71,6 +74,42 @@ describe('resource publish transport', () => {
     result.release();
   });
 
+  it('includes runtime event frames when an event bus is provided', () => {
+    const state = createResourceState([{ id: 'energy', startAmount: 2, capacity: 5 }]);
+    const pool = new TransportBufferPool();
+    const bus = new EventBus(DEFAULT_EVENT_BUS_OPTIONS);
+
+    bus.beginTick(4);
+    bus.publish('automation:toggled', {
+      automationId: 'auto:1',
+      enabled: false,
+    });
+    bus.dispatch({ tick: 4 });
+
+    const snapshot = state.snapshot({ mode: 'publish' });
+    const result = buildResourcePublishTransport(snapshot, pool, {
+      owner: 'test-suite',
+      tick: 4,
+      eventBus: bus,
+    });
+
+    const frame = result.transport.events;
+    expect(frame).toBeDefined();
+    expect(frame!.count).toBe(1);
+    expect(frame!.tick).toBe(4);
+    expect(frame!.manifestHash).toBe(bus.getManifestHash());
+    expect(Array.from(frame!.channelIndices)).toEqual([1]);
+
+    const typeIndex = frame!.typeIndices[0];
+    expect(frame!.stringTable[typeIndex]).toBe('automation:toggled');
+    expect(frame!.payloads[0]).toEqual({
+      automationId: 'auto:1',
+      enabled: false,
+    });
+
+    result.release();
+  });
+
   it('produces transferables for worker pathways and accepts returned buffers', () => {
     const state = createResourceState([{ id: 'energy', startAmount: 1, capacity: 5 }]);
     const energy = state.requireIndex('energy');
@@ -85,6 +124,7 @@ describe('resource publish transport', () => {
 
     const { transport, transferables } = result;
     expect(transferables).toContain(transport.dirtyIndices.buffer);
+    expect(transport.events).toBeUndefined();
     const descriptors = indexDescriptors(transport);
     for (const descriptor of descriptors.values()) {
       expect(transferables).toContain(descriptor.buffer);
@@ -115,6 +155,7 @@ describe('resource publish transport', () => {
     const result = createResourcePublishTransport(state, pool);
     expect(result.transport.dirtyIndices.length).toBe(0);
     expect(result.transferables).toHaveLength(0);
+    expect(result.transport.events).toBeUndefined();
     for (const descriptor of result.transport.buffers) {
       expect(descriptor.length).toBe(0);
     }

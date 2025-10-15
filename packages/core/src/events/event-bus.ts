@@ -47,6 +47,19 @@ export interface EventSubscription {
   unsubscribe(): void;
 }
 
+export interface OutboundEventRecord<TType extends RuntimeEventType = RuntimeEventType> {
+  readonly type: TType;
+  readonly tick: number;
+  readonly issuedAt: number;
+  readonly payload: RuntimeEventPayload<TType>;
+  readonly dispatchOrder: number;
+}
+
+export interface OutboundEventBufferView<TType extends RuntimeEventType = RuntimeEventType> {
+  readonly length: number;
+  at(index: number): OutboundEventRecord<TType>;
+}
+
 export interface EventChannelConfiguration<TType extends RuntimeEventType = RuntimeEventType> {
   readonly definition: RuntimeEventDefinition<TType>;
   readonly capacity?: number;
@@ -363,29 +376,53 @@ export class EventBus implements EventPublisher {
   }
 
   dispatch(context: EventDispatchContext): void {
-    for (const channel of this.channelStates) {
-      const buffer = channel.internalBuffer;
-      let cursor = 0;
+    const cursors = new Array<number>(this.channelStates.length).fill(0);
 
-      while (cursor < buffer.length) {
-        const slot = buffer.at(cursor);
-        const event = createRuntimeEvent({
-          type: slot.type,
-          tick: slot.tick,
-          issuedAt: slot.issuedAt,
-          payload: slot.payload,
-        } satisfies CreateRuntimeEventOptions<RuntimeEventType>);
+    while (true) {
+      let nextChannelIndex = -1;
+      let nextSlot: EventSlot | undefined;
 
-        for (const subscriber of channel.subscribers) {
-          if (!subscriber.active) {
-            continue;
-          }
+      for (let channelIndex = 0; channelIndex < this.channelStates.length; channelIndex += 1) {
+        const channel = this.channelStates[channelIndex];
+        const cursor = cursors[channelIndex];
+        const buffer = channel.internalBuffer;
 
-          subscriber.handler(event, context);
+        if (cursor >= buffer.length) {
+          continue;
         }
 
-        cursor += 1;
+        const candidate = buffer.at(cursor);
+        if (nextSlot === undefined || candidate.dispatchOrder < nextSlot.dispatchOrder) {
+          nextSlot = candidate;
+          nextChannelIndex = channelIndex;
+        }
       }
+
+      if (nextSlot === undefined || nextChannelIndex === -1) {
+        break;
+      }
+
+      const channel = this.channelStates[nextChannelIndex];
+      const event = createRuntimeEvent({
+        type: nextSlot.type,
+        tick: nextSlot.tick,
+        issuedAt: nextSlot.issuedAt,
+        payload: nextSlot.payload,
+      } satisfies CreateRuntimeEventOptions<RuntimeEventType>);
+
+      for (const subscriber of channel.subscribers) {
+        if (!subscriber.active) {
+          continue;
+        }
+
+        subscriber.handler(event, context);
+      }
+
+      cursors[nextChannelIndex] += 1;
+    }
+
+    for (const channel of this.channelStates) {
+      channel.internalBuffer.reset();
     }
   }
 
@@ -409,12 +446,28 @@ export class EventBus implements EventPublisher {
     };
   }
 
-  getOutboundBuffer(channelIndex: number): EventBuffer {
+  getOutboundBuffer(channelIndex: number): OutboundEventBufferView {
     const channel = this.channelStates[channelIndex];
     if (!channel) {
       throw new Error(`Unknown channel index ${channelIndex}`);
     }
-    return channel.outboundBuffer;
+    const buffer = channel.outboundBuffer;
+
+    return {
+      get length() {
+        return buffer.length;
+      },
+      at(index: number) {
+        const slot = buffer.at(index);
+        return {
+          type: slot.type,
+          tick: slot.tick,
+          issuedAt: slot.issuedAt,
+          payload: slot.payload,
+          dispatchOrder: slot.dispatchOrder,
+        };
+      },
+    };
   }
 
   private compactSubscribers(channel: ChannelState): void {

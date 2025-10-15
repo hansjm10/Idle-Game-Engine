@@ -7,19 +7,6 @@ import {
   type RuntimeEventPayload,
 } from './runtime-event.js';
 
-declare module './runtime-event.js' {
-  interface RuntimeEventPayloadMap {
-    'resource:threshold-reached': {
-      resourceId: string;
-      threshold: number;
-    };
-    'automation:toggled': {
-      automationId: string;
-      enabled: boolean;
-    };
-  }
-}
-
 describe('createRuntimeEvent', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
