@@ -5,3 +5,5 @@ pre-commit:
       run: pnpm lint
     test:
       run: pnpm test:ci
+    build:
+      run: pnpm build
