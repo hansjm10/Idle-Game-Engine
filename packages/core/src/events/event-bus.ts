@@ -266,6 +266,10 @@ interface ChannelState {
   softLimitTriggered: boolean;
 }
 
+export interface BeginTickOptions {
+  readonly resetOutbound?: boolean;
+}
+
 export class EventBus implements EventPublisher {
   private readonly registry: EventRegistry;
   private readonly slotPool = new EventSlotPool();
@@ -301,12 +305,15 @@ export class EventBus implements EventPublisher {
     return this.registry.getManifestHash();
   }
 
-  beginTick(tick: number): void {
+  beginTick(tick: number, options?: BeginTickOptions): void {
+    const { resetOutbound = true } = options ?? {};
     this.currentTick = tick;
     this.dispatchCounter = 0;
     for (const channel of this.channelStates) {
       channel.internalBuffer.reset();
-      channel.outboundBuffer.reset();
+      if (resetOutbound) {
+        channel.outboundBuffer.reset();
+      }
       channel.softLimitTriggered = false;
       this.compactSubscribers(channel);
     }

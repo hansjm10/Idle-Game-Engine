@@ -7,6 +7,9 @@ import {
   IdleEngineRuntime,
   type IdleEngineRuntimeOptions,
 } from './index.js';
+import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
+import { buildRuntimeEventFrame } from './events/runtime-event-frame.js';
+import { TransportBufferPool } from './transport-buffer-pool.js';
 import {
   resetTelemetry,
   setTelemetry,
@@ -355,6 +358,39 @@ describe('IdleEngineRuntime', () => {
     runtime.tick(10);
 
     expect(order).toEqual(['event:true', 'tick']);
+  });
+
+  it('preserves outbound events across multi-step ticks', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10 });
+
+    runtime.addSystem({
+      id: 'event-generator',
+      tick: ({ step, events }) => {
+        events.publish('automation:toggled', {
+          automationId: `auto:${step}`,
+          enabled: step % 2 === 0,
+        });
+      },
+    });
+
+    runtime.tick(30);
+
+    const bus = runtime.getEventBus();
+    const frameResult = buildRuntimeEventFrame(bus, new TransportBufferPool(), {
+      tick: runtime.getCurrentStep(),
+      manifestHash: bus.getManifestHash(),
+      owner: 'test-suite',
+    });
+
+    try {
+      expect(frameResult.frame.count).toBe(3);
+      const automationIds = frameResult.frame.payloads.map(
+        (payload) => (payload as AutomationToggledEventPayload).automationId,
+      );
+      expect(automationIds).toEqual(['auto:0', 'auto:1', 'auto:2']);
+    } finally {
+      frameResult.release();
+    }
   });
 
   it('throws when systems subscribe to unknown event channels', () => {

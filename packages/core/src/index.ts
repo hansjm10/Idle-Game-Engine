@@ -168,7 +168,9 @@ export class IdleEngineRuntime {
     this.accumulator -= steps * this.stepSizeMs;
 
     for (let i = 0; i < steps; i += 1) {
-      this.eventBus.beginTick(this.currentStep);
+      this.eventBus.beginTick(this.currentStep, {
+        resetOutbound: i === 0,
+      });
 
       // Accept commands for the current step until the batch is captured.
       this.nextExecutableStep = this.currentStep;
