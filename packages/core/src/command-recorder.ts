@@ -328,6 +328,8 @@ export class CommandRecorder {
     let stateAdvanced = false;
     let finalizationComplete = false;
     const matchedFutureCommandIndices = new Set<number>();
+    const eventBus = runtimeContext?.eventBus;
+    let activeEventBusTick: number | undefined;
     let processedSinceLastTelemetry = 0;
 
     const revertRuntimeContext = (): void => {
@@ -380,6 +382,10 @@ export class CommandRecorder {
       for (let i = 0; i < log.commands.length; i += 1) {
         const cmd = log.commands[i];
         processedSinceLastTelemetry += 1;
+        if (eventBus && cmd.step !== activeEventBusTick) {
+          eventBus.beginTick(cmd.step);
+          activeEventBusTick = cmd.step;
+        }
 
         const context: ExecutionContext = {
           step: cmd.step,
