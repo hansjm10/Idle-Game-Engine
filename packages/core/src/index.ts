@@ -232,3 +232,28 @@ export {
   setTelemetry,
 } from './telemetry.js';
 export { createReadOnlyProxy } from './read-only-proxy.js';
+export {
+  EventBus,
+  EventBufferOverflowError,
+  type EventBusOptions,
+  type EventChannelRegistrationOptions,
+  type EventDispatchContext,
+  type EventPublisher,
+  type EventSoftLimitInfo,
+  type EventSubscription,
+  type EventSubscriptionHost,
+  type PublishResult,
+} from './events/event-bus.js';
+export {
+  areRuntimeEventGuardsEnabled,
+  createRuntimeEventManifest,
+  createRuntimeEventSnapshot,
+  ensureRuntimeEventPayload,
+  type RuntimeEvent,
+  type RuntimeEventDraft,
+  type RuntimeEventManifest,
+  type RuntimeEventPayload,
+  type RuntimeEventPayloadInput,
+  type RuntimeEventPayloadValidator,
+  type RuntimeEventType,
+} from './events/runtime-event.js';
