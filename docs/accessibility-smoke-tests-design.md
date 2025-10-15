@@ -21,7 +21,7 @@ Issue: #5 &mdash; Tooling & QA Workstream
 
 ## 4. Current State
 - The React/Vite shell renders a single landing view (`packages/shell-web/src/modules/App.tsx`) without automated browser tests.
-- The monorepo relies on `pnpm`, with `lefthook` wired to run `pnpm lint` and `pnpm test:ci`, but no package defines an integration or end-to-end test script yet.
+- The monorepo relies on `pnpm`, with `lefthook` wired to run `pnpm lint`, `pnpm test:ci`, and `pnpm build`, but no package defines an integration or end-to-end test script yet.
 - A GitHub Actions CI workflow (`.github/workflows/ci.yml`) already enforces lint, test, and build gates; this effort should extend that pipeline's `pnpm test:ci` phase with accessibility coverage.
 
 ## 5. Proposed Solution
@@ -67,7 +67,7 @@ Issue: #5 &mdash; Tooling & QA Workstream
   3. *(Optional)* `pnpm test:a11y` for a dedicated accessibility report; Playwright's `webServer` configuration handles building `@idle-engine/core` and `@idle-engine/shell-web` before launching the preview server, avoiding redundant work.
   - Cache Playwright browsers between runs (`~/.cache/ms-playwright`) to reduce install time.
 - Evaluate `lefthook.yml` after implementation:
-  - Option A (default): keep `pnpm test:ci` hook; the a11y test should complete in ~20–30s after initial browser download.
+  - Option A (default): keep the `pnpm lint`, `pnpm test:ci`, and `pnpm build` hooks; the a11y test should complete in ~20–30s after initial browser download.
   - Option B: introduce a lighter `test:fast` hook for commits if the team finds the smoke test too heavy; CI will still run `test:ci`.
 
 ### 5.5 Reporting & Observability
