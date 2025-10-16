@@ -1,3 +1,4 @@
+import type { EventPublisher } from './events/event-bus.js';
 import type { Command } from './command.js';
 import type { CommandPriority } from './command.js';
 import { authorizeCommand } from './command-authorization.js';
@@ -7,6 +8,7 @@ export interface ExecutionContext {
   readonly step: number;
   readonly timestamp: number;
   readonly priority: CommandPriority;
+  readonly events: EventPublisher;
 }
 
 export type CommandHandler<TPayload = unknown> = (
@@ -16,9 +18,14 @@ export type CommandHandler<TPayload = unknown> = (
 
 export class CommandDispatcher {
   private readonly handlers = new Map<string, CommandHandler>();
+  private eventPublisher: EventPublisher = DEFAULT_EVENT_PUBLISHER;
 
   register<TPayload>(type: string, handler: CommandHandler<TPayload>): void {
     this.handlers.set(type, handler as CommandHandler);
+  }
+
+  setEventPublisher(publisher: EventPublisher): void {
+    this.eventPublisher = publisher;
   }
 
   getHandler(type: string): CommandHandler | undefined {
@@ -48,6 +55,7 @@ export class CommandDispatcher {
       step: command.step,
       timestamp: command.timestamp,
       priority: command.priority,
+      events: this.eventPublisher,
     };
 
     try {
@@ -76,3 +84,9 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
     typeof (value as PromiseLike<T>).then === 'function'
   );
 }
+
+const DEFAULT_EVENT_PUBLISHER: EventPublisher = {
+  publish() {
+    throw new Error('Event publisher has not been configured on this CommandDispatcher instance.');
+  },
+};

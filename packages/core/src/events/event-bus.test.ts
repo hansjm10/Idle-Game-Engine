@@ -1,20 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EventBus, EventBufferOverflowError } from './event-bus.js';
+import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
 import { type RuntimeEventPayload } from './runtime-event.js';
-
-declare module './runtime-event.js' {
-  interface RuntimeEventPayloadMap {
-    'resource:threshold-reached': {
-      resourceId: string;
-      threshold: number;
-    };
-    'automation:toggled': {
-      automationId: string;
-      enabled: boolean;
-    };
-  }
-}
 
 describe('EventBus', () => {
   const clock = {
@@ -29,20 +17,7 @@ describe('EventBus', () => {
   function createBus(): EventBus {
     return new EventBus({
       clock,
-      channels: [
-        {
-          definition: {
-            type: 'resource:threshold-reached',
-            version: 1,
-          },
-        },
-        {
-          definition: {
-            type: 'automation:toggled',
-            version: 1,
-          },
-        },
-      ],
+      channels: DEFAULT_EVENT_BUS_OPTIONS.channels,
     });
   }
 
@@ -76,6 +51,53 @@ describe('EventBus', () => {
       'resource:10:tick:1',
       'automation:true:tick:1',
     ]);
+  });
+
+  it('preserves publish order across channels', () => {
+    const bus = createBus();
+    bus.beginTick(1);
+
+    const received: string[] = [];
+
+    bus.on('automation:toggled', (event) => {
+      received.push(`automation:${event.payload.enabled}`);
+    });
+
+    bus.on('resource:threshold-reached', (event) => {
+      received.push(`resource:${event.payload.threshold}`);
+    });
+
+    bus.publish('automation:toggled', {
+      automationId: 'auto:1',
+      enabled: true,
+    } as RuntimeEventPayload<'automation:toggled'>);
+
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 10,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    bus.dispatch({ tick: 1 });
+
+    expect(received).toEqual(['automation:true', 'resource:10']);
+  });
+
+  it('does not replay events when dispatch is invoked multiple times in the same tick', () => {
+    const bus = createBus();
+    bus.beginTick(1);
+
+    const handler = vi.fn();
+    bus.on('resource:threshold-reached', handler);
+
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 3,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    bus.dispatch({ tick: 1 });
+    bus.dispatch({ tick: 1 });
+
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it('resets buffers between ticks', () => {
@@ -201,5 +223,26 @@ describe('EventBus', () => {
     bus.dispatch({ tick: 2 });
 
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('provides a read-only view of the outbound buffer', () => {
+    const bus = createBus();
+    bus.beginTick(42);
+
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 9,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const buffer = bus.getOutboundBuffer(0);
+    expect(buffer.length).toBe(1);
+
+    const record = buffer.at(0);
+    expect(record.type).toBe('resource:threshold-reached');
+    expect(record.tick).toBe(42);
+    expect(record.payload).toEqual({
+      resourceId: 'energy',
+      threshold: 9,
+    });
   });
 });

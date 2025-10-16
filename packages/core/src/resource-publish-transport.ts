@@ -1,3 +1,8 @@
+import type { EventBus } from './events/event-bus.js';
+import {
+  buildRuntimeEventFrame,
+  type RuntimeEventFrame,
+} from './events/runtime-event-frame.js';
 import type { ResourceState, ResourceStateSnapshot } from './resource-state.js';
 import type {
   LeaseReleaseContext,
@@ -36,12 +41,14 @@ export interface ResourcePublishTransport {
   readonly ids: readonly string[];
   readonly dirtyIndices: Uint32Array;
   readonly buffers: readonly TransportBufferDescriptor[];
+  readonly events?: RuntimeEventFrame;
 }
 
 export interface ResourcePublishTransportBuildOptions {
   readonly mode?: 'transfer' | 'share';
   readonly owner?: string;
   readonly tick?: number;
+  readonly eventBus?: EventBus;
 }
 
 export interface ResourcePublishTransportReleaseOptions {
@@ -181,9 +188,18 @@ export function buildResourcePublishTransport(
   const owner = options.owner ?? 'ResourcePublishTransport';
   const tick = options.tick;
   const mode = options.mode ?? 'share';
+  const eventBus = options.eventBus;
+
+  if (eventBus !== undefined && tick === undefined) {
+    throw new Error('buildResourcePublishTransport requires a tick when eventBus is provided.');
+  }
 
   if (dirtyCount === 0) {
-    return buildEmptyTransport(snapshot);
+    return buildEmptyTransport(snapshot, eventBus, pool, {
+      owner,
+      tick,
+      mode,
+    });
   }
 
   const dirtyLease = pool.acquireUint32(dirtyCount, {
@@ -211,12 +227,22 @@ export function buildResourcePublishTransport(
 
   const dirtyIndices = dirtyLease.array;
   const dirtyIndicesBuffer = requireArrayBuffer(dirtyIndices.buffer);
+  const eventFrameResult =
+    eventBus === undefined || tick === undefined
+      ? undefined
+      : buildRuntimeEventFrame(eventBus, pool, {
+          tick,
+          manifestHash: eventBus.getManifestHash(),
+          owner: `${owner}:events`,
+          mode,
+        });
 
   const transport: ResourcePublishTransport = {
     version: TRANSPORT_VERSION,
     ids: snapshot.ids,
     dirtyIndices,
     buffers: descriptors,
+    events: eventFrameResult?.frame,
   };
 
   const transferables =
@@ -224,6 +250,7 @@ export function buildResourcePublishTransport(
       ? dedupeBuffers([
           dirtyIndicesBuffer,
           ...descriptors.map((descriptor) => descriptor.buffer),
+          ...(eventFrameResult?.transferables ?? []),
         ])
       : [];
 
@@ -242,6 +269,8 @@ export function buildResourcePublishTransport(
     for (const entry of componentLeases) {
       entry.lease.release(releaseContext(buffers[entry.component]));
     }
+
+    eventFrameResult?.release();
   };
 
   return {
@@ -253,10 +282,23 @@ export function buildResourcePublishTransport(
 
 function buildEmptyTransport(
   snapshot: ResourceStateSnapshot,
+  eventBus: EventBus | undefined,
+  pool: TransportBufferPool,
+  context: { owner: string; tick?: number; mode: 'share' | 'transfer' },
 ): ResourcePublishTransportBuildResult {
   const emptyFloat = new Float64Array(0);
   const emptyUint8 = new Uint8Array(0);
   const emptyUint32 = new Uint32Array(0);
+
+  const eventFrameResult =
+    eventBus === undefined || context.tick === undefined
+      ? undefined
+      : buildRuntimeEventFrame(eventBus, pool, {
+          tick: context.tick,
+          manifestHash: eventBus.getManifestHash(),
+          owner: `${context.owner}:events`,
+          mode: context.mode,
+        });
 
   const descriptors: TransportBufferDescriptor[] = [
     createDescriptor('amounts', emptyFloat),
@@ -274,13 +316,14 @@ function buildEmptyTransport(
     ids: snapshot.ids,
     dirtyIndices: emptyUint32,
     buffers: descriptors,
+    events: eventFrameResult?.frame,
   };
 
   return {
     transport,
-    transferables: [],
+    transferables: eventFrameResult?.transferables ?? [],
     release() {
-      // nothing to release
+      eventFrameResult?.release();
     },
   };
 }

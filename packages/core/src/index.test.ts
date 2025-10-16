@@ -7,6 +7,9 @@ import {
   IdleEngineRuntime,
   type IdleEngineRuntimeOptions,
 } from './index.js';
+import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
+import { buildRuntimeEventFrame } from './events/runtime-event-frame.js';
+import { TransportBufferPool } from './transport-buffer-pool.js';
 import {
   resetTelemetry,
   setTelemetry,
@@ -319,6 +322,89 @@ describe('IdleEngineRuntime', () => {
 
     runtime.tick(10);
     expect(executed).toEqual(['step-0', 'step-1']);
+  });
+
+  it('dispatches event bus publications to system subscribers before tick execution', () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+    const order: string[] = [];
+
+    dispatcher.register('EMIT_EVENT', (_payload, ctx) => {
+      ctx.events.publish('automation:toggled', {
+        automationId: 'auto:1',
+        enabled: true,
+      });
+    });
+
+    runtime.addSystem({
+      id: 'observer',
+      setup: ({ events }) => {
+        events.on('automation:toggled', (event) => {
+          order.push(`event:${event.payload.enabled}`);
+        });
+      },
+      tick: () => {
+        order.push('tick');
+      },
+    });
+
+    queue.enqueue({
+      type: 'EMIT_EVENT',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+    });
+
+    runtime.tick(10);
+
+    expect(order).toEqual(['event:true', 'tick']);
+  });
+
+  it('preserves outbound events across multi-step ticks', () => {
+    const { runtime } = createRuntime({ stepSizeMs: 10 });
+
+    runtime.addSystem({
+      id: 'event-generator',
+      tick: ({ step, events }) => {
+        events.publish('automation:toggled', {
+          automationId: `auto:${step}`,
+          enabled: step % 2 === 0,
+        });
+      },
+    });
+
+    runtime.tick(30);
+
+    const bus = runtime.getEventBus();
+    const frameResult = buildRuntimeEventFrame(bus, new TransportBufferPool(), {
+      tick: runtime.getCurrentStep(),
+      manifestHash: bus.getManifestHash(),
+      owner: 'test-suite',
+    });
+
+    try {
+      expect(frameResult.frame.count).toBe(3);
+      const automationIds = frameResult.frame.payloads.map(
+        (payload) => (payload as AutomationToggledEventPayload).automationId,
+      );
+      expect(automationIds).toEqual(['auto:0', 'auto:1', 'auto:2']);
+    } finally {
+      frameResult.release();
+    }
+  });
+
+  it('throws when systems subscribe to unknown event channels', () => {
+    const { runtime } = createRuntime();
+
+    expect(() =>
+      runtime.addSystem({
+        id: 'invalid-subscriber',
+        setup: ({ events }) => {
+          events.on('invalid:event' as never, () => {});
+        },
+        tick: () => {},
+      }),
+    ).toThrowError(/System "invalid-subscriber" failed to register event subscriptions/);
   });
 
   it('commands enqueued during execution target the next step', () => {

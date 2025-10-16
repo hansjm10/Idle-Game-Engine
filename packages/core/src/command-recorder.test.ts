@@ -17,6 +17,10 @@ import {
   type CommandLog,
   type StateSnapshot,
 } from './command-recorder.js';
+import { EventBus } from './events/event-bus.js';
+import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
+import { buildRuntimeEventFrame } from './events/runtime-event-frame.js';
+import { TransportBufferPool } from './transport-buffer-pool.js';
 import {
   clearGameState,
   getGameState,
@@ -47,6 +51,23 @@ function createCommand(
     timestamp: overrides.timestamp ?? 1,
     step: overrides.step ?? 0,
   };
+}
+
+function buildToggleFrame(enabled: boolean, tick = 0) {
+  const pool = new TransportBufferPool();
+  const bus = new EventBus(DEFAULT_EVENT_BUS_OPTIONS);
+  bus.beginTick(tick);
+  bus.publish('automation:toggled', {
+    automationId: 'auto:1',
+    enabled,
+  });
+  bus.dispatch({ tick });
+
+  return buildRuntimeEventFrame(bus, pool, {
+    tick,
+    manifestHash: bus.getManifestHash(),
+    owner: 'test-suite',
+  });
 }
 
 describe('CommandRecorder', () => {
@@ -664,5 +685,106 @@ describe('CommandRecorder', () => {
       'CommandReplay',
       { processed: 1500 },
     );
+  });
+
+  it('records runtime event frames in exported logs', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+    const frameResult = buildToggleFrame(true, 2);
+
+    try {
+      recorder.recordEventFrame(frameResult.frame);
+      const log = recorder.export();
+
+      expect(log.events).toHaveLength(1);
+      const frame = log.events[0];
+      expect(frame.tick).toBe(2);
+      expect(frame.events).toHaveLength(1);
+      const event = frame.events[0];
+      expect(event).toMatchObject({
+        type: 'automation:toggled',
+        channel: 1,
+        issuedAt: frameResult.frame.issuedAt[0],
+        dispatchOrder: 0,
+        payload: {
+          automationId: 'auto:1',
+          enabled: true,
+        },
+      });
+    } finally {
+      frameResult.release();
+    }
+  });
+
+  it('validates replay event frames against the recorded log', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+    const recordedFrame = buildToggleFrame(false, 1);
+
+    try {
+      recorder.recordEventFrame(recordedFrame.frame);
+      const log = recorder.export();
+
+      const replayFrame = buildToggleFrame(false, 1);
+      try {
+        replayFrame.frame.issuedAt.set(recordedFrame.frame.issuedAt);
+        recorder.beginReplayEventValidation(log);
+        recorder.consumeReplayEventFrame(replayFrame.frame);
+        expect(() => recorder.endReplayEventValidation()).not.toThrow();
+      } finally {
+        replayFrame.release();
+      }
+    } finally {
+      recordedFrame.release();
+    }
+  });
+
+  it('detects issuedAt drift during replay event validation', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+    const recordedFrame = buildToggleFrame(true, 3);
+
+    try {
+      recorder.recordEventFrame(recordedFrame.frame);
+      const log = recorder.export();
+
+      const driftedFrame = buildToggleFrame(true, 3);
+      try {
+        driftedFrame.frame.issuedAt[0] =
+          recordedFrame.frame.issuedAt[0] + 1;
+
+        recorder.beginReplayEventValidation(log);
+        expect(() =>
+          recorder.consumeReplayEventFrame(driftedFrame.frame),
+        ).toThrowError(/Replay event frame does not match/);
+      } finally {
+        driftedFrame.release();
+      }
+    } finally {
+      recordedFrame.release();
+    }
+  });
+
+  it('throws when replay event frames differ from the recorded log', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+    const recordedFrame = buildToggleFrame(true, 3);
+
+    try {
+      recorder.recordEventFrame(recordedFrame.frame);
+      const log = recorder.export();
+
+      const mismatchedFrame = buildToggleFrame(false, 3);
+      try {
+        recorder.beginReplayEventValidation(log);
+        expect(() =>
+          recorder.consumeReplayEventFrame(mismatchedFrame.frame),
+        ).toThrow();
+      } finally {
+        mismatchedFrame.release();
+      }
+    } finally {
+      recordedFrame.release();
+    }
   });
 });

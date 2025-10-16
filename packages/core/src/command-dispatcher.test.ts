@@ -21,17 +21,23 @@ afterEach(() => {
 describe('CommandDispatcher', () => {
   it('executes registered handlers with command metadata context', () => {
     const dispatcher = new CommandDispatcher();
+    const events = { publish: vi.fn() };
+    dispatcher.setEventPublisher(events);
     const handler = vi.fn();
 
     dispatcher.register('TEST', handler);
     dispatcher.execute(baseCommand);
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith(baseCommand.payload, {
-      step: baseCommand.step,
-      timestamp: baseCommand.timestamp,
-      priority: baseCommand.priority,
-    });
+    expect(handler).toHaveBeenCalledWith(
+      baseCommand.payload,
+      expect.objectContaining({
+        step: baseCommand.step,
+        timestamp: baseCommand.timestamp,
+        priority: baseCommand.priority,
+        events,
+      }),
+    );
   });
 
   it('records telemetry when handler throws', () => {

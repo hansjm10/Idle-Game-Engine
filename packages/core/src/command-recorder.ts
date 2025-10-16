@@ -13,6 +13,13 @@ import {
   type ImmutableTypedArraySnapshot,
   type TypedArray,
 } from './immutable-snapshots.js';
+import type { EventBus, EventPublisher } from './events/event-bus.js';
+import type { RuntimeEventFrame } from './events/runtime-event-frame.js';
+import type {
+  RuntimeEventManifestHash,
+  RuntimeEventPayload,
+  RuntimeEventType,
+} from './events/runtime-event.js';
 import { telemetry } from './telemetry.js';
 import {
   getCurrentRNGSeed,
@@ -23,10 +30,25 @@ import { getGameState, setGameState } from './runtime-state.js';
 
 export type StateSnapshot<TState = unknown> = ImmutablePayload<TState>;
 
+export interface RecordedRuntimeEvent {
+  readonly type: RuntimeEventType;
+  readonly channel: number;
+  readonly issuedAt: number;
+  readonly dispatchOrder: number;
+  readonly payload: ImmutablePayload<RuntimeEventPayload<RuntimeEventType>>;
+}
+
+export interface RecordedRuntimeEventFrame {
+  readonly tick: number;
+  readonly manifestHash: RuntimeEventManifestHash;
+  readonly events: readonly RecordedRuntimeEvent[];
+}
+
 export interface CommandLog {
   readonly version: string;
   readonly startState: StateSnapshot;
   readonly commands: readonly CommandSnapshot[];
+  readonly events: readonly RecordedRuntimeEventFrame[];
   readonly metadata: {
     readonly recordedAt: number;
     readonly seed?: number;
@@ -36,6 +58,8 @@ export interface CommandLog {
 
 export interface RuntimeReplayContext {
   readonly commandQueue: CommandQueue;
+  readonly eventPublisher?: EventPublisher;
+  readonly eventBus?: EventBus;
   getCurrentStep?(): number;
   getNextExecutableStep?(): number;
   setCurrentStep?(step: number): void;
@@ -44,6 +68,12 @@ export interface RuntimeReplayContext {
 
 const COMMAND_LOG_VERSION = '0.1.0';
 const REPLAY_TELEMETRY_BATCH_SIZE = 1000;
+
+const DEFAULT_REPLAY_EVENT_PUBLISHER: EventPublisher = {
+  publish() {
+    throw new Error('Event publisher is not configured for replay execution.');
+  },
+};
 
 const sharedArrayBufferCtor = (globalThis as {
   SharedArrayBuffer?: typeof SharedArrayBuffer;
@@ -224,6 +254,12 @@ function getTypedArrayLength(typed: TypedArray): number {
 export class CommandRecorder {
   private readonly recorded: FrozenCommand[] = [];
   private readonly recordedClones: Command[] = [];
+  private readonly recordedEventFrames: RecordedRuntimeEventFrame[] = [];
+  private readonly frozenEventFrames: ImmutablePayload<RecordedRuntimeEventFrame>[] =
+    [];
+  private pendingReplayEventFrames: readonly RecordedRuntimeEventFrame[] | null =
+    null;
+  private replayEventFrameCursor = 0;
   private startState: StateSnapshot;
   private rngSeed: number | undefined;
   private lastRecordedStep = -1;
@@ -255,12 +291,68 @@ export class CommandRecorder {
     this.lastRecordedStep = Math.max(this.lastRecordedStep, command.step);
   }
 
+  recordEventFrame(frame: RuntimeEventFrame): void {
+    const clone = createRecordedEventFrame(frame);
+    const snapshot = freezeSnapshot(clone) as ImmutablePayload<RecordedRuntimeEventFrame>;
+    this.recordedEventFrames.push(clone);
+    this.frozenEventFrames.push(snapshot);
+  }
+
+  beginReplayEventValidation(log: CommandLog): void {
+    this.pendingReplayEventFrames = log.events;
+    this.replayEventFrameCursor = 0;
+  }
+
+  endReplayEventValidation(): void {
+    if (this.pendingReplayEventFrames === null) {
+      return;
+    }
+    if (this.replayEventFrameCursor !== this.pendingReplayEventFrames.length) {
+      telemetry.recordError('ReplayMissingEventFrames', {
+        expected: this.pendingReplayEventFrames.length,
+        consumed: this.replayEventFrameCursor,
+      });
+      throw new Error('Replay did not consume all recorded event frames.');
+    }
+    this.pendingReplayEventFrames = null;
+  }
+
+  consumeReplayEventFrame(frame: RuntimeEventFrame): void {
+    if (this.pendingReplayEventFrames === null) {
+      telemetry.recordError('ReplayUnexpectedEventFrame', {
+        tick: frame.tick,
+        reason: 'replay-not-in-progress',
+      });
+      throw new Error('Received replay event frame before replay was initialised.');
+    }
+
+    const expected = this.pendingReplayEventFrames[this.replayEventFrameCursor];
+    if (!expected) {
+      telemetry.recordError('ReplayUnexpectedEventFrame', {
+        tick: frame.tick,
+        reason: 'no-more-expected-frames',
+      });
+      throw new Error('Replay produced more event frames than were recorded.');
+    }
+
+    const actual = createRecordedEventFrame(frame);
+    if (!areRecordedEventFramesEqual(actual, expected)) {
+      telemetry.recordError('ReplayEventFrameMismatch', {
+        tick: frame.tick,
+      });
+      throw new Error('Replay event frame does not match the recorded log.');
+    }
+
+    this.replayEventFrameCursor += 1;
+  }
+
   export(): CommandLog {
     this.refreshSeedSnapshot();
     const exportedLog = {
       version: COMMAND_LOG_VERSION,
       startState: cloneSnapshotToMutable(this.startState),
       commands: this.recordedClones.map(cloneStructured),
+      events: this.recordedEventFrames.map(cloneStructured),
       metadata: {
         recordedAt: Date.now(),
         seed: this.rngSeed,
@@ -278,6 +370,7 @@ export class CommandRecorder {
   ): void {
     const mutableState = cloneSnapshotToMutable(log.startState);
     restoreState(mutableState);
+
 
     const hasReplaySeed = log.metadata.seed !== undefined;
     const previousSeed = hasReplaySeed
@@ -328,6 +421,8 @@ export class CommandRecorder {
     let stateAdvanced = false;
     let finalizationComplete = false;
     const matchedFutureCommandIndices = new Set<number>();
+    const eventBus = runtimeContext?.eventBus;
+    let activeEventBusTick: number | undefined;
     let processedSinceLastTelemetry = 0;
 
     const revertRuntimeContext = (): void => {
@@ -380,11 +475,16 @@ export class CommandRecorder {
       for (let i = 0; i < log.commands.length; i += 1) {
         const cmd = log.commands[i];
         processedSinceLastTelemetry += 1;
+        if (eventBus && cmd.step !== activeEventBusTick) {
+          eventBus.beginTick(cmd.step);
+          activeEventBusTick = cmd.step;
+        }
 
         const context: ExecutionContext = {
           step: cmd.step,
           timestamp: cmd.timestamp,
           priority: cmd.priority,
+          events: runtimeContext?.eventPublisher ?? DEFAULT_REPLAY_EVENT_PUBLISHER,
         };
 
         const handler = dispatcher.getHandler(cmd.type);
@@ -466,12 +566,17 @@ export class CommandRecorder {
         stateAdvanced = true;
       }
       finalizationComplete = true;
+
     }
   }
 
   clear(nextState: unknown, options?: { seed?: number }): void {
     this.recorded.length = 0;
     this.recordedClones.length = 0;
+    this.recordedEventFrames.length = 0;
+    this.frozenEventFrames.length = 0;
+    this.pendingReplayEventFrames = null;
+    this.replayEventFrameCursor = 0;
     const startClone = cloneStructured(nextState);
     this.startState = freezeSnapshot(startClone);
     this.rngSeed = options?.seed;
@@ -486,6 +591,83 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
     value !== null &&
     typeof (value as PromiseLike<T>).then === 'function'
   );
+}
+
+function createRecordedEventFrame(frame: RuntimeEventFrame): RecordedRuntimeEventFrame {
+  const events: RecordedRuntimeEvent[] = new Array(frame.count);
+
+  for (let index = 0; index < frame.count; index += 1) {
+    const typeIndex = frame.typeIndices[index];
+    const type = frame.stringTable[typeIndex];
+    const payload = freezeSnapshot(
+      cloneStructured(frame.payloads[index] as RuntimeEventPayload<RuntimeEventType>),
+    ) as ImmutablePayload<RuntimeEventPayload<RuntimeEventType>>;
+
+    events[index] = {
+      type: type as RuntimeEventType,
+      channel: frame.channelIndices[index],
+      issuedAt: frame.issuedAt[index],
+      dispatchOrder: frame.dispatchOrder[index],
+      payload,
+    };
+  }
+
+  return {
+    tick: frame.tick,
+    manifestHash: frame.manifestHash,
+    events,
+  };
+}
+
+function areRecordedEventFramesEqual(
+  actual: RecordedRuntimeEventFrame,
+  expected: RecordedRuntimeEventFrame,
+): boolean {
+  if (actual.tick !== expected.tick) {
+    return false;
+  }
+  if (actual.manifestHash !== expected.manifestHash) {
+    return false;
+  }
+  if (actual.events.length !== expected.events.length) {
+    return false;
+  }
+
+  for (let index = 0; index < actual.events.length; index += 1) {
+    const left = actual.events[index];
+    const right = expected.events[index];
+
+    if (
+      left.type !== right.type ||
+      left.channel !== right.channel ||
+      left.issuedAt !== right.issuedAt ||
+      left.dispatchOrder !== right.dispatchOrder
+    ) {
+      return false;
+    }
+
+    if (!areImmutablePayloadsEqual(left.payload, right.payload)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areImmutablePayloadsEqual(
+  left: ImmutablePayload<unknown>,
+  right: ImmutablePayload<unknown>,
+): boolean {
+  try {
+    const leftValue = cloneSnapshotToMutable(left);
+    const rightValue = cloneSnapshotToMutable(right);
+    return JSON.stringify(leftValue) === JSON.stringify(rightValue);
+  } catch (error) {
+    telemetry.recordError('ReplayEventPayloadComparisonFailed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
 }
 
 export function restoreState<TState>(
