@@ -1,9 +1,12 @@
+/* eslint-disable no-console */
+
 export type TelemetryEventData = Readonly<Record<string, unknown>>;
 
 export interface TelemetryFacade {
   recordError(event: string, data?: TelemetryEventData): void;
   recordWarning(event: string, data?: TelemetryEventData): void;
   recordProgress(event: string, data?: TelemetryEventData): void;
+  recordCounters(group: string, counters: Readonly<Record<string, number>>): void;
   recordTick(): void;
 }
 
@@ -16,6 +19,9 @@ const consoleTelemetry: TelemetryFacade = {
   },
   recordProgress(event, data) {
     console.info(`[telemetry:progress] ${event}`, data);
+  },
+  recordCounters(group, counters) {
+    console.info(`[telemetry:counters] ${group}`, counters);
   },
   recordTick() {
     console.debug('[telemetry:tick]');
@@ -33,6 +39,9 @@ export const telemetry: TelemetryFacade = {
   },
   recordProgress(event, data) {
     invokeSafely(activeTelemetry, 'recordProgress', event, data);
+  },
+  recordCounters(group, counters) {
+    invokeSafely(activeTelemetry, 'recordCounters', group, counters);
   },
   recordTick() {
     invokeSafely(activeTelemetry, 'recordTick');

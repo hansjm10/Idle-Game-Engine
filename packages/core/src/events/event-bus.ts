@@ -91,10 +91,28 @@ export interface SoftLimitContext<TType extends RuntimeEventType = RuntimeEventT
   readonly remainingCapacity: number;
 }
 
+export interface SlowHandlerContext<
+  TType extends RuntimeEventType = RuntimeEventType,
+> {
+  readonly type: TType;
+  readonly channel: number;
+  readonly tick: number;
+  readonly dispatchOrder: number;
+  readonly durationMs: number;
+  readonly thresholdMs: number;
+  readonly handlerLabel?: string;
+}
+
+export interface EventSubscriptionOptions {
+  readonly label?: string;
+}
+
 export interface EventBusOptions {
   readonly channels: ReadonlyArray<EventChannelConfiguration>;
   readonly channelConfigs?: EventChannelConfigMap;
   readonly clock?: Clock;
+  readonly slowHandlerThresholdMs?: number;
+  readonly onSlowHandler?: (context: SlowHandlerContext) => void;
 }
 
 export interface Clock {
@@ -328,6 +346,7 @@ class EventRegistry {
 interface SubscriberRecord {
   readonly handler: EventHandler<RuntimeEventType>;
   active: boolean;
+  readonly label?: string;
 }
 
 interface ChannelState {
@@ -349,6 +368,8 @@ export class EventBus implements EventPublisher {
   private readonly slotPool = new EventSlotPool();
   private readonly channelStates: ChannelState[];
   private readonly clock: Clock;
+  private readonly slowHandlerThresholdMs: number;
+  private readonly onSlowHandler?: (context: SlowHandlerContext) => void;
   private telemetryCounters: BackPressureCounters = {
     published: 0,
     softLimited: 0,
@@ -382,6 +403,11 @@ export class EventBus implements EventPublisher {
       };
     });
     this.clock = options.clock ?? defaultClock;
+    this.slowHandlerThresholdMs =
+      typeof options.slowHandlerThresholdMs === 'number'
+        ? Math.max(0, options.slowHandlerThresholdMs)
+        : 2;
+    this.onSlowHandler = options.onSlowHandler;
   }
 
   getManifest(): RuntimeEventManifest {
@@ -549,7 +575,38 @@ export class EventBus implements EventPublisher {
           continue;
         }
 
-        subscriber.handler(event, context);
+        if (this.slowHandlerThresholdMs > 0) {
+          const start = this.clock.now();
+          try {
+            subscriber.handler(event, context);
+          } finally {
+            const duration = this.clock.now() - start;
+            if (duration > this.slowHandlerThresholdMs) {
+              const slowContext: SlowHandlerContext = {
+                type: event.type,
+                channel: nextChannelIndex,
+                tick: event.tick,
+                dispatchOrder: nextSlot.dispatchOrder,
+                durationMs: duration,
+                thresholdMs: this.slowHandlerThresholdMs,
+                handlerLabel: subscriber.label,
+              };
+
+              this.onSlowHandler?.(slowContext);
+              telemetry.recordWarning('EventHandlerSlow', {
+                eventType: event.type,
+                channel: nextChannelIndex,
+                tick: event.tick,
+                dispatchOrder: nextSlot.dispatchOrder,
+                durationMs: duration,
+                thresholdMs: this.slowHandlerThresholdMs,
+                handler: subscriber.label,
+              });
+            }
+          }
+        } else {
+          subscriber.handler(event, context);
+        }
       }
 
       cursors[nextChannelIndex] += 1;
@@ -610,6 +667,7 @@ export class EventBus implements EventPublisher {
   on<TType extends RuntimeEventType>(
     eventType: TType,
     handler: EventHandler<TType>,
+    options?: EventSubscriptionOptions,
   ): EventSubscription {
     const descriptor = this.registry.getDescriptor(eventType);
     const channel = this.channelStates[descriptor.index];
@@ -617,6 +675,7 @@ export class EventBus implements EventPublisher {
     const record: SubscriberRecord = {
       handler: handler as EventHandler<RuntimeEventType>,
       active: true,
+      label: options?.label,
     };
     channel.subscribers.push(record);
 

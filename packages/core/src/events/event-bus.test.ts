@@ -145,6 +145,7 @@ describe('EventBus', () => {
       recordError() {},
       recordWarning: vi.fn(),
       recordProgress() {},
+      recordCounters() {},
       recordTick() {},
     };
 
@@ -215,6 +216,7 @@ describe('EventBus', () => {
       recordError() {},
       recordWarning() {},
       recordProgress() {},
+      recordCounters() {},
       recordTick() {},
     };
 
@@ -536,6 +538,77 @@ describe('EventBus', () => {
       'secondary',
       'secondary',
     ]);
+  });
+
+  it('records slow handler telemetry when execution exceeds the configured threshold', () => {
+    let currentTime = 0;
+    const localClock = {
+      now: vi.fn(() => {
+        currentTime += 1;
+        return currentTime;
+      }),
+    };
+    const onSlowHandler = vi.fn();
+
+    const bus = new EventBus({
+      clock: localClock,
+      channels: DEFAULT_EVENT_BUS_OPTIONS.channels,
+      slowHandlerThresholdMs: 0.5,
+      onSlowHandler,
+    });
+
+    const telemetryStub: TelemetryFacade = {
+      recordError() {},
+      recordWarning: vi.fn(),
+      recordProgress() {},
+      recordCounters() {},
+      recordTick() {},
+    };
+
+    setTelemetry(telemetryStub);
+
+    try {
+      bus.beginTick(7);
+
+      bus.on(
+        'resource:threshold-reached',
+        () => {
+          // No-op handler to drive timing via the mocked clock.
+        },
+        { label: 'system:test' },
+      );
+
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+      bus.dispatch({ tick: 7 });
+
+      expect(onSlowHandler).toHaveBeenCalledTimes(1);
+      expect(onSlowHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'resource:threshold-reached',
+          channel: 0,
+          tick: 7,
+          handlerLabel: 'system:test',
+          durationMs: expect.any(Number),
+          thresholdMs: 0.5,
+        }),
+      );
+
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'EventHandlerSlow',
+        expect.objectContaining({
+          eventType: 'resource:threshold-reached',
+          handler: 'system:test',
+          durationMs: expect.any(Number),
+          thresholdMs: 0.5,
+        }),
+      );
+    } finally {
+      resetTelemetry();
+    }
   });
 });
 

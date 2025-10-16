@@ -59,4 +59,5 @@ export const RUNTIME_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = 
 
 export const DEFAULT_EVENT_BUS_OPTIONS: EventBusOptions = {
   channels: RUNTIME_EVENT_CHANNELS,
+  slowHandlerThresholdMs: 2,
 };

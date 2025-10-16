@@ -79,18 +79,33 @@ describe('WorkerBridgeImpl', () => {
     const handler = vi.fn<void, [RuntimeStateSnapshot]>();
     bridge.onStateUpdate(handler);
 
+    const snapshot: RuntimeStateSnapshot = {
+      currentStep: 7,
+      events: [],
+      backPressure: {
+        tick: 7,
+        counters: {
+          published: 0,
+          softLimited: 0,
+          overflowed: 0,
+          subscribers: 0,
+        },
+        channels: [],
+      },
+    };
+
     worker.emitMessage('message', {
       type: 'STATE_UPDATE',
-      state: { currentStep: 7 },
+      state: snapshot,
     });
 
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler).toHaveBeenCalledWith({ currentStep: 7 });
+    expect(handler).toHaveBeenCalledWith(snapshot);
 
     bridge.offStateUpdate(handler);
     worker.emitMessage('message', {
       type: 'STATE_UPDATE',
-      state: { currentStep: 8 },
+      state: snapshot,
     });
 
     expect(handler).toHaveBeenCalledTimes(1);

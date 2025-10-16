@@ -79,6 +79,7 @@ describe('IdleEngineRuntime', () => {
       },
       recordWarning() {},
       recordProgress() {},
+      recordCounters() {},
       recordTick() {},
     };
 
@@ -272,6 +273,7 @@ describe('IdleEngineRuntime', () => {
       },
       recordWarning() {},
       recordProgress() {},
+      recordCounters() {},
       recordTick() {},
     };
 

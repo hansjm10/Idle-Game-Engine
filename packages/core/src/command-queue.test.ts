@@ -373,6 +373,7 @@ describe('CommandQueue', () => {
       recordError: vi.fn(),
       recordWarning: vi.fn(),
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
     setTelemetry(telemetryStub);
@@ -434,6 +435,7 @@ describe('CommandQueue', () => {
       recordError: vi.fn(),
       recordWarning: vi.fn(),
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
     setTelemetry(telemetryStub);
@@ -497,6 +499,7 @@ describe('CommandQueue', () => {
       recordError: vi.fn(),
       recordWarning: vi.fn(),
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
     setTelemetry(telemetryStub);
@@ -910,6 +913,7 @@ describe('CommandQueue', () => {
         warnings.push({ event, data });
       },
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
     setTelemetry(telemetryStub);
@@ -948,6 +952,7 @@ describe('CommandQueue', () => {
         warnings.push({ event, data });
       },
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
     setTelemetry(telemetryStub);

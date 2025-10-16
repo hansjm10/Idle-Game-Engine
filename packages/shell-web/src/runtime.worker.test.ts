@@ -108,10 +108,25 @@ describe('runtime.worker integration', () => {
     advanceTime(110);
     runTick();
 
-    expect(context.postMessage).toHaveBeenCalledWith({
-      type: 'STATE_UPDATE',
-      state: { currentStep: 1 },
-    });
+    expect(context.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'STATE_UPDATE',
+        state: expect.objectContaining({
+          currentStep: 1,
+          events: expect.any(Array),
+          backPressure: expect.objectContaining({
+            tick: expect.any(Number),
+            counters: expect.objectContaining({
+              published: expect.any(Number),
+              softLimited: expect.any(Number),
+              overflowed: expect.any(Number),
+              subscribers: expect.any(Number),
+            }),
+            channels: expect.any(Array),
+          }),
+        }),
+      }),
+    );
 
     // Subsequent commands are stamped with the next executable step (1).
     advanceTime(1);
