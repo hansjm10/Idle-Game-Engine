@@ -106,8 +106,11 @@ routes them to two audiences:
   }
   ```
 - `RuntimeEventType` is a string literal union grouped by domains (`resource`,
-  `automation`, `social`, `telemetry`). Packages contributing events augment the
-  union via declaration merging to avoid circular imports.
+  `automation`, `social`, `telemetry`). Runtime-owned types live in
+  `packages/core`, while content packs contribute additional entries through an
+  offline manifest. Pack manifests emit `eventTypes` metadata that is sorted by
+  `(packSlug, eventKey)` during generation so every build produces the same
+  declaration file and replay manifests stay stable.
 - Export canonical payload types under `@idle-engine/core/events` (e.g.,
   `ResourceThresholdReachedEvent`, `AutomationToggleEvent`) so command handlers
   and systems share definitions.
@@ -116,6 +119,9 @@ routes them to two audiences:
   core catalogue, refreshes the deterministic manifest hash, and updates the
   `ContentRuntimeEventType` union exported by `@idle-engine/core`. See
   `docs/runtime-event-manifest-authoring.md` for authoring guidance.
+- The generator also publishes a manifest hash consumed by the recorder; replay
+  files embed the hash and fail fast if the runtime attempts to load a different
+  catalogue, preventing content drift across environments.
 
 ### 6.2 Event Bus Core
 
@@ -168,25 +174,28 @@ routes them to two audiences:
 
 ### 6.4 Buffer Management & Back-Pressure
 
-- Default buffer capacity per channel is 256 events. Unless overridden via
-  `EventBusOptions.channelConfigs[type].capacity`, the bus applies that ceiling
-  and derives a soft limit at 75% of capacity (floored, minimum 1) that can be
-  overridden with `softLimit` when a channel is particularly bursty.
-- Publishing beyond the soft limit returns `state: 'soft-limit'`, flips a
-  per-tick `softLimitActive` flag, invokes any registered `onSoftLimit` callback
-  once with remaining capacity, and increments the `events.soft_limited`
-  telemetry counter so publishers can throttle.
-- Overflowing the hard capacity throws `EventBufferOverflowError`, records
-  `telemetry.recordWarning('EventBufferOverflow', {...})`, increments the
-  `events.overflowed` counter, and aborts the tick until `beginTick()` rewinds
-  the buffers.
+- Default buffer capacity per channel is 256 events. `EventBusOptions` now
+  accepts per-channel configs that include `capacity`, `softLimitPercent`,
+  `maxEventsPerTick`, `maxEventsPerSecond`, and `cooldownTicks` so integrators
+  can tune pressure controls without rewriting the bus.
+- Publishing beyond the configured soft limit triggers the `EventDiagnostics`
+  rate limiter. The first breach issues a warning with remaining capacity and
+  increments `events.soft_limited`; subsequent breaches back off exponentially
+  before logging again, keeping telemetry actionable while publishers adapt.
+- Overflowing the hard capacity still throws `EventBufferOverflowError` and
+  records `events.overflowed`, causing the tick to rewind at `beginTick()`. Hard
+  limits remain deterministic safeguards and bypass the rate limiter.
 - `eventBus.getBackPressureSnapshot()` surfaces per-channel `inUse`,
-  `remainingCapacity`, and `highWaterMark` metrics alongside cumulative counters
-  (`events.published`, `events.soft_limited`, `events.overflowed`,
-  `events.subscribers`) that dashboards and transports can consume.
+  `remainingCapacity`, `highWaterMark`, and the current rate-limiter cooldown so
+  dashboards and transports can plot sustained load alongside cumulative
+  counters (`events.published`, `events.soft_limited`, `events.overflowed`,
+  `events.subscribers`).
 - Buffers use struct-of-arrays layouts mirroring resource storage so we can
   transfer them to the shell with minimal copying. Strings (event types, IDs)
-  enter a deduplicated string table shared with resource snapshots.
+  enter a deduplicated string table shared with resource snapshots. When the
+  rolling 256-tick average drops below two events per channel, the exporter can
+  flip a feature flag to emit compact object arrays instead; diagnostics record
+  the transition so we can revisit the default if sparse workloads dominate.
 - When offline catch-up runs for many hours, the bus batches events into
   configurable windows (default 5 minutes) to prevent unbounded array growth.
   The implementation segments the backlog into `RuntimeEventFrame` chunks and
@@ -260,24 +269,29 @@ keep merges small and reviewable.
 
 - Emit telemetry counters for `events.published`, `events.soft_limited`,
   `events.overflowed`, and `events.subscribers` per tick.
+- Surface per-channel gauges for rate limiter cooldowns and soft-limit breaches
+  so dashboards can show which channels are approaching thresholds.
 - Log structured warnings when handlers exceed execution time thresholds (e.g.,
   >2 ms) to surface slow subscribers.
 - Expose a developer-mode event inspector in the web shell that reads the
   transfer frame and renders the last N events for debugging.
 
-## 10. Open Questions & Follow-Ups
+## 10. Resolved Follow-Ups
 
-1. **Content-defined events:** Should content packs declare custom event types
-   that compile into the union automatically? Requires schema and tooling work.
-2. **Priority channels:** Do we need distinct priority tiers (similar to
-   command queue) for events that must dispatch before others?
-3. **Back-pressure strategy:** When buffers overflow, should we drop newest,
-   oldest, or escalate to command-level rate limiting?
-4. **Serialization format:** The current proposal leans on struct-of-arrays; if
-   profiling shows sparse events, a simple object array may suffice.
+All deferred decisions from the draft have been finalised in
+`docs/runtime-event-bus-decisions.md` (issue #87). Highlights:
 
-These decisions can defer to later iterations without blocking the initial bus
-implementation.
+1. **Content-defined events:** Content packs contribute event types through
+   schema-backed manifests generated at build time, preserving deterministic
+   replay manifests.
+2. **Priority channels:** The bus keeps a single FIFO dispatch order; publishers
+   control sequencing by when they emit events rather than via priority tiers.
+3. **Back-pressure strategy:** Channel-scoped diagnostics throttle soft-limit
+   warnings with configurable limits and exponential backoff while hard caps
+   still abort the tick.
+4. **Serialization format:** Struct-of-arrays remains the default, with a
+   feature-flagged downgrade to object arrays when rolling density metrics show
+   sparse workloads.
 
 ## 11. Risks & Mitigations
 
