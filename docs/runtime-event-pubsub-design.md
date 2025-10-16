@@ -174,19 +174,24 @@ routes them to two audiences:
 
 ### 6.4 Buffer Management & Back-Pressure
 
-- Default buffer capacity per channel is 256 events. `EventBusOptions` now
-  accepts per-channel configs that include `capacity`, `softLimitPercent`,
-  `maxEventsPerTick`, `maxEventsPerSecond`, and `cooldownTicks` so integrators
-  can tune pressure controls without rewriting the bus.
+- Default buffer capacity per channel is 256 events. `EventChannelConfiguration`
+  exposes an optional `diagnostics` block and `channelConfigs` allows
+  per-channel overrides so integrators can tune `maxEventsPerTick`,
+  `maxEventsPerSecond`, `cooldownTicks`, and `maxCooldownTicks` without
+  rewriting the bus. `maxEventsPerTick` defaults to the resolved soft limit and
+  `maxEventsPerSecond` falls back to four times that threshold to flag bursts.
 - Publishing beyond the configured soft limit triggers the `EventDiagnostics`
-  rate limiter. The first breach issues a warning with remaining capacity and
-  increments `events.soft_limited`; subsequent breaches back off exponentially
-  before logging again, keeping telemetry actionable while publishers adapt.
+  rate limiter. The first breach issues an `EventSoftLimitBreach` warning with
+  remaining capacity and increments `events.soft_limited` alongside the
+  per-channel `events.soft_limit_breaches` telemetry counter. Subsequent
+  breaches back off exponentially before logging again, keeping telemetry 
+  actionable while publishers adapt.
 - Overflowing the hard capacity still throws `EventBufferOverflowError` and
   records `events.overflowed`, causing the tick to rewind at `beginTick()`. Hard
   limits remain deterministic safeguards and bypass the rate limiter.
 - `eventBus.getBackPressureSnapshot()` surfaces per-channel `inUse`,
-  `remainingCapacity`, `highWaterMark`, and the current rate-limiter cooldown so
+  `remainingCapacity`, `highWaterMark`, `cooldownTicksRemaining`,
+  `softLimitBreaches`, and the most recent `eventsPerSecond` sample so
   dashboards and transports can plot sustained load alongside cumulative
   counters (`events.published`, `events.soft_limited`, `events.overflowed`,
   `events.subscribers`).
@@ -269,12 +274,15 @@ keep merges small and reviewable.
 
 - Emit telemetry counters for `events.published`, `events.soft_limited`,
   `events.overflowed`, and `events.subscribers` per tick.
-- Surface per-channel gauges for rate limiter cooldowns and soft-limit breaches
-  so dashboards can show which channels are approaching thresholds.
+- Surface per-channel gauges (`idle_engine_events_soft_limit_cooldown_ticks`) and
+  counters (`idle_engine_events_soft_limit_breaches_total`) so dashboards can
+  highlight channels that continue to push into the soft limit window.
 - Log structured warnings when handlers exceed execution time thresholds (e.g.,
   >2 ms) to surface slow subscribers.
 - Expose a developer-mode event inspector in the web shell that reads the
-  transfer frame and renders the last N events for debugging.
+  transfer frame and renders the last N events for debugging, including the
+  current soft-limit cooldown, breach counts, and per-channel rates sourced from
+  the back-pressure snapshot.
 
 ## 10. Resolved Follow-Ups
 

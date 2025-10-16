@@ -10,10 +10,15 @@ import {
   type RuntimeEventPayload,
   type RuntimeEventType,
 } from './runtime-event.js';
+import { EventDiagnostics } from './event-diagnostics.js';
+import type { EventDiagnosticsChannelConfig } from './event-diagnostics.js';
 import { telemetry } from '../telemetry.js';
 
 const DEFAULT_CHANNEL_CAPACITY = 256;
 const DEFAULT_SOFT_LIMIT_RATIO = 0.75;
+const DEFAULT_DIAGNOSTIC_COOLDOWN_TICKS = 1;
+const DEFAULT_DIAGNOSTIC_MAX_COOLDOWN_MULTIPLIER = 16;
+const DEFAULT_MAX_EVENTS_PER_SECOND_MULTIPLIER = 4;
 
 export type PublishState = 'accepted' | 'soft-limit';
 
@@ -70,17 +75,26 @@ export interface EventChannelConfiguration<TType extends RuntimeEventType = Runt
   readonly definition: RuntimeEventDefinition<TType>;
   readonly capacity?: number;
   readonly softLimit?: number;
+  readonly diagnostics?: EventChannelDiagnosticsOptions;
   readonly onSoftLimit?: (context: SoftLimitContext<TType>) => void;
 }
 
 export interface EventChannelConfigOverride {
   readonly capacity?: number;
   readonly softLimit?: number;
+  readonly diagnostics?: EventChannelDiagnosticsOptions;
 }
 
 export type EventChannelConfigMap = Partial<
   Record<RuntimeEventType, EventChannelConfigOverride>
 >;
+
+export interface EventChannelDiagnosticsOptions {
+  readonly maxEventsPerTick?: number;
+  readonly maxEventsPerSecond?: number;
+  readonly cooldownTicks?: number;
+  readonly maxCooldownTicks?: number;
+}
 
 export interface SoftLimitContext<TType extends RuntimeEventType = RuntimeEventType> {
   readonly type: TType;
@@ -131,6 +145,9 @@ export interface ChannelBackPressureSnapshot<
   readonly highWaterMark: number;
   readonly softLimitActive: boolean;
   readonly subscribers: number;
+  readonly cooldownTicksRemaining: number;
+  readonly softLimitBreaches: number;
+  readonly eventsPerSecond: number;
 }
 
 export interface BackPressureCounters {
@@ -250,6 +267,7 @@ interface EventChannelDescriptor<TType extends RuntimeEventType = RuntimeEventTy
   readonly definition: RuntimeEventDefinition<TType>;
   readonly capacity: number;
   readonly softLimit: number;
+  readonly diagnostics: EventDiagnosticsChannelConfig | null;
   readonly onSoftLimit?: (context: SoftLimitContext<TType>) => void;
 }
 
@@ -295,6 +313,11 @@ class EventRegistry {
         definition: channelConfig.definition,
         capacity,
         softLimit: resolvedSoftLimit,
+        diagnostics: resolveDiagnosticsConfig(
+          channelConfig,
+          override,
+          resolvedSoftLimit,
+        ),
         onSoftLimit: channelConfig.onSoftLimit,
       };
 
@@ -343,6 +366,70 @@ class EventRegistry {
   }
 }
 
+function resolveDiagnosticsConfig(
+  channelConfig: EventChannelConfiguration,
+  override: EventChannelConfigOverride | undefined,
+  resolvedSoftLimit: number,
+): EventDiagnosticsChannelConfig {
+  const source = {
+    ...(channelConfig.diagnostics ?? {}),
+    ...(override?.diagnostics ?? {}),
+  } as EventChannelDiagnosticsOptions;
+
+  const resolvedMaxPerTick =
+    source.maxEventsPerTick ?? resolvedSoftLimit;
+
+  if (!Number.isFinite(resolvedMaxPerTick) || resolvedMaxPerTick <= 0) {
+    throw new Error(
+      `Invalid diagnostics maxEventsPerTick for channel ${channelConfig.definition.type}: ${resolvedMaxPerTick}.`,
+    );
+  }
+
+  const maxEventsPerTick = Math.max(1, Math.floor(resolvedMaxPerTick));
+
+  const computedMaxEventsPerSecond =
+    source.maxEventsPerSecond ??
+    maxEventsPerTick * DEFAULT_MAX_EVENTS_PER_SECOND_MULTIPLIER;
+
+  const maxEventsPerSecond = Number.isFinite(computedMaxEventsPerSecond) &&
+    computedMaxEventsPerSecond > 0
+    ? computedMaxEventsPerSecond
+    : undefined;
+
+  const rawCooldownTicks =
+    source.cooldownTicks ?? DEFAULT_DIAGNOSTIC_COOLDOWN_TICKS;
+
+  if (!Number.isFinite(rawCooldownTicks) || rawCooldownTicks <= 0) {
+    throw new Error(
+      `Invalid diagnostics cooldownTicks for channel ${channelConfig.definition.type}: ${rawCooldownTicks}.`,
+    );
+  }
+
+  const resolvedCooldownTicks = Math.max(1, Math.floor(rawCooldownTicks));
+
+  const rawMaxCooldown =
+    source.maxCooldownTicks ??
+    resolvedCooldownTicks * DEFAULT_DIAGNOSTIC_MAX_COOLDOWN_MULTIPLIER;
+
+  if (!Number.isFinite(rawMaxCooldown) || rawMaxCooldown <= 0) {
+    throw new Error(
+      `Invalid diagnostics maxCooldownTicks for channel ${channelConfig.definition.type}: ${rawMaxCooldown}.`,
+    );
+  }
+
+  const maxCooldownTicks = Math.max(
+    resolvedCooldownTicks,
+    Math.floor(rawMaxCooldown),
+  );
+
+  return {
+    maxEventsPerTick,
+    maxEventsPerSecond,
+    cooldownTicks: resolvedCooldownTicks,
+    maxCooldownTicks,
+  } satisfies EventDiagnosticsChannelConfig;
+}
+
 interface SubscriberRecord {
   readonly handler: EventHandler<RuntimeEventType>;
   active: boolean;
@@ -370,6 +457,7 @@ export class EventBus implements EventPublisher {
   private readonly clock: Clock;
   private readonly slowHandlerThresholdMs: number;
   private readonly onSlowHandler?: (context: SlowHandlerContext) => void;
+  private readonly diagnostics: EventDiagnostics | null;
   private telemetryCounters: BackPressureCounters = {
     published: 0,
     softLimited: 0,
@@ -403,6 +491,12 @@ export class EventBus implements EventPublisher {
       };
     });
     this.clock = options.clock ?? defaultClock;
+    const diagnosticConfigs = this.registry
+      .getDescriptors()
+      .map((descriptor) => descriptor.diagnostics ?? null);
+    this.diagnostics = diagnosticConfigs.some((config) => config !== null)
+      ? new EventDiagnostics(diagnosticConfigs)
+      : null;
     this.slowHandlerThresholdMs =
       typeof options.slowHandlerThresholdMs === 'number'
         ? Math.max(0, options.slowHandlerThresholdMs)
@@ -430,6 +524,7 @@ export class EventBus implements EventPublisher {
       overflowed: 0,
       subscribers: 0,
     };
+    this.diagnostics?.beginTick(tick);
     for (const channel of this.channelStates) {
       channel.internalBuffer.reset();
       if (resetOutbound) {
@@ -504,6 +599,12 @@ export class EventBus implements EventPublisher {
     channel.currentOccupancy = bufferSize;
     channel.highWaterMark = Math.max(channel.highWaterMark, bufferSize);
     this.telemetryCounters.published += 1;
+    this.diagnostics?.recordPublish(
+      descriptor.index,
+      this.currentTick,
+      timestamp,
+      eventType,
+    );
 
     let state: PublishState = 'accepted';
 
@@ -515,6 +616,17 @@ export class EventBus implements EventPublisher {
         descriptor.onSoftLimit?.({
           type: eventType,
           channel: descriptor.index,
+          bufferSize,
+          capacity: descriptor.capacity,
+          softLimit: descriptor.softLimit,
+          remainingCapacity,
+        });
+        this.diagnostics?.handleSoftLimit({
+          channel: descriptor.index,
+          tick: this.currentTick,
+          eventType,
+          timestamp,
+          reason: 'soft-limit',
           bufferSize,
           capacity: descriptor.capacity,
           softLimit: descriptor.softLimit,
@@ -630,6 +742,12 @@ export class EventBus implements EventPublisher {
           channel.descriptor.capacity - channel.currentOccupancy,
         );
 
+        const diagnosticsSnapshot =
+          this.diagnostics?.getChannelSnapshot(
+            channel.descriptor.index,
+            this.currentTick,
+          ) ?? null;
+
         return {
           type: channel.descriptor.definition.type,
           channel: channel.descriptor.index,
@@ -640,6 +758,10 @@ export class EventBus implements EventPublisher {
           highWaterMark: channel.highWaterMark,
           softLimitActive: channel.softLimitActive,
           subscribers: activeSubscribers,
+          cooldownTicksRemaining:
+            diagnosticsSnapshot?.cooldownTicksRemaining ?? 0,
+          softLimitBreaches: diagnosticsSnapshot?.breaches ?? 0,
+          eventsPerSecond: diagnosticsSnapshot?.eventsPerSecond ?? 0,
         };
       });
 

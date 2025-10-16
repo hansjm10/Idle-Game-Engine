@@ -232,6 +232,13 @@ export class IdleEngineRuntime {
         subscribers: backPressure.counters.subscribers,
       });
 
+      const cooldownCounters: Record<string, number> = {};
+      for (const channel of backPressure.channels) {
+        cooldownCounters[`channel:${channel.channel}`] =
+          channel.cooldownTicksRemaining;
+      }
+      telemetry.recordCounters('events.cooldown_ticks', cooldownCounters);
+
       this.currentStep += 1;
       this.nextExecutableStep = this.currentStep;
       telemetry.recordTick();
@@ -295,6 +302,7 @@ export {
   type EventHandler,
   type EventChannelConfigMap,
   type EventChannelConfigOverride,
+  type EventChannelDiagnosticsOptions,
   type EventPublisher,
   type EventSubscription,
   type PublishResult,

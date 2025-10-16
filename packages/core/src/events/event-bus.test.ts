@@ -419,6 +419,9 @@ describe('EventBus', () => {
       highWaterMark: 3,
       remainingCapacity: 1,
       softLimitActive: true,
+      cooldownTicksRemaining: 1,
+      softLimitBreaches: 1,
+      eventsPerSecond: 3,
     });
   });
 

@@ -16,6 +16,8 @@ interface EventCounters {
   readonly overflowed: Counter<string>;
   readonly subscribers: Gauge<string>;
   readonly slowHandler: Counter<string>;
+  readonly softLimitCooldown: Gauge<string>;
+  readonly softLimitBreaches: Counter<string>;
 }
 
 const DEFAULT_PREFIX = 'idle_engine_';
@@ -80,6 +82,18 @@ export function createPrometheusTelemetry(
       help: 'Total number of slow runtime event handler executions.',
       registers: [registry],
     }),
+    softLimitCooldown: new Gauge({
+      name: `${prefix}events_soft_limit_cooldown_ticks`,
+      help: 'Current cooldown ticks remaining before the next soft limit warning per channel.',
+      registers: [registry],
+      labelNames: ['channel'],
+    }),
+    softLimitBreaches: new Counter({
+      name: `${prefix}events_soft_limit_breaches_total`,
+      help: 'Total number of soft limit warnings emitted per channel.',
+      registers: [registry],
+      labelNames: ['channel'],
+    }),
   };
 
   const logError = createConsoleLogger('error');
@@ -106,6 +120,10 @@ export function createPrometheusTelemetry(
     recordCounters(group: string, counters: Readonly<Record<string, number>>) {
       if (group === 'events') {
         updateEventCounters(eventCounters, counters);
+      } else if (group === 'events.cooldown_ticks') {
+        updateChannelGauge(eventCounters.softLimitCooldown, counters);
+      } else if (group === 'events.soft_limit_breaches') {
+        updateChannelCounter(eventCounters.softLimitBreaches, counters);
       }
     },
     recordTick() {
@@ -145,6 +163,48 @@ function updateEventCounters(
   if (typeof subscribers === 'number') {
     counters.subscribers.set(subscribers);
   }
+}
+
+function updateChannelGauge(
+  gauge: Gauge<string>,
+  values: Readonly<Record<string, number>>,
+): void {
+  for (const [key, value] of Object.entries(values)) {
+    const channel = parseChannelLabel(key);
+    if (!channel || typeof value !== 'number' || !Number.isFinite(value)) {
+      continue;
+    }
+    gauge.set({ channel }, value);
+  }
+}
+
+function updateChannelCounter(
+  counter: Counter<string>,
+  values: Readonly<Record<string, number>>,
+): void {
+  for (const [key, value] of Object.entries(values)) {
+    const channel = parseChannelLabel(key);
+    if (
+      !channel ||
+      typeof value !== 'number' ||
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
+      continue;
+    }
+    counter.inc({ channel }, value);
+  }
+}
+
+function parseChannelLabel(key: string): string | null {
+  if (!key.startsWith('channel:')) {
+    return null;
+  }
+  const label = key.slice('channel:'.length);
+  if (label.length === 0) {
+    return null;
+  }
+  return label;
 }
 
 type ConsoleMethod = (message?: unknown, ...optionalParams: unknown[]) => void;

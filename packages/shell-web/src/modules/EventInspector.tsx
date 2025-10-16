@@ -46,6 +46,12 @@ export function EventInspector({
               : isSoftLimited
                 ? '#b36a00'
                 : '#3a3a3a';
+            const cooldownText =
+              channel.cooldownTicksRemaining > 0
+                ? `cooldown ${channel.cooldownTicksRemaining} ticks`
+                : 'cooldown idle';
+            const breachText = `${channel.softLimitBreaches} warnings`;
+            const rateText = `${Math.round(channel.eventsPerSecond)} events/s`;
 
             return (
               <li
@@ -63,6 +69,7 @@ export function EventInspector({
                   : isSoftLimited
                     ? '(soft limit active)'
                     : ''}
+                {`. ${cooldownText}, ${breachText}, ${rateText}`}
               </li>
             );
           })}
