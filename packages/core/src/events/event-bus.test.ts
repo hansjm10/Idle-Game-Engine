@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EventBus, EventBufferOverflowError } from './event-bus.js';
@@ -459,5 +460,129 @@ describe('EventBus', () => {
       resourceId: 'energy',
       threshold: 9,
     });
+  });
+
+  it('returns dispatch metadata from publish results', () => {
+    const bus = createBus();
+    bus.beginTick(7);
+
+    const first = bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 1,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const second = bus.publish('automation:toggled', {
+      automationId: 'auto:42',
+      enabled: false,
+    } as RuntimeEventPayload<'automation:toggled'>);
+
+    expect(first.dispatchOrder).toBe(0);
+    expect(first.bufferSize).toBe(1);
+    expect(first.remainingCapacity).toBeGreaterThan(0);
+    expect(first.softLimitActive).toBe(false);
+    expect(second.dispatchOrder).toBe(1);
+    expect(second.bufferSize).toBe(1);
+    expect(second.channel).not.toBe(first.channel);
+    expect(second.softLimitActive).toBe(false);
+  });
+
+  it('allows subscribers to unsubscribe during dispatch without affecting others', () => {
+    const bus = createBus();
+    bus.beginTick(3);
+
+    const calls: string[] = [];
+
+    const subscription = bus.on('resource:threshold-reached', () => {
+      calls.push('primary:before');
+      subscription.unsubscribe();
+      calls.push('primary:after');
+    });
+
+    bus.on('resource:threshold-reached', () => {
+      calls.push('secondary');
+    });
+
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 12,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 13,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    bus.dispatch({ tick: 3 });
+
+    expect(calls).toEqual([
+      'primary:before',
+      'primary:after',
+      'secondary',
+      'secondary',
+    ]);
+
+    bus.beginTick(4);
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 14,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    bus.dispatch({ tick: 4 });
+
+    expect(calls).toEqual([
+      'primary:before',
+      'primary:after',
+      'secondary',
+      'secondary',
+      'secondary',
+    ]);
+  });
+});
+
+describe('EventBus performance', () => {
+  const ITERATIONS = 10_000;
+
+  it('publishes and dispatches 10k events within the 100 ms budget', () => {
+    const bus = new EventBus({
+      clock: {
+        now: () => 0,
+      },
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+          capacity: ITERATIONS + 100,
+          softLimit: ITERATIONS + 50,
+        },
+      ],
+    });
+
+    bus.on('resource:threshold-reached', () => {});
+
+    bus.beginTick(0);
+    for (let i = 0; i < 100; i += 1) {
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: i,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+    }
+    bus.dispatch({ tick: 0 });
+
+    bus.beginTick(1);
+    const start = performance.now();
+
+    for (let i = 0; i < ITERATIONS; i += 1) {
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: i,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+    }
+
+    bus.dispatch({ tick: 1 });
+    const durationMs = performance.now() - start;
+
+    expect(durationMs).toBeLessThanOrEqual(100);
   });
 });

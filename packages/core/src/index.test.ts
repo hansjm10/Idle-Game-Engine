@@ -7,8 +7,14 @@ import {
   IdleEngineRuntime,
   type IdleEngineRuntimeOptions,
 } from './index.js';
-import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
-import { buildRuntimeEventFrame } from './events/runtime-event-frame.js';
+import {
+  DEFAULT_EVENT_BUS_OPTIONS,
+  type AutomationToggledEventPayload,
+} from './events/runtime-event-catalog.js';
+import {
+  buildRuntimeEventFrame,
+  type RuntimeEventFrame,
+} from './events/runtime-event-frame.js';
 import { TransportBufferPool } from './transport-buffer-pool.js';
 import {
   resetTelemetry,
@@ -498,4 +504,115 @@ describe('IdleEngineRuntime', () => {
 
     expect(executionOrder).toEqual(['system', 'player', 'automation']);
   });
+
+  it('produces identical event frames across deterministic runs', () => {
+    const first = runDeterministicSimulation();
+    const second = runDeterministicSimulation();
+
+    expect(second).toEqual(first);
+  });
 });
+
+type FrameEventSnapshot = {
+  readonly type: string;
+  readonly channel: number;
+  readonly issuedAt: number;
+  readonly dispatchOrder: number;
+  readonly payload: unknown;
+};
+
+type FrameSnapshot = {
+  readonly tick: number;
+  readonly manifestHash: string;
+  readonly events: readonly FrameEventSnapshot[];
+};
+
+function runDeterministicSimulation(ticks = 3): FrameSnapshot[] {
+  let timestamp = 0;
+  const clock = {
+    now(): number {
+      timestamp += 1;
+      return timestamp;
+    },
+  };
+
+  const runtime = new IdleEngineRuntime({
+    stepSizeMs: 10,
+    maxStepsPerFrame: 4,
+    eventBusOptions: {
+      channels: DEFAULT_EVENT_BUS_OPTIONS.channels,
+      clock,
+    },
+  });
+
+  const bus = runtime.getEventBus();
+  const pool = new TransportBufferPool();
+  const automationQueue: Array<{ threshold: number }> = [];
+
+  runtime.addSystem({
+    id: 'resource-system',
+    tick({ events, step }) {
+      events.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: step + 1,
+      });
+    },
+  });
+
+  runtime.addSystem({
+    id: 'automation-system',
+    setup({ events }) {
+      events.on('resource:threshold-reached', (event) => {
+        automationQueue.push({ threshold: event.payload.threshold });
+      });
+    },
+    tick({ events }) {
+      while (automationQueue.length > 0) {
+        const { threshold } = automationQueue.shift()!;
+        events.publish('automation:toggled', {
+          automationId: `collector:${threshold}`,
+          enabled: threshold % 2 === 0,
+        });
+      }
+    },
+  });
+
+  const frames: FrameSnapshot[] = [];
+
+  for (let index = 0; index < ticks; index += 1) {
+    runtime.tick(10);
+    const processedStep = runtime.getCurrentStep() - 1;
+    const frameResult = buildRuntimeEventFrame(bus, pool, {
+      tick: processedStep,
+      manifestHash: bus.getManifestHash(),
+      owner: 'integration-test',
+    });
+
+    frames.push(snapshotFrame(frameResult.frame));
+    frameResult.release();
+  }
+
+  return frames;
+}
+
+function snapshotFrame(frame: RuntimeEventFrame): FrameSnapshot {
+  const events: FrameEventSnapshot[] = new Array(frame.count);
+
+  for (let index = 0; index < frame.count; index += 1) {
+    const typeIndex = frame.typeIndices[index];
+
+    events[index] = {
+      type: frame.stringTable[typeIndex] ?? '',
+      channel: frame.channelIndices[index],
+      issuedAt: frame.issuedAt[index],
+      dispatchOrder: frame.dispatchOrder[index],
+      payload: JSON.parse(JSON.stringify(frame.payloads[index])),
+    };
+  }
+
+  return {
+    tick: frame.tick,
+    manifestHash: frame.manifestHash,
+    events,
+  };
+}

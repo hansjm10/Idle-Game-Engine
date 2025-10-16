@@ -787,4 +787,73 @@ describe('CommandRecorder', () => {
       recordedFrame.release();
     }
   });
+
+  it('records multi-channel frames with dispatch order preserved', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+
+    let now = 0;
+    const clock = {
+      now(): number {
+        now += 1;
+        return now;
+      },
+    };
+
+    const bus = new EventBus({
+      clock,
+      channels: DEFAULT_EVENT_BUS_OPTIONS.channels,
+    });
+    const pool = new TransportBufferPool();
+
+    bus.beginTick(8);
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 21,
+    });
+    bus.publish('automation:toggled', {
+      automationId: 'auto:21',
+      enabled: true,
+    });
+    bus.dispatch({ tick: 8 });
+
+    const frameResult = buildRuntimeEventFrame(bus, pool, {
+      tick: 8,
+      manifestHash: bus.getManifestHash(),
+      owner: 'recorder-test',
+    });
+
+    try {
+      recorder.recordEventFrame(frameResult.frame);
+      const log = recorder.export();
+      expect(log.events).toHaveLength(1);
+      const frame = log.events[0];
+      expect(frame.tick).toBe(8);
+      expect(frame.manifestHash).toBe(bus.getManifestHash());
+      expect(frame.events).toEqual([
+        {
+          type: 'resource:threshold-reached',
+          channel: 0,
+          issuedAt: 1,
+          dispatchOrder: 0,
+          payload: {
+            resourceId: 'energy',
+            threshold: 21,
+          },
+        },
+        {
+          type: 'automation:toggled',
+          channel: 1,
+          issuedAt: 2,
+          dispatchOrder: 1,
+          payload: {
+            automationId: 'auto:21',
+            enabled: true,
+          },
+        },
+      ]);
+    } finally {
+      frameResult.release();
+    }
+  });
 });
