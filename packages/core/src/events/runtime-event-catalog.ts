@@ -2,6 +2,7 @@ import type {
   EventBusOptions,
   EventChannelConfiguration,
 } from './event-bus.js';
+import { CONTENT_EVENT_CHANNELS } from './runtime-event-manifest.generated.js';
 
 export interface ResourceThresholdReachedEventPayload {
   readonly resourceId: string;
@@ -40,7 +41,7 @@ function validateAutomationToggled(payload: AutomationToggledEventPayload): void
   }
 }
 
-export const RUNTIME_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
+const CORE_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
   {
     definition: {
       type: 'resource:threshold-reached',
@@ -55,6 +56,11 @@ export const RUNTIME_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = 
       validator: validateAutomationToggled,
     },
   } as EventChannelConfiguration,
+];
+
+export const RUNTIME_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
+  ...CORE_EVENT_CHANNELS,
+  ...CONTENT_EVENT_CHANNELS,
 ];
 
 export const DEFAULT_EVENT_BUS_OPTIONS: EventBusOptions = {

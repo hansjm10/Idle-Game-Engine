@@ -40,6 +40,7 @@ import {
   createImmutableTypedArrayView,
   isImmutableTypedArraySnapshot,
 } from './immutable-snapshots.js';
+import type { RuntimeEventManifestHash } from './events/runtime-event.js';
 
 function createCommand(
   overrides: Partial<Command> = {},
@@ -720,6 +721,26 @@ describe('CommandRecorder', () => {
     }
   });
 
+  it('throws when recording an event frame with an unexpected manifest hash', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+    const frameResult = buildToggleFrame(true, 4);
+
+    try {
+      Reflect.set(
+        frameResult.frame as Record<string, unknown>,
+        'manifestHash',
+        'ffffffff' as RuntimeEventManifestHash,
+      );
+
+      expect(() => recorder.recordEventFrame(frameResult.frame)).toThrowError(
+        /manifest hash mismatch/i,
+      );
+    } finally {
+      frameResult.release();
+    }
+  });
+
   it('validates replay event frames against the recorded log', () => {
     const state = setGameState({ counter: 0 });
     const recorder = new CommandRecorder(state);
@@ -786,6 +807,34 @@ describe('CommandRecorder', () => {
         ).toThrow();
       } finally {
         mismatchedFrame.release();
+      }
+    } finally {
+      recordedFrame.release();
+    }
+  });
+
+  it('fails fast when replay event frames provide a mismatched manifest hash', () => {
+    const state = setGameState({ counter: 0 });
+    const recorder = new CommandRecorder(state);
+    const recordedFrame = buildToggleFrame(false, 6);
+
+    try {
+      recorder.recordEventFrame(recordedFrame.frame);
+      const log = recorder.export();
+
+      const mismatchedManifestFrame = buildToggleFrame(false, 6);
+      try {
+        Reflect.set(
+          mismatchedManifestFrame.frame as Record<string, unknown>,
+          'manifestHash',
+          'ffffffff' as RuntimeEventManifestHash,
+        );
+        recorder.beginReplayEventValidation(log);
+        expect(() =>
+          recorder.consumeReplayEventFrame(mismatchedManifestFrame.frame),
+        ).toThrowError(/manifest hash does not match/i);
+      } finally {
+        mismatchedManifestFrame.release();
       }
     } finally {
       recordedFrame.release();

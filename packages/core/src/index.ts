@@ -320,6 +320,15 @@ export {
   type RuntimeEventFrameBuildOptions,
   type RuntimeEventFrameBuildResult,
 } from './events/runtime-event-frame.js';
+export {
+  CONTENT_EVENT_CHANNELS,
+  CONTENT_EVENT_DEFINITIONS,
+  GENERATED_RUNTIME_EVENT_DEFINITIONS,
+  GENERATED_RUNTIME_EVENT_MANIFEST,
+  type ContentEventDefinition,
+  type ContentRuntimeEventType,
+  type GeneratedRuntimeEventDefinition,
+} from './events/runtime-event-manifest.generated.js';
 export type {
   ImmutableArrayBufferSnapshot,
   ImmutableSharedArrayBufferSnapshot,

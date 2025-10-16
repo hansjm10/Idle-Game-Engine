@@ -20,6 +20,7 @@ import type {
   RuntimeEventPayload,
   RuntimeEventType,
 } from './events/runtime-event.js';
+import { GENERATED_RUNTIME_EVENT_MANIFEST } from './events/runtime-event-manifest.generated.js';
 import { telemetry } from './telemetry.js';
 import {
   getCurrentRNGSeed,
@@ -292,6 +293,15 @@ export class CommandRecorder {
   }
 
   recordEventFrame(frame: RuntimeEventFrame): void {
+    if (frame.manifestHash !== GENERATED_RUNTIME_EVENT_MANIFEST.hash) {
+      telemetry.recordError('RuntimeEventManifestMismatch', {
+        expected: GENERATED_RUNTIME_EVENT_MANIFEST.hash,
+        received: frame.manifestHash,
+      });
+      throw new Error(
+        'Runtime event manifest hash mismatch. Re-run `pnpm generate` and rebuild content packages.',
+      );
+    }
     const clone = createRecordedEventFrame(frame);
     const snapshot = freezeSnapshot(clone) as ImmutablePayload<RecordedRuntimeEventFrame>;
     this.recordedEventFrames.push(clone);
@@ -333,6 +343,15 @@ export class CommandRecorder {
         reason: 'no-more-expected-frames',
       });
       throw new Error('Replay produced more event frames than were recorded.');
+    }
+
+    if (frame.manifestHash !== GENERATED_RUNTIME_EVENT_MANIFEST.hash) {
+      telemetry.recordError('ReplayEventManifestMismatch', {
+        expected: GENERATED_RUNTIME_EVENT_MANIFEST.hash,
+        received: frame.manifestHash,
+        tick: frame.tick,
+      });
+      throw new Error('Replay event frame manifest hash does not match the recorded manifest.');
     }
 
     const actual = createRecordedEventFrame(frame);
