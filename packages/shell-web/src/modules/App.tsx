@@ -1,17 +1,48 @@
 import { useEffect, useState } from 'react';
 
+import type { BackPressureSnapshot } from '@idle-engine/core';
+
 import {
+  type RuntimeEventSnapshot,
   useWorkerBridge,
   type RuntimeStateSnapshot,
 } from './worker-bridge.js';
+import { EventInspector } from './EventInspector.js';
+
+const MAX_EVENT_HISTORY = 50;
 
 export function App() {
   const bridge = useWorkerBridge();
   const [currentStep, setCurrentStep] = useState(0);
+  const [events, setEvents] = useState<RuntimeEventSnapshot[]>([]);
+  const [backPressure, setBackPressure] = useState<BackPressureSnapshot | null>(
+    null,
+  );
 
   useEffect(() => {
     const handleState = (state: RuntimeStateSnapshot) => {
       setCurrentStep(state.currentStep);
+      setBackPressure(state.backPressure);
+      setEvents((previous) => {
+        if (!state.events.length) {
+          return previous;
+        }
+
+        const merged = [...state.events, ...previous];
+
+        merged.sort((left, right) => {
+          if (left.tick !== right.tick) {
+            return right.tick - left.tick;
+          }
+          return right.dispatchOrder - left.dispatchOrder;
+        });
+
+        if (merged.length <= MAX_EVENT_HISTORY) {
+          return merged;
+        }
+
+        return merged.slice(0, MAX_EVENT_HISTORY);
+      });
     };
 
     bridge.onStateUpdate(handleState);
@@ -34,6 +65,8 @@ export function App() {
       <button onClick={handleSendCommand} type="button">
         Send Test Command
       </button>
+
+      <EventInspector events={events} backPressure={backPressure} />
     </main>
   );
 }

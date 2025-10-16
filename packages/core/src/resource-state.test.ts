@@ -28,6 +28,7 @@ describe('ResourceState', () => {
       recordError: vi.fn(),
       recordWarning: vi.fn(),
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
     setTelemetry(telemetryStub);

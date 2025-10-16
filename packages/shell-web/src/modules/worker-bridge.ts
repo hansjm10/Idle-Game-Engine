@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+import type { BackPressureSnapshot } from '@idle-engine/core';
+
 export enum CommandSource {
   PLAYER = 'PLAYER',
   AUTOMATION = 'AUTOMATION',
@@ -100,8 +102,19 @@ export class WorkerBridgeImpl<TState = unknown>
   }
 }
 
+export interface RuntimeEventSnapshot {
+  readonly channel: number;
+  readonly type: string;
+  readonly tick: number;
+  readonly issuedAt: number;
+  readonly dispatchOrder: number;
+  readonly payload: unknown;
+}
+
 export interface RuntimeStateSnapshot {
   readonly currentStep: number;
+  readonly events: readonly RuntimeEventSnapshot[];
+  readonly backPressure: BackPressureSnapshot;
 }
 
 export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeImpl<TState> {

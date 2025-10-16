@@ -5,6 +5,7 @@ import {
   type EventHandler,
   type EventPublisher,
   type EventSubscription,
+  type EventSubscriptionOptions,
 } from './events/event-bus.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
@@ -24,6 +25,7 @@ export interface SystemRegistrationContext {
     on<TType extends RuntimeEventType>(
       eventType: TType,
       handler: EventHandler<TType>,
+      options?: EventSubscriptionOptions,
     ): EventSubscription;
   };
 }
@@ -99,8 +101,12 @@ export class IdleEngineRuntime {
           on: <TType extends RuntimeEventType>(
             eventType: TType,
             handler: EventHandler<TType>,
+            options?: EventSubscriptionOptions,
           ): EventSubscription => {
-            const subscription = this.eventBus.on(eventType, handler);
+            const subscription = this.eventBus.on(eventType, handler, {
+              ...options,
+              label: options?.label ?? `system:${system.id}`,
+            });
             subscriptions.push(subscription);
             return subscription;
           },
@@ -219,21 +225,11 @@ export class IdleEngineRuntime {
       }
 
       const backPressure = this.eventBus.getBackPressureSnapshot();
-      telemetry.recordProgress('events.published', {
-        tick: this.currentStep,
-        count: backPressure.counters.published,
-      });
-      telemetry.recordProgress('events.soft_limited', {
-        tick: this.currentStep,
-        count: backPressure.counters.softLimited,
-      });
-      telemetry.recordProgress('events.overflowed', {
-        tick: this.currentStep,
-        count: backPressure.counters.overflowed,
-      });
-      telemetry.recordProgress('events.subscribers', {
-        tick: this.currentStep,
-        count: backPressure.counters.subscribers,
+      telemetry.recordCounters('events', {
+        published: backPressure.counters.published,
+        softLimited: backPressure.counters.softLimited,
+        overflowed: backPressure.counters.overflowed,
+        subscribers: backPressure.counters.subscribers,
       });
 
       this.currentStep += 1;
@@ -381,4 +377,9 @@ export {
   resetTelemetry,
   setTelemetry,
 } from './telemetry.js';
+export {
+  createPrometheusTelemetry,
+  type PrometheusTelemetryOptions,
+  type PrometheusTelemetryFacade,
+} from './telemetry-prometheus.js';
 export { createReadOnlyProxy } from './read-only-proxy.js';

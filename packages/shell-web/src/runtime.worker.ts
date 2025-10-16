@@ -5,6 +5,8 @@ import {
   CommandQueue,
   CommandDispatcher,
   IdleEngineRuntime,
+  type BackPressureSnapshot,
+  type EventBus,
 } from '@idle-engine/core';
 
 interface CommandMessage {
@@ -23,9 +25,7 @@ type IncomingMessage = CommandMessage | TerminateMessage;
 
 interface StateUpdateMessage {
   readonly type: 'STATE_UPDATE';
-  readonly state: {
-    readonly currentStep: number;
-  };
+  readonly state: RuntimeStatePayload;
 }
 
 const RAF_INTERVAL_MS = 16;
@@ -41,6 +41,21 @@ export interface RuntimeWorkerHarness {
   readonly handleMessage: (message: IncomingMessage) => void;
   readonly tick: () => void;
   readonly dispose: () => void;
+}
+
+export interface RuntimeEventSnapshot {
+  readonly channel: number;
+  readonly type: string;
+  readonly tick: number;
+  readonly issuedAt: number;
+  readonly dispatchOrder: number;
+  readonly payload: unknown;
+}
+
+export interface RuntimeStatePayload {
+  readonly currentStep: number;
+  readonly events: readonly RuntimeEventSnapshot[];
+  readonly backPressure: BackPressureSnapshot;
 }
 
 export function initializeRuntimeWorker(
@@ -76,10 +91,16 @@ export function initializeRuntimeWorker(
     const after = runtime.getCurrentStep();
 
     if (after > before) {
+      const eventBus = runtime.getEventBus();
+      const events = collectOutboundEvents(eventBus);
+      const backPressure = eventBus.getBackPressureSnapshot();
+
       const message: StateUpdateMessage = {
         type: 'STATE_UPDATE',
         state: {
           currentStep: after,
+          events,
+          backPressure,
         },
       };
       context.postMessage(message);
@@ -147,4 +168,33 @@ function createMonotonicClock(now: () => number) {
 
 if (!import.meta.vitest) {
   initializeRuntimeWorker();
+}
+
+function collectOutboundEvents(bus: EventBus): RuntimeEventSnapshot[] {
+  const manifest = bus.getManifest();
+  const events: RuntimeEventSnapshot[] = [];
+
+  for (let channelIndex = 0; channelIndex < manifest.entries.length; channelIndex += 1) {
+    const buffer = bus.getOutboundBuffer(channelIndex);
+    for (let bufferIndex = 0; bufferIndex < buffer.length; bufferIndex += 1) {
+      const record = buffer.at(bufferIndex);
+      events.push({
+        channel: channelIndex,
+        type: record.type,
+        tick: record.tick,
+        issuedAt: record.issuedAt,
+        dispatchOrder: record.dispatchOrder,
+        payload: record.payload,
+      });
+    }
+  }
+
+  events.sort((left, right) => {
+    if (left.tick !== right.tick) {
+      return left.tick - right.tick;
+    }
+    return left.dispatchOrder - right.dispatchOrder;
+  });
+
+  return events;
 }

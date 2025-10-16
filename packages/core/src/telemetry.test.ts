@@ -12,6 +12,7 @@ describe('telemetry facade', () => {
     class StatefulTelemetryFacade implements TelemetryFacade {
       history: string[] = [];
       lastProgressData?: TelemetryEventData;
+      lastCounters?: Readonly<Record<string, number>>;
 
       constructor(private readonly label: string) {}
 
@@ -34,6 +35,11 @@ describe('telemetry facade', () => {
         this.lastProgressData = data;
       }
 
+      recordCounters(group: string, counters: Readonly<Record<string, number>>): void {
+        this.note('counters', group);
+        this.lastCounters = counters;
+      }
+
       recordTick(): void {
         this.note('tick');
       }
@@ -47,15 +53,18 @@ describe('telemetry facade', () => {
     telemetry.recordError('failure');
     telemetry.recordWarning('unstable');
     telemetry.recordProgress('milestone', progressData);
+    telemetry.recordCounters('events', { published: 3 });
     telemetry.recordTick();
 
     expect(facade.history).toEqual([
       'custom:error:failure',
       'custom:warning:unstable',
       'custom:progress:milestone',
+      'custom:counters:events',
       'custom:tick',
     ]);
     expect(facade.lastProgressData).toBe(progressData);
+    expect(facade.lastCounters).toEqual({ published: 3 });
   });
 
   it('logs a console error when delegated invocation fails', () => {
@@ -68,6 +77,7 @@ describe('telemetry facade', () => {
       }),
       recordWarning: vi.fn(),
       recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
       recordTick: vi.fn(),
     };
 
