@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventBus, EventBufferOverflowError } from './event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
 import { type RuntimeEventPayload } from './runtime-event.js';
+import {
+  resetTelemetry,
+  setTelemetry,
+  type TelemetryFacade,
+} from '../telemetry.js';
 
 describe('EventBus', () => {
   const clock = {
@@ -135,24 +140,116 @@ describe('EventBus', () => {
 
     bus.beginTick(1);
 
-    bus.publish('resource:threshold-reached', {
-      resourceId: 'energy',
-      threshold: 7,
-    } as RuntimeEventPayload<'resource:threshold-reached'>);
+    const telemetryStub: TelemetryFacade = {
+      recordError() {},
+      recordWarning: vi.fn(),
+      recordProgress() {},
+      recordTick() {},
+    };
 
-    expect(() =>
+    setTelemetry(telemetryStub);
+
+    try {
       bus.publish('resource:threshold-reached', {
         resourceId: 'energy',
-        threshold: 8,
-      } as RuntimeEventPayload<'resource:threshold-reached'>),
-    ).toThrow(EventBufferOverflowError);
+        threshold: 7,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
 
-    const handler = vi.fn();
-    bus.on('resource:threshold-reached', handler);
-    bus.dispatch({ tick: 1 });
+      expect(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 8,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }).toThrow(EventBufferOverflowError);
 
-    expect(handler).toHaveBeenCalledTimes(1);
-    expect(handler.mock.calls[0]?.[0].payload.threshold).toBe(7);
+      const handler = vi.fn();
+      bus.on('resource:threshold-reached', handler);
+      bus.dispatch({ tick: 1 });
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler.mock.calls[0]?.[0].payload.threshold).toBe(7);
+
+      const snapshot = bus.getBackPressureSnapshot();
+      expect(snapshot.counters.published).toBe(1);
+      expect(snapshot.counters.overflowed).toBe(1);
+      expect(snapshot.channels[0]).toMatchObject({
+        capacity: 1,
+        highWaterMark: 1,
+        inUse: 0,
+        remainingCapacity: 1,
+        softLimitActive: true,
+      });
+
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'EventBufferOverflow',
+        {
+          type: 'resource:threshold-reached',
+          channel: 0,
+          capacity: 1,
+          tick: 1,
+        },
+      );
+    } finally {
+      resetTelemetry();
+    }
+  });
+
+  it('blocks subsequent publishes after an overflow until the next tick', () => {
+    const bus = new EventBus({
+      clock,
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+          capacity: 1,
+        },
+      ],
+    });
+
+    bus.beginTick(1);
+
+    const telemetryStub: TelemetryFacade = {
+      recordError() {},
+      recordWarning() {},
+      recordProgress() {},
+      recordTick() {},
+    };
+
+    setTelemetry(telemetryStub);
+
+    try {
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 10,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+      expect(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 11,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }).toThrow(EventBufferOverflowError);
+
+      expect(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 12,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }).toThrow(EventBufferOverflowError);
+
+      bus.beginTick(2);
+
+      expect(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 13,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }).not.toThrow();
+    } finally {
+      resetTelemetry();
+    }
   });
 
   it('invokes soft limit callbacks once per tick', () => {
@@ -189,10 +286,24 @@ describe('EventBus', () => {
       threshold: 3,
     } as RuntimeEventPayload<'resource:threshold-reached'>);
 
-    expect(first.softLimitTriggered).toBe(false);
-    expect(second.softLimitTriggered).toBe(true);
-    expect(third.softLimitTriggered).toBe(true);
+    expect(first.state).toBe('accepted');
+    expect(first.softLimitActive).toBe(false);
+    expect(first.remainingCapacity).toBe(3);
+    expect(second.state).toBe('soft-limit');
+    expect(second.softLimitActive).toBe(true);
+    expect(second.remainingCapacity).toBe(2);
+    expect(third.state).toBe('soft-limit');
+    expect(third.softLimitActive).toBe(true);
+    expect(third.remainingCapacity).toBe(1);
     expect(softLimitSpy).toHaveBeenCalledTimes(1);
+    expect(softLimitSpy).toHaveBeenCalledWith({
+      type: 'resource:threshold-reached',
+      channel: 0,
+      bufferSize: 2,
+      capacity: 4,
+      softLimit: 2,
+      remainingCapacity: 2,
+    });
 
     bus.beginTick(2);
 
@@ -201,7 +312,111 @@ describe('EventBus', () => {
       threshold: 4,
     } as RuntimeEventPayload<'resource:threshold-reached'>);
 
-    expect(fourth.softLimitTriggered).toBe(false);
+    expect(fourth.state).toBe('accepted');
+    expect(fourth.softLimitActive).toBe(false);
+  });
+
+  it('defaults channel soft limits to 75 percent of capacity', () => {
+    const bus = new EventBus({
+      clock,
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+          capacity: 8,
+        },
+      ],
+    });
+
+    bus.beginTick(1);
+
+    const snapshot = bus.getBackPressureSnapshot();
+    expect(snapshot.channels[0]?.softLimit).toBe(6);
+
+    for (let i = 0; i < 6; i += 1) {
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: i,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+    }
+
+    const result = bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 6,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    expect(result.state).toBe('soft-limit');
+  });
+
+  it('applies per-channel overrides from channelConfigs', () => {
+    const bus = new EventBus({
+      clock,
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+        },
+      ],
+      channelConfigs: {
+        'resource:threshold-reached': {
+          capacity: 12,
+          softLimit: 9,
+        },
+      },
+    });
+
+    bus.beginTick(1);
+
+    const snapshot = bus.getBackPressureSnapshot();
+    expect(snapshot.channels[0]).toMatchObject({
+      capacity: 12,
+      softLimit: 9,
+    });
+  });
+
+  it('captures backpressure counters and channel metrics', () => {
+    const bus = new EventBus({
+      clock,
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+          capacity: 4,
+          softLimit: 2,
+        },
+      ],
+    });
+
+    bus.beginTick(1);
+
+    for (let i = 0; i < 3; i += 1) {
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: i,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+    }
+
+    const snapshot = bus.getBackPressureSnapshot();
+
+    expect(snapshot.counters).toEqual({
+      published: 3,
+      softLimited: 2,
+      overflowed: 0,
+      subscribers: 0,
+    });
+
+    expect(snapshot.channels[0]).toMatchObject({
+      inUse: 3,
+      highWaterMark: 3,
+      remainingCapacity: 1,
+      softLimitActive: true,
+    });
   });
 
   it('drops inactive subscriptions when a new tick begins', () => {

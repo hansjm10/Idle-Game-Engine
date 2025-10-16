@@ -10,8 +10,12 @@ import {
   type RuntimeEventPayload,
   type RuntimeEventType,
 } from './runtime-event.js';
+import { telemetry } from '../telemetry.js';
 
 const DEFAULT_CHANNEL_CAPACITY = 256;
+const DEFAULT_SOFT_LIMIT_RATIO = 0.75;
+
+export type PublishState = 'accepted' | 'soft-limit';
 
 export interface PublishMetadata {
   readonly issuedAt?: number;
@@ -19,11 +23,13 @@ export interface PublishMetadata {
 
 export interface PublishResult<TType extends RuntimeEventType = RuntimeEventType> {
   readonly accepted: true;
+  readonly state: PublishState;
   readonly type: TType;
   readonly channel: number;
   readonly bufferSize: number;
+  readonly remainingCapacity: number;
   readonly dispatchOrder: number;
-  readonly softLimitTriggered: boolean;
+  readonly softLimitActive: boolean;
 }
 
 export interface EventPublisher {
@@ -67,21 +73,59 @@ export interface EventChannelConfiguration<TType extends RuntimeEventType = Runt
   readonly onSoftLimit?: (context: SoftLimitContext<TType>) => void;
 }
 
+export interface EventChannelConfigOverride {
+  readonly capacity?: number;
+  readonly softLimit?: number;
+}
+
+export type EventChannelConfigMap = Partial<
+  Record<RuntimeEventType, EventChannelConfigOverride>
+>;
+
 export interface SoftLimitContext<TType extends RuntimeEventType = RuntimeEventType> {
   readonly type: TType;
   readonly channel: number;
   readonly bufferSize: number;
   readonly capacity: number;
   readonly softLimit: number;
+  readonly remainingCapacity: number;
 }
 
 export interface EventBusOptions {
   readonly channels: ReadonlyArray<EventChannelConfiguration>;
+  readonly channelConfigs?: EventChannelConfigMap;
   readonly clock?: Clock;
 }
 
 export interface Clock {
   now(): number;
+}
+
+export interface ChannelBackPressureSnapshot<
+  TType extends RuntimeEventType = RuntimeEventType,
+> {
+  readonly type: TType;
+  readonly channel: number;
+  readonly capacity: number;
+  readonly softLimit: number;
+  readonly inUse: number;
+  readonly remainingCapacity: number;
+  readonly highWaterMark: number;
+  readonly softLimitActive: boolean;
+  readonly subscribers: number;
+}
+
+export interface BackPressureCounters {
+  published: number;
+  softLimited: number;
+  overflowed: number;
+  subscribers: number;
+}
+
+export interface BackPressureSnapshot {
+  readonly tick: number;
+  readonly channels: readonly ChannelBackPressureSnapshot[];
+  readonly counters: BackPressureCounters;
 }
 
 export class EventBufferOverflowError extends Error {
@@ -187,7 +231,7 @@ interface EventChannelDescriptor<TType extends RuntimeEventType = RuntimeEventTy
   readonly index: number;
   readonly definition: RuntimeEventDefinition<TType>;
   readonly capacity: number;
-  readonly softLimit?: number;
+  readonly softLimit: number;
   readonly onSoftLimit?: (context: SoftLimitContext<TType>) => void;
 }
 
@@ -197,14 +241,42 @@ class EventRegistry {
   private readonly manifest: RuntimeEventManifest;
   private readonly manifestHash: RuntimeEventManifestHash;
 
-  constructor(channels: ReadonlyArray<EventChannelConfiguration>) {
+  constructor(
+    channels: ReadonlyArray<EventChannelConfiguration>,
+    overrides: EventChannelConfigMap = {},
+  ) {
     this.descriptors = channels.map((channelConfig, index) => {
-      const capacity = channelConfig.capacity ?? DEFAULT_CHANNEL_CAPACITY;
+      const override = overrides[channelConfig.definition.type];
+      const capacity =
+        override?.capacity ?? channelConfig.capacity ?? DEFAULT_CHANNEL_CAPACITY;
+      if (!Number.isFinite(capacity) || capacity <= 0) {
+        throw new Error(
+          `Invalid capacity for channel ${channelConfig.definition.type}: ${capacity}.`,
+        );
+      }
+
+      const resolvedSoftLimit =
+        override?.softLimit ??
+        channelConfig.softLimit ??
+        Math.max(1, Math.floor(capacity * DEFAULT_SOFT_LIMIT_RATIO));
+
+      if (!Number.isFinite(resolvedSoftLimit) || resolvedSoftLimit <= 0) {
+        throw new Error(
+          `Invalid soft limit for channel ${channelConfig.definition.type}: ${resolvedSoftLimit}.`,
+        );
+      }
+
+      if (resolvedSoftLimit > capacity) {
+        throw new Error(
+          `Soft limit ${resolvedSoftLimit} exceeds capacity ${capacity} for channel ${channelConfig.definition.type}.`,
+        );
+      }
+
       const descriptor: EventChannelDescriptor = {
         index,
         definition: channelConfig.definition,
         capacity,
-        softLimit: channelConfig.softLimit,
+        softLimit: resolvedSoftLimit,
         onSoftLimit: channelConfig.onSoftLimit,
       };
 
@@ -263,7 +335,9 @@ interface ChannelState {
   readonly internalBuffer: EventBuffer;
   readonly outboundBuffer: EventBuffer;
   readonly subscribers: SubscriberRecord[];
-  softLimitTriggered: boolean;
+  softLimitActive: boolean;
+  currentOccupancy: number;
+  highWaterMark: number;
 }
 
 export interface BeginTickOptions {
@@ -275,23 +349,36 @@ export class EventBus implements EventPublisher {
   private readonly slotPool = new EventSlotPool();
   private readonly channelStates: ChannelState[];
   private readonly clock: Clock;
+  private telemetryCounters: BackPressureCounters = {
+    published: 0,
+    softLimited: 0,
+    overflowed: 0,
+    subscribers: 0,
+  };
 
   private currentTick = 0;
   private dispatchCounter = 0;
+  private tickAborted = false;
+  private lastOverflowError: EventBufferOverflowError | null = null;
 
   constructor(options: EventBusOptions) {
     if (options.channels.length === 0) {
       throw new Error('EventBus requires at least one channel configuration.');
     }
 
-    this.registry = new EventRegistry(options.channels);
+    this.registry = new EventRegistry(
+      options.channels,
+      options.channelConfigs,
+    );
     this.channelStates = this.registry.getDescriptors().map((descriptor) => {
       return {
         descriptor,
         internalBuffer: new EventBuffer(this.slotPool, descriptor.capacity),
         outboundBuffer: new EventBuffer(this.slotPool, descriptor.capacity),
         subscribers: [],
-        softLimitTriggered: false,
+        softLimitActive: false,
+        currentOccupancy: 0,
+        highWaterMark: 0,
       };
     });
     this.clock = options.clock ?? defaultClock;
@@ -309,12 +396,22 @@ export class EventBus implements EventPublisher {
     const { resetOutbound = true } = options ?? {};
     this.currentTick = tick;
     this.dispatchCounter = 0;
+    this.tickAborted = false;
+    this.lastOverflowError = null;
+    this.telemetryCounters = {
+      published: 0,
+      softLimited: 0,
+      overflowed: 0,
+      subscribers: 0,
+    };
     for (const channel of this.channelStates) {
       channel.internalBuffer.reset();
       if (resetOutbound) {
         channel.outboundBuffer.reset();
       }
-      channel.softLimitTriggered = false;
+      channel.softLimitActive = false;
+      channel.currentOccupancy = 0;
+      channel.highWaterMark = 0;
       this.compactSubscribers(channel);
     }
   }
@@ -327,8 +424,29 @@ export class EventBus implements EventPublisher {
     const descriptor = this.registry.getDescriptor(eventType);
     const channel = this.channelStates[descriptor.index];
 
+    if (this.tickAborted) {
+      throw (
+        this.lastOverflowError ??
+        new EventBufferOverflowError(
+          eventType,
+          descriptor.index,
+          descriptor.capacity,
+        )
+      );
+    }
+
     if (channel.internalBuffer.isAtCapacity() || channel.outboundBuffer.isAtCapacity()) {
-      throw new EventBufferOverflowError(eventType, descriptor.index, descriptor.capacity);
+      const error = new EventBufferOverflowError(eventType, descriptor.index, descriptor.capacity);
+      this.tickAborted = true;
+      this.lastOverflowError = error;
+      this.telemetryCounters.overflowed += 1;
+      telemetry.recordWarning('EventBufferOverflow', {
+        type: eventType,
+        channel: descriptor.index,
+        capacity: descriptor.capacity,
+        tick: this.currentTick,
+      });
+      throw error;
     }
 
     const timestamp = metadata?.issuedAt ?? this.clock.now();
@@ -356,29 +474,38 @@ export class EventBus implements EventPublisher {
     channel.outboundBuffer.push(outboundSlot);
 
     const bufferSize = channel.internalBuffer.length;
+    const remainingCapacity = Math.max(0, descriptor.capacity - bufferSize);
+    channel.currentOccupancy = bufferSize;
+    channel.highWaterMark = Math.max(channel.highWaterMark, bufferSize);
+    this.telemetryCounters.published += 1;
 
-    if (
-      descriptor.softLimit !== undefined &&
-      bufferSize >= descriptor.softLimit &&
-      !channel.softLimitTriggered
-    ) {
-      channel.softLimitTriggered = true;
-      descriptor.onSoftLimit?.({
-        type: eventType,
-        channel: descriptor.index,
-        bufferSize,
-        capacity: descriptor.capacity,
-        softLimit: descriptor.softLimit,
-      });
+    let state: PublishState = 'accepted';
+
+    if (bufferSize >= descriptor.softLimit) {
+      state = 'soft-limit';
+      this.telemetryCounters.softLimited += 1;
+      if (!channel.softLimitActive) {
+        channel.softLimitActive = true;
+        descriptor.onSoftLimit?.({
+          type: eventType,
+          channel: descriptor.index,
+          bufferSize,
+          capacity: descriptor.capacity,
+          softLimit: descriptor.softLimit,
+          remainingCapacity,
+        });
+      }
     }
 
     return {
       accepted: true,
+      state,
       type: eventType,
       channel: descriptor.index,
       bufferSize,
+      remainingCapacity,
       dispatchOrder,
-      softLimitTriggered: channel.softLimitTriggered,
+      softLimitActive: channel.softLimitActive,
     };
   }
 
@@ -430,7 +557,54 @@ export class EventBus implements EventPublisher {
 
     for (const channel of this.channelStates) {
       channel.internalBuffer.reset();
+      channel.currentOccupancy = 0;
     }
+  }
+
+  getBackPressureSnapshot(): BackPressureSnapshot {
+    const channelSnapshots: ChannelBackPressureSnapshot[] =
+      this.channelStates.map((channel) => {
+        const activeSubscribers = channel.subscribers.reduce(
+          (count, subscriber) => (subscriber.active ? count + 1 : count),
+          0,
+        );
+        const remainingCapacity = Math.max(
+          0,
+          channel.descriptor.capacity - channel.currentOccupancy,
+        );
+
+        return {
+          type: channel.descriptor.definition.type,
+          channel: channel.descriptor.index,
+          capacity: channel.descriptor.capacity,
+          softLimit: channel.descriptor.softLimit,
+          inUse: channel.currentOccupancy,
+          remainingCapacity,
+          highWaterMark: channel.highWaterMark,
+          softLimitActive: channel.softLimitActive,
+          subscribers: activeSubscribers,
+        };
+      });
+
+    const totalSubscribers = channelSnapshots.reduce(
+      (count, snapshot) => count + snapshot.subscribers,
+      0,
+    );
+
+    const counters: BackPressureCounters = {
+      published: this.telemetryCounters.published,
+      softLimited: this.telemetryCounters.softLimited,
+      overflowed: this.telemetryCounters.overflowed,
+      subscribers: totalSubscribers,
+    };
+
+    this.telemetryCounters = counters;
+
+    return {
+      tick: this.currentTick,
+      channels: channelSnapshots,
+      counters: { ...counters },
+    };
   }
 
   on<TType extends RuntimeEventType>(
