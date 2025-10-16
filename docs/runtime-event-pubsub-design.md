@@ -163,10 +163,22 @@ routes them to two audiences:
 
 ### 6.4 Buffer Management & Back-Pressure
 
-- Default buffer capacity per channel is 256 events; exceeding the limit
-  triggers a `telemetry.recordWarning('event-buffer-overflow', {...})` and
-  discards additional events for the tick. Capacities are configurable per
-  channel during registry setup to accommodate chatty domains.
+- Default buffer capacity per channel is 256 events. Unless overridden via
+  `EventBusOptions.channelConfigs[type].capacity`, the bus applies that ceiling
+  and derives a soft limit at 75% of capacity (floored, minimum 1) that can be
+  overridden with `softLimit` when a channel is particularly bursty.
+- Publishing beyond the soft limit returns `state: 'soft-limit'`, flips a
+  per-tick `softLimitActive` flag, invokes any registered `onSoftLimit` callback
+  once with remaining capacity, and increments the `events.soft_limited`
+  telemetry counter so publishers can throttle.
+- Overflowing the hard capacity throws `EventBufferOverflowError`, records
+  `telemetry.recordWarning('EventBufferOverflow', {...})`, increments the
+  `events.overflowed` counter, and aborts the tick until `beginTick()` rewinds
+  the buffers.
+- `eventBus.getBackPressureSnapshot()` surfaces per-channel `inUse`,
+  `remainingCapacity`, and `highWaterMark` metrics alongside cumulative counters
+  (`events.published`, `events.soft_limited`, `events.overflowed`,
+  `events.subscribers`) that dashboards and transports can consume.
 - Buffers use struct-of-arrays layouts mirroring resource storage so we can
   transfer them to the shell with minimal copying. Strings (event types, IDs)
   enter a deduplicated string table shared with resource snapshots.
@@ -241,8 +253,8 @@ keep merges small and reviewable.
 
 ## 9. Observability
 
-- Emit telemetry counters for `events.published`, `events.dropped`, and
-  `events.subscribers` per tick.
+- Emit telemetry counters for `events.published`, `events.soft_limited`,
+  `events.overflowed`, and `events.subscribers` per tick.
 - Log structured warnings when handlers exceed execution time thresholds (e.g.,
   >2 ms) to surface slow subscribers.
 - Expose a developer-mode event inspector in the web shell that reads the

@@ -218,6 +218,24 @@ export class IdleEngineRuntime {
         this.eventBus.dispatch(dispatchContext);
       }
 
+      const backPressure = this.eventBus.getBackPressureSnapshot();
+      telemetry.recordProgress('events.published', {
+        tick: this.currentStep,
+        count: backPressure.counters.published,
+      });
+      telemetry.recordProgress('events.soft_limited', {
+        tick: this.currentStep,
+        count: backPressure.counters.softLimited,
+      });
+      telemetry.recordProgress('events.overflowed', {
+        tick: this.currentStep,
+        count: backPressure.counters.overflowed,
+      });
+      telemetry.recordProgress('events.subscribers', {
+        tick: this.currentStep,
+        count: backPressure.counters.subscribers,
+      });
+
       this.currentStep += 1;
       this.nextExecutableStep = this.currentStep;
       telemetry.recordTick();
@@ -274,11 +292,18 @@ export {
 } from './command-recorder.js';
 export {
   EventBus,
+  type BackPressureCounters,
+  type BackPressureSnapshot,
   type EventBusOptions,
   type EventDispatchContext,
   type EventHandler,
+  type EventChannelConfigMap,
+  type EventChannelConfigOverride,
   type EventPublisher,
   type EventSubscription,
+  type PublishResult,
+  type PublishState,
+  type ChannelBackPressureSnapshot,
 } from './events/event-bus.js';
 export {
   DEFAULT_EVENT_BUS_OPTIONS,
