@@ -18,8 +18,6 @@ interface EventCounters {
   readonly slowHandler: Counter<string>;
 }
 
-type EventCounterTotals = Record<'published' | 'softLimited' | 'overflowed', number>;
-
 const DEFAULT_PREFIX = 'idle_engine_';
 
 export interface PrometheusTelemetryFacade extends TelemetryFacade {
@@ -83,11 +81,6 @@ export function createPrometheusTelemetry(
       registers: [registry],
     }),
   };
-  const eventCounterTotals: EventCounterTotals = {
-    published: 0,
-    softLimited: 0,
-    overflowed: 0,
-  };
 
   const logError = createConsoleLogger('error');
   const logWarning = createConsoleLogger('warn');
@@ -112,7 +105,7 @@ export function createPrometheusTelemetry(
     },
     recordCounters(group: string, counters: Readonly<Record<string, number>>) {
       if (group === 'events') {
-        updateEventCounters(eventCounters, counters, eventCounterTotals);
+        updateEventCounters(eventCounters, counters);
       }
     },
     recordTick() {
@@ -127,32 +120,26 @@ export function createPrometheusTelemetry(
 function updateEventCounters(
   counters: EventCounters,
   values: Readonly<Record<string, number>>,
-  totals: EventCounterTotals,
 ): void {
   const { published, softLimited, overflowed, subscribers } = values;
 
+  // The runtime resets its event counters every tick, so the provided values are per-tick increments.
   if (typeof published === 'number') {
-    const delta = published - totals.published;
-    if (delta > 0) {
-      counters.published.inc(delta);
+    if (published > 0) {
+      counters.published.inc(published);
     }
-    totals.published = published;
   }
 
   if (typeof softLimited === 'number') {
-    const delta = softLimited - totals.softLimited;
-    if (delta > 0) {
-      counters.softLimited.inc(delta);
+    if (softLimited > 0) {
+      counters.softLimited.inc(softLimited);
     }
-    totals.softLimited = softLimited;
   }
 
   if (typeof overflowed === 'number') {
-    const delta = overflowed - totals.overflowed;
-    if (delta > 0) {
-      counters.overflowed.inc(delta);
+    if (overflowed > 0) {
+      counters.overflowed.inc(overflowed);
     }
-    totals.overflowed = overflowed;
   }
 
   if (typeof subscribers === 'number') {

@@ -20,9 +20,9 @@ describe('createPrometheusTelemetry', () => {
     });
 
     telemetry.recordCounters('events', {
-      published: 8,
-      softLimited: 2,
-      overflowed: 3,
+      published: 3,
+      softLimited: 1,
+      overflowed: 0,
       subscribers: 6,
     });
 
@@ -45,8 +45,8 @@ describe('createPrometheusTelemetry', () => {
       ?.get();
 
     expect(published?.values[0]?.value).toBe(8);
-    expect(softLimited?.values[0]?.value).toBe(2);
-    expect(overflowed?.values[0]?.value).toBe(3);
+    expect(softLimited?.values[0]?.value).toBe(3);
+    expect(overflowed?.values[0]?.value).toBe(1);
     expect(subscribers?.values[0]?.value).toBe(6);
     expect(slowHandlers?.values[0]?.value).toBe(1);
   });
