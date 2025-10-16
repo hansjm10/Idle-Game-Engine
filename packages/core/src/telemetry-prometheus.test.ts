@@ -20,9 +20,9 @@ describe('createPrometheusTelemetry', () => {
     });
 
     telemetry.recordCounters('events', {
-      published: 3,
-      softLimited: 0,
-      overflowed: 2,
+      published: 8,
+      softLimited: 2,
+      overflowed: 3,
       subscribers: 6,
     });
 
