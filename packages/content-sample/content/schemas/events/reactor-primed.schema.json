@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SampleReactorPrimedEvent",
+  "type": "object",
+  "description": "Payload for the sample reactor primed runtime event.",
+  "properties": {
+    "generatorId": {
+      "type": "string",
+      "description": "Identifier of the reactor that primed."
+    },
+    "tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Simulation tick when the event was emitted."
+    }
+  },
+  "required": ["generatorId"],
+  "additionalProperties": false
+}

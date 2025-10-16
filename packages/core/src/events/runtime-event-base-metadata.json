@@ -1,0 +1,12 @@
+[
+  {
+    "type": "resource:threshold-reached",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "automation:toggled",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  }
+]

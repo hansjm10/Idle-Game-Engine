@@ -1,3 +1,8 @@
+import {
+  GENERATED_RUNTIME_EVENT_DEFINITIONS,
+  type ContentRuntimeEventType,
+} from '@idle-engine/core';
+
 export interface ResourceDefinition {
   readonly id: string;
   readonly name: string;
@@ -53,3 +58,15 @@ export const sampleContent: ContentPack = {
     }
   ]
 };
+
+const SAMPLE_PACK_SLUG = sampleContent.metadata.id;
+
+export const sampleEventDefinitions = GENERATED_RUNTIME_EVENT_DEFINITIONS.filter(
+  (definition) => definition.packSlug === SAMPLE_PACK_SLUG,
+);
+
+export const sampleEventTypes = Object.freeze(
+  sampleEventDefinitions.map(
+    (definition) => definition.type as ContentRuntimeEventType,
+  ),
+);

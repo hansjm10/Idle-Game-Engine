@@ -37,6 +37,8 @@ assume a stable contract.
   the baked manifest so all environments share the exact event catalogue.
 - Follow-up: extend the existing content schema CLI to merge `eventTypes` during
   `pnpm generate`. Owners of `packages/content-sample` provide the first example.
+- Authoring flow: `docs/runtime-event-manifest-authoring.md` captures the manifest
+  format, generation command, and how the recorder validates the hash.
 
 ### 2. No additional priority tiers; deterministic order follows publish time
 

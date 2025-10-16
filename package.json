@@ -9,6 +9,7 @@
     "test:ci": "pnpm -r run test:ci",
     "test:a11y": "pnpm --filter @idle-engine/a11y-smoke-tests run test",
     "dev": "pnpm --filter shell-web run dev",
+    "generate": "pnpm --filter @idle-engine/content-schema-cli run generate",
     "prepare": "lefthook install"
   },
   "devDependencies": {

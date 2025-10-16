@@ -114,6 +114,11 @@ routes them to two audiences:
 - Export canonical payload types under `@idle-engine/core/events` (e.g.,
   `ResourceThresholdReachedEvent`, `AutomationToggleEvent`) so command handlers
   and systems share definitions.
+- Per-pack manifests authored in `content/event-types.json` files describe
+  additional event types. Running `pnpm generate` merges the manifests with the
+  core catalogue, refreshes the deterministic manifest hash, and updates the
+  `ContentRuntimeEventType` union exported by `@idle-engine/core`. See
+  `docs/runtime-event-manifest-authoring.md` for authoring guidance.
 - The generator also publishes a manifest hash consumed by the recorder; replay
   files embed the hash and fail fast if the runtime attempts to load a different
   catalogue, preventing content drift across environments.

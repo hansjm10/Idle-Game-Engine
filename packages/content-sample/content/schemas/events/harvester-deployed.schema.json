@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SampleHarvesterDeployedEvent",
+  "type": "object",
+  "description": "Payload emitted when the sample content deploys a harvester.",
+  "properties": {
+    "resourceId": {
+      "type": "string",
+      "description": "Resource that gains production from the harvester."
+    },
+    "deployedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Simulation tick when deployment completed."
+    },
+    "operator": {
+      "type": "string",
+      "description": "Optional NPC responsible for the deployment."
+    }
+  },
+  "required": ["resourceId"],
+  "additionalProperties": false
+}
