@@ -64,7 +64,12 @@ assume a stable contract.
   increases the cooldown (exponential backoff) before emitting the next warning.
   Hard limits still throw determinism-breaking errors immediately.
 - Telemetry exports aggregate counters so dashboards can alert on sustained
-  pressure without spamming logs.
+  pressure without spamming logs. The implementation emits
+  `EventSoftLimitBreach` warnings, records per-channel increments through the
+  `events.soft_limit_breaches` counter stream, and surfaces cooldown gauges via
+  `events.cooldown_ticks` which feed the Prometheus metrics
+  `idle_engine_events_soft_limit_breaches_total` and
+  `idle_engine_events_soft_limit_cooldown_ticks`.
 - Follow-up: wire the diagnostic struct into the existing telemetry adapter and
   add focused tests in the bus package.
 
