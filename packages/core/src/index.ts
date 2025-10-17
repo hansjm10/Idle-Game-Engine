@@ -325,9 +325,18 @@ export {
 export {
   buildRuntimeEventFrame,
   type RuntimeEventFrame,
+  type RuntimeEventObjectArrayFrame,
+  type RuntimeEventObjectRecord,
+  type RuntimeEventStructOfArraysFrame,
   type RuntimeEventFrameBuildOptions,
   type RuntimeEventFrameBuildResult,
 } from './events/runtime-event-frame.js';
+export {
+  type RuntimeEventFrameDiagnostics,
+  type RuntimeEventFrameExportOptions,
+  type RuntimeEventFrameExportState,
+  type RuntimeEventFrameFormat,
+} from './events/runtime-event-frame-format.js';
 export {
   CONTENT_EVENT_CHANNELS,
   CONTENT_EVENT_DEFINITIONS,

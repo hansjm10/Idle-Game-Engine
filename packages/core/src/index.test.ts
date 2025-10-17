@@ -584,10 +584,13 @@ function runDeterministicSimulation(ticks = 3): FrameSnapshot[] {
   for (let index = 0; index < ticks; index += 1) {
     runtime.tick(10);
     const processedStep = runtime.getCurrentStep() - 1;
+    const exportState = bus.getFrameExportState();
     const frameResult = buildRuntimeEventFrame(bus, pool, {
       tick: processedStep,
       manifestHash: bus.getManifestHash(),
       owner: 'integration-test',
+      format: exportState.format,
+      diagnostics: exportState.diagnostics,
     });
 
     frames.push(snapshotFrame(frameResult.frame));
@@ -598,6 +601,24 @@ function runDeterministicSimulation(ticks = 3): FrameSnapshot[] {
 }
 
 function snapshotFrame(frame: RuntimeEventFrame): FrameSnapshot {
+  if (frame.format === 'object-array') {
+    const events = frame.events.map((event) => {
+      return {
+        type: event.type,
+        channel: event.channel,
+        issuedAt: event.issuedAt,
+        dispatchOrder: event.dispatchOrder,
+        payload: JSON.parse(JSON.stringify(event.payload)),
+      } satisfies FrameEventSnapshot;
+    });
+
+    return {
+      tick: frame.tick,
+      manifestHash: frame.manifestHash,
+      events,
+    };
+  }
+
   const events: FrameEventSnapshot[] = new Array(frame.count);
 
   for (let index = 0; index < frame.count; index += 1) {

@@ -8,11 +8,21 @@ import type {
   TransportBufferLease,
   TransportBufferPool,
 } from '../transport-buffer-pool.js';
+import type {
+  RuntimeEventFrameDiagnostics,
+  RuntimeEventFrameFormat,
+} from './runtime-event-frame-format.js';
 
-export interface RuntimeEventFrame {
+interface RuntimeEventFrameBase {
   readonly tick: number;
   readonly manifestHash: RuntimeEventManifestHash;
   readonly count: number;
+  readonly format: RuntimeEventFrameFormat;
+  readonly diagnostics?: RuntimeEventFrameDiagnostics;
+}
+
+export interface RuntimeEventStructOfArraysFrame extends RuntimeEventFrameBase {
+  readonly format: 'struct-of-arrays';
   readonly channelIndices: Uint32Array;
   readonly typeIndices: Uint32Array;
   readonly issuedAt: Float64Array;
@@ -21,11 +31,30 @@ export interface RuntimeEventFrame {
   readonly stringTable: readonly string[];
 }
 
+export interface RuntimeEventObjectRecord {
+  readonly type: RuntimeEventType;
+  readonly channel: number;
+  readonly issuedAt: number;
+  readonly dispatchOrder: number;
+  readonly payload: RuntimeEventPayload<RuntimeEventType>;
+}
+
+export interface RuntimeEventObjectArrayFrame extends RuntimeEventFrameBase {
+  readonly format: 'object-array';
+  readonly events: readonly RuntimeEventObjectRecord[];
+}
+
+export type RuntimeEventFrame =
+  | RuntimeEventStructOfArraysFrame
+  | RuntimeEventObjectArrayFrame;
+
 export interface RuntimeEventFrameBuildOptions {
   readonly tick: number;
   readonly manifestHash: RuntimeEventManifestHash;
   readonly owner?: string;
   readonly mode?: 'share' | 'transfer';
+  readonly format?: RuntimeEventFrameFormat;
+  readonly diagnostics?: RuntimeEventFrameDiagnostics;
 }
 
 export interface RuntimeEventFrameBuildResult {
@@ -53,6 +82,46 @@ export function buildRuntimeEventFrame(
     const buffer = bus.getOutboundBuffer(channelIndex);
     outboundBuffers.push(buffer);
     totalEvents += buffer.length;
+  }
+
+  const format = options.format ?? 'struct-of-arrays';
+  const diagnostics = options.diagnostics;
+
+  if (format === 'object-array') {
+    const events: RuntimeEventObjectRecord[] = new Array(totalEvents);
+    let writeIndex = 0;
+
+    for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+      const buffer = outboundBuffers[channelIndex];
+      for (let bufferIndex = 0; bufferIndex < buffer.length; bufferIndex += 1) {
+        const record = buffer.at(bufferIndex);
+        events[writeIndex] = {
+          type: record.type,
+          channel: channelIndex,
+          issuedAt: record.issuedAt,
+          dispatchOrder: record.dispatchOrder,
+          payload: record.payload,
+        };
+        writeIndex += 1;
+      }
+    }
+
+    const frame: RuntimeEventObjectArrayFrame = {
+      format,
+      tick: options.tick,
+      manifestHash: options.manifestHash,
+      count: totalEvents,
+      events,
+      diagnostics,
+    };
+
+    return {
+      frame,
+      transferables: [],
+      release() {
+        // no-op for object-array fallback frames
+      },
+    };
   }
 
   const channelLease = pool.acquireUint32(totalEvents, {
@@ -112,6 +181,7 @@ export function buildRuntimeEventFrame(
   }
 
   const frame: RuntimeEventFrame = {
+    format,
     tick: options.tick,
     manifestHash: options.manifestHash,
     count: totalEvents,
@@ -121,6 +191,7 @@ export function buildRuntimeEventFrame(
     dispatchOrder,
     payloads,
     stringTable,
+    diagnostics,
   };
 
   const transferables =

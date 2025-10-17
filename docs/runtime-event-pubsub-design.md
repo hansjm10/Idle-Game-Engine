@@ -201,6 +201,8 @@ routes them to two audiences:
   rolling 256-tick average drops below two events per channel, the exporter can
   flip a feature flag to emit compact object arrays instead; diagnostics record
   the transition so we can revisit the default if sparse workloads dominate.
+  Both frame shapes share a `format` discriminator and diagnostics payload so
+  downstream tooling can branch safely when the fallback is active.
 - When offline catch-up runs for many hours, the bus batches events into
   configurable windows (default 5 minutes) to prevent unbounded array growth.
   The implementation segments the backlog into `RuntimeEventFrame` chunks and

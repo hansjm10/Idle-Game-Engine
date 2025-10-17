@@ -12,6 +12,11 @@ import {
 } from './runtime-event.js';
 import { EventDiagnostics } from './event-diagnostics.js';
 import type { EventDiagnosticsChannelConfig } from './event-diagnostics.js';
+import {
+  RuntimeEventFrameFormatController,
+  type RuntimeEventFrameExportOptions,
+  type RuntimeEventFrameExportState,
+} from './runtime-event-frame-format.js';
 import { telemetry } from '../telemetry.js';
 
 const DEFAULT_CHANNEL_CAPACITY = 256;
@@ -127,6 +132,7 @@ export interface EventBusOptions {
   readonly clock?: Clock;
   readonly slowHandlerThresholdMs?: number;
   readonly onSlowHandler?: (context: SlowHandlerContext) => void;
+  readonly frameExport?: RuntimeEventFrameExportOptions;
 }
 
 export interface Clock {
@@ -458,6 +464,7 @@ export class EventBus implements EventPublisher {
   private readonly slowHandlerThresholdMs: number;
   private readonly onSlowHandler?: (context: SlowHandlerContext) => void;
   private readonly diagnostics: EventDiagnostics | null;
+  private readonly frameFormatController: RuntimeEventFrameFormatController;
   private telemetryCounters: BackPressureCounters = {
     published: 0,
     softLimited: 0,
@@ -469,6 +476,8 @@ export class EventBus implements EventPublisher {
   private dispatchCounter = 0;
   private tickAborted = false;
   private lastOverflowError: EventBufferOverflowError | null = null;
+  private eventsPublishedThisTick = 0;
+  private firstTickPending = true;
 
   constructor(options: EventBusOptions) {
     if (options.channels.length === 0) {
@@ -502,6 +511,10 @@ export class EventBus implements EventPublisher {
         ? Math.max(0, options.slowHandlerThresholdMs)
         : 2;
     this.onSlowHandler = options.onSlowHandler;
+    this.frameFormatController = new RuntimeEventFrameFormatController(
+      this.channelStates.length,
+      options.frameExport,
+    );
   }
 
   getManifest(): RuntimeEventManifest {
@@ -512,8 +525,24 @@ export class EventBus implements EventPublisher {
     return this.registry.getManifestHash();
   }
 
+  getFrameExportState(): RuntimeEventFrameExportState {
+    return this.frameFormatController.getExportState();
+  }
+
   beginTick(tick: number, options?: BeginTickOptions): void {
     const { resetOutbound = true } = options ?? {};
+    const isSameTick = !this.firstTickPending && tick === this.currentTick;
+
+    if (this.firstTickPending) {
+      this.firstTickPending = false;
+    } else if (!isSameTick) {
+      this.frameFormatController.beginTick(this.eventsPublishedThisTick, tick);
+    }
+
+    if (!isSameTick) {
+      this.eventsPublishedThisTick = 0;
+    }
+
     this.currentTick = tick;
     this.dispatchCounter = 0;
     this.tickAborted = false;
@@ -599,6 +628,7 @@ export class EventBus implements EventPublisher {
     channel.currentOccupancy = bufferSize;
     channel.highWaterMark = Math.max(channel.highWaterMark, bufferSize);
     this.telemetryCounters.published += 1;
+    this.eventsPublishedThisTick += 1;
     this.diagnostics?.recordPublish(
       descriptor.index,
       this.currentTick,
