@@ -16,6 +16,7 @@ export interface CompleteTickOptions {
   readonly endedAt?: number;
   readonly error?: unknown;
   readonly budgetMs?: number;
+  readonly metadata?: DiagnosticTimelineMetadata;
 }
 
 export interface ErrorLike {
@@ -39,6 +40,58 @@ export interface DiagnosticTimelineEntry {
   readonly isSlow: boolean;
   readonly overBudgetMs: number;
   readonly error?: ErrorLike;
+  readonly metadata?: DiagnosticTimelineMetadata;
+}
+
+export interface DiagnosticTimelineQueueMetrics {
+  readonly sizeBefore: number;
+  readonly sizeAfter: number;
+  readonly captured: number;
+  readonly executed: number;
+  readonly skipped: number;
+}
+
+export interface DiagnosticTimelineEventChannelSnapshot {
+  readonly channel: number;
+  readonly subscribers: number;
+  readonly remainingCapacity: number;
+  readonly cooldownTicksRemaining: number;
+  readonly softLimitBreaches: number;
+  readonly eventsPerSecond: number;
+  readonly softLimitActive: boolean;
+}
+
+export interface DiagnosticTimelineEventMetrics {
+  readonly counters: {
+    readonly published: number;
+    readonly softLimited: number;
+    readonly overflowed: number;
+    readonly subscribers: number;
+  };
+  readonly channels: readonly DiagnosticTimelineEventChannelSnapshot[];
+}
+
+export interface DiagnosticTimelineSystemHistory {
+  readonly sampleCount: number;
+  readonly averageMs: number;
+  readonly maxMs: number;
+}
+
+export interface DiagnosticTimelineSystemSpan {
+  readonly id: string;
+  readonly durationMs: number;
+  readonly budgetMs?: number;
+  readonly isSlow: boolean;
+  readonly overBudgetMs: number;
+  readonly history?: DiagnosticTimelineSystemHistory;
+  readonly error?: ErrorLike;
+}
+
+export interface DiagnosticTimelineMetadata {
+  readonly accumulatorBacklogMs?: number;
+  readonly queue?: DiagnosticTimelineQueueMetrics;
+  readonly events?: DiagnosticTimelineEventMetrics;
+  readonly systems?: readonly DiagnosticTimelineSystemSpan[];
 }
 
 export interface DiagnosticTimelineResult {
@@ -74,6 +127,7 @@ interface TimelineEntryInternal {
   isSlow: boolean;
   overBudgetMs: number;
   error?: ErrorLike;
+  metadata?: DiagnosticTimelineMetadata;
 }
 
 const DEFAULT_CAPACITY = 120;
@@ -156,6 +210,7 @@ export function createDiagnosticTimelineRecorder(
       isSlow: false,
       overBudgetMs: 0,
       error: undefined,
+      metadata: undefined,
     };
     pool[index] = entry;
     return entry;
@@ -220,6 +275,7 @@ export function createDiagnosticTimelineRecorder(
             ? duration - finalBudget
             : 0;
         slot.error = toErrorLike(completion?.error);
+        slot.metadata = cloneMetadata(completion?.metadata);
 
         commitEntry(slot);
       },
@@ -274,6 +330,7 @@ export function createDiagnosticTimelineRecorder(
         isSlow: source.isSlow,
         overBudgetMs: source.overBudgetMs,
         error: clonedError ? Object.freeze(clonedError) : undefined,
+        metadata: source.metadata,
       });
       entries.push(entry);
     }
@@ -293,6 +350,13 @@ export function createDiagnosticTimelineRecorder(
     size = 0;
     droppedEntries = 0;
     lastTick = undefined;
+    for (let index = 0; index < capacity; index += 1) {
+      const slot = pool[index];
+      if (!slot) {
+        continue;
+      }
+      slot.metadata = undefined;
+    }
   }
 
   return {
@@ -312,7 +376,7 @@ export function createNoopDiagnosticTimelineRecorder(): DiagnosticTimelineRecord
   });
 
   return {
-    startTick(tick: number): DiagnosticTickHandle {
+        startTick(tick: number): DiagnosticTickHandle {
       return {
         tick,
         startedAt: 0,
@@ -370,4 +434,54 @@ function isErrorLike(
     typeof (value as { name?: unknown }).name === 'string' ||
     typeof (value as { stack?: unknown }).stack === 'string'
   );
+}
+
+function cloneMetadata(
+  metadata: DiagnosticTimelineMetadata | undefined,
+): DiagnosticTimelineMetadata | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+
+  const queueMetrics = metadata.queue
+    ? Object.freeze({ ...metadata.queue })
+    : undefined;
+
+  const eventMetrics = metadata.events
+    ? Object.freeze({
+        counters: Object.freeze({ ...metadata.events.counters }),
+        channels: Object.freeze(
+          metadata.events.channels.map((channel) =>
+            Object.freeze({ ...channel }),
+          ),
+        ),
+      })
+    : undefined;
+
+  const systemSpans = metadata.systems
+    ? Object.freeze(
+        metadata.systems.map((span) =>
+          Object.freeze({
+            id: span.id,
+            durationMs: span.durationMs,
+            budgetMs: span.budgetMs,
+            isSlow: span.isSlow,
+            overBudgetMs: span.overBudgetMs,
+            history: span.history
+              ? Object.freeze({ ...span.history })
+              : undefined,
+            error: span.error
+              ? Object.freeze({ ...span.error })
+              : undefined,
+          }),
+        ),
+      )
+    : undefined;
+
+  return Object.freeze({
+    accumulatorBacklogMs: metadata.accumulatorBacklogMs,
+    queue: queueMetrics,
+    events: eventMetrics,
+    systems: systemSpans,
+  });
 }

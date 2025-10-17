@@ -6,6 +6,7 @@ import {
   type EventPublisher,
   type EventSubscription,
   type EventSubscriptionOptions,
+  type BackPressureSnapshot,
 } from './events/event-bus.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
@@ -13,6 +14,16 @@ import type { Command } from './command.js';
 import { CommandDispatcher } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import { telemetry } from './telemetry.js';
+import {
+  createRuntimeDiagnosticsController,
+  type IdleEngineRuntimeDiagnosticsOptions,
+  type RuntimeDiagnosticsController,
+} from './diagnostics/runtime-diagnostics-controller.js';
+import type {
+  DiagnosticTimelineRecorder,
+  DiagnosticTimelineResult,
+  DiagnosticTimelineEventMetrics,
+} from './diagnostics/diagnostic-timeline.js';
 
 export interface TickContext {
   readonly deltaMs: number;
@@ -51,6 +62,7 @@ export interface IdleEngineRuntimeOptions
   extends EngineOptions,
     RuntimeDependencies {
   readonly eventBusOptions?: EventBusOptions;
+  readonly diagnostics?: IdleEngineRuntimeDiagnosticsOptions;
 }
 
 const DEFAULT_STEP_MS = 100;
@@ -77,6 +89,7 @@ export class IdleEngineRuntime {
   private readonly eventPublisher: EventPublisher;
   private currentStep = 0;
   private nextExecutableStep = 0;
+  private readonly diagnostics: RuntimeDiagnosticsController;
 
   constructor(options: IdleEngineRuntimeOptions = {}) {
     this.stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
@@ -90,6 +103,13 @@ export class IdleEngineRuntime {
     this.eventPublisher = createEventPublisher(this.eventBus);
 
     this.commandDispatcher.setEventPublisher(this.eventPublisher);
+
+    this.diagnostics = createRuntimeDiagnosticsController(
+      options.diagnostics,
+      {
+        stepSizeMs: this.stepSizeMs,
+      },
+    );
   }
 
   addSystem(system: System): void {
@@ -154,6 +174,14 @@ export class IdleEngineRuntime {
     return this.eventBus;
   }
 
+  getDiagnosticTimeline(): DiagnosticTimelineRecorder {
+    return this.diagnostics.timeline;
+  }
+
+  getDiagnosticTimelineSnapshot(): DiagnosticTimelineResult {
+    return this.diagnostics.snapshot();
+  }
+
   /**
    * Advance the simulation by `deltaMs`, clamping the number of processed
    * steps to avoid spiral of death scenarios.
@@ -174,74 +202,103 @@ export class IdleEngineRuntime {
     this.accumulator -= steps * this.stepSizeMs;
 
     for (let i = 0; i < steps; i += 1) {
-      this.eventBus.beginTick(this.currentStep, {
-        resetOutbound: i === 0,
-      });
+      const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
 
-      // Accept commands for the current step until the batch is captured.
-      this.nextExecutableStep = this.currentStep;
-      const commands =
-        this.commandQueue.dequeueUpToStep(this.currentStep);
+      const queueSizeBefore = this.commandQueue.size;
+      let queueSizeAfter = queueSizeBefore;
+      let capturedCommands = 0;
+      let executedCommands = 0;
+      let skippedCommands = 0;
 
-      // Commands enqueued during execution target the next tick.
-      this.nextExecutableStep = this.currentStep + 1;
+      try {
+        this.eventBus.beginTick(this.currentStep, {
+          resetOutbound: i === 0,
+        });
 
-      for (const command of commands) {
-        if (command.step !== this.currentStep) {
-          telemetry.recordError('CommandStepMismatch', {
-            expectedStep: this.currentStep,
-            commandStep: command.step,
-            type: command.type,
-          });
-          continue;
+        // Accept commands for the current step until the batch is captured.
+        this.nextExecutableStep = this.currentStep;
+        const commands =
+          this.commandQueue.dequeueUpToStep(this.currentStep);
+        capturedCommands = commands.length;
+
+        // Commands enqueued during execution target the next tick.
+        this.nextExecutableStep = this.currentStep + 1;
+
+        for (const command of commands) {
+          if (command.step !== this.currentStep) {
+            skippedCommands += 1;
+            telemetry.recordError('CommandStepMismatch', {
+              expectedStep: this.currentStep,
+              commandStep: command.step,
+              type: command.type,
+            });
+            continue;
+          }
+
+          this.commandDispatcher.execute(command as Command);
+          executedCommands += 1;
         }
 
-        this.commandDispatcher.execute(command as Command);
-      }
-
-      const dispatchContext: EventDispatchContext = {
-        tick: this.currentStep,
-      };
-
-      this.eventBus.dispatch(dispatchContext);
-
-      const context: TickContext = {
-        deltaMs: this.stepSizeMs,
-        step: this.currentStep,
-        events: this.eventPublisher,
-      };
-
-      for (const { system } of this.systems) {
-        try {
-          system.tick(context);
-        } catch (error) {
-          telemetry.recordError('SystemExecutionFailed', {
-            systemId: system.id,
-            error: error instanceof Error ? error : new Error(String(error)),
-          });
-        }
+        const dispatchContext: EventDispatchContext = {
+          tick: this.currentStep,
+        };
 
         this.eventBus.dispatch(dispatchContext);
+
+        const context: TickContext = {
+          deltaMs: this.stepSizeMs,
+          step: this.currentStep,
+          events: this.eventPublisher,
+        };
+
+        for (const { system } of this.systems) {
+          const systemSpan = tickDiagnostics.startSystem(system.id);
+          try {
+            system.tick(context);
+            systemSpan.end();
+          } catch (error) {
+            try {
+              systemSpan.fail(error);
+            } catch (annotatedError) {
+              telemetry.recordError('SystemExecutionFailed', {
+                systemId: system.id,
+                error:
+                  annotatedError instanceof Error
+                    ? annotatedError
+                    : new Error(String(annotatedError)),
+              });
+            }
+          }
+
+          this.eventBus.dispatch(dispatchContext);
+        }
+
+        queueSizeAfter = this.commandQueue.size;
+
+        const backPressure = this.eventBus.getBackPressureSnapshot();
+
+        tickDiagnostics.recordEventMetrics(
+          toDiagnosticTimelineEventMetrics(backPressure),
+        );
+        tickDiagnostics.recordQueueMetrics({
+          sizeBefore: queueSizeBefore,
+          sizeAfter: queueSizeAfter,
+          captured: capturedCommands,
+          executed: executedCommands,
+          skipped: skippedCommands,
+        });
+        tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
+
+        recordBackPressureTelemetry(backPressure);
+
+        this.currentStep += 1;
+        this.nextExecutableStep = this.currentStep;
+        telemetry.recordTick();
+
+        tickDiagnostics.complete();
+      } catch (error) {
+        tickDiagnostics.fail(error);
       }
-
-      const backPressure = this.eventBus.getBackPressureSnapshot();
-      telemetry.recordCounters('events', {
-        published: backPressure.counters.published,
-        softLimited: backPressure.counters.softLimited,
-        overflowed: backPressure.counters.overflowed,
-        subscribers: backPressure.counters.subscribers,
-      });
-
-      const cooldownCounters: Record<string, number> = {};
-      for (const channel of backPressure.channels) {
-        cooldownCounters[`channel:${channel.channel}`] =
-          channel.cooldownTicksRemaining;
-      }
-      telemetry.recordCounters('events.cooldown_ticks', cooldownCounters);
-
-      this.currentStep += 1;
-      this.nextExecutableStep = this.currentStep;
-      telemetry.recordTick();
     }
   }
 }
@@ -249,6 +306,46 @@ export class IdleEngineRuntime {
 function createEventPublisher(bus: EventBus): EventPublisher {
   return {
     publish: bus.publish.bind(bus),
+  };
+}
+
+function recordBackPressureTelemetry(
+  snapshot: BackPressureSnapshot,
+): void {
+  telemetry.recordCounters('events', {
+    published: snapshot.counters.published,
+    softLimited: snapshot.counters.softLimited,
+    overflowed: snapshot.counters.overflowed,
+    subscribers: snapshot.counters.subscribers,
+  });
+
+  const cooldownCounters: Record<string, number> = {};
+  for (const channel of snapshot.channels) {
+    cooldownCounters[`channel:${channel.channel}`] =
+      channel.cooldownTicksRemaining;
+  }
+  telemetry.recordCounters('events.cooldown_ticks', cooldownCounters);
+}
+
+function toDiagnosticTimelineEventMetrics(
+  snapshot: BackPressureSnapshot,
+): DiagnosticTimelineEventMetrics {
+  return {
+    counters: {
+      published: snapshot.counters.published,
+      softLimited: snapshot.counters.softLimited,
+      overflowed: snapshot.counters.overflowed,
+      subscribers: snapshot.counters.subscribers,
+    },
+    channels: snapshot.channels.map((channel) => ({
+      channel: channel.channel,
+      subscribers: channel.subscribers,
+      remainingCapacity: channel.remainingCapacity,
+      cooldownTicksRemaining: channel.cooldownTicksRemaining,
+      softLimitBreaches: channel.softLimitBreaches,
+      eventsPerSecond: channel.eventsPerSecond,
+      softLimitActive: channel.softLimitActive,
+    })),
   };
 }
 
@@ -411,12 +508,21 @@ export {
   type CompleteTickOptions,
   type DiagnosticTickHandle,
   type DiagnosticTimelineEntry,
+  type DiagnosticTimelineEventChannelSnapshot,
+  type DiagnosticTimelineEventMetrics,
+  type DiagnosticTimelineMetadata,
+  type DiagnosticTimelineQueueMetrics,
   type DiagnosticTimelineRecorder,
   type DiagnosticTimelineResult,
+  type DiagnosticTimelineSystemHistory,
+  type DiagnosticTimelineSystemSpan,
   type ErrorLike,
   type HighResolutionClock,
   type StartTickOptions,
 } from './diagnostics/diagnostic-timeline.js';
+export type {
+  IdleEngineRuntimeDiagnosticsOptions,
+} from './diagnostics/runtime-diagnostics-controller.js';
 export {
   createPrometheusTelemetry,
   type PrometheusTelemetryOptions,

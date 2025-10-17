@@ -43,6 +43,22 @@ function createRuntime(
   return { runtime, queue, dispatcher };
 }
 
+class TestClock {
+  private current = 0;
+
+  now(): number {
+    return this.current;
+  }
+
+  advance(byMs: number): void {
+    this.current += byMs;
+  }
+
+  set(toMs: number): void {
+    this.current = toMs;
+  }
+}
+
 describe('IdleEngineRuntime', () => {
   it('executes queued commands for the current step and advances counters', () => {
     const { runtime, queue, dispatcher } = createRuntime();
@@ -505,6 +521,196 @@ describe('IdleEngineRuntime', () => {
     runtime.tick(10);
 
     expect(executionOrder).toEqual(['system', 'player', 'automation']);
+  });
+
+  it('records diagnostic timeline metadata and warns on slow ticks and systems', () => {
+    const clock = new TestClock();
+    const warnings: Array<{ event: string; data?: unknown }> = [];
+    const telemetryFacade: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning(event, data) {
+        warnings.push({ event, data });
+      },
+      recordProgress() {},
+      recordCounters() {},
+      recordTick() {},
+    };
+
+    setTelemetry(telemetryFacade);
+
+    try {
+      const runtime = new IdleEngineRuntime({
+        stepSizeMs: 10,
+        maxStepsPerFrame: 1,
+        diagnostics: {
+          timeline: {
+            enabled: true,
+            capacity: 8,
+            slowTickBudgetMs: 3,
+            slowSystemBudgetMs: 2,
+            systemHistorySize: 4,
+            clock,
+          },
+        },
+      });
+
+      const queue = runtime.getCommandQueue();
+      queue.enqueue({
+        type: 'EXEC',
+        priority: CommandPriority.PLAYER,
+        payload: {},
+        timestamp: 1,
+        step: 0,
+      });
+      queue.enqueue({
+        type: 'SKIP',
+        priority: CommandPriority.PLAYER,
+        payload: {},
+        timestamp: 2,
+        step: -1,
+      });
+      queue.enqueue({
+        type: 'FUTURE',
+        priority: CommandPriority.PLAYER,
+        payload: {},
+        timestamp: 3,
+        step: 2,
+      });
+
+      runtime.addSystem({
+        id: 'slow-system',
+        tick: ({ events }) => {
+          clock.advance(3);
+          events.publish('automation:toggled', {
+            automationId: 'auto:slow',
+            enabled: true,
+          });
+        },
+      });
+
+      runtime.addSystem({
+        id: 'fast-system',
+        tick: () => {
+          clock.advance(1);
+        },
+      });
+
+      runtime.tick(10);
+      runtime.tick(10);
+
+      const timeline = runtime.getDiagnosticTimelineSnapshot();
+      expect(timeline.entries.length).toBe(2);
+
+      const firstEntry = timeline.entries[0]!;
+      expect(firstEntry.metadata?.queue).toEqual({
+        sizeBefore: 3,
+        sizeAfter: 1,
+        captured: 2,
+        executed: 1,
+        skipped: 1,
+      });
+      expect(firstEntry.metadata?.events?.counters.published).toBeGreaterThanOrEqual(1);
+      expect(firstEntry.metadata?.systems?.length).toBe(2);
+      const firstSlowSpan = firstEntry.metadata?.systems?.find(
+        (span) => span.id === 'slow-system',
+      );
+      expect(firstSlowSpan?.isSlow).toBe(true);
+      expect(firstSlowSpan?.history?.sampleCount).toBe(1);
+
+      const secondEntry = timeline.entries[1]!;
+      const secondSlowSpan = secondEntry.metadata?.systems?.find(
+        (span) => span.id === 'slow-system',
+      );
+      expect(secondSlowSpan?.history?.sampleCount).toBe(2);
+      expect(secondSlowSpan?.history?.averageMs).toBeGreaterThan(0);
+
+      const slowWarnings = warnings.filter(
+        (warning) => warning.event === 'SystemExecutionSlow',
+      );
+      expect(slowWarnings.length).toBe(2);
+
+      const tickWarnings = warnings.filter(
+        (warning) => warning.event === 'TickExecutionSlow',
+      );
+      expect(tickWarnings.length).toBe(2);
+      expect(tickWarnings[0]?.data).toMatchObject({
+        tick: 0,
+        budgetMs: 3,
+      });
+    } finally {
+      resetTelemetry();
+    }
+  });
+
+  it('annotates system errors in the diagnostic timeline and preserves telemetry', () => {
+    const clock = new TestClock();
+    const errors: Array<{ event: string; data?: unknown }> = [];
+    const telemetryFacade: TelemetryFacade = {
+      recordError(event, data) {
+        errors.push({ event, data });
+      },
+      recordWarning() {},
+      recordProgress() {},
+      recordCounters() {},
+      recordTick() {},
+    };
+
+    setTelemetry(telemetryFacade);
+
+    try {
+      const runtime = new IdleEngineRuntime({
+        stepSizeMs: 10,
+        diagnostics: {
+          timeline: {
+            enabled: true,
+            capacity: 4,
+            slowTickBudgetMs: 10,
+            slowSystemBudgetMs: 1,
+            systemHistorySize: 3,
+            clock,
+          },
+        },
+      });
+
+      runtime.addSystem({
+        id: 'faulty',
+        tick: () => {
+          clock.advance(2);
+          throw new Error('boom');
+        },
+      });
+
+      runtime.addSystem({
+        id: 'recovery',
+        tick: () => {
+          clock.advance(1);
+        },
+      });
+
+      expect(() => runtime.tick(10)).not.toThrow();
+
+      const timeline = runtime.getDiagnosticTimelineSnapshot();
+      expect(timeline.entries.length).toBe(1);
+      const entry = timeline.entries[0]!;
+      const faultySpan = entry.metadata?.systems?.find(
+        (span) => span.id === 'faulty',
+      );
+      expect(faultySpan?.error).toMatchObject({ message: 'boom' });
+      expect(faultySpan?.isSlow).toBe(true);
+      expect(faultySpan?.history?.sampleCount).toBe(1);
+
+      expect(errors).toEqual([
+        {
+          event: 'SystemExecutionFailed',
+          data: {
+            systemId: 'faulty',
+            error: expect.any(Error),
+          },
+        },
+      ]);
+    } finally {
+      resetTelemetry();
+    }
   });
 
   it('produces identical event frames across deterministic runs', () => {
