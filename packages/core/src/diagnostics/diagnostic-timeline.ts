@@ -340,13 +340,13 @@ export function toErrorLike(value: unknown): ErrorLike | undefined {
 
   if (isErrorLike(value)) {
     const serialized: MutableErrorLike = {};
-    if (value.name) {
+    if (value.name !== undefined) {
       serialized.name = value.name;
     }
-    if (value.message) {
+    if (value.message !== undefined) {
       serialized.message = value.message;
     }
-    if (value.stack) {
+    if (value.stack !== undefined) {
       serialized.stack = value.stack;
     }
     return serialized;

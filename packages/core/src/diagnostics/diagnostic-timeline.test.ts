@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createDiagnosticTimelineRecorder,
   createNoopDiagnosticTimelineRecorder,
+  toErrorLike,
   type HighResolutionClock,
 } from './diagnostic-timeline.js';
 
@@ -130,5 +131,20 @@ describe('createNoopDiagnosticTimelineRecorder', () => {
     expect(snapshot.entries.length).toBe(0);
     expect(snapshot.capacity).toBe(0);
     expect(snapshot).toBe(nextSnapshot);
+  });
+});
+
+describe('toErrorLike', () => {
+  it('preserves empty strings on serialized errors', () => {
+    const error = new Error('');
+    error.stack = '';
+
+    const result = toErrorLike(error);
+
+    expect(result).toEqual({
+      name: 'Error',
+      message: '',
+      stack: '',
+    });
   });
 });
