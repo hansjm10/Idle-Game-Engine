@@ -208,6 +208,8 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  tools/content-schema-cli: {}
+
 packages:
 
   '@asamuzakjp/css-color@3.2.0':
