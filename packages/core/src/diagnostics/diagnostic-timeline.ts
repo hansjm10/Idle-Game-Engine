@@ -125,9 +125,12 @@ const sharedDefaultClock = getDefaultHighResolutionClock();
 export function createDiagnosticTimelineRecorder(
   options: DiagnosticTimelineOptions = {},
 ): DiagnosticTimelineRecorder {
+  const capacityOption = options.capacity;
   const capacity =
-    options.capacity && options.capacity > 0
-      ? Math.floor(options.capacity)
+    typeof capacityOption === 'number' &&
+    Number.isFinite(capacityOption) &&
+    capacityOption >= 0
+      ? Math.floor(capacityOption)
       : DEFAULT_CAPACITY;
   const slowTickBudgetMs =
     options.slowTickBudgetMs ?? DEFAULT_SLOW_TICK_BUDGET_MS;
@@ -183,14 +186,10 @@ export function createDiagnosticTimelineRecorder(
       tick,
       startedAt,
       end(completion?: CompleteTickOptions) {
-        if (ended || capacity === 0) {
-          ended = true;
+        if (ended) {
           return;
         }
         ended = true;
-
-        const slotIndex = writeIndex;
-        const slot = claimSlot(slotIndex);
 
         const endTime =
           completion?.endedAt ?? clock.now();
@@ -199,6 +198,15 @@ export function createDiagnosticTimelineRecorder(
 
         const finalBudget =
           completion?.budgetMs ?? budgetMs;
+
+        if (capacity === 0) {
+          droppedEntries += 1;
+          lastTick = tick;
+          return;
+        }
+
+        const slotIndex = writeIndex;
+        const slot = claimSlot(slotIndex);
 
         slot.tick = tick;
         slot.startedAt = startedAt;

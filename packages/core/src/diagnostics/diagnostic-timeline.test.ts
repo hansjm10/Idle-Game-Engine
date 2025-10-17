@@ -89,6 +89,31 @@ describe('DiagnosticTimelineRecorder', () => {
     expect(slowEntry.overBudgetMs).toBeCloseTo(2);
     expect(slowEntry.budgetMs).toBe(5);
   });
+
+  it('counts dropped ticks when capacity is zero', () => {
+    const clock = new StubClock();
+    const recorder = createDiagnosticTimelineRecorder({
+      capacity: 0,
+      clock,
+      slowTickBudgetMs: 5,
+    });
+
+    const firstTick = recorder.startTick(1);
+    clock.advance(3);
+    firstTick.end();
+
+    const secondTick = recorder.startTick(2);
+    clock.advance(2);
+    secondTick.end();
+
+    const snapshot = recorder.snapshot();
+
+    expect(snapshot.capacity).toBe(0);
+    expect(snapshot.size).toBe(0);
+    expect(snapshot.entries.length).toBe(0);
+    expect(snapshot.droppedEntries).toBe(2);
+    expect(snapshot.lastTick).toBe(2);
+  });
 });
 
 describe('createNoopDiagnosticTimelineRecorder', () => {
