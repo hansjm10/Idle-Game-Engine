@@ -404,6 +404,20 @@ export {
   setTelemetry,
 } from './telemetry.js';
 export {
+  createDiagnosticTimelineRecorder,
+  createNoopDiagnosticTimelineRecorder,
+  getDefaultHighResolutionClock,
+  toErrorLike,
+  type CompleteTickOptions,
+  type DiagnosticTickHandle,
+  type DiagnosticTimelineEntry,
+  type DiagnosticTimelineRecorder,
+  type DiagnosticTimelineResult,
+  type ErrorLike,
+  type HighResolutionClock,
+  type StartTickOptions,
+} from './diagnostics/diagnostic-timeline.js';
+export {
   createPrometheusTelemetry,
   type PrometheusTelemetryOptions,
   type PrometheusTelemetryFacade,
