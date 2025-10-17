@@ -613,6 +613,31 @@ function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
 }
 
 function createRecordedEventFrame(frame: RuntimeEventFrame): RecordedRuntimeEventFrame {
+  if (frame.format === 'object-array') {
+    const events: RecordedRuntimeEvent[] = new Array(frame.count);
+
+    for (let index = 0; index < frame.events.length; index += 1) {
+      const event = frame.events[index];
+      const payload = freezeSnapshot(
+        cloneStructured(event.payload as RuntimeEventPayload<RuntimeEventType>),
+      ) as ImmutablePayload<RuntimeEventPayload<RuntimeEventType>>;
+
+      events[index] = {
+        type: event.type,
+        channel: event.channel,
+        issuedAt: event.issuedAt,
+        dispatchOrder: event.dispatchOrder,
+        payload,
+      };
+    }
+
+    return {
+      tick: frame.tick,
+      manifestHash: frame.manifestHash,
+      events,
+    };
+  }
+
   const events: RecordedRuntimeEvent[] = new Array(frame.count);
 
   for (let index = 0; index < frame.count; index += 1) {

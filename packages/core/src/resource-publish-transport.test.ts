@@ -95,14 +95,18 @@ describe('resource publish transport', () => {
 
     const frame = result.transport.events;
     expect(frame).toBeDefined();
-    expect(frame!.count).toBe(1);
-    expect(frame!.tick).toBe(4);
-    expect(frame!.manifestHash).toBe(bus.getManifestHash());
-    expect(Array.from(frame!.channelIndices)).toEqual([1]);
+    if (!frame || frame.format !== 'struct-of-arrays') {
+      throw new Error('Expected struct-of-arrays frame when fallback is disabled.');
+    }
 
-    const typeIndex = frame!.typeIndices[0];
-    expect(frame!.stringTable[typeIndex]).toBe('automation:toggled');
-    expect(frame!.payloads[0]).toEqual({
+    expect(frame.count).toBe(1);
+    expect(frame.tick).toBe(4);
+    expect(frame.manifestHash).toBe(bus.getManifestHash());
+    expect(Array.from(frame.channelIndices)).toEqual([1]);
+
+    const typeIndex = frame.typeIndices[0];
+    expect(frame.stringTable[typeIndex]).toBe('automation:toggled');
+    expect(frame.payloads[0]).toEqual({
       automationId: 'auto:1',
       enabled: false,
     });

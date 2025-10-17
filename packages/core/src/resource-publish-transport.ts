@@ -230,12 +230,17 @@ export function buildResourcePublishTransport(
   const eventFrameResult =
     eventBus === undefined || tick === undefined
       ? undefined
-      : buildRuntimeEventFrame(eventBus, pool, {
-          tick,
-          manifestHash: eventBus.getManifestHash(),
-          owner: `${owner}:events`,
-          mode,
-        });
+      : (() => {
+          const exportState = eventBus.getFrameExportState();
+          return buildRuntimeEventFrame(eventBus, pool, {
+            tick,
+            manifestHash: eventBus.getManifestHash(),
+            owner: `${owner}:events`,
+            mode,
+            format: exportState.format,
+            diagnostics: exportState.diagnostics,
+          });
+        })();
 
   const transport: ResourcePublishTransport = {
     version: TRANSPORT_VERSION,
@@ -293,12 +298,17 @@ function buildEmptyTransport(
   const eventFrameResult =
     eventBus === undefined || context.tick === undefined
       ? undefined
-      : buildRuntimeEventFrame(eventBus, pool, {
-          tick: context.tick,
-          manifestHash: eventBus.getManifestHash(),
-          owner: `${context.owner}:events`,
-          mode: context.mode,
-        });
+      : (() => {
+          const exportState = eventBus.getFrameExportState();
+          return buildRuntimeEventFrame(eventBus, pool, {
+            tick: context.tick,
+            manifestHash: eventBus.getManifestHash(),
+            owner: `${context.owner}:events`,
+            mode: context.mode,
+            format: exportState.format,
+            diagnostics: exportState.diagnostics,
+          });
+        })();
 
   const descriptors: TransportBufferDescriptor[] = [
     createDescriptor('amounts', emptyFloat),

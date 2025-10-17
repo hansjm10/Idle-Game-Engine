@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventBus, EventBufferOverflowError } from './event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
 import { type RuntimeEventPayload } from './runtime-event.js';
+import { buildRuntimeEventFrame } from './runtime-event-frame.js';
 import {
   resetTelemetry,
   setTelemetry,
   type TelemetryFacade,
 } from '../telemetry.js';
+import { TransportBufferPool } from '../transport-buffer-pool.js';
 
 describe('EventBus', () => {
   const clock = {
@@ -607,6 +609,90 @@ describe('EventBus', () => {
           handler: 'system:test',
           durationMs: expect.any(Number),
           thresholdMs: 0.5,
+        }),
+      );
+    } finally {
+      resetTelemetry();
+    }
+  });
+
+  it('toggles event frame export format based on density when enabled', () => {
+    const telemetryStub: TelemetryFacade = {
+      recordError() {},
+      recordWarning: vi.fn(),
+      recordProgress() {},
+      recordCounters() {},
+      recordTick() {},
+    };
+
+    setTelemetry(telemetryStub);
+
+    try {
+      const bus = new EventBus({
+        clock,
+        channels: DEFAULT_EVENT_BUS_OPTIONS.channels,
+        frameExport: {
+          defaultFormat: 'struct-of-arrays',
+          autoFallback: {
+            enabled: true,
+            windowLength: 1,
+            densityThreshold: 2,
+          },
+        },
+      });
+      const pool = new TransportBufferPool();
+
+      bus.beginTick(0);
+      expect(bus.getFrameExportState().format).toBe('struct-of-arrays');
+
+      bus.beginTick(1);
+      expect(bus.getFrameExportState().format).toBe('object-array');
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'RuntimeEventFrameFormatChanged',
+        expect.objectContaining({
+          previousFormat: 'struct-of-arrays',
+          nextFormat: 'object-array',
+          featureFlagEnabled: true,
+        }),
+      );
+
+      const exportState = bus.getFrameExportState();
+      for (let i = 0; i < 4; i += 1) {
+        bus.publish('resource:threshold-reached', {
+          resourceId: `energy:${i}`,
+          threshold: i,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }
+
+      const frameResult = buildRuntimeEventFrame(bus, pool, {
+        tick: 1,
+        manifestHash: bus.getManifestHash(),
+        owner: 'test',
+        format: exportState.format,
+        diagnostics: exportState.diagnostics,
+      });
+
+      expect(frameResult.frame.format).toBe('object-array');
+      frameResult.release();
+
+      const channelCount = bus.getManifest().entries.length;
+      const eventsNeeded = Math.ceil(channelCount * 2);
+
+      for (let i = 0; i < eventsNeeded; i += 1) {
+        bus.publish('resource:threshold-reached', {
+          resourceId: `dense:${i}`,
+          threshold: i,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }
+
+      bus.beginTick(2);
+
+      expect(bus.getFrameExportState().format).toBe('struct-of-arrays');
+      expect(telemetryStub.recordWarning).toHaveBeenLastCalledWith(
+        'RuntimeEventFrameFormatChanged',
+        expect.objectContaining({
+          previousFormat: 'object-array',
+          nextFormat: 'struct-of-arrays',
         }),
       );
     } finally {

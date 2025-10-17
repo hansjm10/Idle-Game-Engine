@@ -83,6 +83,18 @@ assume a stable contract.
   The toggle is feature-flagged to allow per-environment experimentation.
 - The runtime exporter surfaces diagnostics when the fallback is activated so we
   can revisit the default if sparse workloads become dominant.
+- `EventBusOptions.frameExport.autoFallback.enabled` controls whether the
+  density-driven downgrade is considered. When enabled, the runtime emits a
+  `RuntimeEventFrameFormatChanged` telemetry warning any time the exporter flips
+  formats and `EventBus.getFrameExportState()` exposes the rolling window,
+  density threshold, and active format so shells can display the state.
+- `RuntimeEventFrame` payloads now include a `format` discriminator and optional
+  `diagnostics` block; consumers should branch on the format before accessing
+  struct-of-arrays fields. Object-array exports surface the same metadata but
+  provide `events[]` records instead of typed arrays.
+- Benchmarks comparing both representations live under
+  `packages/core/benchmarks`. Run `pnpm --filter @idle-engine/core run benchmark`
+  to capture dense and sparse timings in CI logs.
 - Follow-up: add benchmark coverage for both formats and document the flag in
   the shell transport guide.
 
