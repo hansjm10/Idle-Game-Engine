@@ -161,6 +161,43 @@ describe('DiagnosticTimelineRecorder', () => {
     expect(overwritten.entries.map((entry) => entry.tick)).toEqual([3, 4]);
     expect(overwritten.dropped).toBe(1);
   });
+
+  it('treats heads from a previous timeline as a fresh baseline', () => {
+    const clock = new StubClock();
+    const recorder = createDiagnosticTimelineRecorder({
+      capacity: 3,
+      clock,
+      slowTickBudgetMs: 10,
+    });
+
+    for (let tick = 1; tick <= 3; tick += 1) {
+      const initial = recorder.startTick(tick);
+      clock.advance(1);
+      initial.end();
+      clock.advance(1);
+    }
+
+    const staleSnapshot = recorder.readDelta();
+    expect(staleSnapshot.head).toBe(3);
+
+    recorder.clear();
+
+    const resumedFirst = recorder.startTick(101);
+    clock.advance(2);
+    resumedFirst.end();
+
+    const resumedSecond = recorder.startTick(102);
+    clock.advance(3);
+    resumedSecond.end();
+
+    const delta = recorder.readDelta(staleSnapshot.head);
+    expect(delta.head).toBe(2);
+    expect(delta.entries.map((entry) => entry.tick)).toEqual([
+      101,
+      102,
+    ]);
+    expect(delta.dropped).toBe(0);
+  });
 });
 
 describe('createNoopDiagnosticTimelineRecorder', () => {

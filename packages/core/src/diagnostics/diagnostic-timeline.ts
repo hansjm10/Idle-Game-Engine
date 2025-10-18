@@ -379,6 +379,8 @@ export function createDiagnosticTimelineRecorder(
   function readDelta(
     sinceHead?: number,
   ): DiagnosticTimelineResult {
+    const currentHead = head;
+
     const normalizedSinceHead =
       typeof sinceHead === 'number' &&
       Number.isFinite(sinceHead) &&
@@ -386,15 +388,23 @@ export function createDiagnosticTimelineRecorder(
         ? sinceHead
         : undefined;
 
-    const entries = collectEntries(normalizedSinceHead);
-    const currentHead = head;
+    const shouldResetBaseline =
+      normalizedSinceHead !== undefined &&
+      normalizedSinceHead > currentHead;
+
+    const entries = collectEntries(
+      shouldResetBaseline ? undefined : normalizedSinceHead,
+    );
 
     let droppedSince =
-      normalizedSinceHead === undefined
+      normalizedSinceHead === undefined || shouldResetBaseline
         ? dropped
         : 0;
 
-    if (normalizedSinceHead !== undefined) {
+    if (
+      normalizedSinceHead !== undefined &&
+      !shouldResetBaseline
+    ) {
       const expectedNew =
         normalizedSinceHead >= currentHead
           ? 0
