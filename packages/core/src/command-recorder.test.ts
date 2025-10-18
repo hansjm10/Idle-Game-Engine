@@ -672,6 +672,104 @@ describe('CommandRecorder', () => {
     expect(queue.size).toBe(1);
   });
 
+  it('rolls back runtime state when diagnostics callbacks throw', () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    dispatcher.register('SET', (payload: { value: number }) => {
+      state.value = payload.value;
+    });
+
+    recorder.record(
+      createCommand({
+        type: 'SET',
+        payload: { value: 42 },
+        step: 5,
+      }),
+    );
+
+    const log = recorder.export();
+    const configuration = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration,
+    });
+
+    const entry: DiagnosticTimelineEntry = Object.freeze({
+      tick: 3,
+      startedAt: 0,
+      endedAt: 6,
+      durationMs: 6,
+      budgetMs: 4,
+      isSlow: true,
+      overBudgetMs: 2,
+      error: undefined,
+      metadata: undefined,
+    });
+
+    const delta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([entry]),
+      head: 13,
+      dropped: 0,
+      configuration,
+    });
+
+    const diagnosticsError = new Error('diagnostics failed');
+    let readCallCount = 0;
+    const previousStep = 10;
+    const previousNextStep = 11;
+    let currentStep = previousStep;
+    let nextExecutableStep = previousNextStep;
+    const setCurrentStep = vi.fn((step: number) => {
+      currentStep = step;
+    });
+    const setNextExecutableStep = vi.fn((step: number) => {
+      nextExecutableStep = step;
+    });
+
+    expect(() =>
+      recorder.replay(log, dispatcher, {
+        commandQueue: queue,
+        getCurrentStep: () => currentStep,
+        getNextExecutableStep: () => nextExecutableStep,
+        setCurrentStep,
+        setNextExecutableStep,
+        readDiagnosticsDelta: (sinceHead?: number) => {
+          readCallCount += 1;
+          if (sinceHead === undefined) {
+            return baseline;
+          }
+          expect(sinceHead).toBe(baseline.head);
+          return delta;
+        },
+        attachDiagnosticsDelta() {
+          throw diagnosticsError;
+        },
+      }),
+    ).toThrow(diagnosticsError);
+
+    expect(readCallCount).toBe(2);
+    expect(state.value).toBe(0);
+    expect(currentStep).toBe(previousStep);
+    expect(nextExecutableStep).toBe(previousNextStep);
+    expect(setCurrentStep).toHaveBeenCalledWith(previousStep);
+    expect(setCurrentStep).not.toHaveBeenCalledWith(log.metadata.lastStep + 1);
+    expect(setNextExecutableStep).toHaveBeenCalledWith(previousNextStep);
+    expect(setNextExecutableStep).not.toHaveBeenCalledWith(log.metadata.lastStep + 1);
+  });
+
   it('captures and restores deterministic RNG seed', () => {
     const state = setGameState({ value: 0 });
     setRNGSeed(9876);

@@ -467,6 +467,7 @@ export class CommandRecorder {
     let diagnosticsError: unknown;
 
     const revertRuntimeContext = (): void => {
+      restoreState(mutableState);
       if (hasReplaySeed) {
         restoreReplaySeed();
       }
@@ -619,6 +620,7 @@ export class CommandRecorder {
           }
         } catch (error) {
           diagnosticsError = error;
+          replayFailed = true;
         }
       }
 
