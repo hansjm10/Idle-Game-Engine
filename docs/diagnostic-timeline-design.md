@@ -113,6 +113,7 @@ Issue: #9 — Runtime Core Workstream
 - High-resolution timestamps rely on monotonic clocks; fallbacks degrade precision but remain deterministic because start/end are still measured within the same clock.
 - Instrumentation branches are minimized by caching the recorder (either real or noop) and inline guards for disabled configuration.
 - Export snapshots clone arrays at most once per request; by freezing entries on write, consumers can reuse references safely.
+- A dedicated micro-benchmark (`packages/core/benchmarks/diagnostic-timeline-overhead.bench.mjs`) exercises multiple systems and high queue churn. On Node.js v22.20.0 running under WSL2, `pnpm --filter @idle-engine/core run benchmark:diagnostics` reported a mean +10.8 ms cost per 320 ticks (about 10.1% overhead) with a median delta of +9.0 ms.
 
 ## 8. Rollout Steps
 1. Scaffold `packages/core/src/diagnostics/diagnostic-timeline.ts` with recorder, data model, and tests covering ring-buffer rollover, slow-tick detection, and noop mode.
