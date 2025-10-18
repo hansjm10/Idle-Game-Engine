@@ -726,6 +726,34 @@ describe('IdleEngineRuntime', () => {
     );
   });
 
+  it('retains diagnostics overrides when disabling the timeline with options', () => {
+    const runtime = new IdleEngineRuntime();
+
+    runtime.enableDiagnostics({
+      capacity: 3,
+      slowSystemBudgetMs: 6,
+      systemHistorySize: 5,
+    });
+
+    runtime.enableDiagnostics({
+      enabled: false,
+      capacity: 9,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 4,
+    });
+
+    const disabledSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(disabledSnapshot.configuration.enabled).toBe(false);
+
+    runtime.enableDiagnostics();
+
+    const reenablingSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(reenablingSnapshot.configuration.enabled).toBe(true);
+    expect(reenablingSnapshot.configuration.capacity).toBe(9);
+    expect(reenablingSnapshot.configuration.slowSystemBudgetMs).toBe(2);
+    expect(reenablingSnapshot.configuration.systemHistorySize).toBe(4);
+  });
+
   it('annotates system errors in the diagnostic timeline and preserves telemetry', () => {
     const clock = new TestClock();
     const errors: Array<{ event: string; data?: unknown }> = [];

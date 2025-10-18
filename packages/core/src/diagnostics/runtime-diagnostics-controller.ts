@@ -673,13 +673,25 @@ class RuntimeDiagnosticsControllerImpl
     base: RuntimeDiagnosticsTimelineOptions,
     config: Readonly<ResolvedDiagnosticTimelineOptions>,
   ): RuntimeDiagnosticsTimelineOptions {
+    const {
+      capacity,
+      slowTickBudgetMs,
+      slowSystemBudgetMs,
+      systemHistorySize,
+      enabled: _,
+      ...otherOptions
+    } = base;
+
     return {
-      ...base,
+      ...otherOptions,
       enabled: true,
-      capacity: config.capacity,
-      slowTickBudgetMs: config.slowTickBudgetMs,
-      slowSystemBudgetMs: config.slowSystemBudgetMs,
-      systemHistorySize: config.systemHistorySize,
+      capacity: capacity ?? config.capacity,
+      slowTickBudgetMs:
+        slowTickBudgetMs ?? config.slowTickBudgetMs,
+      slowSystemBudgetMs:
+        slowSystemBudgetMs ?? config.slowSystemBudgetMs,
+      systemHistorySize:
+        systemHistorySize ?? config.systemHistorySize,
     };
   }
 }
