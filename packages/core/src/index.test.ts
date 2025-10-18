@@ -40,9 +40,8 @@ type CreateRuntimeOptions = Omit<IdleEngineRuntimeOptions, 'diagnostics'> & {
 
 interface RuntimeTestDiagnosticsContext {
   readonly options: RuntimeDiagnosticsTimelineOptions | false | undefined;
-  get head(): number;
-  set head(value: number);
-  get configuration(): DiagnosticTimelineResult['configuration'];
+  head: number;
+  readonly configuration: DiagnosticTimelineResult['configuration'];
   readDelta(sinceHead?: number): DiagnosticTimelineResult;
 }
 
