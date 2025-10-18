@@ -333,6 +333,40 @@ describe('IdleEngineRuntime', () => {
     expect(queue.size).toBe(4);
   });
 
+  it('records accumulator backlog telemetry when clamped by maxStepsPerFrame', () => {
+    const clock = new TestClock();
+    const { runtime, diagnostics } = createRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 2,
+      diagnostics: {
+        enabled: true,
+        capacity: 8,
+        clock,
+      },
+    });
+
+    runtime.tick(45);
+
+    expect(runtime.getCurrentStep()).toBe(2);
+    expect(runtime.getNextExecutableStep()).toBe(2);
+
+    const delta = diagnostics.readDelta();
+    expect(delta.dropped).toBe(0);
+    expect(delta.entries).toHaveLength(2);
+    expect(delta.entries.map((entry) => entry.tick)).toEqual([0, 1]);
+
+    for (const entry of delta.entries) {
+      expect(entry.metadata?.accumulatorBacklogMs).toBeCloseTo(25, 5);
+      expect(entry.metadata?.queue).toEqual({
+        sizeBefore: 0,
+        sizeAfter: 0,
+        captured: 0,
+        executed: 0,
+        skipped: 0,
+      });
+    }
+  });
+
   it('executes systems during each tick with the correct context', () => {
     const { runtime } = createRuntime();
     const executedSteps: number[] = [];
