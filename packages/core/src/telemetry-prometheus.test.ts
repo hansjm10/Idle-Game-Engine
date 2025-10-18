@@ -27,6 +27,13 @@ describe('createPrometheusTelemetry', () => {
     });
 
     telemetry.recordWarning('EventHandlerSlow');
+    telemetry.recordWarning('TickExecutionSlow');
+    telemetry.recordWarning('SystemExecutionSlow', { systemId: 'alpha' });
+    telemetry.recordWarning('SystemExecutionSlow', { systemId: 'alpha' });
+    telemetry.recordWarning('SystemExecutionSlow', {
+      systemId: 'beta',
+    });
+    telemetry.recordWarning('SystemExecutionSlow', { systemId: 123 });
     telemetry.recordCounters('events.cooldown_ticks', {
       'channel:0': 3,
       'channel:1': 0,
@@ -57,12 +64,31 @@ describe('createPrometheusTelemetry', () => {
     const softLimitBreaches = await registry
       .getSingleMetric('test_events_soft_limit_breaches_total')
       ?.get();
+    const ticksOverBudget = await registry
+      .getSingleMetric('test_runtime_ticks_over_budget_total')
+      ?.get();
+    const slowSystems = await registry
+      .getSingleMetric('test_runtime_system_slow_total')
+      ?.get();
 
     expect(published?.values[0]?.value).toBe(8);
     expect(softLimited?.values[0]?.value).toBe(3);
     expect(overflowed?.values[0]?.value).toBe(1);
     expect(subscribers?.values[0]?.value).toBe(6);
     expect(slowHandlers?.values[0]?.value).toBe(1);
+    expect(ticksOverBudget?.values[0]?.value).toBe(1);
+    expect(slowSystems?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          value: 2,
+          labels: { system_id: 'alpha' },
+        }),
+        expect.objectContaining({
+          value: 1,
+          labels: { system_id: 'beta' },
+        }),
+      ]),
+    );
     expect(cooldownTicks?.values).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ value: 3, labels: { channel: '0' } }),
