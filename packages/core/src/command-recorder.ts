@@ -4,7 +4,10 @@ import type {
   CommandDispatcher,
   ExecutionContext,
 } from './command-dispatcher.js';
-import type { DiagnosticTimelineResult } from './diagnostics/diagnostic-timeline.js';
+import type {
+  DiagnosticTimelineResult,
+  ResolvedDiagnosticTimelineOptions,
+} from './diagnostics/diagnostic-timeline.js';
 import { CommandQueue, deepFreezeInPlace } from './command-queue.js';
 import type { ImmutablePayload } from './command.js';
 import {
@@ -424,10 +427,14 @@ export class CommandRecorder {
     const readDiagnosticsDelta = runtimeContext?.readDiagnosticsDelta;
     const attachDiagnosticsDelta = runtimeContext?.attachDiagnosticsDelta;
     let diagnosticsHead: number | undefined;
+    let diagnosticsConfiguration:
+      | ResolvedDiagnosticTimelineOptions
+      | undefined;
 
     if (typeof readDiagnosticsDelta === 'function') {
       const baseline = readDiagnosticsDelta();
       diagnosticsHead = baseline.head;
+      diagnosticsConfiguration = baseline.configuration;
     }
 
     if (queue.size > 0) {
@@ -588,11 +595,23 @@ export class CommandRecorder {
       replayFailed = false;
     } finally {
       if (typeof readDiagnosticsDelta === 'function') {
+        const previousDiagnosticsHead = diagnosticsHead;
+        const previousDiagnosticsConfiguration = diagnosticsConfiguration;
         const delta = readDiagnosticsDelta(diagnosticsHead);
         diagnosticsHead = delta.head;
+        diagnosticsConfiguration = delta.configuration;
+        const hasEntries = delta.entries.length > 0;
+        const hasDrops = delta.dropped > 0;
+        const headChanged =
+          previousDiagnosticsHead !== undefined &&
+          delta.head !== previousDiagnosticsHead;
+        const configurationChanged =
+          previousDiagnosticsConfiguration !== undefined &&
+          previousDiagnosticsConfiguration !== delta.configuration;
+
         if (
           attachDiagnosticsDelta &&
-          (delta.entries.length > 0 || delta.dropped > 0)
+          (hasEntries || hasDrops || headChanged || configurationChanged)
         ) {
           attachDiagnosticsDelta(delta);
         }

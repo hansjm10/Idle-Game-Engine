@@ -544,6 +544,67 @@ describe('CommandRecorder', () => {
     expect(attachments).toEqual([delta]);
   });
 
+  it('attaches diagnostics deltas when configuration changes without new entries', () => {
+    const recorder = new CommandRecorder(setGameState({ value: 0 }));
+    const log = recorder.export();
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    const attachments: DiagnosticTimelineResult[] = [];
+    const configurationEnabled = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+    const configurationDisabled = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: false,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration: configurationEnabled,
+    });
+
+    const configurationOnlyDelta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 0,
+      dropped: 0,
+      configuration: configurationDisabled,
+    });
+
+    let diagnosticCallCount = 0;
+    recorder.replay(log, dispatcher, {
+      commandQueue: queue,
+      readDiagnosticsDelta: (sinceHead?: number) => {
+        if (diagnosticCallCount === 0) {
+          diagnosticCallCount += 1;
+          expect(sinceHead).toBeUndefined();
+          return baseline;
+        }
+
+        diagnosticCallCount += 1;
+        expect(sinceHead).toBe(baseline.head);
+        return configurationOnlyDelta;
+      },
+      attachDiagnosticsDelta(result) {
+        attachments.push(result);
+      },
+    });
+
+    expect(diagnosticCallCount).toBe(2);
+    expect(attachments).toEqual([configurationOnlyDelta]);
+  });
+
   it('captures and restores deterministic RNG seed', () => {
     const state = setGameState({ value: 0 });
     setRNGSeed(9876);
