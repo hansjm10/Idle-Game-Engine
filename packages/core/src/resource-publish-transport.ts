@@ -1,3 +1,4 @@
+import type { DiagnosticTimelineResult } from './diagnostics/diagnostic-timeline.js';
 import type { EventBus } from './events/event-bus.js';
 import {
   buildRuntimeEventFrame,
@@ -42,6 +43,7 @@ export interface ResourcePublishTransport {
   readonly dirtyIndices: Uint32Array;
   readonly buffers: readonly TransportBufferDescriptor[];
   readonly events?: RuntimeEventFrame;
+  readonly diagnostics?: DiagnosticTimelineResult;
 }
 
 export interface ResourcePublishTransportBuildOptions {
@@ -49,6 +51,7 @@ export interface ResourcePublishTransportBuildOptions {
   readonly owner?: string;
   readonly tick?: number;
   readonly eventBus?: EventBus;
+  readonly diagnosticsPayload?: DiagnosticTimelineResult;
 }
 
 export interface ResourcePublishTransportReleaseOptions {
@@ -189,17 +192,24 @@ export function buildResourcePublishTransport(
   const tick = options.tick;
   const mode = options.mode ?? 'share';
   const eventBus = options.eventBus;
+  const diagnosticsPayload = options.diagnosticsPayload;
 
   if (eventBus !== undefined && tick === undefined) {
     throw new Error('buildResourcePublishTransport requires a tick when eventBus is provided.');
   }
 
   if (dirtyCount === 0) {
-    return buildEmptyTransport(snapshot, eventBus, pool, {
-      owner,
-      tick,
-      mode,
-    });
+    return buildEmptyTransport(
+      snapshot,
+      eventBus,
+      pool,
+      {
+        owner,
+        tick,
+        mode,
+      },
+      diagnosticsPayload,
+    );
   }
 
   const dirtyLease = pool.acquireUint32(dirtyCount, {
@@ -248,6 +258,7 @@ export function buildResourcePublishTransport(
     dirtyIndices,
     buffers: descriptors,
     events: eventFrameResult?.frame,
+    diagnostics: diagnosticsPayload,
   };
 
   const transferables =
@@ -290,6 +301,7 @@ function buildEmptyTransport(
   eventBus: EventBus | undefined,
   pool: TransportBufferPool,
   context: { owner: string; tick?: number; mode: 'share' | 'transfer' },
+  diagnosticsPayload?: DiagnosticTimelineResult,
 ): ResourcePublishTransportBuildResult {
   const emptyFloat = new Float64Array(0);
   const emptyUint8 = new Uint8Array(0);
@@ -327,6 +339,7 @@ function buildEmptyTransport(
     dirtyIndices: emptyUint32,
     buffers: descriptors,
     events: eventFrameResult?.frame,
+    diagnostics: diagnosticsPayload,
   };
 
   return {

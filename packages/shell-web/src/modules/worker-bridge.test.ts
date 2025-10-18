@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { DiagnosticTimelineResult } from '@idle-engine/core';
+
 import {
   CommandSource,
   WorkerBridgeImpl,
@@ -125,5 +127,52 @@ describe('WorkerBridgeImpl', () => {
     expect(() => bridge.sendCommand('PING', {})).toThrow(
       'WorkerBridge has been disposed',
     );
+    expect(() => bridge.enableDiagnostics()).toThrow(
+      'WorkerBridge has been disposed',
+    );
+  });
+
+  it('subscribes to diagnostics updates and forwards payloads', () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    const handler = vi.fn<void, [DiagnosticTimelineResult]>();
+    bridge.onDiagnosticsUpdate(handler);
+    bridge.enableDiagnostics();
+
+    const subscribeEnvelope = worker.postMessage.mock.calls.at(-1)?.[0] as {
+      type?: string;
+    };
+    expect(subscribeEnvelope?.type).toBe('DIAGNOSTICS_SUBSCRIBE');
+
+    const diagnosticsPayload = Object.freeze({
+      entries: Object.freeze([]),
+      head: 1,
+      dropped: 0,
+      configuration: Object.freeze({
+        capacity: 120,
+        slowTickBudgetMs: 50,
+        enabled: true,
+        slowSystemBudgetMs: 16,
+        systemHistorySize: 60,
+        tickBudgetMs: 100,
+      }),
+    }) as DiagnosticTimelineResult;
+
+    worker.emitMessage('message', {
+      type: 'DIAGNOSTICS_UPDATE',
+      diagnostics: diagnosticsPayload,
+    });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(diagnosticsPayload);
+
+    bridge.offDiagnosticsUpdate(handler);
+    worker.emitMessage('message', {
+      type: 'DIAGNOSTICS_UPDATE',
+      diagnostics: diagnosticsPayload,
+    });
+
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });

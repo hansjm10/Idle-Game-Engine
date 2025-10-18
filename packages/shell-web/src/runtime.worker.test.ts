@@ -182,4 +182,64 @@ describe('runtime.worker integration', () => {
     expect(commands[0]!.timestamp).toBe(100);
     expect(commands[1]!.timestamp).toBeCloseTo(100.0001, 6);
   });
+
+  it('gates diagnostics updates behind a subscription handshake', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    // Advance once to generate a state update before diagnostics are enabled.
+    advanceTime(110);
+    runTick();
+    const hasPreHandshakeDiagnostics = context.postMessage.mock.calls.some(
+      ([payload]) => (payload as { type?: string } | undefined)?.type === 'DIAGNOSTICS_UPDATE',
+    );
+    expect(hasPreHandshakeDiagnostics).toBe(false);
+
+    context.postMessage.mockClear();
+
+    const enableSpy = vi.spyOn(harness.runtime, 'enableDiagnostics');
+    context.dispatch({ type: 'DIAGNOSTICS_SUBSCRIBE' });
+    expect(enableSpy).toHaveBeenCalledTimes(1);
+
+    const baselineCall = context.postMessage.mock.calls.find(
+      ([payload]) => (payload as { type?: string } | undefined)?.type === 'DIAGNOSTICS_UPDATE',
+    );
+    expect(baselineCall).toBeDefined();
+
+    const baselineDiagnostics = (baselineCall![0] as {
+      diagnostics: { head: number };
+    }).diagnostics;
+
+    context.postMessage.mockClear();
+
+    advanceTime(120);
+    runTick();
+
+    const diagnosticsCall = context.postMessage.mock.calls.find(
+      ([payload]) => (payload as { type?: string } | undefined)?.type === 'DIAGNOSTICS_UPDATE',
+    );
+    expect(diagnosticsCall).toBeDefined();
+    const diagnosticsAfterTick = (diagnosticsCall![0] as {
+      diagnostics: { head: number; entries: unknown[] };
+    }).diagnostics;
+    expect(diagnosticsAfterTick.head).toBeGreaterThanOrEqual(baselineDiagnostics.head);
+    expect(Array.isArray(diagnosticsAfterTick.entries)).toBe(true);
+
+    const stateUpdateCall = context.postMessage.mock.calls.find(
+      ([payload]) => (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+    );
+    expect(stateUpdateCall).toBeDefined();
+  });
 });
