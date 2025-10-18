@@ -4,6 +4,10 @@ import type {
   CommandDispatcher,
   ExecutionContext,
 } from './command-dispatcher.js';
+import type {
+  DiagnosticTimelineResult,
+  ResolvedDiagnosticTimelineOptions,
+} from './diagnostics/diagnostic-timeline.js';
 import { CommandQueue, deepFreezeInPlace } from './command-queue.js';
 import type { ImmutablePayload } from './command.js';
 import {
@@ -65,6 +69,10 @@ export interface RuntimeReplayContext {
   getNextExecutableStep?(): number;
   setCurrentStep?(step: number): void;
   setNextExecutableStep?(step: number): void;
+  readDiagnosticsDelta?(
+    sinceHead?: number,
+  ): DiagnosticTimelineResult;
+  attachDiagnosticsDelta?(delta: DiagnosticTimelineResult): void;
 }
 
 const COMMAND_LOG_VERSION = '0.1.0';
@@ -416,6 +424,19 @@ export class CommandRecorder {
       runtimeContext?.commandQueue ??
       new CommandQueue();
 
+    const readDiagnosticsDelta = runtimeContext?.readDiagnosticsDelta;
+    const attachDiagnosticsDelta = runtimeContext?.attachDiagnosticsDelta;
+    let diagnosticsHead: number | undefined;
+    let diagnosticsConfiguration:
+      | ResolvedDiagnosticTimelineOptions
+      | undefined;
+
+    if (typeof readDiagnosticsDelta === 'function') {
+      const baseline = readDiagnosticsDelta();
+      diagnosticsHead = baseline.head;
+      diagnosticsConfiguration = baseline.configuration;
+    }
+
     if (queue.size > 0) {
       telemetry.recordError('ReplayQueueNotEmpty', { pending: queue.size });
       restoreReplaySeed();
@@ -443,8 +464,10 @@ export class CommandRecorder {
     const eventBus = runtimeContext?.eventBus;
     let activeEventBusTick: number | undefined;
     let processedSinceLastTelemetry = 0;
+    let diagnosticsError: unknown;
 
     const revertRuntimeContext = (): void => {
+      restoreState(mutableState);
       if (hasReplaySeed) {
         restoreReplaySeed();
       }
@@ -573,6 +596,34 @@ export class CommandRecorder {
 
       replayFailed = false;
     } finally {
+      if (typeof readDiagnosticsDelta === 'function') {
+        try {
+          const previousDiagnosticsHead = diagnosticsHead;
+          const previousDiagnosticsConfiguration = diagnosticsConfiguration;
+          const delta = readDiagnosticsDelta(diagnosticsHead);
+          diagnosticsHead = delta.head;
+          diagnosticsConfiguration = delta.configuration;
+          const hasEntries = delta.entries.length > 0;
+          const hasDrops = delta.dropped > 0;
+          const headChanged =
+            previousDiagnosticsHead !== undefined &&
+            delta.head !== previousDiagnosticsHead;
+          const configurationChanged =
+            previousDiagnosticsConfiguration !== undefined &&
+            previousDiagnosticsConfiguration !== delta.configuration;
+
+          if (
+            attachDiagnosticsDelta &&
+            (hasEntries || hasDrops || headChanged || configurationChanged)
+          ) {
+            attachDiagnosticsDelta(delta);
+          }
+        } catch (error) {
+          diagnosticsError = error;
+          replayFailed = true;
+        }
+      }
+
       (queue as CommandQueue & {
         enqueue: (command: Command) => void;
       }).enqueue = originalEnqueue;
@@ -586,6 +637,10 @@ export class CommandRecorder {
       }
       finalizationComplete = true;
 
+    }
+
+    if (diagnosticsError !== undefined) {
+      throw diagnosticsError;
     }
   }
 

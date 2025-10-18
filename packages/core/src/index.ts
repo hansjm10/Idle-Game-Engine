@@ -17,6 +17,7 @@ import { telemetry } from './telemetry.js';
 import {
   createRuntimeDiagnosticsController,
   type IdleEngineRuntimeDiagnosticsOptions,
+  type RuntimeDiagnosticsTimelineOptions,
   type RuntimeDiagnosticsController,
 } from './diagnostics/runtime-diagnostics-controller.js';
 import type {
@@ -180,6 +181,20 @@ export class IdleEngineRuntime {
 
   getDiagnosticTimelineSnapshot(): DiagnosticTimelineResult {
     return this.diagnostics.snapshot();
+  }
+
+  readDiagnosticsDelta(sinceHead?: number): DiagnosticTimelineResult {
+    return this.diagnostics.readDelta(sinceHead);
+  }
+
+  enableDiagnostics(
+    options?: RuntimeDiagnosticsTimelineOptions | false,
+  ): void {
+    if (options === false) {
+      this.diagnostics.disable();
+      return;
+    }
+    this.diagnostics.enable(options);
   }
 
   /**
@@ -514,14 +529,17 @@ export {
   type DiagnosticTimelineQueueMetrics,
   type DiagnosticTimelineRecorder,
   type DiagnosticTimelineResult,
+  type DiagnosticTimelinePhase,
   type DiagnosticTimelineSystemHistory,
   type DiagnosticTimelineSystemSpan,
   type ErrorLike,
   type HighResolutionClock,
+  type ResolvedDiagnosticTimelineOptions,
   type StartTickOptions,
 } from './diagnostics/diagnostic-timeline.js';
 export type {
   IdleEngineRuntimeDiagnosticsOptions,
+  RuntimeDiagnosticsTimelineOptions,
 } from './diagnostics/runtime-diagnostics-controller.js';
 export {
   createPrometheusTelemetry,

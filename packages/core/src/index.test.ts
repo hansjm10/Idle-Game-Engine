@@ -642,6 +642,118 @@ describe('IdleEngineRuntime', () => {
     }
   });
 
+  it('toggles diagnostics at runtime and preserves resolved configuration', () => {
+    const runtime = new IdleEngineRuntime();
+
+    const initial = runtime.readDiagnosticsDelta();
+    expect(initial.configuration.enabled).toBe(false);
+    expect(initial.entries.length).toBe(0);
+
+    runtime.enableDiagnostics({
+      capacity: 3,
+      slowTickBudgetMs: 8,
+      slowSystemBudgetMs: 4,
+      systemHistorySize: 6,
+    });
+
+    const afterEnable = runtime.readDiagnosticsDelta();
+    expect(afterEnable.configuration.enabled).toBe(true);
+    expect(afterEnable.configuration.capacity).toBe(3);
+    expect(afterEnable.configuration.slowSystemBudgetMs).toBe(4);
+
+    runtime.tick(100);
+
+    const delta = runtime.readDiagnosticsDelta(afterEnable.head);
+    expect(delta.entries.length).toBeGreaterThan(0);
+    expect(delta.configuration.enabled).toBe(true);
+
+    runtime.enableDiagnostics(false);
+
+    const afterDisable = runtime.readDiagnosticsDelta(delta.head);
+    expect(afterDisable.entries.length).toBe(0);
+    expect(afterDisable.configuration.enabled).toBe(false);
+    expect(afterDisable.configuration.capacity).toBe(3);
+
+    runtime.tick(100);
+    const disabledDelta = runtime.readDiagnosticsDelta(afterDisable.head);
+    expect(disabledDelta.entries.length).toBe(0);
+    expect(disabledDelta.configuration.enabled).toBe(false);
+  });
+
+  it('restores diagnostics configuration after disabling and re-enabling without arguments', () => {
+    const runtime = new IdleEngineRuntime();
+
+    runtime.enableDiagnostics({
+      capacity: 5,
+      slowTickBudgetMs: 12,
+      slowSystemBudgetMs: 3,
+      systemHistorySize: 7,
+    });
+
+    const initialSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(initialSnapshot.configuration).toMatchObject({
+      enabled: true,
+      capacity: 5,
+      slowTickBudgetMs: 12,
+      slowSystemBudgetMs: 3,
+      systemHistorySize: 7,
+      tickBudgetMs: 12,
+    });
+
+    runtime.enableDiagnostics(false);
+
+    const afterDisableSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(afterDisableSnapshot.configuration.enabled).toBe(false);
+
+    runtime.enableDiagnostics();
+
+    const reenablingSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(reenablingSnapshot.configuration.enabled).toBe(true);
+    expect(reenablingSnapshot.configuration.capacity).toBe(
+      initialSnapshot.configuration.capacity,
+    );
+    expect(reenablingSnapshot.configuration.slowTickBudgetMs).toBe(
+      initialSnapshot.configuration.slowTickBudgetMs,
+    );
+    expect(reenablingSnapshot.configuration.slowSystemBudgetMs).toBe(
+      initialSnapshot.configuration.slowSystemBudgetMs,
+    );
+    expect(reenablingSnapshot.configuration.systemHistorySize).toBe(
+      initialSnapshot.configuration.systemHistorySize,
+    );
+    expect(reenablingSnapshot.configuration.tickBudgetMs).toBe(
+      initialSnapshot.configuration.tickBudgetMs,
+    );
+  });
+
+  it('retains diagnostics overrides when disabling the timeline with options', () => {
+    const runtime = new IdleEngineRuntime();
+
+    runtime.enableDiagnostics({
+      capacity: 3,
+      slowSystemBudgetMs: 6,
+      systemHistorySize: 5,
+    });
+
+    runtime.enableDiagnostics({
+      enabled: false,
+      capacity: 9,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 4,
+    });
+
+    const disabledSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(disabledSnapshot.configuration.enabled).toBe(false);
+
+    runtime.enableDiagnostics();
+
+    const reenablingSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(reenablingSnapshot.configuration.enabled).toBe(true);
+    expect(reenablingSnapshot.configuration.capacity).toBe(9);
+    expect(reenablingSnapshot.configuration.slowSystemBudgetMs).toBe(2);
+    expect(reenablingSnapshot.configuration.systemHistorySize).toBe(4);
+  });
+
   it('annotates system errors in the diagnostic timeline and preserves telemetry', () => {
     const clock = new TestClock();
     const errors: Array<{ event: string; data?: unknown }> = [];

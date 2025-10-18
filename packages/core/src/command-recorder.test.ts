@@ -17,6 +17,10 @@ import {
   type CommandLog,
   type StateSnapshot,
 } from './command-recorder.js';
+import type {
+  DiagnosticTimelineEntry,
+  DiagnosticTimelineResult,
+} from './diagnostics/diagnostic-timeline.js';
 import { EventBus } from './events/event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
 import { buildRuntimeEventFrame } from './events/runtime-event-frame.js';
@@ -473,6 +477,297 @@ describe('CommandRecorder', () => {
 
     expect(currentStep).toBe(log.metadata.lastStep + 1);
     expect(nextStep).toBe(log.metadata.lastStep + 1);
+  });
+
+  it('attaches diagnostics deltas from the replay context when provided', () => {
+    const recorder = new CommandRecorder(setGameState({ value: 0 }));
+    const log = recorder.export();
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    const attachments: DiagnosticTimelineResult[] = [];
+    const configuration = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration,
+    });
+
+    const entry: DiagnosticTimelineEntry = Object.freeze({
+      tick: 3,
+      startedAt: 0,
+      endedAt: 6,
+      durationMs: 6,
+      budgetMs: 4,
+      isSlow: true,
+      overBudgetMs: 2,
+      error: undefined,
+      metadata: undefined,
+    });
+
+    const delta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([entry]),
+      head: 13,
+      dropped: 0,
+      configuration,
+    });
+
+    let diagnosticCallCount = 0;
+    recorder.replay(log, dispatcher, {
+      commandQueue: queue,
+      readDiagnosticsDelta: (sinceHead?: number) => {
+        if (diagnosticCallCount === 0) {
+          diagnosticCallCount += 1;
+          expect(sinceHead).toBeUndefined();
+          return baseline;
+        }
+
+        diagnosticCallCount += 1;
+        expect(sinceHead).toBe(baseline.head);
+        return delta;
+      },
+      attachDiagnosticsDelta(result) {
+        attachments.push(result);
+      },
+    });
+
+    expect(diagnosticCallCount).toBe(2);
+    expect(attachments).toEqual([delta]);
+  });
+
+  it('attaches diagnostics deltas when configuration changes without new entries', () => {
+    const recorder = new CommandRecorder(setGameState({ value: 0 }));
+    const log = recorder.export();
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    const attachments: DiagnosticTimelineResult[] = [];
+    const configurationEnabled = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+    const configurationDisabled = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: false,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration: configurationEnabled,
+    });
+
+    const configurationOnlyDelta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 0,
+      dropped: 0,
+      configuration: configurationDisabled,
+    });
+
+    let diagnosticCallCount = 0;
+    recorder.replay(log, dispatcher, {
+      commandQueue: queue,
+      readDiagnosticsDelta: (sinceHead?: number) => {
+        if (diagnosticCallCount === 0) {
+          diagnosticCallCount += 1;
+          expect(sinceHead).toBeUndefined();
+          return baseline;
+        }
+
+        diagnosticCallCount += 1;
+        expect(sinceHead).toBe(baseline.head);
+        return configurationOnlyDelta;
+      },
+      attachDiagnosticsDelta(result) {
+        attachments.push(result);
+      },
+    });
+
+    expect(diagnosticCallCount).toBe(2);
+    expect(attachments).toEqual([configurationOnlyDelta]);
+  });
+
+  it('restores the command queue when diagnostics callbacks throw', () => {
+    const recorder = new CommandRecorder(setGameState({ value: 0 }));
+    const log = recorder.export();
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+    const configuration = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration,
+    });
+
+    const entry: DiagnosticTimelineEntry = Object.freeze({
+      tick: 3,
+      startedAt: 0,
+      endedAt: 6,
+      durationMs: 6,
+      budgetMs: 4,
+      isSlow: true,
+      overBudgetMs: 2,
+      error: undefined,
+      metadata: undefined,
+    });
+
+    const delta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([entry]),
+      head: 13,
+      dropped: 0,
+      configuration,
+    });
+
+    const diagnosticsError = new Error('diagnostics failed');
+    let readCallCount = 0;
+
+    expect(() =>
+      recorder.replay(log, dispatcher, {
+        commandQueue: queue,
+        readDiagnosticsDelta: (sinceHead?: number) => {
+          readCallCount += 1;
+          if (sinceHead === undefined) {
+            return baseline;
+          }
+          expect(sinceHead).toBe(baseline.head);
+          return delta;
+        },
+        attachDiagnosticsDelta() {
+          throw diagnosticsError;
+        },
+      }),
+    ).toThrow(diagnosticsError);
+
+    expect(readCallCount).toBe(2);
+
+    const command = createCommand({ step: 1 });
+    queue.enqueue(command);
+    expect(queue.size).toBe(1);
+  });
+
+  it('rolls back runtime state when diagnostics callbacks throw', () => {
+    const state = setGameState({ value: 0 });
+    const recorder = new CommandRecorder(state);
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    dispatcher.register('SET', (payload: { value: number }) => {
+      state.value = payload.value;
+    });
+
+    recorder.record(
+      createCommand({
+        type: 'SET',
+        payload: { value: 42 },
+        step: 5,
+      }),
+    );
+
+    const log = recorder.export();
+    const configuration = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration,
+    });
+
+    const entry: DiagnosticTimelineEntry = Object.freeze({
+      tick: 3,
+      startedAt: 0,
+      endedAt: 6,
+      durationMs: 6,
+      budgetMs: 4,
+      isSlow: true,
+      overBudgetMs: 2,
+      error: undefined,
+      metadata: undefined,
+    });
+
+    const delta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([entry]),
+      head: 13,
+      dropped: 0,
+      configuration,
+    });
+
+    const diagnosticsError = new Error('diagnostics failed');
+    let readCallCount = 0;
+    const previousStep = 10;
+    const previousNextStep = 11;
+    let currentStep = previousStep;
+    let nextExecutableStep = previousNextStep;
+    const setCurrentStep = vi.fn((step: number) => {
+      currentStep = step;
+    });
+    const setNextExecutableStep = vi.fn((step: number) => {
+      nextExecutableStep = step;
+    });
+
+    expect(() =>
+      recorder.replay(log, dispatcher, {
+        commandQueue: queue,
+        getCurrentStep: () => currentStep,
+        getNextExecutableStep: () => nextExecutableStep,
+        setCurrentStep,
+        setNextExecutableStep,
+        readDiagnosticsDelta: (sinceHead?: number) => {
+          readCallCount += 1;
+          if (sinceHead === undefined) {
+            return baseline;
+          }
+          expect(sinceHead).toBe(baseline.head);
+          return delta;
+        },
+        attachDiagnosticsDelta() {
+          throw diagnosticsError;
+        },
+      }),
+    ).toThrow(diagnosticsError);
+
+    expect(readCallCount).toBe(2);
+    expect(state.value).toBe(0);
+    expect(currentStep).toBe(previousStep);
+    expect(nextExecutableStep).toBe(previousNextStep);
+    expect(setCurrentStep).toHaveBeenCalledWith(previousStep);
+    expect(setCurrentStep).not.toHaveBeenCalledWith(log.metadata.lastStep + 1);
+    expect(setNextExecutableStep).toHaveBeenCalledWith(previousNextStep);
+    expect(setNextExecutableStep).not.toHaveBeenCalledWith(log.metadata.lastStep + 1);
   });
 
   it('captures and restores deterministic RNG seed', () => {

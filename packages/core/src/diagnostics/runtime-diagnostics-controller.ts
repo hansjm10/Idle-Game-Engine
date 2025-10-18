@@ -11,9 +11,11 @@ import {
   type DiagnosticTimelineQueueMetrics,
   type DiagnosticTimelineRecorder,
   type DiagnosticTimelineResult,
+  type DiagnosticTimelinePhase,
   type DiagnosticTimelineSystemHistory,
   type DiagnosticTimelineSystemSpan,
   type HighResolutionClock,
+  type ResolvedDiagnosticTimelineOptions,
 } from './diagnostic-timeline.js';
 import { telemetry } from '../telemetry.js';
 
@@ -35,7 +37,11 @@ export interface RuntimeDiagnosticsController {
   readonly isEnabled: boolean;
   readonly timeline: DiagnosticTimelineRecorder;
   beginTick(tick: number): RuntimeTickDiagnostics;
+  readDelta(sinceHead?: number): DiagnosticTimelineResult;
   snapshot(): DiagnosticTimelineResult;
+  enable(options?: RuntimeDiagnosticsTimelineOptions): void;
+  disable(): void;
+  getConfiguration(): Readonly<ResolvedDiagnosticTimelineOptions>;
   clear(): void;
 }
 
@@ -44,6 +50,11 @@ export interface RuntimeTickDiagnostics {
   recordQueueMetrics(metrics: DiagnosticTimelineQueueMetrics): void;
   recordEventMetrics(metrics: DiagnosticTimelineEventMetrics): void;
   setAccumulatorBacklogMs(backlogMs: number): void;
+  addPhase(
+    name: string,
+    durationMs: number,
+    offsetMs?: number,
+  ): void;
   startSystem(systemId: string): RuntimeSystemSpanDiagnostics;
   complete(): void;
   fail(error: unknown): never;
@@ -80,6 +91,9 @@ const noopTickDiagnostics: RuntimeTickDiagnostics = {
   setAccumulatorBacklogMs() {
     // intentionally noop
   },
+  addPhase() {
+    // intentionally noop
+  },
   startSystem() {
     return noopSystemSpan;
   },
@@ -91,20 +105,6 @@ const noopTickDiagnostics: RuntimeTickDiagnostics = {
   },
 };
 
-const noopController: RuntimeDiagnosticsController = {
-  isEnabled: false,
-  timeline: noopTimeline,
-  beginTick() {
-    return noopTickDiagnostics;
-  },
-  snapshot() {
-    return noopTimeline.snapshot();
-  },
-  clear() {
-    // intentionally noop
-  },
-};
-
 interface SystemHistoryEntry {
   readonly values: number[];
 }
@@ -113,13 +113,11 @@ interface RuntimeTickContext {
   readonly tick: number;
   readonly handle: DiagnosticTickHandle;
   readonly clock: HighResolutionClock;
-  readonly controller: RealRuntimeDiagnosticsController;
+  readonly controller: EnabledRuntimeDiagnostics;
   readonly tickBudgetMs?: number;
 }
 
-class RealRuntimeDiagnosticsController
-  implements RuntimeDiagnosticsController
-{
+class EnabledRuntimeDiagnostics {
   readonly isEnabled = true;
   readonly timeline: DiagnosticTimelineRecorder;
   private readonly clock: HighResolutionClock;
@@ -127,6 +125,7 @@ class RealRuntimeDiagnosticsController
   private readonly systemHistorySize: number;
   private readonly tickBudgetMs?: number;
   private readonly systemHistory = new Map<string, SystemHistoryEntry>();
+  private readonly resolvedConfiguration: Readonly<ResolvedDiagnosticTimelineOptions>;
 
   constructor(
     options: RuntimeDiagnosticsTimelineOptions,
@@ -170,6 +169,15 @@ class RealRuntimeDiagnosticsController
         : context.stepSizeMs;
 
     this.tickBudgetMs = tickBudget > 0 ? tickBudget : undefined;
+
+    const baseConfiguration = this.timeline.readDelta().configuration;
+    this.resolvedConfiguration = Object.freeze({
+      ...baseConfiguration,
+      enabled: true,
+      slowSystemBudgetMs: this.slowSystemBudgetMs,
+      systemHistorySize: this.systemHistorySize,
+      tickBudgetMs: this.tickBudgetMs,
+    });
   }
 
   beginTick(tick: number): RuntimeTickDiagnostics {
@@ -185,8 +193,26 @@ class RealRuntimeDiagnosticsController
     });
   }
 
+  readDelta(sinceHead?: number): DiagnosticTimelineResult {
+    const base = this.timeline.readDelta(sinceHead);
+    if (base.configuration === this.resolvedConfiguration) {
+      return base;
+    }
+
+    return Object.freeze({
+      entries: base.entries,
+      head: base.head,
+      dropped: base.dropped,
+      configuration: this.resolvedConfiguration,
+    });
+  }
+
+  getConfiguration(): Readonly<ResolvedDiagnosticTimelineOptions> {
+    return this.resolvedConfiguration;
+  }
+
   snapshot(): DiagnosticTimelineResult {
-    return this.timeline.snapshot();
+    return this.readDelta();
   }
 
   clear(): void {
@@ -308,13 +334,14 @@ class RealRuntimeTickDiagnostics implements RuntimeTickDiagnostics {
   readonly tick: number;
   private readonly handle: DiagnosticTickHandle;
   private readonly clock: HighResolutionClock;
-  private readonly controller: RealRuntimeDiagnosticsController;
+  private readonly controller: EnabledRuntimeDiagnostics;
   private readonly tickBudgetMs?: number;
   private completed = false;
   private queueMetrics: DiagnosticTimelineQueueMetrics | undefined;
   private eventMetrics: DiagnosticTimelineEventMetrics | undefined;
   private accumulatorBacklogMs: number | undefined;
   private readonly systemSpans: DiagnosticTimelineSystemSpan[] = [];
+  private readonly phases: DiagnosticTimelinePhase[] = [];
 
   constructor(context: RuntimeTickContext) {
     this.tick = context.tick;
@@ -337,6 +364,31 @@ class RealRuntimeTickDiagnostics implements RuntimeTickDiagnostics {
 
   setAccumulatorBacklogMs(backlogMs: number): void {
     this.accumulatorBacklogMs = backlogMs;
+  }
+
+  addPhase(
+    name: string,
+    durationMs: number,
+    offsetMs?: number,
+  ): void {
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+    const normalizedOffset = Number.isFinite(offsetMs ?? NaN)
+      ? (offsetMs as number)
+      : undefined;
+    const phase: DiagnosticTimelinePhase =
+      normalizedOffset === undefined
+        ? {
+            name,
+            durationMs,
+          }
+        : {
+            name,
+            durationMs,
+            offsetMs: normalizedOffset,
+          };
+    this.phases.push(phase);
   }
 
   startSystem(systemId: string): RuntimeSystemSpanDiagnostics {
@@ -396,6 +448,14 @@ class RealRuntimeTickDiagnostics implements RuntimeTickDiagnostics {
       queue: this.queueMetrics,
       events: this.eventMetrics,
       systems: this.systemSpans.slice(),
+      phases:
+        this.phases.length > 0
+          ? this.phases.map((phase) => ({
+              name: phase.name,
+              durationMs: phase.durationMs,
+              offsetMs: phase.offsetMs,
+            }))
+          : undefined,
     };
     return metadata;
   }
@@ -404,7 +464,7 @@ class RealRuntimeTickDiagnostics implements RuntimeTickDiagnostics {
 interface CreateSystemSpanContext {
   readonly systemId: string;
   readonly tick: number;
-  readonly controller: RealRuntimeDiagnosticsController;
+  readonly controller: EnabledRuntimeDiagnostics;
   readonly parent: RealRuntimeTickDiagnostics;
   readonly clock: HighResolutionClock;
 }
@@ -414,7 +474,7 @@ class RealRuntimeSystemSpanDiagnostics
 {
   private readonly systemId: string;
   private readonly tick: number;
-  private readonly controller: RealRuntimeDiagnosticsController;
+  private readonly controller: EnabledRuntimeDiagnostics;
   private readonly parent: RealRuntimeTickDiagnostics;
   private readonly clock: HighResolutionClock;
   private readonly startedAt: number;
@@ -457,21 +517,188 @@ class RealRuntimeSystemSpanDiagnostics
   }
 }
 
+const DISABLED_CONFIGURATION = Object.freeze({
+  capacity: 0,
+  slowTickBudgetMs: undefined,
+  enabled: false,
+} satisfies ResolvedDiagnosticTimelineOptions);
+
+class RuntimeDiagnosticsControllerImpl
+  implements RuntimeDiagnosticsController
+{
+  private readonly context: CreateRuntimeDiagnosticsControllerOptions;
+  private active: EnabledRuntimeDiagnostics | null = null;
+  private timelineRecorder: DiagnosticTimelineRecorder = noopTimeline;
+  private configuration: Readonly<ResolvedDiagnosticTimelineOptions> =
+    DISABLED_CONFIGURATION;
+  private preservedOptions:
+    | RuntimeDiagnosticsTimelineOptions
+    | undefined;
+
+  constructor(
+    diagnostics: IdleEngineRuntimeDiagnosticsOptions | undefined,
+    context: CreateRuntimeDiagnosticsControllerOptions,
+  ) {
+    this.context = context;
+
+    const timelineConfig = diagnostics?.timeline;
+    if (timelineConfig !== undefined && timelineConfig !== false) {
+      if (timelineConfig.enabled === false) {
+        this.preservedOptions =
+          this.normalizeRequestedOptions(timelineConfig);
+        this.disable();
+      } else {
+        this.enable(timelineConfig);
+      }
+    }
+  }
+
+  get isEnabled(): boolean {
+    return this.active !== null;
+  }
+
+  get timeline(): DiagnosticTimelineRecorder {
+    return this.timelineRecorder;
+  }
+
+  beginTick(tick: number): RuntimeTickDiagnostics {
+    if (!this.active) {
+      return noopTickDiagnostics;
+    }
+    return this.active.beginTick(tick);
+  }
+
+  readDelta(sinceHead?: number): DiagnosticTimelineResult {
+    if (!this.active) {
+      const base = noopTimeline.readDelta(sinceHead);
+      if (base.configuration === this.configuration) {
+        return base;
+      }
+      return Object.freeze({
+        entries: base.entries,
+        head: base.head,
+        dropped: base.dropped,
+        configuration: this.configuration,
+      });
+    }
+
+    const base = this.active.readDelta(sinceHead);
+    if (base.configuration === this.configuration) {
+      return base;
+    }
+
+    return Object.freeze({
+      entries: base.entries,
+      head: base.head,
+      dropped: base.dropped,
+      configuration: this.configuration,
+    });
+  }
+
+  snapshot(): DiagnosticTimelineResult {
+    return this.readDelta();
+  }
+
+  enable(options?: RuntimeDiagnosticsTimelineOptions): void {
+    const baseOptions: RuntimeDiagnosticsTimelineOptions =
+      this.preservedOptions !== undefined
+        ? { ...this.preservedOptions }
+        : {};
+
+    const mergedOptions: RuntimeDiagnosticsTimelineOptions =
+      options !== undefined
+        ? { ...baseOptions, ...options }
+        : baseOptions;
+
+    if (mergedOptions.enabled === false) {
+      this.preservedOptions =
+        this.normalizeRequestedOptions(mergedOptions);
+      this.disable();
+      return;
+    }
+    const resolvedOptions: RuntimeDiagnosticsTimelineOptions = {
+      ...mergedOptions,
+      enabled: true,
+    };
+    this.active = new EnabledRuntimeDiagnostics(
+      resolvedOptions,
+      this.context,
+    );
+    this.timelineRecorder = this.active.timeline;
+    this.configuration = this.active.getConfiguration();
+    this.preservedOptions = this.mergePreservedOptions(
+      resolvedOptions,
+      this.configuration,
+    );
+  }
+
+  disable(): void {
+    const previous = this.configuration;
+    if (this.active) {
+      const baseOptions: RuntimeDiagnosticsTimelineOptions =
+        this.preservedOptions !== undefined
+          ? this.preservedOptions
+          : {};
+      this.preservedOptions = this.mergePreservedOptions(
+        baseOptions,
+        previous,
+      );
+    }
+    this.active = null;
+    this.timelineRecorder = noopTimeline;
+    this.configuration = Object.freeze({
+      ...previous,
+      enabled: false,
+    });
+  }
+
+  getConfiguration(): Readonly<ResolvedDiagnosticTimelineOptions> {
+    return this.configuration;
+  }
+
+  clear(): void {
+    this.active?.clear();
+  }
+
+  private normalizeRequestedOptions(
+    options: RuntimeDiagnosticsTimelineOptions,
+  ): RuntimeDiagnosticsTimelineOptions {
+    return {
+      ...options,
+      enabled: true,
+    };
+  }
+
+  private mergePreservedOptions(
+    base: RuntimeDiagnosticsTimelineOptions,
+    config: Readonly<ResolvedDiagnosticTimelineOptions>,
+  ): RuntimeDiagnosticsTimelineOptions {
+    const {
+      capacity,
+      slowTickBudgetMs,
+      slowSystemBudgetMs,
+      systemHistorySize,
+      enabled: _,
+      ...otherOptions
+    } = base;
+
+    return {
+      ...otherOptions,
+      enabled: true,
+      capacity: capacity ?? config.capacity,
+      slowTickBudgetMs:
+        slowTickBudgetMs ?? config.slowTickBudgetMs,
+      slowSystemBudgetMs:
+        slowSystemBudgetMs ?? config.slowSystemBudgetMs,
+      systemHistorySize:
+        systemHistorySize ?? config.systemHistorySize,
+    };
+  }
+}
+
 export function createRuntimeDiagnosticsController(
   diagnostics: IdleEngineRuntimeDiagnosticsOptions | undefined,
   context: CreateRuntimeDiagnosticsControllerOptions,
 ): RuntimeDiagnosticsController {
-  const timelineConfig = diagnostics?.timeline;
-  if (timelineConfig === undefined || timelineConfig === false) {
-    return noopController;
-  }
-
-  if (timelineConfig.enabled === false) {
-    return noopController;
-  }
-
-  return new RealRuntimeDiagnosticsController(
-    timelineConfig,
-    context,
-  );
+  return new RuntimeDiagnosticsControllerImpl(diagnostics, context);
 }
