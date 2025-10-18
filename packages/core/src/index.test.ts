@@ -21,26 +21,115 @@ import {
   setTelemetry,
   type TelemetryFacade,
 } from './telemetry.js';
+import type {
+  DiagnosticTimelineResult,
+} from './diagnostics/diagnostic-timeline.js';
+import type {
+  IdleEngineRuntimeDiagnosticsOptions,
+  RuntimeDiagnosticsTimelineOptions,
+} from './diagnostics/runtime-diagnostics-controller.js';
+
+type RuntimeTestDiagnosticsOption =
+  | RuntimeDiagnosticsTimelineOptions
+  | false
+  | undefined;
+
+type CreateRuntimeOptions = Omit<IdleEngineRuntimeOptions, 'diagnostics'> & {
+  diagnostics?: RuntimeTestDiagnosticsOption;
+};
+
+interface RuntimeTestDiagnosticsContext {
+  readonly options: RuntimeDiagnosticsTimelineOptions | false | undefined;
+  head: number;
+  readonly configuration: DiagnosticTimelineResult['configuration'];
+  readDelta(sinceHead?: number): DiagnosticTimelineResult;
+}
+
+function normalizeDiagnosticsOptions(
+  option: RuntimeTestDiagnosticsOption,
+): IdleEngineRuntimeDiagnosticsOptions | undefined {
+  if (option === undefined) {
+    return undefined;
+  }
+
+  if (option === false) {
+    return { timeline: false };
+  }
+
+  if (option.enabled === false) {
+    return { timeline: false };
+  }
+
+  const { enabled: _enabled, ...timeline } = option;
+  return {
+    timeline: {
+      enabled: true,
+      ...timeline,
+    },
+  };
+}
 
 function createRuntime(
-  overrides: Partial<IdleEngineRuntimeOptions> = {},
+  overrides: CreateRuntimeOptions = {},
 ): {
   runtime: IdleEngineRuntime;
   queue: CommandQueue;
   dispatcher: CommandDispatcher;
+  diagnostics: RuntimeTestDiagnosticsContext;
 } {
-  const queue = overrides.commandQueue ?? new CommandQueue();
+  const {
+    diagnostics: diagnosticsOverride,
+    commandQueue: providedQueue,
+    commandDispatcher: providedDispatcher,
+    ...runtimeOverrides
+  } = overrides;
+
+  const queue = providedQueue ?? new CommandQueue();
   const dispatcher =
-    overrides.commandDispatcher ?? new CommandDispatcher();
+    providedDispatcher ?? new CommandDispatcher();
+
+  const normalizedDiagnostics =
+    normalizeDiagnosticsOptions(diagnosticsOverride);
+
   const runtime = new IdleEngineRuntime({
     stepSizeMs: 10,
     maxStepsPerFrame: 4,
     commandQueue: queue,
     commandDispatcher: dispatcher,
-    ...overrides,
+    ...runtimeOverrides,
+    diagnostics: normalizedDiagnostics,
   });
 
-  return { runtime, queue, dispatcher };
+  const initialDelta = runtime.readDiagnosticsDelta();
+  const { head: initialHead } = readBacklog(runtime);
+  let head = initialHead;
+  let configuration = initialDelta.configuration;
+
+  const diagnosticsOptions =
+    normalizedDiagnostics?.timeline ?? undefined;
+
+  const diagnostics: RuntimeTestDiagnosticsContext = {
+    options: diagnosticsOptions,
+    get head(): number {
+      return head;
+    },
+    set head(value: number) {
+      head = value;
+    },
+    get configuration() {
+      return configuration;
+    },
+    readDelta(sinceHead?: number) {
+      const result = runtime.readDiagnosticsDelta(
+        sinceHead ?? head,
+      );
+      head = result.head;
+      configuration = result.configuration;
+      return result;
+    },
+  };
+
+  return { runtime, queue, dispatcher, diagnostics };
 }
 
 class TestClock {
@@ -57,6 +146,17 @@ class TestClock {
   set(toMs: number): void {
     this.current = toMs;
   }
+}
+
+function readBacklog(
+  runtime: IdleEngineRuntime,
+  head?: number,
+): {
+  entries: DiagnosticTimelineResult['entries'];
+  head: number;
+} {
+  const result = runtime.readDiagnosticsDelta(head);
+  return { entries: result.entries, head: result.head };
 }
 
 describe('IdleEngineRuntime', () => {
