@@ -531,6 +531,9 @@ class RuntimeDiagnosticsControllerImpl
   private timelineRecorder: DiagnosticTimelineRecorder = noopTimeline;
   private configuration: Readonly<ResolvedDiagnosticTimelineOptions> =
     DISABLED_CONFIGURATION;
+  private preservedOptions:
+    | RuntimeDiagnosticsTimelineOptions
+    | undefined;
 
   constructor(
     diagnostics: IdleEngineRuntimeDiagnosticsOptions | undefined,
@@ -541,6 +544,8 @@ class RuntimeDiagnosticsControllerImpl
     const timelineConfig = diagnostics?.timeline;
     if (timelineConfig !== undefined && timelineConfig !== false) {
       if (timelineConfig.enabled === false) {
+        this.preservedOptions =
+          this.normalizeRequestedOptions(timelineConfig);
         this.disable();
       } else {
         this.enable(timelineConfig);
@@ -595,12 +600,24 @@ class RuntimeDiagnosticsControllerImpl
   }
 
   enable(options?: RuntimeDiagnosticsTimelineOptions): void {
-    if (options && options.enabled === false) {
+    const baseOptions: RuntimeDiagnosticsTimelineOptions =
+      this.preservedOptions !== undefined
+        ? { ...this.preservedOptions }
+        : {};
+
+    const mergedOptions: RuntimeDiagnosticsTimelineOptions =
+      options !== undefined
+        ? { ...baseOptions, ...options }
+        : baseOptions;
+
+    if (mergedOptions.enabled === false) {
+      this.preservedOptions =
+        this.normalizeRequestedOptions(mergedOptions);
       this.disable();
       return;
     }
     const resolvedOptions: RuntimeDiagnosticsTimelineOptions = {
-      ...options,
+      ...mergedOptions,
       enabled: true,
     };
     this.active = new EnabledRuntimeDiagnostics(
@@ -609,10 +626,24 @@ class RuntimeDiagnosticsControllerImpl
     );
     this.timelineRecorder = this.active.timeline;
     this.configuration = this.active.getConfiguration();
+    this.preservedOptions = this.mergePreservedOptions(
+      resolvedOptions,
+      this.configuration,
+    );
   }
 
   disable(): void {
     const previous = this.configuration;
+    if (this.active) {
+      const baseOptions: RuntimeDiagnosticsTimelineOptions =
+        this.preservedOptions !== undefined
+          ? this.preservedOptions
+          : {};
+      this.preservedOptions = this.mergePreservedOptions(
+        baseOptions,
+        previous,
+      );
+    }
     this.active = null;
     this.timelineRecorder = noopTimeline;
     this.configuration = Object.freeze({
@@ -627,6 +658,29 @@ class RuntimeDiagnosticsControllerImpl
 
   clear(): void {
     this.active?.clear();
+  }
+
+  private normalizeRequestedOptions(
+    options: RuntimeDiagnosticsTimelineOptions,
+  ): RuntimeDiagnosticsTimelineOptions {
+    return {
+      ...options,
+      enabled: true,
+    };
+  }
+
+  private mergePreservedOptions(
+    base: RuntimeDiagnosticsTimelineOptions,
+    config: Readonly<ResolvedDiagnosticTimelineOptions>,
+  ): RuntimeDiagnosticsTimelineOptions {
+    return {
+      ...base,
+      enabled: true,
+      capacity: config.capacity,
+      slowTickBudgetMs: config.slowTickBudgetMs,
+      slowSystemBudgetMs: config.slowSystemBudgetMs,
+      systemHistorySize: config.systemHistorySize,
+    };
   }
 }
 

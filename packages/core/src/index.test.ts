@@ -680,6 +680,52 @@ describe('IdleEngineRuntime', () => {
     expect(disabledDelta.configuration.enabled).toBe(false);
   });
 
+  it('restores diagnostics configuration after disabling and re-enabling without arguments', () => {
+    const runtime = new IdleEngineRuntime();
+
+    runtime.enableDiagnostics({
+      capacity: 5,
+      slowTickBudgetMs: 12,
+      slowSystemBudgetMs: 3,
+      systemHistorySize: 7,
+    });
+
+    const initialSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(initialSnapshot.configuration).toMatchObject({
+      enabled: true,
+      capacity: 5,
+      slowTickBudgetMs: 12,
+      slowSystemBudgetMs: 3,
+      systemHistorySize: 7,
+      tickBudgetMs: 12,
+    });
+
+    runtime.enableDiagnostics(false);
+
+    const afterDisableSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(afterDisableSnapshot.configuration.enabled).toBe(false);
+
+    runtime.enableDiagnostics();
+
+    const reenablingSnapshot = runtime.getDiagnosticTimelineSnapshot();
+    expect(reenablingSnapshot.configuration.enabled).toBe(true);
+    expect(reenablingSnapshot.configuration.capacity).toBe(
+      initialSnapshot.configuration.capacity,
+    );
+    expect(reenablingSnapshot.configuration.slowTickBudgetMs).toBe(
+      initialSnapshot.configuration.slowTickBudgetMs,
+    );
+    expect(reenablingSnapshot.configuration.slowSystemBudgetMs).toBe(
+      initialSnapshot.configuration.slowSystemBudgetMs,
+    );
+    expect(reenablingSnapshot.configuration.systemHistorySize).toBe(
+      initialSnapshot.configuration.systemHistorySize,
+    );
+    expect(reenablingSnapshot.configuration.tickBudgetMs).toBe(
+      initialSnapshot.configuration.tickBudgetMs,
+    );
+  });
+
   it('annotates system errors in the diagnostic timeline and preserves telemetry', () => {
     const clock = new TestClock();
     const errors: Array<{ event: string; data?: unknown }> = [];
