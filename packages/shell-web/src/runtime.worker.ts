@@ -6,6 +6,7 @@ import {
   CommandDispatcher,
   IdleEngineRuntime,
   type BackPressureSnapshot,
+  type DiagnosticTimelineResult,
   type EventBus,
 } from '@idle-engine/core';
 
@@ -21,11 +22,23 @@ interface TerminateMessage {
   readonly type: 'TERMINATE';
 }
 
-type IncomingMessage = CommandMessage | TerminateMessage;
+interface DiagnosticsSubscribeMessage {
+  readonly type: 'DIAGNOSTICS_SUBSCRIBE';
+}
+
+type IncomingMessage =
+  | CommandMessage
+  | TerminateMessage
+  | DiagnosticsSubscribeMessage;
 
 interface StateUpdateMessage {
   readonly type: 'STATE_UPDATE';
   readonly state: RuntimeStatePayload;
+}
+
+interface DiagnosticsUpdateMessage {
+  readonly type: 'DIAGNOSTICS_UPDATE';
+  readonly diagnostics: DiagnosticTimelineResult;
 }
 
 const RAF_INTERVAL_MS = 16;
@@ -78,6 +91,42 @@ export function initializeRuntimeWorker(
     commandDispatcher,
   });
 
+  let diagnosticsEnabled = false;
+  let diagnosticsHead: number | undefined;
+  let diagnosticsConfiguration:
+    | DiagnosticTimelineResult['configuration']
+    | undefined;
+
+  const postDiagnosticsUpdate = (result: DiagnosticTimelineResult) => {
+    diagnosticsHead = result.head;
+    diagnosticsConfiguration = result.configuration;
+
+    const message: DiagnosticsUpdateMessage = {
+      type: 'DIAGNOSTICS_UPDATE',
+      diagnostics: result,
+    };
+    context.postMessage(message);
+  };
+
+  const emitDiagnosticsDelta = (force = false) => {
+    if (!diagnosticsEnabled) {
+      return;
+    }
+
+    const result = runtime.readDiagnosticsDelta(diagnosticsHead);
+    const hasUpdates =
+      force ||
+      result.entries.length > 0 ||
+      result.dropped > 0 ||
+      diagnosticsConfiguration !== result.configuration;
+
+    if (!hasUpdates) {
+      return;
+    }
+
+    postDiagnosticsUpdate(result);
+  };
+
   const monotonicClock = createMonotonicClock(now);
 
   let lastTimestamp = now();
@@ -104,6 +153,7 @@ export function initializeRuntimeWorker(
         },
       };
       context.postMessage(message);
+      emitDiagnosticsDelta();
     }
   };
 
@@ -121,6 +171,15 @@ export function initializeRuntimeWorker(
         timestamp: monotonicClock.now(),
         step: runtime.getNextExecutableStep(),
       });
+      return;
+    }
+
+    if (message.type === 'DIAGNOSTICS_SUBSCRIBE') {
+      diagnosticsEnabled = true;
+      diagnosticsHead = undefined;
+      diagnosticsConfiguration = undefined;
+      runtime.enableDiagnostics();
+      emitDiagnosticsDelta(true);
       return;
     }
 

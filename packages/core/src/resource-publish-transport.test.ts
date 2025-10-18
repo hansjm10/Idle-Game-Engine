@@ -42,6 +42,7 @@ describe('resource publish transport', () => {
     const { transport } = result;
     expect(transport.version).toBe(2);
     expect(transport.events).toBeUndefined();
+    expect(transport.diagnostics).toBeUndefined();
     expect(Array.from(transport.dirtyIndices)).toEqual([
       snapshot.dirtyIndices[0],
       snapshot.dirtyIndices[1],
@@ -111,6 +112,7 @@ describe('resource publish transport', () => {
       enabled: false,
     });
 
+    expect(result.transport.diagnostics).toBeUndefined();
     result.release();
   });
 
@@ -129,6 +131,7 @@ describe('resource publish transport', () => {
     const { transport, transferables } = result;
     expect(transferables).toContain(transport.dirtyIndices.buffer);
     expect(transport.events).toBeUndefined();
+    expect(transport.diagnostics).toBeUndefined();
     const descriptors = indexDescriptors(transport);
     for (const descriptor of descriptors.values()) {
       expect(transferables).toContain(descriptor.buffer);
@@ -160,9 +163,36 @@ describe('resource publish transport', () => {
     expect(result.transport.dirtyIndices.length).toBe(0);
     expect(result.transferables).toHaveLength(0);
     expect(result.transport.events).toBeUndefined();
+    expect(result.transport.diagnostics).toBeUndefined();
     for (const descriptor of result.transport.buffers) {
       expect(descriptor.length).toBe(0);
     }
+    result.release();
+  });
+
+  it('attaches diagnostics payloads when provided', () => {
+    const state = createResourceState([{ id: 'energy', startAmount: 5, capacity: 10 }]);
+    const pool = new TransportBufferPool();
+    const diagnosticsPayload = Object.freeze({
+      entries: Object.freeze([]),
+      head: 4,
+      dropped: 0,
+      configuration: Object.freeze({
+        capacity: 120,
+        slowTickBudgetMs: 50,
+        enabled: true,
+        slowSystemBudgetMs: 16,
+        systemHistorySize: 60,
+        tickBudgetMs: 100,
+      }),
+    });
+
+    const snapshot = state.snapshot({ mode: 'publish' });
+    const result = buildResourcePublishTransport(snapshot, pool, {
+      diagnosticsPayload,
+    });
+
+    expect(result.transport.diagnostics).toBe(diagnosticsPayload);
     result.release();
   });
 });

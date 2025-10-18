@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 
-import type { BackPressureSnapshot } from '@idle-engine/core';
+import type {
+  BackPressureSnapshot,
+  DiagnosticTimelineResult,
+} from '@idle-engine/core';
 
 export enum CommandSource {
   PLAYER = 'PLAYER',
@@ -12,6 +15,13 @@ export interface WorkerBridge<TState = unknown> {
   sendCommand<TPayload = unknown>(type: string, payload: TPayload): void;
   onStateUpdate(callback: (state: TState) => void): void;
   offStateUpdate(callback: (state: TState) => void): void;
+  enableDiagnostics(): void;
+  onDiagnosticsUpdate(
+    callback: (diagnostics: DiagnosticTimelineResult) => void,
+  ): void;
+  offDiagnosticsUpdate(
+    callback: (diagnostics: DiagnosticTimelineResult) => void,
+  ): void;
 }
 
 interface CommandEnvelope<TPayload> {
@@ -33,19 +43,43 @@ interface StateUpdateEnvelope<TState> {
   readonly state: TState;
 }
 
-type OutboundEnvelope<TPayload> = CommandEnvelope<TPayload> | TerminateEnvelope;
-type InboundEnvelope<TState> = StateUpdateEnvelope<TState>;
+interface DiagnosticsSubscribeEnvelope {
+  readonly type: 'DIAGNOSTICS_SUBSCRIBE';
+}
+
+interface DiagnosticsUpdateEnvelope {
+  readonly type: 'DIAGNOSTICS_UPDATE';
+  readonly diagnostics: DiagnosticTimelineResult;
+}
+
+type OutboundEnvelope<TPayload> =
+  | CommandEnvelope<TPayload>
+  | TerminateEnvelope
+  | DiagnosticsSubscribeEnvelope;
+type InboundEnvelope<TState> =
+  | StateUpdateEnvelope<TState>
+  | DiagnosticsUpdateEnvelope;
 
 export class WorkerBridgeImpl<TState = unknown>
   implements WorkerBridge<TState>
 {
   private readonly worker: Worker;
   private readonly stateUpdateCallbacks: Array<(state: TState) => void> = [];
+  private readonly diagnosticsUpdateCallbacks: Array<
+    (diagnostics: DiagnosticTimelineResult) => void
+  > = [];
   private disposed = false;
 
   private readonly handleMessage = (event: MessageEvent<InboundEnvelope<TState>>) => {
     const { data } = event;
     if (!data) {
+      return;
+    }
+
+    if (data.type === 'DIAGNOSTICS_UPDATE') {
+      for (const callback of this.diagnosticsUpdateCallbacks) {
+        callback(data.diagnostics);
+      }
       return;
     }
 
@@ -89,6 +123,32 @@ export class WorkerBridgeImpl<TState = unknown>
     }
   }
 
+  enableDiagnostics(): void {
+    if (this.disposed) {
+      throw new Error('WorkerBridge has been disposed');
+    }
+
+    const envelope: DiagnosticsSubscribeEnvelope = {
+      type: 'DIAGNOSTICS_SUBSCRIBE',
+    };
+    this.worker.postMessage(envelope as OutboundEnvelope<never>);
+  }
+
+  onDiagnosticsUpdate(
+    callback: (diagnostics: DiagnosticTimelineResult) => void,
+  ): void {
+    this.diagnosticsUpdateCallbacks.push(callback);
+  }
+
+  offDiagnosticsUpdate(
+    callback: (diagnostics: DiagnosticTimelineResult) => void,
+  ): void {
+    const index = this.diagnosticsUpdateCallbacks.indexOf(callback);
+    if (index !== -1) {
+      this.diagnosticsUpdateCallbacks.splice(index, 1);
+    }
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -99,6 +159,7 @@ export class WorkerBridgeImpl<TState = unknown>
     this.worker.postMessage(envelope as OutboundEnvelope<never>);
     this.worker.terminate();
     this.stateUpdateCallbacks.length = 0;
+    this.diagnosticsUpdateCallbacks.length = 0;
   }
 }
 
