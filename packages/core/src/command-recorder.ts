@@ -464,6 +464,7 @@ export class CommandRecorder {
     const eventBus = runtimeContext?.eventBus;
     let activeEventBusTick: number | undefined;
     let processedSinceLastTelemetry = 0;
+    let diagnosticsError: unknown;
 
     const revertRuntimeContext = (): void => {
       if (hasReplaySeed) {
@@ -595,25 +596,29 @@ export class CommandRecorder {
       replayFailed = false;
     } finally {
       if (typeof readDiagnosticsDelta === 'function') {
-        const previousDiagnosticsHead = diagnosticsHead;
-        const previousDiagnosticsConfiguration = diagnosticsConfiguration;
-        const delta = readDiagnosticsDelta(diagnosticsHead);
-        diagnosticsHead = delta.head;
-        diagnosticsConfiguration = delta.configuration;
-        const hasEntries = delta.entries.length > 0;
-        const hasDrops = delta.dropped > 0;
-        const headChanged =
-          previousDiagnosticsHead !== undefined &&
-          delta.head !== previousDiagnosticsHead;
-        const configurationChanged =
-          previousDiagnosticsConfiguration !== undefined &&
-          previousDiagnosticsConfiguration !== delta.configuration;
+        try {
+          const previousDiagnosticsHead = diagnosticsHead;
+          const previousDiagnosticsConfiguration = diagnosticsConfiguration;
+          const delta = readDiagnosticsDelta(diagnosticsHead);
+          diagnosticsHead = delta.head;
+          diagnosticsConfiguration = delta.configuration;
+          const hasEntries = delta.entries.length > 0;
+          const hasDrops = delta.dropped > 0;
+          const headChanged =
+            previousDiagnosticsHead !== undefined &&
+            delta.head !== previousDiagnosticsHead;
+          const configurationChanged =
+            previousDiagnosticsConfiguration !== undefined &&
+            previousDiagnosticsConfiguration !== delta.configuration;
 
-        if (
-          attachDiagnosticsDelta &&
-          (hasEntries || hasDrops || headChanged || configurationChanged)
-        ) {
-          attachDiagnosticsDelta(delta);
+          if (
+            attachDiagnosticsDelta &&
+            (hasEntries || hasDrops || headChanged || configurationChanged)
+          ) {
+            attachDiagnosticsDelta(delta);
+          }
+        } catch (error) {
+          diagnosticsError = error;
         }
       }
 
@@ -630,6 +635,10 @@ export class CommandRecorder {
       }
       finalizationComplete = true;
 
+    }
+
+    if (diagnosticsError !== undefined) {
+      throw diagnosticsError;
     }
   }
 
