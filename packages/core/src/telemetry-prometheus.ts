@@ -20,6 +20,11 @@ interface EventCounters {
   readonly softLimitBreaches: Counter<string>;
 }
 
+interface DiagnosticsCounters {
+  readonly ticksOverBudget: Counter<string>;
+  readonly slowSystem: Counter<string>;
+}
+
 const DEFAULT_PREFIX = 'idle_engine_';
 
 export interface PrometheusTelemetryFacade extends TelemetryFacade {
@@ -96,6 +101,22 @@ export function createPrometheusTelemetry(
     }),
   };
 
+  const diagnosticsCounters: DiagnosticsCounters = {
+    ticksOverBudget: new Counter({
+      name: `${prefix}runtime_ticks_over_budget_total`,
+      help: 'Total number of runtime ticks that exceeded their budget.',
+      registers: [registry],
+    }),
+    slowSystem: new Counter({
+      name: `${prefix}runtime_system_slow_total`,
+      help: 'Total number of runtime system slow warnings emitted.',
+      registers: [registry],
+      labelNames: ['system_id'],
+    }),
+  };
+
+  const registeredSlowSystemLabels = new Set<string>();
+
   const logError = createConsoleLogger('error');
   const logWarning = createConsoleLogger('warn');
   const logInfo = createConsoleLogger('info');
@@ -110,6 +131,19 @@ export function createPrometheusTelemetry(
 
       if (event === 'EventHandlerSlow') {
         eventCounters.slowHandler.inc();
+      } else if (event === 'TickExecutionSlow') {
+        diagnosticsCounters.ticksOverBudget.inc();
+      } else if (
+        event === 'SystemExecutionSlow' &&
+        typeof data?.systemId === 'string' &&
+        data.systemId.length > 0
+      ) {
+        const systemId = data.systemId;
+        if (!registeredSlowSystemLabels.has(systemId)) {
+          diagnosticsCounters.slowSystem.labels({ system_id: systemId });
+          registeredSlowSystemLabels.add(systemId);
+        }
+        diagnosticsCounters.slowSystem.inc({ system_id: systemId });
       }
 
       logWarning(`[telemetry:warning] ${event}`, data);

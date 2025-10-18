@@ -40,3 +40,20 @@ and UI sources stamp commands consistently.
 
 Together these pieces keep live execution, system automation, and UI command
 entry synchronized with the fixed-step lifecycle detailed in the design doc.
+
+## Diagnostics Timeline
+
+- Enable diagnostics by providing `diagnostics: { timeline: { enabled: true } }` when constructing `IdleEngineRuntime` or calling `runtime.enableDiagnostics({ enabled: true })` mid-session. The controller resolves budgets from the runtime configuration so thresholds stay consistent across hosts.
+- The devtools helper `formatLatestDiagnosticTimelineEntry()` (`packages/core/src/devtools/diagnostics.ts`) converts the most recent timeline entry into a console-friendly message while preserving full metadata for inspection.
+
+```ts
+import { formatLatestDiagnosticTimelineEntry } from '@idle-engine/core/devtools/diagnostics';
+
+const diagnostics = runtime.readDiagnosticsDelta();
+const formatted = formatLatestDiagnosticTimelineEntry(diagnostics);
+if (formatted) {
+  console.info(formatted.message, formatted.context.entry);
+}
+```
+
+- When the Prometheus telemetry adapter is active, slow ticks increment `runtime_ticks_over_budget_total` and slow systems increment `runtime_system_slow_total{system_id="…"}`, aligning counters with the runtime warning thresholds.
