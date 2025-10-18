@@ -17,6 +17,10 @@ import {
   type CommandLog,
   type StateSnapshot,
 } from './command-recorder.js';
+import type {
+  DiagnosticTimelineEntry,
+  DiagnosticTimelineResult,
+} from './diagnostics/diagnostic-timeline.js';
 import { EventBus } from './events/event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
 import { buildRuntimeEventFrame } from './events/runtime-event-frame.js';
@@ -473,6 +477,71 @@ describe('CommandRecorder', () => {
 
     expect(currentStep).toBe(log.metadata.lastStep + 1);
     expect(nextStep).toBe(log.metadata.lastStep + 1);
+  });
+
+  it('attaches diagnostics deltas from the replay context when provided', () => {
+    const recorder = new CommandRecorder(setGameState({ value: 0 }));
+    const log = recorder.export();
+    const dispatcher = new CommandDispatcher();
+    const queue = new CommandQueue();
+
+    const attachments: DiagnosticTimelineResult[] = [];
+    const configuration = Object.freeze({
+      capacity: 4,
+      slowTickBudgetMs: 5,
+      enabled: true,
+      slowSystemBudgetMs: 2,
+      systemHistorySize: 8,
+      tickBudgetMs: 5,
+    });
+
+    const baseline: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([]),
+      head: 12,
+      dropped: 0,
+      configuration,
+    });
+
+    const entry: DiagnosticTimelineEntry = Object.freeze({
+      tick: 3,
+      startedAt: 0,
+      endedAt: 6,
+      durationMs: 6,
+      budgetMs: 4,
+      isSlow: true,
+      overBudgetMs: 2,
+      error: undefined,
+      metadata: undefined,
+    });
+
+    const delta: DiagnosticTimelineResult = Object.freeze({
+      entries: Object.freeze([entry]),
+      head: 13,
+      dropped: 0,
+      configuration,
+    });
+
+    let diagnosticCallCount = 0;
+    recorder.replay(log, dispatcher, {
+      commandQueue: queue,
+      readDiagnosticsDelta: (sinceHead?: number) => {
+        if (diagnosticCallCount === 0) {
+          diagnosticCallCount += 1;
+          expect(sinceHead).toBeUndefined();
+          return baseline;
+        }
+
+        diagnosticCallCount += 1;
+        expect(sinceHead).toBe(baseline.head);
+        return delta;
+      },
+      attachDiagnosticsDelta(result) {
+        attachments.push(result);
+      },
+    });
+
+    expect(diagnosticCallCount).toBe(2);
+    expect(attachments).toEqual([delta]);
   });
 
   it('captures and restores deterministic RNG seed', () => {

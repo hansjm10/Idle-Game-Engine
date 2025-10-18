@@ -46,17 +46,18 @@ describe('DiagnosticTimelineRecorder', () => {
     clock.advance(4);
     tickThree.end();
 
-    const snapshot = recorder.snapshot();
+    const delta = recorder.readDelta();
 
-    expect(snapshot.capacity).toBe(2);
-    expect(snapshot.size).toBe(2);
-    expect(snapshot.entries.length).toBe(2);
-    expect(snapshot.entries[0].tick).toBe(2);
-    expect(snapshot.entries[1].tick).toBe(3);
-    expect(snapshot.entries[0].durationMs).toBeCloseTo(3);
-    expect(snapshot.entries[1].durationMs).toBeCloseTo(4);
-    expect(Object.isFrozen(snapshot.entries)).toBe(true);
-    expect(snapshot.entries.every((entry) => Object.isFrozen(entry))).toBe(
+    expect(delta.head).toBe(3);
+    expect(delta.dropped).toBe(1);
+    expect(delta.configuration.capacity).toBe(2);
+    expect(delta.entries.length).toBe(2);
+    expect(delta.entries[0].tick).toBe(2);
+    expect(delta.entries[1].tick).toBe(3);
+    expect(delta.entries[0].durationMs).toBeCloseTo(3);
+    expect(delta.entries[1].durationMs).toBeCloseTo(4);
+    expect(Object.isFrozen(delta.entries)).toBe(true);
+    expect(delta.entries.every((entry) => Object.isFrozen(entry))).toBe(
       true,
     );
   });
@@ -77,10 +78,10 @@ describe('DiagnosticTimelineRecorder', () => {
     clock.advance(7);
     slowTick.end();
 
-    const snapshot = recorder.snapshot();
-    expect(snapshot.entries.length).toBe(2);
+    const delta = recorder.readDelta();
+    expect(delta.entries.length).toBe(2);
 
-    const [fastEntry, slowEntry] = snapshot.entries;
+    const [fastEntry, slowEntry] = delta.entries;
 
     expect(fastEntry.isSlow).toBe(false);
     expect(fastEntry.overBudgetMs).toBe(0);
@@ -107,13 +108,58 @@ describe('DiagnosticTimelineRecorder', () => {
     clock.advance(2);
     secondTick.end();
 
-    const snapshot = recorder.snapshot();
+    const delta = recorder.readDelta();
 
-    expect(snapshot.capacity).toBe(0);
-    expect(snapshot.size).toBe(0);
-    expect(snapshot.entries.length).toBe(0);
-    expect(snapshot.droppedEntries).toBe(2);
-    expect(snapshot.lastTick).toBe(2);
+    expect(delta.configuration.capacity).toBe(0);
+    expect(delta.entries.length).toBe(0);
+    expect(delta.dropped).toBe(2);
+    expect(delta.head).toBe(2);
+    expect(Object.isFrozen(delta.entries)).toBe(true);
+  });
+
+  it('returns only new entries when requesting a delta and reports dropped count', () => {
+    const clock = new StubClock();
+    const recorder = createDiagnosticTimelineRecorder({
+      capacity: 2,
+      clock,
+      slowTickBudgetMs: 10,
+    });
+
+    const first = recorder.startTick(1);
+    clock.advance(3);
+    first.end();
+
+    const fullSnapshot = recorder.readDelta();
+    expect(fullSnapshot.entries.length).toBe(1);
+    expect(fullSnapshot.head).toBe(1);
+    expect(fullSnapshot.dropped).toBe(0);
+
+    const second = recorder.startTick(2);
+    clock.advance(2);
+    second.end();
+
+    const delta = recorder.readDelta(fullSnapshot.head);
+    expect(delta.entries.length).toBe(1);
+    expect(delta.entries[0]?.tick).toBe(2);
+    expect(delta.dropped).toBe(0);
+
+    const third = recorder.startTick(3);
+    clock.advance(4);
+    third.end();
+
+    const rolledOver = recorder.readDelta(fullSnapshot.head);
+    expect(rolledOver.entries.length).toBe(2);
+    expect(rolledOver.entries.map((entry) => entry.tick)).toEqual([2, 3]);
+    expect(rolledOver.dropped).toBe(0);
+
+    const fourth = recorder.startTick(4);
+    clock.advance(5);
+    fourth.end();
+
+    const overwritten = recorder.readDelta(fullSnapshot.head);
+    expect(overwritten.entries.length).toBe(2);
+    expect(overwritten.entries.map((entry) => entry.tick)).toEqual([3, 4]);
+    expect(overwritten.dropped).toBe(1);
   });
 });
 
@@ -125,12 +171,13 @@ describe('createNoopDiagnosticTimelineRecorder', () => {
     tick.end({ error: new Error('ignored') });
     tick.fail(new Error('double ignore'));
 
-    const snapshot = recorder.snapshot();
-    const nextSnapshot = recorder.snapshot();
+    const delta = recorder.readDelta();
+    const nextDelta = recorder.readDelta();
 
-    expect(snapshot.entries.length).toBe(0);
-    expect(snapshot.capacity).toBe(0);
-    expect(snapshot).toBe(nextSnapshot);
+    expect(delta.entries.length).toBe(0);
+    expect(delta.head).toBe(0);
+    expect(delta.dropped).toBe(0);
+    expect(delta).toBe(nextDelta);
   });
 });
 

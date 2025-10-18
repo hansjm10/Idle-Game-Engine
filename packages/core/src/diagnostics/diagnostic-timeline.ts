@@ -8,6 +8,15 @@ export interface DiagnosticTimelineOptions {
   readonly clock?: HighResolutionClock;
 }
 
+export interface ResolvedDiagnosticTimelineOptions {
+  readonly capacity: number;
+  readonly slowTickBudgetMs?: number;
+  readonly enabled?: boolean;
+  readonly slowSystemBudgetMs?: number;
+  readonly systemHistorySize?: number;
+  readonly tickBudgetMs?: number;
+}
+
 export interface StartTickOptions {
   readonly budgetMs?: number;
 }
@@ -87,14 +96,30 @@ export interface DiagnosticTimelineSystemSpan {
   readonly error?: ErrorLike;
 }
 
+export interface DiagnosticTimelinePhase {
+  readonly name: string;
+  readonly durationMs: number;
+  readonly offsetMs?: number;
+}
+
 export interface DiagnosticTimelineMetadata {
   readonly accumulatorBacklogMs?: number;
   readonly queue?: DiagnosticTimelineQueueMetrics;
   readonly events?: DiagnosticTimelineEventMetrics;
   readonly systems?: readonly DiagnosticTimelineSystemSpan[];
+  readonly phases?: readonly DiagnosticTimelinePhase[];
 }
 
 export interface DiagnosticTimelineResult {
+  readonly entries: readonly DiagnosticTimelineEntry[];
+  readonly head: number;
+  readonly dropped: number;
+  readonly configuration: Readonly<ResolvedDiagnosticTimelineOptions>;
+}
+
+export type DiagnosticTimelineSnapshot = DiagnosticTimelineResult;
+
+export interface LegacyDiagnosticTimelineSnapshot {
   readonly capacity: number;
   readonly size: number;
   readonly droppedEntries: number;
@@ -114,12 +139,14 @@ export interface DiagnosticTickHandle {
 
 export interface DiagnosticTimelineRecorder {
   startTick(tick: number, options?: StartTickOptions): DiagnosticTickHandle;
-  snapshot(): DiagnosticTimelineResult;
+  snapshot(): LegacyDiagnosticTimelineSnapshot;
+  readDelta(sinceHead?: number): DiagnosticTimelineResult;
   clear(): void;
 }
 
 interface TimelineEntryInternal {
   tick: number;
+  head: number;
   startedAt: number;
   endedAt: number;
   durationMs: number;
@@ -193,8 +220,13 @@ export function createDiagnosticTimelineRecorder(
   const pool: TimelineEntryInternal[] = new Array(capacity);
   let writeIndex = 0;
   let size = 0;
-  let droppedEntries = 0;
+  let dropped = 0;
+  let head = 0;
   let lastTick: number | undefined;
+  const resolvedConfiguration = Object.freeze({
+    capacity,
+    slowTickBudgetMs,
+  } satisfies ResolvedDiagnosticTimelineOptions);
 
   function claimSlot(index: number): TimelineEntryInternal {
     const existing = pool[index];
@@ -203,6 +235,7 @@ export function createDiagnosticTimelineRecorder(
     }
     const entry: TimelineEntryInternal = {
       tick: 0,
+      head: 0,
       startedAt: 0,
       endedAt: 0,
       durationMs: 0,
@@ -218,7 +251,7 @@ export function createDiagnosticTimelineRecorder(
 
   function commitEntry(entry: TimelineEntryInternal): void {
     if (size === capacity) {
-      droppedEntries += 1;
+      dropped += 1;
     } else {
       size += 1;
     }
@@ -254,8 +287,11 @@ export function createDiagnosticTimelineRecorder(
         const finalBudget =
           completion?.budgetMs ?? budgetMs;
 
+        const entryHead = head + 1;
+        head = entryHead;
+
         if (capacity === 0) {
-          droppedEntries += 1;
+          dropped += 1;
           lastTick = tick;
           return;
         }
@@ -264,6 +300,7 @@ export function createDiagnosticTimelineRecorder(
         const slot = claimSlot(slotIndex);
 
         slot.tick = tick;
+        slot.head = entryHead;
         slot.startedAt = startedAt;
         slot.endedAt = endTime;
         slot.durationMs = duration;
@@ -290,65 +327,105 @@ export function createDiagnosticTimelineRecorder(
     return handle;
   }
 
-  function snapshot(): DiagnosticTimelineResult {
-    if (size === 0) {
-      return Object.freeze({
-        capacity,
-        size,
-        droppedEntries,
-        lastTick,
-        entries: EMPTY_ENTRIES,
-      });
+  function cloneEntry(
+    source: TimelineEntryInternal,
+  ): DiagnosticTimelineEntry {
+    const clonedError =
+      source.error === undefined
+        ? undefined
+        : Object.freeze({
+            name: source.error.name,
+            message: source.error.message,
+            stack: source.error.stack,
+          });
+    return Object.freeze({
+      tick: source.tick,
+      startedAt: source.startedAt,
+      endedAt: source.endedAt,
+      durationMs: source.durationMs,
+      budgetMs: source.budgetMs,
+      isSlow: source.isSlow,
+      overBudgetMs: source.overBudgetMs,
+      error: clonedError,
+      metadata: source.metadata,
+    });
+  }
+
+  function collectEntries(
+    sinceHead: number | undefined,
+  ): readonly DiagnosticTimelineEntry[] {
+    if (size === 0 || capacity === 0) {
+      return EMPTY_ENTRIES;
     }
 
     const entries: DiagnosticTimelineEntry[] = [];
-    const startIndex =
-      size === capacity ? writeIndex : 0;
+    const startIndex = size === capacity ? writeIndex : 0;
 
     for (let i = 0; i < size; i += 1) {
-      const index = capacity === 0
-        ? 0
-        : (startIndex + i) % capacity;
+      const index = (startIndex + i) % capacity;
       const source = pool[index];
       if (!source) {
         continue;
       }
-      const clonedError =
-        source.error === undefined
-          ? undefined
-          : {
-              name: source.error.name,
-              message: source.error.message,
-              stack: source.error.stack,
-            };
-      const entry: DiagnosticTimelineEntry = Object.freeze({
-        tick: source.tick,
-        startedAt: source.startedAt,
-        endedAt: source.endedAt,
-        durationMs: source.durationMs,
-        budgetMs: source.budgetMs,
-        isSlow: source.isSlow,
-        overBudgetMs: source.overBudgetMs,
-        error: clonedError ? Object.freeze(clonedError) : undefined,
-        metadata: source.metadata,
-      });
-      entries.push(entry);
+      if (sinceHead !== undefined && source.head <= sinceHead) {
+        continue;
+      }
+      entries.push(cloneEntry(source));
     }
 
-    const finalEntries = Object.freeze(entries);
+    return Object.freeze(entries);
+  }
+
+  function readDelta(
+    sinceHead?: number,
+  ): DiagnosticTimelineResult {
+    const normalizedSinceHead =
+      typeof sinceHead === 'number' &&
+      Number.isFinite(sinceHead) &&
+      sinceHead >= 0
+        ? sinceHead
+        : undefined;
+
+    const entries = collectEntries(normalizedSinceHead);
+    const currentHead = head;
+
+    let droppedSince =
+      normalizedSinceHead === undefined
+        ? dropped
+        : 0;
+
+    if (normalizedSinceHead !== undefined) {
+      const expectedNew =
+        normalizedSinceHead >= currentHead
+          ? 0
+          : currentHead - normalizedSinceHead;
+      droppedSince = Math.max(0, expectedNew - entries.length);
+    }
+
+    return Object.freeze({
+      entries,
+      head: currentHead,
+      dropped: droppedSince,
+      configuration: resolvedConfiguration,
+    });
+  }
+
+  function snapshot(): LegacyDiagnosticTimelineSnapshot {
+    const delta = readDelta();
     return Object.freeze({
       capacity,
       size,
-      droppedEntries,
+      droppedEntries: dropped,
       lastTick,
-      entries: finalEntries,
+      entries: delta.entries,
     });
   }
 
   function clear(): void {
     writeIndex = 0;
     size = 0;
-    droppedEntries = 0;
+    dropped = 0;
+    head = 0;
     lastTick = undefined;
     for (let index = 0; index < capacity; index += 1) {
       const slot = pool[index];
@@ -362,12 +439,19 @@ export function createDiagnosticTimelineRecorder(
   return {
     startTick,
     snapshot,
+    readDelta,
     clear,
   };
 }
 
 export function createNoopDiagnosticTimelineRecorder(): DiagnosticTimelineRecorder {
-  const frozenResult = Object.freeze({
+  const frozenConfiguration = Object.freeze({
+    capacity: 0,
+    slowTickBudgetMs: undefined,
+    enabled: false,
+  } satisfies ResolvedDiagnosticTimelineOptions);
+
+  const frozenSnapshot = Object.freeze({
     capacity: 0,
     size: 0,
     droppedEntries: 0,
@@ -375,8 +459,15 @@ export function createNoopDiagnosticTimelineRecorder(): DiagnosticTimelineRecord
     entries: EMPTY_ENTRIES,
   });
 
+  const frozenDelta = Object.freeze({
+    entries: EMPTY_ENTRIES,
+    head: 0,
+    dropped: 0,
+    configuration: frozenConfiguration,
+  } satisfies DiagnosticTimelineResult);
+
   return {
-        startTick(tick: number): DiagnosticTickHandle {
+    startTick(tick: number): DiagnosticTickHandle {
       return {
         tick,
         startedAt: 0,
@@ -389,7 +480,10 @@ export function createNoopDiagnosticTimelineRecorder(): DiagnosticTimelineRecord
       };
     },
     snapshot() {
-      return frozenResult;
+      return frozenSnapshot;
+    },
+    readDelta() {
+      return frozenDelta;
     },
     clear() {
       // intentionally noop
@@ -478,10 +572,23 @@ function cloneMetadata(
       )
     : undefined;
 
+  const phases = metadata.phases
+    ? Object.freeze(
+        metadata.phases.map((phase) =>
+          Object.freeze({
+            name: phase.name,
+            durationMs: phase.durationMs,
+            offsetMs: phase.offsetMs,
+          }),
+        ),
+      )
+    : undefined;
+
   return Object.freeze({
     accumulatorBacklogMs: metadata.accumulatorBacklogMs,
     queue: queueMetrics,
     events: eventMetrics,
     systems: systemSpans,
+    phases,
   });
 }

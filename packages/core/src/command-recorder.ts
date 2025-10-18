@@ -4,6 +4,7 @@ import type {
   CommandDispatcher,
   ExecutionContext,
 } from './command-dispatcher.js';
+import type { DiagnosticTimelineResult } from './diagnostics/diagnostic-timeline.js';
 import { CommandQueue, deepFreezeInPlace } from './command-queue.js';
 import type { ImmutablePayload } from './command.js';
 import {
@@ -65,6 +66,10 @@ export interface RuntimeReplayContext {
   getNextExecutableStep?(): number;
   setCurrentStep?(step: number): void;
   setNextExecutableStep?(step: number): void;
+  readDiagnosticsDelta?(
+    sinceHead?: number,
+  ): DiagnosticTimelineResult;
+  attachDiagnosticsDelta?(delta: DiagnosticTimelineResult): void;
 }
 
 const COMMAND_LOG_VERSION = '0.1.0';
@@ -416,6 +421,15 @@ export class CommandRecorder {
       runtimeContext?.commandQueue ??
       new CommandQueue();
 
+    const readDiagnosticsDelta = runtimeContext?.readDiagnosticsDelta;
+    const attachDiagnosticsDelta = runtimeContext?.attachDiagnosticsDelta;
+    let diagnosticsHead: number | undefined;
+
+    if (typeof readDiagnosticsDelta === 'function') {
+      const baseline = readDiagnosticsDelta();
+      diagnosticsHead = baseline.head;
+    }
+
     if (queue.size > 0) {
       telemetry.recordError('ReplayQueueNotEmpty', { pending: queue.size });
       restoreReplaySeed();
@@ -573,6 +587,17 @@ export class CommandRecorder {
 
       replayFailed = false;
     } finally {
+      if (typeof readDiagnosticsDelta === 'function') {
+        const delta = readDiagnosticsDelta(diagnosticsHead);
+        diagnosticsHead = delta.head;
+        if (
+          attachDiagnosticsDelta &&
+          (delta.entries.length > 0 || delta.dropped > 0)
+        ) {
+          attachDiagnosticsDelta(delta);
+        }
+      }
+
       (queue as CommandQueue & {
         enqueue: (command: Command) => void;
       }).enqueue = originalEnqueue;
