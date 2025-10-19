@@ -367,6 +367,116 @@ describe('IdleEngineRuntime', () => {
     }
   });
 
+  it('drains accumulator backlog deterministically across varied deltas', () => {
+    const clock = new TestClock();
+    const recordCountersMock = vi.fn<
+      (group: string, counters: Readonly<Record<string, number>>) => void
+    >();
+    const recordTickMock = vi.fn();
+
+    const telemetryFacade: TelemetryFacade = {
+      recordError() {},
+      recordWarning() {},
+      recordProgress() {},
+      recordCounters(group, counters) {
+        recordCountersMock(group, counters);
+      },
+      recordTick() {
+        recordTickMock();
+      },
+    };
+
+    setTelemetry(telemetryFacade);
+
+    try {
+      const { runtime, diagnostics } = createRuntime({
+        stepSizeMs: 10,
+        maxStepsPerFrame: 2,
+        diagnostics: {
+          enabled: true,
+          capacity: 8,
+          clock,
+        },
+      });
+
+      const deltas = [45, 10, 10, 5];
+      const expectedBacklog = [25, 15, 5, 0];
+      const expectedAdvances = [2, 2, 2, 1];
+
+      const observedBacklog: number[] = [];
+      const observedAdvances: number[] = [];
+
+      let previousStep = runtime.getCurrentStep();
+
+      deltas.forEach((delta, index) => {
+        runtime.tick(delta);
+
+        const deltaResult = diagnostics.readDelta();
+        expect(deltaResult.dropped).toBe(0);
+        expect(deltaResult.entries.length).toBeGreaterThan(0);
+
+        const lastEntry = deltaResult.entries.at(-1);
+        expect(lastEntry?.metadata?.accumulatorBacklogMs).toBeDefined();
+        const backlog = lastEntry?.metadata?.accumulatorBacklogMs ?? NaN;
+        observedBacklog.push(backlog);
+        expect(backlog).toBeCloseTo(expectedBacklog[index], 5);
+
+        for (const entry of deltaResult.entries) {
+          expect(entry.metadata?.queue).toEqual({
+            sizeBefore: 0,
+            sizeAfter: 0,
+            captured: 0,
+            executed: 0,
+            skipped: 0,
+          });
+        }
+
+        const currentStep = runtime.getCurrentStep();
+        const advance = currentStep - previousStep;
+        observedAdvances.push(advance);
+        previousStep = currentStep;
+      });
+
+      expectedBacklog.forEach((value, idx) => {
+        expect(observedBacklog[idx]).toBeCloseTo(value, 5);
+      });
+      expect(observedAdvances).toEqual(expectedAdvances);
+      expect(runtime.getCurrentStep()).toBe(7);
+      expect(runtime.getNextExecutableStep()).toBe(7);
+
+      const totalSteps = expectedAdvances.reduce(
+        (sum, value) => sum + value,
+        0,
+      );
+      expect(recordTickMock).toHaveBeenCalledTimes(totalSteps);
+
+      const eventsCalls = recordCountersMock.mock.calls.filter(
+        ([group]) => group === 'events',
+      );
+      expect(eventsCalls).toHaveLength(totalSteps);
+      for (const [, counters] of eventsCalls) {
+        expect(counters).toEqual({
+          published: 0,
+          softLimited: 0,
+          overflowed: 0,
+          subscribers: 0,
+        });
+      }
+
+      const cooldownCalls = recordCountersMock.mock.calls.filter(
+        ([group]) => group === 'events.cooldown_ticks',
+      );
+      expect(cooldownCalls).toHaveLength(totalSteps);
+      for (const [, counters] of cooldownCalls) {
+        for (const value of Object.values(counters)) {
+          expect(value).toBe(0);
+        }
+      }
+    } finally {
+      resetTelemetry();
+    }
+  });
+
   it('executes systems during each tick with the correct context', () => {
     const { runtime } = createRuntime();
     const executedSteps: number[] = [];
