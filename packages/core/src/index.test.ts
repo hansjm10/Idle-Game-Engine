@@ -477,6 +477,48 @@ describe('IdleEngineRuntime', () => {
     }
   });
 
+  it('maintains accumulator precision for fractional cadence ticks', () => {
+    const stepSizeMs = 1000 / 60;
+    const clock = new TestClock();
+    const { runtime, diagnostics } = createRuntime({
+      stepSizeMs,
+      maxStepsPerFrame: 6,
+      diagnostics: {
+        enabled: true,
+        capacity: 128,
+        clock,
+      },
+    });
+
+    for (let index = 0; index < 60; index += 1) {
+      runtime.tick(stepSizeMs);
+    }
+
+    expect(runtime.getCurrentStep()).toBe(60);
+    expect(runtime.getNextExecutableStep()).toBe(60);
+
+    const delta = diagnostics.readDelta();
+    expect(delta.dropped).toBe(0);
+    expect(delta.entries).toHaveLength(60);
+
+    const lastEntry = delta.entries.at(-1);
+    expect(lastEntry?.metadata?.accumulatorBacklogMs).toBeDefined();
+    expect(lastEntry?.metadata?.accumulatorBacklogMs ?? NaN).toBeCloseTo(
+      0,
+      6,
+    );
+
+    for (const entry of delta.entries) {
+      expect(entry.metadata?.queue).toEqual({
+        sizeBefore: 0,
+        sizeAfter: 0,
+        captured: 0,
+        executed: 0,
+        skipped: 0,
+      });
+    }
+  });
+
   it('executes systems during each tick with the correct context', () => {
     const { runtime } = createRuntime();
     const executedSteps: number[] = [];
