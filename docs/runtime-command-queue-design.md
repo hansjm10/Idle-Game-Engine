@@ -2852,7 +2852,7 @@ The command queue is complete when:
 
 ## Appendix A – 2025-10-11 Update Summary
 
-- Added spiral-of-death clamp and accumulator carry-over coverage to the runtime tick loop (`packages/core/src/index.test.ts:193`).
+- Added accumulator diagnostics coverage for clamp debt, deterministic drain, and fractional cadence precision (`packages/core/src/index.test.ts:336`, `packages/core/src/index.test.ts:370`, `packages/core/src/index.test.ts:480`). See `docs/tick-accumulator-coverage-design.md` §§5.1–5.3 for the scenarios and backlog expectations—the diagnostics metadata must surface the remaining accumulator debt while queue counters stay at zero so devtools timelines remain reliable.
 - Documented system execution order, error handling, and deferred enqueue behaviour via new runtime tests; exceptions now log `SystemExecutionFailed` telemetry instead of stopping the tick (`packages/core/src/index.ts:120`, `packages/core/src/index.test.ts:210`, `packages/core/src/index.test.ts:252`, `packages/core/src/index.test.ts:293`).
 - Strengthened priority guarantees by mixing command priorities inside runtime ticks and capturing queue boundary scenarios (`packages/core/src/index.test.ts:327`, `packages/core/src/command-queue.test.ts:553`).
 - Validated monotonic clock behaviour within the worker bridge when the host clock stalls (`packages/shell-web/src/runtime.worker.test.ts:136`).
