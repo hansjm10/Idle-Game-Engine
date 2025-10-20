@@ -313,7 +313,7 @@ function getFormulaDepth(formula: NumericFormulaModel): number {
   }
 
   if (formula.kind === 'expression') {
-    return 1 + getExpressionDepth(formula.expression);
+    return getExpressionDepth(formula.expression);
   }
 
   return 1;

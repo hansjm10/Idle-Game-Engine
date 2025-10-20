@@ -135,4 +135,14 @@ describe('numericFormulaSchema', () => {
       ]),
     );
   });
+
+  it('accepts expression formulas at the maximum allowed depth', () => {
+    const expression = createDeepUnaryExpression(15);
+    const result = numericFormulaSchema.safeParse({
+      kind: 'expression',
+      expression,
+    });
+
+    expect(result.success).toBe(true);
+  });
 });
