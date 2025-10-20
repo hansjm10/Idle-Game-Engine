@@ -106,26 +106,6 @@ const sortCapabilities = (
   return deduped.sort((left, right) => left.localeCompare(right));
 };
 
-const assertUniqueCapabilities = (
-  entries: readonly CapabilityId[],
-  ctx: z.RefinementCtx,
-  path: (string | number)[],
-) => {
-  const seen = new Map<string, number>();
-  entries.forEach((capability, index) => {
-    const existing = seen.get(capability);
-    if (existing !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [...path, index],
-        message: `Capability "${capability}" duplicates entry at index ${existing}.`,
-      });
-      return;
-    }
-    seen.set(capability, index);
-  });
-};
-
 const sortConflicts = (entries: readonly ConflictEntry[]) =>
   [...entries].sort((left, right) => {
     const byId = left.packId.localeCompare(right.packId);
@@ -173,7 +153,6 @@ export const dependencyCollectionSchema: z.ZodType<
     UNIQUE_REQUIRES(dependencies.requires, ctx, ['requires']);
     UNIQUE_OPTIONAL(dependencies.optional, ctx, ['optional']);
     UNIQUE_CONFLICTS(dependencies.conflicts, ctx, ['conflicts']);
-    assertUniqueCapabilities(dependencies.provides, ctx, ['provides']);
   })
   .transform((dependencies) => ({
     requires: Object.freeze(sortDependencyEdges(dependencies.requires)),
