@@ -53,6 +53,56 @@ type PiecewiseSegmentModel = {
   formula: NumericFormulaModel;
 };
 
+type ContentIdInput = z.input<typeof contentIdSchema>;
+
+type VariableReferenceTargetInput = VariableReferenceTarget;
+
+type EntityReferenceTargetInput = {
+  type: 'resource' | 'generator' | 'upgrade' | 'automation' | 'prestigeLayer';
+  id: ContentIdInput;
+};
+
+type ExpressionNodeInput =
+  | { kind: 'literal'; value: number }
+  | {
+      kind: 'ref';
+      target: VariableReferenceTargetInput | EntityReferenceTargetInput;
+    }
+  | {
+      kind: 'binary';
+      op: (typeof BINARY_OPERATORS)[number];
+      left: ExpressionNodeInput;
+      right: ExpressionNodeInput;
+    }
+  | {
+      kind: 'unary';
+      op: (typeof UNARY_OPERATORS)[number];
+      operand: ExpressionNodeInput;
+    }
+  | {
+      kind: 'call';
+      name: (typeof CALL_FUNCTION_NAMES)[number];
+      args: ExpressionNodeInput[];
+    };
+
+type PiecewiseSegmentInput = {
+  untilLevel?: number;
+  formula: NumericFormulaInput;
+};
+
+type NumericFormulaInput =
+  | { kind: 'constant'; value: number }
+  | { kind: 'linear'; base: number; slope: number }
+  | {
+      kind: 'exponential';
+      base: number;
+      growth: number;
+      offset?: number;
+    }
+  | { kind: 'polynomial'; coefficients: number[] }
+  | { kind: 'piecewise'; pieces: PiecewiseSegmentInput[] }
+  | { kind: 'expression'; expression: ExpressionNodeInput };
+
 const BINARY_OPERATORS = [
   'add',
   'sub',
@@ -115,7 +165,9 @@ const literalExpressionSchema = z
   })
   .strict();
 
-const createExpressionNodeSchema = (): z.ZodTypeAny =>
+const createExpressionNodeSchema = (
+  self: z.ZodType<ExpressionNodeModel, z.ZodTypeDef, ExpressionNodeInput>,
+) =>
   z.discriminatedUnion('kind', [
     literalExpressionSchema,
     z
@@ -128,30 +180,34 @@ const createExpressionNodeSchema = (): z.ZodTypeAny =>
       .object({
         kind: z.literal('binary'),
         op: z.enum(BINARY_OPERATORS),
-        left: expressionNodeSchema,
-        right: expressionNodeSchema,
+        left: self,
+        right: self,
       })
       .strict(),
     z
       .object({
         kind: z.literal('unary'),
         op: z.enum(UNARY_OPERATORS),
-        operand: expressionNodeSchema,
+        operand: self,
       })
       .strict(),
     z
       .object({
         kind: z.literal('call'),
         name: z.enum(CALL_FUNCTION_NAMES),
-        args: z.array(expressionNodeSchema).min(1, {
+        args: z.array(self).min(1, {
           message: 'Function calls must supply at least one argument.',
         }),
       })
       .strict(),
   ]);
 
-export const expressionNodeSchema: z.ZodTypeAny = z
-  .lazy(createExpressionNodeSchema)
+export const expressionNodeSchema: z.ZodType<
+  ExpressionNodeModel,
+  z.ZodTypeDef,
+  ExpressionNodeInput
+> = z
+  .lazy(() => createExpressionNodeSchema(expressionNodeSchema))
   .superRefine((node, ctx) => {
     const depth = getExpressionDepth(node);
     if (depth > MAX_EXPRESSION_DEPTH) {
@@ -170,14 +226,19 @@ export const expressionNodeSchema: z.ZodTypeAny = z
     }
   });
 
-const pieceSchema: z.ZodTypeAny = z
-  .object({
-    untilLevel: finiteNumberSchema.optional(),
-    formula: z.lazy(() => numericFormulaSchema),
-  })
-  .strict();
+const createPieceSchema = (
+  self: z.ZodType<NumericFormulaModel, z.ZodTypeDef, NumericFormulaInput>,
+) =>
+  z
+    .object({
+      untilLevel: finiteNumberSchema.optional(),
+      formula: self,
+    })
+    .strict();
 
-const createNumericFormulaSchema = (): z.ZodTypeAny =>
+const createNumericFormulaSchema = (
+  self: z.ZodType<NumericFormulaModel, z.ZodTypeDef, NumericFormulaInput>,
+) =>
   z.discriminatedUnion('kind', [
     z
       .object({
@@ -216,7 +277,7 @@ const createNumericFormulaSchema = (): z.ZodTypeAny =>
       .object({
         kind: z.literal('piecewise'),
         pieces: z
-          .array(pieceSchema)
+          .array(createPieceSchema(self))
           .min(1, { message: 'Piecewise formulas require at least one piece.' }),
       })
       .strict(),
@@ -228,8 +289,12 @@ const createNumericFormulaSchema = (): z.ZodTypeAny =>
       .strict(),
   ]);
 
-export const numericFormulaSchema: z.ZodTypeAny = z
-  .lazy(createNumericFormulaSchema)
+export const numericFormulaSchema: z.ZodType<
+  NumericFormulaModel,
+  z.ZodTypeDef,
+  NumericFormulaInput
+> = z
+  .lazy(() => createNumericFormulaSchema(numericFormulaSchema))
   .superRefine((formula, ctx) => {
     if (formula.kind === 'piecewise') {
       validatePiecewise(formula.pieces, ctx);
