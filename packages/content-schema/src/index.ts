@@ -7,7 +7,11 @@ export {
   type NormalizedContentPack,
 } from './pack.js';
 
-export { ContentSchemaError, type ContentSchemaWarning } from './errors.js';
+export {
+  ContentSchemaError,
+  type ContentSchemaWarning,
+  type ContentSchemaWarningSeverity,
+} from './errors.js';
 
 export * from './base/ids.js';
 export * from './base/localization.js';

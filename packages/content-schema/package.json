@@ -19,9 +19,11 @@
     "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "semver": "^7.6.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/semver": "^7.5.8",
     "@idle-engine/config-eslint": "workspace:*",
     "@idle-engine/config-vitest": "workspace:*",
     "eslint": "^9.37.0",
