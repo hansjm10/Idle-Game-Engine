@@ -22,12 +22,14 @@ export const finiteNumberSchema = z.coerce
   .number()
   .transform((value, ctx) => ensureFinite(value, ctx));
 
-export const nonnegativeNumberSchema = finiteNumberSchema.refine(
+export const nonNegativeNumberSchema = finiteNumberSchema.refine(
   (value) => value >= 0,
   {
     message: NONNEGATIVE_NUMBER_MESSAGE,
   },
 );
+
+export const nonnegativeNumberSchema = nonNegativeNumberSchema;
 
 export const positiveIntSchema = z.coerce
   .number()

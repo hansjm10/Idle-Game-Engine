@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   finiteNumberSchema,
   integerSchema,
-  nonnegativeNumberSchema,
+  nonNegativeNumberSchema,
   percentSchema,
   positiveIntSchema,
 } from './numbers.js';
@@ -15,8 +15,8 @@ describe('numbers', () => {
   });
 
   it('enforces non-negative numbers', () => {
-    expect(nonnegativeNumberSchema.parse(0)).toBe(0);
-    expect(nonnegativeNumberSchema.safeParse(-0.1).success).toBe(false);
+    expect(nonNegativeNumberSchema.parse(0)).toBe(0);
+    expect(nonNegativeNumberSchema.safeParse(-0.1).success).toBe(false);
   });
 
   it('validates positive integers', () => {

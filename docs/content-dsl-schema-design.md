@@ -140,7 +140,7 @@ packages/content-schema/
   - `semverSchema` and `semverRangeSchema`: validated via the `semver`
     library (`semver@7`) inside `.superRefine`.
   - `hexColorSchema`, `iconPathSchema`, `urlSchema` for UI metadata.
-  - `nonnegativeNumberSchema`, `percentSchema`, `positiveIntSchema`.
+  - `nonNegativeNumberSchema`, `percentSchema`, `positiveIntSchema`.
 
 [^npm-scope]: *Scoped packages* — npm Docs. Demonstrates npm’s scoped package
   naming convention using `@myorg/mypackage`, which the schema mirrors so packs
@@ -389,7 +389,7 @@ edges. https://en.wikipedia.org/wiki/Non-monotonic_logic
     upkeep costs.
   - `purchase`: strict object with explicit scalar schemas:
     - `currencyId`: `contentIdSchema` (lowercased during normalisation).
-    - `baseCost`: `nonnegativeNumberSchema` ensuring finite, ≥0 values.
+    - `baseCost`: `nonNegativeNumberSchema` ensuring finite, ≥0 values.
     - `costCurve`: `numericFormulaSchema` evaluated in the runtime against the
       current purchase count.
     - `maxBulk`: optional `positiveIntSchema` constraining bulk-buy UI affordances.
