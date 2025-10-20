@@ -28,6 +28,39 @@ const cloneVariants = (value: LocalizedVariants): LocalizedVariants => {
   return JSON.parse(JSON.stringify(value)) as LocalizedVariants;
 };
 
+const canonicalizeVariantLocales = (
+  variants: LocalizedVariants,
+): LocalizedVariants => {
+  const canonicalized: LocalizedVariants = {};
+
+  for (const [locale, value] of Object.entries(variants) as readonly [
+    string,
+    string | undefined,
+  ][]) {
+    if (value === undefined) {
+      continue;
+    }
+
+    const parsed = localeCodeSchema.safeParse(locale);
+    if (!parsed.success) {
+      canonicalized[locale as LocaleCode] = value;
+      continue;
+    }
+
+    const canonicalLocale = parsed.data;
+    if (
+      canonicalLocale in canonicalized &&
+      canonicalLocale !== locale
+    ) {
+      continue;
+    }
+
+    canonicalized[canonicalLocale] = value;
+  }
+
+  return canonicalized;
+};
+
 const emitWarning = (
   warningSink: ((warning: ContentSchemaWarning) => void) | undefined,
   warning: ContentSchemaWarning,
@@ -146,7 +179,7 @@ export const normalizeLocalizedText = <
     localeCodeSchema.parse(locale),
   );
 
-  const variants = cloneVariants(localized.variants);
+  const variants = canonicalizeVariantLocales(localized.variants);
   const normalized: LocalizedContent = {
     ...localized,
     variants,

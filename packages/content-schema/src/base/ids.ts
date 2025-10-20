@@ -4,7 +4,6 @@ import { z } from 'zod';
 const CONTENT_ID_PATTERN = /^[A-Za-z0-9][-./:\w]{0,63}$/;
 const PACK_SLUG_PATTERN = /^(?:@[a-z0-9][a-z0-9\-._]*\/)?[a-z0-9][a-z0-9\-._]*$/;
 const PACK_SLUG_SEPARATOR_PATTERN = /\/{2,}/g;
-const MAX_LOCALE_LENGTH = 35;
 // TODO: keep this list in sync with runtime system automation targets.
 const SYSTEM_AUTOMATION_TARGET_IDS = new Set<string>([
   'offline-catchup',
@@ -103,9 +102,6 @@ export const localeCodeSchema = z
   .string()
   .trim()
   .min(2, { message: 'Locale code must contain at least two characters.' })
-  .max(MAX_LOCALE_LENGTH, {
-    message: `Locale code must contain at most ${MAX_LOCALE_LENGTH} characters.`,
-  })
   .transform((value, ctx) => canonicalizeLocale(value, ctx))
   .pipe(z.string().brand<'LocaleCode'>());
 

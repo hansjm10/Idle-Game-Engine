@@ -70,4 +70,25 @@ describe('localization', () => {
       LOCALIZATION_WARNING_CODES.defaultVariantMismatch,
     );
   });
+
+  it('canonicalizes localization variant keys', () => {
+    const warnings: { code: string }[] = [];
+    const normalized = normalizeLocalizedText(
+      {
+        default: 'Howdy',
+        variants: {
+          'en-us': 'Howdy',
+        },
+      },
+      {
+        defaultLocale: 'en-US',
+        supportedLocales: ['en-us'],
+        warningSink: (warning) => warnings.push(warning),
+      },
+    );
+
+    expect(Object.keys(normalized.variants)).toEqual(['en-US']);
+    expect(normalized.variants['en-US']).toBe('Howdy');
+    expect(warnings).toHaveLength(0);
+  });
 });
