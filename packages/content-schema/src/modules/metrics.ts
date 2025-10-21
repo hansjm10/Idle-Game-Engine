@@ -78,8 +78,10 @@ type MetricDefinitionInput = {
   readonly order?: z.input<typeof finiteNumberSchema>;
 };
 
+type ContentId = z.infer<typeof contentIdSchema>;
+
 type MetricDefinitionModel = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly description?: z.infer<typeof localizedSummarySchema>;
   readonly kind: MetricKind;

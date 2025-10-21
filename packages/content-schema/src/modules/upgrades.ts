@@ -306,7 +306,7 @@ type UpgradeDefinitionInput = {
 };
 
 type UpgradeDefinition = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly tags: readonly string[];

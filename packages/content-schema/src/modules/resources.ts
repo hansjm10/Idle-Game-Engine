@@ -47,8 +47,10 @@ type ResourceDefinitionInput = {
   readonly tags?: readonly string[];
 };
 
+type ResourceId = z.infer<typeof contentIdSchema>;
+
 type ResourceDefinition = {
-  readonly id: string;
+  readonly id: ResourceId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly category: ResourceCategory;
   readonly tier: number;
@@ -62,7 +64,7 @@ type ResourceDefinition = {
   readonly unlockCondition?: z.infer<typeof conditionSchema>;
   readonly visibilityCondition?: z.infer<typeof conditionSchema>;
   readonly prestige?: {
-    readonly layerId: string;
+    readonly layerId: ResourceId;
     readonly resetRetention?: z.infer<typeof numericFormulaSchema>;
   };
   readonly tags: readonly string[];

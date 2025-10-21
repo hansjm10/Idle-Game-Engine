@@ -315,7 +315,9 @@ const freezeMap = <Value extends { readonly id: string }>(
   values: readonly Value[],
 ): ReadonlyMap<Value['id'], Value> =>
   Object.freeze(
-    new Map(values.map((value) => [value.id as Value['id'], value] as const)),
+    new Map<Value['id'], Value>(
+      values.map((value) => [value.id, value]),
+    ),
   );
 
 const freezeRecord = <Value extends { readonly id: string }>(

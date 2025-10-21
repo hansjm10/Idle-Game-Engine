@@ -32,6 +32,8 @@ const rewardSchema = z
   })
   .strict();
 
+type ContentId = z.infer<typeof contentIdSchema>;
+
 type PrestigeLayerInput = {
   readonly id: z.input<typeof contentIdSchema>;
   readonly name: z.input<typeof localizedTextSchema>;
@@ -46,21 +48,21 @@ type PrestigeLayerInput = {
 };
 
 type PrestigeLayerModel = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly summary: z.infer<typeof localizedTextSchema>;
-  readonly resetTargets: readonly string[];
+  readonly resetTargets: readonly ContentId[];
   readonly unlockCondition: z.infer<typeof conditionSchema>;
   readonly reward: z.infer<typeof rewardSchema>;
   readonly retention: readonly z.infer<typeof retentionEntrySchema>[];
-  readonly automation?: { readonly automationId: string };
+  readonly automation?: { readonly automationId: ContentId };
   readonly order?: number;
 };
 
 const normalizeResetTargets = (
-  targets: readonly string[],
-): readonly string[] =>
+  targets: readonly ContentId[],
+): readonly ContentId[] =>
   Object.freeze(
     [...new Set(targets)].sort((left, right) => left.localeCompare(right)),
   );

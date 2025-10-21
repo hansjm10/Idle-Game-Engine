@@ -110,6 +110,80 @@ describe('normalizeContentPack', () => {
     );
   });
 
+  it('sorts modules without explicit order fields by canonical id', () => {
+    const validator = createContentPackValidator();
+    const input = createNormalizationFixture();
+    input.resources = [
+      {
+        id: 'resource:gamma',
+        name: { default: 'Gamma', variants: {} },
+        category: 'primary',
+        tier: 1,
+      },
+      {
+        id: 'resource:beta',
+        name: { default: 'Beta', variants: {} },
+        category: 'primary',
+        tier: 1,
+      },
+      {
+        id: 'resource:alpha',
+        name: { default: 'Alpha', variants: {} },
+        category: 'primary',
+        tier: 1,
+      },
+    ];
+
+    const { pack: normalized } = validator.parse(input);
+
+    expect(normalized.resources.map((resource) => resource.id)).toEqual([
+      'resource:alpha',
+      'resource:beta',
+      'resource:gamma',
+    ]);
+  });
+
+  it('breaks displayOrder ties deterministically using canonical ids', () => {
+    const validator = createContentPackValidator();
+    const input = createNormalizationFixture();
+    input.achievements = [
+      {
+        id: 'achievement:bravo',
+        name: { default: 'Bravo', variants: {} },
+        description: { default: 'Bravo description', variants: {} },
+        category: 'progression',
+        tier: 'bronze',
+        track: {
+          kind: 'resource',
+          resourceId: 'resource:alpha',
+          threshold: { kind: 'constant', value: 1 },
+          comparator: 'gte',
+        },
+        displayOrder: 5,
+      },
+      {
+        id: 'achievement:alpha',
+        name: { default: 'Alpha', variants: {} },
+        description: { default: 'Alpha description', variants: {} },
+        category: 'progression',
+        tier: 'bronze',
+        track: {
+          kind: 'resource',
+          resourceId: 'resource:alpha',
+          threshold: { kind: 'constant', value: 1 },
+          comparator: 'gte',
+        },
+        displayOrder: 5,
+      },
+    ];
+
+    const { pack: normalized } = validator.parse(input);
+
+    expect(
+      normalized.achievements.map((achievement) => achievement.id),
+    ).toEqual(['achievement:alpha', 'achievement:bravo']);
+  });
+
   it('emits stable digests across repeated runs', () => {
     const validator = createContentPackValidator();
     const base = createNormalizationFixture();

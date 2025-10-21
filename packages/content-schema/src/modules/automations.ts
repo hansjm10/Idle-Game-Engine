@@ -10,6 +10,10 @@ import { localizedTextSchema } from '../base/localization.js';
 import { numericFormulaSchema, type NumericFormula } from '../base/formulas.js';
 import { finiteNumberSchema } from '../base/numbers.js';
 
+type ContentId = z.infer<typeof contentIdSchema>;
+type ScriptId = z.infer<typeof scriptIdSchema>;
+type SystemAutomationTargetId = z.infer<typeof systemAutomationTargetIdSchema>;
+
 type AutomationTargetType = 'generator' | 'upgrade' | 'system';
 
 type AutomationTrigger =
@@ -19,12 +23,12 @@ type AutomationTrigger =
     }
   | {
       readonly kind: 'resourceThreshold';
-      readonly resourceId: string;
+      readonly resourceId: ContentId;
       readonly comparator: 'gte' | 'gt' | 'lte' | 'lt';
       readonly threshold: NumericFormula;
     }
   | { readonly kind: 'commandQueueEmpty' }
-  | { readonly kind: 'event'; readonly eventId: string };
+  | { readonly kind: 'event'; readonly eventId: ContentId };
 
 const comparatorSchema = z.enum(['gte', 'gt', 'lte', 'lt'] as const);
 
@@ -82,19 +86,19 @@ type AutomationDefinitionInput = {
 };
 
 type AutomationDefinitionModel = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly description: z.infer<typeof localizedTextSchema>;
   readonly targetType: AutomationTargetType;
-  readonly targetId?: string;
-  readonly systemTargetId?: string;
+  readonly targetId?: ContentId;
+  readonly systemTargetId?: SystemAutomationTargetId;
   readonly trigger: AutomationTrigger;
   readonly cooldown?: number;
   readonly resourceCost?: z.infer<typeof resourceCostSchema>;
   readonly unlockCondition: z.infer<typeof conditionSchema>;
   readonly enabledByDefault: boolean;
   readonly order?: number;
-  readonly scriptId?: string;
+  readonly scriptId?: ScriptId;
 };
 
 export const automationDefinitionSchema: z.ZodType<
