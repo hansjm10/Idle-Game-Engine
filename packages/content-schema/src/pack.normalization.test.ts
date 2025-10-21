@@ -139,7 +139,9 @@ describe('normalizeContentPack', () => {
     ] as typeof input.resources;
 
     expect(
-      input.resources.every((resource) => !Object.hasOwn(resource, 'order')),
+      input.resources.every(
+        (resource) => !Object.prototype.hasOwnProperty.call(resource, 'order'),
+      ),
     ).toBe(true);
 
     const { pack: normalized } = validator.parse(input);
