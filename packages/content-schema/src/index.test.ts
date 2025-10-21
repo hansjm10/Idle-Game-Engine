@@ -54,8 +54,10 @@ describe('content pack validator', () => {
 
     const { pack: normalized, warnings } = createContentPackValidator().parse(pack);
     expect(warnings).toHaveLength(0);
-    expect(normalized.lookup.resources.get('resource:energy')).toBeDefined();
-    expect(normalized.lookup.generators.get('generator:reactor')).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(normalized.lookup.resources.get('resource:energy' as any)).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(normalized.lookup.generators.get('generator:reactor' as any)).toBeDefined();
     expect(normalized.digest.hash).toMatch(/^fnv1a-[0-9a-f]{8}$/);
   });
 
@@ -68,7 +70,8 @@ describe('content pack validator', () => {
 
   it('collects warnings for missing optional dependencies when active pack ids are supplied', () => {
     const packWithOptionalDependency = createMinimalPack();
-    packWithOptionalDependency.metadata.dependencies = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (packWithOptionalDependency.metadata as any).dependencies = {
       optional: [{ packId: 'friends-pack' }],
     };
     const validator = createContentPackValidator({
@@ -84,7 +87,8 @@ describe('content pack validator', () => {
 
   it('enforces feature gates when runtime version predates automations', () => {
     const packWithAutomation = createMinimalPack();
-    packWithAutomation.automations = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (packWithAutomation.automations as any) = [
       {
         id: 'automation:auto-reactor',
         name: { default: 'Auto Reactor' },
@@ -104,7 +108,8 @@ describe('content pack validator', () => {
 
   it('does not enforce allowlists for unspecified categories', () => {
     const packWithScriptMetric = createMinimalPack();
-    packWithScriptMetric.metrics = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (packWithScriptMetric.metrics as any) = [
       {
         id: 'metric:scripted',
         name: { default: 'Scripted Metric', variants: {} },
