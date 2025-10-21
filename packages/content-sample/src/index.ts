@@ -1,63 +1,41 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  parseContentPack,
+  type NormalizedContentPack,
+  type NormalizedGenerator,
+  type NormalizedResource,
+} from '@idle-engine/content-schema';
 import {
   GENERATED_RUNTIME_EVENT_DEFINITIONS,
   type ContentRuntimeEventType,
 } from '@idle-engine/core';
 
-export interface ResourceDefinition {
-  readonly id: string;
-  readonly name: string;
-  readonly startAmount: number;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SAMPLE_PACK_PATH = path.resolve(__dirname, '../content/pack.json');
+
+const document = JSON.parse(readFileSync(SAMPLE_PACK_PATH, 'utf8'));
+const { pack: samplePack, warnings } = parseContentPack(document, {
+  runtimeEventCatalogue: GENERATED_RUNTIME_EVENT_DEFINITIONS.map(
+    (definition) => definition.type,
+  ),
+});
+
+if (warnings.length > 0) {
+  throw new Error(
+    `Sample content pack emitted schema warnings: ${JSON.stringify(
+      warnings,
+    )}`,
+  );
 }
 
-export interface GeneratorDefinition {
-  readonly id: string;
-  readonly name: string;
-  readonly produces: string;
-  readonly baseRate: number;
-  readonly cost: number;
-}
+export type ResourceDefinition = NormalizedResource;
+export type GeneratorDefinition = NormalizedGenerator;
+export type ContentPack = NormalizedContentPack;
 
-export interface ContentPack {
-  readonly metadata: {
-    readonly id: string;
-    readonly version: string;
-    readonly engine: string;
-  };
-  readonly resources: readonly ResourceDefinition[];
-  readonly generators: readonly GeneratorDefinition[];
-}
-
-/**
- * Minimal reference content pack aligned with the prototype milestone. Real
- * data will be generated from the DSL compiler in later iterations.
- */
-export const sampleContent: ContentPack = {
-  metadata: {
-    id: 'sample-pack',
-    version: '0.1.0',
-    engine: '0.1.x'
-  },
-  resources: [
-    { id: 'energy', name: 'Energy', startAmount: 10 },
-    { id: 'crystal', name: 'Crystal', startAmount: 0 }
-  ],
-  generators: [
-    {
-      id: 'reactor',
-      name: 'Reactor',
-      produces: 'energy',
-      baseRate: 1,
-      cost: 10
-    },
-    {
-      id: 'harvester',
-      name: 'Crystal Harvester',
-      produces: 'crystal',
-      baseRate: 0.25,
-      cost: 25
-    }
-  ]
-};
+export const sampleContent: ContentPack = samplePack;
 
 const SAMPLE_PACK_SLUG = sampleContent.metadata.id;
 

@@ -1255,6 +1255,8 @@ interface NormalizedContentPack {
 - Document schema additions in `docs/idle-engine-design.md` and call out
   migrations in `docs/implementation-plan.md` to keep the DSL contract in sync
   with runtime workstreams.
+- Run `pnpm generate` after editing pack sources; the CLI now validates packs via `@idle-engine/content-schema` and emits JSON log entries (`content_pack.validated`, `content_pack.validation_failed`) that downstream automation can consume.
+- Keep authoring sources in `<package>/content/pack.json`, resolve warnings before publishing, and annotate intentional suppressions so migration scripts can distinguish deliberate exceptions from regressions.
 
 ## 6. Testing Strategy
 
@@ -1349,3 +1351,4 @@ interface NormalizedContentPack {
   v1.0, or can they wait for the scripting design doc?
 - What is the migration strategy when schema digests change (e.g., do we embed
   the digest into save files similar to event manifests)?
+- Migrate remaining TypeScript/hand-authored sample data into the CLI-discoverable pack format and ensure the forthcoming DSL compiler emits the same schema-normalised structures.

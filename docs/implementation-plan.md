@@ -49,6 +49,7 @@ This plan converts the design document into actionable engineering work. It span
 - Integrate validation CLI with reporting (severity levels, actionable output).
 - Generate extended sample content (at least 10 resources, 6 generators, 3 upgrade tiers, 1 prestige layer, guild perk stub).
 - DoD: CLI rejects invalid sample intentionally, `@idle-engine/content-sample` builds from compiler output.
+- Status update (Issue #136): `pnpm generate` now validates workspace packs through `@idle-engine/content-schema`, emitting machine-readable `content_pack.*` diagnostics. The sample pack lives in `packages/content-sample/content/pack.json` and ships warning-free. Follow-ups: migrate future DSL compiler outputs into the same format, add additional packs, and promote schema warnings to CI failures once broader content coverage lands.
 
 ### Phase 3 – Presentation Shell Integration (Weeks 3-5)
 - Implement Worker bridge (postMessage contract) between runtime and React shell.

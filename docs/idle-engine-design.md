@@ -158,11 +158,15 @@ function runTick(deltaMs) {
 - Support for hierarchical content packages (base game, seasonal event, micro-DLC) with dependency resolution.
 - Validation tooling to verify IDs, cyclical dependencies, formula sanity before shipping.
 - Provide CLI to bundle content, generate documentation, and run balance simulations.
+- `pnpm generate` invokes `tools/content-schema-cli`, which now validates every `content/pack.json` via `@idle-engine/content-schema` before refreshing runtime event manifests. The CLI emits JSON log events (`content_pack.validated`, `content_pack.validation_failed`) so automation can gate builds on hard failures or elevated warning counts.
+- Authoring packs live alongside their manifests (e.g., `packages/content-sample/content/pack.json`). Keep schema warnings at zero, add missing localized variants for declared locales, and document intentional deviations so future migrations stay deterministic.
 - Extendable DSL supports custom modifiers, scripted events, and guild-related hooks while maintaining sandbox boundaries.
 - DSL expressed as strongly typed schemas (Zod) compiled into immutable definitions; support YAML option for non-TS teams via build-time conversion.
 - Each content item declares metadata (version, compatibility range), resource/generator definitions, formulas (expressed as AST or limited expression strings), and unlock conditions.
 - Preprocessors resolve derived values (e.g., cumulative cost curves) and emit warnings when difficulty spikes exceed configured thresholds.
 - Content lints enforce naming conventions, ID uniqueness, and forbid direct references across prestige layers without explicit bridges.
+
+Follow-up migration work: wire the DSL compiler to emit schema-aligned packs instead of hand-authored TypeScript, port legacy sample data into the CLI format, and extend CI so schema warnings fail builds once the broader content library lands.
 
 ## 11. Presentation Layer Contracts
 - Runtime sends UI ready snapshots through a state channel; UI sends user intents (purchase upgrade, toggle automation) via command channel.
