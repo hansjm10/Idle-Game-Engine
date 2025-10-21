@@ -10,11 +10,13 @@
     "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@idle-engine/content-schema": "workspace:*",
     "@idle-engine/core": "workspace:*"
   },
   "devDependencies": {
     "@idle-engine/config-eslint": "workspace:*",
     "@idle-engine/config-vitest": "workspace:*",
+    "@types/node": "^24.9.1",
     "eslint": "^9.37.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",

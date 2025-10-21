@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "generate": "node ./src/generate.js"
+  },
+  "dependencies": {
+    "@idle-engine/content-schema": "workspace:*"
   }
 }

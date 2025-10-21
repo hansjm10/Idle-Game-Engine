@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createContentPackValidator } from '@idle-engine/content-schema';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -14,6 +15,7 @@ const GENERATED_MODULE_PATH = path.join(
   REPO_ROOT,
   'packages/core/src/events/runtime-event-manifest.generated.ts',
 );
+const CONTENT_PACK_FILENAME = 'content/pack.json';
 
 async function main() {
   const baseMetadata = await loadBaseMetadata();
@@ -34,6 +36,8 @@ async function main() {
     manifestEntries,
     manifestHash,
   });
+
+  await validateContentPacks(manifestDefinitions);
 
   await fs.mkdir(path.dirname(GENERATED_MODULE_PATH), { recursive: true });
   await fs.writeFile(GENERATED_MODULE_PATH, fileContents, 'utf8');
@@ -461,6 +465,146 @@ function escapeString(value) {
   return String(value)
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'");
+}
+
+async function loadContentPackDocuments() {
+  const packagesDir = path.join(REPO_ROOT, 'packages');
+  const directories = await fs.readdir(packagesDir, { withFileTypes: true });
+  const packs = [];
+
+  for (const entry of directories) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const packageRoot = path.join(packagesDir, entry.name);
+    const packPath = path.join(packageRoot, CONTENT_PACK_FILENAME);
+    if (!(await fileExists(packPath))) {
+      continue;
+    }
+
+    const raw = await fs.readFile(packPath, 'utf8');
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(
+        `Failed to parse content pack ${toPosixPath(
+          path.relative(REPO_ROOT, packPath),
+        )}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    packs.push({
+      packageRoot,
+      packPath,
+      document: parsed,
+    });
+  }
+
+  return packs;
+}
+
+function extractKnownPackEntries(documents) {
+  return documents
+    .map((document) => {
+      const metadata = document?.document?.metadata;
+      if (typeof metadata !== 'object' || metadata === null) {
+        return undefined;
+      }
+
+      const { id, version, dependencies } = metadata;
+      if (typeof id !== 'string' || typeof version !== 'string') {
+        return undefined;
+      }
+
+      const requires =
+        Array.isArray(dependencies?.requires) && dependencies.requires.length > 0
+          ? dependencies.requires
+              .map((entry) => {
+                if (typeof entry !== 'object' || entry === null) {
+                  return undefined;
+                }
+                const { packId, version: requirementVersion } = entry;
+                if (typeof packId !== 'string') {
+                  return undefined;
+                }
+                return {
+                  packId,
+                  version:
+                    typeof requirementVersion === 'string'
+                      ? requirementVersion
+                      : undefined,
+                };
+              })
+              .filter((value) => value !== undefined)
+          : undefined;
+
+      return requires && requires.length === 0
+        ? { id, version }
+        : {
+            id,
+            version,
+            requires,
+          };
+    })
+    .filter((entry) => entry !== undefined);
+}
+
+async function validateContentPacks(manifestDefinitions) {
+  const documents = await loadContentPackDocuments();
+  if (documents.length === 0) {
+    return;
+  }
+
+  const knownPacks = extractKnownPackEntries(documents);
+  const activePackIds = knownPacks.map((entry) => entry.id);
+  const runtimeEventCatalogue = manifestDefinitions.map(
+    (definition) => definition.type,
+  );
+
+  const validator = createContentPackValidator({
+    knownPacks,
+    activePackIds,
+    runtimeEventCatalogue,
+  });
+
+  const failures = [];
+
+  for (const document of documents) {
+    const { packPath } = document;
+    const result = validator.safeParse(document.document);
+    const relativePath = toPosixPath(path.relative(REPO_ROOT, packPath));
+    if (result.success) {
+      const { pack, warnings } = result.data;
+      const payload = {
+        event: 'content_pack.validated',
+        packSlug: pack.metadata.id,
+        path: relativePath,
+        warningCount: warnings.length,
+        warnings,
+      };
+      if (warnings.length > 0) {
+        console.warn(JSON.stringify(payload));
+      } else {
+        console.log(JSON.stringify(payload));
+      }
+      continue;
+    }
+
+    const payload = {
+      event: 'content_pack.validation_failed',
+      path: relativePath,
+      issues: result.error.issues,
+      message: result.error.message,
+    };
+    console.error(JSON.stringify(payload));
+    failures.push(payload);
+  }
+
+  if (failures.length > 0) {
+    throw new Error('One or more content packs failed validation; see logs for details.');
+  }
 }
 
 async function fileExists(targetPath) {

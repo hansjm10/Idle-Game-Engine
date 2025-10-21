@@ -1,0 +1,192 @@
+{
+  "metadata": {
+    "id": "sample-pack",
+    "title": {
+      "default": "Sample Content Pack",
+      "variants": {}
+    },
+    "summary": {
+      "default": "Reference data for the prototype milestone and automated tests.",
+      "variants": {}
+    },
+    "version": "0.1.0",
+    "engine": "^0.1.0",
+    "authors": ["Idle Engine Team"],
+    "defaultLocale": "en-US",
+    "supportedLocales": ["en-US"],
+    "tags": ["Sample", "Prototype"],
+    "links": [
+      {
+        "kind": "docs",
+        "label": "Content Schema Design",
+        "href": "https://github.com/hansjm10/Idle-Game-Engine/blob/main/docs/content-dsl-schema-design.md"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "id": "energy",
+      "name": {
+        "default": "Energy",
+        "variants": {}
+      },
+      "category": "primary",
+      "tier": 1,
+      "startAmount": 10,
+      "capacity": 100,
+      "visible": true,
+      "unlocked": true,
+      "order": 1
+    },
+    {
+      "id": "crystal",
+      "name": {
+        "default": "Crystal",
+        "variants": {}
+      },
+      "category": "currency",
+      "tier": 1,
+      "startAmount": 0,
+      "visible": true,
+      "unlocked": false,
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "energy",
+        "comparator": "gte",
+        "amount": {
+          "kind": "constant",
+          "value": 25
+        }
+      },
+      "order": 2
+    }
+  ],
+  "generators": [
+    {
+      "id": "reactor",
+      "name": {
+        "default": "Reactor",
+        "variants": {}
+      },
+      "produces": [
+        {
+          "resourceId": "energy",
+          "rate": {
+            "kind": "constant",
+            "value": 1
+          }
+        }
+      ],
+      "consumes": [],
+      "purchase": {
+        "currencyId": "energy",
+        "baseCost": 10,
+        "costCurve": {
+          "kind": "exponential",
+          "base": 10,
+          "growth": 1.15,
+          "offset": 0
+        }
+      },
+      "baseUnlock": {
+        "kind": "always"
+      },
+      "order": 1
+    },
+    {
+      "id": "harvester",
+      "name": {
+        "default": "Crystal Harvester",
+        "variants": {}
+      },
+      "produces": [
+        {
+          "resourceId": "crystal",
+          "rate": {
+            "kind": "constant",
+            "value": 0.25
+          }
+        }
+      ],
+      "consumes": [
+        {
+          "resourceId": "energy",
+          "rate": {
+            "kind": "constant",
+            "value": 0.5
+          }
+        }
+      ],
+      "purchase": {
+        "currencyId": "energy",
+        "baseCost": 25,
+        "costCurve": {
+          "kind": "linear",
+          "base": 25,
+          "slope": 5
+        }
+      },
+      "baseUnlock": {
+        "kind": "resourceThreshold",
+        "resourceId": "energy",
+        "comparator": "gte",
+        "amount": {
+          "kind": "constant",
+          "value": 15
+        }
+      },
+      "order": 2
+    }
+  ],
+  "upgrades": [],
+  "metrics": [
+    {
+      "id": "energy-produced",
+      "name": {
+        "default": "Total Energy Produced",
+        "variants": {}
+      },
+      "description": {
+        "default": "Cumulative energy yield tracked across all runs.",
+        "variants": {}
+      },
+      "kind": "counter",
+      "unit": "units",
+      "source": {
+        "kind": "runtime"
+      }
+    }
+  ],
+  "achievements": [
+    {
+      "id": "first-energy",
+      "name": {
+        "default": "First Spark",
+        "variants": {}
+      },
+      "description": {
+        "default": "Generate one unit of energy.",
+        "variants": {}
+      },
+      "category": "progression",
+      "tier": "bronze",
+      "track": {
+        "kind": "resource",
+        "resourceId": "energy",
+        "threshold": {
+          "kind": "constant",
+          "value": 1
+        },
+        "comparator": "gte"
+      },
+      "progress": {
+        "mode": "oneShot"
+      }
+    }
+  ],
+  "automations": [],
+  "transforms": [],
+  "prestigeLayers": [],
+  "guildPerks": [],
+  "runtimeEvents": []
+}
