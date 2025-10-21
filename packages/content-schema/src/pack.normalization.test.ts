@@ -123,23 +123,24 @@ describe('normalizeContentPack', () => {
         name: { default: 'Gamma', variants: {} },
         category: 'primary',
         tier: 1,
-        order: 0,
       },
       {
         id: 'resource:beta',
         name: { default: 'Beta', variants: {} },
         category: 'primary',
         tier: 1,
-        order: 0,
       },
       {
         id: 'resource:alpha',
         name: { default: 'Alpha', variants: {} },
         category: 'primary',
         tier: 1,
-        order: 0,
       },
-    ];
+    ] as typeof input.resources;
+
+    expect(
+      input.resources.every((resource) => !Object.hasOwn(resource, 'order')),
+    ).toBe(true);
 
     const { pack: normalized } = validator.parse(input);
 
