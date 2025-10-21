@@ -9,8 +9,8 @@ import type { z } from 'zod';
 import type {
   ContentSchemaOptions,
   NormalizedContentPack,
-  SchemaWarning,
 } from '../pack.js';
+import type { ContentSchemaWarning } from '../errors.js';
 import {
   contentIdSchema,
   flagIdSchema,
@@ -140,13 +140,13 @@ describe('Type Assertions: NormalizedContentPack', () => {
 });
 
 describe('Type Assertions: Schema Warning', () => {
-  it('SchemaWarning has correct structure', () => {
-    expectTypeOf<SchemaWarning>().toHaveProperty('code');
-    expectTypeOf<SchemaWarning>().toHaveProperty('message');
-    expectTypeOf<SchemaWarning>().toHaveProperty('path');
-    expectTypeOf<SchemaWarning>().toHaveProperty('severity');
+  it('ContentSchemaWarning has correct structure', () => {
+    expectTypeOf<ContentSchemaWarning>().toHaveProperty('code');
+    expectTypeOf<ContentSchemaWarning>().toHaveProperty('message');
+    expectTypeOf<ContentSchemaWarning>().toHaveProperty('path');
+    expectTypeOf<ContentSchemaWarning>().toHaveProperty('severity');
 
-    expectTypeOf<SchemaWarning>().toMatchTypeOf<{
+    expectTypeOf<ContentSchemaWarning>().toMatchTypeOf<{
       readonly code: string;
       readonly message: string;
       readonly path: readonly (string | number)[];
@@ -156,24 +156,24 @@ describe('Type Assertions: Schema Warning', () => {
     }>();
   });
 
-  it('SchemaWarning path is a readonly array of strings or numbers', () => {
-    expectTypeOf<SchemaWarning['path']>().toEqualTypeOf<
+  it('ContentSchemaWarning path is a readonly array of strings or numbers', () => {
+    expectTypeOf<ContentSchemaWarning['path']>().toEqualTypeOf<
       readonly (string | number)[]
     >();
 
     // Should not be assignable to mutable array
-    expectTypeOf<SchemaWarning['path']>().not.toMatchTypeOf<
+    expectTypeOf<ContentSchemaWarning['path']>().not.toMatchTypeOf<
       (string | number)[]
     >();
   });
 
-  it('SchemaWarning severity is a discriminated union', () => {
-    expectTypeOf<SchemaWarning['severity']>().toEqualTypeOf<
+  it('ContentSchemaWarning severity is a discriminated union', () => {
+    expectTypeOf<ContentSchemaWarning['severity']>().toEqualTypeOf<
       'error' | 'warning' | 'info'
     >();
 
     // Should not accept arbitrary strings
-    expectTypeOf<SchemaWarning['severity']>().not.toMatchTypeOf<string>();
+    expectTypeOf<ContentSchemaWarning['severity']>().not.toMatchTypeOf<string>();
   });
 });
 
@@ -185,7 +185,7 @@ describe('Type Assertions: Validator Return Types', () => {
 
     expectTypeOf(validator.parse).returns.toMatchTypeOf<{
       pack: NormalizedContentPack;
-      warnings: readonly SchemaWarning[];
+      warnings: readonly ContentSchemaWarning[];
     }>();
   });
 
@@ -195,7 +195,7 @@ describe('Type Assertions: Validator Return Types', () => {
     >;
 
     expectTypeOf<SafeParseResult>().toMatchTypeOf<
-      | { success: true; data: { pack: NormalizedContentPack; warnings: readonly SchemaWarning[] } }
+      | { success: true; data: { pack: NormalizedContentPack; warnings: readonly ContentSchemaWarning[] } }
       | { success: false; error: unknown }
     >();
   });
@@ -209,17 +209,17 @@ describe('Type Assertions: Content Schema Options', () => {
       knownPacks?: readonly unknown[];
       runtimeEventCatalogue?: readonly string[] | ReadonlySet<string>;
       activePackIds?: readonly string[] | ReadonlySet<string>;
-      warningSink?: (warning: SchemaWarning) => void;
+      warningSink?: (warning: ContentSchemaWarning) => void;
     }>();
 
     // All fields should be optional - empty options object should be valid
     expectTypeOf<ContentSchemaOptions>().toMatchTypeOf<Record<string, never>>();
   });
 
-  it('warningSink accepts SchemaWarning parameter', () => {
+  it('warningSink accepts ContentSchemaWarning parameter', () => {
     type WarningSink = NonNullable<ContentSchemaOptions['warningSink']>;
 
-    expectTypeOf<WarningSink>().parameters.toEqualTypeOf<[SchemaWarning]>();
+    expectTypeOf<WarningSink>().parameters.toEqualTypeOf<[ContentSchemaWarning]>();
     expectTypeOf<WarningSink>().returns.toEqualTypeOf<void>();
   });
 });
