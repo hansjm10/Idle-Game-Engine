@@ -90,11 +90,15 @@ describe('normalizeContentPack', () => {
       'resource:beta',
     ]);
 
-    const alphaResource = normalized.lookup.resources.get('resource:alpha');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const alphaResource = normalized.lookup.resources.get('resource:alpha' as any);
     expect(alphaResource).toBe(normalized.resources[0]);
 
-    const betaResource = normalized.lookup.resources.get('resource:beta');
-    expect(betaResource?.name.variants['en-US']).toBe('Beta Resource');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const betaResource = normalized.lookup.resources.get('resource:beta' as any);
+    expect(
+      (betaResource?.name.variants as Record<string, string>)['en-US'],
+    ).toBe('Beta Resource');
 
     expect(
       normalized.serializedLookup.resourceById['resource:alpha'],
@@ -132,7 +136,13 @@ describe('normalizeContentPack', () => {
         category: 'primary',
         tier: 1,
       },
-    ];
+    ] as typeof input.resources;
+
+    expect(
+      input.resources.every(
+        (resource) => !Object.prototype.hasOwnProperty.call(resource, 'order'),
+      ),
+    ).toBe(true);
 
     const { pack: normalized } = validator.parse(input);
 
@@ -146,7 +156,8 @@ describe('normalizeContentPack', () => {
   it('breaks displayOrder ties deterministically using canonical ids', () => {
     const validator = createContentPackValidator();
     const input = createNormalizationFixture();
-    input.achievements = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (input.achievements as any) = [
       {
         id: 'achievement:bravo',
         name: { default: 'Bravo', variants: {} },

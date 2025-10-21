@@ -16,7 +16,8 @@
     "clean": "rimraf dist",
     "lint": "eslint 'src/**/*.ts'",
     "test": "vitest",
-    "test:ci": "vitest run --passWithNoTests"
+    "test:ci": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "semver": "^7.6.3",

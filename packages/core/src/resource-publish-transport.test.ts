@@ -144,7 +144,9 @@ describe('resource publish transport', () => {
         descriptor.buffer.slice(0),
       );
     }
-    const dirtyIndicesReplacement = transport.dirtyIndices.buffer.slice(0);
+    const dirtyIndicesReplacement = transport.dirtyIndices.buffer.slice(
+      0,
+    ) as ArrayBuffer;
 
     result.release({
       buffers: Object.fromEntries(replacementBuffers),

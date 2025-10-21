@@ -43,7 +43,9 @@ describe('metadataSchema', () => {
         href: 'https://example.com/guide',
       },
     ]);
-    expect(result.title.variants['en-US']).toBe('Idle Pack');
+    expect((result.title.variants as Record<string, string>)['en-US']).toBe(
+      'Idle Pack',
+    );
   });
 
   it('rejects metadata when supported locales omit the default locale', () => {
