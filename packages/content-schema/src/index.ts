@@ -5,6 +5,18 @@ export {
   type ContentPackValidationResult,
   type ContentPackValidator,
   type NormalizedContentPack,
+  type NormalizedMetadata,
+  type NormalizedResource,
+  type NormalizedGenerator,
+  type NormalizedUpgrade,
+  type NormalizedMetric,
+  type NormalizedAchievement,
+  type NormalizedAutomation,
+  type NormalizedTransform,
+  type NormalizedPrestigeLayer,
+  type NormalizedGuildPerk,
+  type NormalizedRuntimeEventContribution,
+  type NormalizationContext,
 } from './pack.js';
 
 export {

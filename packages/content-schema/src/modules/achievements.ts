@@ -171,8 +171,10 @@ type AchievementDefinitionInput = {
   readonly displayOrder?: z.input<typeof finiteNumberSchema>;
 };
 
+type ContentId = z.infer<typeof contentIdSchema>;
+
 type AchievementDefinitionModel = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly description: z.infer<typeof localizedSummarySchema>;
   readonly category: AchievementCategory;
@@ -188,7 +190,7 @@ type AchievementDefinitionModel = {
   readonly reward?: AchievementReward;
   readonly unlockCondition?: z.infer<typeof conditionSchema>;
   readonly visibilityCondition?: z.infer<typeof conditionSchema>;
-  readonly onUnlockEvents: readonly string[];
+  readonly onUnlockEvents: readonly ContentId[];
   readonly displayOrder?: number;
 };
 
@@ -198,8 +200,8 @@ const normalizeTags = (tags: readonly string[]): readonly string[] =>
   );
 
 const normalizeUnlockEvents = (
-  events: readonly string[],
-): readonly string[] =>
+  events: readonly ContentId[],
+): readonly ContentId[] =>
   Object.freeze(
     [...new Set(events)].sort((left, right) => left.localeCompare(right)),
   );

@@ -19,6 +19,8 @@ const tagSchema: z.ZodString = z
       'Tags must start with an alphanumeric character and may include "-", "_", ":", or "/" thereafter.',
   });
 
+type ContentId = z.infer<typeof contentIdSchema>;
+
 const endpointSchema = z
   .object({
     resourceId: contentIdSchema,
@@ -45,9 +47,9 @@ type TransformTriggerInput =
 
 type TransformTrigger =
   | { readonly kind: 'manual' }
-  | { readonly kind: 'automation'; readonly automationId: string }
+  | { readonly kind: 'automation'; readonly automationId: ContentId }
   | { readonly kind: 'condition'; readonly condition: Condition }
-  | { readonly kind: 'event'; readonly eventId: string };
+  | { readonly kind: 'event'; readonly eventId: ContentId };
 
 type TransformDefinitionInput = {
   readonly id: z.input<typeof contentIdSchema>;
@@ -68,7 +70,7 @@ type TransformDefinitionInput = {
 };
 
 type TransformDefinitionModel = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly description: z.infer<typeof localizedSummarySchema>;
   readonly mode: 'instant' | 'continuous' | 'batch';
@@ -79,7 +81,7 @@ type TransformDefinitionModel = {
   readonly trigger: TransformTrigger;
   readonly unlockCondition?: z.infer<typeof conditionSchema>;
   readonly visibilityCondition?: z.infer<typeof conditionSchema>;
-  readonly automation?: { readonly automationId: string };
+  readonly automation?: { readonly automationId: ContentId };
   readonly tags: readonly string[];
   readonly safety?: TransformSafety;
   readonly order?: number;

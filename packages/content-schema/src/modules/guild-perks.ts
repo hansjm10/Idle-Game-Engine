@@ -43,6 +43,8 @@ const guildCostSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
+type ContentId = z.infer<typeof contentIdSchema>;
+
 type GuildPerkDefinitionInput = {
   readonly id: z.input<typeof contentIdSchema>;
   readonly name: z.input<typeof localizedTextSchema>;
@@ -57,7 +59,7 @@ type GuildPerkDefinitionInput = {
 };
 
 type GuildPerkDefinitionModel = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly description: z.infer<typeof localizedTextSchema>;
   readonly category: 'buff' | 'utility' | 'cosmetic';

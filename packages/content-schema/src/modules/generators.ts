@@ -22,6 +22,8 @@ const tagSchema = z
   })
   .transform((value) => value.toLowerCase());
 
+type ContentId = z.infer<typeof contentIdSchema>;
+
 const productionEntrySchema = z
   .object({
     resourceId: contentIdSchema,
@@ -37,7 +39,7 @@ const consumptionEntrySchema = z
   .strict();
 
 const ensureUniqueResourceHandles = (
-  entries: readonly { resourceId: string }[],
+  entries: readonly { resourceId: ContentId }[],
   ctx: z.RefinementCtx,
   path: readonly (string | number)[],
 ) => {
@@ -62,7 +64,7 @@ const normalizeTags = (tags: readonly string[]): readonly string[] =>
   );
 
 type PurchaseDefinition = {
-  readonly currencyId: string;
+  readonly currencyId: ContentId;
   readonly baseCost: number;
   readonly costCurve: z.infer<typeof numericFormulaSchema>;
   readonly maxBulk?: number;
@@ -92,7 +94,7 @@ type GeneratorDefinitionInput = {
 };
 
 type GeneratorDefinition = {
-  readonly id: string;
+  readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly tags: readonly string[];
@@ -103,7 +105,7 @@ type GeneratorDefinition = {
   readonly order?: number;
   readonly baseUnlock: z.infer<typeof conditionSchema>;
   readonly visibilityCondition?: z.infer<typeof conditionSchema>;
-  readonly automation?: { readonly automationId: string };
+  readonly automation?: { readonly automationId: ContentId };
   readonly effects: readonly z.infer<typeof upgradeEffectSchema>[];
 };
 
