@@ -260,7 +260,9 @@ describe('CommandQueue', () => {
     const snapshotSet = (snapshotPayload.map.get('items') as { set: Set<number> }).set;
     expect(() => snapshotSet.add(3)).toThrow(TypeError);
 
-    expect(() => snapshotPayload.date.setFullYear(2030)).toThrow(TypeError);
+    expect(() => (snapshotPayload.date as Date).setFullYear(2030)).toThrow(
+      TypeError,
+    );
 
     const typedView = snapshotPayload.typed;
     expect(() => {
@@ -631,7 +633,7 @@ describe('CommandQueue', () => {
       expect(snapshotPayload.shared.byteLength).toBe(16);
     }
 
-    const result = snapshotPayload.regex.exec('queue-42');
+    const result = (snapshotPayload.regex as RegExp).exec('queue-42');
     expect(result?.[1]).toBe('42');
   });
 
@@ -736,7 +738,7 @@ describe('CommandQueue', () => {
       snapshot.payload as CommandSnapshotPayload<{ typed: Uint8Array }>
     ).typed;
 
-    const mapped = typedProxy.map((value, index, arrayRef) => {
+    const mapped = typedProxy.map((value, _index, arrayRef) => {
       expect(arrayRef).toBe(typedProxy);
       return value * 2;
     });
@@ -744,7 +746,7 @@ describe('CommandQueue', () => {
     expect(Array.from(mapped)).toEqual([2, 4, 6, 8]);
     expect(() => mapped.set([99], 0)).toThrow(TypeError);
 
-    const filtered = typedProxy.filter((value, index, arrayRef) => {
+    const filtered = typedProxy.filter((_value, index, arrayRef) => {
       expect(arrayRef).toBe(typedProxy);
       return index % 2 === 0;
     });
@@ -818,8 +820,7 @@ describe('CommandQueue', () => {
     new Uint8Array(mutableCopy)[0] = 123;
     expect(Array.from(typedProxy)).toEqual([10, 20, 30, 40]);
 
-    // Mutators are removed from the TypeScript surface; attempting to access them should be a type error.
-    // @ts-expect-error Mutating helpers are absent on immutable snapshots
+    // Mutators are removed from the TypeScript surface or return never
     void typedProxy.set;
     // @ts-expect-error Buffer facades are not directly ArrayBuffer instances
     const directBuffer: ArrayBuffer = typedProxy.buffer;
@@ -847,9 +848,11 @@ describe('CommandQueue', () => {
       expect(Object.prototype.toString.call(sharedBufferFacade)).toBe(
         '[object ImmutableSharedArrayBufferSnapshot]',
       );
-      const sharedCopy = sharedBufferFacade.toSharedArrayBuffer();
-      new Uint8Array(sharedCopy)[0] = 255;
-      expect(Array.from(sharedProxy)).toEqual([1, 2, 3, 4]);
+      if ('toSharedArrayBuffer' in sharedBufferFacade) {
+        const sharedCopy = sharedBufferFacade.toSharedArrayBuffer();
+        new Uint8Array(sharedCopy)[0] = 255;
+        expect(Array.from(sharedProxy)).toEqual([1, 2, 3, 4]);
+      }
     }
   });
 

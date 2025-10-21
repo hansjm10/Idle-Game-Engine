@@ -415,7 +415,8 @@ describe('IdleEngineRuntime', () => {
         expect(deltaResult.dropped).toBe(0);
         expect(deltaResult.entries.length).toBeGreaterThan(0);
 
-        const lastEntry = deltaResult.entries.at(-1);
+        const lastEntry =
+          deltaResult.entries[deltaResult.entries.length - 1];
         expect(lastEntry?.metadata?.accumulatorBacklogMs).toBeDefined();
         const backlog = lastEntry?.metadata?.accumulatorBacklogMs ?? NaN;
         observedBacklog.push(backlog);
@@ -501,7 +502,7 @@ describe('IdleEngineRuntime', () => {
     expect(delta.dropped).toBe(0);
     expect(delta.entries).toHaveLength(60);
 
-    const lastEntry = delta.entries.at(-1);
+    const lastEntry = delta.entries[delta.entries.length - 1];
     expect(lastEntry?.metadata?.accumulatorBacklogMs).toBeDefined();
     expect(lastEntry?.metadata?.accumulatorBacklogMs ?? NaN).toBeCloseTo(
       0,
@@ -694,9 +695,16 @@ describe('IdleEngineRuntime', () => {
 
     try {
       expect(frameResult.frame.count).toBe(3);
-      const automationIds = frameResult.frame.payloads.map(
-        (payload) => (payload as AutomationToggledEventPayload).automationId,
-      );
+      const automationIds =
+        frameResult.frame.format === 'struct-of-arrays'
+          ? frameResult.frame.payloads.map(
+              (payload) =>
+                (payload as AutomationToggledEventPayload).automationId,
+            )
+          : frameResult.frame.events.map(
+              (event) =>
+                (event.payload as AutomationToggledEventPayload).automationId,
+            );
       expect(automationIds).toEqual(['auto:0', 'auto:1', 'auto:2']);
     } finally {
       frameResult.release();

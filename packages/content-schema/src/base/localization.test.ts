@@ -44,7 +44,9 @@ describe('localization', () => {
       path: ['title'],
     });
 
-    expect(normalized.variants['en-US']).toBe('Hello');
+    expect(
+      (normalized.variants as Record<string, string>)['en-US'],
+    ).toBe('Hello');
     expect(warnings).toHaveLength(1);
     expect(warnings[0].code).toBe(LOCALIZATION_WARNING_CODES.missingVariant);
     expect(input.variants).toEqual({});
@@ -88,7 +90,9 @@ describe('localization', () => {
     );
 
     expect(Object.keys(normalized.variants)).toEqual(['en-US']);
-    expect(normalized.variants['en-US']).toBe('Howdy');
+    expect(
+      (normalized.variants as Record<string, string>)['en-US'],
+    ).toBe('Howdy');
     expect(warnings).toHaveLength(0);
   });
 });

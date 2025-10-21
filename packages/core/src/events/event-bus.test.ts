@@ -14,7 +14,7 @@ import { TransportBufferPool } from '../transport-buffer-pool.js';
 
 describe('EventBus', () => {
   const clock = {
-    now: vi.fn<[], number>(),
+    now: vi.fn<() => number>(),
   };
 
   beforeEach(() => {

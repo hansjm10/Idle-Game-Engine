@@ -185,15 +185,15 @@ describe('resource command handlers', () => {
       expect(resources.getAmount(energyIndex)).toBe(5);
       expect(purchases.applied).toHaveLength(0);
 
-      const warningEvents = telemetryStub.recordWarning.mock.calls.map(
-        (call) => call[0],
-      );
+      const warningEvents = vi
+        .mocked(telemetryStub.recordWarning)
+        .mock.calls.map((call: [string, unknown?]) => call[0]);
       expect(warningEvents).toContain('ResourceSpendFailed');
       expect(warningEvents).toContain('InsufficientResources');
 
-      const spendFailed = telemetryStub.recordWarning.mock.calls.find(
-        (call) => call[0] === 'ResourceSpendFailed',
-      );
+      const spendFailed = vi
+        .mocked(telemetryStub.recordWarning)
+        .mock.calls.find((call: [string, unknown?]) => call[0] === 'ResourceSpendFailed');
       expect(spendFailed?.[1]).toMatchObject({
         commandId: RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR,
         systemId: 'auto-buy',
@@ -225,9 +225,9 @@ describe('resource command handlers', () => {
       expect(resources.getAmount(crystalIndex)).toBe(4);
       expect(purchases.applied).toHaveLength(0);
 
-      const insufficient = telemetryStub.recordWarning.mock.calls.find(
-        (call) => call[0] === 'InsufficientResources',
-      );
+      const insufficient = vi
+        .mocked(telemetryStub.recordWarning)
+        .mock.calls.find((call: [string, unknown?]) => call[0] === 'InsufficientResources');
       expect(insufficient?.[1]).toMatchObject({
         generatorId: 'hybrid',
         resourceId: 'crystal',

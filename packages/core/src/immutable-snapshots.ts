@@ -93,6 +93,7 @@ export type ImmutableTypedArraySnapshot<TArray extends TypedArray> = Omit<
   readonly buffer:
     | ImmutableArrayBufferSnapshot
     | ImmutableSharedArrayBufferSnapshot;
+  set(array: ArrayLike<number>, offset?: number): never;
   valueOf(): ImmutableTypedArraySnapshot<TArray>;
   subarray(
     begin?: number,

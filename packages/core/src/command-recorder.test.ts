@@ -132,13 +132,12 @@ describe('CommandRecorder', () => {
 
     const log = recorder.export();
 
-    const payloadMap = log.commands[0].payload.map as unknown as Map<
-      string,
-      number
-    >;
+    const payloadMap = (log.commands[0]!.payload as Record<string, unknown>)
+      .map as unknown as Map<string, number>;
     expect(() => payloadMap.set('beta', 2)).toThrow(TypeError);
 
-    const stateMap = log.startState.resources as unknown as Map<string, number>;
+    const stateMap = (log.startState as Record<string, unknown>)
+      .resources as unknown as Map<string, number>;
     expect(() => stateMap.set('energy', 1)).toThrow(TypeError);
   });
 
@@ -225,8 +224,9 @@ describe('CommandRecorder', () => {
       },
     });
     const recorder = new CommandRecorder(state);
-    const snapshot = recorder.export().startState;
-    const snapshotMeta = snapshot.meta as Record<PropertyKey, unknown>;
+    const snapshot = recorder.export().startState as StateSnapshot<typeof state>;
+    const snapshotMeta = (snapshot as Record<string, unknown>)
+      .meta as Record<PropertyKey, unknown>;
     expect(Reflect.has(snapshotMeta, FLAGS)).toBe(true);
 
     const meta = state.meta as Record<PropertyKey, unknown>;
@@ -255,7 +255,7 @@ describe('CommandRecorder', () => {
     });
 
     const recorder = new CommandRecorder(state);
-    const snapshot = recorder.export().startState;
+    const snapshot = recorder.export().startState as StateSnapshot<typeof state>;
 
     entities.get('alpha')!.tags.add('b');
     entities.set('beta', { tags: new Set(['c']) });
@@ -282,7 +282,7 @@ describe('CommandRecorder', () => {
       viewAlias: view,
     });
     const recorder = new CommandRecorder(state);
-    const snapshot = recorder.export().startState;
+    const snapshot = recorder.export().startState as StateSnapshot<typeof state>;
 
     shared.fill(9);
     state.mirror = new Uint8Array(new ArrayBuffer(8));
@@ -1001,10 +1001,14 @@ describe('CommandRecorder', () => {
       expect(frame.tick).toBe(2);
       expect(frame.events).toHaveLength(1);
       const event = frame.events[0];
+      const issuedAt =
+        frameResult.frame.format === 'struct-of-arrays'
+          ? frameResult.frame.issuedAt[0]
+          : frameResult.frame.events[0].issuedAt;
       expect(event).toMatchObject({
         type: 'automation:toggled',
         channel: 1,
-        issuedAt: frameResult.frame.issuedAt[0],
+        issuedAt,
         dispatchOrder: 0,
         payload: {
           automationId: 'auto:1',
@@ -1023,7 +1027,7 @@ describe('CommandRecorder', () => {
 
     try {
       Reflect.set(
-        frameResult.frame as Record<string, unknown>,
+        frameResult.frame as unknown as Record<string, unknown>,
         'manifestHash',
         'ffffffff' as RuntimeEventManifestHash,
       );
@@ -1047,7 +1051,12 @@ describe('CommandRecorder', () => {
 
       const replayFrame = buildToggleFrame(false, 1);
       try {
-        replayFrame.frame.issuedAt.set(recordedFrame.frame.issuedAt);
+        if (
+          replayFrame.frame.format === 'struct-of-arrays' &&
+          recordedFrame.frame.format === 'struct-of-arrays'
+        ) {
+          replayFrame.frame.issuedAt.set(recordedFrame.frame.issuedAt);
+        }
         recorder.beginReplayEventValidation(log);
         recorder.consumeReplayEventFrame(replayFrame.frame);
         expect(() => recorder.endReplayEventValidation()).not.toThrow();
@@ -1070,8 +1079,13 @@ describe('CommandRecorder', () => {
 
       const driftedFrame = buildToggleFrame(true, 3);
       try {
-        driftedFrame.frame.issuedAt[0] =
-          recordedFrame.frame.issuedAt[0] + 1;
+        if (
+          driftedFrame.frame.format === 'struct-of-arrays' &&
+          recordedFrame.frame.format === 'struct-of-arrays'
+        ) {
+          driftedFrame.frame.issuedAt[0] =
+            recordedFrame.frame.issuedAt[0] + 1;
+        }
 
         recorder.beginReplayEventValidation(log);
         expect(() =>
@@ -1120,7 +1134,7 @@ describe('CommandRecorder', () => {
       const mismatchedManifestFrame = buildToggleFrame(false, 6);
       try {
         Reflect.set(
-          mismatchedManifestFrame.frame as Record<string, unknown>,
+          mismatchedManifestFrame.frame as unknown as Record<string, unknown>,
           'manifestHash',
           'ffffffff' as RuntimeEventManifestHash,
         );

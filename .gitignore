@@ -30,3 +30,7 @@ playwright-report/
 test-results/
 blob-report/
 artifacts/accessibility/
+
+# Local LLM
+configs/
+output/
