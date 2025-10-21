@@ -10,6 +10,11 @@ import {
 } from './base/ids.js';
 import type { ExpressionNode, NumericFormula } from './base/formulas.js';
 import {
+  normalizeLocalizedText,
+  type LocalizedSummary,
+  type LocalizedText,
+} from './base/localization.js';
+import {
   achievementCollectionSchema,
   type AchievementDefinition,
 } from './modules/achievements.js';
@@ -55,8 +60,21 @@ import type { ContentSchemaWarning } from './errors.js';
 import { resolveFeatureViolations, type FeatureGateMap } from './runtime-compat.js';
 
 type PackId = z.infer<typeof packSlugSchema>;
+type ContentId = z.infer<typeof contentIdSchema>;
 type UpgradeDefinition = Upgrade;
 type UpgradeEffect = z.infer<typeof upgradeEffectSchema>;
+
+export type NormalizedMetadata = Metadata;
+export type NormalizedResource = Resource;
+export type NormalizedGenerator = Generator;
+export type NormalizedUpgrade = UpgradeDefinition;
+export type NormalizedMetric = MetricDefinition;
+export type NormalizedAchievement = AchievementDefinition;
+export type NormalizedAutomation = AutomationDefinition;
+export type NormalizedTransform = TransformDefinition;
+export type NormalizedPrestigeLayer = PrestigeLayerDefinition;
+export type NormalizedGuildPerk = GuildPerkDefinition;
+export type NormalizedRuntimeEventContribution = RuntimeEventContribution;
 
 type AllowlistEntries = readonly string[] | ReadonlySet<string>;
 
@@ -115,35 +133,54 @@ interface ParsedContentPack {
   readonly runtimeEvents: readonly RuntimeEventContribution[];
 }
 
-export interface NormalizedContentPack extends ParsedContentPack {
+type NormalizedContentPackModules = {
+  readonly metadata: NormalizedMetadata;
+  readonly resources: readonly NormalizedResource[];
+  readonly generators: readonly NormalizedGenerator[];
+  readonly upgrades: readonly NormalizedUpgrade[];
+  readonly metrics: readonly NormalizedMetric[];
+  readonly achievements: readonly NormalizedAchievement[];
+  readonly automations: readonly NormalizedAutomation[];
+  readonly transforms: readonly NormalizedTransform[];
+  readonly prestigeLayers: readonly NormalizedPrestigeLayer[];
+  readonly guildPerks: readonly NormalizedGuildPerk[];
+  readonly runtimeEvents: readonly NormalizedRuntimeEventContribution[];
+};
+
+export interface NormalizedContentPack extends NormalizedContentPackModules {
   readonly lookup: {
-    readonly resources: ReadonlyMap<string, Resource>;
-    readonly generators: ReadonlyMap<string, Generator>;
-    readonly upgrades: ReadonlyMap<string, UpgradeDefinition>;
-    readonly metrics: ReadonlyMap<string, MetricDefinition>;
-    readonly achievements: ReadonlyMap<string, AchievementDefinition>;
-    readonly automations: ReadonlyMap<string, AutomationDefinition>;
-    readonly transforms: ReadonlyMap<string, TransformDefinition>;
-    readonly prestigeLayers: ReadonlyMap<string, PrestigeLayerDefinition>;
-    readonly guildPerks: ReadonlyMap<string, GuildPerkDefinition>;
-    readonly runtimeEvents: ReadonlyMap<string, RuntimeEventContribution>;
+    readonly resources: ReadonlyMap<ContentId, NormalizedResource>;
+    readonly generators: ReadonlyMap<ContentId, NormalizedGenerator>;
+    readonly upgrades: ReadonlyMap<ContentId, NormalizedUpgrade>;
+    readonly metrics: ReadonlyMap<ContentId, NormalizedMetric>;
+    readonly achievements: ReadonlyMap<ContentId, NormalizedAchievement>;
+    readonly automations: ReadonlyMap<ContentId, NormalizedAutomation>;
+    readonly transforms: ReadonlyMap<ContentId, NormalizedTransform>;
+    readonly prestigeLayers: ReadonlyMap<ContentId, NormalizedPrestigeLayer>;
+    readonly guildPerks: ReadonlyMap<ContentId, NormalizedGuildPerk>;
+    readonly runtimeEvents: ReadonlyMap<ContentId, NormalizedRuntimeEventContribution>;
   };
   readonly serializedLookup: {
-    readonly resourceById: Readonly<Record<string, Resource>>;
-    readonly generatorById: Readonly<Record<string, Generator>>;
-    readonly upgradeById: Readonly<Record<string, UpgradeDefinition>>;
-    readonly metricById: Readonly<Record<string, MetricDefinition>>;
-    readonly achievementById: Readonly<Record<string, AchievementDefinition>>;
-    readonly automationById: Readonly<Record<string, AutomationDefinition>>;
-    readonly transformById: Readonly<Record<string, TransformDefinition>>;
-    readonly prestigeLayerById: Readonly<Record<string, PrestigeLayerDefinition>>;
-    readonly guildPerkById: Readonly<Record<string, GuildPerkDefinition>>;
-    readonly runtimeEventById: Readonly<Record<string, RuntimeEventContribution>>;
+    readonly resourceById: Readonly<Record<string, NormalizedResource>>;
+    readonly generatorById: Readonly<Record<string, NormalizedGenerator>>;
+    readonly upgradeById: Readonly<Record<string, NormalizedUpgrade>>;
+    readonly metricById: Readonly<Record<string, NormalizedMetric>>;
+    readonly achievementById: Readonly<Record<string, NormalizedAchievement>>;
+    readonly automationById: Readonly<Record<string, NormalizedAutomation>>;
+    readonly transformById: Readonly<Record<string, NormalizedTransform>>;
+    readonly prestigeLayerById: Readonly<Record<string, NormalizedPrestigeLayer>>;
+    readonly guildPerkById: Readonly<Record<string, NormalizedGuildPerk>>;
+    readonly runtimeEventById: Readonly<Record<string, NormalizedRuntimeEventContribution>>;
   };
   readonly digest: {
     readonly version: number;
     readonly hash: string;
   };
+}
+
+export interface NormalizationContext {
+  readonly runtimeVersion?: string;
+  readonly warningSink?: (warning: ContentSchemaWarning) => void;
 }
 
 const CONTENT_PACK_DIGEST_VERSION = 1;
@@ -276,9 +313,9 @@ const normalizeActivePackIds = (
 
 const freezeMap = <Value extends { readonly id: string }>(
   values: readonly Value[],
-): ReadonlyMap<string, Value> =>
+): ReadonlyMap<Value['id'], Value> =>
   Object.freeze(
-    new Map(values.map((value) => [value.id, value] as const)),
+    new Map(values.map((value) => [value.id as Value['id'], value] as const)),
   );
 
 const freezeRecord = <Value extends { readonly id: string }>(
@@ -287,6 +324,47 @@ const freezeRecord = <Value extends { readonly id: string }>(
   Object.freeze(
     Object.fromEntries(values.map((value) => [value.id, value] as const)),
   );
+
+const freezeArray = <Value>(values: Value[]): readonly Value[] =>
+  Object.freeze(values);
+
+const freezeObject = <Value extends object>(value: Value): Value =>
+  Object.freeze(value);
+
+type LocalizedValue = LocalizedText | LocalizedSummary;
+
+const createLocalizedValueNormalizer = (
+  metadata: NormalizedMetadata,
+  warningSink: NormalizationContext['warningSink'],
+) => {
+  const baseOptions = {
+    defaultLocale: metadata.defaultLocale,
+    supportedLocales: metadata.supportedLocales,
+    warningSink,
+  };
+
+  const normalize = <Localized extends LocalizedValue>(
+    localized: Localized,
+    path: readonly (string | number)[],
+  ): Localized =>
+    normalizeLocalizedText(localized, {
+      ...baseOptions,
+      path,
+    });
+
+  const normalizeOptional = <Localized extends LocalizedValue>(
+    localized: Localized | undefined,
+    path: readonly (string | number)[],
+  ): Localized | undefined =>
+    localized
+      ? normalizeLocalizedText(localized, {
+          ...baseOptions,
+          path,
+        })
+      : undefined;
+
+  return { normalize, normalizeOptional };
+};
 
 const fnv1a = (input: string): number => {
   let hash = 0x811c9dc5;
@@ -298,7 +376,7 @@ const fnv1a = (input: string): number => {
   return hash >>> 0;
 };
 
-const computeDigest = (pack: ParsedContentPack) => {
+const computeDigest = (pack: NormalizedContentPackModules) => {
   const digestPayload = {
     id: pack.metadata.id,
     version: pack.metadata.version,
@@ -325,38 +403,198 @@ const computeDigest = (pack: ParsedContentPack) => {
 
 const normalizeContentPack = (
   pack: ParsedContentPack,
+  context: NormalizationContext = {},
 ): NormalizedContentPack => {
-  const lookup = {
-    resources: freezeMap(pack.resources),
-    generators: freezeMap(pack.generators),
-    upgrades: freezeMap(pack.upgrades),
-    metrics: freezeMap(pack.metrics),
-    achievements: freezeMap(pack.achievements),
-    automations: freezeMap(pack.automations),
-    transforms: freezeMap(pack.transforms),
-    prestigeLayers: freezeMap(pack.prestigeLayers),
-    guildPerks: freezeMap(pack.guildPerks),
-    runtimeEvents: freezeMap(pack.runtimeEvents),
-  } as const;
+  const metadataBaseOptions = {
+    defaultLocale: pack.metadata.defaultLocale,
+    supportedLocales: pack.metadata.supportedLocales,
+    warningSink: context.warningSink,
+  };
 
-  const serializedLookup = {
-    resourceById: freezeRecord(pack.resources),
-    generatorById: freezeRecord(pack.generators),
-    upgradeById: freezeRecord(pack.upgrades),
-    metricById: freezeRecord(pack.metrics),
-    achievementById: freezeRecord(pack.achievements),
-    automationById: freezeRecord(pack.automations),
-    transformById: freezeRecord(pack.transforms),
-    prestigeLayerById: freezeRecord(pack.prestigeLayers),
-    guildPerkById: freezeRecord(pack.guildPerks),
-    runtimeEventById: freezeRecord(pack.runtimeEvents),
-  } as const;
+  const normalizedMetadata = freezeObject({
+    ...pack.metadata,
+    title: normalizeLocalizedText(pack.metadata.title, {
+      ...metadataBaseOptions,
+      path: ['metadata', 'title'],
+    }),
+    summary: pack.metadata.summary
+      ? normalizeLocalizedText(pack.metadata.summary, {
+          ...metadataBaseOptions,
+          path: ['metadata', 'summary'],
+        })
+      : pack.metadata.summary,
+  } as NormalizedMetadata);
 
-  return Object.freeze({
-    ...pack,
+  const { normalize, normalizeOptional } = createLocalizedValueNormalizer(
+    normalizedMetadata,
+    context.warningSink,
+  );
+
+  const normalizedResources = freezeArray(
+    pack.resources.map(
+      (resource, index) =>
+        freezeObject({
+          ...resource,
+          name: normalize(resource.name, ['resources', index, 'name']),
+        }) as NormalizedResource,
+    ),
+  );
+
+  const normalizedGenerators = freezeArray(
+    pack.generators.map(
+      (generator, index) =>
+        freezeObject({
+          ...generator,
+          name: normalize(generator.name, ['generators', index, 'name']),
+        }) as NormalizedGenerator,
+    ),
+  );
+
+  const normalizedUpgrades = freezeArray(
+    pack.upgrades.map(
+      (upgrade, index) =>
+        freezeObject({
+          ...upgrade,
+          name: normalize(upgrade.name, ['upgrades', index, 'name']),
+        }) as NormalizedUpgrade,
+    ),
+  );
+
+  const normalizedMetrics = freezeArray(
+    pack.metrics.map(
+      (metric, index) =>
+        freezeObject({
+          ...metric,
+          name: normalize(metric.name, ['metrics', index, 'name']),
+          description: normalizeOptional(
+            metric.description,
+            ['metrics', index, 'description'],
+          ),
+        }) as NormalizedMetric,
+    ),
+  );
+
+  const normalizedAchievements = freezeArray(
+    pack.achievements.map(
+      (achievement, index) =>
+        freezeObject({
+          ...achievement,
+          name: normalize(achievement.name, ['achievements', index, 'name']),
+          description: normalize(
+            achievement.description,
+            ['achievements', index, 'description'],
+          ),
+        }) as NormalizedAchievement,
+    ),
+  );
+
+  const normalizedAutomations = freezeArray(
+    pack.automations.map(
+      (automation, index) =>
+        freezeObject({
+          ...automation,
+          name: normalize(automation.name, ['automations', index, 'name']),
+          description: normalize(
+            automation.description,
+            ['automations', index, 'description'],
+          ),
+        }) as NormalizedAutomation,
+    ),
+  );
+
+  const normalizedTransforms = freezeArray(
+    pack.transforms.map(
+      (transform, index) =>
+        freezeObject({
+          ...transform,
+          name: normalize(transform.name, ['transforms', index, 'name']),
+          description: normalize(
+            transform.description,
+            ['transforms', index, 'description'],
+          ),
+        }) as NormalizedTransform,
+    ),
+  );
+
+  const normalizedPrestigeLayers = freezeArray(
+    pack.prestigeLayers.map(
+      (layer, index) =>
+        freezeObject({
+          ...layer,
+          name: normalize(layer.name, ['prestigeLayers', index, 'name']),
+          summary: normalize(
+            layer.summary,
+            ['prestigeLayers', index, 'summary'],
+          ),
+        }) as NormalizedPrestigeLayer,
+    ),
+  );
+
+  const normalizedGuildPerks = freezeArray(
+    pack.guildPerks.map(
+      (perk, index) =>
+        freezeObject({
+          ...perk,
+          name: normalize(perk.name, ['guildPerks', index, 'name']),
+          description: normalize(
+            perk.description,
+            ['guildPerks', index, 'description'],
+          ),
+        }) as NormalizedGuildPerk,
+    ),
+  );
+
+  const normalizedRuntimeEvents = freezeArray(
+    pack.runtimeEvents.map((event) => freezeObject({ ...event }) as NormalizedRuntimeEventContribution),
+  );
+
+  const normalizedModules: NormalizedContentPackModules = {
+    metadata: normalizedMetadata,
+    resources: normalizedResources,
+    generators: normalizedGenerators,
+    upgrades: normalizedUpgrades,
+    metrics: normalizedMetrics,
+    achievements: normalizedAchievements,
+    automations: normalizedAutomations,
+    transforms: normalizedTransforms,
+    prestigeLayers: normalizedPrestigeLayers,
+    guildPerks: normalizedGuildPerks,
+    runtimeEvents: normalizedRuntimeEvents,
+  };
+
+  const lookup = freezeObject({
+    resources: freezeMap(normalizedModules.resources),
+    generators: freezeMap(normalizedModules.generators),
+    upgrades: freezeMap(normalizedModules.upgrades),
+    metrics: freezeMap(normalizedModules.metrics),
+    achievements: freezeMap(normalizedModules.achievements),
+    automations: freezeMap(normalizedModules.automations),
+    transforms: freezeMap(normalizedModules.transforms),
+    prestigeLayers: freezeMap(normalizedModules.prestigeLayers),
+    guildPerks: freezeMap(normalizedModules.guildPerks),
+    runtimeEvents: freezeMap(normalizedModules.runtimeEvents),
+  });
+
+  const serializedLookup = freezeObject({
+    resourceById: freezeRecord(normalizedModules.resources),
+    generatorById: freezeRecord(normalizedModules.generators),
+    upgradeById: freezeRecord(normalizedModules.upgrades),
+    metricById: freezeRecord(normalizedModules.metrics),
+    achievementById: freezeRecord(normalizedModules.achievements),
+    automationById: freezeRecord(normalizedModules.automations),
+    transformById: freezeRecord(normalizedModules.transforms),
+    prestigeLayerById: freezeRecord(normalizedModules.prestigeLayers),
+    guildPerkById: freezeRecord(normalizedModules.guildPerks),
+    runtimeEventById: freezeRecord(normalizedModules.runtimeEvents),
+  });
+
+  const digest = computeDigest(normalizedModules);
+
+  return freezeObject({
+    ...normalizedModules,
     lookup,
     serializedLookup,
-    digest: computeDigest(pack),
+    digest,
   });
 };
 
@@ -1714,7 +1952,12 @@ const buildContentPackEffectsSchema = (
         knownPacks,
       }),
     )
-    .transform((pack) => normalizeContentPack(pack));
+    .transform((pack) =>
+      normalizeContentPack(pack, {
+        runtimeVersion: options.runtimeVersion,
+        warningSink,
+      }),
+    );
 };
 
 export const createContentPackValidator = (
