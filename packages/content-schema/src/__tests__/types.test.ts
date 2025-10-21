@@ -213,7 +213,7 @@ describe('Type Assertions: Content Schema Options', () => {
     }>();
 
     // All fields should be optional - empty options object should be valid
-    expectTypeOf<ContentSchemaOptions>().toMatchTypeOf<Record<string, never>>();
+    expectTypeOf<Record<string, never>>().toMatchTypeOf<ContentSchemaOptions>();
   });
 
   it('warningSink accepts ContentSchemaWarning parameter', () => {
