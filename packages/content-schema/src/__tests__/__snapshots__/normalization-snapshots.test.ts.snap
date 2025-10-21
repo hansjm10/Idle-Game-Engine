@@ -1,0 +1,907 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Normalization Snapshots > normalizes conditions deterministically > complex-condition-tree 1`] = `
+{
+  "conditions": [
+    {
+      "amount": {
+        "kind": "constant",
+        "value": 100,
+      },
+      "comparator": "gte",
+      "kind": "resourceThreshold",
+      "resourceId": "energy",
+    },
+    {
+      "conditions": [
+        {
+          "amount": {
+            "kind": "constant",
+            "value": 200,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+      ],
+      "kind": "anyOf",
+    },
+  ],
+  "kind": "allOf",
+}
+`;
+
+exports[`Normalization Snapshots > normalizes formulas deterministically > piecewise-formula 1`] = `
+{
+  "kind": "piecewise",
+  "pieces": [
+    {
+      "formula": {
+        "base": 1,
+        "kind": "linear",
+        "slope": 0.5,
+      },
+      "untilLevel": 10,
+    },
+    {
+      "formula": {
+        "base": 10,
+        "growth": 1.1,
+        "kind": "exponential",
+        "offset": 5,
+      },
+      "untilLevel": 50,
+    },
+    {
+      "formula": {
+        "coefficients": [
+          100,
+          10,
+          1,
+        ],
+        "kind": "polynomial",
+      },
+    },
+  ],
+}
+`;
+
+exports[`Normalization Snapshots > normalizes locale variants deterministically > resource-name-with-locales 1`] = `
+{
+  "default": "Energy",
+  "variants": {
+    "en-US": "Energy",
+    "es-ES": "Energía",
+    "fr-FR": "Énergie",
+  },
+}
+`;
+
+exports[`Normalization Snapshots > normalizes locale variants deterministically > title-with-locales 1`] = `
+{
+  "default": "Locale Test",
+  "variants": {
+    "de-DE": "Locale-Test",
+    "en-US": "Locale Test",
+    "es-ES": "Prueba de Configuración Regional",
+    "fr-FR": "Test de Locale",
+  },
+}
+`;
+
+exports[`Normalization Snapshots > normalizes lookup maps structure > lookup-map-keys 1`] = `
+{
+  "achievements": [
+    "first-energy",
+  ],
+  "generators": [
+    "solar-panel",
+  ],
+  "metrics": [
+    "total-energy-produced",
+  ],
+  "resources": [
+    "energy",
+    "crystals",
+  ],
+  "upgrades": [
+    "efficiency-boost",
+  ],
+}
+`;
+
+exports[`Normalization Snapshots > normalizes lookup maps structure > serialized-lookup-keys 1`] = `
+{
+  "generators": [
+    "solar-panel",
+  ],
+  "resources": [
+    "energy",
+    "crystals",
+  ],
+  "upgrades": [
+    "efficiency-boost",
+  ],
+}
+`;
+
+exports[`Normalization Snapshots > normalizes metadata fields deterministically > normalized-metadata 1`] = `
+{
+  "authors": [
+    "Author A",
+    "Author B",
+    "Author C",
+  ],
+  "defaultLocale": "en-US",
+  "engine": ">=1.0.0 <2.0.0-0",
+  "id": "metadata-test",
+  "links": [],
+  "summary": undefined,
+  "supportedLocales": [
+    "en-US",
+    "es-ES",
+    "fr-FR",
+  ],
+  "tags": [
+    "alpha",
+    "mike",
+    "zulu",
+  ],
+  "title": {
+    "default": "Metadata Test",
+    "variants": {
+      "en-US": "Metadata Test",
+    },
+  },
+  "version": "1.0.0",
+}
+`;
+
+exports[`Normalization Snapshots > normalizes resource ordering deterministically > ordered-resources 1`] = `
+[
+  {
+    "capacity": 0,
+    "category": "primary",
+    "id": "alpha",
+    "name": {
+      "default": "Alpha",
+      "variants": {
+        "en-US": "Alpha",
+      },
+    },
+    "order": 1,
+    "startAmount": 0,
+    "tags": [],
+    "tier": 1,
+    "unlocked": false,
+    "visible": true,
+  },
+  {
+    "capacity": 0,
+    "category": "primary",
+    "id": "mike",
+    "name": {
+      "default": "Mike",
+      "variants": {
+        "en-US": "Mike",
+      },
+    },
+    "order": 2,
+    "startAmount": 0,
+    "tags": [],
+    "tier": 1,
+    "unlocked": false,
+    "visible": true,
+  },
+  {
+    "capacity": 0,
+    "category": "primary",
+    "id": "zulu",
+    "name": {
+      "default": "Zulu",
+      "variants": {
+        "en-US": "Zulu",
+      },
+    },
+    "order": 3,
+    "startAmount": 0,
+    "tags": [],
+    "tier": 1,
+    "unlocked": false,
+    "visible": true,
+  },
+]
+`;
+
+exports[`Normalization Snapshots > produces consistent digest hashes for equivalent packs > digest-format 1`] = `
+{
+  "hash": "fnv1a-0869eed8",
+  "version": 1,
+}
+`;
+
+exports[`Normalization Snapshots > produces deterministic output for comprehensive pack > pack-digest 1`] = `
+{
+  "hash": "fnv1a-d11b94ec",
+  "version": 1,
+}
+`;
+
+exports[`Normalization Snapshots > produces deterministic output for comprehensive pack 1`] = `
+{
+  "achievements": [
+    {
+      "category": "progression",
+      "description": {
+        "default": "Produce your first unit of energy",
+        "variants": {
+          "en-US": "Produce your first unit of energy",
+          "fr-FR": "Produisez votre première unité d'énergie",
+        },
+      },
+      "id": "first-energy",
+      "name": {
+        "default": "First Energy",
+        "variants": {
+          "en-US": "First Energy",
+          "fr-FR": "Première Énergie",
+        },
+      },
+      "onUnlockEvents": [],
+      "progress": {
+        "mode": "oneShot",
+        "repeatable": undefined,
+        "target": {
+          "kind": "constant",
+          "value": 1,
+        },
+      },
+      "tags": [],
+      "tier": "bronze",
+      "track": {
+        "comparator": "gte",
+        "kind": "resource",
+        "resourceId": "energy",
+        "threshold": {
+          "kind": "constant",
+          "value": 1,
+        },
+      },
+    },
+  ],
+  "automations": [],
+  "digest": {
+    "hash": "fnv1a-d11b94ec",
+    "version": 1,
+  },
+  "generators": [
+    {
+      "baseUnlock": {
+        "kind": "always",
+      },
+      "consumes": [],
+      "effects": [],
+      "id": "solar-panel",
+      "name": {
+        "default": "Solar Panel",
+        "variants": {
+          "en-US": "Solar Panel",
+          "fr-FR": "Panneau Solaire",
+        },
+      },
+      "order": 1,
+      "produces": [
+        {
+          "rate": {
+            "base": 1,
+            "kind": "linear",
+            "slope": 0.5,
+          },
+          "resourceId": "energy",
+        },
+      ],
+      "purchase": {
+        "baseCost": 10,
+        "costCurve": {
+          "base": 10,
+          "growth": 1.15,
+          "kind": "exponential",
+          "offset": 0,
+        },
+        "currencyId": "energy",
+      },
+      "tags": [],
+    },
+  ],
+  "guildPerks": [],
+  "lookup": {
+    "achievements": Map {
+      "first-energy" => {
+        "category": "progression",
+        "description": {
+          "default": "Produce your first unit of energy",
+          "variants": {
+            "en-US": "Produce your first unit of energy",
+            "fr-FR": "Produisez votre première unité d'énergie",
+          },
+        },
+        "id": "first-energy",
+        "name": {
+          "default": "First Energy",
+          "variants": {
+            "en-US": "First Energy",
+            "fr-FR": "Première Énergie",
+          },
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "repeatable": undefined,
+          "target": {
+            "kind": "constant",
+            "value": 1,
+          },
+        },
+        "tags": [],
+        "tier": "bronze",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "energy",
+          "threshold": {
+            "kind": "constant",
+            "value": 1,
+          },
+        },
+      },
+    },
+    "automations": Map {},
+    "generators": Map {
+      "solar-panel" => {
+        "baseUnlock": {
+          "kind": "always",
+        },
+        "consumes": [],
+        "effects": [],
+        "id": "solar-panel",
+        "name": {
+          "default": "Solar Panel",
+          "variants": {
+            "en-US": "Solar Panel",
+            "fr-FR": "Panneau Solaire",
+          },
+        },
+        "order": 1,
+        "produces": [
+          {
+            "rate": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.5,
+            },
+            "resourceId": "energy",
+          },
+        ],
+        "purchase": {
+          "baseCost": 10,
+          "costCurve": {
+            "base": 10,
+            "growth": 1.15,
+            "kind": "exponential",
+            "offset": 0,
+          },
+          "currencyId": "energy",
+        },
+        "tags": [],
+      },
+    },
+    "guildPerks": Map {},
+    "metrics": Map {
+      "total-energy-produced" => {
+        "attributes": [],
+        "description": {
+          "default": "Cumulative energy produced across all time",
+          "variants": {
+            "en-US": "Cumulative energy produced across all time",
+          },
+        },
+        "id": "total-energy-produced",
+        "kind": "counter",
+        "name": {
+          "default": "Total Energy Produced",
+          "variants": {
+            "en-US": "Total Energy Produced",
+            "fr-FR": "Énergie Totale Produite",
+          },
+        },
+        "source": {
+          "kind": "runtime",
+        },
+        "unit": "units",
+      },
+    },
+    "prestigeLayers": Map {},
+    "resources": Map {
+      "energy" => {
+        "capacity": 1000,
+        "category": "primary",
+        "id": "energy",
+        "name": {
+          "default": "Energy",
+          "variants": {
+            "en-US": "Energy",
+            "es-ES": "Energía",
+            "fr-FR": "Énergie",
+          },
+        },
+        "order": 1,
+        "startAmount": 10,
+        "tags": [],
+        "tier": 1,
+        "unlocked": true,
+        "visible": true,
+      },
+      "crystals" => {
+        "capacity": 0,
+        "category": "prestige",
+        "id": "crystals",
+        "name": {
+          "default": "Crystals",
+          "variants": {
+            "en-US": "Crystals",
+            "es-ES": "Cristales",
+            "fr-FR": "Cristaux",
+          },
+        },
+        "order": 2,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 2,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+        "unlocked": false,
+        "visible": true,
+      },
+    },
+    "runtimeEvents": Map {},
+    "transforms": Map {},
+    "upgrades": Map {
+      "efficiency-boost" => {
+        "category": "global",
+        "cost": {
+          "baseCost": 50,
+          "costCurve": {
+            "kind": "constant",
+            "value": 50,
+          },
+          "currencyId": "energy",
+        },
+        "effects": [
+          {
+            "generatorId": "solar-panel",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.5,
+            },
+          },
+        ],
+        "id": "efficiency-boost",
+        "name": {
+          "default": "Efficiency Boost",
+          "variants": {
+            "en-US": "Efficiency Boost",
+            "fr-FR": "Amélioration d'Efficacité",
+          },
+        },
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "kind": "global",
+          },
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 50,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+      },
+    },
+  },
+  "metadata": {
+    "authors": [
+      "Another Author",
+      "Test Author",
+    ],
+    "defaultLocale": "en-US",
+    "dependencies": {
+      "conflicts": [],
+      "optional": [
+        {
+          "packId": "optional-pack",
+          "version": ">=1.0.0 <2.0.0-0",
+        },
+      ],
+      "provides": [],
+      "requires": [
+        {
+          "packId": "@idle-engine/core",
+          "version": ">=1.0.0 <2.0.0-0",
+        },
+      ],
+    },
+    "engine": ">=1.0.0 <2.0.0-0",
+    "id": "comprehensive-test",
+    "links": [],
+    "summary": {
+      "default": "A complete pack covering all modules",
+      "variants": {
+        "en-US": "A complete pack covering all modules",
+        "fr-FR": "Un pack complet couvrant tous les modules",
+      },
+    },
+    "supportedLocales": [
+      "en-US",
+      "es-ES",
+      "fr-FR",
+    ],
+    "tags": [
+      "comprehensive",
+      "test",
+    ],
+    "title": {
+      "default": "Comprehensive Test Pack",
+      "variants": {
+        "en-US": "Comprehensive Test Pack",
+        "es-ES": "Paquete de Prueba Integral",
+        "fr-FR": "Pack de Test Complet",
+      },
+    },
+    "version": "1.0.0",
+  },
+  "metrics": [
+    {
+      "attributes": [],
+      "description": {
+        "default": "Cumulative energy produced across all time",
+        "variants": {
+          "en-US": "Cumulative energy produced across all time",
+        },
+      },
+      "id": "total-energy-produced",
+      "kind": "counter",
+      "name": {
+        "default": "Total Energy Produced",
+        "variants": {
+          "en-US": "Total Energy Produced",
+          "fr-FR": "Énergie Totale Produite",
+        },
+      },
+      "source": {
+        "kind": "runtime",
+      },
+      "unit": "units",
+    },
+  ],
+  "prestigeLayers": [],
+  "resources": [
+    {
+      "capacity": 1000,
+      "category": "primary",
+      "id": "energy",
+      "name": {
+        "default": "Energy",
+        "variants": {
+          "en-US": "Energy",
+          "es-ES": "Energía",
+          "fr-FR": "Énergie",
+        },
+      },
+      "order": 1,
+      "startAmount": 10,
+      "tags": [],
+      "tier": 1,
+      "unlocked": true,
+      "visible": true,
+    },
+    {
+      "capacity": 0,
+      "category": "prestige",
+      "id": "crystals",
+      "name": {
+        "default": "Crystals",
+        "variants": {
+          "en-US": "Crystals",
+          "es-ES": "Cristales",
+          "fr-FR": "Cristaux",
+        },
+      },
+      "order": 2,
+      "startAmount": 0,
+      "tags": [],
+      "tier": 2,
+      "unlockCondition": {
+        "amount": {
+          "kind": "constant",
+          "value": 100,
+        },
+        "comparator": "gte",
+        "kind": "resourceThreshold",
+        "resourceId": "energy",
+      },
+      "unlocked": false,
+      "visible": true,
+    },
+  ],
+  "runtimeEvents": [],
+  "serializedLookup": {
+    "achievementById": {
+      "first-energy": {
+        "category": "progression",
+        "description": {
+          "default": "Produce your first unit of energy",
+          "variants": {
+            "en-US": "Produce your first unit of energy",
+            "fr-FR": "Produisez votre première unité d'énergie",
+          },
+        },
+        "id": "first-energy",
+        "name": {
+          "default": "First Energy",
+          "variants": {
+            "en-US": "First Energy",
+            "fr-FR": "Première Énergie",
+          },
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "repeatable": undefined,
+          "target": {
+            "kind": "constant",
+            "value": 1,
+          },
+        },
+        "tags": [],
+        "tier": "bronze",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "energy",
+          "threshold": {
+            "kind": "constant",
+            "value": 1,
+          },
+        },
+      },
+    },
+    "automationById": {},
+    "generatorById": {
+      "solar-panel": {
+        "baseUnlock": {
+          "kind": "always",
+        },
+        "consumes": [],
+        "effects": [],
+        "id": "solar-panel",
+        "name": {
+          "default": "Solar Panel",
+          "variants": {
+            "en-US": "Solar Panel",
+            "fr-FR": "Panneau Solaire",
+          },
+        },
+        "order": 1,
+        "produces": [
+          {
+            "rate": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.5,
+            },
+            "resourceId": "energy",
+          },
+        ],
+        "purchase": {
+          "baseCost": 10,
+          "costCurve": {
+            "base": 10,
+            "growth": 1.15,
+            "kind": "exponential",
+            "offset": 0,
+          },
+          "currencyId": "energy",
+        },
+        "tags": [],
+      },
+    },
+    "guildPerkById": {},
+    "metricById": {
+      "total-energy-produced": {
+        "attributes": [],
+        "description": {
+          "default": "Cumulative energy produced across all time",
+          "variants": {
+            "en-US": "Cumulative energy produced across all time",
+          },
+        },
+        "id": "total-energy-produced",
+        "kind": "counter",
+        "name": {
+          "default": "Total Energy Produced",
+          "variants": {
+            "en-US": "Total Energy Produced",
+            "fr-FR": "Énergie Totale Produite",
+          },
+        },
+        "source": {
+          "kind": "runtime",
+        },
+        "unit": "units",
+      },
+    },
+    "prestigeLayerById": {},
+    "resourceById": {
+      "crystals": {
+        "capacity": 0,
+        "category": "prestige",
+        "id": "crystals",
+        "name": {
+          "default": "Crystals",
+          "variants": {
+            "en-US": "Crystals",
+            "es-ES": "Cristales",
+            "fr-FR": "Cristaux",
+          },
+        },
+        "order": 2,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 2,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+        "unlocked": false,
+        "visible": true,
+      },
+      "energy": {
+        "capacity": 1000,
+        "category": "primary",
+        "id": "energy",
+        "name": {
+          "default": "Energy",
+          "variants": {
+            "en-US": "Energy",
+            "es-ES": "Energía",
+            "fr-FR": "Énergie",
+          },
+        },
+        "order": 1,
+        "startAmount": 10,
+        "tags": [],
+        "tier": 1,
+        "unlocked": true,
+        "visible": true,
+      },
+    },
+    "runtimeEventById": {},
+    "transformById": {},
+    "upgradeById": {
+      "efficiency-boost": {
+        "category": "global",
+        "cost": {
+          "baseCost": 50,
+          "costCurve": {
+            "kind": "constant",
+            "value": 50,
+          },
+          "currencyId": "energy",
+        },
+        "effects": [
+          {
+            "generatorId": "solar-panel",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.5,
+            },
+          },
+        ],
+        "id": "efficiency-boost",
+        "name": {
+          "default": "Efficiency Boost",
+          "variants": {
+            "en-US": "Efficiency Boost",
+            "fr-FR": "Amélioration d'Efficacité",
+          },
+        },
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "kind": "global",
+          },
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 50,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+      },
+    },
+  },
+  "transforms": [],
+  "upgrades": [
+    {
+      "category": "global",
+      "cost": {
+        "baseCost": 50,
+        "costCurve": {
+          "kind": "constant",
+          "value": 50,
+        },
+        "currencyId": "energy",
+      },
+      "effects": [
+        {
+          "generatorId": "solar-panel",
+          "kind": "modifyGeneratorRate",
+          "operation": "multiply",
+          "value": {
+            "kind": "constant",
+            "value": 1.5,
+          },
+        },
+      ],
+      "id": "efficiency-boost",
+      "name": {
+        "default": "Efficiency Boost",
+        "variants": {
+          "en-US": "Efficiency Boost",
+          "fr-FR": "Amélioration d'Efficacité",
+        },
+      },
+      "prerequisites": [],
+      "tags": [],
+      "targets": [
+        {
+          "kind": "global",
+        },
+      ],
+      "unlockCondition": {
+        "amount": {
+          "kind": "constant",
+          "value": 50,
+        },
+        "comparator": "gte",
+        "kind": "resourceThreshold",
+        "resourceId": "energy",
+      },
+    },
+  ],
+}
+`;
