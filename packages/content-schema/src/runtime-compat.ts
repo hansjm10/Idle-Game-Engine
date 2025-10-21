@@ -44,6 +44,16 @@ const normalizeRuntimeVersion = (runtimeVersion: string | undefined): string | n
   if (!runtimeVersion) {
     return null;
   }
+  const exactVersion = semver.valid(runtimeVersion);
+  if (exactVersion) {
+    return exactVersion;
+  }
+
+  const cleanedVersion = semver.clean(runtimeVersion);
+  if (cleanedVersion) {
+    return cleanedVersion;
+  }
+
   const normalized = semver.coerce(runtimeVersion);
   return normalized ? normalized.version : null;
 };
