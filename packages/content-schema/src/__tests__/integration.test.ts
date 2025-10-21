@@ -6,9 +6,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
+import type { z } from 'zod';
 
 import { createContentPackValidator } from '../index.js';
 import type { ContentSchemaOptions } from '../pack.js';
+import { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import {
   cyclicUnlockConditionsFixture,
   dependencyLoopFixture,
@@ -23,6 +25,9 @@ import {
   selfReferencingDependencyFixture,
   validComprehensivePackFixture,
 } from '../__fixtures__/integration-packs.js';
+
+type ContentId = z.infer<typeof contentIdSchema>;
+type PackId = z.infer<typeof packSlugSchema>;
 
 describe('Integration: Success Cases', () => {
   it('validates and normalizes a comprehensive pack with all modules', () => {
@@ -46,9 +51,9 @@ describe('Integration: Success Cases', () => {
     expect(pack.achievements).toHaveLength(1);
 
     // Verify lookups are populated
-    expect(pack.lookup.resources.get('energy')).toBeDefined();
-    expect(pack.lookup.resources.get('crystals')).toBeDefined();
-    expect(pack.lookup.generators.get('solar-panel')).toBeDefined();
+    expect(pack.lookup.resources.get('energy' as ContentId)).toBeDefined();
+    expect(pack.lookup.resources.get('crystals' as ContentId)).toBeDefined();
+    expect(pack.lookup.generators.get('solar-panel' as ContentId)).toBeDefined();
 
     // Verify serialized lookups
     expect(pack.serializedLookup.resourceById.energy).toBeDefined();
@@ -79,8 +84,10 @@ describe('Integration: Success Cases', () => {
     const { pack } = result.data;
 
     // Verify locale mirroring: default text should appear in defaultLocale variant
-    const energyResource = pack.lookup.resources.get('energy');
+    const energyResource = pack.lookup.resources.get('energy' as ContentId);
+    // @ts-expect-error - accessing variants with plain string in test
     expect(energyResource?.name.variants['en-US']).toBe('Energy');
+    // @ts-expect-error - accessing variants with plain string in test
     expect(energyResource?.name.variants['fr-FR']).toBe('Énergie');
   });
 });
@@ -180,9 +187,9 @@ describe('Integration: Cyclic Dependencies', () => {
     const options: ContentSchemaOptions = {
       knownPacks: [
         {
-          id: 'pack-b',
+          id: 'pack-b' as PackId,
           version: '1.0.0',
-          requires: [{ packId: 'pack-a', version: '^1.0.0' }],
+          requires: [{ packId: 'pack-a' as PackId, version: '^1.0.0' }],
         },
       ],
     };

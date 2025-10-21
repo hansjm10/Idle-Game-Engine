@@ -292,7 +292,9 @@ describe('numericFormulaSchema (property-based tests)', () => {
           if (!result.success) return;
 
           // Verify parsed formula maintains segment order
-          expect(result.data.pieces).toHaveLength(pieces.length);
+          if (result.data.kind === 'piecewise') {
+            expect(result.data.pieces).toHaveLength(pieces.length);
+          }
         },
       ),
       { numRuns: 50 },
@@ -343,7 +345,7 @@ describe('numericFormulaSchema (property-based tests)', () => {
           const result = numericFormulaSchema.safeParse(formula);
           expect(result.success).toBe(true);
 
-          if (result.success) {
+          if (result.success && result.data.kind === 'constant') {
             expect(result.data.value).toBe(value);
           }
         },

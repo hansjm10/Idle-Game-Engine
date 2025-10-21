@@ -142,6 +142,7 @@ describe('Normalization Snapshots', () => {
     );
 
     // Verify defaultLocale is mirrored into variants
+    // @ts-expect-error - accessing variants with plain string in test
     expect(result.pack.metadata.title.variants['en-US']).toBe('Locale Test');
   });
 
