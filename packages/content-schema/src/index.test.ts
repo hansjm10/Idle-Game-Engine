@@ -101,4 +101,24 @@ describe('content pack validator', () => {
     const validator = createContentPackValidator({ runtimeVersion: '0.1.0' });
     expect(() => validator.parse(packWithAutomation)).toThrow(ZodError);
   });
+
+  it('does not enforce allowlists for unspecified categories', () => {
+    const packWithScriptMetric = createMinimalPack();
+    packWithScriptMetric.metrics = [
+      {
+        id: 'metric:scripted',
+        name: { default: 'Scripted Metric', variants: {} },
+        kind: 'counter',
+        source: { kind: 'script', scriptId: 'script:custom' },
+      },
+    ];
+
+    const validator = createContentPackValidator({
+      allowlists: {
+        flags: { required: ['flag:ok'] },
+      },
+    });
+
+    expect(() => validator.parse(packWithScriptMetric)).not.toThrow();
+  });
 });

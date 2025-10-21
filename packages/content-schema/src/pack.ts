@@ -1658,28 +1658,41 @@ const buildContentPackEffectsSchema = (
   options: ContentSchemaOptions,
   warningSink: (warning: ContentSchemaWarning) => void,
 ) => {
-  const allowlists = options.allowlists
-    ? {
-        flags: normalizeAllowlistSpec(
-          options.allowlists.flags,
-          flagIdSchema,
-          warningSink,
-          ['options', 'allowlists', 'flags'],
-        ),
-        scripts: normalizeAllowlistSpec(
-          options.allowlists.scripts,
-          scriptIdSchema,
-          warningSink,
-          ['options', 'allowlists', 'scripts'],
-        ),
-        systemAutomationTargets: normalizeAllowlistSpec(
-          options.allowlists.systemAutomationTargets,
-          systemAutomationTargetIdSchema,
-          warningSink,
-          ['options', 'allowlists', 'systemAutomationTargets'],
-        ),
-      }
-    : {};
+  const allowlists: CrossReferenceContext['allowlists'] =
+    options.allowlists === undefined
+      ? {}
+      : {
+          ...(options.allowlists.flags
+            ? {
+                flags: normalizeAllowlistSpec(
+                  options.allowlists.flags,
+                  flagIdSchema,
+                  warningSink,
+                  ['options', 'allowlists', 'flags'],
+                ),
+              }
+            : {}),
+          ...(options.allowlists.scripts
+            ? {
+                scripts: normalizeAllowlistSpec(
+                  options.allowlists.scripts,
+                  scriptIdSchema,
+                  warningSink,
+                  ['options', 'allowlists', 'scripts'],
+                ),
+              }
+            : {}),
+          ...(options.allowlists.systemAutomationTargets
+            ? {
+                systemAutomationTargets: normalizeAllowlistSpec(
+                  options.allowlists.systemAutomationTargets,
+                  systemAutomationTargetIdSchema,
+                  warningSink,
+                  ['options', 'allowlists', 'systemAutomationTargets'],
+                ),
+              }
+            : {}),
+        };
 
   const runtimeEventCatalogue = normalizeRuntimeEventCatalogue(
     options.runtimeEventCatalogue,
