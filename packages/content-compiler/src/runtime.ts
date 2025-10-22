@@ -12,6 +12,12 @@ import {
   type SerializedNormalizedModules,
 } from './types.js';
 
+type LookupKey = Extract<keyof NormalizedContentPack['lookup'], string>;
+type SerializedLookupKey = Extract<
+  keyof NormalizedContentPack['serializedLookup'],
+  string
+>;
+
 function deepFreeze<Value>(value: Value): Value {
   if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
     return value;
@@ -49,7 +55,7 @@ function cloneDigest(digest: SerializedContentDigest): SerializedContentDigest {
   });
 }
 
-const LOOKUP_PROPERTY: Record<ModuleName, keyof NormalizedContentPack['lookup']> = {
+const LOOKUP_PROPERTY: Record<ModuleName, LookupKey> = {
   resources: 'resources',
   generators: 'generators',
   upgrades: 'upgrades',
@@ -62,10 +68,7 @@ const LOOKUP_PROPERTY: Record<ModuleName, keyof NormalizedContentPack['lookup']>
   runtimeEvents: 'runtimeEvents',
 };
 
-const SERIALIZED_LOOKUP_PROPERTY: Record<
-  ModuleName,
-  keyof NormalizedContentPack['serializedLookup']
-> = {
+const SERIALIZED_LOOKUP_PROPERTY: Record<ModuleName, SerializedLookupKey> = {
   resources: 'resourceById',
   generators: 'generatorById',
   upgrades: 'upgradeById',
@@ -103,8 +106,8 @@ function cloneModuleArrays(
 }
 
 function createLookupRecords(packModules: SerializedNormalizedModules) {
-  const lookup = Object.create(null) as Record<string, unknown>;
-  const serializedLookup = Object.create(null) as Record<string, unknown>;
+  const lookup = Object.create(null) as Record<LookupKey, unknown>;
+  const serializedLookup = Object.create(null) as Record<SerializedLookupKey, unknown>;
 
   for (const name of MODULE_NAMES) {
     const entries = packModules[name];
