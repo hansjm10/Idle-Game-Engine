@@ -1,45 +1,64 @@
 import { createHash } from 'crypto';
 
+import type { NormalizedMetadata } from '@idle-engine/content-schema';
+
+import { MODULE_NAMES, type NormalizedContentPack, type SerializedNormalizedContentPack, type SerializedNormalizedModules } from './types.js';
+
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
-const textEncoder = new TextEncoder();
 
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
+type DigestInput =
+  | Pick<SerializedNormalizedContentPack, 'metadata' | 'modules'>
+  | NormalizedContentPack;
 
-  if (Array.isArray(value)) {
-    const items = value.map((entry) => stableStringify(entry));
-    return `[${items.join(',')}]`;
-  }
-
-  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-    a.localeCompare(b),
-  );
-  const serializedProps = entries.map(
-    ([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`,
-  );
-
-  return `{${serializedProps.join(',')}}`;
+interface DigestSource {
+  readonly metadata: NormalizedMetadata;
+  readonly modules: SerializedNormalizedModules;
 }
 
-function fnv1a(bytes: Uint8Array): string {
+function fnv1aFromString(input: string): string {
   let hash = FNV_OFFSET_BASIS;
 
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, FNV_PRIME) >>> 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, FNV_PRIME);
+    hash >>>= 0;
   }
 
-  return hash.toString(16).padStart(8, '0');
+  return `fnv1a-${hash.toString(16).padStart(8, '0')}`;
 }
 
-export function computeContentDigest(input: unknown): string {
-  const serialized = stableStringify(input);
-  const bytes = textEncoder.encode(serialized);
+function toDigestSource(input: DigestInput): DigestSource {
+  const metadata = input.metadata;
+  const modules = input.modules;
 
-  return fnv1a(bytes);
+  return {
+    metadata,
+    modules,
+  };
+}
+
+function collectModuleIds(modules: SerializedNormalizedModules): Record<string, readonly string[]> {
+  const result: Record<string, readonly string[]> = Object.create(null);
+
+  for (const name of MODULE_NAMES) {
+    const entries = modules[name];
+    result[name] = entries.map((entry) => (entry as { id: string }).id);
+  }
+
+  return result;
+}
+
+export function computeContentDigest(input: DigestInput): string {
+  const { metadata, modules } = toDigestSource(input);
+
+  const digestPayload = {
+    id: metadata.id,
+    version: metadata.version,
+    modules: collectModuleIds(modules),
+  };
+
+  return fnv1aFromString(JSON.stringify(digestPayload));
 }
 
 export function computeArtifactHash(bytes: Uint8Array): string {

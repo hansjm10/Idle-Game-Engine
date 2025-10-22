@@ -1,19 +1,30 @@
 import type { ModuleIndexTables, NormalizedContentPack } from '../types.js';
 
+type ModuleWithId = Readonly<{ id: string }>;
+
+function buildIndex<T extends ModuleWithId>(items: readonly T[]): ReadonlyMap<string, number> {
+  const index = new Map<string, number>();
+
+  items.forEach((item, position) => {
+    index.set(item.id, position);
+  });
+
+  return index;
+}
+
 export function createModuleIndices(
   pack: NormalizedContentPack,
 ): ModuleIndexTables {
-  void pack;
   return {
-    resources: new Map(),
-    generators: new Map(),
-    upgrades: new Map(),
-    metrics: new Map(),
-    achievements: new Map(),
-    automations: new Map(),
-    transforms: new Map(),
-    prestigeLayers: new Map(),
-    guildPerks: new Map(),
-    runtimeEvents: new Map(),
+    resources: buildIndex(pack.resources),
+    generators: buildIndex(pack.generators),
+    upgrades: buildIndex(pack.upgrades),
+    metrics: buildIndex(pack.metrics),
+    achievements: buildIndex(pack.achievements),
+    automations: buildIndex(pack.automations),
+    transforms: buildIndex(pack.transforms),
+    prestigeLayers: buildIndex(pack.prestigeLayers),
+    guildPerks: buildIndex(pack.guildPerks),
+    runtimeEvents: buildIndex(pack.runtimeEvents),
   };
 }

@@ -1,3 +1,19 @@
+import type {
+  ContentSchemaWarning,
+  NormalizedAchievement,
+  NormalizedAutomation,
+  NormalizedContentPack as SchemaNormalizedContentPack,
+  NormalizedGenerator,
+  NormalizedGuildPerk,
+  NormalizedMetadata,
+  NormalizedMetric,
+  NormalizedPrestigeLayer,
+  NormalizedResource,
+  NormalizedRuntimeEventContribution,
+  NormalizedTransform,
+  NormalizedUpgrade,
+} from '@idle-engine/content-schema';
+
 export interface ContentDocument {
   readonly absolutePath: string;
   readonly relativePath: string;
@@ -33,28 +49,53 @@ export interface RehydrateOptions {
   readonly verifyDigest?: boolean;
 }
 
-export interface SerializedContentSchemaWarning {
-  readonly code: string;
-  readonly message: string;
+export type SerializedContentSchemaWarning = ContentSchemaWarning;
+
+export const MODULE_NAMES = [
+  'resources',
+  'generators',
+  'upgrades',
+  'metrics',
+  'achievements',
+  'automations',
+  'transforms',
+  'prestigeLayers',
+  'guildPerks',
+  'runtimeEvents',
+] as const;
+
+export type ModuleName = (typeof MODULE_NAMES)[number];
+
+interface ModuleTypeMap {
+  readonly resources: NormalizedResource;
+  readonly generators: NormalizedGenerator;
+  readonly upgrades: NormalizedUpgrade;
+  readonly metrics: NormalizedMetric;
+  readonly achievements: NormalizedAchievement;
+  readonly automations: NormalizedAutomation;
+  readonly transforms: NormalizedTransform;
+  readonly prestigeLayers: NormalizedPrestigeLayer;
+  readonly guildPerks: NormalizedGuildPerk;
+  readonly runtimeEvents: NormalizedRuntimeEventContribution;
 }
 
-export interface NormalizedMetadata {
-  readonly id: string;
-  readonly name: string;
-  readonly version: string;
-}
+export type SerializedNormalizedModules = {
+  readonly [Key in keyof ModuleTypeMap]: readonly ModuleTypeMap[Key][];
+};
 
-export interface NormalizedContentPack {
-  readonly metadata: NormalizedMetadata;
-  readonly modules: Record<string, unknown>;
-}
+export type NormalizedContentPack = SchemaNormalizedContentPack & {
+  readonly modules: SerializedNormalizedModules;
+};
 
-// TODO(#159): Expand module typings to match docs/content-compiler-design.md section 5.4.
+export type SerializableNormalizedContentPackInput = SchemaNormalizedContentPack & {
+  readonly modules?: SerializedNormalizedModules;
+};
+
 export interface SerializedNormalizedContentPack {
   readonly formatVersion: 1;
   readonly metadata: NormalizedMetadata;
   readonly warnings: readonly SerializedContentSchemaWarning[];
-  readonly modules: NormalizedContentPack['modules'];
+  readonly modules: SerializedNormalizedModules;
   readonly digest?: string;
   readonly artifactHash?: string;
 }

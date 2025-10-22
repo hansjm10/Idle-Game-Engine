@@ -1,31 +1,169 @@
-import type {
-  ModuleIndexTables,
-  NormalizedContentPack,
-  RehydrateOptions,
-  SerializedNormalizedContentPack,
-} from './types.js';
 import { createModuleIndices as createModuleIndicesInternal } from './artifacts/module.js';
+import { computeContentDigest } from './hashing.js';
+import {
+  MODULE_NAMES,
+  type ModuleName,
+  type ModuleIndexTables,
+  type NormalizedContentPack,
+  type RehydrateOptions,
+  type SerializedNormalizedContentPack,
+  type SerializedNormalizedModules,
+} from './types.js';
+
+const LOOKUP_PROPERTY: Record<ModuleName, keyof NormalizedContentPack['lookup']> = {
+  resources: 'resources',
+  generators: 'generators',
+  upgrades: 'upgrades',
+  metrics: 'metrics',
+  achievements: 'achievements',
+  automations: 'automations',
+  transforms: 'transforms',
+  prestigeLayers: 'prestigeLayers',
+  guildPerks: 'guildPerks',
+  runtimeEvents: 'runtimeEvents',
+};
+
+const SERIALIZED_LOOKUP_PROPERTY: Record<
+  ModuleName,
+  keyof NormalizedContentPack['serializedLookup']
+> = {
+  resources: 'resourceById',
+  generators: 'generatorById',
+  upgrades: 'upgradeById',
+  metrics: 'metricById',
+  achievements: 'achievementById',
+  automations: 'automationById',
+  transforms: 'transformById',
+  prestigeLayers: 'prestigeLayerById',
+  guildPerks: 'guildPerkById',
+  runtimeEvents: 'runtimeEventById',
+};
+
+function cloneModuleArray<Name extends ModuleName>(
+  modules: SerializedNormalizedModules,
+  name: Name,
+): SerializedNormalizedModules[Name] {
+  const moduleEntries = modules[name];
+  return Object.freeze([...moduleEntries]) as SerializedNormalizedModules[Name];
+}
+
+function cloneModuleArrays(
+  modules: SerializedNormalizedModules,
+): SerializedNormalizedModules {
+  const cloned = Object.create(null) as Record<
+    ModuleName,
+    SerializedNormalizedModules[ModuleName]
+  >;
+
+  for (const name of MODULE_NAMES) {
+    cloned[name] = cloneModuleArray(modules, name);
+  }
+
+  return cloned as SerializedNormalizedModules;
+}
+
+function createLookupRecords(packModules: SerializedNormalizedModules) {
+  const lookup = Object.create(null) as Record<string, unknown>;
+  const serializedLookup = Object.create(null) as Record<string, unknown>;
+
+  for (const name of MODULE_NAMES) {
+    const entries = packModules[name];
+    const map = new Map<string, (typeof entries)[number]>();
+    const record: Record<string, (typeof entries)[number]> = Object.create(null);
+    const mapKey = LOOKUP_PROPERTY[name];
+    const recordKey = SERIALIZED_LOOKUP_PROPERTY[name];
+
+    for (const entry of entries) {
+      const entryId = (entry as { id: string }).id;
+      map.set(entryId, entry);
+      record[entryId] = entry;
+    }
+
+    lookup[mapKey] = map;
+    serializedLookup[recordKey] = Object.freeze(record);
+  }
+
+  return {
+    lookup: Object.freeze(lookup) as NormalizedContentPack['lookup'],
+    serializedLookup: Object.freeze(serializedLookup) as NormalizedContentPack['serializedLookup'],
+  };
+}
+
+function resolveModulesObject(
+  packModules: SerializedNormalizedModules,
+): SerializedNormalizedModules {
+  return Object.freeze({
+    resources: packModules.resources,
+    generators: packModules.generators,
+    upgrades: packModules.upgrades,
+    metrics: packModules.metrics,
+    achievements: packModules.achievements,
+    automations: packModules.automations,
+    transforms: packModules.transforms,
+    prestigeLayers: packModules.prestigeLayers,
+    guildPerks: packModules.guildPerks,
+    runtimeEvents: packModules.runtimeEvents,
+  });
+}
 
 export function rehydrateNormalizedPack(
   serialized: SerializedNormalizedContentPack,
   options?: RehydrateOptions,
 ): NormalizedContentPack {
-  if (options?.verifyDigest === true) {
-    throw new Error('Digest verification is not implemented yet');
-  }
-
-  const clonedModules: Record<string, unknown> = Object.create(null);
-
-  for (const [name, moduleValue] of Object.entries(serialized.modules)) {
-    clonedModules[name] = Array.isArray(moduleValue)
-      ? Object.freeze([...moduleValue])
-      : moduleValue;
-  }
-
-  return {
+  const clonedModules = cloneModuleArrays(serialized.modules);
+  const { lookup, serializedLookup } = createLookupRecords(clonedModules);
+  const digestInput = {
     metadata: serialized.metadata,
-    modules: Object.freeze(clonedModules),
-  };
+    modules: clonedModules,
+  } as const;
+  const computedDigest = computeContentDigest(digestInput);
+  const serializedDigest = serialized.digest;
+  const shouldVerify = options?.verifyDigest === true;
+
+  if (shouldVerify) {
+    if (serializedDigest === undefined) {
+      throw new Error(
+        `Digest verification requested for pack ${serialized.metadata.id}, but the serialized payload does not include a digest.`,
+      );
+    }
+
+    if (computedDigest !== serializedDigest) {
+      throw new Error(
+        `Digest mismatch for pack ${serialized.metadata.id}: expected ${computedDigest}, received ${serializedDigest}`,
+      );
+    }
+  }
+
+  const digestHash = serializedDigest ?? computedDigest;
+
+  // TODO(#159): Add artifact hash verification once canonical serialization wiring is complete.
+
+  const digest = Object.freeze({
+    version: 1,
+    hash: digestHash,
+  });
+
+  const modulesObject = resolveModulesObject(clonedModules);
+
+  const pack: NormalizedContentPack = Object.freeze({
+    metadata: serialized.metadata,
+    resources: clonedModules.resources,
+    generators: clonedModules.generators,
+    upgrades: clonedModules.upgrades,
+    metrics: clonedModules.metrics,
+    achievements: clonedModules.achievements,
+    automations: clonedModules.automations,
+    transforms: clonedModules.transforms,
+    prestigeLayers: clonedModules.prestigeLayers,
+    guildPerks: clonedModules.guildPerks,
+    runtimeEvents: clonedModules.runtimeEvents,
+    modules: modulesObject,
+    lookup,
+    serializedLookup,
+    digest,
+  });
+
+  return pack;
 }
 
 export function createModuleIndices(
