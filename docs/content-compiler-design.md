@@ -81,7 +81,7 @@ packages/content-compiler/
 }
 ```
 
-To share digest logic without bundling the full schema implementation, `@idle-engine/content-schema` will add a `runtime-helpers` export that surfaces `createContentPackDigest`, freeze helpers, and associated types. The compiler package depends on that entrypoint so hashing stays consistent across the workspace. Splitting orchestration from artifact emitters mirrors the manifest-driven content pipeline described in [Engine Internals: Content Pipeline](https://medium.com/@heinapurola/engine-internals-content-pipeline-1af34a117f1).
+To share digest logic without bundling the full schema implementation, `@idle-engine/content-schema` now publishes a `runtime-helpers` export that surfaces `createContentPackDigest`, freeze helpers, and associated types. The compiler package depends on that entrypoint so hashing stays consistent across the workspace. Splitting orchestration from artifact emitters mirrors the manifest-driven content pipeline described in [Engine Internals: Content Pipeline](https://medium.com/@heinapurola/engine-internals-content-pipeline-1af34a117f1).
 
 ### 5.2 Public API Surface
 
@@ -261,7 +261,7 @@ export interface ModuleIndexTables {
 
 ### Phase 1 - Package Foundations
 - [ ] Scaffold `packages/content-compiler`, add build tooling, exports map, and baseline tests.
-- [ ] Add `runtime-helpers` export to `@idle-engine/content-schema` with shared digest utilities.
+- [x] Add `runtime-helpers` export to `@idle-engine/content-schema` with shared digest utilities.
 - [ ] Implement discovery, context preparation, and single-pack compilation APIs.
 
 ### Phase 2 - Artifact Emitters & CLI Wiring
