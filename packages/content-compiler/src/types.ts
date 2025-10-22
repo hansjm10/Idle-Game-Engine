@@ -24,13 +24,39 @@ export interface ContentDocument {
 export interface CompileOptions {
   readonly cwd?: string;
   readonly watch?: boolean;
+  readonly schema?: SchemaContextInput;
 }
 
-export interface PackArtifactResult {
-  readonly packSlug: string;
-  readonly artifacts: readonly string[];
-  readonly warnings: readonly string[];
+export interface SchemaContextInput {
+  readonly runtimeEventCatalogue?: readonly string[] | ReadonlySet<string>;
+  readonly knownPacks?: readonly {
+    readonly id: string;
+    readonly version: string;
+    readonly requires?: readonly {
+      readonly packId: string;
+      readonly version?: string;
+    }[];
+  }[];
+  readonly activePackIds?: readonly string[] | ReadonlySet<string>;
 }
+
+interface PackCompileSuccess {
+  readonly status: 'compiled';
+  readonly packSlug: string;
+  readonly document: ContentDocument;
+  readonly normalizedPack: NormalizedContentPack;
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+}
+
+interface PackCompileFailure {
+  readonly status: 'failed';
+  readonly packSlug: string;
+  readonly document: ContentDocument;
+  readonly error: Error;
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+}
+
+export type PackArtifactResult = PackCompileSuccess | PackCompileFailure;
 
 export interface WorkspaceFS {
   readonly rootDirectory: string;
