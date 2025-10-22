@@ -10,10 +10,21 @@ export function rehydrateNormalizedPack(
   serialized: SerializedNormalizedContentPack,
   options?: RehydrateOptions,
 ): NormalizedContentPack {
-  void options;
+  if (options?.verifyDigest === true) {
+    throw new Error('Digest verification is not implemented yet');
+  }
+
+  const clonedModules: Record<string, unknown> = Object.create(null);
+
+  for (const [name, moduleValue] of Object.entries(serialized.modules)) {
+    clonedModules[name] = Array.isArray(moduleValue)
+      ? Object.freeze([...moduleValue])
+      : moduleValue;
+  }
+
   return {
     metadata: serialized.metadata,
-    modules: {},
+    modules: Object.freeze(clonedModules),
   };
 }
 

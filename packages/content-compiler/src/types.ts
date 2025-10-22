@@ -49,10 +49,12 @@ export interface NormalizedContentPack {
   readonly modules: Record<string, unknown>;
 }
 
+// TODO(#159): Expand module typings to match docs/content-compiler-design.md section 5.4.
 export interface SerializedNormalizedContentPack {
   readonly formatVersion: 1;
   readonly metadata: NormalizedMetadata;
   readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly modules: NormalizedContentPack['modules'];
   readonly digest?: string;
   readonly artifactHash?: string;
 }
