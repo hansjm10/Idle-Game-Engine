@@ -223,6 +223,40 @@ describe('content compiler pipeline', () => {
     expect(failure.error.message).toMatch(/requires missing dependencies/i);
   });
 
+  it('marks packs as failed when required dependencies fail compilation', async () => {
+    const workspace = await createWorkspace();
+    const invalidDocument = {
+      metadata: {
+        id: 'alpha-pack',
+        title: { default: 'Broken Alpha', variants: {} },
+      },
+    } as unknown as Record<string, unknown>;
+    await workspace.writePack('alpha', invalidDocument);
+    await workspace.writePack(
+      'beta',
+      createPackDocument('beta-pack', {
+        metadata: {
+          dependencies: {
+            requires: [{ packId: 'alpha-pack' }],
+            optional: [],
+            conflicts: [],
+          },
+        },
+      }),
+    );
+    const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+
+    const result = await compileWorkspacePacks(fsHandle, {});
+
+    expect(result.packs).toHaveLength(2);
+    const alpha = result.packs.find((pack) => pack.packSlug === 'alpha-pack');
+    const beta = result.packs.find((pack) => pack.packSlug === 'beta-pack');
+    expect(alpha?.status).toBe('failed');
+    expect(beta?.status).toBe('failed');
+    if (beta?.status !== 'failed') return;
+    expect(beta.error.message).toMatch(/failed to compile/i);
+  });
+
   it('reports dependency cycles without invoking the schema parser', async () => {
     const workspace = await createWorkspace();
     await workspace.writePack(

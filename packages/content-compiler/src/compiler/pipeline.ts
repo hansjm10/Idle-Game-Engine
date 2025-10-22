@@ -73,12 +73,25 @@ export async function compileWorkspacePacks(
       continue;
     }
 
+    const requiredDependencies = extractRequiredDependencies(document);
     const missingDependencies = dependencyMap.missing.get(slug);
     if (missingDependencies !== undefined && missingDependencies.size > 0) {
       results.push(
         createFailureResult(
           document,
           `Pack "${slug}" requires missing dependencies: ${Array.from(missingDependencies).join(', ')}`,
+        ),
+      );
+      failed.add(slug);
+      continue;
+    }
+
+    const failedDependencies = requiredDependencies.filter((dependency) => failed.has(dependency));
+    if (failedDependencies.length > 0) {
+      results.push(
+        createFailureResult(
+          document,
+          `Pack "${slug}" requires dependencies that failed to compile: ${failedDependencies.join(', ')}`,
         ),
       );
       failed.add(slug);
