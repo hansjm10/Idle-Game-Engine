@@ -39,6 +39,37 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0
 
+  packages/content-compiler:
+    dependencies:
+      '@idle-engine/content-schema':
+        specifier: workspace:*
+        version: link:../content-schema
+    devDependencies:
+      '@idle-engine/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../config-vitest
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.9.1
+      eslint:
+        specifier: ^9.37.0
+        version: 9.37.0
+      rimraf:
+        specifier: ^6.0.1
+        version: 6.0.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@24.9.1)(jsdom@25.0.1)
+      vitest-llm-reporter:
+        specifier: ^1.2.0
+        version: 1.2.0
+
   packages/content-sample:
     dependencies:
       '@idle-engine/content-schema':

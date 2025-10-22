@@ -1,0 +1,40 @@
+{
+  "name": "@idle-engine/content-compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./runtime": {
+      "import": "./dist/runtime.js",
+      "types": "./dist/runtime.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@idle-engine/content-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@idle-engine/config-eslint": "workspace:*",
+    "@idle-engine/config-vitest": "workspace:*",
+    "@types/node": "^24.9.1",
+    "eslint": "^9.37.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "vitest-llm-reporter": "^1.2.0"
+  }
+}
