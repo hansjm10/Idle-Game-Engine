@@ -184,8 +184,9 @@ export function serializeNormalizedContentPack(
     digest,
   });
 
-  const canonicalWithoutHash = canonicalizeValue(base);
-  const hashInput = textEncoder.encode(canonicalWithoutHash);
+  const serializedForHash = buildSerializedPackWithHash(base, '');
+  const canonicalWithPlaceholder = canonicalizeValue(serializedForHash);
+  const hashInput = textEncoder.encode(canonicalWithPlaceholder);
   const artifactHash = computeArtifactHash(hashInput);
   const serialized = buildSerializedPackWithHash(base, artifactHash);
   const canonicalJson = canonicalizeValue(serialized);
@@ -228,5 +229,6 @@ export function canonicalizeSerializedNormalizedContentPackForHash(
     digest,
   });
 
-  return canonicalizeValue(base);
+  const canonical = buildSerializedPackWithHash(base, '');
+  return canonicalizeValue(canonical);
 }

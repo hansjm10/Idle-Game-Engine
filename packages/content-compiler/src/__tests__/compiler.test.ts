@@ -152,10 +152,12 @@ describe('content compiler scaffolding', () => {
     expect(result.serialized.artifactHash).toBe(
       computeArtifactHash(result.hashInput),
     );
+    const hashInputJson = decoder.decode(result.hashInput);
+    expect(hashInputJson).toContain('"artifactHash":""');
     expect(result.canonicalJson).toBe(
       canonicalizeSerializedNormalizedContentPack(result.serialized),
     );
-    expect(decoder.decode(result.hashInput)).toBe(
+    expect(hashInputJson).toBe(
       canonicalizeSerializedNormalizedContentPackForHash(result.serialized),
     );
   });
