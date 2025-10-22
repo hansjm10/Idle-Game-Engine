@@ -58,6 +58,14 @@ import {
 } from './modules/upgrades.js';
 import type { ContentSchemaWarning } from './errors.js';
 import { resolveFeatureViolations, type FeatureGateMap } from './runtime-compat.js';
+import {
+  createContentPackDigest,
+  freezeArray,
+  freezeMap,
+  freezeObject,
+  freezeRecord,
+  type ContentPackDigest,
+} from './runtime-helpers.js';
 
 type PackId = z.infer<typeof packSlugSchema>;
 type ContentId = z.infer<typeof contentIdSchema>;
@@ -172,18 +180,13 @@ export interface NormalizedContentPack extends NormalizedContentPackModules {
     readonly guildPerkById: Readonly<Record<string, NormalizedGuildPerk>>;
     readonly runtimeEventById: Readonly<Record<string, NormalizedRuntimeEventContribution>>;
   };
-  readonly digest: {
-    readonly version: number;
-    readonly hash: string;
-  };
+  readonly digest: ContentPackDigest;
 }
 
 export interface NormalizationContext {
   readonly runtimeVersion?: string;
   readonly warningSink?: (warning: ContentSchemaWarning) => void;
 }
-
-const CONTENT_PACK_DIGEST_VERSION = 1;
 
 const baseContentPackSchema: z.ZodType<ParsedContentPack, z.ZodTypeDef, unknown> = z
   .object({
@@ -311,28 +314,6 @@ const normalizeActivePackIds = (
 ): ReadonlySet<PackId> =>
   new Set(toArray(entries).map((packId) => packSlugSchema.parse(packId)));
 
-const freezeMap = <Value extends { readonly id: string }>(
-  values: readonly Value[],
-): ReadonlyMap<Value['id'], Value> =>
-  Object.freeze(
-    new Map<Value['id'], Value>(
-      values.map((value) => [value.id, value]),
-    ),
-  );
-
-const freezeRecord = <Value extends { readonly id: string }>(
-  values: readonly Value[],
-): Readonly<Record<string, Value>> =>
-  Object.freeze(
-    Object.fromEntries(values.map((value) => [value.id, value] as const)),
-  );
-
-const freezeArray = <Value>(values: Value[]): readonly Value[] =>
-  Object.freeze(values);
-
-const freezeObject = <Value extends object>(value: Value): Value =>
-  Object.freeze(value);
-
 type LocalizedValue = LocalizedText | LocalizedSummary;
 
 const createLocalizedValueNormalizer = (
@@ -366,41 +347,6 @@ const createLocalizedValueNormalizer = (
       : undefined;
 
   return { normalize, normalizeOptional };
-};
-
-const fnv1a = (input: string): number => {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-    hash >>>= 0;
-  }
-  return hash >>> 0;
-};
-
-const computeDigest = (pack: NormalizedContentPackModules) => {
-  const digestPayload = {
-    id: pack.metadata.id,
-    version: pack.metadata.version,
-    modules: {
-      resources: pack.resources.map((resource) => resource.id),
-      generators: pack.generators.map((generator) => generator.id),
-      upgrades: pack.upgrades.map((upgrade) => upgrade.id),
-      metrics: pack.metrics.map((metric) => metric.id),
-      achievements: pack.achievements.map((achievement) => achievement.id),
-      automations: pack.automations.map((automation) => automation.id),
-      transforms: pack.transforms.map((transform) => transform.id),
-      prestigeLayers: pack.prestigeLayers.map((layer) => layer.id),
-      guildPerks: pack.guildPerks.map((perk) => perk.id),
-      runtimeEvents: pack.runtimeEvents.map((event) => event.id),
-    },
-  };
-  const serialized = JSON.stringify(digestPayload);
-  const hash = fnv1a(serialized);
-  return {
-    version: CONTENT_PACK_DIGEST_VERSION,
-    hash: `fnv1a-${hash.toString(16).padStart(8, '0')}`,
-  };
 };
 
 const normalizeContentPack = (
@@ -590,7 +536,7 @@ const normalizeContentPack = (
     runtimeEventById: freezeRecord(normalizedModules.runtimeEvents),
   });
 
-  const digest = computeDigest(normalizedModules);
+  const digest = createContentPackDigest(normalizedModules);
 
   return freezeObject({
     ...normalizedModules,
