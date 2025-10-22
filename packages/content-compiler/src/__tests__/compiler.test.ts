@@ -6,10 +6,12 @@ import { createWorkspaceSummary } from '../artifacts/summary.js';
 import { compileContentPack, compileWorkspacePacks } from '../compiler/pipeline.js';
 import { computeArtifactHash, computeContentDigest } from '../hashing.js';
 import { createModuleIndices, rehydrateNormalizedPack } from '../runtime.js';
-import type {
-  SerializedContentSchemaWarning,
-  SerializedNormalizedContentPack,
-  SerializedNormalizedModules,
+import {
+  SERIALIZED_PACK_FORMAT_VERSION,
+  type SerializedContentDigest,
+  type SerializedContentSchemaWarning,
+  type SerializedNormalizedContentPack,
+  type SerializedNormalizedModules,
 } from '../types.js';
 
 const createSchemaDocument = () =>
@@ -73,7 +75,7 @@ function createSerializedPack(
   const modules = overrides.modules ?? createModules();
 
   return {
-    formatVersion: 1,
+    formatVersion: SERIALIZED_PACK_FORMAT_VERSION,
     metadata: overrides.metadata ?? BASE_METADATA,
     modules,
     warnings: overrides.warnings ?? [],
@@ -146,14 +148,14 @@ describe('content compiler scaffolding', () => {
     const pack = rehydrateNormalizedPack(serialized);
     const result = serializeNormalizedContentPack(pack, {
       warnings,
-      digest: pack.digest.hash,
+      digest: pack.digest,
       artifactHash: 'hash-123',
     });
 
     expect(result.metadata).toEqual(pack.metadata);
     expect(result.modules).toEqual(pack.modules);
     expect(result.warnings).toEqual(warnings);
-    expect(result.digest).toBe(pack.digest.hash);
+    expect(result.digest).toEqual(pack.digest);
     expect(result.artifactHash).toBe('hash-123');
   });
 
@@ -186,7 +188,7 @@ describe('content compiler scaffolding', () => {
     expect(serialized.modules.resources).toBe(pack.resources);
     expect(serialized.modules.generators).toBe(pack.generators);
     expect(serialized.warnings).toEqual(warnings);
-    expect(serialized.digest).toBe(pack.digest.hash);
+    expect(serialized.digest).toEqual(pack.digest);
   });
 
   it('rehydrates serialized packs with lookup metadata and digest verification', () => {
@@ -211,12 +213,20 @@ describe('content compiler scaffolding', () => {
     expect(Object.isFrozen(pack.modules)).toBe(true);
     expect(pack.resources).toHaveLength(1);
     expect(pack.lookup.resources.get(resource.id)).toBe(resource);
-    expect(pack.digest.hash).toBe(digest);
+    expect(pack.digest).toEqual(digest);
   });
 
   it('throws when verifyDigest detects mismatched hashes', () => {
+    const mismatchedDigest: SerializedContentDigest = {
+      ...computeContentDigest({
+        metadata: BASE_METADATA,
+        modules: createModules(),
+      }),
+      hash: 'fnv1a-deadbeef',
+    };
+
     const serialized = createSerializedPack({
-      digest: 'fnv1a-deadbeef',
+      digest: mismatchedDigest,
     });
 
     expect(() => rehydrateNormalizedPack(serialized, { verifyDigest: true })).toThrow(
@@ -256,7 +266,7 @@ describe('content compiler scaffolding', () => {
     });
 
     expect(digestA).toEqual(digestB);
-    expect(digestA).toMatch(/^fnv1a-[0-9a-f]{8}$/);
+    expect(digestA.hash).toMatch(/^fnv1a-[0-9a-f]{8}$/);
 
     const bytes = new TextEncoder().encode('hello world');
     const artifactHash = computeArtifactHash(bytes);

@@ -1,7 +1,9 @@
 import {
   MODULE_NAMES,
+  SERIALIZED_PACK_FORMAT_VERSION,
   type ModuleName,
   type SerializableNormalizedContentPackInput,
+  type SerializedContentDigest,
   type SerializedContentSchemaWarning,
   type SerializedNormalizedContentPack,
   type SerializedNormalizedModules,
@@ -22,7 +24,7 @@ const EMPTY_MODULES: SerializedNormalizedModules = {
 
 export interface SerializeNormalizedContentPackOptions {
   readonly warnings?: readonly SerializedContentSchemaWarning[];
-  readonly digest?: string;
+  readonly digest?: SerializedContentDigest;
   readonly artifactHash?: string;
 }
 
@@ -52,6 +54,15 @@ function cloneWarnings(
   warnings: readonly SerializedContentSchemaWarning[],
 ): readonly SerializedContentSchemaWarning[] {
   return Object.freeze(warnings.map(cloneSchemaWarning));
+}
+
+function cloneDigest(
+  digest: SerializedContentDigest,
+): SerializedContentDigest {
+  return Object.freeze({
+    version: digest.version,
+    hash: digest.hash,
+  });
 }
 
 type SerializedSchemaIssue =
@@ -89,6 +100,7 @@ function buildSerializedObject(
   data: Omit<SerializedNormalizedContentPack, 'modules' | 'warnings'> & {
     readonly modules: SerializedNormalizedModules;
     readonly warnings: readonly SerializedContentSchemaWarning[];
+    readonly digest?: SerializedContentDigest;
   },
 ): SerializedNormalizedContentPack {
   const serialized: SerializedNormalizedContentPack = {
@@ -131,10 +143,11 @@ export function serializeNormalizedContentPack(
 ): SerializedNormalizedContentPack {
   const warnings = cloneWarnings(options.warnings ?? []);
   const modules = cloneModules(resolveSerializedModules(pack));
-  const digest = options.digest ?? pack.digest?.hash;
+  const digestSource = options.digest ?? pack.digest;
+  const digest = digestSource !== undefined ? cloneDigest(digestSource) : undefined;
 
   return buildSerializedObject({
-    formatVersion: 1,
+    formatVersion: SERIALIZED_PACK_FORMAT_VERSION,
     metadata: pack.metadata,
     modules,
     warnings,
@@ -148,10 +161,14 @@ export function canonicalizeSerializedNormalizedContentPack(
 ): string {
   const modules = cloneModules(serialized.modules);
   const warnings = cloneWarnings(serialized.warnings);
+  const digest = serialized.digest !== undefined ? cloneDigest(serialized.digest) : undefined;
   const canonical = buildSerializedObject({
-    ...serialized,
+    formatVersion: serialized.formatVersion,
+    metadata: serialized.metadata,
     modules,
     warnings,
+    digest,
+    artifactHash: serialized.artifactHash,
   });
 
   return JSON.stringify(canonical);

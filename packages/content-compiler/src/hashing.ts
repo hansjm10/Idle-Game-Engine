@@ -2,10 +2,12 @@ import { createHash } from 'crypto';
 
 import type { NormalizedMetadata } from '@idle-engine/content-schema';
 
-import { MODULE_NAMES, type NormalizedContentPack, type SerializedNormalizedContentPack, type SerializedNormalizedModules } from './types.js';
+import { MODULE_NAMES, type NormalizedContentPack, type SerializedContentDigest, type SerializedNormalizedContentPack, type SerializedNormalizedModules } from './types.js';
 
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
+
+const CONTENT_DIGEST_VERSION = 1;
 
 type DigestInput =
   | Pick<SerializedNormalizedContentPack, 'metadata' | 'modules'>
@@ -46,10 +48,10 @@ function collectModuleIds(modules: SerializedNormalizedModules): Record<string, 
     result[name] = entries.map((entry) => (entry as { id: string }).id);
   }
 
-  return result;
+  return Object.freeze(result);
 }
 
-export function computeContentDigest(input: DigestInput): string {
+export function computeContentDigest(input: DigestInput): SerializedContentDigest {
   const { metadata, modules } = toDigestSource(input);
 
   const digestPayload = {
@@ -58,7 +60,10 @@ export function computeContentDigest(input: DigestInput): string {
     modules: collectModuleIds(modules),
   };
 
-  return fnv1aFromString(JSON.stringify(digestPayload));
+  return Object.freeze({
+    version: CONTENT_DIGEST_VERSION,
+    hash: fnv1aFromString(JSON.stringify(digestPayload)),
+  });
 }
 
 export function computeArtifactHash(bytes: Uint8Array): string {

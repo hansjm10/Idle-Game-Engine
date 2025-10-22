@@ -2,13 +2,52 @@ import { createModuleIndices as createModuleIndicesInternal } from './artifacts/
 import { computeContentDigest } from './hashing.js';
 import {
   MODULE_NAMES,
+  SERIALIZED_PACK_FORMAT_VERSION,
   type ModuleName,
   type ModuleIndexTables,
   type NormalizedContentPack,
   type RehydrateOptions,
+  type SerializedContentDigest,
   type SerializedNormalizedContentPack,
   type SerializedNormalizedModules,
 } from './types.js';
+
+function deepFreeze<Value>(value: Value): Value {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => {
+      deepFreeze(item);
+    });
+  } else if (value instanceof Map) {
+    value.forEach((mapValue, mapKey) => {
+      deepFreeze(mapKey);
+      deepFreeze(mapValue);
+    });
+  } else if (value instanceof Set) {
+    value.forEach((setValue) => {
+      deepFreeze(setValue);
+    });
+  } else {
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor?.value !== undefined) {
+        deepFreeze(descriptor.value);
+      }
+    }
+  }
+
+  return Object.freeze(value);
+}
+
+function cloneDigest(digest: SerializedContentDigest): SerializedContentDigest {
+  return Object.freeze({
+    version: digest.version,
+    hash: digest.hash,
+  });
+}
 
 const LOOKUP_PROPERTY: Record<ModuleName, keyof NormalizedContentPack['lookup']> = {
   resources: 'resources',
@@ -44,7 +83,8 @@ function cloneModuleArray<Name extends ModuleName>(
   name: Name,
 ): SerializedNormalizedModules[Name] {
   const moduleEntries = modules[name];
-  return Object.freeze([...moduleEntries]) as SerializedNormalizedModules[Name];
+  const clonedEntries = moduleEntries.map((entry) => deepFreeze(entry));
+  return Object.freeze(clonedEntries) as SerializedNormalizedModules[Name];
 }
 
 function cloneModuleArrays(
@@ -59,7 +99,7 @@ function cloneModuleArrays(
     cloned[name] = cloneModuleArray(modules, name);
   }
 
-  return cloned as SerializedNormalizedModules;
+  return Object.freeze(cloned) as SerializedNormalizedModules;
 }
 
 function createLookupRecords(packModules: SerializedNormalizedModules) {
@@ -110,6 +150,12 @@ export function rehydrateNormalizedPack(
   serialized: SerializedNormalizedContentPack,
   options?: RehydrateOptions,
 ): NormalizedContentPack {
+  if (serialized.formatVersion !== SERIALIZED_PACK_FORMAT_VERSION) {
+    throw new Error(
+      `Unsupported serialized content pack format ${serialized.formatVersion}. Expected ${SERIALIZED_PACK_FORMAT_VERSION}.`,
+    );
+  }
+
   const clonedModules = cloneModuleArrays(serialized.modules);
   const { lookup, serializedLookup } = createLookupRecords(clonedModules);
   const digestInput = {
@@ -120,6 +166,15 @@ export function rehydrateNormalizedPack(
   const serializedDigest = serialized.digest;
   const shouldVerify = options?.verifyDigest === true;
 
+  if (
+    serializedDigest !== undefined &&
+    serializedDigest.version !== computedDigest.version
+  ) {
+    throw new Error(
+      `Serialized digest version ${serializedDigest.version} does not match supported version ${computedDigest.version} for pack ${serialized.metadata.id}.`,
+    );
+  }
+
   if (shouldVerify) {
     if (serializedDigest === undefined) {
       throw new Error(
@@ -127,21 +182,18 @@ export function rehydrateNormalizedPack(
       );
     }
 
-    if (computedDigest !== serializedDigest) {
+    if (computedDigest.hash !== serializedDigest.hash) {
       throw new Error(
-        `Digest mismatch for pack ${serialized.metadata.id}: expected ${computedDigest}, received ${serializedDigest}`,
+        `Digest mismatch for pack ${serialized.metadata.id}: expected ${computedDigest.hash}, received ${serializedDigest.hash}`,
       );
     }
   }
 
-  const digestHash = serializedDigest ?? computedDigest;
+  const digestSource = serializedDigest ?? computedDigest;
 
   // TODO(#159): Add artifact hash verification once canonical serialization wiring is complete.
 
-  const digest = Object.freeze({
-    version: 1,
-    hash: digestHash,
-  });
+  const digest = cloneDigest(digestSource);
 
   const modulesObject = resolveModulesObject(clonedModules);
 

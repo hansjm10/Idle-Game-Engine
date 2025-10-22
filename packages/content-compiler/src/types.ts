@@ -91,12 +91,16 @@ export type SerializableNormalizedContentPackInput = SchemaNormalizedContentPack
   readonly modules?: SerializedNormalizedModules;
 };
 
+export const SERIALIZED_PACK_FORMAT_VERSION = 1;
+
+export type SerializedContentDigest = NormalizedContentPack['digest'];
+
 export interface SerializedNormalizedContentPack {
-  readonly formatVersion: 1;
+  readonly formatVersion: typeof SERIALIZED_PACK_FORMAT_VERSION;
   readonly metadata: NormalizedMetadata;
   readonly warnings: readonly SerializedContentSchemaWarning[];
   readonly modules: SerializedNormalizedModules;
-  readonly digest?: string;
+  readonly digest?: SerializedContentDigest;
   readonly artifactHash?: string;
 }
 

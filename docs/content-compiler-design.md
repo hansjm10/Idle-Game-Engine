@@ -1,6 +1,6 @@
 # Content Compiler Design Document
 
-**Issue:** #12  
+**Issue:** #159  
 **Workstream:** Content Pipeline  
 **Status:** Design  
 **Last Updated:** 2025-10-22
