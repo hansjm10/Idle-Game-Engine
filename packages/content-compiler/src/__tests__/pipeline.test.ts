@@ -6,7 +6,11 @@ import { describe, expect, it } from 'vitest';
 
 import { discoverContentDocuments } from '../fs/discovery.js';
 import { compileContentPack, compileWorkspacePacks } from '../compiler/pipeline.js';
-import type { CompileOptions, ContentDocument, WorkspaceFS } from '../types.js';
+import type {
+  CompileWorkspaceOptions,
+  ContentDocument,
+  WorkspaceFS,
+} from '../types.js';
 
 const TMP_PREFIX = 'content-compiler-';
 
@@ -93,6 +97,32 @@ describe('content compiler pipeline', () => {
     expect(document.packSlug).toBe('alpha-pack');
     expect(document.relativePath).toBe('packages/alpha/content/pack.json');
     expect(document.absolutePath.endsWith('/alpha/content/pack.json')).toBe(true);
+  });
+
+  it('reports drift when check mode detects pending writes', async () => {
+    const workspace = await createWorkspace();
+    await workspace.writePack('alpha', createPackDocument('alpha-pack'));
+    const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+
+    const result = await compileWorkspacePacks(fsHandle, { check: true });
+
+    expect(result.hasDrift).toBe(true);
+    expect(
+      result.artifacts.operations.some(
+        (operation) => operation.action === 'would-write',
+      ),
+    ).toBe(true);
+    await expect(
+      fs.access(
+        path.join(
+          workspace.rootDirectory,
+          'packages/alpha/content/compiled/alpha-pack.normalized.json',
+        ),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(workspace.rootDirectory, result.summaryPath)),
+    ).rejects.toThrow();
   });
 
   it('throws when duplicate slugs are discovered', async () => {
@@ -187,7 +217,7 @@ describe('content compiler pipeline', () => {
       }),
     );
     const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
-    const options: CompileOptions = {};
+    const options: CompileWorkspaceOptions = {};
 
     const result = await compileWorkspacePacks(fsHandle, options);
 
@@ -195,6 +225,13 @@ describe('content compiler pipeline', () => {
     expect(result.packs[0]?.packSlug).toBe('alpha-pack');
     expect(result.packs[1]?.packSlug).toBe('beta-pack');
     expect(result.packs.every((pack) => pack.status === 'compiled')).toBe(true);
+    expect(result.summary.packs.map((pack) => pack.slug)).toEqual([
+      'alpha-pack',
+      'beta-pack',
+    ]);
+    expect(result.summaryPath).toBe('content/compiled/index.json');
+    expect(result.summaryAction === 'written' || result.summaryAction === 'unchanged').toBe(true);
+    expect(result.hasDrift).toBe(false);
   });
 
   it('marks packs with missing requires dependencies as failures', async () => {
@@ -213,8 +250,9 @@ describe('content compiler pipeline', () => {
       }),
     );
     const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+    const options: CompileWorkspaceOptions = {};
 
-    const result = await compileWorkspacePacks(fsHandle, {});
+    const result = await compileWorkspacePacks(fsHandle, options);
 
     expect(result.packs).toHaveLength(2);
     const failure = result.packs.find((pack) => pack.packSlug === 'gamma-pack');
@@ -255,6 +293,8 @@ describe('content compiler pipeline', () => {
     expect(beta?.status).toBe('failed');
     if (beta?.status !== 'failed') return;
     expect(beta.error.message).toMatch(/failed to compile/i);
+    const summaryEntry = result.summary.packs.find((pack) => pack.slug === 'beta-pack');
+    expect(summaryEntry?.status).toBe('failed');
   });
 
   it('reports dependency cycles without invoking the schema parser', async () => {
@@ -284,8 +324,9 @@ describe('content compiler pipeline', () => {
       }),
     );
     const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+    const options: CompileWorkspaceOptions = {};
 
-    const result = await compileWorkspacePacks(fsHandle, {});
+    const result = await compileWorkspacePacks(fsHandle, options);
 
     expect(result.packs).toHaveLength(2);
     result.packs.forEach((pack) => {
@@ -293,5 +334,6 @@ describe('content compiler pipeline', () => {
       if (pack.status !== 'failed') return;
       expect(pack.error.message).toMatch(/Dependency cycle detected/);
     });
+    expect(result.summary.packs.every((pack) => pack.status === 'failed')).toBe(true);
   });
 });

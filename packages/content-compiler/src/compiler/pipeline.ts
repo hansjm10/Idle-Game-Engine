@@ -1,8 +1,13 @@
+import path from 'node:path';
+
 import { parseContentPack } from '@idle-engine/content-schema';
 import type { NormalizedContentPack as SchemaNormalizedContentPack } from '@idle-engine/content-schema';
 
 import { createCompilerContext } from './context.js';
 import { discoverContentDocuments } from '../fs/discovery.js';
+import { serializeNormalizedContentPack } from '../artifacts/json.js';
+import { createWorkspaceSummary } from '../artifacts/summary.js';
+import { writeDeterministicFile, writeWorkspaceArtifacts } from '../fs/writer.js';
 import type {
   CompileOptions,
   CompileWorkspaceOptions,
@@ -10,6 +15,9 @@ import type {
   PackArtifactResult,
   NormalizedContentPack,
   SerializedNormalizedModules,
+  ArtifactFileAction,
+  WorkspaceSummary,
+  WorkspaceArtifactWriteResult,
   WorkspaceCompileResult,
   WorkspaceFS,
 } from '../types.js';
@@ -31,13 +39,18 @@ export async function compileContentPack(
     );
 
     const normalizedPack = withSerializedModules(pack);
+    const normalizedWarnings = Object.freeze([...warnings]);
+    const artifact = serializeNormalizedContentPack(normalizedPack, {
+      warnings: normalizedWarnings,
+    });
 
     return {
       status: 'compiled',
       packSlug: document.packSlug,
       document,
       normalizedPack,
-      warnings: Object.freeze([...warnings]),
+      warnings: normalizedWarnings,
+      artifact,
     };
   } catch (error) {
     const failureError =
@@ -121,9 +134,37 @@ export async function compileWorkspacePacks(
     }
   }
 
+  const artifactWrites = await writeWorkspaceArtifacts(fs, results, {
+    check: options.check,
+    clean: options.clean,
+  });
+
+  const summary = createWorkspaceSummary({
+    results,
+    artifacts: artifactWrites,
+  });
+
+  const summaryPath = resolveSummaryPath(
+    fs.rootDirectory,
+    options.summaryOutputPath,
+  );
+  const summaryBuffer = createSummaryBuffer(summary);
+  const summaryAction = await writeDeterministicFile(summaryPath, summaryBuffer, {
+    check: options.check,
+    clean: options.clean,
+  });
+
+  const hasDrift =
+    options.check === true &&
+    hasDriftActions(artifactWrites, summaryAction);
+
   return {
     packs: results,
-    summaryPath: options.summaryOutputPath,
+    artifacts: artifactWrites,
+    summary,
+    summaryPath: toPosixPath(path.relative(fs.rootDirectory, summaryPath)),
+    summaryAction,
+    hasDrift,
   };
 }
 
@@ -260,6 +301,40 @@ function topologicallySortDocuments(
     ordered,
     cycleSlugs,
   };
+}
+
+function resolveSummaryPath(
+  rootDirectory: string,
+  overridePath: string | undefined,
+): string {
+  if (overridePath) {
+    return path.isAbsolute(overridePath)
+      ? overridePath
+      : path.join(rootDirectory, overridePath);
+  }
+  return path.join(rootDirectory, 'content', 'compiled', 'index.json');
+}
+
+function createSummaryBuffer(summary: WorkspaceSummary): Uint8Array {
+  const json = JSON.stringify(summary, null, 2);
+  return Buffer.from(`${json}\n`, 'utf8');
+}
+
+function hasDriftActions(
+  artifacts: WorkspaceArtifactWriteResult,
+  summaryAction: ArtifactFileAction,
+): boolean {
+  return (
+    artifacts.operations.some(
+      (operation) =>
+        operation.action === 'would-write' ||
+        operation.action === 'would-delete',
+    ) || summaryAction === 'would-write'
+  );
+}
+
+function toPosixPath(value: string): string {
+  return value.split(path.sep).join('/');
 }
 
 function createFailureResult(

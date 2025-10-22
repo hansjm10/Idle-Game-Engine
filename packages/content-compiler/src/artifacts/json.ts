@@ -1,3 +1,6 @@
+import canonicalize from 'canonicalize';
+
+import { computeArtifactHash } from '../hashing.js';
 import {
   MODULE_NAMES,
   SERIALIZED_PACK_FORMAT_VERSION,
@@ -7,7 +10,10 @@ import {
   type SerializedContentSchemaWarning,
   type SerializedNormalizedContentPack,
   type SerializedNormalizedModules,
+  type SerializedPackArtifact,
 } from '../types.js';
+
+const textEncoder = new TextEncoder();
 
 const EMPTY_MODULES: SerializedNormalizedModules = {
   resources: Object.freeze([]) as SerializedNormalizedModules['resources'],
@@ -25,44 +31,6 @@ const EMPTY_MODULES: SerializedNormalizedModules = {
 export interface SerializeNormalizedContentPackOptions {
   readonly warnings?: readonly SerializedContentSchemaWarning[];
   readonly digest?: SerializedContentDigest;
-  readonly artifactHash?: string;
-}
-
-function cloneModules(
-  source: Partial<SerializedNormalizedModules>,
-): SerializedNormalizedModules {
-  const modules = Object.create(null) as Record<
-    ModuleName,
-    SerializedNormalizedModules[ModuleName]
-  >;
-
-  for (const name of MODULE_NAMES) {
-    modules[name] = cloneModuleEntries(source, name);
-  }
-
-  return modules as SerializedNormalizedModules;
-}
-
-function cloneModuleEntries<Name extends ModuleName>(
-  source: Partial<SerializedNormalizedModules>,
-  name: Name,
-): SerializedNormalizedModules[Name] {
-  return (source[name] ?? EMPTY_MODULES[name]) as SerializedNormalizedModules[Name];
-}
-
-function cloneWarnings(
-  warnings: readonly SerializedContentSchemaWarning[],
-): readonly SerializedContentSchemaWarning[] {
-  return Object.freeze(warnings.map(cloneSchemaWarning));
-}
-
-function cloneDigest(
-  digest: SerializedContentDigest,
-): SerializedContentDigest {
-  return Object.freeze({
-    version: digest.version,
-    hash: digest.hash,
-  });
 }
 
 type SerializedSchemaIssue =
@@ -96,23 +64,80 @@ function cloneSchemaWarningIssue(
   return Object.freeze(cloned) as SerializedSchemaIssue;
 }
 
-function buildSerializedObject(
-  data: Omit<SerializedNormalizedContentPack, 'modules' | 'warnings'> & {
+function cloneWarnings(
+  warnings: readonly SerializedContentSchemaWarning[],
+): readonly SerializedContentSchemaWarning[] {
+  return Object.freeze(warnings.map(cloneSchemaWarning));
+}
+
+function cloneModules(
+  source: Partial<SerializedNormalizedModules>,
+): SerializedNormalizedModules {
+  const modules = Object.create(null) as Record<
+    ModuleName,
+    SerializedNormalizedModules[ModuleName]
+  >;
+
+  for (const name of MODULE_NAMES) {
+    modules[name] = cloneModuleEntries(source, name);
+  }
+
+  return Object.freeze(modules) as SerializedNormalizedModules;
+}
+
+function cloneModuleEntries<Name extends ModuleName>(
+  source: Partial<SerializedNormalizedModules>,
+  name: Name,
+): SerializedNormalizedModules[Name] {
+  return (source[name] ?? EMPTY_MODULES[name]) as SerializedNormalizedModules[Name];
+}
+
+function cloneDigest(
+  digest: SerializedContentDigest,
+): SerializedContentDigest {
+  return Object.freeze({
+    version: digest.version,
+    hash: digest.hash,
+  });
+}
+
+type SerializedPackBase = Omit<SerializedNormalizedContentPack, 'artifactHash'>;
+
+function canonicalizeValue(value: unknown): string {
+  const result = canonicalize(value);
+  if (typeof result !== 'string') {
+    throw new Error('Failed to canonicalize serialized content pack.');
+  }
+  return result;
+}
+
+function buildSerializedPackBase(
+  data: Omit<SerializedPackBase, 'modules' | 'warnings'> & {
     readonly modules: SerializedNormalizedModules;
     readonly warnings: readonly SerializedContentSchemaWarning[];
-    readonly digest?: SerializedContentDigest;
   },
-): SerializedNormalizedContentPack {
-  const serialized: SerializedNormalizedContentPack = {
+): SerializedPackBase {
+  const serialized: SerializedPackBase = {
     formatVersion: data.formatVersion,
     metadata: data.metadata,
     modules: data.modules,
     warnings: data.warnings,
-    ...(data.digest !== undefined ? { digest: data.digest } : {}),
-    ...(data.artifactHash !== undefined ? { artifactHash: data.artifactHash } : {}),
+    digest: data.digest,
   };
 
-  return serialized;
+  return Object.freeze(serialized);
+}
+
+function buildSerializedPackWithHash(
+  base: SerializedPackBase,
+  artifactHash: string,
+): SerializedNormalizedContentPack {
+  const serialized: SerializedNormalizedContentPack = {
+    ...base,
+    artifactHash,
+  };
+
+  return Object.freeze(serialized);
 }
 
 function resolveSerializedModules(
@@ -140,20 +165,36 @@ function resolveSerializedModules(
 export function serializeNormalizedContentPack(
   pack: SerializableNormalizedContentPackInput,
   options: SerializeNormalizedContentPackOptions = {},
-): SerializedNormalizedContentPack {
+): SerializedPackArtifact {
   const warnings = cloneWarnings(options.warnings ?? []);
   const modules = cloneModules(resolveSerializedModules(pack));
   const digestSource = options.digest ?? pack.digest;
-  const digest = digestSource !== undefined ? cloneDigest(digestSource) : undefined;
+  if (digestSource === undefined) {
+    throw new Error(
+      `Serialized content pack ${pack.metadata?.id ?? '<unknown>'} is missing a digest.`,
+    );
+  }
+  const digest = cloneDigest(digestSource);
 
-  return buildSerializedObject({
+  const base = buildSerializedPackBase({
     formatVersion: SERIALIZED_PACK_FORMAT_VERSION,
     metadata: pack.metadata,
     modules,
     warnings,
     digest,
-    artifactHash: options.artifactHash,
   });
+
+  const canonicalWithoutHash = canonicalizeValue(base);
+  const hashInput = textEncoder.encode(canonicalWithoutHash);
+  const artifactHash = computeArtifactHash(hashInput);
+  const serialized = buildSerializedPackWithHash(base, artifactHash);
+  const canonicalJson = canonicalizeValue(serialized);
+
+  return {
+    serialized,
+    canonicalJson,
+    hashInput,
+  };
 }
 
 export function canonicalizeSerializedNormalizedContentPack(
@@ -161,15 +202,31 @@ export function canonicalizeSerializedNormalizedContentPack(
 ): string {
   const modules = cloneModules(serialized.modules);
   const warnings = cloneWarnings(serialized.warnings);
-  const digest = serialized.digest !== undefined ? cloneDigest(serialized.digest) : undefined;
-  const canonical = buildSerializedObject({
+  const digest = cloneDigest(serialized.digest);
+  const base = buildSerializedPackBase({
     formatVersion: serialized.formatVersion,
     metadata: serialized.metadata,
     modules,
     warnings,
     digest,
-    artifactHash: serialized.artifactHash,
+  });
+  const canonical = buildSerializedPackWithHash(base, serialized.artifactHash);
+  return canonicalizeValue(canonical);
+}
+
+export function canonicalizeSerializedNormalizedContentPackForHash(
+  serialized: SerializedNormalizedContentPack,
+): string {
+  const modules = cloneModules(serialized.modules);
+  const warnings = cloneWarnings(serialized.warnings);
+  const digest = cloneDigest(serialized.digest);
+  const base = buildSerializedPackBase({
+    formatVersion: serialized.formatVersion,
+    metadata: serialized.metadata,
+    modules,
+    warnings,
+    digest,
   });
 
-  return JSON.stringify(canonical);
+  return canonicalizeValue(base);
 }

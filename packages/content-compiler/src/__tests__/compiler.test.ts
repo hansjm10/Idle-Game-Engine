@@ -1,7 +1,11 @@
 import { parseContentPack } from '@idle-engine/content-schema';
 import { describe, expect, it } from 'vitest';
 
-import { serializeNormalizedContentPack } from '../artifacts/json.js';
+import {
+  canonicalizeSerializedNormalizedContentPack,
+  canonicalizeSerializedNormalizedContentPackForHash,
+  serializeNormalizedContentPack,
+} from '../artifacts/json.js';
 import { computeArtifactHash, computeContentDigest } from '../hashing.js';
 import { createModuleIndices, rehydrateNormalizedPack } from '../runtime.js';
 import {
@@ -11,6 +15,9 @@ import {
   type SerializedNormalizedContentPack,
   type SerializedNormalizedModules,
 } from '../types.js';
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 const createSchemaDocument = () =>
   ({
@@ -71,15 +78,35 @@ function createSerializedPack(
   overrides: Partial<SerializedNormalizedContentPack> = {},
 ): SerializedNormalizedContentPack {
   const modules = overrides.modules ?? createModules();
+  const metadata = overrides.metadata ?? BASE_METADATA;
+  const warnings = overrides.warnings ?? [];
+  const digest =
+    overrides.digest ??
+    computeContentDigest({
+      metadata,
+      modules,
+    });
 
-  return {
+  const draft: SerializedNormalizedContentPack = {
     formatVersion: SERIALIZED_PACK_FORMAT_VERSION,
-    metadata: overrides.metadata ?? BASE_METADATA,
+    metadata,
     modules,
-    warnings: overrides.warnings ?? [],
-    digest: overrides.digest,
-    artifactHash: overrides.artifactHash,
+    warnings,
+    digest,
+    artifactHash: overrides.artifactHash ?? '',
   };
+
+  if (overrides.artifactHash !== undefined) {
+    return Object.freeze(draft);
+  }
+
+  const canonicalForHash = canonicalizeSerializedNormalizedContentPackForHash(draft);
+  const artifactHash = computeArtifactHash(encoder.encode(canonicalForHash));
+
+  return Object.freeze({
+    ...draft,
+    artifactHash,
+  });
 }
 
 describe('content compiler scaffolding', () => {
@@ -116,17 +143,21 @@ describe('content compiler scaffolding', () => {
     });
 
     const pack = rehydrateNormalizedPack(serialized);
-    const result = serializeNormalizedContentPack(pack, {
-      warnings,
-      digest: pack.digest,
-      artifactHash: 'hash-123',
-    });
+    const result = serializeNormalizedContentPack(pack, { warnings });
 
-    expect(result.metadata).toEqual(pack.metadata);
-    expect(result.modules).toEqual(pack.modules);
-    expect(result.warnings).toEqual(warnings);
-    expect(result.digest).toEqual(pack.digest);
-    expect(result.artifactHash).toBe('hash-123');
+    expect(result.serialized.metadata).toEqual(pack.metadata);
+    expect(result.serialized.modules).toEqual(pack.modules);
+    expect(result.serialized.warnings).toEqual(warnings);
+    expect(result.serialized.digest).toEqual(pack.digest);
+    expect(result.serialized.artifactHash).toBe(
+      computeArtifactHash(result.hashInput),
+    );
+    expect(result.canonicalJson).toBe(
+      canonicalizeSerializedNormalizedContentPack(result.serialized),
+    );
+    expect(decoder.decode(result.hashInput)).toBe(
+      canonicalizeSerializedNormalizedContentPackForHash(result.serialized),
+    );
   });
 
   it('serializes packs emitted by the content schema without a modules bag', () => {
@@ -152,13 +183,13 @@ describe('content compiler scaffolding', () => {
     } as const;
 
     const { pack, warnings } = parseContentPack(document);
-    const serialized = serializeNormalizedContentPack(pack, { warnings });
+    const result = serializeNormalizedContentPack(pack, { warnings });
 
-    expect(serialized.metadata).toEqual(pack.metadata);
-    expect(serialized.modules.resources).toBe(pack.resources);
-    expect(serialized.modules.generators).toBe(pack.generators);
-    expect(serialized.warnings).toEqual(warnings);
-    expect(serialized.digest).toEqual(pack.digest);
+    expect(result.serialized.metadata).toEqual(pack.metadata);
+    expect(result.serialized.modules.resources).toBe(pack.resources);
+    expect(result.serialized.modules.generators).toBe(pack.generators);
+    expect(result.serialized.warnings).toEqual(warnings);
+    expect(result.serialized.digest).toEqual(pack.digest);
   });
 
   it('rehydrates serialized packs with lookup metadata and digest verification', () => {
@@ -206,8 +237,10 @@ describe('content compiler scaffolding', () => {
 
   it('throws when verifyDigest is requested without a serialized digest', () => {
     const serialized = createSerializedPack();
+    const { digest: _digest, ...rest } = serialized;
+    const withoutDigest = rest as unknown as SerializedNormalizedContentPack;
 
-    expect(() => rehydrateNormalizedPack(serialized, { verifyDigest: true })).toThrow(
+    expect(() => rehydrateNormalizedPack(withoutDigest, { verifyDigest: true })).toThrow(
       /does not include a digest/,
     );
   });
@@ -238,11 +271,19 @@ describe('content compiler scaffolding', () => {
     expect(digestA).toEqual(digestB);
     expect(digestA.hash).toMatch(/^fnv1a-[0-9a-f]{8}$/);
 
-    const bytes = new TextEncoder().encode('hello world');
+    const bytes = encoder.encode('hello world');
     const artifactHash = computeArtifactHash(bytes);
 
     expect(artifactHash).toBe(
       'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9',
     );
+
+    const serializedA = createSerializedPack({ modules: modulesA });
+    const serializedB = createSerializedPack({ modules: modulesB });
+
+    expect(serializedA.artifactHash).toEqual(serializedB.artifactHash);
+    expect(
+      canonicalizeSerializedNormalizedContentPack(serializedA),
+    ).toEqual(canonicalizeSerializedNormalizedContentPack(serializedB));
   });
 });
