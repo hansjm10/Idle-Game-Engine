@@ -3,23 +3,20 @@
 import { createContentPackValidator } from '@idle-engine/content-schema';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '../../..');
-const BASE_METADATA_PATH = path.join(
-  REPO_ROOT,
-  'packages/core/src/events/runtime-event-base-metadata.json',
-);
-const GENERATED_MODULE_PATH = path.join(
-  REPO_ROOT,
-  'packages/core/src/events/runtime-event-manifest.generated.ts',
-);
+const DEFAULT_REPO_ROOT = path.resolve(__dirname, '../../..');
+const BASE_METADATA_RELATIVE_PATH =
+  'packages/core/src/events/runtime-event-base-metadata.json';
+const GENERATED_MODULE_RELATIVE_PATH =
+  'packages/core/src/events/runtime-event-manifest.generated.ts';
 const CONTENT_PACK_FILENAME = 'content/pack.json';
 
-async function main() {
-  const baseMetadata = await loadBaseMetadata();
-  const contentDefinitions = await loadContentEventDefinitions();
+export async function buildRuntimeEventManifest(options = {}) {
+  const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
+  const baseMetadata = await loadBaseMetadata(rootDirectory);
+  const contentDefinitions = await loadContentEventDefinitions(rootDirectory);
   const manifestDefinitions = buildManifestDefinitions(
     baseMetadata,
     contentDefinitions,
@@ -37,18 +34,75 @@ async function main() {
     manifestHash,
   });
 
-  await validateContentPacks(manifestDefinitions);
+  return {
+    manifestDefinitions,
+    manifestEntries,
+    manifestHash,
+    moduleSource: fileContents,
+  };
+}
 
-  await fs.mkdir(path.dirname(GENERATED_MODULE_PATH), { recursive: true });
-  await fs.writeFile(GENERATED_MODULE_PATH, fileContents, 'utf8');
+export async function writeRuntimeEventManifest(moduleSource, options = {}) {
+  const { check = false, clean = false } = options;
+  const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
+  const targetPath = path.join(rootDirectory, GENERATED_MODULE_RELATIVE_PATH);
+  const existing = await readExistingManifest(rootDirectory);
+  const identical = existing === moduleSource;
+  const relativePath = toPosixPath(
+    path.relative(rootDirectory, targetPath),
+  );
+
+  if (check) {
+    return {
+      action: identical ? 'unchanged' : 'would-write',
+      path: relativePath,
+    };
+  }
+
+  if (identical && !clean) {
+    return {
+      action: 'unchanged',
+      path: relativePath,
+    };
+  }
+
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, moduleSource, 'utf8');
+  return {
+    action: 'written',
+    path: relativePath,
+  };
+}
+
+async function readExistingManifest(rootDirectory) {
+  const targetPath = path.join(rootDirectory, GENERATED_MODULE_RELATIVE_PATH);
+  try {
+    return await fs.readFile(targetPath, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+export async function runGenerate(options = {}) {
+  const manifest = await buildRuntimeEventManifest(options);
+  const validation = await validateContentPacks(
+    manifest.manifestDefinitions,
+    options,
+  );
+  await writeRuntimeEventManifest(manifest.moduleSource, options);
+  return {
+    ...manifest,
+    schemaOptions: validation.schemaOptions,
+  };
 }
 
 function toPosixPath(value) {
   return value.split(path.sep).join('/');
 }
 
-async function loadBaseMetadata() {
-  const raw = await fs.readFile(BASE_METADATA_PATH, 'utf8');
+async function loadBaseMetadata(rootDirectory) {
+  const metadataPath = path.join(rootDirectory, BASE_METADATA_RELATIVE_PATH);
+  const raw = await fs.readFile(metadataPath, 'utf8');
   const data = JSON.parse(raw);
   if (!Array.isArray(data)) {
     throw new Error('Base event metadata must be an array.');
@@ -96,8 +150,8 @@ async function loadBaseMetadata() {
   });
 }
 
-async function loadContentEventDefinitions() {
-  const packagesDir = path.join(REPO_ROOT, 'packages');
+async function loadContentEventDefinitions(rootDirectory) {
+  const packagesDir = path.join(rootDirectory, 'packages');
   const directories = await fs.readdir(packagesDir, { withFileTypes: true });
   const definitions = [];
   const seenEventTypes = new Map();
@@ -118,7 +172,7 @@ async function loadContentEventDefinitions() {
       manifest = JSON.parse(manifestRaw);
     } catch (error) {
       throw new Error(
-        `Failed to parse ${toPosixPath(path.relative(REPO_ROOT, manifestPath))}: ${
+        `Failed to parse ${toPosixPath(path.relative(rootDirectory, manifestPath))}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -129,6 +183,7 @@ async function loadContentEventDefinitions() {
       manifestPath,
       definitions,
       seenEventTypes,
+      rootDirectory,
     );
   }
 
@@ -176,10 +231,11 @@ async function validateContentManifest(
   manifestPath,
   definitions,
   seenEventTypes,
+  rootDirectory,
 ) {
   if (typeof manifest !== 'object' || manifest === null) {
     throw new Error(
-      `Manifest ${toPosixPath(path.relative(REPO_ROOT, manifestPath))} must export an object.`,
+      `Manifest ${toPosixPath(path.relative(rootDirectory, manifestPath))} must export an object.`,
     );
   }
 
@@ -187,13 +243,13 @@ async function validateContentManifest(
 
   if (typeof packSlug !== 'string' || packSlug.length === 0) {
     throw new Error(
-      `Manifest ${toPosixPath(path.relative(REPO_ROOT, manifestPath))} must declare a non-empty packSlug.`,
+      `Manifest ${toPosixPath(path.relative(rootDirectory, manifestPath))} must declare a non-empty packSlug.`,
     );
   }
 
   if (!Array.isArray(eventTypes)) {
     throw new Error(
-      `Manifest ${toPosixPath(path.relative(REPO_ROOT, manifestPath))} must declare an eventTypes array.`,
+      `Manifest ${toPosixPath(path.relative(rootDirectory, manifestPath))} must declare an eventTypes array.`,
     );
   }
 
@@ -204,7 +260,7 @@ async function validateContentManifest(
     if (typeof entry !== 'object' || entry === null) {
       throw new Error(
         `Event type at index ${index} in ${toPosixPath(
-          path.relative(REPO_ROOT, manifestPath),
+          path.relative(rootDirectory, manifestPath),
         )} must be an object.`,
       );
     }
@@ -214,7 +270,7 @@ async function validateContentManifest(
     if (typeof namespace !== 'string' || namespace.length === 0) {
       throw new Error(
         `Event type at index ${index} in ${toPosixPath(
-          path.relative(REPO_ROOT, manifestPath),
+          path.relative(rootDirectory, manifestPath),
         )} is missing a namespace.`,
       );
     }
@@ -222,7 +278,7 @@ async function validateContentManifest(
     if (typeof name !== 'string' || name.length === 0) {
       throw new Error(
         `Event type at index ${index} in ${toPosixPath(
-          path.relative(REPO_ROOT, manifestPath),
+          path.relative(rootDirectory, manifestPath),
         )} is missing a name.`,
       );
     }
@@ -230,7 +286,7 @@ async function validateContentManifest(
     if (!Number.isInteger(version) || version <= 0) {
       throw new Error(
         `Event type ${namespace}:${name} in ${toPosixPath(
-          path.relative(REPO_ROOT, manifestPath),
+          path.relative(rootDirectory, manifestPath),
         )} must provide a positive integer version.`,
       );
     }
@@ -238,7 +294,7 @@ async function validateContentManifest(
     if (typeof schema !== 'string' || schema.length === 0) {
       throw new Error(
         `Event type ${namespace}:${name} in ${toPosixPath(
-          path.relative(REPO_ROOT, manifestPath),
+          path.relative(rootDirectory, manifestPath),
         )} must reference a schema path.`,
       );
     }
@@ -255,7 +311,7 @@ async function validateContentManifest(
     if (!(await fileExists(schemaPath))) {
       throw new Error(
         `Schema ${toPosixPath(
-          path.relative(REPO_ROOT, schemaPath),
+          path.relative(rootDirectory, schemaPath),
         )} referenced by ${eventType} does not exist.`,
       );
     }
@@ -263,7 +319,7 @@ async function validateContentManifest(
       packSlug,
       type: eventType,
       version,
-      schema: toPosixPath(path.relative(REPO_ROOT, schemaPath)),
+      schema: toPosixPath(path.relative(rootDirectory, schemaPath)),
     });
     seenEventTypes.set(eventType, packSlug);
   }
@@ -467,8 +523,8 @@ function escapeString(value) {
     .replace(/'/g, "\\'");
 }
 
-async function loadContentPackDocuments() {
-  const packagesDir = path.join(REPO_ROOT, 'packages');
+async function loadContentPackDocuments(rootDirectory) {
+  const packagesDir = path.join(rootDirectory, 'packages');
   const directories = await fs.readdir(packagesDir, { withFileTypes: true });
   const packs = [];
 
@@ -490,7 +546,7 @@ async function loadContentPackDocuments() {
     } catch (error) {
       throw new Error(
         `Failed to parse content pack ${toPosixPath(
-          path.relative(REPO_ROOT, packPath),
+          path.relative(rootDirectory, packPath),
         )}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -551,17 +607,27 @@ function extractKnownPackEntries(documents) {
     .filter((entry) => entry !== undefined);
 }
 
-async function validateContentPacks(manifestDefinitions) {
-  const documents = await loadContentPackDocuments();
+export async function validateContentPacks(manifestDefinitions, options = {}) {
+  const { pretty = false } = options;
+  const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
+
+  const documents = await loadContentPackDocuments(rootDirectory);
+  const runtimeEventCatalogue = manifestDefinitions.map(
+    (definition) => definition.type,
+  );
+
   if (documents.length === 0) {
-    return;
+    return {
+      schemaOptions: {
+        knownPacks: [],
+        activePackIds: [],
+        runtimeEventCatalogue,
+      },
+    };
   }
 
   const knownPacks = extractKnownPackEntries(documents);
   const activePackIds = knownPacks.map((entry) => entry.id);
-  const runtimeEventCatalogue = manifestDefinitions.map(
-    (definition) => definition.type,
-  );
 
   const validator = createContentPackValidator({
     knownPacks,
@@ -574,7 +640,7 @@ async function validateContentPacks(manifestDefinitions) {
   for (const document of documents) {
     const { packPath } = document;
     const result = validator.safeParse(document.document);
-    const relativePath = toPosixPath(path.relative(REPO_ROOT, packPath));
+    const relativePath = toPosixPath(path.relative(rootDirectory, packPath));
     if (result.success) {
       const { pack, warnings } = result.data;
       const payload = {
@@ -585,9 +651,9 @@ async function validateContentPacks(manifestDefinitions) {
         warnings,
       };
       if (warnings.length > 0) {
-        console.warn(JSON.stringify(payload));
+        console.warn(formatLogPayload(payload, pretty));
       } else {
-        console.log(JSON.stringify(payload));
+        console.log(formatLogPayload(payload, pretty));
       }
       continue;
     }
@@ -598,13 +664,25 @@ async function validateContentPacks(manifestDefinitions) {
       issues: result.error.issues,
       message: result.error.message,
     };
-    console.error(JSON.stringify(payload));
+    console.error(formatLogPayload(payload, pretty));
     failures.push(payload);
   }
 
   if (failures.length > 0) {
     throw new Error('One or more content packs failed validation; see logs for details.');
   }
+
+  return {
+    schemaOptions: {
+      knownPacks,
+      activePackIds,
+      runtimeEventCatalogue,
+    },
+  };
+}
+
+function formatLogPayload(payload, pretty) {
+  return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
 async function fileExists(targetPath) {
@@ -616,7 +694,17 @@ async function fileExists(targetPath) {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack : error);
-  process.exitCode = 1;
-});
+if (isExecutedDirectly(import.meta.url)) {
+  runGenerate().catch((error) => {
+    console.error(error instanceof Error ? error.stack : error);
+    process.exitCode = 1;
+  });
+}
+
+function isExecutedDirectly(moduleUrl) {
+  const scriptPath = process.argv[1];
+  if (!scriptPath) {
+    return false;
+  }
+  return moduleUrl === pathToFileURL(scriptPath).href;
+}

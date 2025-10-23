@@ -75,6 +75,9 @@ importers:
 
   packages/content-sample:
     dependencies:
+      '@idle-engine/content-compiler':
+        specifier: workspace:*
+        version: link:../content-compiler
       '@idle-engine/content-schema':
         specifier: workspace:*
         version: link:../content-schema
@@ -293,9 +296,25 @@ importers:
 
   tools/content-schema-cli:
     dependencies:
+      '@idle-engine/content-compiler':
+        specifier: workspace:*
+        version: link:../../packages/content-compiler
       '@idle-engine/content-schema':
         specifier: workspace:*
         version: link:../../packages/content-schema
+      chokidar:
+        specifier: ^3.6.0
+        version: 3.6.0
+    devDependencies:
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../../packages/config-vitest
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/node@24.9.1)(jsdom@25.0.1)
+      vitest-llm-reporter:
+        specifier: ^1.2.0
+        version: 1.2.0
 
 packages:
 

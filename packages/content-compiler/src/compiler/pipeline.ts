@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import { parseContentPack } from '@idle-engine/content-schema';
 import type { NormalizedContentPack as SchemaNormalizedContentPack } from '@idle-engine/content-schema';
@@ -26,6 +27,7 @@ export async function compileContentPack(
   document: ContentDocument,
   options: CompileOptions,
 ): Promise<PackArtifactResult> {
+  const start = performance.now();
   const context = createCompilerContext(
     { rootDirectory: options.cwd ?? process.cwd() },
     options,
@@ -51,6 +53,7 @@ export async function compileContentPack(
       normalizedPack,
       warnings: normalizedWarnings,
       artifact,
+      durationMs: performance.now() - start,
     };
   } catch (error) {
     const failureError =
@@ -62,6 +65,7 @@ export async function compileContentPack(
       document,
       error: failureError,
       warnings: Object.freeze([]),
+      durationMs: performance.now() - start,
     };
   }
 }
@@ -347,6 +351,7 @@ function createFailureResult(
     document,
     error: new Error(message),
     warnings: Object.freeze([]),
+    durationMs: 0,
   };
 }
 

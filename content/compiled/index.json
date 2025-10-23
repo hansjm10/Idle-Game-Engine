@@ -1,0 +1,24 @@
+{
+  "packs": [
+    {
+      "slug": "sample-pack",
+      "status": "compiled",
+      "version": "0.1.0",
+      "digest": {
+        "version": 1,
+        "hash": "fnv1a-ae9b401a"
+      },
+      "artifactHash": "ef07b1adf4b4225e03e7e8bae65706a3eaeb34a515574d7ecd5f9ac54ee83589",
+      "warnings": [],
+      "dependencies": {
+        "requires": [],
+        "optional": [],
+        "conflicts": []
+      },
+      "artifacts": {
+        "json": "packages/content-sample/content/compiled/sample-pack.normalized.json",
+        "module": "packages/content-sample/src/generated/sample-pack.generated.ts"
+      }
+    }
+  ]
+}

@@ -9,3 +9,5 @@ pre-commit:
       run: pnpm test:ci
     build:
       run: pnpm build
+    generate:
+      run: pnpm generate --check

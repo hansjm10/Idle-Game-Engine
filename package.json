@@ -10,7 +10,7 @@
     "test:a11y": "pnpm --filter @idle-engine/a11y-smoke-tests run test",
     "typecheck": "pnpm -r run typecheck",
     "dev": "pnpm --filter shell-web run dev",
-    "generate": "pnpm --filter @idle-engine/content-schema-cli run generate",
+    "generate": "pnpm --filter @idle-engine/content-schema-cli run compile",
     "prepare": "lefthook install"
   },
   "devDependencies": {
