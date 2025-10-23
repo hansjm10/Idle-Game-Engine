@@ -38,16 +38,27 @@ async function main() {
     process.exit(1);
   }
 
-  const tailLine = lines[lines.length - 1];
   let parsed;
-  try {
-    parsed = JSON.parse(tailLine);
-  } catch (error) {
+  let candidate = '';
+  let lastError;
+  // Walk upward until we accumulate a full JSON block (covers compact and pretty output).
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    candidate = candidate.length > 0 ? `${lines[index]}\n${candidate}` : lines[index];
+    try {
+      parsed = JSON.parse(candidate);
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!parsed) {
     console.error(
       [
-        `Failed to parse trailing line of ${absolutePath} as JSON.`,
-        `Line: ${tailLine}`,
-        error instanceof Error ? error.message : String(error),
+        `Failed to parse trailing JSON payload in ${absolutePath}.`,
+        `Payload:`,
+        candidate,
+        lastError instanceof Error ? lastError.message : String(lastError),
       ].join('\n'),
     );
     process.exit(1);
