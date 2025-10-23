@@ -40,7 +40,11 @@ export interface SchemaContextInput {
   readonly activePackIds?: readonly string[] | ReadonlySet<string>;
 }
 
-interface PackCompileSuccess {
+interface PackResultBase {
+  readonly durationMs: number;
+}
+
+interface PackCompileSuccess extends PackResultBase {
   readonly status: 'compiled';
   readonly packSlug: string;
   readonly document: ContentDocument;
@@ -49,7 +53,7 @@ interface PackCompileSuccess {
   readonly artifact: SerializedPackArtifact;
 }
 
-interface PackCompileFailure {
+interface PackCompileFailure extends PackResultBase {
   readonly status: 'failed';
   readonly packSlug: string;
   readonly document: ContentDocument;
@@ -156,12 +160,51 @@ export interface ModuleIndexTables {
   readonly runtimeEvents: ReadonlyMap<string, number>;
 }
 
-export interface CompileLogEvent {
-  readonly name: string;
-  readonly slug: string;
-  readonly message?: string;
-  readonly timestamp: string;
+export interface CompileLogArtifactOperation {
+  readonly kind: ArtifactFileKind;
+  readonly path: string;
+  readonly action: ArtifactFileAction;
 }
+
+export type CompileLogEvent =
+  | {
+      readonly name: 'content_pack.compiled';
+      readonly slug: string;
+      readonly path: string;
+      readonly timestamp: string;
+      readonly durationMs: number;
+      readonly warnings: number;
+      readonly artifacts: readonly CompileLogArtifactOperation[];
+      readonly check: boolean;
+    }
+  | {
+      readonly name: 'content_pack.compilation_failed';
+      readonly slug: string;
+      readonly path: string;
+      readonly timestamp: string;
+      readonly durationMs: number;
+      readonly message: string;
+      readonly stack?: string;
+      readonly artifacts: readonly CompileLogArtifactOperation[];
+      readonly check: boolean;
+    }
+  | {
+      readonly name: 'content_pack.skipped';
+      readonly slug: string;
+      readonly path: string;
+      readonly timestamp: string;
+      readonly durationMs: number;
+      readonly warnings: number;
+      readonly artifacts: readonly CompileLogArtifactOperation[];
+      readonly check: boolean;
+    }
+  | {
+      readonly name: 'content_pack.pruned';
+      readonly slug: string;
+      readonly timestamp: string;
+      readonly artifacts: readonly CompileLogArtifactOperation[];
+      readonly check: boolean;
+    };
 
 export interface ArtifactWriterOptions {
   readonly check?: boolean;

@@ -136,6 +136,7 @@ describe('createWorkspaceSummary', () => {
       document: compileResults[0]!.document,
       error: new Error('normalization failed'),
       warnings: [],
+      durationMs: 0,
     };
     const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
     const artifactWrites: WorkspaceArtifactWriteResult = await writeWorkspaceArtifacts(

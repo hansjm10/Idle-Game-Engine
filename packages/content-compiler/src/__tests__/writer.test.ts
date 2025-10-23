@@ -200,6 +200,7 @@ describe('writeWorkspaceArtifacts', () => {
       document: successResult.document,
       error: new Error('schema failure'),
       warnings: [],
+      durationMs: 0,
     };
 
     const removalResult = await writeWorkspaceArtifacts(fsHandle, [failureResult]);

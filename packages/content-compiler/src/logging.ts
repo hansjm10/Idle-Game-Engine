@@ -2,8 +2,16 @@ import type { CompileLogEvent } from './types.js';
 
 export type Logger = (event: CompileLogEvent) => void;
 
-export function createLogger(): Logger {
+export interface LoggerOptions {
+  readonly pretty?: boolean;
+  readonly stream?: NodeJS.WritableStream;
+}
+
+export function createLogger(options: LoggerOptions = {}): Logger {
+  const { pretty = false, stream = process.stdout } = options;
+
   return (event) => {
-    throw new Error(`Logger not implemented. Tried to log event ${event.name}`);
+    const serialized = JSON.stringify(event, undefined, pretty ? 2 : undefined);
+    stream.write(`${serialized}\n`);
   };
 }

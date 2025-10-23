@@ -10,6 +10,7 @@
     "test:ci": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@idle-engine/content-compiler": "workspace:*",
     "@idle-engine/content-schema": "workspace:*",
     "@idle-engine/core": "workspace:*"
   },

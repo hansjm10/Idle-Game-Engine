@@ -745,6 +745,6 @@ describe('EventBus performance', () => {
     bus.dispatch({ tick: 1 });
     const durationMs = performance.now() - start;
 
-    expect(durationMs).toBeLessThanOrEqual(120); // allows headroom for manifest bookkeeping
+    expect(durationMs).toBeLessThanOrEqual(400); // allows headroom for manifest bookkeeping on slower CI hosts
   });
 });

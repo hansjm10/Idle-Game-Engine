@@ -5,6 +5,7 @@ export { createWorkspaceSummary } from './artifacts/summary.js';
 export { createLogger } from './logging.js';
 export { computeArtifactHash, computeContentDigest } from './hashing.js';
 export type {
+  CompileLogArtifactOperation,
   CompileLogEvent,
   CompileOptions,
   CompileWorkspaceOptions,
