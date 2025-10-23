@@ -181,20 +181,21 @@ async function executePipeline(
     };
   } catch (error) {
     if (error instanceof ContentPackValidationError) {
+      const checkMode = options.check === true;
+      const cleanMode = options.clean === true;
       try {
         const summaryOutcome = await persistValidationFailureSummary({
           failures: error.failures,
           rootDirectory: workspaceRoot,
           summaryOverride: options.summary,
-          check: options.check === true,
-          clean: options.clean === true,
+          clean: cleanMode,
         });
+        const summaryDrift =
+          checkMode && summaryOutcome.action !== 'unchanged';
 
         return {
           success: false,
-          drift:
-            options.check === true &&
-            summaryOutcome.action === 'would-write',
+          drift: summaryDrift,
           runSummary: createValidationFailureRunSummary({
             failures: error.failures,
             summaryAction: summaryOutcome.action,
@@ -424,7 +425,6 @@ async function persistValidationFailureSummary({
   failures,
   rootDirectory,
   summaryOverride,
-  check,
   clean,
 }) {
   const summary = createValidationFailureSummary(failures);
@@ -436,7 +436,7 @@ async function persistValidationFailureSummary({
     absoluteSummaryPath,
     summary,
     {
-      check,
+      check: false,
       clean,
     },
   );

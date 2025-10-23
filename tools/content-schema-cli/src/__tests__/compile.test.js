@@ -144,6 +144,50 @@ describe('content schema CLI compile command', () => {
     }
   });
 
+  it('writes a failure summary in check mode', async () => {
+    const workspace = await createWorkspace([
+      {
+        slug: 'invalid-pack',
+        overrides: {
+          resources: null,
+        },
+      },
+    ]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--check'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const failureEvent = events.find(
+        (entry) =>
+          entry.event === 'content_pack.validation_failed' &&
+          entry.packSlug === 'invalid-pack',
+      );
+      expect(failureEvent).toBeDefined();
+      expect(events.some((entry) => entry.name === 'content_pack.compiled')).toBe(
+        false,
+      );
+
+      const summaryPath = path.join(
+        workspace.root,
+        'content/compiled/index.json',
+      );
+      const summaryRaw = await fs.readFile(summaryPath, 'utf8');
+      const summary = JSON.parse(summaryRaw);
+      const summaryEntry = summary.packs.find(
+        (pack) => pack.slug === 'invalid-pack',
+      );
+      expect(summaryEntry?.status).toBe('failed');
+      expect(typeof summaryEntry?.error).toBe('string');
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   it('reports drift in check mode', async () => {
     const workspace = await createWorkspace([
       { slug: 'beta-pack' },
