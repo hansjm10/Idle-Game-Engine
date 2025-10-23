@@ -16,7 +16,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 - **Deterministic enforcement:** Every `pnpm generate` run must validate all discovered packs before emitting runtime artifacts, aborting on schema failures to protect the deterministic runtime loop (`docs/idle-engine-design.md` §6 & §10).
 - **Actionable diagnostics:** Emit machine-readable JSON events (`content_pack.*`) that surface pack slug, file path, warning counts, and blocker details so CI and humans can triage quickly without parsing prose logs.
 - **Workflow integration:** Support one-shot, `--check`, and `--watch` modes with consistent exit codes, clean handling of drift, and optional pretty-printing to keep the developer experience aligned with other repo tooling.
-- **Summary visibility:** Persist a workspace-level summary (`content/compiled/index.json`) that records validation and compilation outcomes, enabling downstream scripts to detect drift without rerunning the pipeline.
+- **Summary visibility:** Persist a workspace-level summary (`content/compiled/index.json`) that records validation and compilation outcomes—even when validation aborts compilation—so downstream scripts never read stale success snapshots.
 - **Build hygiene:** Automatically build `@idle-engine/content-compiler` on demand, skip redundant rewrites, and prune stale artifacts so committed outputs always match authored packs.
 
 ## 3. Non-Goals
@@ -39,7 +39,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 
 ### 5.1 Functional
 
-- Discover all packs under `packages/**/content/pack.json` (JSON and JSON5) and validate them via `createContentPackValidator`.
+- Discover all packs under `packages/**/content/pack.(json|json5)` and validate them via `createContentPackValidator`, parsing JSON5 files with the JSON5 loader so comment/relaxed syntax remains supported.
 - Respect pack dependency metadata (`metadata.dependencies.requires`) so validation and compilation occur in a topologically sorted order.
 - Emit structured logs for validation successes (`content_pack.validated`) and failures (`content_pack.validation_failed`), including warning payloads.
 - Abort the command before compilation when any validation failure occurs; `process.exitCode` must be non-zero.
@@ -75,17 +75,19 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 3. **Build runtime event manifest** via `buildRuntimeEventManifest`, capturing the generated source, manifest entries, and schema options (`manifestDefinitions`).
 4. **Validate content packs** by calling `validateContentPacks(manifest.manifestDefinitions, options)`. The function:
    - Discovers pack documents.
+   - Supports both `pack.json` and `pack.json5`, using JSON.parse for strict JSON files and the JSON5 parser for relaxed syntax.
    - Builds a validator with `createContentPackValidator`.
    - Emits a `content_pack.validated` log per pack, including warnings when present.
    - Emits `content_pack.validation_failed` logs for schema errors and throws when any failure occurs.
-   - Returns schema options to seed the compiler (known packs, active IDs, runtime event catalogue).
+   - Serializes a failure summary to the workspace summary path before bubbling the error so consumers observe the latest validation status.
+   - Returns schema options to seed the compiler (known packs, active IDs, runtime event catalogue) when validation succeeds.
 5. **Write manifest** using `writeRuntimeEventManifest`, respecting `check` and `clean`.
 6. **Compile packs** by calling `compileWorkspacePacks` with the workspace filesystem implementation and schema options from step 4. The compiler:
    - Topologically sorts packs based on declared dependencies.
    - Serializes normalized packs to deterministic JSON and generated TypeScript modules.
    - Produces artifact operations (written, deleted, unchanged) for per-pack outputs and the workspace summary.
 7. **Emit compiler logs** using the logger returned by `loadContentCompiler().createLogger`, producing `content_pack.compiled`, `content_pack.skipped`, `content_pack.compilation_failed`, and `content_pack.pruned` events.
-8. **Summarise run** by merging manifest and compiler results into a structured summary (pack totals, artifact actions, changed pack slugs). Watch mode emits an additional `watch.run` event with duration and trigger metadata.
+8. **Summarise run** by merging manifest and compiler results into a structured summary (pack totals, artifact actions, changed pack slugs). When validation fails, write a structured failure summary that captures the offending packs and skip compilation details. Watch mode emits an additional `watch.run` event with duration and trigger metadata.
 9. **Set exit codes**: any validation failure, compiler failure, or drift in `--check` mode results in a non-zero exit status.
 
 ### 6.3 Structured Logging & Telemetry
@@ -93,7 +95,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 - Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with `docs/idle-engine-design.md` §10 logging guidance).
 - Validation events include:
   - `content_pack.validated`: `{ event, packSlug, path, warningCount, warnings }`.
-  - `content_pack.validation_failed`: `{ event, path, issues, message }`.
+  - `content_pack.validation_failed`: `{ event, packSlug, packVersion, path, issues, message }` (with `packSlug`/`packVersion` populated when metadata can be read from the document).
 - Compiler events include:
   - `content_pack.compiled`: `{ name, slug, path, durationMs, warnings, artifacts, check }`.
   - `content_pack.skipped`: same shape but indicates all artifacts unchanged during `--check`.
@@ -101,6 +103,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
   - `content_pack.pruned`: emitted when stale artifacts are removed.
 - Watch loop emits `watch.status`, `watch.hint`, and `watch.run` events summarising triggers and run outcomes.
 - All log emitters accept `pretty` to switch between single-line and indented JSON without changing field names.
+- Unexpected runtime errors surface as `cli.unhandled_error` events `{ event, message, stack, fatal, timestamp }`, keeping console output machine-readable while preserving stack traces.
 
 ### 6.4 Summary Artifact & Drift Detection
 
@@ -126,10 +129,10 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 
 ### 6.6 Failure Handling & Exit Codes
 
-- Validation errors throw before compilation, ensuring stale artifacts are not re-emitted when packs are invalid.
+- Validation errors persist a failure summary before throwing, ensuring stale artifacts are not re-emitted when packs are invalid and downstream tooling observes the failure state.
 - Compiler failures for specific packs do not abort the entire run; they mark the pack as failed, emit diagnostics, and continue compiling independent packs. Exit code remains non-zero when any pack fails.
 - When `--check` is passed, drift (manifest or artifacts) sets `process.exitCode = 1` even if validation succeeds.
-- Unexpected exceptions propagate to the top-level handler, logging the stack trace and marking the run as failed.
+- Unexpected exceptions emit a `cli.unhandled_error` event (carrying message and stack) before setting a non-zero exit code, keeping all console output structured.
 
 ### 6.7 Integration Points
 
@@ -144,11 +147,14 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
    - Import and invoke `validateContentPacks` from the compile entrypoint.
    - Plumb schema options into the compiler call.
    - Ensure manifest writing respects validation outcomes (skip when validation fails).
+   - Extend pack discovery to read both `pack.json` and `pack.json5`, falling back to the JSON5 parser when relaxed syntax is detected.
 2. **Logging Enhancements**
    - Emit structured validation and compiler events with clear fields.
+   - Include pack identifiers on validation failures and surface fatal errors via a `cli.unhandled_error` JSON payload instead of raw stack traces.
    - Add watch-mode status logs and usage text updates.
 3. **Summary Output & Drift Detection**
    - Persist deterministic summary JSON via the compiler.
+   - Persist a validation-failure summary before exiting so consumers see the most recent run state.
    - Update exit code logic for `--check` drift handling.
 4. **Documentation & Tests**
    - Add Vitest coverage around the CLI argument parser, validation failure flows, watch trigger aggregation, and summary generation.
@@ -160,7 +166,9 @@ Delivery order: steps 1 → 3 must complete before CI accepts the change; step 4
 
 - **Unit tests** (`tools/content-schema-cli/src/__tests__/compile.test.js`):
   - Validation success and failure scenarios, asserting exit codes and emitted logs.
+  - Pack discovery covering both `pack.json` and `pack.json5` inputs, ensuring JSON5 parsing works and surfaces diagnostics.
   - `--check` drift detection for manifest and compiler artifacts.
+  - Top-level error handling emits `cli.unhandled_error` JSON logs instead of raw stack traces.
   - Watch mode trigger summarisation and repeated failure handling.
 - **Integration tests** in `packages/content-compiler`: verify schema options are honoured and dependency ordering works.
 - **Manual verification**:
@@ -182,4 +190,3 @@ Delivery order: steps 1 → 3 must complete before CI accepts the change; step 4
 - Do we need a standalone `validate` subcommand for quick checks without manifest/compile work, or is the combined pipeline sufficient?
 - How should we expose the summary JSON schema to other tooling (publish types or JSON Schema artifact)?
 - When content packs specify optional digests or compatibility metadata, should validation enforce semantic version ranges beyond basic format checks (ties to Issue #138)?
-
