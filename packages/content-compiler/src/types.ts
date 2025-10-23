@@ -263,3 +263,121 @@ export interface WorkspaceSummaryPack {
 export interface WorkspaceSummary {
   readonly packs: readonly WorkspaceSummaryPack[];
 }
+
+export type ContentValidationLogEvent =
+  | ContentValidationValidatedEvent
+  | ContentValidationFailedEvent;
+
+export interface ContentValidationValidatedEvent {
+  readonly event: 'content_pack.validated';
+  readonly packSlug: string;
+  readonly packVersion?: string;
+  readonly path: string;
+  readonly warningCount: number;
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+}
+
+export interface ContentValidationFailedEvent {
+  readonly event: 'content_pack.validation_failed';
+  readonly packSlug?: string;
+  readonly packVersion?: string;
+  readonly path: string;
+  readonly message: string;
+  readonly issues?: readonly unknown[];
+}
+
+export type RuntimeManifestLogEvent =
+  | RuntimeManifestWrittenEvent
+  | RuntimeManifestUnchangedEvent
+  | RuntimeManifestDriftEvent;
+
+interface RuntimeManifestBaseEvent {
+  readonly path: string;
+  readonly action: 'written' | 'unchanged' | 'would-write';
+  readonly check: boolean;
+  readonly timestamp: string;
+}
+
+export interface RuntimeManifestWrittenEvent extends RuntimeManifestBaseEvent {
+  readonly event: 'runtime_manifest.written';
+  readonly action: 'written';
+}
+
+export interface RuntimeManifestUnchangedEvent extends RuntimeManifestBaseEvent {
+  readonly event: 'runtime_manifest.unchanged';
+  readonly action: 'unchanged';
+}
+
+export interface RuntimeManifestDriftEvent extends RuntimeManifestBaseEvent {
+  readonly event: 'runtime_manifest.drift';
+  readonly action: 'would-write';
+}
+
+export interface WatchStatusLogEvent {
+  readonly event: 'watch.status';
+  readonly message: string;
+  readonly timestamp: string;
+  readonly rootDirectory?: string;
+}
+
+export interface WatchHintLogEvent {
+  readonly event: 'watch.hint';
+  readonly message: string;
+  readonly timestamp: string;
+  readonly exit: string;
+}
+
+export interface WatchRunLogEvent {
+  readonly event: 'watch.run';
+  readonly status: 'success' | 'failed' | 'skipped';
+  readonly iteration: number;
+  readonly timestamp: string;
+  readonly durationMs: number;
+  readonly triggers?: WatchTriggerSummary;
+  readonly packs?: WatchRunPackSummary;
+  readonly artifacts?: WatchRunArtifactSummary;
+  readonly changedPacks?: readonly string[];
+  readonly failedPacks?: readonly string[];
+}
+
+export interface WatchTriggerSummary {
+  readonly count: number;
+  readonly limit: number;
+  readonly events?: Record<string, number>;
+  readonly paths?: readonly string[];
+  readonly morePaths?: number;
+}
+
+export interface WatchRunPackSummary {
+  readonly total: number;
+  readonly compiled: number;
+  readonly failed: number;
+  readonly withWarnings: number;
+  readonly changed: number;
+}
+
+export interface WatchRunArtifactSummary {
+  readonly total: number;
+  readonly changed: number;
+  readonly summaryAction: string;
+  readonly manifestAction: string;
+  readonly byAction: Record<string, number>;
+}
+
+export interface CliUnhandledErrorEvent {
+  readonly event: 'cli.unhandled_error';
+  readonly message: string;
+  readonly timestamp: string;
+  readonly fatal: boolean;
+  readonly name?: string;
+  readonly stack?: string;
+}
+
+export type ContentCliLogEvent =
+  | ContentValidationLogEvent
+  | RuntimeManifestLogEvent
+  | WatchStatusLogEvent
+  | WatchHintLogEvent
+  | WatchRunLogEvent
+  | CliUnhandledErrorEvent
+  | CompileLogEvent;

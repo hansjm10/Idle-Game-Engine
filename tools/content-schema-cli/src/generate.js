@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createContentPackValidator } from '@idle-engine/content-schema';
+import JSON5 from 'json5';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -11,7 +12,7 @@ const BASE_METADATA_RELATIVE_PATH =
   'packages/core/src/events/runtime-event-base-metadata.json';
 const GENERATED_MODULE_RELATIVE_PATH =
   'packages/core/src/events/runtime-event-manifest.generated.ts';
-const CONTENT_PACK_FILENAME = 'content/pack.json';
+const CONTENT_PACK_FILENAMES = ['content/pack.json', 'content/pack.json5'];
 
 export async function buildRuntimeEventManifest(options = {}) {
   const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
@@ -526,6 +527,7 @@ function escapeString(value) {
 async function loadContentPackDocuments(rootDirectory) {
   const packagesDir = path.join(rootDirectory, 'packages');
   const directories = await fs.readdir(packagesDir, { withFileTypes: true });
+  directories.sort((left, right) => left.name.localeCompare(right.name));
   const packs = [];
 
   for (const entry of directories) {
@@ -534,37 +536,79 @@ async function loadContentPackDocuments(rootDirectory) {
     }
 
     const packageRoot = path.join(packagesDir, entry.name);
-    const packPath = path.join(packageRoot, CONTENT_PACK_FILENAME);
-    if (!(await fileExists(packPath))) {
+    const packPath = await findContentPackPath(packageRoot);
+    if (!packPath) {
       continue;
     }
 
-    const raw = await fs.readFile(packPath, 'utf8');
-    let parsed;
     try {
-      parsed = JSON.parse(raw);
+      const document = await readContentPackDocument(packPath);
+      packs.push({
+        status: 'ok',
+        packageRoot,
+        packPath,
+        document,
+        metadata: extractDocumentMetadata(document),
+      });
     } catch (error) {
-      throw new Error(
-        `Failed to parse content pack ${toPosixPath(
-          path.relative(rootDirectory, packPath),
-        )}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      packs.push({
+        status: 'error',
+        packageRoot,
+        packPath,
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
     }
-
-    packs.push({
-      packageRoot,
-      packPath,
-      document: parsed,
-    });
   }
 
   return packs;
 }
 
+async function findContentPackPath(packageRoot) {
+  for (const relativePath of CONTENT_PACK_FILENAMES) {
+    const candidate = path.join(packageRoot, relativePath);
+    if (await fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+async function readContentPackDocument(packPath) {
+  const raw = await fs.readFile(packPath, 'utf8');
+  if (packPath.toLowerCase().endsWith('.json5')) {
+    return JSON5.parse(raw);
+  }
+  return JSON.parse(raw);
+}
+
+function extractDocumentMetadata(document) {
+  const metadata = document?.metadata;
+  if (typeof metadata !== 'object' || metadata === null) {
+    return {
+      packSlug: undefined,
+      packVersion: undefined,
+    };
+  }
+
+  const packSlug =
+    typeof metadata.id === 'string' && metadata.id.length > 0
+      ? metadata.id
+      : undefined;
+  const packVersion =
+    typeof metadata.version === 'string' && metadata.version.length > 0
+      ? metadata.version
+      : undefined;
+
+  return {
+    packSlug,
+    packVersion,
+  };
+}
+
 function extractKnownPackEntries(documents) {
   return documents
-    .map((document) => {
-      const metadata = document?.document?.metadata;
+    .map((entry) => {
+      const metadata = entry?.document?.metadata;
       if (typeof metadata !== 'object' || metadata === null) {
         return undefined;
       }
@@ -577,11 +621,11 @@ function extractKnownPackEntries(documents) {
       const requires =
         Array.isArray(dependencies?.requires) && dependencies.requires.length > 0
           ? dependencies.requires
-              .map((entry) => {
-                if (typeof entry !== 'object' || entry === null) {
+              .map((dependency) => {
+                if (typeof dependency !== 'object' || dependency === null) {
                   return undefined;
                 }
-                const { packId, version: requirementVersion } = entry;
+                const { packId, version: requirementVersion } = dependency;
                 if (typeof packId !== 'string') {
                   return undefined;
                 }
@@ -607,45 +651,66 @@ function extractKnownPackEntries(documents) {
     .filter((entry) => entry !== undefined);
 }
 
+export class ContentPackValidationError extends Error {
+  constructor(message, { failures }) {
+    super(message);
+    this.name = 'ContentPackValidationError';
+    this.failures = Object.freeze([...failures]);
+  }
+}
+
 export async function validateContentPacks(manifestDefinitions, options = {}) {
   const { pretty = false } = options;
   const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
 
   const documents = await loadContentPackDocuments(rootDirectory);
+  const validDocuments = documents.filter((entry) => entry.status === 'ok');
   const runtimeEventCatalogue = manifestDefinitions.map(
     (definition) => definition.type,
   );
-
-  if (documents.length === 0) {
-    return {
-      schemaOptions: {
-        knownPacks: [],
-        activePackIds: [],
-        runtimeEventCatalogue,
-      },
-    };
-  }
-
-  const knownPacks = extractKnownPackEntries(documents);
+  const knownPacks = extractKnownPackEntries(validDocuments);
   const activePackIds = knownPacks.map((entry) => entry.id);
 
-  const validator = createContentPackValidator({
+  const schemaOptions = {
     knownPacks,
     activePackIds,
     runtimeEventCatalogue,
-  });
+  };
 
+  if (validDocuments.length === 0 && documents.length === 0) {
+    return {
+      schemaOptions,
+    };
+  }
+
+  const validator = createContentPackValidator(schemaOptions);
   const failures = [];
 
-  for (const document of documents) {
-    const { packPath } = document;
-    const result = validator.safeParse(document.document);
-    const relativePath = toPosixPath(path.relative(rootDirectory, packPath));
+  for (const entry of documents) {
+    const relativePath = toPosixPath(
+      path.relative(rootDirectory, entry.packPath),
+    );
+
+    if (entry.status === 'error') {
+      const failurePayload = createValidationFailurePayload({
+        relativePath,
+        metadata: undefined,
+        packageRoot: entry.packageRoot,
+        message: entry.error.message,
+        issues: undefined,
+      });
+      console.error(formatLogPayload(failurePayload.log, pretty));
+      failures.push(failurePayload.summary);
+      continue;
+    }
+
+    const result = validator.safeParse(entry.document);
     if (result.success) {
       const { pack, warnings } = result.data;
       const payload = {
         event: 'content_pack.validated',
         packSlug: pack.metadata.id,
+        packVersion: pack.metadata.version,
         path: relativePath,
         warningCount: warnings.length,
         warnings,
@@ -658,31 +723,77 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
       continue;
     }
 
-    const payload = {
-      event: 'content_pack.validation_failed',
-      path: relativePath,
-      issues: result.error.issues,
+    const failurePayload = createValidationFailurePayload({
+      relativePath,
+      metadata: entry.metadata,
+      packageRoot: entry.packageRoot,
       message: result.error.message,
-    };
-    console.error(formatLogPayload(payload, pretty));
-    failures.push(payload);
+      issues: result.error.issues,
+    });
+    console.error(formatLogPayload(failurePayload.log, pretty));
+    failures.push(failurePayload.summary);
   }
 
   if (failures.length > 0) {
-    throw new Error('One or more content packs failed validation; see logs for details.');
+    throw new ContentPackValidationError(
+      'One or more content packs failed validation; see logs for details.',
+      { failures },
+    );
   }
 
   return {
-    schemaOptions: {
-      knownPacks,
-      activePackIds,
-      runtimeEventCatalogue,
-    },
+    schemaOptions,
   };
 }
 
 function formatLogPayload(payload, pretty) {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
+}
+
+function createValidationFailurePayload({
+  relativePath,
+  metadata,
+  packageRoot,
+  message,
+  issues,
+}) {
+  const packSlug =
+    metadata?.packSlug ?? inferPackSlugFromPackageRoot(packageRoot);
+  const packVersion = metadata?.packVersion;
+
+  const logPayload = {
+    event: 'content_pack.validation_failed',
+    path: relativePath,
+    message,
+    ...(packSlug ? { packSlug } : {}),
+    ...(typeof packVersion === 'string' ? { packVersion } : {}),
+    ...(issues !== undefined ? { issues } : {}),
+  };
+
+  const summaryEntry = {
+    packSlug: packSlug ?? inferPackSlugFromRelativePath(relativePath),
+    ...(packVersion ? { packVersion } : {}),
+    path: relativePath,
+    message,
+    ...(issues !== undefined ? { issues } : {}),
+  };
+
+  return {
+    log: logPayload,
+    summary: summaryEntry,
+  };
+}
+
+function inferPackSlugFromPackageRoot(packageRoot) {
+  return path.basename(packageRoot);
+}
+
+function inferPackSlugFromRelativePath(relativePath) {
+  const segments = relativePath.split('/');
+  if (segments.length >= 3) {
+    return segments[1];
+  }
+  return relativePath;
 }
 
 async function fileExists(targetPath) {
@@ -696,7 +807,7 @@ async function fileExists(targetPath) {
 
 if (isExecutedDirectly(import.meta.url)) {
   runGenerate().catch((error) => {
-    console.error(error instanceof Error ? error.stack : error);
+    logUnhandledError(error, false);
     process.exitCode = 1;
   });
 }
@@ -707,4 +818,33 @@ function isExecutedDirectly(moduleUrl) {
     return false;
   }
   return moduleUrl === pathToFileURL(scriptPath).href;
+}
+
+function logUnhandledError(error, pretty) {
+  const normalized = normalizeError(error);
+  const payload = {
+    event: 'cli.unhandled_error',
+    message: normalized.message,
+    timestamp: new Date().toISOString(),
+    fatal: true,
+    ...(normalized.name ? { name: normalized.name } : {}),
+    ...(normalized.stack ? { stack: normalized.stack } : {}),
+  };
+  console.error(formatLogPayload(payload, pretty));
+}
+
+function normalizeError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message ?? String(error),
+      stack: error.stack,
+    };
+  }
+  const message = String(error);
+  return {
+    name: undefined,
+    message,
+    stack: undefined,
+  };
 }
