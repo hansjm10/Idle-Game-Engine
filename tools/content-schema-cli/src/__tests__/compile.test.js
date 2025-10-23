@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import readline from 'node:readline';
 
 import { describe, expect, it } from 'vitest';
 
@@ -158,6 +159,89 @@ describe('content schema CLI compile command', () => {
       await workspace.cleanup();
     }
   });
+
+  it('emits watch run events for changes, skips, and failures', async () => {
+    const packSlug = 'watch-pack';
+    const workspace = await createWorkspace([{ slug: packSlug }]);
+    const packPath = path.join(
+      workspace.root,
+      'packages',
+      packSlug,
+      'content/pack.json',
+    );
+
+    const watchProcess = startWatchCli(
+      ['--cwd', workspace.root, '--watch'],
+      { cwd: workspace.root },
+    );
+
+    try {
+      await watchProcess.events.waitForEvent(
+        (event) => event.event === 'watch.status',
+      );
+      await watchProcess.events.waitForEvent(
+        (event) => event.event === 'watch.hint',
+      );
+      await watchProcess.events.waitForEvent(
+        (event) =>
+          event.name === 'content_pack.compiled' && event.slug === packSlug,
+      );
+
+      await sleep(200);
+      await bumpPackVersion(workspace.root, packSlug, '0.0.2');
+
+      const successRun = await watchProcess.events.waitForEvent(
+        (event) =>
+          event.event === 'watch.run' && event.status === 'success',
+      );
+      expect(successRun.changedPacks).toEqual(
+        expect.arrayContaining([packSlug]),
+      );
+      expect(successRun.artifacts?.changed ?? 0).toBeGreaterThan(0);
+      expect(successRun.triggers?.count ?? 0).toBeGreaterThan(0);
+
+      await sleep(200);
+      await rewritePackWithoutChanges(packPath);
+
+      const skippedRun = await watchProcess.events.waitForEvent(
+        (event) =>
+          event.event === 'watch.run' && event.status === 'skipped',
+      );
+      expect(skippedRun.artifacts?.changed ?? 0).toBe(0);
+      expect(skippedRun.triggers?.count ?? 0).toBeGreaterThan(0);
+
+      await sleep(200);
+      await setMissingDependency(workspace.root, packSlug, 'missing-pack');
+
+      await watchProcess.events.waitForEvent(
+        (event) =>
+          event.name === 'content_pack.compilation_failed' &&
+          event.slug === packSlug,
+      );
+
+      const failureRun = await watchProcess.events.waitForEvent(
+        (event) =>
+          event.event === 'watch.run' && event.status === 'failed',
+      );
+      expect(failureRun.failedPacks).toEqual(
+        expect.arrayContaining([packSlug]),
+      );
+      expect(failureRun.triggers?.count ?? 0).toBeGreaterThan(0);
+    } catch (error) {
+      const history = watchProcess.events.history();
+      const augmented = new Error(
+        [
+          error instanceof Error ? error.message : String(error),
+          `History: ${JSON.stringify(history, null, 2)}`,
+        ].join('\n\n'),
+      );
+      augmented.stack = error instanceof Error ? error.stack : augmented.stack;
+      throw augmented;
+    } finally {
+      await watchProcess.stop();
+      await workspace.cleanup();
+    }
+  }, 20000);
 });
 
 function createPackDocument(id, overrides = {}) {
@@ -319,10 +403,144 @@ async function writeJson(filePath, data) {
   await fs.writeFile(`${filePath}`, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function bumpPackVersion(root, slug, nextVersion) {
   const packPath = path.join(root, 'packages', slug, 'content/pack.json');
   const raw = await fs.readFile(packPath, 'utf8');
   const parsed = JSON.parse(raw);
   parsed.metadata.version = nextVersion;
+  await writeJson(packPath, parsed);
+}
+
+function startWatchCli(args, options) {
+  const child = spawn(
+    process.execPath,
+    [CLI_PATH, ...args],
+    {
+      cwd: options.cwd,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+
+  const stdoutInterface = readline.createInterface({ input: child.stdout });
+  const stderrInterface = readline.createInterface({ input: child.stderr });
+  const events = createEventCollector();
+
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      events.push(parsed);
+    } catch {
+      // Ignore non-JSON lines.
+    }
+  };
+
+  stdoutInterface.on('line', handleLine);
+  stderrInterface.on('line', handleLine);
+
+  const cleanup = () => {
+    stdoutInterface.off('line', handleLine);
+    stderrInterface.off('line', handleLine);
+    stdoutInterface.close();
+    stderrInterface.close();
+  };
+
+  child.once('exit', () => {
+    cleanup();
+  });
+  child.once('error', () => {
+    cleanup();
+  });
+
+  return {
+    child,
+    events,
+    async stop(signal = 'SIGINT') {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill(signal);
+        await new Promise((resolve) => {
+          child.once('exit', () => resolve());
+        });
+      }
+    },
+  };
+}
+
+function createEventCollector() {
+  const bufferedEvents = [];
+  const waiters = [];
+  const history = [];
+
+  return {
+    push(event) {
+      history.push(event);
+      for (let index = 0; index < waiters.length; index += 1) {
+        const waiter = waiters[index];
+        if (waiter.matcher(event)) {
+          waiters.splice(index, 1);
+          waiter.resolve(event);
+          return;
+        }
+      }
+      bufferedEvents.push(event);
+    },
+    waitForEvent(matcher, timeoutMs = 10000) {
+      const existingIndex = bufferedEvents.findIndex(matcher);
+      if (existingIndex !== -1) {
+        const [event] = bufferedEvents.splice(existingIndex, 1);
+        return Promise.resolve(event);
+      }
+
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          matcher,
+          resolve: (event) => {
+            clearTimeout(timeoutId);
+            resolve(event);
+          },
+        };
+        const timeoutId = setTimeout(() => {
+          const waiterIndex = waiters.indexOf(waiter);
+          if (waiterIndex !== -1) {
+            waiters.splice(waiterIndex, 1);
+          }
+          reject(
+            new Error(
+              `Timed out after ${timeoutMs}ms waiting for matching event.`,
+            ),
+          );
+        }, timeoutMs);
+        waiters.push(waiter);
+      });
+    },
+    history() {
+      return history.slice();
+    },
+  };
+}
+
+async function rewritePackWithoutChanges(packPath) {
+  const raw = await fs.readFile(packPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  await writeJson(packPath, parsed);
+}
+
+async function setMissingDependency(root, slug, missingSlug) {
+  const packPath = path.join(root, 'packages', slug, 'content/pack.json');
+  const raw = await fs.readFile(packPath, 'utf8');
+  const parsed = JSON.parse(raw);
+  parsed.metadata.dependencies = {
+    requires: [{ packId: missingSlug }],
+  };
   await writeJson(packPath, parsed);
 }

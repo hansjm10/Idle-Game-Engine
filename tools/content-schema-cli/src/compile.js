@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import chokidar from 'chokidar';
@@ -27,6 +28,8 @@ const WATCH_IGNORED = [
   '**/node_modules/**',
 ];
 const DEBOUNCE_MS = 150;
+const WATCH_EVENT_TYPES = new Set(['add', 'change', 'unlink']);
+const MAX_TRIGGER_PATHS = 10;
 
 void run().catch((error) => {
   console.error(error instanceof Error ? error.stack ?? error.message : error);
@@ -57,13 +60,26 @@ async function run() {
   });
   const logger = createLogger({ pretty: options.pretty });
 
-  const execute = async () => {
+  const execute = async (context = undefined) => {
+    const startTime = performance.now();
     const outcome = await executePipeline(
       options,
       logger,
       workspaceRoot,
       compileWorkspacePacks,
     );
+    const durationMs = performance.now() - startTime;
+
+    if (options.watch && context?.mode === 'watch') {
+      emitWatchRunEvent({
+        outcome,
+        durationMs,
+        pretty: options.pretty,
+        iteration: context.iteration,
+        triggers: context.triggers ?? [],
+      });
+    }
+
     if (!options.watch) {
       process.exitCode = outcome.success ? 0 : 1;
     } else if (!outcome.success) {
@@ -90,6 +106,7 @@ async function run() {
       workspaceRoot,
     ),
   );
+  console.log(formatWatchHintLog(options.pretty));
   await startWatch(options, execute, workspaceRoot);
 }
 
@@ -144,12 +161,17 @@ async function executePipeline(
     return {
       success: !hasFailures && !hasDrift,
       drift: hasDrift,
+      runSummary: createRunSummary({
+        compileResult,
+        manifestAction: manifestResult.action,
+      }),
     };
   } catch (error) {
     console.error(error instanceof Error ? error.stack ?? error.message : error);
     return {
       success: false,
       drift: false,
+      runSummary: undefined,
     };
   }
 }
@@ -249,6 +271,86 @@ function emitCompileEvents({ compileResult, logger, check }) {
   }
 }
 
+function createRunSummary({ compileResult, manifestAction }) {
+  const actionCounts = Object.create(null);
+  const changedPacks = new Set();
+
+  for (const operation of compileResult.artifacts.operations) {
+    actionCounts[operation.action] =
+      (actionCounts[operation.action] ?? 0) + 1;
+
+    if (isChangeAction(operation.action)) {
+      changedPacks.add(operation.slug);
+    }
+  }
+
+  const sortedActionEntries = Object.entries(actionCounts).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const artifactActionsByType = Object.fromEntries(sortedActionEntries);
+  const changedActionCount =
+    (artifactActionsByType.written ?? 0) +
+    (artifactActionsByType.deleted ?? 0) +
+    (artifactActionsByType['would-write'] ?? 0) +
+    (artifactActionsByType['would-delete'] ?? 0);
+
+  let compiledCount = 0;
+  let failedCount = 0;
+  let packsWithWarnings = 0;
+  const failedPacks = [];
+
+  for (const packResult of compileResult.packs) {
+    if (packResult.status === 'compiled') {
+      compiledCount += 1;
+      if (packResult.warnings.length > 0) {
+        packsWithWarnings += 1;
+      }
+    } else {
+      failedCount += 1;
+      failedPacks.push(packResult.packSlug);
+    }
+  }
+
+  failedPacks.sort();
+
+  const summaryAction =
+    typeof compileResult.summaryAction === 'string'
+      ? compileResult.summaryAction
+      : 'unchanged';
+  const summaryChanged =
+    summaryAction === 'written' || summaryAction === 'would-write';
+  const manifestChanged =
+    manifestAction === 'written' || manifestAction === 'would-write';
+
+  return {
+    packTotals: {
+      total: compileResult.packs.length,
+      compiled: compiledCount,
+      failed: failedCount,
+      withWarnings: packsWithWarnings,
+    },
+    artifactActions: {
+      total: compileResult.artifacts.operations.length,
+      changed: changedActionCount,
+      byAction: artifactActionsByType,
+    },
+    changedPacks: Array.from(changedPacks).sort(),
+    failedPacks,
+    hasChanges: changedActionCount > 0 || summaryChanged || manifestChanged,
+    summaryAction,
+    manifestAction,
+  };
+}
+
+function isChangeAction(action) {
+  return (
+    action === 'written' ||
+    action === 'deleted' ||
+    action === 'would-write' ||
+    action === 'would-delete'
+  );
+}
+
 function formatOperation(operation) {
   return {
     kind: operation.kind,
@@ -275,7 +377,7 @@ function logManifestResult(result, options) {
   console.log(serialized);
 }
 
-async function startWatch(options, execute, workspaceRoot) {
+async function startWatch(_options, execute, workspaceRoot) {
   const watcher = chokidar.watch(WATCH_GLOBS, {
     cwd: workspaceRoot,
     ignoreInitial: true,
@@ -289,6 +391,8 @@ async function startWatch(options, execute, workspaceRoot) {
   let timeoutId;
   let running = false;
   let queued = false;
+  let iteration = 0;
+  const pendingTriggers = [];
 
   const schedule = () => {
     queued = true;
@@ -302,20 +406,34 @@ async function startWatch(options, execute, workspaceRoot) {
       }
       running = true;
       queued = false;
+      const triggers = pendingTriggers.splice(0, pendingTriggers.length);
+      iteration += 1;
       try {
-        await execute();
+        await execute({
+          mode: 'watch',
+          iteration,
+          triggers,
+        });
       } finally {
         running = false;
-        if (queued) {
+        if (queued || pendingTriggers.length > 0) {
           schedule();
         }
       }
     }, DEBOUNCE_MS);
   };
 
-  watcher.on('add', schedule);
-  watcher.on('change', schedule);
-  watcher.on('unlink', schedule);
+  watcher.on('all', (eventName, targetPath) => {
+    if (!WATCH_EVENT_TYPES.has(eventName)) {
+      return;
+    }
+    const normalizedPath = normalizeWatchTargetPath(workspaceRoot, targetPath);
+    pendingTriggers.push({
+      event: eventName,
+      ...(normalizedPath.length > 0 ? { path: normalizedPath } : {}),
+    });
+    schedule();
+  });
 
   const closeWatcher = async () => {
     await watcher.close();
@@ -422,6 +540,129 @@ function formatMonitorLog(message, pretty, rootDirectory) {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
+function formatWatchHintLog(pretty) {
+  const payload = {
+    event: 'watch.hint',
+    message: 'Press Ctrl+C to stop watching; structured logs continue until exit.',
+    timestamp: new Date().toISOString(),
+    exit: 'CTRL+C',
+  };
+  return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
+}
+
+function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty }) {
+  const status = determineWatchStatus(outcome);
+  const payload = {
+    event: 'watch.run',
+    status,
+    iteration,
+    timestamp: new Date().toISOString(),
+    durationMs: Number(durationMs.toFixed(2)),
+  };
+
+  if (Array.isArray(triggers) && triggers.length > 0) {
+    payload.triggers = summarizeWatchTriggers(triggers);
+  }
+
+  const summary = outcome.runSummary;
+  if (summary) {
+    payload.packs = {
+      total: summary.packTotals.total,
+      compiled: summary.packTotals.compiled,
+      failed: summary.packTotals.failed,
+      withWarnings: summary.packTotals.withWarnings,
+      changed: summary.changedPacks.length,
+    };
+    payload.artifacts = {
+      total: summary.artifactActions.total,
+      changed: summary.artifactActions.changed,
+      summaryAction: summary.summaryAction,
+      manifestAction: summary.manifestAction,
+      byAction: summary.artifactActions.byAction,
+    };
+    if (summary.changedPacks.length > 0) {
+      payload.changedPacks = summary.changedPacks;
+    }
+    if (summary.failedPacks.length > 0) {
+      payload.failedPacks = summary.failedPacks;
+    }
+  }
+
+  console.log(formatWatchRunLog(payload, pretty));
+}
+
+function determineWatchStatus(outcome) {
+  if (!outcome.success) {
+    return 'failed';
+  }
+
+  if (outcome.runSummary && outcome.runSummary.hasChanges === false) {
+    return 'skipped';
+  }
+
+  return 'success';
+}
+
+function summarizeWatchTriggers(triggers) {
+  const eventsByType = Object.create(null);
+  const uniquePaths = [];
+  const seenPaths = new Set();
+
+  for (const trigger of triggers) {
+    const { event, path: triggerPath } = trigger ?? {};
+    if (typeof event === 'string') {
+      eventsByType[event] = (eventsByType[event] ?? 0) + 1;
+    }
+    if (typeof triggerPath === 'string' && !seenPaths.has(triggerPath)) {
+      seenPaths.add(triggerPath);
+      uniquePaths.push(triggerPath);
+    }
+  }
+
+  const sortedEventEntries = Object.entries(eventsByType).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const limitedPaths = uniquePaths.slice(0, MAX_TRIGGER_PATHS);
+  const overflow = uniquePaths.length - limitedPaths.length;
+
+  const summary = {
+    count: triggers.length,
+    limit: MAX_TRIGGER_PATHS,
+    ...(sortedEventEntries.length > 0
+      ? { events: Object.fromEntries(sortedEventEntries) }
+      : {}),
+    ...(limitedPaths.length > 0 ? { paths: limitedPaths } : {}),
+  };
+
+  if (overflow > 0) {
+    summary.morePaths = overflow;
+  }
+
+  return summary;
+}
+
+function formatWatchRunLog(payload, pretty) {
+  return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
+}
+
 function resolveWorkspaceRoot(inputPath) {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(process.cwd(), inputPath);
+}
+
+function normalizeWatchTargetPath(workspaceRoot, targetPath) {
+  if (typeof targetPath !== 'string' || targetPath.length === 0) {
+    return '';
+  }
+  const absolutePath = path.isAbsolute(targetPath)
+    ? targetPath
+    : path.resolve(workspaceRoot, targetPath);
+  const relativePath = path.relative(workspaceRoot, absolutePath);
+  return toPosixPath(relativePath);
+}
+
+function toPosixPath(inputPath) {
+  if (inputPath === '') {
+    return '';
+  }
+  return inputPath.split(path.sep).join('/');
 }
