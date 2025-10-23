@@ -4,16 +4,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import chokidar from 'chokidar';
-import {
-  compileWorkspacePacks,
-  createLogger,
-} from '@idle-engine/content-compiler';
 
 import {
   buildRuntimeEventManifest,
   validateContentPacks,
   writeRuntimeEventManifest,
 } from './generate.js';
+import { loadContentCompiler } from './content-compiler.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -54,11 +51,19 @@ async function run() {
     return;
   }
 
-  const logger = createLogger({ pretty: options.pretty });
   const workspaceRoot = options.cwd ?? REPO_ROOT;
+  const { compileWorkspacePacks, createLogger } = await loadContentCompiler({
+    projectRoot: REPO_ROOT,
+  });
+  const logger = createLogger({ pretty: options.pretty });
 
   const execute = async () => {
-    const outcome = await executePipeline(options, logger, workspaceRoot);
+    const outcome = await executePipeline(
+      options,
+      logger,
+      workspaceRoot,
+      compileWorkspacePacks,
+    );
     if (!options.watch) {
       process.exitCode = outcome.success ? 0 : 1;
     } else if (!outcome.success) {
@@ -88,7 +93,12 @@ async function run() {
   await startWatch(options, execute, workspaceRoot);
 }
 
-async function executePipeline(options, logger, workspaceRoot) {
+async function executePipeline(
+  options,
+  logger,
+  workspaceRoot,
+  compileWorkspacePacks,
+) {
   try {
     const manifest = await buildRuntimeEventManifest({
       rootDirectory: workspaceRoot,
