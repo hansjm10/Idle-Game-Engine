@@ -105,6 +105,42 @@ describe('content schema CLI compile command', () => {
     }
   });
 
+  it('emits structured cli.unhandled_error events when manifest generation fails', async () => {
+    const workspace = await createWorkspace([{ slug: 'error-pack' }]);
+    const metadataPath = path.join(
+      workspace.root,
+      'packages/core/src/events/runtime-event-base-metadata.json',
+    );
+    await fs.writeFile(metadataPath, '{ not: "valid json"', 'utf8');
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(1);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const errorEvents = events.filter(
+        (event) => event.event === 'cli.unhandled_error',
+      );
+      expect(errorEvents).toHaveLength(1);
+      const [errorEvent] = errorEvents;
+      expect(errorEvent?.fatal).toBe(true);
+      expect(typeof errorEvent?.message).toBe('string');
+      expect(typeof errorEvent?.stack).toBe('string');
+      expect(errorEvent?.stack).toMatch(/SyntaxError/);
+
+      const stderrLines = result.stderr
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+      expect(stderrLines).not.toHaveLength(0);
+      for (const line of stderrLines) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   it('writes a failure summary when validation fails', async () => {
     const workspace = await createWorkspace([
       {
@@ -267,7 +303,7 @@ describe('content schema CLI compile command', () => {
     }
   });
 
-  it('emits watch run events for changes, skips, and failures', async () => {
+  it('emits watch run events for changes, skips, and repeated failures with aggregated triggers', async () => {
     const packSlug = 'watch-pack';
     const workspace = await createWorkspace([{ slug: packSlug }]);
     const packPath = path.join(
@@ -276,6 +312,10 @@ describe('content schema CLI compile command', () => {
       packSlug,
       'content/pack.json',
     );
+    const contentDir = path.dirname(packPath);
+    const bonusPath = path.join(contentDir, 'bonus.json');
+    const packRelativePath = ['packages', packSlug, 'content', 'pack.json'].join('/');
+    const bonusRelativePath = ['packages', packSlug, 'content', 'bonus.json'].join('/');
 
     const watchProcess = startWatchCli(
       ['--cwd', workspace.root, '--watch'],
@@ -295,7 +335,10 @@ describe('content schema CLI compile command', () => {
       );
 
       await sleep(200);
-      await bumpPackVersion(workspace.root, packSlug, '0.0.2');
+      await Promise.all([
+        bumpPackVersion(workspace.root, packSlug, '0.0.2'),
+        writeJson(bonusPath, { generated: true }),
+      ]);
 
       const successRun = await watchProcess.events.waitForEvent(
         (event) =>
@@ -305,7 +348,12 @@ describe('content schema CLI compile command', () => {
         expect.arrayContaining([packSlug]),
       );
       expect(successRun.artifacts?.changed ?? 0).toBeGreaterThan(0);
-      expect(successRun.triggers?.count ?? 0).toBeGreaterThan(0);
+      expect(successRun.triggers?.count ?? 0).toBeGreaterThan(1);
+      expect(successRun.triggers?.events?.change ?? 0).toBeGreaterThanOrEqual(1);
+      expect(successRun.triggers?.events?.add ?? 0).toBeGreaterThanOrEqual(1);
+      expect(successRun.triggers?.paths ?? []).toEqual(
+        expect.arrayContaining([packRelativePath, bonusRelativePath]),
+      );
 
       await sleep(200);
       await rewritePackWithoutChanges(packPath);
@@ -334,6 +382,28 @@ describe('content schema CLI compile command', () => {
         expect.arrayContaining([packSlug]),
       );
       expect(failureRun.triggers?.count ?? 0).toBeGreaterThan(0);
+      expect(failureRun.triggers?.paths ?? []).toEqual(
+        expect.arrayContaining([packRelativePath]),
+      );
+      const failureIteration = failureRun.iteration ?? 0;
+
+      await sleep(200);
+      await rewritePackWithoutChanges(packPath);
+
+      const repeatedFailureRun = await watchProcess.events.waitForEvent(
+        (event) =>
+          event.event === 'watch.run' &&
+          event.status === 'failed' &&
+          typeof event.iteration === 'number' &&
+          event.iteration > failureIteration,
+      );
+      expect(repeatedFailureRun.failedPacks).toEqual(
+        expect.arrayContaining([packSlug]),
+      );
+      expect(repeatedFailureRun.iteration).toBeGreaterThan(failureIteration);
+      expect(repeatedFailureRun.triggers?.paths ?? []).toEqual(
+        expect.arrayContaining([packRelativePath]),
+      );
     } catch (error) {
       const history = watchProcess.events.history();
       const augmented = new Error(

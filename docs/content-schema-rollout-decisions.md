@@ -168,13 +168,15 @@ All modification effects use `NumericFormula` (formulas.ts), which supports:
 
 **Status:** The content compiler now emits deterministic artifacts during `pnpm generate`, and `@idle-engine/content-sample` imports the generated module instead of reparsing `content/pack.json`.
 
-- **Required workflow:** Run `pnpm generate` (or `pnpm generate --check` for CI) after editing any pack JSON, schemas, or runtime event manifests. Commit the updated files under `content/compiled/`, `src/generated/`, and the workspace summary (`content/compiled/index.json`).
+- **Required workflow:** `pnpm generate` validates every discovered pack before the compiler writes artifacts. After editing any pack JSON, schema file, or runtime event manifest, run `pnpm generate` (or `pnpm generate --check` for CI/Lefthook) and commit the resulting updates under `content/compiled/`, `src/generated/`, and the workspace summary (`content/compiled/index.json`).
+- **Structured logging:** The CLI emits JSON events (`content_pack.validated`, `content_pack.validation_failed`, `content_pack.compiled`, `content_pack.pruned`, `watch.run`, etc.) that automation should parse instead of scraping console text. Watch mode keeps the process alive across failures while still surfacing non-zero exit codes on termination.
+- **Summary contract:** Treat `content/compiled/index.json` (or the path supplied via `--summary`) as the canonical record of validation and compilation outcomes. If validation fails or `pnpm generate --check` indicates drift, the summary is stale—rerun the command before using compiled artifacts downstream.
 - **Runtime guarantees:** The generated module rehydrates a frozen `NormalizedContentPack`, exposes digest, artifact hash, module indices, and summary metadata, and fails fast if the compiler captured warnings. Downstream code should consume the exported summary (`sampleContentSummary`) instead of inferring metadata at runtime.
 - **Digest verification:** `rehydrateNormalizedPack` recomputes the digest whenever `NODE_ENV !== 'production'`. To diagnose mismatches, rerun `pnpm generate --clean` and compare the hash reported in the thrown error with `content/compiled/sample-pack.normalized.json`. Production builds may opt out of digest verification by keeping `NODE_ENV=production`, preserving the previous behaviour.
 - **Common failures:**  
   - *Import-time warning error*: fix schema warnings surfaced in the compiler log or add contextual suppressions before retrying.  
   - *Digest mismatch*: ensure artifacts were regenerated (use `pnpm generate --clean`), verify custom post-processing didn’t mutate the generated module, and re-run tests.  
-  - *Stale summary*: if `content/compiled/index.json` reports outdated versions or warning counts, regenerate artifacts and commit the refreshed summary alongside package-level outputs.
+  - *Stale summary*: if `content/compiled/index.json` (or a custom summary path) reports outdated versions or warning counts, rerun `pnpm generate` so validation and compilation refresh the summary before committing artifacts.
 
 ---
 
