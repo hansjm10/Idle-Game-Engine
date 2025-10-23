@@ -99,6 +99,7 @@ describe('content schema CLI compile command', () => {
       );
       expect(validationEvent).toBeDefined();
       expect(validationEvent?.packVersion).toBe('0.0.1');
+      expect(validationEvent?.path).toContain('content/pack.json5');
     } finally {
       await workspace.cleanup();
     }
@@ -373,7 +374,11 @@ async function createWorkspace(packs) {
 
     const packPath = path.join(packageRoot, 'content', packFilename);
     if (packFormat === 'json5') {
-      await writeJson5(packPath, document);
+      const json5Source =
+        typeof packConfig.json5Source === 'string'
+          ? packConfig.json5Source
+          : undefined;
+      await writeJson5(packPath, json5Source ?? document);
     } else {
       await writeJson(packPath, document);
     }
@@ -469,11 +474,17 @@ async function writeJson(filePath, data) {
   await fs.writeFile(`${filePath}`, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
 }
 
+function renderJson5Document(document) {
+  const json = JSON.stringify(document, null, 2);
+  return `// json5 test document\n${json}`;
+}
+
 async function writeJson5(filePath, data) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const json = JSON.stringify(data, null, 2);
-  const content = `// json5 test document\n${json}\n`;
-  await fs.writeFile(filePath, content, 'utf8');
+  const source =
+    typeof data === 'string' ? data : renderJson5Document(data);
+  const normalized = source.endsWith('\n') ? source : `${source}\n`;
+  await fs.writeFile(filePath, normalized, 'utf8');
 }
 
 function sleep(ms) {
