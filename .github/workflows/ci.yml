@@ -52,7 +52,11 @@ jobs:
           pnpm generate --check | tee /tmp/generate.log
           GENERATE_EXIT=${PIPESTATUS[0]}
           node tools/scripts/assert-json-tail.mjs /tmp/generate.log cli.run_summary
-          exit "${GENERATE_EXIT}"
+          ASSERT_EXIT=$?
+          if [ "${GENERATE_EXIT}" -ne 0 ]; then
+            exit "${GENERATE_EXIT}"
+          fi
+          exit "${ASSERT_EXIT}"
 
       - name: Test
         env:
