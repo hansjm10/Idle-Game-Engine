@@ -46,7 +46,6 @@ export async function writeRuntimeEventManifest(moduleSource, options = {}) {
   const { check = false, clean = false } = options;
   const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
   const targetPath = path.join(rootDirectory, GENERATED_MODULE_RELATIVE_PATH);
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
   const existing = await readExistingManifest(rootDirectory);
   const identical = existing === moduleSource;
   const relativePath = toPosixPath(
@@ -67,6 +66,7 @@ export async function writeRuntimeEventManifest(moduleSource, options = {}) {
     };
   }
 
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, moduleSource, 'utf8');
   return {
     action: 'written',
