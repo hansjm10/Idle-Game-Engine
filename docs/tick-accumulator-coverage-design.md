@@ -35,7 +35,7 @@ Instantiate an `IdleEngineRuntime` with `stepSizeMs: 10`, `maxStepsPerFrame: 2`,
 Using a fresh runtime configured as above, invoke ticks with deltas `[45, 10, 10, 5]`, capturing the timeline delta after each frame. The recorded backlog sequence should be `[25, 15, 5, 0]`, and `currentStep` should advance by `[2, 2, 2, 1]` for a total of 7. This demonstrates deterministic debt reduction once the host stops overshooting and ensures the accumulator never underflows.
 
 ### 5.3 Fractional step precision
-Construct a runtime with `stepSizeMs = 1000 / 60`, `maxStepsPerFrame: 6`, and timeline capacity ≥ 128. Loop 60 times, invoking `tick(stepSizeMs)`. After the loop, assert `currentStep === nextExecutableStep === 60` and the latest backlog reported by diagnostics is `< 1e-6` ms (using `toBeCloseTo` for safety). This safeguards the floating-point carry logic against regression when alternative cadence (e.g., 60 Hz) is configured.
+Construct a runtime with `stepSizeMs = 1000 / 60`, `maxStepsPerFrame: 6`, and timeline capacity ≥ 128. Loop 60 times, invoking `tick(stepSizeMs)`. After the loop, assert `currentStep === nextExecutableStep === 60` and the latest backlog reported by diagnostics stays below 1e-6 ms (using `toBeCloseTo` for safety). This safeguards the floating-point carry logic against regression when alternative cadence (e.g., 60 Hz) is configured.
 
 ## 6. Implementation Notes
 - Extend the existing `createRuntime` helper in `packages/core/src/index.test.ts` to accept diagnostics overrides and to surface the runtime head index for timeline reads.
@@ -45,7 +45,7 @@ Construct a runtime with `stepSizeMs = 1000 / 60`, `maxStepsPerFrame: 6`, and ti
 ## 7. Risks & Mitigations
 - **Floating-point tolerance drift:** Use `toBeCloseTo` with an epsilon (1e-6) instead of strict equality so the fractional-step test stays stable across JS engines.
 - **Timeline capacity wrap-around:** Configure capacities ≥ number of expected entries (8 and 128) to avoid dropped records; add an assertion that `dropped === 0`.
-- **Diagnostic overhead in tests:** Each runtime instance is short-lived and exercises at most a dozen ticks, so the additional timeline bookkeeping should keep Vitest runtimes negligible (<5 ms per test).
+- **Diagnostic overhead in tests:** Each runtime instance is short-lived and exercises at most a dozen ticks, so the additional timeline bookkeeping should keep Vitest runtimes negligible (under 5 ms per test).
 
 ## 8. Rollout Steps
 - Update the test helper and add the backlog reader utility in `packages/core/src/index.test.ts`.

@@ -36,7 +36,7 @@ Legend: ✅ complete · 🟡 partially complete · 🔴 not started.
 ## §13 Success Criteria Status
 - **Determinism** — ✅ `packages/core/src/command-recorder.test.ts:144` restores snapshots and matches live state.
 - **Priority guarantees (1000+)** — ✅ regression at `packages/core/src/command-queue.test.ts:112` plus runtime tick test `packages/core/src/index.test.ts:381`.
-- **Performance (<5% overhead @60Hz)** — 🔴 Pending profiling; no benchmarks checked in.
+- **Performance (under 5% overhead @60Hz)** — 🔴 Pending profiling; no benchmarks checked in.
 - **Integration with React shell** — 🟡 Worker bridge validated (`packages/shell-web/src/runtime.worker.test.ts:1`), but shell UI assertions still TODO once React components consume queue.
 - **Observability metrics** — 🟡 Telemetry hooks exist (`packages/core/src/telemetry.ts:1`, queue overflow logs at `packages/core/src/command-queue.test.ts:414`), but dashboards/export pending.
 

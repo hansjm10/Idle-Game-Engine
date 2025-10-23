@@ -38,7 +38,7 @@ The Idle Engine is a reusable, data-driven runtime tailored for incremental/idle
 - Social layer services: leaderboards (global, guild) and guild roster/state management with server synchronization APIs.
 
 ## 7. Non-Functional Requirements
-- Idle tick loop must sustain 60 ticks/sec in foreground and efficient low-frequency batching in background.<br>
+- Idle tick loop must sustain 60 ticks/sec in foreground and efficient low-frequency batching in background.<br />
 - Engine memory footprint under ~5 MB for moderate content sets; no unbounded data growth.
 - State serialization/deserialization under 10 ms for typical saves.
 - Content module API stable across game releases; breaking changes require version negotiation.
@@ -181,7 +181,7 @@ Follow-up migration work: wire the DSL compiler to emit schema-aligned packs ins
 - Profile with browser tools and Node benchmarks; escalate hotspots to WebAssembly implementations when ROI is justified.
 
 ## 13. Tooling & Developer Experience
-- Monorepo using pnpm or Turborepo: `packages/core`, `packages/content-<game>`, `packages/shell-web`, `packages/shell-desktop`, `packages/tools`.
+- Monorepo using pnpm or Turborepo: `packages/core`, `packages/content-{game}`, `packages/shell-web`, `packages/shell-desktop`, `packages/tools`.
 - Shared type definitions and schema validation via Zod or similar.
 - CLI tools for content linting, simulation playback, save migration testing.
 - Storybook or component library for UI kit review.
@@ -245,7 +245,7 @@ Follow-up migration work: wire the DSL compiler to emit schema-aligned packs ins
   6. Hardening (Week 7-8): profiling, test coverage targets, docs (runbooks, developer guide), milestone demo.
 
 - **Success Criteria**
-  - Reference game runs at 60 ticks/sec in browser foreground with <30% main-thread utilization on target hardware.
+  - Reference game runs at 60 ticks/sec in browser foreground with under 30% main-thread utilization on target hardware.
   - Offline catch-up accurately simulates up to 12 hours without divergence from continuous play baseline.
   - Leaderboard submissions authenticated via Keycloak and shown in UI (stubbed data acceptable).
   - Content CLI blocks invalid definitions and outputs human-friendly diagnostics.

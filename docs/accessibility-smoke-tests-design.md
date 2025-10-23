@@ -95,6 +95,6 @@ Issue: #5 &mdash; Tooling & QA Workstream
 
 ## 9. Acceptance Criteria
 - Repeatable `pnpm test:a11y` command that fails on Axe violations.
-- Smoke test executes in <1 minute locally after browsers are installed.
+- Smoke test executes in under 1 minute locally after browsers are installed.
 - Documentation updated so contributors know how to run and debug the suite.
 - Root `pnpm test:ci` exercises the smoke test, enabling easy CI adoption once the pipeline is live.
