@@ -47,6 +47,9 @@ importers:
       canonicalize:
         specifier: ^2.0.0
         version: 2.1.0
+      json5:
+        specifier: ^2.2.3
+        version: 2.2.3
     devDependencies:
       '@idle-engine/config-eslint':
         specifier: workspace:*
@@ -305,6 +308,9 @@ importers:
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
+      json5:
+        specifier: ^2.2.3
+        version: 2.2.3
     devDependencies:
       '@idle-engine/config-vitest':
         specifier: workspace:*

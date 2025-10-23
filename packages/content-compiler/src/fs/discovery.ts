@@ -1,10 +1,12 @@
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 
+import JSON5 from 'json5';
+
 import type { ContentDocument, WorkspaceFS } from '../types.js';
 
 const PACKAGES_DIRECTORY = 'packages';
-const PACK_MANIFEST_PATH = path.join('content', 'pack.json');
+const PACK_MANIFEST_FILENAMES = ['content/pack.json', 'content/pack.json5'] as const;
 
 function toPosixPath(value: string): string {
   return value.split(path.sep).join('/');
@@ -53,8 +55,8 @@ export async function discoverContentDocuments(
     }
 
     const packageRoot = path.join(packagesRoot, entry.name);
-    const manifestPath = path.join(packageRoot, PACK_MANIFEST_PATH);
-    if (!(await fileExists(manifestPath))) {
+    const manifestPath = await resolveManifestPath(packageRoot);
+    if (manifestPath === undefined) {
       continue;
     }
 
@@ -66,7 +68,7 @@ export async function discoverContentDocuments(
     let parsed: unknown;
     try {
       const raw = await fsPromises.readFile(manifestPath, 'utf8');
-      parsed = JSON.parse(raw) as unknown;
+      parsed = parseManifest(raw, manifestPath);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
@@ -102,4 +104,20 @@ export async function discoverContentDocuments(
   });
 
   return documents;
+}
+
+async function resolveManifestPath(packageRoot: string): Promise<string | undefined> {
+  for (const filename of PACK_MANIFEST_FILENAMES) {
+    const candidate = path.join(packageRoot, filename);
+    if (await fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function parseManifest(raw: string, manifestPath: string): unknown {
+  return manifestPath.endsWith('.json5')
+    ? (JSON5.parse(raw) as unknown)
+    : (JSON.parse(raw) as unknown);
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createContentPackValidator } from '@idle-engine/content-schema';
+import JSON5 from 'json5';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -11,9 +12,11 @@ const BASE_METADATA_RELATIVE_PATH =
   'packages/core/src/events/runtime-event-base-metadata.json';
 const GENERATED_MODULE_RELATIVE_PATH =
   'packages/core/src/events/runtime-event-manifest.generated.ts';
-const CONTENT_PACK_FILENAME = 'content/pack.json';
+const CONTENT_PACK_FILENAMES = ['content/pack.json', 'content/pack.json5'];
+const VALIDATION_ERROR_NAME = 'ContentPackValidationError';
+const VALIDATION_ERROR_CODE = 'CONTENT_PACK_VALIDATION_FAILED';
 
-export async function buildRuntimeEventManifest(options = {}) {
+export async function loadRuntimeEventManifestContext(options = {}) {
   const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
   const baseMetadata = await loadBaseMetadata(rootDirectory);
   const contentDefinitions = await loadContentEventDefinitions(rootDirectory);
@@ -21,21 +24,33 @@ export async function buildRuntimeEventManifest(options = {}) {
     baseMetadata,
     contentDefinitions,
   );
-  const manifestEntries = manifestDefinitions.map(
+  return {
+    baseMetadata,
+    contentDefinitions,
+    manifestDefinitions,
+  };
+}
+
+export async function buildRuntimeEventManifest(options = {}) {
+  const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
+  const manifestContext =
+    options.manifestContext ??
+    (await loadRuntimeEventManifestContext({ rootDirectory }));
+  const manifestEntries = manifestContext.manifestDefinitions.map(
     ({ channel, type, version }) => ({ channel, type, version }),
   );
   const manifestHash = computeManifestHash(manifestEntries);
 
   const fileContents = renderModule({
-    baseMetadata,
-    contentDefinitions,
-    manifestDefinitions,
+    baseMetadata: manifestContext.baseMetadata,
+    contentDefinitions: manifestContext.contentDefinitions,
+    manifestDefinitions: manifestContext.manifestDefinitions,
     manifestEntries,
     manifestHash,
   });
 
   return {
-    manifestDefinitions,
+    manifestDefinitions: manifestContext.manifestDefinitions,
     manifestEntries,
     manifestHash,
     moduleSource: fileContents,
@@ -84,11 +99,15 @@ async function readExistingManifest(rootDirectory) {
 }
 
 export async function runGenerate(options = {}) {
-  const manifest = await buildRuntimeEventManifest(options);
+  const manifestContext = await loadRuntimeEventManifestContext(options);
   const validation = await validateContentPacks(
-    manifest.manifestDefinitions,
+    manifestContext.manifestDefinitions,
     options,
   );
+  const manifest = await buildRuntimeEventManifest({
+    ...options,
+    manifestContext,
+  });
   await writeRuntimeEventManifest(manifest.moduleSource, options);
   return {
     ...manifest,
@@ -534,31 +553,44 @@ async function loadContentPackDocuments(rootDirectory) {
     }
 
     const packageRoot = path.join(packagesDir, entry.name);
-    const packPath = path.join(packageRoot, CONTENT_PACK_FILENAME);
-    if (!(await fileExists(packPath))) {
+    const packPath = await resolveContentPackPath(packageRoot);
+    if (!packPath) {
       continue;
     }
 
-    const raw = await fs.readFile(packPath, 'utf8');
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      throw new Error(
-        `Failed to parse content pack ${toPosixPath(
-          path.relative(rootDirectory, packPath),
-        )}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    const document = await loadPackDocument(packPath, rootDirectory);
 
     packs.push({
       packageRoot,
       packPath,
-      document: parsed,
+      document,
     });
   }
 
   return packs;
+}
+
+async function resolveContentPackPath(packageRoot) {
+  for (const relative of CONTENT_PACK_FILENAMES) {
+    const candidate = path.join(packageRoot, relative);
+    if (await fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+async function loadPackDocument(packPath, rootDirectory) {
+  const raw = await fs.readFile(packPath, 'utf8');
+  try {
+    return packPath.endsWith('.json5') ? JSON5.parse(raw) : JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `Failed to parse content pack ${toPosixPath(
+        path.relative(rootDirectory, packPath),
+      )}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function extractKnownPackEntries(documents) {
@@ -669,7 +701,7 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
   }
 
   if (failures.length > 0) {
-    throw new Error('One or more content packs failed validation; see logs for details.');
+    throw createContentValidationError();
   }
 
   return {
@@ -679,6 +711,27 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
       runtimeEventCatalogue,
     },
   };
+}
+
+function createContentValidationError() {
+  const error = new Error(
+    'One or more content packs failed validation; see logs for details.',
+  );
+  error.name = VALIDATION_ERROR_NAME;
+  error.code = VALIDATION_ERROR_CODE;
+  return error;
+}
+
+export function isContentValidationError(error) {
+  if (error === null || typeof error !== 'object') {
+    return false;
+  }
+  const name = /** @type {{ name?: unknown }} */ (error).name;
+  if (name === VALIDATION_ERROR_NAME) {
+    return true;
+  }
+  const code = /** @type {{ code?: unknown }} */ (error).code;
+  return code === VALIDATION_ERROR_CODE;
 }
 
 function formatLogPayload(payload, pretty) {
@@ -696,7 +749,9 @@ async function fileExists(targetPath) {
 
 if (isExecutedDirectly(import.meta.url)) {
   runGenerate().catch((error) => {
-    console.error(error instanceof Error ? error.stack : error);
+    if (!isContentValidationError(error)) {
+      console.error(error instanceof Error ? error.stack : error);
+    }
     process.exitCode = 1;
   });
 }

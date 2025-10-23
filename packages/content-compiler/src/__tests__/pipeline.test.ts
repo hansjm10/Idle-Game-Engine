@@ -14,9 +14,18 @@ import type {
 
 const TMP_PREFIX = 'content-compiler-';
 
+interface WritePackOptions {
+  readonly manifestExtension?: 'json' | 'json5';
+  readonly json5Source?: string;
+}
+
 interface WorkspaceBuilder {
   readonly rootDirectory: string;
-  writePack(packageName: string, document: Record<string, unknown>): Promise<void>;
+  writePack(
+    packageName: string,
+    document: Record<string, unknown>,
+    options?: WritePackOptions,
+  ): Promise<void>;
 }
 
 async function createWorkspace(): Promise<WorkspaceBuilder> {
@@ -26,11 +35,22 @@ async function createWorkspace(): Promise<WorkspaceBuilder> {
 
   return {
     rootDirectory: workspaceRoot,
-    async writePack(packageName, document) {
+    async writePack(packageName, document, options = {}) {
       const packageRoot = path.join(packagesRoot, packageName, 'content');
       await fs.mkdir(packageRoot, { recursive: true });
-      const manifestPath = path.join(packageRoot, 'pack.json');
-      await fs.writeFile(manifestPath, JSON.stringify(document, null, 2), 'utf8');
+      const extension = options.manifestExtension ?? 'json';
+      const manifestPath = path.join(packageRoot, `pack.${extension}`);
+      if (extension === 'json5') {
+        const source =
+          options.json5Source ?? JSON.stringify(document, null, 2);
+        await fs.writeFile(manifestPath, `${source}\n`, 'utf8');
+      } else {
+        await fs.writeFile(
+          manifestPath,
+          JSON.stringify(document, null, 2),
+          'utf8',
+        );
+      }
     },
   };
 }
@@ -97,6 +117,44 @@ describe('content compiler pipeline', () => {
     expect(document.packSlug).toBe('alpha-pack');
     expect(document.relativePath).toBe('packages/alpha/content/pack.json');
     expect(document.absolutePath.endsWith('/alpha/content/pack.json')).toBe(true);
+  });
+
+  it('discovers JSON5 pack manifests', async () => {
+    const workspace = await createWorkspace();
+    const json5Source = `{
+  metadata: {
+    id: 'json5-pack',
+    title: { default: 'JSON5 title', variants: {} },
+    version: '0.0.1',
+    engine: '^0.1.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [],
+  generators: [],
+  upgrades: [],
+  metrics: [],
+  achievements: [],
+  automations: [],
+  transforms: [],
+  prestigeLayers: [],
+  guildPerks: [],
+  runtimeEvents: [],
+}`;
+    await workspace.writePack(
+      'beta',
+      createPackDocument('json5-pack'),
+      { manifestExtension: 'json5', json5Source },
+    );
+    const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+
+    const documents = await discoverContentDocuments(fsHandle);
+
+    expect(documents).toHaveLength(1);
+    const [document] = documents;
+    expect(document.packSlug).toBe('json5-pack');
+    expect(document.relativePath).toBe('packages/beta/content/pack.json5');
+    expect(document.absolutePath.endsWith('/beta/content/pack.json5')).toBe(true);
   });
 
   it('reports drift when check mode detects pending writes', async () => {
