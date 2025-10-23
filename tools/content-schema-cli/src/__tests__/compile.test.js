@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 
+import JSON5 from 'json5';
 import { describe, expect, it } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -76,6 +77,28 @@ describe('content schema CLI compile command', () => {
       await assertFileExists(
         path.join(workspace.root, 'content/compiled/index.json'),
       );
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it('supports JSON5 content packs', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'json5-pack', format: 'json5' },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const validationEvent = events.find(
+        (entry) =>
+          entry.event === 'content_pack.validated' &&
+          typeof entry.path === 'string' &&
+          entry.path.endsWith('content/pack.json5'),
+      );
+      expect(validationEvent?.packSlug).toBe('json5-pack');
     } finally {
       await workspace.cleanup();
     }
@@ -277,6 +300,14 @@ function createPackDocument(id, overrides = {}) {
   };
 }
 
+function renderJson5Document(document) {
+  const json = JSON.stringify(document, null, 2);
+  const identifier = typeof document?.metadata?.id === 'string'
+    ? document.metadata.id
+    : 'unknown-pack';
+  return `// JSON5 content pack for ${identifier}\n${json}`;
+}
+
 function createDefaultEventTypes(slug) {
   return {
     packSlug: slug,
@@ -307,10 +338,21 @@ async function createWorkspace(packs) {
     const document = packConfig.document ?? createPackDocument(slug, packConfig.overrides);
     const packageRoot = path.join(root, 'packages', slug);
 
-    await writeJson(
-      path.join(packageRoot, 'content/pack.json'),
-      document,
-    );
+    const packFormat = packConfig.format ?? 'json';
+    if (packFormat === 'json5') {
+      const packPath = path.join(packageRoot, 'content/pack.json5');
+      const source =
+        typeof packConfig.json5Source === 'string'
+          ? packConfig.json5Source
+          : renderJson5Document(document);
+      await fs.mkdir(path.dirname(packPath), { recursive: true });
+      await fs.writeFile(`${packPath}`, `${source.trimEnd()}\n`, 'utf8');
+    } else {
+      await writeJson(
+        path.join(packageRoot, 'content/pack.json'),
+        document,
+      );
+    }
 
     if (packConfig.eventTypes !== false) {
       const eventManifest = packConfig.eventTypes ?? createDefaultEventTypes(slug);
@@ -409,12 +451,47 @@ function sleep(ms) {
   });
 }
 
+async function getPackFilePath(root, slug) {
+  const baseDir = path.join(root, 'packages', slug, 'content');
+  const jsonPath = path.join(baseDir, 'pack.json');
+  if (await pathExists(jsonPath)) {
+    return jsonPath;
+  }
+  const json5Path = path.join(baseDir, 'pack.json5');
+  if (await pathExists(json5Path)) {
+    return json5Path;
+  }
+  throw new Error(`Unable to locate content pack for ${slug}.`);
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parsePackDocument(raw, packPath) {
+  return packPath.endsWith('.json5') ? JSON5.parse(raw) : JSON.parse(raw);
+}
+
+async function writePackDocument(packPath, data) {
+  if (packPath.endsWith('.json5')) {
+    const source = renderJson5Document(data);
+    await fs.writeFile(`${packPath}`, `${source.trimEnd()}\n`, 'utf8');
+    return;
+  }
+  await writeJson(packPath, data);
+}
+
 async function bumpPackVersion(root, slug, nextVersion) {
-  const packPath = path.join(root, 'packages', slug, 'content/pack.json');
+  const packPath = await getPackFilePath(root, slug);
   const raw = await fs.readFile(packPath, 'utf8');
-  const parsed = JSON.parse(raw);
+  const parsed = parsePackDocument(raw, packPath);
   parsed.metadata.version = nextVersion;
-  await writeJson(packPath, parsed);
+  await writePackDocument(packPath, parsed);
 }
 
 function startWatchCli(args, options) {
@@ -531,16 +608,16 @@ function createEventCollector() {
 
 async function rewritePackWithoutChanges(packPath) {
   const raw = await fs.readFile(packPath, 'utf8');
-  const parsed = JSON.parse(raw);
-  await writeJson(packPath, parsed);
+  const parsed = parsePackDocument(raw, packPath);
+  await writePackDocument(packPath, parsed);
 }
 
 async function setMissingDependency(root, slug, missingSlug) {
-  const packPath = path.join(root, 'packages', slug, 'content/pack.json');
+  const packPath = await getPackFilePath(root, slug);
   const raw = await fs.readFile(packPath, 'utf8');
-  const parsed = JSON.parse(raw);
+  const parsed = parsePackDocument(raw, packPath);
   parsed.metadata.dependencies = {
     requires: [{ packId: missingSlug }],
   };
-  await writeJson(packPath, parsed);
+  await writePackDocument(packPath, parsed);
 }

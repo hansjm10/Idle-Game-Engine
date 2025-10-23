@@ -10,6 +10,8 @@ import {
   buildRuntimeEventManifest,
   validateContentPacks,
   writeRuntimeEventManifest,
+  loadRuntimeEventManifestContext,
+  isContentValidationError,
 } from './generate.js';
 import { loadContentCompiler } from './content-compiler.js';
 
@@ -117,12 +119,20 @@ async function executePipeline(
   compileWorkspacePacks,
 ) {
   try {
-    const manifest = await buildRuntimeEventManifest({
+    const manifestContext = await loadRuntimeEventManifestContext({
       rootDirectory: workspaceRoot,
     });
-    const validation = await validateContentPacks(manifest.manifestDefinitions, {
-      pretty: options.pretty,
+    const validation = await validateContentPacks(
+      manifestContext.manifestDefinitions,
+      {
+        pretty: options.pretty,
+        rootDirectory: workspaceRoot,
+      },
+    );
+
+    const manifest = await buildRuntimeEventManifest({
       rootDirectory: workspaceRoot,
+      manifestContext,
     });
 
     const manifestResult = await writeRuntimeEventManifest(manifest.moduleSource, {
@@ -167,7 +177,9 @@ async function executePipeline(
       }),
     };
   } catch (error) {
-    console.error(error instanceof Error ? error.stack ?? error.message : error);
+    if (!isContentValidationError(error)) {
+      console.error(error instanceof Error ? error.stack ?? error.message : error);
+    }
     return {
       success: false,
       drift: false,
