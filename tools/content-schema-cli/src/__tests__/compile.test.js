@@ -56,6 +56,15 @@ describe('content schema CLI compile command', () => {
         ]),
       );
 
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent).toBeDefined();
+      expect(summaryEvent?.success).toBe(true);
+      expect(summaryEvent?.drift).toBe(false);
+      expect(summaryEvent?.summary?.packTotals?.compiled).toBe(1);
+      expect(summaryEvent?.mode).toBe('single');
+
       await assertFileExists(
         path.join(
           workspace.root,
@@ -128,6 +137,13 @@ describe('content schema CLI compile command', () => {
       expect(typeof errorEvent?.stack).toBe('string');
       expect(errorEvent?.stack).toMatch(/SyntaxError/);
 
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent).toBeDefined();
+      expect(summaryEvent?.success).toBe(false);
+      expect(summaryEvent?.summary).toBeNull();
+
       const stderrLines = result.stderr
         .split(/\r?\n/)
         .map((line) => line.trim())
@@ -166,6 +182,14 @@ describe('content schema CLI compile command', () => {
       expect(events.some((entry) => entry.name === 'content_pack.compiled')).toBe(false);
       expect(events.some((entry) => entry.event?.startsWith?.('runtime_manifest.'))).toBe(false);
       expect(events.some((entry) => entry.event === 'cli.unhandled_error')).toBe(false);
+
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent).toBeDefined();
+      expect(summaryEvent?.success).toBe(false);
+      expect(summaryEvent?.drift).toBe(false);
+      expect(summaryEvent?.summary?.packTotals?.failed).toBeGreaterThan(0);
 
       const summaryPath = path.join(workspace.root, 'content/compiled/index.json');
       const summaryRaw = await fs.readFile(summaryPath, 'utf8');
@@ -207,6 +231,14 @@ describe('content schema CLI compile command', () => {
       expect(events.some((entry) => entry.name === 'content_pack.compiled')).toBe(
         false,
       );
+
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent).toBeDefined();
+      expect(summaryEvent?.success).toBe(false);
+      expect(summaryEvent?.drift).toBe(true);
+      expect(summaryEvent?.summary?.packTotals?.failed).toBeGreaterThan(0);
 
       const summaryPath = path.join(
         workspace.root,
@@ -261,6 +293,16 @@ describe('content schema CLI compile command', () => {
           entry.name === 'content_pack.skipped' && entry.slug === 'beta-pack',
       );
       expect(skippedEvent).toBeUndefined();
+
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent).toBeDefined();
+      expect(summaryEvent?.success).toBe(false);
+      expect(summaryEvent?.drift).toBe(true);
+      expect(
+        summaryEvent?.summary?.artifactActions?.byAction?.['would-write'] ?? 0,
+      ).toBeGreaterThan(0);
     } finally {
       await workspace.cleanup();
     }
@@ -298,6 +340,15 @@ describe('content schema CLI compile command', () => {
         (entry) => entry.event === 'content_pack.validated' && entry.packSlug === 'delta-pack',
       );
       expect(warningEvent?.warningCount).toBe(1);
+
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent).toBeDefined();
+      expect(summaryEvent?.success).toBe(false);
+      expect(summaryEvent?.summary?.failedPacks).toEqual(
+        expect.arrayContaining(['delta-pack']),
+      );
     } finally {
       await workspace.cleanup();
     }

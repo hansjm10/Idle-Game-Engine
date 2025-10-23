@@ -72,6 +72,13 @@ async function run() {
     );
     const durationMs = performance.now() - startTime;
 
+    emitRunSummaryEvent({
+      outcome,
+      pretty: options.pretty,
+      durationMs,
+      mode: options.watch ? 'watch' : 'single',
+    });
+
     if (options.watch && context?.mode === 'watch') {
       emitWatchRunEvent({
         outcome,
@@ -848,6 +855,26 @@ function summarizeWatchTriggers(triggers) {
 
 function formatWatchRunLog(payload, pretty) {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
+}
+
+function emitRunSummaryEvent({ outcome, pretty, durationMs, mode }) {
+  const payload = {
+    event: 'cli.run_summary',
+    timestamp: new Date().toISOString(),
+    success: outcome.success === true,
+    drift: outcome.drift === true,
+    summary: outcome.runSummary ?? null,
+  };
+
+  if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
+    payload.durationMs = Number(durationMs.toFixed(2));
+  }
+
+  if (typeof mode === 'string' && mode.length > 0) {
+    payload.mode = mode;
+  }
+
+  console.log(JSON.stringify(payload, undefined, pretty ? 2 : undefined));
 }
 
 function resolveWorkspaceRoot(inputPath) {
