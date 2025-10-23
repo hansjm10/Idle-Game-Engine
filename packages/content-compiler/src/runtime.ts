@@ -1,5 +1,4 @@
-import { createModuleIndices as createModuleIndicesInternal } from './artifacts/module.js';
-import { computeContentDigest } from './hashing.js';
+import { computeContentDigest } from './digest.js';
 import {
   MODULE_NAMES,
   SERIALIZED_PACK_FORMAT_VERSION,
@@ -81,6 +80,29 @@ const SERIALIZED_LOOKUP_PROPERTY: Record<ModuleName, SerializedLookupKey> = {
   runtimeEvents: 'runtimeEventById',
 };
 
+function extractModuleEntryId<Name extends ModuleName>(
+  entry: SerializedNormalizedModules[Name][number],
+  packId: string,
+  moduleName: Name,
+  position: number,
+): string {
+  if (entry === null || typeof entry !== 'object') {
+    throw new Error(
+      `Serialized ${moduleName} entry at index ${position} in pack ${packId} is not an object.`,
+    );
+  }
+
+  const entryId = (entry as { id?: unknown }).id;
+
+  if (typeof entryId !== 'string' || entryId.length === 0) {
+    throw new Error(
+      `Serialized ${moduleName} entry at index ${position} in pack ${packId} is missing a valid id.`,
+    );
+  }
+
+  return entryId;
+}
+
 function cloneModuleArray<Name extends ModuleName>(
   modules: SerializedNormalizedModules,
   name: Name,
@@ -105,7 +127,10 @@ function cloneModuleArrays(
   return Object.freeze(cloned) as SerializedNormalizedModules;
 }
 
-function createLookupRecords(packModules: SerializedNormalizedModules) {
+function createLookupRecords(
+  packModules: SerializedNormalizedModules,
+  packId: string,
+) {
   const lookup = Object.create(null) as Record<LookupKey, unknown>;
   const serializedLookup = Object.create(null) as Record<SerializedLookupKey, unknown>;
 
@@ -116,13 +141,18 @@ function createLookupRecords(packModules: SerializedNormalizedModules) {
     const mapKey = LOOKUP_PROPERTY[name];
     const recordKey = SERIALIZED_LOOKUP_PROPERTY[name];
 
-    for (const entry of entries) {
-      const entryId = (entry as { id: string }).id;
+    entries.forEach((entry, position) => {
+      const entryId = extractModuleEntryId(entry, packId, name, position);
+      if (map.has(entryId)) {
+        throw new Error(
+          `Duplicate ${name} id "${entryId}" detected while rehydrating pack ${packId}.`,
+        );
+      }
       map.set(entryId, entry);
       record[entryId] = entry;
-    }
+    });
 
-    lookup[mapKey] = map;
+    lookup[mapKey] = Object.freeze(map);
     serializedLookup[recordKey] = Object.freeze(record);
   }
 
@@ -160,7 +190,8 @@ export function rehydrateNormalizedPack(
   }
 
   const clonedModules = cloneModuleArrays(serialized.modules);
-  const { lookup, serializedLookup } = createLookupRecords(clonedModules);
+  const packId = serialized.metadata.id;
+  const { lookup, serializedLookup } = createLookupRecords(clonedModules, packId);
   const digestInput = {
     metadata: serialized.metadata,
     modules: clonedModules,
@@ -192,7 +223,9 @@ export function rehydrateNormalizedPack(
     }
   }
 
-  const digestSource = serializedDigest ?? computedDigest;
+  const digestSource = shouldVerify
+    ? computedDigest
+    : serializedDigest ?? computedDigest;
 
   // TODO(#159): Add artifact hash verification once canonical serialization wiring is complete.
 
@@ -221,8 +254,36 @@ export function rehydrateNormalizedPack(
   return pack;
 }
 
+function buildModuleIndex<Name extends ModuleName>(
+  pack: NormalizedContentPack,
+  name: Name,
+): ReadonlyMap<string, number> {
+  const modules = (pack as { readonly modules?: SerializedNormalizedModules }).modules;
+  const entries =
+    (modules?.[name] ?? pack[name]) as SerializedNormalizedModules[Name];
+  const index = new Map<string, number>();
+
+  entries.forEach((entry, position) => {
+    const entryId = extractModuleEntryId(entry, pack.metadata.id, name, position);
+    if (index.has(entryId)) {
+      throw new Error(
+        `Duplicate ${name} id "${entryId}" detected while building indices for pack ${pack.metadata.id}.`,
+      );
+    }
+    index.set(entryId, position);
+  });
+
+  return Object.freeze(index);
+}
+
 export function createModuleIndices(
   pack: NormalizedContentPack,
 ): ModuleIndexTables {
-  return createModuleIndicesInternal(pack);
+  const tables = Object.create(null) as Record<ModuleName, ReadonlyMap<string, number>>;
+
+  for (const name of MODULE_NAMES) {
+    tables[name] = buildModuleIndex(pack, name);
+  }
+
+  return Object.freeze(tables) as ModuleIndexTables;
 }

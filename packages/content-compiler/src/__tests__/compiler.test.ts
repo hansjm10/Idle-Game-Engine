@@ -237,6 +237,23 @@ describe('content compiler scaffolding', () => {
     );
   });
 
+  it('rehydrates without digest verification when disabled', () => {
+    const serialized = createSerializedPack();
+    const tamperedDigest: SerializedContentDigest = {
+      ...serialized.digest,
+      hash: 'fnv1a-deadbeef',
+    };
+
+    const tampered = Object.freeze({
+      ...serialized,
+      digest: tamperedDigest,
+    }) as SerializedNormalizedContentPack;
+
+    const pack = rehydrateNormalizedPack(tampered);
+
+    expect(pack.digest).toEqual(tamperedDigest);
+  });
+
   it('throws when verifyDigest is requested without a serialized digest', () => {
     const serialized = createSerializedPack();
     const { digest: _digest, ...rest } = serialized;
@@ -245,6 +262,64 @@ describe('content compiler scaffolding', () => {
     expect(() => rehydrateNormalizedPack(withoutDigest, { verifyDigest: true })).toThrow(
       /does not include a digest/,
     );
+  });
+
+  it('throws when serialized pack format version is unsupported', () => {
+    const serialized = createSerializedPack();
+    const unsupported = Object.freeze({
+      ...serialized,
+      formatVersion: SERIALIZED_PACK_FORMAT_VERSION + 1,
+    }) as unknown as SerializedNormalizedContentPack;
+
+    expect(() => rehydrateNormalizedPack(unsupported)).toThrow(
+      /Unsupported serialized content pack format/,
+    );
+  });
+
+  it('rejects module entries missing identifiers during rehydration', () => {
+    const modules = createModules({
+      resources: [
+        {} as unknown as SerializedNormalizedModules['resources'][number],
+      ] as SerializedNormalizedModules['resources'],
+    });
+
+    const serialized = createSerializedPack({ modules });
+
+    expect(() => rehydrateNormalizedPack(serialized)).toThrow(/missing a valid id/);
+  });
+
+  it('rejects duplicate module identifiers during rehydration', () => {
+    const resourceA = { id: 'duplicate' } as unknown as SerializedNormalizedModules['resources'][number];
+    const resourceB = { id: 'duplicate' } as unknown as SerializedNormalizedModules['resources'][number];
+
+    const serialized = createSerializedPack({
+      modules: createModules({
+        resources: [resourceA, resourceB] as SerializedNormalizedModules['resources'],
+      }),
+    });
+
+    expect(() => rehydrateNormalizedPack(serialized)).toThrow(/Duplicate resources id/);
+  });
+
+  it('creates zero-based module indices aligned with module order', () => {
+    const modules = createModules({
+      resources: [
+        { id: 'first-resource' } as unknown as SerializedNormalizedModules['resources'][number],
+        { id: 'second-resource' } as unknown as SerializedNormalizedModules['resources'][number],
+      ],
+      generators: [
+        { id: 'generator-a' } as unknown as SerializedNormalizedModules['generators'][number],
+      ],
+    });
+
+    const serialized = createSerializedPack({ modules });
+    const pack = rehydrateNormalizedPack(serialized);
+    const indices = createModuleIndices(pack);
+
+    expect(indices.resources.get('first-resource')).toBe(0);
+    expect(indices.resources.get('second-resource')).toBe(1);
+    expect(indices.generators.get('generator-a')).toBe(0);
+    expect(Object.isFrozen(indices)).toBe(true);
   });
 
   it('computes deterministic hashes for content and artifacts', () => {

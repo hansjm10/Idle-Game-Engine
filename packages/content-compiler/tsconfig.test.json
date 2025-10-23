@@ -7,6 +7,10 @@
       "@idle-engine/content-schema": [
         "packages/content-schema/src/index.ts",
         "packages/content-schema/src/index.d.ts"
+      ],
+      "@idle-engine/content-schema/runtime-helpers": [
+        "packages/content-schema/src/runtime-helpers.ts",
+        "packages/content-schema/src/runtime-helpers.d.ts"
       ]
     }
   },
