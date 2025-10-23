@@ -1256,7 +1256,9 @@ interface NormalizedContentPack {
 - Document schema additions in `docs/idle-engine-design.md` and call out
   migrations in `docs/implementation-plan.md` to keep the DSL contract in sync
   with runtime workstreams.
-- Run `pnpm generate` after editing pack sources; the CLI now validates packs via `@idle-engine/content-schema` and emits JSON log entries (`content_pack.validated`, `content_pack.validation_failed`) that downstream automation can consume.
+- Run `pnpm generate` after editing pack sources; the CLI validates packs via `@idle-engine/content-schema`, then compiles artifacts once validation succeeds, emitting structured JSON log entries (`content_pack.validated`, `content_pack.validation_failed`, `content_pack.compiled`, `watch.run`, etc.) for downstream automation.
+- Use `pnpm generate --check` in CI, Lefthook, and verification scripts to detect drift without rewriting artifacts. `--watch` keeps the pipeline alive during authoring but still marks failures while emitting `watch.run` summaries so you can fix issues before exit.
+- Treat `content/compiled/index.json` (or any path supplied via `--summary`) as the canonical workspace summary. If validation fails or the CLI reports drift, rerun `pnpm generate` before consuming the summary or committing compiled artifacts to avoid shipping stale data.
 - Keep authoring sources in `<package>/content/pack.json`, resolve warnings before publishing, and annotate intentional suppressions so migration scripts can distinguish deliberate exceptions from regressions.
 
 ## 6. Testing Strategy

@@ -167,7 +167,9 @@ export interface ModuleIndexTables {
 
    If `compileContentPack` throws or returns a failure state, the compiler deletes any existing `content/compiled/<slug>.normalized.json` and `src/generated/<slug>.generated.ts` artifacts before moving on. A `--check` run surfaces the removal as a drift so CI fails visibly, and the workspace summary records the failure to stop automation from silently using stale modules.
 
-6. **Log results** – emit machine-readable JSON events (`content_pack.compiled`, `content_pack.compilation_failed`, `content_pack.skipped`, `content_pack.pruned`) that include slug, duration, warning counts, and artifact paths. Logs follow structured logging practices that favor JSON key/value payloads for downstream parsing ([9 Logging Best Practices You Should Know](https://www.dash0.com/guides/logging-best-practices), [Best Practices for Analyzing Logs in Data Pipelines](https://blog.dreamfactory.com/best-practices-for-analyzing-logs-in-data-pipelines)).
+   The CLI never lets compilation run ahead of validation. `pnpm generate` persists a validation failure summary and exits early when schema checks break, and `--check` mode flags the run as drifted whenever that summary would change. This sequencing guarantees validation remains the gatekeeper for every artifact write.
+
+6. **Log results** – emit machine-readable JSON events (`content_pack.compiled`, `content_pack.compilation_failed`, `content_pack.skipped`, `content_pack.pruned`) that include slug, duration, warning counts, and artifact paths. Validation emits its own `content_pack.validated` / `.validation_failed` events before compilation begins so log consumers can correlate outcomes end-to-end. Watch mode adds a `watch.run` event after each iteration with duration, trigger paths, and outcome to simplify monitoring. Logs follow structured logging practices that favor JSON key/value payloads for downstream parsing ([9 Logging Best Practices You Should Know](https://www.dash0.com/guides/logging-best-practices), [Best Practices for Analyzing Logs in Data Pipelines](https://blog.dreamfactory.com/best-practices-for-analyzing-logs-in-data-pipelines)).
 
 ### 5.4 Artifact Contracts
 
@@ -213,6 +215,7 @@ export interface ModuleIndexTables {
 
 - **Workspace summary (`content/compiled/index.json`)**
   - Resides at the repository root and lists every compiled pack with slug, version, digest, artifact hash, dependency set (sourced from `metadata.dependencies`), warning count, and artifact paths.
+  - Serves as the canonical workspace index for automation, docs, and runtime bootstrapping. Consumers must treat the file as stale whenever validation fails or the CLI reports drift and rerun `pnpm generate` before relying on the data.
   - Doubles as the collision manifest: the compiler records when two packs share a digest or dependency and emits warnings immediately.
   - Drives documentation tooling and allows `pnpm generate --check` to diff a single file to detect drift.
 
