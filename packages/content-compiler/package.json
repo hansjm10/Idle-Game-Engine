@@ -25,7 +25,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@idle-engine/content-schema": "workspace:*"
+    "@idle-engine/content-schema": "workspace:*",
+    "canonicalize": "^2.0.0"
   },
   "devDependencies": {
     "@idle-engine/config-eslint": "workspace:*",

@@ -44,6 +44,9 @@ importers:
       '@idle-engine/content-schema':
         specifier: workspace:*
         version: link:../content-schema
+      canonicalize:
+        specifier: ^2.0.0
+        version: 2.1.0
     devDependencies:
       '@idle-engine/config-eslint':
         specifier: workspace:*
@@ -1110,6 +1113,10 @@ packages:
 
   caniuse-lite@1.0.30001748:
     resolution: {integrity: sha512-5P5UgAr0+aBmNiplks08JLw+AW/XG/SurlgZLgB1dDLfAw7EfRGxIwzPHxdSCGY/BTKDqIVyJL87cCN6s0ZR0w==}
+
+  canonicalize@2.1.0:
+    resolution: {integrity: sha512-F705O3xrsUtgt98j7leetNhTWPe+5S72rlL5O4jA1pKqBVQ/dT1O1D6PFxmSXvc0SUOinWS57DKx0I3CHrXJHQ==}
+    hasBin: true
 
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
@@ -3212,6 +3219,8 @@ snapshots:
   callsites@3.1.0: {}
 
   caniuse-lite@1.0.30001748: {}
+
+  canonicalize@2.1.0: {}
 
   chai@5.3.3:
     dependencies:

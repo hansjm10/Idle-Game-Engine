@@ -226,8 +226,8 @@ export interface ModuleIndexTables {
 
 ### 5.5.1 Artifact Integrity Contract
 
-- `artifactHash` is the lowercase hex encoding of the SHA-256 hash of the RFC-8785 canonical JSON representation of the complete `SerializedNormalizedContentPack` object (including `formatVersion`, `digest`, and warning metadata).
-  - The compiler computes the hash after canonical serialization and stores it alongside the JSON artifact; `--check` recomputes the same bytes without touching disk.
+- `artifactHash` is the lowercase hex encoding of the SHA-256 hash of the RFC-8785 canonical JSON representation of the complete `SerializedNormalizedContentPack`, computed with `artifactHash` temporarily set to the empty string.
+  - The compiler canonicalizes a clone of the payload with the hash cleared, hashes those bytes, and then writes the emitted JSON with the computed hash reinserted. Integrity checks repeat the same “blank then canonicalize” procedure before hashing.
   - `rehydrateNormalizedPack` recomputes the digest when `verifyDigest` is enabled (artifact hash validation will land alongside the canonical serializer upgrades tracked in #159).
   - `formatVersion` changes whenever the serialized payload shape or canonicalization rules change. When `formatVersion` increments, the compiler writes new artifacts and the runtime refuses to rehydrate packs whose `formatVersion` it does not understand.
   - `digest` remains the schema-defined content identity (used for dependency tracking, change detection, and collision reporting). `artifactHash` guarantees the integrity of the compiled artifact itself. Automation treats `digest` drift as a semantic change in content, while `artifactHash` mismatches indicate corrupted or stale build output.
