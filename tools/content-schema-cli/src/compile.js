@@ -313,9 +313,14 @@ function createRunSummary({ compileResult, manifestAction }) {
 
   failedPacks.sort();
 
-  const summaryAction = manifestAction;
+  const summaryAction =
+    typeof compileResult.summaryAction === 'string'
+      ? compileResult.summaryAction
+      : 'unchanged';
   const summaryChanged =
     summaryAction === 'written' || summaryAction === 'would-write';
+  const manifestChanged =
+    manifestAction === 'written' || manifestAction === 'would-write';
 
   return {
     packTotals: {
@@ -331,8 +336,9 @@ function createRunSummary({ compileResult, manifestAction }) {
     },
     changedPacks: Array.from(changedPacks).sort(),
     failedPacks,
-    hasChanges: changedActionCount > 0 || summaryChanged,
-    manifestAction: summaryAction,
+    hasChanges: changedActionCount > 0 || summaryChanged || manifestChanged,
+    summaryAction,
+    manifestAction,
   };
 }
 
@@ -570,7 +576,8 @@ function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty })
     payload.artifacts = {
       total: summary.artifactActions.total,
       changed: summary.artifactActions.changed,
-      summaryAction: summary.manifestAction,
+      summaryAction: summary.summaryAction,
+      manifestAction: summary.manifestAction,
       byAction: summary.artifactActions.byAction,
     };
     if (summary.changedPacks.length > 0) {
