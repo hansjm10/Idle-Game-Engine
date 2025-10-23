@@ -95,14 +95,24 @@ function createSummaryLiteral(): string {
 }
 
 function toConstantBase(slug: string): string {
-  const normalized = slug
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toUpperCase();
+  const encodeCharacter = (char: string): string => {
+    if (/^[a-zA-Z0-9]$/.test(char)) {
+      return char.toUpperCase();
+    }
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined) {
+      return '';
+    }
+    const hex = codePoint.toString(16).toUpperCase();
+    const padded = hex.length % 2 === 0 ? hex : `0${hex}`;
+    return `_U${padded}_`;
+  };
+
+  const normalized = Array.from(slug).map(encodeCharacter).join('');
   if (normalized.length === 0) {
     return 'CONTENT_PACK';
   }
-  if (/^[0-9]/.test(normalized)) {
+  if (!/^[A-Z]/.test(normalized[0] ?? '')) {
     return `PACK_${normalized}`;
   }
   return normalized;

@@ -149,17 +149,17 @@ describe('content compiler scaffolding', () => {
     expect(result.serialized.modules).toEqual(pack.modules);
     expect(result.serialized.warnings).toEqual(warnings);
     expect(result.serialized.digest).toEqual(pack.digest);
+    const canonicalForHash =
+      canonicalizeSerializedNormalizedContentPackForHash(result.serialized);
     expect(result.serialized.artifactHash).toBe(
-      computeArtifactHash(result.hashInput),
+      computeArtifactHash(encoder.encode(canonicalForHash)),
     );
     const hashInputJson = decoder.decode(result.hashInput);
     expect(hashInputJson).toContain('"artifactHash":""');
     expect(result.canonicalJson).toBe(
       canonicalizeSerializedNormalizedContentPack(result.serialized),
     );
-    expect(hashInputJson).toBe(
-      canonicalizeSerializedNormalizedContentPackForHash(result.serialized),
-    );
+    expect(hashInputJson).toBe(canonicalForHash);
   });
 
   it('serializes packs emitted by the content schema without a modules bag', () => {
