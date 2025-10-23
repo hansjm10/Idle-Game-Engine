@@ -164,6 +164,20 @@ All modification effects use `NumericFormula` (formulas.ts), which supports:
 
 ---
 
+## 5. Compiler Adoption & Troubleshooting
+
+**Status:** The content compiler now emits deterministic artifacts during `pnpm generate`, and `@idle-engine/content-sample` imports the generated module instead of reparsing `content/pack.json`.
+
+- **Required workflow:** Run `pnpm generate` (or `pnpm generate --check` for CI) after editing any pack JSON, schemas, or runtime event manifests. Commit the updated files under `content/compiled/`, `src/generated/`, and the workspace summary (`content/compiled/index.json`).
+- **Runtime guarantees:** The generated module rehydrates a frozen `NormalizedContentPack`, exposes digest, artifact hash, module indices, and summary metadata, and fails fast if the compiler captured warnings. Downstream code should consume the exported summary (`sampleContentSummary`) instead of inferring metadata at runtime.
+- **Digest verification:** `rehydrateNormalizedPack` recomputes the digest whenever `NODE_ENV !== 'production'`. To diagnose mismatches, rerun `pnpm generate --clean` and compare the hash reported in the thrown error with `content/compiled/sample-pack.normalized.json`. Production builds may opt out of digest verification by keeping `NODE_ENV=production`, preserving the previous behaviour.
+- **Common failures:**  
+  - *Import-time warning error*: fix schema warnings surfaced in the compiler log or add contextual suppressions before retrying.  
+  - *Digest mismatch*: ensure artifacts were regenerated (use `pnpm generate --clean`), verify custom post-processing didn’t mutate the generated module, and re-run tests.  
+  - *Stale summary*: if `content/compiled/index.json` reports outdated versions or warning counts, regenerate artifacts and commit the refreshed summary alongside package-level outputs.
+
+---
+
 ## 4. Schema Digest Migration Strategy
 
 **Question:** What is the migration strategy when schema digests change (e.g., do we embed the digest into save files similar to event manifests)?

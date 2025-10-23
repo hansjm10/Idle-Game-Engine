@@ -4,9 +4,10 @@ Sample content pack used by the prototype milestone. The definitions here will u
 
 ## Content validation
 
-- Authoring sources live in `content/pack.json` and are parsed with `@idle-engine/content-schema` before being exported from `src/index.ts`.
-- Running `pnpm generate` validates the pack and emits machine-readable `content_pack.*` log lines before regenerating runtime event manifests. Keep schema warnings at zero so downstream automation can treat any new warning as a regression.
-- Follow-up work will migrate future DSL compiler output into this directory so the CLI remains the single entry-point for pack validation.
+- Authoring sources live in `content/pack.json`. Run `pnpm generate` after editing content to rebuild the compiled artifacts under `content/compiled/` and `src/generated/`.
+- The generated module (`src/generated/sample-pack.generated.ts`) rehydrates a frozen `NormalizedContentPack`, exposes digest and artifact hash metadata, and ships positional indices so runtime consumers avoid recomputing lookup tables.
+- `src/index.ts` re-exports the generated pack, digest, indices, and summary. It throws during import when the compiler recorded schema warnings, keeping the sample pack warning-free by default.
+- The compiler emits structured `content_pack.*` log lines; treat any new warning as a regression and resolve it before committing.
 
 ## Runtime event manifests
 
@@ -16,4 +17,4 @@ Custom runtime events for the sample pack live in `content/event-types.json`. Af
 - `packages/core/src/events/runtime-event-manifest.generated.ts`
 - the `ContentRuntimeEventType` union exported by `@idle-engine/core`
 
-`sampleEventDefinitions` and `sampleEventTypes` in `src/index.ts` mirror the generated output to keep tests and examples in sync with the manifest.
+`sampleEventDefinitions` and `sampleEventTypes` in `src/index.ts` mirror the generated output to keep tests and examples in sync with the manifest. If you add new event schemas, regenerate the manifest and commit the updated compiler artifacts alongside the changes.
