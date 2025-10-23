@@ -29,7 +29,7 @@ The content DSL distributed through `@idle-engine/content-schema` already return
 
 ## 4. Current State
 
-- `packages/content-sample/src/index.ts` reads `content/pack.json`, calls `parseContentPack`, throws on warnings, and exports the runtime event definitions; it never caches digests or indices.
+- `packages/content-sample/src/index.ts` now imports the compiler's generated module (`src/generated/sample-pack.generated.ts`), re-exporting the rehydrated pack alongside digest, summary, and module indices. Earlier revisions called `parseContentPack` on `content/pack.json` during import, re-running schema validation for every consumer.
 - `tools/content-schema-cli/src/generate.js` builds the runtime event manifest and validates packs but does not write pack-level artifacts or logs.
 - No package currently writes `content/compiled/` or `src/generated/` outputs; a search for those directories under `packages/` returns nothing.
 - There is no shared digest registry, and Lefthook cannot assert that authored JSON matches committed outputs because none exist yet.
@@ -209,6 +209,7 @@ export interface ModuleIndexTables {
 
   `rehydrateNormalizedPack` (implemented in `runtime.ts`) reconstructs lookup maps, freezes arrays, and—when `verifyDigest` is true—recomputes the digest (artifact hash verification is planned as a follow-up in #159). `createModuleIndices` iterates the frozen module arrays, asserts identifier uniqueness, and returns immutable lookup tables so runtime code can map identifiers to array offsets without recomputing them on startup. `SAMPLE_PACK_INDICES.generators.get('starter-generator')` returns the array index inside `SAMPLE_PACK.generators`, allowing consumers to map ids to offsets without recomputing lookup tables.
   The `verifyDigest` guard inspects `globalThis.process?.env` when present instead of assuming `import.meta.env`, preventing runtime errors in environments that do not expose the Vite-style global ([Should the browser consider an import.meta.env object?](https://discourse.wicg.io/t/should-the-browser-consider-an-import-meta-env-object/4522/)).
+  `@idle-engine/content-sample/src/index.ts` aliases these exports to ergonomic runtime names (`sampleContent`, `sampleContentSummary`, `sampleContentIndices`, etc.) and throws whenever the compiler recorded warnings so existing guardrails remain in place without reparsing authoring JSON.
 
 - **Workspace summary (`content/compiled/index.json`)**
   - Resides at the repository root and lists every compiled pack with slug, version, digest, artifact hash, dependency set (sourced from `metadata.dependencies`), warning count, and artifact paths.
@@ -272,8 +273,8 @@ export interface ModuleIndexTables {
 
 ### Phase 3 - Developer Experience & Adoption
 - [ ] Implement watch mode with debounced recompilation and change detection.
-- [ ] Update `packages/content-sample` (and any other consumers) to import generated artifacts.
-- [ ] Backfill documentation and onboarding guides with compiler usage and troubleshooting tips.
+- [x] Update `packages/content-sample` (and any other consumers) to import generated artifacts.
+- [x] Backfill documentation and onboarding guides with compiler usage and troubleshooting tips.
 
 ## 7. Success Criteria
 

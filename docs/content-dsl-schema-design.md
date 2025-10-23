@@ -50,8 +50,9 @@ content is compiled into runtime-ready definitions. The goal is to deliver a
 
 ## 4. Current State
 
-- `packages/content-sample/src/index.ts` exposes handwritten interfaces for
-  resources and generators, but the runtime accepts any shape at compile time.
+- `packages/content-sample/src/index.ts` now re-exports the compiler-generated
+  sample pack (rehydrated content, digest, summary, indices), maintaining the
+  import-time warning guard without reparsing `content/pack.json`.
 - No shared schema package exists. Content authors must rely on informal
   conventions captured in `docs/idle-engine-design.md`.
 - `tools/content-schema-cli` is a stub focused on runtime event manifests and
