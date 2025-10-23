@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -8,10 +9,9 @@ import chokidar from 'chokidar';
 
 import {
   buildRuntimeEventManifest,
+  ContentPackValidationError,
   validateContentPacks,
   writeRuntimeEventManifest,
-  loadRuntimeEventManifestContext,
-  isContentValidationError,
 } from './generate.js';
 import { loadContentCompiler } from './content-compiler.js';
 
@@ -118,21 +118,24 @@ async function executePipeline(
   workspaceRoot,
   compileWorkspacePacks,
 ) {
+  let manifest;
   try {
-    const manifestContext = await loadRuntimeEventManifestContext({
+    manifest = await buildRuntimeEventManifest({
       rootDirectory: workspaceRoot,
     });
-    const validation = await validateContentPacks(
-      manifestContext.manifestDefinitions,
-      {
-        pretty: options.pretty,
-        rootDirectory: workspaceRoot,
-      },
-    );
+  } catch (error) {
+    logUnhandledCliError(error, { pretty: options.pretty });
+    return {
+      success: false,
+      drift: false,
+      runSummary: undefined,
+    };
+  }
 
-    const manifest = await buildRuntimeEventManifest({
+  try {
+    const validation = await validateContentPacks(manifest.manifestDefinitions, {
+      pretty: options.pretty,
       rootDirectory: workspaceRoot,
-      manifestContext,
     });
 
     const manifestResult = await writeRuntimeEventManifest(manifest.moduleSource, {
@@ -177,9 +180,37 @@ async function executePipeline(
       }),
     };
   } catch (error) {
-    if (!isContentValidationError(error)) {
-      console.error(error instanceof Error ? error.stack ?? error.message : error);
+    if (error instanceof ContentPackValidationError) {
+      try {
+        const summaryOutcome = await persistValidationFailureSummary({
+          failures: error.failures,
+          rootDirectory: workspaceRoot,
+          summaryOverride: options.summary,
+          check: options.check === true,
+          clean: options.clean === true,
+        });
+
+        return {
+          success: false,
+          drift:
+            options.check === true &&
+            summaryOutcome.action === 'would-write',
+          runSummary: createValidationFailureRunSummary({
+            failures: error.failures,
+            summaryAction: summaryOutcome.action,
+          }),
+        };
+      } catch (persistError) {
+        logUnhandledCliError(persistError, { pretty: options.pretty });
+        return {
+          success: false,
+          drift: false,
+          runSummary: undefined,
+        };
+      }
     }
+
+    logUnhandledCliError(error, { pretty: options.pretty });
     return {
       success: false,
       drift: false,
@@ -387,6 +418,168 @@ function logManifestResult(result, options) {
     options.pretty ? 2 : undefined,
   );
   console.log(serialized);
+}
+
+async function persistValidationFailureSummary({
+  failures,
+  rootDirectory,
+  summaryOverride,
+  check,
+  clean,
+}) {
+  const summary = createValidationFailureSummary(failures);
+  const absoluteSummaryPath = resolveSummaryOutputPath(
+    rootDirectory,
+    summaryOverride,
+  );
+  const writeResult = await writeDeterministicJsonFile(
+    absoluteSummaryPath,
+    summary,
+    {
+      check,
+      clean,
+    },
+  );
+  return {
+    action: writeResult.action,
+    path: toPosixPath(path.relative(rootDirectory, absoluteSummaryPath)),
+  };
+}
+
+async function writeDeterministicJsonFile(targetPath, data, options) {
+  const serialized = `${JSON.stringify(data, null, 2)}\n`;
+  const existing = await readFileIfExists(targetPath);
+
+  if (options.check) {
+    return {
+      action: existing === serialized ? 'unchanged' : 'would-write',
+    };
+  }
+
+  if (!options.clean && existing === serialized) {
+    return { action: 'unchanged' };
+  }
+
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, serialized, 'utf8');
+  return { action: 'written' };
+}
+
+async function readFileIfExists(targetPath) {
+  try {
+    return await fs.readFile(targetPath, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+function createValidationFailureSummary(failures) {
+  const packs = failures
+    .map((failure) => ({
+      slug: failure.packSlug ?? failure.path,
+      status: 'failed',
+      ...(failure.packVersion ? { version: failure.packVersion } : {}),
+      warnings: [],
+      dependencies: emptySummaryDependencies(),
+      artifacts: emptySummaryArtifacts(),
+      error: failure.message,
+    }))
+    .sort((left, right) => {
+      if (left.slug === right.slug) {
+        return 0;
+      }
+      return left.slug < right.slug ? -1 : 1;
+    });
+
+  return { packs };
+}
+
+function emptySummaryDependencies() {
+  return {
+    requires: [],
+    optional: [],
+    conflicts: [],
+  };
+}
+
+function emptySummaryArtifacts() {
+  return {};
+}
+
+function createValidationFailureRunSummary({ failures, summaryAction }) {
+  const failedSlugs = Array.from(
+    new Set(
+      failures
+        .map((failure) => failure.packSlug)
+        .filter((slug) => typeof slug === 'string' && slug.length > 0),
+    ),
+  ).sort();
+
+  const actionChanges =
+    summaryAction === 'written' || summaryAction === 'would-write';
+
+  return {
+    packTotals: {
+      total: failedSlugs.length,
+      compiled: 0,
+      failed: failedSlugs.length,
+      withWarnings: 0,
+    },
+    artifactActions: {
+      total: 0,
+      changed: 0,
+      byAction: {},
+    },
+    changedPacks: [],
+    failedPacks: failedSlugs,
+    hasChanges: actionChanges,
+    summaryAction,
+    manifestAction: 'skipped',
+  };
+}
+
+function resolveSummaryOutputPath(rootDirectory, overridePath) {
+  if (overridePath) {
+    return path.isAbsolute(overridePath)
+      ? overridePath
+      : path.join(rootDirectory, overridePath);
+  }
+  return path.join(rootDirectory, 'content', 'compiled', 'index.json');
+}
+
+function logUnhandledCliError(error, { pretty }) {
+  const normalized = normalizeError(error);
+  const payload = {
+    event: 'cli.unhandled_error',
+    message: normalized.message,
+    timestamp: new Date().toISOString(),
+    fatal: true,
+    ...(normalized.name ? { name: normalized.name } : {}),
+    ...(normalized.stack ? { stack: normalized.stack } : {}),
+  };
+
+  const serialized = JSON.stringify(
+    payload,
+    undefined,
+    pretty ? 2 : undefined,
+  );
+  console.error(serialized);
+}
+
+function normalizeError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message ?? String(error),
+      stack: error.stack,
+    };
+  }
+  const message = String(error);
+  return {
+    name: undefined,
+    message,
+    stack: undefined,
+  };
 }
 
 async function startWatch(_options, execute, workspaceRoot) {
