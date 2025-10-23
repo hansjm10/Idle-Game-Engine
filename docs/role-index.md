@@ -41,6 +41,8 @@ touch most often.
 
 - `docs/project-board-workflow.md` describes backlog triage.
 - `docs/implementation-plan.md` tracks roadmap workstreams.
+- `docs/design-document-template.md` standardises future proposals and
+  outlines the migration checklist for legacy docs.
 - Service experiments in `services/` should cross-reference
   `docs/resource-state-storage-design.md` and
   `docs/runtime-event-bus-decisions.md` for data contract expectations.

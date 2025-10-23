@@ -18,7 +18,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Getting Started',
       collapsed: false,
-      items: ['index', 'contributor-handbook', 'role-index'],
+      items: ['index', 'contributor-handbook', 'role-index', 'design-document-template'],
     },
     {
       type: 'category',

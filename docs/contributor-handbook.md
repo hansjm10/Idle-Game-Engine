@@ -56,6 +56,8 @@ console output around that summary to keep downstream tooling happy.
   for lifecycle updates, etc.).
 - Keep sections deterministic by including reproduction steps or validation
   commands (`pnpm test --filter <pkg>`).
+- Draft new proposals using `docs/design-document-template.md` and migrate older
+  specs into that format when making substantial edits.
 - Propose substantial architecture changes through the RFC process described in
   `docs/implementation-plan.md`.
 
