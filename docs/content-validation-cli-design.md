@@ -52,7 +52,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 - Avoid unnecessary rewrites by comparing byte content before writing generated modules, JSON artifacts, or the workspace summary.
 - Prevent watch mode from flooding logs by debouncing events, summarising triggers, and flagging repeated validation errors without dropping detail.
 - Keep the validation step performant for dozens of packs (parallel discovery, single validator instance).
-- Preserve compatibility with Node ≥18.18 and pnpm ≥8 as defined in `package.json`.
+- Preserve compatibility with Node ≥20.10 and pnpm ≥8 as defined in `package.json`.
 
 ## 6. Proposed Solution
 

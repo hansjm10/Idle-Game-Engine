@@ -11,7 +11,7 @@ context.
 
 ## Prerequisites
 
-- Node.js ≥18.18 (the docs site requires ≥20, so 20.x LTS is recommended)
+- Node.js ≥20.10 (matches the docs site requirement; stay on the 20.x LTS stream)
 - pnpm ≥8 (we track the exact version in `packageManager` inside `package.json`)
 - Playwright system dependencies (`pnpm exec playwright install-deps`) on fresh
   Linux hosts before running accessibility smoke tests
