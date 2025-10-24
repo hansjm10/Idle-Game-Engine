@@ -3,6 +3,7 @@ node_modules/
 
 # Builds
 packages/*/dist/
+packages/*/build/
 services/*/dist/
 tools/*/dist/
 

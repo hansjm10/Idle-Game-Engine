@@ -10,6 +10,9 @@
     "test:a11y": "pnpm --filter @idle-engine/a11y-smoke-tests run test",
     "typecheck": "pnpm -r run typecheck",
     "dev": "pnpm --filter shell-web run dev",
+    "docs:dev": "pnpm --filter @idle-engine/docs run start",
+    "docs:build": "pnpm --filter @idle-engine/docs run build",
+    "docs:serve": "pnpm --filter @idle-engine/docs run serve",
     "generate": "pnpm --filter @idle-engine/content-schema-cli run compile",
     "prepare": "lefthook install"
   },
@@ -19,7 +22,7 @@
     "lefthook": "^1.10.10"
   },
   "engines": {
-    "node": ">=18.18.0",
+    "node": ">=20.10.0",
     "pnpm": ">=8.0.0"
   },
   "packageManager": "pnpm@10.18.1"

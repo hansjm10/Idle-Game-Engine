@@ -1234,110 +1234,104 @@ function executePrestigeReset(currentStep: number, layer: number) {
 }
 ```
 
-**Security Architecture**:
+**Security Architecture**
 
-1. **Trust Boundary**: The Worker's `self.onmessage` handler is the security boundary
-   - **Untrusted**: Any message from main thread (includes UI, dev tools, injected scripts)
-   - **Trusted**: Code executing within the Worker context
+- **Trust Boundary**: The Worker's `self.onmessage` handler acts as the security boundary.
+  - **Untrusted**: Any message from the main thread (UI, dev tools, injected scripts).
+  - **Trusted**: Code executing within the Worker context.
+- **Priority & Timestamp Assignment**:
+  - Messages from `postMessage()` always become PLAYER priority and receive a Worker-stamped monotonic timestamp.
+  - Internal `commandQueue.enqueue()` calls (trusted code) keep the requested priority and can supply custom ordering metadata.
+- **Attack Prevention**: Compromised UI code cannot escalate permissions.
 
-2. **Priority & Timestamp Assignment**:
-   - Messages from `postMessage()` → **Always PLAYER priority** and receive a Worker-stamped timestamp that advances monotonically
-   - Internal `commandQueue.enqueue()` calls → Use specified priority (trusted code) and can supply their own timestamp/ordering metadata
+```typescript
+// ✗ Attack attempt (from compromised UI):
+worker.postMessage({
+  type: 'COMMAND',
+  source: 'SYSTEM', // Attacker tries to escalate
+  command: { type: 'GRANT_RESOURCES', payload: { energy: 9999999 } }
+});
 
-3. **Attack Prevention**:
-   ```typescript
-   // ✗ Attack attempt (from compromised UI):
-   worker.postMessage({
-     type: 'COMMAND',
-     source: 'SYSTEM', // Attacker tries to escalate
-     command: { type: 'GRANT_RESOURCES', payload: { energy: 9999999 } }
-   });
+// ✓ Runtime handles safely:
+// - Ignores event.data.source and event.data.command.timestamp
+// - Forces priority = PLAYER
+// - Replaces timestamp with Worker-owned monotonic clock
+// - Command executes with normal player permissions
+```
 
-   // ✓ Runtime handles safely:
-   // - Ignores event.data.source and event.data.command.timestamp
-   // - Forces priority = PLAYER
-   // - Replaces timestamp with Worker-owned monotonic clock
-   // - Command executes with normal player permissions
-   ```
+- **Authorization via Priority**: Command handlers receive `context.priority` and reject work outside their allowed tier.
 
-4. **Authorization via Priority**: Command handlers use `context.priority` to enforce permissions:
-   ```typescript
-  const resources: ResourceState = runtimeResources; // Created via createResourceState(...)
+```typescript
+const resources: ResourceState = runtimeResources; // Created via createResourceState(...)
 
-  // System-only commands check priority
-  const grantResourcesHandler = (
-    payload: GrantResourcesPayload,
-    ctx: ExecutionContext
-  ) => {
-    // Only SYSTEM priority can execute this command
-    if (ctx.priority !== CommandPriority.SYSTEM) {
-      telemetry.recordWarning('UnauthorizedSystemCommand', {
-        payload,
-        attemptedPriority: ctx.priority
-      });
-      return; // Reject - only system commands allowed
-    }
-
-    const index = resources.requireIndex(payload.resourceId);
-    resources.addAmount(index, payload.amount); // Marks dirty + clamps internally
-  };
-
-  // Most commands accept any priority (SYSTEM, PLAYER, or AUTOMATION)
-  const purchaseGeneratorHandler = (
-    payload: PurchaseGeneratorPayload,
-    ctx: ExecutionContext
-  ) => {
-    // All priorities can purchase - no authorization check needed
-    // (Purchases are gated by resource cost, not priority)
-
-    const generator = registry.getGenerator(payload.generatorId);
-    const totalCost = generator.cost * payload.count;
-    const energyIndex = resources.requireIndex('energy'); // Sample pack purchases spend energy
-
-    const spendSucceeded = resources.spendAmount(energyIndex, totalCost, {
-      commandId: 'PURCHASE_GENERATOR',
-      systemId:
-        ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined
+// System-only commands check priority
+const grantResourcesHandler = (
+  payload: GrantResourcesPayload,
+  ctx: ExecutionContext
+) => {
+  if (ctx.priority !== CommandPriority.SYSTEM) {
+    telemetry.recordWarning('UnauthorizedSystemCommand', {
+      payload,
+      attemptedPriority: ctx.priority
     });
+    return; // Reject - only system commands allowed
+  }
 
-    if (!spendSucceeded) {
-      telemetry.recordWarning('InsufficientResources', {
-        generatorId: payload.generatorId,
-        cost: totalCost,
-        priority: ctx.priority
-      });
-      return; // Command rejected, no state mutation
-    }
+  const index = resources.requireIndex(payload.resourceId);
+  resources.addAmount(index, payload.amount); // Marks dirty + clamps internally
+};
 
-    generator.owned += payload.count;
-  };
+// Most commands accept any priority (SYSTEM, PLAYER, or AUTOMATION)
+const purchaseGeneratorHandler = (
+  payload: PurchaseGeneratorPayload,
+  ctx: ExecutionContext
+) => {
+  const generator = registry.getGenerator(payload.generatorId);
+  const totalCost = generator.cost * payload.count;
+  const energyIndex = resources.requireIndex('energy'); // Sample pack purchases spend energy
 
-   // Some commands restrict based on priority
-   const prestigeResetHandler = (
-     payload: PrestigeResetPayload,
-     ctx: ExecutionContext
-   ) => {
-     // Only PLAYER or SYSTEM can trigger prestige (prevents automation accidents)
-     if (ctx.priority === CommandPriority.AUTOMATION) {
-       telemetry.recordWarning('AutomationPrestigeBlocked', { payload });
-       return; // Require explicit player confirmation
-     }
+  const spendSucceeded = resources.spendAmount(energyIndex, totalCost, {
+    commandId: 'PURCHASE_GENERATOR',
+    systemId: ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined
+  });
 
-     // Execute prestige reset with current step and layer
-     executePrestigeReset(ctx.step, payload.layer);
-   };
-   ```
+  if (!spendSucceeded) {
+    telemetry.recordWarning('InsufficientResources', {
+      generatorId: payload.generatorId,
+      cost: totalCost,
+      priority: ctx.priority
+    });
+    return; // Command rejected, no state mutation
+  }
 
-   **Priority Authorization Levels**:
-   - `CommandPriority.SYSTEM` (0): Full authority - migrations, admin tools, engine operations
-   - `CommandPriority.PLAYER` (1): User-initiated - purchases, prestige, manual actions
-   - `CommandPriority.AUTOMATION` (2): Automated - purchases allowed, but some operations restricted (prestige)
+  generator.owned += payload.count;
+};
 
-   **Handler Authorization Patterns**:
-   - **No restrictions** (purchases, resource collection): Accept any priority
-   - **Player-or-System only** (prestige, destructive actions): Block AUTOMATION
-   - **System-only** (migrations, debug commands): Require SYSTEM priority
-   ```
+// Some commands restrict based on priority
+const prestigeResetHandler = (
+  payload: PrestigeResetPayload,
+  ctx: ExecutionContext
+) => {
+  if (ctx.priority === CommandPriority.AUTOMATION) {
+    telemetry.recordWarning('AutomationPrestigeBlocked', { payload });
+    return; // Require explicit player confirmation
+  }
+
+  executePrestigeReset(ctx.step, payload.layer);
+};
+```
+
+**Priority Authorization Levels**
+
+- `CommandPriority.SYSTEM` (0): Full authority—migrations, admin tools, engine operations.
+- `CommandPriority.PLAYER` (1): User actions—purchases, prestige, manual triggers.
+- `CommandPriority.AUTOMATION` (2): Automation flows—purchases allowed, destructive operations restricted.
+
+**Handler Authorization Patterns**
+
+- **No restrictions** (purchases, resource collection): Accept any priority.
+- **Player-or-System only** (prestige, destructive actions): Block AUTOMATION.
+- **System-only** (migrations, debug commands): Require SYSTEM priority.
 
 **Security Note**: The `CommandSource` enum exists for documentation purposes, but the Worker **never trusts the source field from external messages**. All `postMessage()` commands are treated as PLAYER priority, regardless of what the sender claims. Only code running inside the Worker can enqueue SYSTEM or AUTOMATION commands.
 
@@ -2825,7 +2819,7 @@ The command queue is complete when:
 
 1. **Determinism**: Replaying a command log produces identical final state (verified by property tests)
 2. **Priority**: Commands execute in correct priority order across 1000+ enqueued commands (benchmark)
-3. **Performance**: Command processing overhead < 5% of tick budget at 60 ticks/sec (profiled)
+3. **Performance**: Command processing overhead stays under 5% of the tick budget at 60 ticks/sec (profiled)
 4. **Integration**: React shell can enqueue commands, runtime executes them, state updates reflected in UI (E2E test)
 5. **Observability**: Command queue depth and execution metrics exposed via diagnostics interface
 

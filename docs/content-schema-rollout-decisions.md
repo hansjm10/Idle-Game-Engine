@@ -380,7 +380,7 @@ Review of risks from §7 and their current mitigation status:
 
 **Action Items (Issue #143 recommended - Phase 6):**
 - [ ] Implement validation result caching (memoize by pack id + version + digest)
-- [ ] Add performance benchmarks for validation (target: <100ms for packs with 100+ entities)
+- [ ] Add performance benchmarks for validation (target: under 100ms for packs with 100+ entities)
 - [ ] Create large test pack (500+ resources, 200+ generators) for performance testing
 - [ ] Profile validation bottlenecks (cross-reference checks, formula walking, cycle detection)
 - [ ] Consider worker-based validation for large packs if main-thread blocking observed

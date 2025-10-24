@@ -657,7 +657,7 @@ https://raw.githubusercontent.com/open-telemetry/opentelemetry-specification/mai
   entries align with the manifest generator responsible for producing
   `GENERATED_RUNTIME_EVENT_DEFINITIONS`:
   - `id`: `contentIdSchema`, derived from the canonical runtime event type
-    `\`${namespace}:${name}\``. Authors may omit the field; when provided the
+    `namespace:name`. Authors may omit the field; when provided the
     schema verifies the value matches the derived identifier before emitting the
     canonical lowercased string.
   - `namespace`: trimmed slug (≤32 chars) for grouping related events.
