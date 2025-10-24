@@ -39,16 +39,24 @@ async function main() {
   }
 
   let parsed;
-  let candidate = '';
   let lastError;
-  // Walk upward until we accumulate a full JSON block (covers compact and pretty output).
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    candidate = candidate.length > 0 ? `${lines[index]}\n${candidate}` : lines[index];
-    try {
-      parsed = JSON.parse(candidate);
+  let errorCandidate = '';
+  // Walk upward ignoring trailing noise until we accumulate a full JSON block (covers compact and pretty output).
+  for (let tailIndex = lines.length - 1; tailIndex >= 0; tailIndex -= 1) {
+    let working = '';
+    for (let index = tailIndex; index >= 0; index -= 1) {
+      working = working.length > 0 ? `${lines[index]}\n${working}` : lines[index];
+      try {
+        parsed = JSON.parse(working);
+        break;
+      } catch (error) {
+        lastError = error;
+        errorCandidate = working;
+      }
+    }
+
+    if (parsed) {
       break;
-    } catch (error) {
-      lastError = error;
     }
   }
 
@@ -57,7 +65,7 @@ async function main() {
       [
         `Failed to parse trailing JSON payload in ${absolutePath}.`,
         `Payload:`,
-        candidate,
+        errorCandidate.length > 0 ? errorCandidate : '(no viable JSON candidate found)',
         lastError instanceof Error ? lastError.message : String(lastError),
       ].join('\n'),
     );
