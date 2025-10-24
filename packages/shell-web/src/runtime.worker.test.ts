@@ -361,4 +361,59 @@ describe('runtime.worker integration', () => {
     expect(runtimeTickSpy).toHaveBeenCalledTimes(1);
     expect(runtimeTickSpy.mock.calls[0]![0]).toBeCloseTo(remainingMs, 6);
   });
+
+  it('excludes offline overflow from the next foreground tick', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      runtimeOptions: {
+        offlineCatchUp: {
+          maxElapsedMs: 60_000,
+        },
+      },
+    });
+
+    const runtimeTickSpy = vi.spyOn(harness.runtime, 'tick');
+    context.postMessage.mockClear();
+
+    context.dispatch({ type: 'OFFLINE_CATCH_UP', elapsedMs: 120_000 });
+
+    const resultMessage = context.postMessage.mock.calls
+      .map(([payload]) => payload)
+      .find(
+        (payload) =>
+          typeof payload === 'object' &&
+          payload !== null &&
+          (payload as { type?: unknown }).type === 'OFFLINE_CATCH_UP_RESULT',
+      ) as
+      | {
+          result: {
+            simulatedMs: number;
+            overflowMs: number;
+            remainingMs: number;
+          };
+        }
+      | undefined;
+
+    expect(resultMessage?.result.simulatedMs).toBe(60_000);
+    expect(resultMessage?.result.overflowMs).toBe(60_000);
+    expect(resultMessage?.result.remainingMs).toBe(0);
+    expect(harness.runtime.getAccumulatorBacklogMs()).toBe(0);
+
+    runtimeTickSpy.mockClear();
+    harness.tick();
+
+    expect(runtimeTickSpy).toHaveBeenCalledTimes(1);
+    expect(runtimeTickSpy.mock.calls[0]![0]).toBe(0);
+  });
 });

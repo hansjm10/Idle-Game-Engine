@@ -106,6 +106,7 @@ export class IdleEngineRuntime {
   private nextExecutableStep = 0;
   private readonly diagnostics: RuntimeDiagnosticsController;
   private readonly scheduler: FixedTimestepScheduler;
+  private offlineCatchUpResetPending = false;
 
   constructor(options: IdleEngineRuntimeOptions = {}) {
     this.stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
@@ -234,7 +235,12 @@ export class IdleEngineRuntime {
   }
 
   runOfflineCatchUp(elapsedMs: number): OfflineCatchUpResult {
-    return this.scheduler.catchUp(elapsedMs);
+    this.offlineCatchUpResetPending = true;
+    try {
+      return this.scheduler.catchUp(elapsedMs);
+    } finally {
+      this.offlineCatchUpResetPending = false;
+    }
   }
 
   getAccumulatorBacklogMs(): number {
@@ -270,9 +276,21 @@ export class IdleEngineRuntime {
         tickDiagnostics.addPhase('mode.offline', 0);
       }
 
+      const resetOutbound = context.isCatchUp
+        ? this.offlineCatchUpResetPending && context.isFirstInBatch
+        : context.isFirstInBatch;
+
       this.eventBus.beginTick(this.currentStep, {
-        resetOutbound: context.isFirstInBatch,
+        resetOutbound,
       });
+
+      if (
+        context.isCatchUp &&
+        context.isFirstInBatch &&
+        this.offlineCatchUpResetPending
+      ) {
+        this.offlineCatchUpResetPending = false;
+      }
 
       const commandPhaseStart = getMonotonicTimeMs();
 

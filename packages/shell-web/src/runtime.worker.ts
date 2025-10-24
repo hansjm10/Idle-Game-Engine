@@ -5,6 +5,7 @@ import {
   CommandQueue,
   CommandDispatcher,
   IdleEngineRuntime,
+  type IdleEngineRuntimeOptions,
   type BackPressureSnapshot,
   type DiagnosticTimelineResult,
   type EventBus,
@@ -69,6 +70,7 @@ export interface RuntimeWorkerOptions {
   readonly context?: DedicatedWorkerGlobalScope;
   readonly now?: () => number;
   readonly scheduleTick?: (callback: () => void) => () => void;
+  readonly runtimeOptions?: IdleEngineRuntimeOptions;
 }
 
 export interface RuntimeWorkerHarness {
@@ -111,6 +113,7 @@ export function initializeRuntimeWorker(
   const commandQueue = new CommandQueue();
   const commandDispatcher = new CommandDispatcher();
   const runtime = new IdleEngineRuntime({
+    ...options.runtimeOptions,
     commandQueue,
     commandDispatcher,
   });
@@ -185,7 +188,7 @@ export function initializeRuntimeWorker(
   const performOfflineCatchUp = (elapsedMs: number): OfflineCatchUpResult => {
     const result = runOfflineCatchUpInternal(elapsedMs, true);
     const currentTime = now();
-    const remainingMs = Math.max(0, result.requestedMs - result.simulatedMs);
+    const remainingMs = Math.max(0, result.backlogMs);
     const baselineTimestamp = currentTime - remainingMs;
     lastTimestamp = Number.isFinite(baselineTimestamp)
       ? baselineTimestamp

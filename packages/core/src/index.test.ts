@@ -1187,12 +1187,22 @@ describe('IdleEngineRuntime', () => {
     expect(ticks).toEqual([0, 1, 2, 3, 4]);
   });
 
-  it('flushes outbound event buffers between offline catch-up batches', () => {
+  it('preserves outbound event buffers across offline catch-up batches', () => {
     const stepsToSimulate = 300;
+    const eventBusOptions = {
+      ...DEFAULT_EVENT_BUS_OPTIONS,
+      channelConfigs: {
+        ...(DEFAULT_EVENT_BUS_OPTIONS.channelConfigs ?? {}),
+        'automation:toggled': {
+          capacity: stepsToSimulate + 50,
+        },
+      },
+    };
     const { runtime } = createRuntime({
       offlineCatchUp: {
         maxBatchSteps: 64,
       },
+      eventBusOptions,
     });
 
     runtime.addSystem({
@@ -1209,6 +1219,12 @@ describe('IdleEngineRuntime', () => {
 
     expect(catchUpResult.executedSteps).toBe(stepsToSimulate);
     expect(runtime.getCurrentStep()).toBe(stepsToSimulate);
+
+    const outbound = runtime.getEventBus().getOutboundBuffer(1);
+
+    expect(outbound.length).toBe(stepsToSimulate);
+    expect(outbound.at(0).tick).toBe(0);
+    expect(outbound.at(stepsToSimulate - 1).tick).toBe(stepsToSimulate - 1);
 
     const backPressure = runtime.getEventBus().getBackPressureSnapshot();
     expect(backPressure.counters.overflowed).toBe(0);
