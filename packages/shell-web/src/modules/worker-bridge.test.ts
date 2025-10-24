@@ -6,6 +6,7 @@ import {
   CommandSource,
   WorkerBridgeImpl,
   type RuntimeStateSnapshot,
+  type OfflineCatchUpSummary,
 } from './worker-bridge.js';
 
 type MessageListener<TData = unknown> = (event: { data: TData }) => void;
@@ -130,6 +131,12 @@ describe('WorkerBridgeImpl', () => {
     expect(() => bridge.enableDiagnostics()).toThrow(
       'WorkerBridge has been disposed',
     );
+    expect(() => bridge.setVisibilityState(true)).toThrow(
+      'WorkerBridge has been disposed',
+    );
+    expect(() => bridge.requestOfflineCatchUp(1000)).toThrow(
+      'WorkerBridge has been disposed',
+    );
   });
 
   it('subscribes to diagnostics updates and forwards payloads', () => {
@@ -174,5 +181,58 @@ describe('WorkerBridgeImpl', () => {
     });
 
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('posts visibility envelopes when toggling state', () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    bridge.setVisibilityState(false);
+
+    expect(worker.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'VISIBILITY_CHANGE',
+        visible: false,
+      }),
+    );
+  });
+
+  it('requests offline catch-up and surfaces results to listeners', () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const summaries: OfflineCatchUpSummary[] = [];
+    bridge.onOfflineCatchUpResult((summary) => summaries.push(summary));
+
+    bridge.requestOfflineCatchUp(9000);
+
+    expect(worker.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'OFFLINE_CATCH_UP',
+        elapsedMs: 9000,
+      }),
+    );
+
+    worker.emitMessage('message', {
+      type: 'OFFLINE_CATCH_UP_RESULT',
+      result: {
+        requestedMs: 9000,
+        simulatedMs: 8000,
+        executedSteps: 8,
+        overflowMs: 1000,
+        backlogMs: 0,
+        remainingMs: 1000,
+      },
+    });
+
+    expect(summaries).toEqual([
+      {
+        requestedMs: 9000,
+        simulatedMs: 8000,
+        executedSteps: 8,
+        overflowMs: 1000,
+        backlogMs: 0,
+        remainingMs: 1000,
+      },
+    ]);
   });
 });
