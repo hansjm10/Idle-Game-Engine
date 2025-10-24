@@ -65,7 +65,11 @@ interface ResourceDeltaBuffers {
 export class RuntimeChangeJournal {
   private readonly requireMonotonicTick: boolean;
   private lastTick: number | undefined;
-  private readonly resourceBuffers: ResourceDeltaBuffers = createResourceDeltaBuffers();
+  private readonly resourcePublishBuffers: [ResourceDeltaBuffers, ResourceDeltaBuffers] = [
+    createResourceDeltaBuffers(),
+    createResourceDeltaBuffers(),
+  ];
+  private activeResourcePublishIndex = 0;
 
   constructor(options: RuntimeChangeJournalOptions = {}) {
     this.requireMonotonicTick = options.requireMonotonicTick !== false;
@@ -85,9 +89,14 @@ export class RuntimeChangeJournal {
       this.lastTick = tick;
     }
 
-    const resourceDelta = input.resources
-      ? buildResourceDelta(input.resources.snapshot(), this.resourceBuffers)
-      : undefined;
+    let resourceDelta: RuntimeResourceDelta | undefined;
+    if (input.resources) {
+      const resourceSnapshot = input.resources.snapshot();
+      if (resourceSnapshot.dirtyCount > 0) {
+        const publishBuffers = this.swapResourcePublishBuffers();
+        resourceDelta = buildResourceDelta(resourceSnapshot, publishBuffers);
+      }
+    }
 
     const generatorSnapshot = input.generators?.snapshot();
     const generatorDelta = generatorSnapshot && generatorSnapshot.dirtyCount > 0
@@ -110,16 +119,19 @@ export class RuntimeChangeJournal {
       upgrades: upgradeDelta,
     };
   }
+
+  private swapResourcePublishBuffers(): ResourceDeltaBuffers {
+    const nextIndex = this.activeResourcePublishIndex ^ 1;
+    this.activeResourcePublishIndex = nextIndex;
+    return this.resourcePublishBuffers[nextIndex];
+  }
 }
 
 function buildResourceDelta(
   snapshot: ResourceStateSnapshot,
   buffers: ResourceDeltaBuffers,
-): RuntimeResourceDelta | undefined {
+): RuntimeResourceDelta {
   const dirtyCount = snapshot.dirtyCount;
-  if (dirtyCount === 0) {
-    return undefined;
-  }
 
   ensureResourceCapacity(buffers, dirtyCount);
 
@@ -187,4 +199,3 @@ function nextPowerOfTwo(value: number): number {
   }
   return 2 ** Math.ceil(Math.log2(value));
 }
-
