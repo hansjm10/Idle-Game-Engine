@@ -96,4 +96,36 @@ describe('FixedTimestepScheduler', () => {
     expect(executions[0]?.isFirstInBatch).toBe(true);
     expect(executions[1]?.isFirstInBatch).toBe(false);
   });
+
+  it('treats non-finite offline catch-up requests as a no-op', () => {
+    const executions: SchedulerStepExecutionContext[] = [];
+    const scheduler = new FixedTimestepScheduler(
+      (context) => {
+        executions.push({ ...context });
+      },
+      {
+        stepSizeMs: 100,
+      },
+    );
+
+    // Build a backlog that should remain untouched by the guard.
+    scheduler.advance(50);
+    const priorBacklog = scheduler.getAccumulatorMs();
+
+    const nanResult = scheduler.catchUp(Number.NaN);
+    expect(nanResult.requestedMs).toBe(0);
+    expect(nanResult.simulatedMs).toBe(0);
+    expect(nanResult.executedSteps).toBe(0);
+    expect(nanResult.overflowMs).toBe(0);
+    expect(nanResult.backlogMs).toBe(priorBacklog);
+
+    const infiniteResult = scheduler.catchUp(Number.POSITIVE_INFINITY);
+    expect(infiniteResult.requestedMs).toBe(0);
+    expect(infiniteResult.simulatedMs).toBe(0);
+    expect(infiniteResult.executedSteps).toBe(0);
+    expect(infiniteResult.overflowMs).toBe(0);
+    expect(infiniteResult.backlogMs).toBe(priorBacklog);
+
+    expect(executions).toHaveLength(0);
+  });
 });

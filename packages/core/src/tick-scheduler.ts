@@ -201,9 +201,13 @@ export class FixedTimestepScheduler {
   }
 
   catchUp(elapsedMs: number): OfflineCatchUpResult {
-    if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    const normalizedRequest = Number.isFinite(elapsedMs)
+      ? Math.max(0, elapsedMs)
+      : 0;
+
+    if (normalizedRequest <= 0) {
       return {
-        requestedMs: Math.max(0, elapsedMs ?? 0),
+        requestedMs: 0,
         simulatedMs: 0,
         executedSteps: 0,
         overflowMs: 0,
@@ -212,7 +216,6 @@ export class FixedTimestepScheduler {
     }
 
     const priorAccumulator = this.accumulatorMs;
-    const normalizedRequest = Math.max(0, elapsedMs);
     const clampedRequest = Math.min(
       normalizedRequest,
       this.maxOfflineCatchUpMs,
