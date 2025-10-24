@@ -22,6 +22,7 @@ import {
   type TelemetryFacade,
 } from './telemetry.js';
 import type {
+  DiagnosticTimelinePhase,
   DiagnosticTimelineResult,
 } from './diagnostics/diagnostic-timeline.js';
 import type {
@@ -355,8 +356,12 @@ describe('IdleEngineRuntime', () => {
     expect(delta.entries).toHaveLength(2);
     expect(delta.entries.map((entry) => entry.tick)).toEqual([0, 1]);
 
+    const backlogSamples = delta.entries.map(
+      (entry) => entry.metadata?.accumulatorBacklogMs,
+    );
+    expect(backlogSamples).toEqual([35, 25]);
+
     for (const entry of delta.entries) {
-      expect(entry.metadata?.accumulatorBacklogMs).toBeCloseTo(25, 5);
       expect(entry.metadata?.queue).toEqual({
         sizeBefore: 0,
         sizeAfter: 0,
@@ -1117,6 +1122,92 @@ describe('IdleEngineRuntime', () => {
     } finally {
       resetTelemetry();
     }
+  });
+
+  it('throttles ticks while backgrounded and restores foreground cadence', () => {
+    const executedSteps: number[] = [];
+    const { runtime } = createRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 5,
+      background: { maxStepsPerFrame: 1 },
+    });
+
+    runtime.addSystem({
+      id: 'counter',
+      tick: () => {
+        executedSteps.push(runtime.getCurrentStep());
+      },
+    });
+
+    runtime.tick(100);
+    expect(executedSteps).toHaveLength(5);
+    expect(runtime.getCurrentStep()).toBe(5);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(50);
+
+    executedSteps.length = 0;
+    runtime.setBackgroundThrottled(true);
+    runtime.tick(100);
+
+    expect(executedSteps).toHaveLength(1);
+    expect(runtime.getCurrentStep()).toBe(6);
+    expect(runtime.getAccumulatorBacklogMs()).toBe(140);
+
+    runtime.setBackgroundThrottled(false);
+    executedSteps.length = 0;
+    runtime.tick(100);
+
+    expect(executedSteps).toHaveLength(5);
+    expect(runtime.getCurrentStep()).toBe(11);
+  });
+
+  it('replays offline catch-up within configured caps', () => {
+    const ticks: number[] = [];
+    const { runtime } = createRuntime({
+      stepSizeMs: 20,
+      maxStepsPerFrame: 5,
+      offlineCatchUp: {
+        maxElapsedMs: 100,
+        maxBatchSteps: 3,
+      },
+    });
+
+    runtime.addSystem({
+      id: 'tracker',
+      tick: (context) => {
+        ticks.push(context.step);
+      },
+    });
+
+    const result = runtime.runOfflineCatchUp(240);
+
+    expect(result.simulatedMs).toBe(100);
+    expect(result.overflowMs).toBe(140);
+    expect(result.executedSteps).toBe(5);
+    expect(runtime.getCurrentStep()).toBe(5);
+    expect(ticks).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('records pipeline phases inside diagnostic metadata', () => {
+    const { runtime, diagnostics } = createRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 2,
+      diagnostics: {
+        enabled: true,
+        capacity: 16,
+      },
+    });
+
+    runtime.enableDiagnostics();
+    runtime.tick(20);
+
+    const delta = diagnostics.readDelta();
+    expect(delta.entries.length).toBeGreaterThan(0);
+    const lastEntry = delta.entries[delta.entries.length - 1];
+    const phases = (lastEntry?.metadata?.phases ?? []) as DiagnosticTimelinePhase[];
+    const phaseNames = phases.map((phase) => phase.name);
+    expect(phaseNames).toContain('commands.capture');
+    expect(phaseNames).toContain('systems.execute');
+    expect(phaseNames).toContain('diagnostics.emit');
   });
 
   it('produces identical event frames across deterministic runs', () => {

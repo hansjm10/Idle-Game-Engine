@@ -8,6 +8,7 @@ import {
   type BackPressureSnapshot,
   type DiagnosticTimelineResult,
   type EventBus,
+  type OfflineCatchUpResult,
 } from '@idle-engine/core';
 
 interface CommandMessage {
@@ -26,10 +27,22 @@ interface DiagnosticsSubscribeMessage {
   readonly type: 'DIAGNOSTICS_SUBSCRIBE';
 }
 
+interface VisibilityChangeMessage {
+  readonly type: 'VISIBILITY_CHANGE';
+  readonly visible: boolean;
+}
+
+interface OfflineCatchUpMessage {
+  readonly type: 'OFFLINE_CATCH_UP';
+  readonly elapsedMs: number;
+}
+
 type IncomingMessage =
   | CommandMessage
   | TerminateMessage
-  | DiagnosticsSubscribeMessage;
+  | DiagnosticsSubscribeMessage
+  | VisibilityChangeMessage
+  | OfflineCatchUpMessage;
 
 interface StateUpdateMessage {
   readonly type: 'STATE_UPDATE';
@@ -39,6 +52,15 @@ interface StateUpdateMessage {
 interface DiagnosticsUpdateMessage {
   readonly type: 'DIAGNOSTICS_UPDATE';
   readonly diagnostics: DiagnosticTimelineResult;
+}
+
+interface OfflineCatchUpResultPayload extends OfflineCatchUpResult {
+  readonly remainingMs: number;
+}
+
+interface OfflineCatchUpResultMessage {
+  readonly type: 'OFFLINE_CATCH_UP_RESULT';
+  readonly result: OfflineCatchUpResultPayload;
 }
 
 const RAF_INTERVAL_MS = 16;
@@ -52,6 +74,8 @@ export interface RuntimeWorkerOptions {
 export interface RuntimeWorkerHarness {
   readonly runtime: IdleEngineRuntime;
   readonly handleMessage: (message: IncomingMessage) => void;
+  readonly setVisibility: (visible: boolean) => void;
+  readonly requestOfflineCatchUp: (elapsedMs: number) => OfflineCatchUpResult;
   readonly tick: () => void;
   readonly dispose: () => void;
 }
@@ -127,6 +151,53 @@ export function initializeRuntimeWorker(
     postDiagnosticsUpdate(result);
   };
 
+  const emitStateSnapshot = () => {
+    const eventBus = runtime.getEventBus();
+    const events = collectOutboundEvents(eventBus);
+    const backPressure = eventBus.getBackPressureSnapshot();
+
+    const message: StateUpdateMessage = {
+      type: 'STATE_UPDATE',
+      state: {
+        currentStep: runtime.getCurrentStep(),
+        events,
+        backPressure,
+      },
+    };
+    context.postMessage(message);
+  };
+
+  const runOfflineCatchUpInternal = (
+    elapsedMs: number,
+    emitOutputs: boolean,
+  ): OfflineCatchUpResult => {
+    const normalizedElapsed = Math.max(0, elapsedMs ?? 0);
+    const result = runtime.runOfflineCatchUp(normalizedElapsed);
+    if (emitOutputs && result.executedSteps > 0) {
+      emitStateSnapshot();
+      emitDiagnosticsDelta(true);
+    }
+    return result;
+  };
+
+  const performOfflineCatchUp = (elapsedMs: number): OfflineCatchUpResult => {
+    const result = runOfflineCatchUpInternal(elapsedMs, true);
+    const remainingMs = Math.max(0, result.requestedMs - result.simulatedMs);
+    const message: OfflineCatchUpResultMessage = {
+      type: 'OFFLINE_CATCH_UP_RESULT',
+      result: {
+        ...result,
+        remainingMs,
+      },
+    };
+    context.postMessage(message);
+    return result;
+  };
+
+  const setVisibility = (visible: boolean) => {
+    runtime.setBackgroundThrottled(!visible);
+  };
+
   const monotonicClock = createMonotonicClock(now);
 
   let lastTimestamp = now();
@@ -140,19 +211,7 @@ export function initializeRuntimeWorker(
     const after = runtime.getCurrentStep();
 
     if (after > before) {
-      const eventBus = runtime.getEventBus();
-      const events = collectOutboundEvents(eventBus);
-      const backPressure = eventBus.getBackPressureSnapshot();
-
-      const message: StateUpdateMessage = {
-        type: 'STATE_UPDATE',
-        state: {
-          currentStep: after,
-          events,
-          backPressure,
-        },
-      };
-      context.postMessage(message);
+      emitStateSnapshot();
       emitDiagnosticsDelta();
     }
   };
@@ -183,6 +242,16 @@ export function initializeRuntimeWorker(
       return;
     }
 
+    if (message.type === 'VISIBILITY_CHANGE') {
+      setVisibility(message.visible);
+      return;
+    }
+
+    if (message.type === 'OFFLINE_CATCH_UP') {
+      performOfflineCatchUp(message.elapsedMs);
+      return;
+    }
+
     if (message.type === 'TERMINATE') {
       stopTick();
       context.removeEventListener('message', messageListener);
@@ -205,6 +274,8 @@ export function initializeRuntimeWorker(
   return {
     runtime,
     handleMessage,
+    setVisibility,
+    requestOfflineCatchUp: performOfflineCatchUp,
     tick,
     dispose,
   };

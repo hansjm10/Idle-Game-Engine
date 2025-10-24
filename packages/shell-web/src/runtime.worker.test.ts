@@ -242,4 +242,81 @@ describe('runtime.worker integration', () => {
     );
     expect(stateUpdateCall).toBeDefined();
   });
+
+  it('throttles ticks when visibility changes to hidden', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    expect(scheduledTick).not.toBeNull();
+    harness.setVisibility(false);
+
+    advanceTime(500);
+    const beforeBackground = harness.runtime.getCurrentStep();
+    harness.tick();
+    const afterBackground = harness.runtime.getCurrentStep();
+    expect(afterBackground - beforeBackground).toBe(1);
+
+    harness.setVisibility(true);
+    advanceTime(500);
+    const beforeForeground = harness.runtime.getCurrentStep();
+    harness.tick();
+    const afterForeground = harness.runtime.getCurrentStep();
+    expect(afterForeground - beforeForeground).toBeGreaterThan(1);
+  });
+
+  it('runs offline catch-up and emits result summaries', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    const elapsedMs = 450;
+    context.dispatch({ type: 'OFFLINE_CATCH_UP', elapsedMs });
+
+    const messages = context.postMessage.mock.calls.map((call) => call[0]);
+    const stateUpdate = messages.find(
+      (message) =>
+        typeof message === 'object' &&
+        message !== null &&
+        (message as { type?: unknown }).type === 'STATE_UPDATE',
+    ) as { state: { currentStep: number } } | undefined;
+    const resultMessage = messages.find(
+      (message) =>
+        typeof message === 'object' &&
+        message !== null &&
+        (message as { type?: unknown }).type === 'OFFLINE_CATCH_UP_RESULT',
+    ) as {
+      result: { remainingMs: number; simulatedMs: number };
+    } | undefined;
+
+    expect(stateUpdate?.state.currentStep).toBeGreaterThan(0);
+    expect(resultMessage).toBeDefined();
+    expect(resultMessage?.result.remainingMs).toBe(50);
+    expect(resultMessage?.result.simulatedMs).toBe(400);
+    expect(harness.runtime.getCurrentStep()).toBe(4);
+  });
 });
