@@ -14,10 +14,39 @@ export interface AutomationToggledEventPayload {
   readonly enabled: boolean;
 }
 
+export interface PrestigeResetEventPayload {
+  readonly layer: number;
+}
+
+export interface TaskCompletedEventPayload {
+  readonly taskId: string;
+  readonly completedAtStep: number;
+  readonly payload?: Readonly<Record<string, unknown>>;
+}
+
+export interface SocialIntentQueuedEventPayload {
+  readonly intentId: string;
+  readonly type: string;
+  readonly issuedAt: number;
+  readonly payload?: Record<string, unknown>;
+}
+
+export interface SocialIntentResolvedEventPayload {
+  readonly intentId: string;
+  readonly type: string;
+  readonly confirmedAt: number;
+  readonly payload?: Record<string, unknown>;
+}
+
 declare module './runtime-event.js' {
   interface RuntimeEventPayloadMap {
     'resource:threshold-reached': ResourceThresholdReachedEventPayload;
     'automation:toggled': AutomationToggledEventPayload;
+    'prestige:reset': PrestigeResetEventPayload;
+    'task:completed': TaskCompletedEventPayload;
+    'social:intent-queued': SocialIntentQueuedEventPayload;
+    'social:intent-confirmed': SocialIntentResolvedEventPayload;
+    'social:intent-rejected': SocialIntentResolvedEventPayload;
   }
 }
 
@@ -41,6 +70,45 @@ function validateAutomationToggled(payload: AutomationToggledEventPayload): void
   }
 }
 
+function validatePrestigeReset(payload: PrestigeResetEventPayload): void {
+  if (!Number.isInteger(payload.layer) || payload.layer < 0) {
+    throw new Error('layer must be a non-negative integer.');
+  }
+}
+
+function validateTaskCompleted(payload: TaskCompletedEventPayload): void {
+  if (typeof payload.taskId !== 'string' || payload.taskId.length === 0) {
+    throw new Error('taskId must be a non-empty string.');
+  }
+  if (!Number.isInteger(payload.completedAtStep) || payload.completedAtStep < 0) {
+    throw new Error('completedAtStep must be a non-negative integer.');
+  }
+}
+
+function validateSocialIntentQueued(payload: SocialIntentQueuedEventPayload): void {
+  if (typeof payload.intentId !== 'string' || payload.intentId.length === 0) {
+    throw new Error('intentId must be a non-empty string.');
+  }
+  if (typeof payload.type !== 'string' || payload.type.length === 0) {
+    throw new Error('type must be a non-empty string.');
+  }
+  if (!Number.isFinite(payload.issuedAt)) {
+    throw new Error('issuedAt must be a finite number.');
+  }
+}
+
+function validateSocialIntentResolved(payload: SocialIntentResolvedEventPayload): void {
+  if (typeof payload.intentId !== 'string' || payload.intentId.length === 0) {
+    throw new Error('intentId must be a non-empty string.');
+  }
+  if (typeof payload.type !== 'string' || payload.type.length === 0) {
+    throw new Error('type must be a non-empty string.');
+  }
+  if (!Number.isFinite(payload.confirmedAt)) {
+    throw new Error('confirmedAt must be a finite number.');
+  }
+}
+
 const CORE_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
   {
     definition: {
@@ -54,6 +122,41 @@ const CORE_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
       type: 'automation:toggled',
       version: 1,
       validator: validateAutomationToggled,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'prestige:reset',
+      version: 1,
+      validator: validatePrestigeReset,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'task:completed',
+      version: 1,
+      validator: validateTaskCompleted,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'social:intent-queued',
+      version: 1,
+      validator: validateSocialIntentQueued,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'social:intent-confirmed',
+      version: 1,
+      validator: validateSocialIntentResolved,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'social:intent-rejected',
+      version: 1,
+      validator: validateSocialIntentResolved,
     },
   } as EventChannelConfiguration,
 ];

@@ -8,5 +8,30 @@
     "type": "automation:toggled",
     "version": 1,
     "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "prestige:reset",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "task:completed",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "social:intent-queued",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "social:intent-confirmed",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "social:intent-rejected",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
   }
 ]

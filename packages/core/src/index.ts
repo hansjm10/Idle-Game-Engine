@@ -30,28 +30,16 @@ import {
   type OfflineCatchUpResult,
   type SchedulerStepExecutionContext,
 } from './tick-scheduler.js';
-
-export interface TickContext {
-  readonly deltaMs: number;
-  readonly step: number;
-  readonly events: EventPublisher;
-}
-
-export interface SystemRegistrationContext {
-  readonly events: {
-    on<TType extends RuntimeEventType>(
-      eventType: TType,
-      handler: EventHandler<TType>,
-      options?: EventSubscriptionOptions,
-    ): EventSubscription;
-  };
-}
-
-export type System = {
-  readonly id: string;
-  readonly tick: (context: TickContext) => void;
-  readonly setup?: (context: SystemRegistrationContext) => void;
-};
+import type {
+  System,
+  SystemRegistrationContext,
+  TickContext,
+  SystemDefinition,
+} from './systems/system-types.js';
+import {
+  registerSystems as registerSystemDefinitions,
+  type RegisterSystemsResult,
+} from './systems/system-registry.js';
 
 export interface EngineOptions {
   readonly stepSizeMs?: number;
@@ -147,6 +135,9 @@ export class IdleEngineRuntime {
   }
 
   addSystem(system: System): void {
+    if (this.systems.some((entry) => entry.system.id === system.id)) {
+      throw new Error(`System "${system.id}" is already registered.`);
+    }
     const subscriptions: EventSubscription[] = [];
 
     if (typeof system.setup === 'function') {
@@ -186,6 +177,13 @@ export class IdleEngineRuntime {
       system,
       subscriptions,
     });
+  }
+
+  addSystems(definitions: readonly SystemDefinition[]): RegisterSystemsResult {
+    if (!Array.isArray(definitions) || definitions.length === 0) {
+      return { order: [] };
+    }
+    return registerSystemDefinitions(this, definitions);
   }
 
   getCommandQueue(): CommandQueue {
@@ -640,6 +638,80 @@ export {
   type RuntimeGeneratorDelta,
   type RuntimeUpgradeDelta,
 } from './runtime-change-journal.js';
+export {
+  createModifierPipeline,
+  additiveModifier,
+  multiplicativeModifier,
+  exponentialModifier,
+  clampModifier,
+  type ModifierPipeline,
+  type ModifierStage,
+  type ModifierAccumulator,
+} from './modifiers/modifier-pipeline.js';
+export {
+  registerSystems,
+  type SystemHost,
+  type RegisterSystemsResult,
+} from './systems/system-registry.js';
+export {
+  GeneratorModifierLedger,
+  type ModifierVector,
+} from './systems/modifier-ledger.js';
+export {
+  createProductionSystem,
+  type ProductionSystemOptions,
+  type ProductionGeneratorDefinition,
+  type ProductionOutputDefinition,
+  type ProductionModifierContext,
+} from './systems/production-system.js';
+export {
+  createUpgradeSystem,
+  type UpgradeSystemOptions,
+  type UpgradeRuntimeDefinition,
+  type UpgradeEffectDefinition,
+  type UpgradeEffectContext,
+  type UpgradeModifierMode,
+  type UpgradeRequirement,
+} from './systems/upgrade-system.js';
+export {
+  createPrestigeSystem,
+  PrestigeResetQueue,
+  type PrestigeSystemOptions,
+  type PrestigeResetRequest,
+} from './systems/prestige-system.js';
+export {
+  createEventSystem,
+  type EventSystemOptions,
+} from './systems/event-system.js';
+export {
+  registerCoreSystems,
+  type CoreSystemsOptions,
+  type CoreSystemsResult,
+} from './systems/core-systems.js';
+export {
+  createTaskSystem,
+  TaskSchedulerState,
+  type TaskSystemOptions,
+  type TaskDefinition,
+  type TaskRecord,
+  type TaskStatus,
+} from './systems/task-system.js';
+export {
+  createSocialSystem,
+  SocialIntentQueue,
+  type SocialSystemOptions,
+  type SocialIntentDefinition,
+  type SocialIntentRecord,
+  type SocialIntentStatus,
+  type SocialConfirmation,
+  type SocialProvider,
+} from './systems/social-system.js';
+export {
+  type System,
+  type SystemDefinition,
+  type SystemRegistrationContext,
+  type TickContext,
+} from './systems/system-types.js';
 export {
   createRuntimeStateView,
   type RuntimeStateView,

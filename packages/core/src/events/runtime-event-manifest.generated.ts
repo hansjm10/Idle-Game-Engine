@@ -64,13 +64,43 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
   },
   {
     channel: 2,
+    type: 'prestige:reset' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 3,
+    type: 'task:completed' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 4,
+    type: 'social:intent-queued' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 5,
+    type: 'social:intent-confirmed' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 6,
+    type: 'social:intent-rejected' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 7,
     type: 'sample:harvester-deployed' as RuntimeEventType,
     version: 1,
     packSlug: 'sample-pack',
     schema: 'packages/content-sample/content/schemas/events/harvester-deployed.schema.json',
   },
   {
-    channel: 3,
+    channel: 8,
     type: 'sample:reactor-primed' as RuntimeEventType,
     version: 1,
     packSlug: 'sample-pack',
@@ -92,16 +122,41 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
     },
     {
       channel: 2,
-      type: 'sample:harvester-deployed' as RuntimeEventType,
+      type: 'prestige:reset' as RuntimeEventType,
       version: 1,
     },
     {
       channel: 3,
+      type: 'task:completed' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 4,
+      type: 'social:intent-queued' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 5,
+      type: 'social:intent-confirmed' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 6,
+      type: 'social:intent-rejected' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 7,
+      type: 'sample:harvester-deployed' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 8,
       type: 'sample:reactor-primed' as RuntimeEventType,
       version: 1,
     },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: 'b8688937' as RuntimeEventManifestHash,
+  hash: '04ecf0a2' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =
