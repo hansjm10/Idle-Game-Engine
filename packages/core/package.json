@@ -12,7 +12,8 @@
     "test": "vitest",
     "test:ci": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
-    "benchmark": "pnpm run build && node benchmarks/event-frame-format.bench.mjs && node benchmarks/diagnostic-timeline-overhead.bench.mjs",
+    "benchmark": "pnpm run build && node benchmarks/event-frame-format.bench.mjs && node benchmarks/diagnostic-timeline-overhead.bench.mjs && node benchmarks/runtime-change-journal.bench.mjs",
+    "benchmark:runtime-state": "pnpm run build && node benchmarks/runtime-change-journal.bench.mjs",
     "benchmark:diagnostics": "pnpm run build && node benchmarks/diagnostic-timeline-overhead.bench.mjs"
   },
   "dependencies": {

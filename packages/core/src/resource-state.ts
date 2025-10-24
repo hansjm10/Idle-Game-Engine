@@ -1,6 +1,7 @@
 import {
   createImmutableTypedArrayView,
   type ImmutableMapSnapshot,
+  type ImmutableTypedArraySnapshot,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
 
@@ -60,6 +61,18 @@ export interface ResourceDefinition {
   readonly dirtyTolerance?: number;
 }
 
+export interface NormalizedResourceRecord {
+  readonly id: string;
+  readonly amount: number;
+  readonly capacity: number;
+  readonly incomePerSecond: number;
+  readonly expensePerSecond: number;
+  readonly netPerSecond: number;
+  readonly tickDelta: number;
+  readonly unlocked: boolean;
+  readonly visible: boolean;
+}
+
 export interface ResourceDefinitionDigest {
   readonly ids: readonly string[];
   readonly version: number;
@@ -116,6 +129,19 @@ export interface ResourceStateSnapshot {
   readonly dirtyCount: number;
 }
 
+export interface ResourceStateView {
+  readonly ids: readonly string[];
+  readonly indexById: ImmutableMapSnapshot<string, number>;
+  readonly amounts: ImmutableTypedArraySnapshot<Float64Array>;
+  readonly capacities: ImmutableTypedArraySnapshot<Float64Array>;
+  readonly incomePerSecond: ImmutableTypedArraySnapshot<Float64Array>;
+  readonly expensePerSecond: ImmutableTypedArraySnapshot<Float64Array>;
+  readonly netPerSecond: ImmutableTypedArraySnapshot<Float64Array>;
+  readonly tickDelta: ImmutableTypedArraySnapshot<Float64Array>;
+  readonly flags: ImmutableTypedArraySnapshot<Uint8Array>;
+  readonly dirtyTolerance: ImmutableTypedArraySnapshot<Float64Array>;
+}
+
 export interface SerializedResourceState {
   readonly ids: readonly string[];
   readonly amounts: readonly number[];
@@ -155,8 +181,10 @@ export interface ResourceState {
   forceClearDirtyState(): void;
   clearDirtyScratch(): void;
   snapshot(options?: { mode?: 'publish' | 'recorder' }): ResourceStateSnapshot;
+  view(): ResourceStateView;
   exportForSave(): SerializedResourceState;
   getDefinitionDigest(): ResourceDefinitionDigest;
+  collectRecords(): NormalizedResourceRecord[];
 }
 
 const resourceStateInternals = new WeakMap<ResourceState, ResourceStateInternal>();
@@ -531,9 +559,48 @@ function createResourceStateFacade(
     clearDirtyScratch: () => clearDirtyScratch(internal),
     snapshot: (options?: PublishSnapshotOptions) =>
       snapshot(internal, options ?? {}),
+    view: () => createView(internal),
     exportForSave: () => exportForSave(internal),
     getDefinitionDigest: () => internal.definitionDigest,
+    collectRecords: () => collectRecords(internal),
   };
+}
+
+function createView(internal: ResourceStateInternal): ResourceStateView {
+  const { buffers } = internal;
+  return {
+    ids: buffers.ids,
+    indexById: buffers.indexById,
+    amounts: createImmutableTypedArrayView(buffers.amounts),
+    capacities: createImmutableTypedArrayView(buffers.capacities),
+    incomePerSecond: createImmutableTypedArrayView(buffers.incomePerSecond),
+    expensePerSecond: createImmutableTypedArrayView(buffers.expensePerSecond),
+    netPerSecond: createImmutableTypedArrayView(buffers.netPerSecond),
+    tickDelta: createImmutableTypedArrayView(buffers.tickDelta),
+    flags: createImmutableTypedArrayView(buffers.flags),
+    dirtyTolerance: createImmutableTypedArrayView(buffers.dirtyTolerance),
+  };
+}
+
+function collectRecords(internal: ResourceStateInternal): NormalizedResourceRecord[] {
+  const { buffers } = internal;
+  const records: NormalizedResourceRecord[] = new Array(buffers.ids.length);
+
+  for (let index = 0; index < buffers.ids.length; index += 1) {
+    records[index] = {
+      id: buffers.ids[index],
+      amount: buffers.amounts[index],
+      capacity: buffers.capacities[index],
+      incomePerSecond: buffers.incomePerSecond[index],
+      expensePerSecond: buffers.expensePerSecond[index],
+      netPerSecond: buffers.netPerSecond[index],
+      tickDelta: buffers.tickDelta[index],
+      unlocked: (buffers.flags[index] & FLAG_UNLOCKED) !== 0,
+      visible: (buffers.flags[index] & FLAG_VISIBLE) !== 0,
+    };
+  }
+
+  return records;
 }
 
 function requireIndex(
