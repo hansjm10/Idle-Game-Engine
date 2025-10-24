@@ -513,7 +513,11 @@ export {
   DEFAULT_EVENT_BUS_OPTIONS,
   RUNTIME_EVENT_CHANNELS,
   type AutomationToggledEventPayload,
+  type PrestigeResetEventPayload,
   type ResourceThresholdReachedEventPayload,
+  type SocialIntentQueuedEventPayload,
+  type SocialIntentResolvedEventPayload,
+  type TaskCompletedEventPayload,
 } from './events/runtime-event-catalog.js';
 export {
   FixedTimestepScheduler,
