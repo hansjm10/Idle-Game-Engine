@@ -67,10 +67,9 @@ describe('FixedTimestepScheduler', () => {
     expect(result.executedSteps).toBe(3);
     expect(result.backlogMs).toBe(0);
     expect(executions).toHaveLength(3);
-    expect(executions[0]?.isFirstInBatch).toBe(true);
     expect(
-      executions.slice(1).every((context) => context.isFirstInBatch === false),
-    ).toBe(true);
+      executions.map((context) => context.isFirstInBatch),
+    ).toEqual([true, false, true]);
   });
 
   it('retains partial backlog after offline catch-up', () => {

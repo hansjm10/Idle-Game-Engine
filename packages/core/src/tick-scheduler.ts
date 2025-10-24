@@ -229,7 +229,6 @@ export class FixedTimestepScheduler {
     );
 
     let executedSteps = 0;
-    let firstStepDispatched = false;
 
     while (executedSteps < totalStepsToExecute) {
       const batchSteps = Math.min(
@@ -243,9 +242,8 @@ export class FixedTimestepScheduler {
         this.executeStep({
           backlogMs: this.accumulatorMs,
           isCatchUp: true,
-          isFirstInBatch: !firstStepDispatched,
+          isFirstInBatch: index === 0,
         });
-        firstStepDispatched = true;
       }
     }
 

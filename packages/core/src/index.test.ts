@@ -1187,6 +1187,33 @@ describe('IdleEngineRuntime', () => {
     expect(ticks).toEqual([0, 1, 2, 3, 4]);
   });
 
+  it('flushes outbound event buffers between offline catch-up batches', () => {
+    const stepsToSimulate = 300;
+    const { runtime } = createRuntime({
+      offlineCatchUp: {
+        maxBatchSteps: 64,
+      },
+    });
+
+    runtime.addSystem({
+      id: 'automation-emitter',
+      tick: (context) => {
+        context.events.publish('automation:toggled', {
+          automationId: 'auto',
+          enabled: true,
+        });
+      },
+    });
+
+    const catchUpResult = runtime.runOfflineCatchUp(stepsToSimulate * 10);
+
+    expect(catchUpResult.executedSteps).toBe(stepsToSimulate);
+    expect(runtime.getCurrentStep()).toBe(stepsToSimulate);
+
+    const backPressure = runtime.getEventBus().getBackPressureSnapshot();
+    expect(backPressure.counters.overflowed).toBe(0);
+  });
+
   it('records pipeline phases inside diagnostic metadata', () => {
     const { runtime, diagnostics } = createRuntime({
       stepSizeMs: 10,
