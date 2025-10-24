@@ -46,6 +46,18 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Validate Content
+        run: |
+          set -o pipefail
+          pnpm generate --check | tee /tmp/generate.log
+          GENERATE_EXIT=${PIPESTATUS[0]}
+          node tools/scripts/assert-json-tail.mjs /tmp/generate.log cli.run_summary
+          ASSERT_EXIT=$?
+          if [ "${GENERATE_EXIT}" -ne 0 ]; then
+            exit "${GENERATE_EXIT}"
+          fi
+          exit "${ASSERT_EXIT}"
+
       - name: Test
         env:
           NODE_OPTIONS: '--dns-result-order=ipv4first'
