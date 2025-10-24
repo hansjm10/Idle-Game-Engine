@@ -160,6 +160,12 @@ describe('ResourceState', () => {
     expect(() => {
       (snapshot.amounts as unknown as Float64Array)[energy] = 123;
     }).toThrowError(/read-only/);
+
+    const view = state.view();
+    expect(view.amounts[energy]).toBe(5);
+    expect(() => {
+      (view.amounts as unknown as Float64Array)[energy] = 12;
+    }).toThrowError(/read-only/);
   });
 
   it('blocks buffer-backed mutation attempts when guards are enabled', () => {
@@ -198,6 +204,26 @@ describe('ResourceState', () => {
     const mirror = new Float64Array(copy as ArrayBufferLike);
     mirror[energy] = 99;
     expect(snapshot.amounts[energy]).toBe(4);
+  });
+
+  it('collects normalized resource records for diagnostic views', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 5, capacity: 10, unlocked: true },
+      { id: 'crystal', startAmount: 3, capacity: 12, unlocked: false },
+    ]);
+
+    const [energy, crystal] = state.collectRecords();
+    expect(energy).toMatchObject({
+      id: 'energy',
+      amount: 5,
+      capacity: 10,
+      unlocked: true,
+      visible: true,
+    });
+    expect(crystal).toMatchObject({
+      id: 'crystal',
+      unlocked: false,
+    });
   });
 
   it('allows disabling snapshot guards via SNAPSHOT_GUARDS=force-off', () => {

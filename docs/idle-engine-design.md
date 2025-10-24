@@ -114,7 +114,10 @@ function runTick(deltaMs) {
 - Use structural sharing or typed arrays for efficient snapshots; avoid deep clone churn.
 - Core entities stored in struct-of-arrays layout (`resourceIds[]`, `quantities[]`, `rates[]`) for cache-friendly iteration.
 - Derived views published as read-only proxies to presentation layer to avoid mutation leaks.
-- Change journal collects mutations each tick so deltas can be sent to clients without serializing full state.
+- Generator and upgrade state now follow the same struct-of-arrays layout via `createGeneratorState` and `createUpgradeState`, mirroring resource buffers while clamping level and purchase caps.
+- Runtime-facing records are documented as `NormalizedResourceRecord`, `NormalizedGeneratorRecord`, and `NormalizedUpgradeRecord`; serialization contracts surface as `SerializedResourceState`, `SerializedGeneratorState`, and `SerializedUpgradeState`.
+- `createRuntimeStateView` exposes an immutable aggregate suitable for UI binding, backed by typed-array guards so presentation layers cannot mutate runtime buffers.
+- `RuntimeChangeJournal` collects mutations each tick and emits compact deltas (indices plus typed-array payloads) so messaging streams only ship touched entities instead of full clones.
 
 ### 9.3 Systems
 - **Production System**: processes generators, cost reductions, automation toggles.
