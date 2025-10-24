@@ -130,8 +130,11 @@ export class RuntimeChangeJournal {
 function buildResourceDelta(
   snapshot: ResourceStateSnapshot,
   buffers: ResourceDeltaBuffers,
-): RuntimeResourceDelta {
+): RuntimeResourceDelta | undefined {
   const dirtyCount = snapshot.dirtyCount;
+  if (dirtyCount === 0) {
+    return undefined;
+  }
 
   ensureResourceCapacity(buffers, dirtyCount);
 
