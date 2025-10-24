@@ -167,6 +167,8 @@ export function initializeRuntimeWorker(
     context.postMessage(message);
   };
 
+  let lastTimestamp = now();
+
   const runOfflineCatchUpInternal = (
     elapsedMs: number,
     emitOutputs: boolean,
@@ -182,7 +184,12 @@ export function initializeRuntimeWorker(
 
   const performOfflineCatchUp = (elapsedMs: number): OfflineCatchUpResult => {
     const result = runOfflineCatchUpInternal(elapsedMs, true);
+    const currentTime = now();
     const remainingMs = Math.max(0, result.requestedMs - result.simulatedMs);
+    const baselineTimestamp = currentTime - remainingMs;
+    lastTimestamp = Number.isFinite(baselineTimestamp)
+      ? baselineTimestamp
+      : currentTime;
     const message: OfflineCatchUpResultMessage = {
       type: 'OFFLINE_CATCH_UP_RESULT',
       result: {
@@ -200,7 +207,6 @@ export function initializeRuntimeWorker(
 
   const monotonicClock = createMonotonicClock(now);
 
-  let lastTimestamp = now();
   const tick = () => {
     const current = now();
     const delta = current - lastTimestamp;

@@ -319,4 +319,46 @@ describe('runtime.worker integration', () => {
     expect(resultMessage?.result.simulatedMs).toBe(400);
     expect(harness.runtime.getCurrentStep()).toBe(4);
   });
+
+  it('resets tick baseline after offline catch-up completes', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    const runtimeTickSpy = vi.spyOn(harness.runtime, 'tick');
+    context.postMessage.mockClear();
+
+    const elapsedMs = 450;
+    advanceTime(elapsedMs);
+    context.dispatch({ type: 'OFFLINE_CATCH_UP', elapsedMs });
+
+    const resultMessage = context.postMessage.mock.calls
+      .map(([payload]) => payload)
+      .find(
+        (payload) =>
+          typeof payload === 'object' &&
+          payload !== null &&
+          (payload as { type?: unknown }).type === 'OFFLINE_CATCH_UP_RESULT',
+      ) as { result: { remainingMs: number } } | undefined;
+
+    const remainingMs = resultMessage?.result.remainingMs ?? 0;
+
+    runtimeTickSpy.mockClear();
+
+    harness.tick();
+
+    expect(runtimeTickSpy).toHaveBeenCalledTimes(1);
+    expect(runtimeTickSpy.mock.calls[0]![0]).toBeCloseTo(remainingMs, 6);
+  });
 });
