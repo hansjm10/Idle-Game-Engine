@@ -87,6 +87,17 @@ describe('UpgradeState', () => {
     expect(Array.from(rollback.purchaseDelta)).toEqual([-2]);
   });
 
+  it('allows unlimited purchases when maxPurchases is omitted', () => {
+    const state = createUpgradeState([{ id: 'repeatable-upgrade' }]);
+    const repeatable = state.requireIndex('repeatable-upgrade');
+
+    state.purchase(repeatable);
+    state.purchase(repeatable, 4);
+
+    expect(state.getPurchaseCount(repeatable)).toBe(5);
+    expect(state.getMaxPurchases(repeatable)).toBeNull();
+  });
+
   it('records telemetry for invalid definitions', () => {
     expect(() => {
       createUpgradeState([
@@ -100,4 +111,3 @@ describe('UpgradeState', () => {
     );
   });
 });
-

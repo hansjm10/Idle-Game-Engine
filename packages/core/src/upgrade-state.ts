@@ -409,7 +409,7 @@ function nextPowerOfTwo(value: number): number {
 
 function sanitizeMaxPurchases(maxPurchases: number | undefined, id: string | undefined): number {
   if (maxPurchases === undefined) {
-    return 1;
+    return 0;
   }
   if (!Number.isFinite(maxPurchases) || maxPurchases <= 0) {
     telemetry.recordError(TELEMETRY_INVALID_MAX_PURCHASES, {
