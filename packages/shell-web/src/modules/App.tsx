@@ -6,7 +6,6 @@ import {
   type RuntimeEventSnapshot,
   useWorkerBridge,
   type RuntimeStateSnapshot,
-  type OfflineCatchUpSummary,
 } from './worker-bridge.js';
 import { EventInspector } from './EventInspector.js';
 
@@ -17,9 +16,6 @@ export function App() {
   const [currentStep, setCurrentStep] = useState(0);
   const [events, setEvents] = useState<RuntimeEventSnapshot[]>([]);
   const [backPressure, setBackPressure] = useState<BackPressureSnapshot | null>(
-    null,
-  );
-  const [offlineSummary, setOfflineSummary] = useState<OfflineCatchUpSummary | null>(
     null,
   );
 
@@ -55,35 +51,8 @@ export function App() {
     };
   }, [bridge]);
 
-  useEffect(() => {
-    const handleVisibility = () => {
-      bridge.setVisibilityState(document.visibilityState === 'visible');
-    };
-
-    handleVisibility();
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [bridge]);
-
-  useEffect(() => {
-    const handleOffline = (summary: OfflineCatchUpSummary) => {
-      setOfflineSummary(summary);
-    };
-    bridge.onOfflineCatchUpResult(handleOffline);
-    return () => {
-      bridge.offOfflineCatchUpResult(handleOffline);
-    };
-  }, [bridge]);
-
   const handleSendCommand = () => {
     bridge.sendCommand('PING', { issuedAt: performance.now() });
-  };
-
-  const handleOfflineCatchUp = () => {
-    const elapsedMs = 60 * 60 * 1000;
-    bridge.requestOfflineCatchUp(elapsedMs);
   };
 
   return (
@@ -96,29 +65,6 @@ export function App() {
       <button onClick={handleSendCommand} type="button">
         Send Test Command
       </button>
-      <button
-        onClick={handleOfflineCatchUp}
-        type="button"
-        style={{ marginLeft: 12 }}
-      >
-        Simulate 1h Offline Catch-up
-      </button>
-
-      {offlineSummary ? (
-        <section style={{ marginTop: 16 }}>
-          <h2>Offline Catch-up</h2>
-          <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 8 }}>
-            <dt>Requested</dt>
-            <dd>{Math.round(offlineSummary.requestedMs / 1000)}s</dd>
-            <dt>Simulated</dt>
-            <dd>{Math.round(offlineSummary.simulatedMs / 1000)}s</dd>
-            <dt>Remaining</dt>
-            <dd>{Math.round(offlineSummary.remainingMs / 1000)}s</dd>
-            <dt>Overflow</dt>
-            <dd>{Math.round(offlineSummary.overflowMs / 1000)}s</dd>
-          </dl>
-        </section>
-      ) : null}
 
       <EventInspector events={events} backPressure={backPressure} />
     </main>
