@@ -119,6 +119,7 @@ export class SocialIntentQueue {
     intent.confirmationPayload = toRecord(confirmation.payload);
     intent.resolutionNotified = false;
     intent.dirtyReason = 'status';
+    this.dirty.add(intent.id);
     return intent;
   }
 

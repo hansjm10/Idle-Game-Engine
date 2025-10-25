@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EventBus, EventBufferOverflowError } from './event-bus.js';
+import { EventBus } from './event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
 import { type RuntimeEventPayload } from './runtime-event.js';
 import { buildRuntimeEventFrame } from './runtime-event-frame.js';
@@ -127,7 +127,7 @@ describe('EventBus', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('throws before mutating state when a channel exceeds its capacity', () => {
+  it('rejects publishes once a channel exceeds its capacity', () => {
     const bus = new EventBus({
       clock,
       channels: [
@@ -154,17 +154,24 @@ describe('EventBus', () => {
     setTelemetry(telemetryStub);
 
     try {
-      bus.publish('resource:threshold-reached', {
+      const first = bus.publish('resource:threshold-reached', {
         resourceId: 'energy',
         threshold: 7,
       } as RuntimeEventPayload<'resource:threshold-reached'>);
 
-      expect(() => {
-        bus.publish('resource:threshold-reached', {
-          resourceId: 'energy',
-          threshold: 8,
-        } as RuntimeEventPayload<'resource:threshold-reached'>);
-      }).toThrow(EventBufferOverflowError);
+      expect(first.accepted).toBe(true);
+      expect(first.state).toBe('soft-limit');
+      expect(first.softLimitActive).toBe(true);
+
+      const second = bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 8,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+      expect(second.accepted).toBe(false);
+      expect(second.state).toBe('rejected');
+      expect(second.remainingCapacity).toBe(0);
+      expect(second.softLimitActive).toBe(true);
 
       const handler = vi.fn();
       bus.on('resource:threshold-reached', handler);
@@ -198,7 +205,7 @@ describe('EventBus', () => {
     }
   });
 
-  it('blocks subsequent publishes after an overflow until the next tick', () => {
+  it('returns rejected publishes until buffers reset on the next tick', () => {
     const bus = new EventBus({
       clock,
       channels: [
@@ -225,33 +232,39 @@ describe('EventBus', () => {
     setTelemetry(telemetryStub);
 
     try {
-      bus.publish('resource:threshold-reached', {
+      const first = bus.publish('resource:threshold-reached', {
         resourceId: 'energy',
         threshold: 10,
       } as RuntimeEventPayload<'resource:threshold-reached'>);
 
-      expect(() => {
-        bus.publish('resource:threshold-reached', {
-          resourceId: 'energy',
-          threshold: 11,
-        } as RuntimeEventPayload<'resource:threshold-reached'>);
-      }).toThrow(EventBufferOverflowError);
+      expect(first.accepted).toBe(true);
+      expect(first.state).toBe('soft-limit');
 
-      expect(() => {
-        bus.publish('resource:threshold-reached', {
-          resourceId: 'energy',
-          threshold: 12,
-        } as RuntimeEventPayload<'resource:threshold-reached'>);
-      }).toThrow(EventBufferOverflowError);
+      const second = bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 11,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+      expect(second.accepted).toBe(false);
+      expect(second.state).toBe('rejected');
+
+      const third = bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 12,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+      expect(third.accepted).toBe(false);
+      expect(third.state).toBe('rejected');
 
       bus.beginTick(2);
 
-      expect(() => {
-        bus.publish('resource:threshold-reached', {
-          resourceId: 'energy',
-          threshold: 13,
-        } as RuntimeEventPayload<'resource:threshold-reached'>);
-      }).not.toThrow();
+      const fourth = bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 13,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+      expect(fourth.accepted).toBe(true);
+      expect(fourth.state).toBe('soft-limit');
     } finally {
       resetTelemetry();
     }
@@ -319,6 +332,39 @@ describe('EventBus', () => {
 
     expect(fourth.state).toBe('accepted');
     expect(fourth.softLimitActive).toBe(false);
+  });
+
+  it('treats soft limited publishes as accepted', () => {
+    const bus = new EventBus({
+      clock,
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+          capacity: 4,
+          softLimit: 2,
+        },
+      ],
+    });
+
+    bus.beginTick(1);
+
+    const first = bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 1,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const second = bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 2,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    expect(first.state).toBe('accepted');
+    expect(first.accepted).toBe(true);
+    expect(second.state).toBe('soft-limit');
+    expect(second.accepted).toBe(true);
   });
 
   it('defaults channel soft limits to 75 percent of capacity', () => {

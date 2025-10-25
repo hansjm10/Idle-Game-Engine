@@ -51,27 +51,85 @@ describe('prestige-system', () => {
       { type: 'prestige:reset', payload: { layer: 1 } },
     ]);
   });
+  it('retries reset notifications when the publish is rejected', () => {
+    const resources = createResourceState([{ id: 'energy', startAmount: 120 }]);
+    const generators = createGeneratorState([]);
+    const upgrades = createUpgradeState([]);
+
+    const queue = new PrestigeResetQueue();
+    queue.enqueue({
+      layer: 2,
+      resourceRetention: {
+        energy: 0.5,
+      },
+    });
+
+    const acceptanceSequence = [false, true];
+    const attempts: boolean[] = [];
+    const onPublish: PublishEvaluator = (type) => {
+      if (type !== 'prestige:reset') {
+        return true;
+      }
+      const accepted = acceptanceSequence.shift() ?? true;
+      attempts.push(accepted);
+      return accepted;
+    };
+
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const system = createPrestigeSystem({
+      resources,
+      generators,
+      upgrades,
+      queue,
+    });
+
+    system.tick(createContext(events, { onPublish }));
+
+    const energyIndex = resources.requireIndex('energy');
+    expect(resources.getAmount(energyIndex)).toBeCloseTo(60, 6);
+    expect(events).toHaveLength(0);
+    expect(attempts).toEqual([false]);
+
+    system.tick(createContext(events, { onPublish }));
+
+    expect(events).toEqual([{ type: 'prestige:reset', payload: { layer: 2 } }]);
+    expect(attempts).toEqual([false, true]);
+    expect(resources.getAmount(energyIndex)).toBeCloseTo(60, 6);
+  });
 });
 
-function createContext(log: Array<{ type: string; payload: unknown }>): TickContext {
+type PublishEvaluator = (type: string, payload: unknown) => boolean;
+
+interface CreateContextOptions {
+  readonly onPublish?: PublishEvaluator;
+}
+
+function createContext(
+  log: Array<{ type: string; payload: unknown }>,
+  options: CreateContextOptions = {},
+): TickContext {
+  let dispatchOrder = 0;
   return {
     deltaMs: 100,
     step: 10,
     events: {
       publish(type, payload) {
-        log.push({ type, payload });
+        dispatchOrder += 1;
+        const accepted = options.onPublish?.(type, payload) ?? true;
+        if (accepted) {
+          log.push({ type, payload });
+        }
         return {
-          accepted: true,
-          state: 'accepted',
+          accepted,
+          state: accepted ? 'accepted' : 'soft-limit',
           type,
           channel: 0,
           bufferSize: 0,
           remainingCapacity: 0,
-          dispatchOrder: log.length,
+          dispatchOrder,
           softLimitActive: false,
         };
       },
     },
   };
 }
-

@@ -8,6 +8,7 @@ export interface PrestigeResetRequest {
   readonly layer: number;
   readonly resourceRetention?: Readonly<Record<string, number>>;
   readonly grantUpgrades?: ReadonlyArray<{ upgradeId: string; count: number }>;
+  readonly notificationOnly?: boolean;
 }
 
 export class PrestigeResetQueue {
@@ -56,11 +57,25 @@ export function createPrestigeSystem(options: PrestigeSystemOptions): SystemDefi
         return;
       }
 
+      const retryQueue: PrestigeResetRequest[] = [];
       for (const request of resets) {
-        applyReset(resources, generators, upgrades, request);
-        context.events.publish('prestige:reset', {
+        if (!request.notificationOnly) {
+          applyReset(resources, generators, upgrades, request);
+        }
+
+        const result = context.events.publish('prestige:reset', {
           layer: request.layer,
         });
+        if (!result.accepted) {
+          retryQueue.push({
+            ...request,
+            notificationOnly: true,
+          });
+        }
+      }
+
+      for (const retry of retryQueue) {
+        queue.enqueue(retry);
       }
     },
   };

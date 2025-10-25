@@ -25,7 +25,7 @@ const DEFAULT_DIAGNOSTIC_COOLDOWN_TICKS = 1;
 const DEFAULT_DIAGNOSTIC_MAX_COOLDOWN_MULTIPLIER = 16;
 const DEFAULT_MAX_EVENTS_PER_SECOND_MULTIPLIER = 4;
 
-export type PublishState = 'accepted' | 'soft-limit';
+export type PublishState = 'accepted' | 'soft-limit' | 'rejected';
 
 export interface PublishMetadata {
   readonly issuedAt?: number;
@@ -474,8 +474,6 @@ export class EventBus implements EventPublisher {
 
   private currentTick = 0;
   private dispatchCounter = 0;
-  private tickAborted = false;
-  private lastOverflowError: EventBufferOverflowError | null = null;
   private eventsPublishedThisTick = 0;
   private firstTickPending = true;
 
@@ -545,8 +543,6 @@ export class EventBus implements EventPublisher {
 
     this.currentTick = tick;
     this.dispatchCounter = 0;
-    this.tickAborted = false;
-    this.lastOverflowError = null;
     this.telemetryCounters = {
       published: 0,
       softLimited: 0,
@@ -574,21 +570,9 @@ export class EventBus implements EventPublisher {
     const descriptor = this.registry.getDescriptor(eventType);
     const channel = this.channelStates[descriptor.index];
 
-    if (this.tickAborted) {
-      throw (
-        this.lastOverflowError ??
-        new EventBufferOverflowError(
-          eventType,
-          descriptor.index,
-          descriptor.capacity,
-        )
-      );
-    }
-
     if (channel.internalBuffer.isAtCapacity() || channel.outboundBuffer.isAtCapacity()) {
-      const error = new EventBufferOverflowError(eventType, descriptor.index, descriptor.capacity);
-      this.tickAborted = true;
-      this.lastOverflowError = error;
+      const bufferSize = channel.internalBuffer.length;
+      const remainingCapacity = Math.max(0, descriptor.capacity - bufferSize);
       this.telemetryCounters.overflowed += 1;
       telemetry.recordWarning('EventBufferOverflow', {
         type: eventType,
@@ -596,7 +580,17 @@ export class EventBus implements EventPublisher {
         capacity: descriptor.capacity,
         tick: this.currentTick,
       });
-      throw error;
+      return {
+        accepted: false,
+        state: 'rejected',
+        type: eventType,
+        channel: descriptor.index,
+        bufferSize,
+        remainingCapacity,
+        dispatchOrder: this.dispatchCounter,
+        softLimitActive:
+          channel.softLimitActive || bufferSize >= descriptor.softLimit,
+      };
     }
 
     const timestamp = metadata?.issuedAt ?? this.clock.now();
@@ -665,8 +659,10 @@ export class EventBus implements EventPublisher {
       }
     }
 
+    const accepted = state === 'accepted' || state === 'soft-limit';
+
     return {
-      accepted: state === 'accepted',
+      accepted,
       state,
       type: eventType,
       channel: descriptor.index,

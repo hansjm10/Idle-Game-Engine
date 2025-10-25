@@ -90,6 +90,33 @@ describe('social-system', () => {
     expect(stale).toBeUndefined();
   });
 
+  it('marks manual confirmations as dirty for resolution publishing', () => {
+    const queue = new SocialIntentQueue(() => 0);
+    const intent = queue.queue(
+      {
+        type: 'guild:invite',
+        payload: { guildId: 'epsilon' },
+      },
+      3,
+    );
+
+    queue.consumeDirty();
+
+    const updated = queue.applyConfirmation({
+      intentId: intent.id,
+      status: 'confirmed',
+      confirmedAt: 42,
+      payload: { membershipId: 'member-42' },
+    });
+
+    expect(updated?.dirtyReason).toBe('status');
+
+    const dirty = queue.consumeDirty();
+    expect(dirty).toHaveLength(1);
+    expect(dirty[0]?.id).toBe(intent.id);
+    expect(queue.consumeDirty()).toHaveLength(0);
+  });
+
   it('retries queued intents when the publish is rejected', () => {
     const queue = new SocialIntentQueue(() => 0);
     const intent = queue.queue(
