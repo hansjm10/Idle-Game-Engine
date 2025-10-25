@@ -186,9 +186,10 @@ routes them to two audiences:
   per-channel `events.soft_limit_breaches` telemetry counter. Subsequent
   breaches back off exponentially before logging again, keeping telemetry 
   actionable while publishers adapt.
-- Overflowing the hard capacity still throws `EventBufferOverflowError` and
-  records `events.overflowed`, causing the tick to rewind at `beginTick()`. Hard
-  limits remain deterministic safeguards and bypass the rate limiter.
+- Overflowing the hard capacity returns a `PublishResult` with `accepted: false`
+  and records `events.overflowed`, signaling publishers to shed load before the
+  tick rewinds at `beginTick()`. Hard limits remain deterministic safeguards and
+  still bypass the rate limiter.
 - `eventBus.getBackPressureSnapshot()` surfaces per-channel `inUse`,
   `remainingCapacity`, `highWaterMark`, `cooldownTicksRemaining`,
   `softLimitBreaches`, and the most recent `eventsPerSecond` sample so
