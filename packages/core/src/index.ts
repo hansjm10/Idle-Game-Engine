@@ -396,12 +396,19 @@ export class IdleEngineRuntime {
         diagnosticsPhaseEnd - diagnosticsPhaseStart,
       );
 
+      const overflowError = this.eventBus.getLastOverflowError();
+      if (overflowError !== null) {
+        this.nextExecutableStep = this.currentStep;
+        throw overflowError;
+      }
+
       this.currentStep += 1;
       this.nextExecutableStep = this.currentStep;
       telemetry.recordTick();
 
       tickDiagnostics.complete();
     } catch (error) {
+      this.nextExecutableStep = this.currentStep;
       tickDiagnostics.fail(error);
     }
   }

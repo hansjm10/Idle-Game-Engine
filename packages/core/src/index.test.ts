@@ -296,9 +296,9 @@ describe('IdleEngineRuntime', () => {
       },
     });
 
-    expect(() => runtime.tick(10)).not.toThrow();
-    expect(runtime.getCurrentStep()).toBe(1);
-    expect(runtime.getNextExecutableStep()).toBe(1);
+    expect(() => runtime.tick(10)).toThrow(EventBufferOverflowError);
+    expect(runtime.getCurrentStep()).toBe(0);
+    expect(runtime.getNextExecutableStep()).toBe(0);
     expect(attempts).toBe(1);
 
     expect(publishResults).toHaveLength(2);
