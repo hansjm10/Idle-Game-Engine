@@ -179,6 +179,10 @@ export class IdleEngineRuntime {
     });
   }
 
+  hasSystem(systemId: string): boolean {
+    return this.systems.some((entry) => entry.system.id === systemId);
+  }
+
   addSystems(definitions: readonly SystemDefinition[]): RegisterSystemsResult {
     if (!Array.isArray(definitions) || definitions.length === 0) {
       return { order: [] };

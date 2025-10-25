@@ -86,6 +86,41 @@ describe('production-system', () => {
     // Base 2, pipeline adds 1 => 3, multiplies by 2 => 6
     expect(snapshot.incomePerSecond[energy]).toBeCloseTo(6, 6);
   });
+
+  it('clamps consumption outputs when modifiers reduce the rate below zero', () => {
+    const resources = createResourceState([{ id: 'fuel' }]);
+    const generators = createGeneratorState([
+      { id: 'engine', startLevel: 1 },
+    ]);
+    const ledger = new GeneratorModifierLedger();
+
+    const system = createProductionSystem({
+      resources,
+      generators,
+      ledger,
+      definitions: [
+        {
+          generatorId: 'engine',
+          consumes: [
+            {
+              resourceId: 'fuel',
+              ratePerSecond: 5,
+              pipeline: createModifierPipeline([
+                additiveModifier(() => -10),
+              ]),
+            },
+          ],
+          produces: [],
+        },
+      ],
+    });
+
+    system.tick(createContext());
+
+    const snapshot = resources.snapshot({ mode: 'recorder' });
+    const fuel = resources.requireIndex('fuel');
+    expect(snapshot.expensePerSecond[fuel]).toBe(0);
+  });
 });
 
 function createContext(): TickContext {

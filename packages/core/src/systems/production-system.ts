@@ -154,9 +154,16 @@ function applyOutputs({
       continue;
     }
 
-    if (consume || adjusted < 0) {
-      const expense = Math.abs(adjusted);
-      resources.applyExpense(resourceIndex, expense);
+    if (consume) {
+      if (adjusted <= 0) {
+        continue;
+      }
+      resources.applyExpense(resourceIndex, adjusted);
+      continue;
+    }
+
+    if (adjusted < 0) {
+      resources.applyExpense(resourceIndex, -adjusted);
     } else {
       resources.applyIncome(resourceIndex, adjusted);
     }

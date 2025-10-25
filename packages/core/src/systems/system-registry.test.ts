@@ -51,6 +51,21 @@ describe('system-registry', () => {
       ]),
     ).toThrowError(/registered multiple times/);
   });
+
+  it('allows dependencies that reference systems already registered on the host', () => {
+    const registered: string[] = [];
+    const host = createHost((system) => {
+      registered.push(system.id);
+    }, ['events']);
+
+    const { order } = registerSystems(host, [
+      createSystem('achievements', { after: ['events'] }),
+      createSystem('automation', { after: ['achievements'] }),
+    ]);
+
+    expect(order).toEqual(['achievements', 'automation']);
+    expect(registered).toEqual(order);
+  });
 });
 
 function createSystem(
@@ -67,10 +82,15 @@ function createSystem(
   };
 }
 
-function createHost(register: (system: System) => void) {
+function createHost(register: (system: System) => void, existing: readonly string[] = []) {
+  const registeredIds = new Set(existing);
   return {
     addSystem(system: System) {
+      registeredIds.add(system.id);
       register(system);
+    },
+    hasSystem(systemId: string) {
+      return registeredIds.has(systemId);
     },
   };
 }

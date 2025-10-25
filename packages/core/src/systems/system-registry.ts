@@ -3,6 +3,7 @@ import type { System, SystemDefinition } from './system-types.js';
 
 export interface SystemHost {
   addSystem(system: System): void;
+  hasSystem?(systemId: string): boolean;
 }
 
 export interface RegisterSystemsResult {
@@ -21,6 +22,10 @@ export function registerSystems(
   const orderIndex = new Map<string, number>();
   const adjacency = new Map<string, Set<string>>();
   const indegree = new Map<string, number>();
+  const hostHasSystem =
+    typeof host.hasSystem === 'function'
+      ? (systemId: string) => host.hasSystem!(systemId)
+      : () => false;
 
   definitions.forEach((definition, index) => {
     if (systemsById.has(definition.id)) {
@@ -35,13 +40,19 @@ export function registerSystems(
   for (const definition of definitions) {
     const { id, after, before } = definition;
 
+    const isKnownSystem = (systemId: string): boolean =>
+      systemsById.has(systemId) || hostHasSystem(systemId);
+
     if (Array.isArray(after)) {
       for (const dependency of after) {
         if (dependency === id) {
           throw new Error(`System "${id}" cannot depend on itself.`);
         }
-        if (!systemsById.has(dependency)) {
+        if (!isKnownSystem(dependency)) {
           throw new Error(`System "${id}" declares unknown dependency "${dependency}".`);
+        }
+        if (!systemsById.has(dependency)) {
+          continue;
         }
         const targets = adjacency.get(dependency)!;
         if (!targets.has(id)) {
@@ -56,8 +67,11 @@ export function registerSystems(
         if (successor === id) {
           throw new Error(`System "${id}" cannot declare before itself.`);
         }
-        if (!systemsById.has(successor)) {
+        if (!isKnownSystem(successor)) {
           throw new Error(`System "${id}" declares unknown successor "${successor}".`);
+        }
+        if (!systemsById.has(successor)) {
+          continue;
         }
         const targets = adjacency.get(id)!;
         if (!targets.has(successor)) {
