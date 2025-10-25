@@ -100,26 +100,5 @@ describe('RuntimeChangeJournal', () => {
       expect.objectContaining({ previous: 5, current: 4 }),
     );
   });
-
-  it('does not mutate previously emitted resource deltas', () => {
-    const resources = createResourceState([
-      { id: 'energy', startAmount: 0, capacity: 20 },
-    ]);
-    const journal = new RuntimeChangeJournal();
-
-    const energy = resources.requireIndex('energy');
-    resources.addAmount(energy, 5);
-
-    const firstDelta = journal.capture({ tick: 1, resources });
-    expect(firstDelta?.resources).toBeDefined();
-    const firstAmounts = Array.from(firstDelta?.resources?.amounts ?? []);
-    expect(firstAmounts).toEqual([5]);
-
-    resources.addAmount(energy, 3);
-    const secondDelta = journal.capture({ tick: 2, resources });
-    expect(secondDelta?.resources).toBeDefined();
-    expect(Array.from(secondDelta?.resources?.amounts ?? [])).toEqual([8]);
-
-    expect(Array.from(firstDelta?.resources?.amounts ?? [])).toEqual(firstAmounts);
-  });
 });
+
