@@ -476,6 +476,7 @@ export class EventBus implements EventPublisher {
   private dispatchCounter = 0;
   private eventsPublishedThisTick = 0;
   private firstTickPending = true;
+  private lastOverflowWarningTick = -1;
 
   constructor(options: EventBusOptions) {
     if (options.channels.length === 0) {
@@ -576,18 +577,23 @@ export class EventBus implements EventPublisher {
         channel.outboundBuffer.length,
       );
       const remainingCapacity = Math.max(0, descriptor.capacity - bufferOccupancy);
+      channel.currentOccupancy = bufferOccupancy;
+      channel.highWaterMark = Math.max(channel.highWaterMark, bufferOccupancy);
       const softLimitActive =
         channel.softLimitActive || bufferOccupancy >= descriptor.softLimit;
       if (softLimitActive && !channel.softLimitActive) {
         channel.softLimitActive = true;
       }
       this.telemetryCounters.overflowed += 1;
-      telemetry.recordWarning('EventBufferOverflow', {
-        type: eventType,
-        channel: descriptor.index,
-        capacity: descriptor.capacity,
-        tick: this.currentTick,
-      });
+      if (this.lastOverflowWarningTick !== this.currentTick) {
+        telemetry.recordWarning('EventBufferOverflow', {
+          type: eventType,
+          channel: descriptor.index,
+          capacity: descriptor.capacity,
+          tick: this.currentTick,
+        });
+        this.lastOverflowWarningTick = this.currentTick;
+      }
       return {
         accepted: false,
         state: 'rejected',

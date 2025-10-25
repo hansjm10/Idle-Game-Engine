@@ -71,7 +71,7 @@ export function createUpgradeSystem(options: UpgradeSystemOptions): SystemDefini
         }
 
         const requirementSatisfied = evaluateRequirement(definition.requirement, resources);
-        if (definition.requirement && requirementSatisfied) {
+        if (requirementSatisfied && !upgrades.isUnlocked(upgradeIndex)) {
           upgrades.unlock(upgradeIndex);
         }
 
