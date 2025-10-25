@@ -482,28 +482,8 @@ export {
   type ResourceSpendAttemptContext,
   type ResourceState,
   type ResourceStateSnapshot,
-  type ResourceStateView,
   type SerializedResourceState,
-  type NormalizedResourceRecord,
 } from './resource-state.js';
-export {
-  createGeneratorState,
-  type GeneratorDefinition,
-  type GeneratorState,
-  type GeneratorStateSnapshot,
-  type GeneratorStateView,
-  type SerializedGeneratorState,
-  type NormalizedGeneratorRecord,
-} from './generator-state.js';
-export {
-  createUpgradeState,
-  type UpgradeDefinition,
-  type UpgradeState,
-  type UpgradeStateSnapshot,
-  type UpgradeStateView,
-  type SerializedUpgradeState,
-  type NormalizedUpgradeRecord,
-} from './upgrade-state.js';
 export {
   registerResourceCommandHandlers,
   type ResourceCommandHandlerOptions,
@@ -535,20 +515,6 @@ export {
   resetTelemetry,
   setTelemetry,
 } from './telemetry.js';
-export {
-  RuntimeChangeJournal,
-  type RuntimeChangeJournalOptions,
-  type ChangeJournalCaptureInput,
-  type RuntimeStateDelta,
-  type RuntimeResourceDelta,
-  type RuntimeGeneratorDelta,
-  type RuntimeUpgradeDelta,
-} from './runtime-change-journal.js';
-export {
-  createRuntimeStateView,
-  type RuntimeStateView,
-  type RuntimeStateViewOptions,
-} from './runtime-state-view.js';
 export {
   createDiagnosticTimelineRecorder,
   createNoopDiagnosticTimelineRecorder,
