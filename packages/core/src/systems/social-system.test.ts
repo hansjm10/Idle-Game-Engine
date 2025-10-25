@@ -89,22 +89,133 @@ describe('social-system', () => {
 
     expect(stale).toBeUndefined();
   });
+
+  it('retries queued intents when the publish is rejected', () => {
+    const queue = new SocialIntentQueue(() => 0);
+    const intent = queue.queue(
+      {
+        type: 'guild:join',
+        payload: { guildId: 'gamma' },
+      },
+      0,
+    );
+
+    const attempts: boolean[] = [];
+    const acceptanceSequence = [false, true];
+    const onPublish: PublishEvaluator = (type) => {
+      if (type !== 'social:intent-queued') {
+        return true;
+      }
+      const accepted = acceptanceSequence.shift() ?? true;
+      attempts.push(accepted);
+      return accepted;
+    };
+
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const system = createSocialSystem({
+      queue,
+      removeResolved: false,
+    });
+
+    system.tick(createContext(events, 16, 0, { onPublish }));
+
+    expect(events).toHaveLength(0);
+    expect(attempts).toEqual([false]);
+    const pending = queue.list().find((item) => item.id === intent.id);
+    expect(pending?.status).toBe('queued');
+
+    system.tick(createContext(events, 16, 1, { onPublish }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe('social:intent-queued');
+    expect(attempts).toEqual([false, true]);
+    const queued = queue.list().find((item) => item.id === intent.id);
+    expect(queued?.dirtyReason).toBeUndefined();
+  });
+
+  it('retries resolved intents when the publish is rejected', () => {
+    const queue = new SocialIntentQueue(() => 0);
+    const intent = queue.queue(
+      {
+        type: 'guild:join',
+        payload: { guildId: 'delta' },
+      },
+      0,
+    );
+
+    const attempts: boolean[] = [];
+    const confirmationAcceptance = [false, true];
+    const onPublish: PublishEvaluator = (type) => {
+      if (type === 'social:intent-confirmed') {
+        const accepted = confirmationAcceptance.shift() ?? true;
+        attempts.push(accepted);
+        return accepted;
+      }
+      return true;
+    };
+
+    const confirmations: SocialConfirmation[] = [
+      {
+        intentId: intent.id,
+        status: 'confirmed',
+        confirmedAt: 25,
+      },
+    ];
+
+    const provider = {
+      pullConfirmations() {
+        return confirmations.splice(0, confirmations.length);
+      },
+    };
+
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const system = createSocialSystem({
+      queue,
+      provider,
+    });
+
+    system.tick(createContext(events, 16, 0, { onPublish }));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe('social:intent-queued');
+    expect(attempts).toEqual([false]);
+    const confirmed = queue.list().find((item) => item.id === intent.id);
+    expect(confirmed?.status).toBe('confirmed');
+    expect(confirmed?.resolutionNotified).toBe(false);
+
+    system.tick(createContext(events, 16, 1, { onPublish }));
+
+    expect(events).toHaveLength(2);
+    expect(events[1]?.type).toBe('social:intent-confirmed');
+    expect(attempts).toEqual([false, true]);
+    expect(queue.list()).toHaveLength(0);
+  });
 });
+
+type PublishEvaluator = (type: string, payload: unknown) => boolean;
+
+interface CreateContextOptions {
+  readonly onPublish?: PublishEvaluator;
+}
 
 function createContext(
   events: Array<{ type: string; payload: unknown }>,
   deltaMs: number,
   step = 0,
+  options: CreateContextOptions = {},
 ): TickContext {
   return {
     deltaMs,
     step,
     events: {
       publish(type, payload) {
-        events.push({ type, payload });
+        const accepted = options.onPublish?.(type, payload) ?? true;
+        if (accepted) {
+          events.push({ type, payload });
+        }
         return {
-          accepted: true,
-          state: 'accepted',
+          accepted,
+          state: accepted ? 'accepted' : 'soft-limit',
           type,
           channel: 0,
           bufferSize: 0,

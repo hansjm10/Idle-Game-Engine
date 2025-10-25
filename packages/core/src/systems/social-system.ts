@@ -16,10 +16,12 @@ export interface SocialIntentDefinition<TPayload = unknown> {
 export interface SocialIntentRecord<TPayload = unknown> extends SocialIntentDefinition<TPayload> {
   readonly id: string;
   readonly issuedAt: number;
+  readonly sequence: number;
   status: SocialIntentStatus;
   readonly enqueuedStep: number;
   lastConfirmedAt?: number;
   confirmationPayload?: Record<string, unknown>;
+  resolutionNotified?: boolean;
   dirtyReason?: 'queued' | 'status';
 }
 
@@ -45,13 +47,15 @@ export class SocialIntentQueue {
   constructor(private readonly clock: () => number = () => Date.now()) {}
 
   queue<TPayload>(definition: SocialIntentDefinition<TPayload>, step: number): SocialIntentRecord<TPayload> {
-    const id = this.createIntentId();
+    const sequence = this.nextSequence();
+    const id = sequence.toString(36);
     const issuedAt = definition.issuedAt ?? this.clock();
     const record: SocialIntentRecord<TPayload> = {
       id,
       type: definition.type,
       payload: definition.payload,
       issuedAt,
+      sequence,
       status: 'queued',
       enqueuedStep: step,
       dirtyReason: 'queued',
@@ -60,6 +64,16 @@ export class SocialIntentQueue {
     this.insertIntent(record);
     this.dirty.add(id);
     return record;
+  }
+
+  markDirty(intentId: string, reason: 'queued' | 'status'): void {
+    const intent = this.intents.get(intentId);
+    if (!intent) {
+      return;
+    }
+
+    intent.dirtyReason = reason;
+    this.dirty.add(intentId);
   }
 
   list(): readonly SocialIntentRecord[] {
@@ -103,8 +117,8 @@ export class SocialIntentQueue {
     intent.status = confirmation.status;
     intent.lastConfirmedAt = confirmation.confirmedAt;
     intent.confirmationPayload = toRecord(confirmation.payload);
+    intent.resolutionNotified = false;
     intent.dirtyReason = 'status';
-    this.dirty.add(intent.id);
     return intent;
   }
 
@@ -116,16 +130,19 @@ export class SocialIntentQueue {
         this.order.splice(index, 1);
         continue;
       }
-      if (intent.status === 'confirmed' || intent.status === 'rejected') {
+      if (
+        (intent.status === 'confirmed' || intent.status === 'rejected') &&
+        intent.resolutionNotified
+      ) {
         this.intents.delete(id);
         this.order.splice(index, 1);
       }
     }
   }
 
-  private createIntentId(): string {
-    const sequence = (this.sequence += 1);
-    return `${sequence.toString(36)}`;
+  private nextSequence(): number {
+    this.sequence += 1;
+    return this.sequence;
   }
 
   private insertIntent(record: SocialIntentRecord): void {
@@ -168,19 +185,55 @@ export function createSocialSystem(options: SocialSystemOptions): SystemDefiniti
     before,
     after,
     tick(context: TickContext) {
-      const newlyQueued = queue.consumeDirty().filter((intent) => intent.status === 'queued');
-      for (const intent of newlyQueued) {
-        const recordPayload = toRecord(intent.payload);
-        const basePayload = {
-          intentId: intent.id,
-          type: intent.type,
-          issuedAt: intent.issuedAt,
-        } satisfies Omit<SocialIntentQueuedEventPayload, 'payload'>;
+      const dirtyIntents = queue.consumeDirty();
+      for (const intent of dirtyIntents) {
+        if (intent.status === 'queued') {
+          const recordPayload = toRecord(intent.payload);
+          const basePayload = {
+            intentId: intent.id,
+            type: intent.type,
+            issuedAt: intent.issuedAt,
+          } satisfies Omit<SocialIntentQueuedEventPayload, 'payload'>;
 
-        const queuedPayload: SocialIntentQueuedEventPayload = recordPayload
-          ? { ...basePayload, payload: recordPayload }
-          : basePayload;
-        context.events.publish('social:intent-queued', queuedPayload);
+          const queuedPayload: SocialIntentQueuedEventPayload = recordPayload
+            ? { ...basePayload, payload: recordPayload }
+            : basePayload;
+
+          const result = context.events.publish('social:intent-queued', queuedPayload);
+          if (!result.accepted) {
+            queue.markDirty(intent.id, 'queued');
+          }
+          continue;
+        }
+
+        if (intent.status !== 'confirmed' && intent.status !== 'rejected') {
+          continue;
+        }
+
+        const confirmedAt = intent.lastConfirmedAt ?? context.step;
+        const resolvedPayload: SocialIntentResolvedEventPayload = intent.confirmationPayload
+          ? {
+              intentId: intent.id,
+              type: intent.type,
+              confirmedAt,
+              payload: intent.confirmationPayload,
+            }
+          : {
+              intentId: intent.id,
+              type: intent.type,
+              confirmedAt,
+            };
+
+        const eventType =
+          intent.status === 'confirmed'
+            ? 'social:intent-confirmed'
+            : 'social:intent-rejected';
+        const result = context.events.publish(eventType, resolvedPayload);
+        if (result.accepted) {
+          intent.resolutionNotified = true;
+        } else {
+          queue.markDirty(intent.id, 'status');
+        }
       }
 
       if (provider) {
@@ -205,10 +258,15 @@ export function createSocialSystem(options: SocialSystemOptions): SystemDefiniti
                 confirmedAt,
               };
 
-          if (intent.status === 'confirmed') {
-            context.events.publish('social:intent-confirmed', resolvedPayload);
-          } else if (intent.status === 'rejected') {
-            context.events.publish('social:intent-rejected', resolvedPayload);
+          const eventType =
+            intent.status === 'confirmed'
+              ? 'social:intent-confirmed'
+              : 'social:intent-rejected';
+          const result = context.events.publish(eventType, resolvedPayload);
+          if (result.accepted) {
+            intent.resolutionNotified = true;
+          } else {
+            queue.markDirty(intent.id, 'status');
           }
         }
       }
@@ -224,7 +282,7 @@ function compareIntents(left: SocialIntentRecord, right: SocialIntentRecord): nu
   if (left.issuedAt !== right.issuedAt) {
     return left.issuedAt - right.issuedAt;
   }
-  return left.id.localeCompare(right.id);
+  return left.sequence - right.sequence;
 }
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {

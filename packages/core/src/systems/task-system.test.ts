@@ -51,22 +51,68 @@ describe('task-system', () => {
       },
     });
   });
+
+  it('retries completion notifications until the publish is accepted', () => {
+    const scheduler = new TaskSchedulerState();
+    scheduler.schedule({ id: 'task-retry', durationMs: 50 });
+
+    const attempts: boolean[] = [];
+    const acceptanceSequence = [false, true];
+
+    const onPublish: PublishEvaluator = (type) => {
+      if (type !== 'task:completed') {
+        return true;
+      }
+      const accepted = acceptanceSequence.shift() ?? true;
+      attempts.push(accepted);
+      return accepted;
+    };
+
+    const events: Array<{ type: string; payload: unknown }> = [];
+    const system = createTaskSystem({
+      state: scheduler,
+    });
+
+    system.tick(createContext(events, 50, 0, { onPublish }));
+
+    expect(events).toHaveLength(0);
+    expect(attempts).toEqual([false]);
+    const unfinished = scheduler.get('task-retry');
+    expect(unfinished?.status).toBe('completed');
+    expect(unfinished?.completionNotified).toBeUndefined();
+
+    system.tick(createContext(events, 10, 1, { onPublish }));
+
+    expect(events).toHaveLength(1);
+    expect(attempts).toEqual([false, true]);
+    expect(scheduler.get('task-retry')).toBeUndefined();
+  });
 });
+
+type PublishEvaluator = (type: string, payload: unknown) => boolean;
+
+interface CreateContextOptions {
+  readonly onPublish?: PublishEvaluator;
+}
 
 function createContext(
   events: Array<{ type: string; payload: unknown }>,
   deltaMs: number,
   step = 0,
+  options: CreateContextOptions = {},
 ): TickContext {
   return {
     deltaMs,
     step,
     events: {
       publish(type, payload) {
-        events.push({ type, payload });
+        const accepted = options.onPublish?.(type, payload) ?? true;
+        if (accepted) {
+          events.push({ type, payload });
+        }
         return {
-          accepted: true,
-          state: 'accepted',
+          accepted,
+          state: accepted ? 'accepted' : 'soft-limit',
           type,
           channel: 0,
           bufferSize: 0,
@@ -78,4 +124,3 @@ function createContext(
     },
   };
 }
-

@@ -32,7 +32,7 @@ export interface PublishMetadata {
 }
 
 export interface PublishResult<TType extends RuntimeEventType = RuntimeEventType> {
-  readonly accepted: true;
+  readonly accepted: boolean;
   readonly state: PublishState;
   readonly type: TType;
   readonly channel: number;

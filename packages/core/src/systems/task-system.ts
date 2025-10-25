@@ -19,6 +19,7 @@ export interface TaskRecord extends TaskDefinition {
 export class TaskSchedulerState {
   private readonly order: string[] = [];
   private readonly tasks = new Map<string, TaskRecord>();
+  private readonly pendingNotifications = new Set<string>();
 
   schedule(task: TaskDefinition): void {
     if (this.tasks.has(task.id)) {
@@ -77,6 +78,7 @@ export class TaskSchedulerState {
       if (task.remainingMs === 0) {
         task.status = 'completed';
         task.completedAtStep = step;
+        this.pendingNotifications.add(task.id);
         completed.push(task);
       }
     }
@@ -87,6 +89,7 @@ export class TaskSchedulerState {
   clearCompleted(): void {
     for (const [taskId, task] of this.tasks.entries()) {
       if (task.status === 'completed' && task.completionNotified) {
+        this.pendingNotifications.delete(taskId);
         this.tasks.delete(taskId);
         const index = this.order.indexOf(taskId);
         if (index >= 0) {
@@ -100,7 +103,31 @@ export class TaskSchedulerState {
     const task = this.tasks.get(taskId);
     if (task) {
       task.completionNotified = true;
+      this.pendingNotifications.delete(taskId);
     }
+  }
+
+  getPendingCompletions(): readonly TaskRecord[] {
+    if (this.pendingNotifications.size === 0) {
+      return [];
+    }
+
+    const pending: TaskRecord[] = [];
+    for (const taskId of this.order) {
+      if (!this.pendingNotifications.has(taskId)) {
+        continue;
+      }
+
+      const task = this.tasks.get(taskId);
+      if (!task || task.status !== 'completed' || task.completionNotified) {
+        this.pendingNotifications.delete(taskId);
+        continue;
+      }
+
+      pending.push(task);
+    }
+
+    return pending;
   }
 
   private require(taskId: string): TaskRecord {
@@ -134,8 +161,9 @@ export function createTaskSystem(options: TaskSystemOptions): SystemDefinition {
     before,
     after,
     tick(context: TickContext) {
-      const completed = state.advance(context.deltaMs, context.step);
-      for (const task of completed) {
+      state.advance(context.deltaMs, context.step);
+      const pending = state.getPendingCompletions();
+      for (const task of pending) {
         const result = context.events.publish('task:completed', {
           taskId: task.id,
           payload: task.payload,
