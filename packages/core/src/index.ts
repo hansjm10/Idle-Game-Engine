@@ -264,6 +264,14 @@ export class IdleEngineRuntime {
     }
   }
 
+  private throwIfEventBusOverflowed(): void {
+    const overflowError = this.eventBus.getLastOverflowError();
+    if (overflowError) {
+      this.nextExecutableStep = this.currentStep;
+      throw overflowError;
+    }
+  }
+
   private runStep(context: SchedulerStepExecutionContext): void {
     const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
 
@@ -323,6 +331,7 @@ export class IdleEngineRuntime {
       };
 
       this.eventBus.dispatch(dispatchContext);
+      this.throwIfEventBusOverflowed();
 
       const commandPhaseEnd = getMonotonicTimeMs();
       tickDiagnostics.addPhase(
@@ -358,6 +367,7 @@ export class IdleEngineRuntime {
         }
 
         this.eventBus.dispatch(dispatchContext);
+        this.throwIfEventBusOverflowed();
       }
 
       const systemsPhaseEnd = getMonotonicTimeMs();

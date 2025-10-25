@@ -477,6 +477,7 @@ export class EventBus implements EventPublisher {
   private eventsPublishedThisTick = 0;
   private firstTickPending = true;
   private lastOverflowWarningTick = -1;
+  private lastOverflowError: EventBufferOverflowError | null = null;
 
   constructor(options: EventBusOptions) {
     if (options.channels.length === 0) {
@@ -531,6 +532,8 @@ export class EventBus implements EventPublisher {
   beginTick(tick: number, options?: BeginTickOptions): void {
     const { resetOutbound = true } = options ?? {};
     const isSameTick = !this.firstTickPending && tick === this.currentTick;
+
+    this.lastOverflowError = null;
 
     if (this.firstTickPending) {
       this.firstTickPending = false;
@@ -593,6 +596,13 @@ export class EventBus implements EventPublisher {
           tick: this.currentTick,
         });
         this.lastOverflowWarningTick = this.currentTick;
+      }
+      if (this.lastOverflowError === null) {
+        this.lastOverflowError = new EventBufferOverflowError(
+          eventType,
+          descriptor.index,
+          descriptor.capacity,
+        );
       }
       return {
         accepted: false,
@@ -770,6 +780,10 @@ export class EventBus implements EventPublisher {
       channel.internalBuffer.reset();
       channel.currentOccupancy = 0;
     }
+  }
+
+  getLastOverflowError(): EventBufferOverflowError | null {
+    return this.lastOverflowError;
   }
 
   getBackPressureSnapshot(): BackPressureSnapshot {

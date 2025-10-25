@@ -11,6 +11,7 @@ import {
   DEFAULT_EVENT_BUS_OPTIONS,
   type AutomationToggledEventPayload,
 } from './events/runtime-event-catalog.js';
+import { EventBufferOverflowError } from './events/event-bus.js';
 import {
   buildRuntimeEventFrame,
   type RuntimeEventFrame,
@@ -251,6 +252,50 @@ describe('IdleEngineRuntime', () => {
 
     expect(observedDuringHandler).toBe(1);
     expect(runtime.getNextExecutableStep()).toBe(1);
+  });
+
+  it('rewinds the tick when publishes overflow channel capacity', () => {
+    const { runtime } = createRuntime({
+      eventBusOptions: {
+        ...DEFAULT_EVENT_BUS_OPTIONS,
+        channelConfigs: {
+          ...(DEFAULT_EVENT_BUS_OPTIONS.channelConfigs ?? {}),
+          'automation:toggled': {
+            capacity: 1,
+          },
+        },
+      },
+    });
+
+    let attempts = 0;
+
+    runtime.addSystem({
+      id: 'overflow-producer',
+      tick({ events }) {
+        attempts += 1;
+
+        events.publish('automation:toggled', {
+          automationId: 'auto',
+          enabled: attempts % 2 === 0,
+        } satisfies AutomationToggledEventPayload);
+
+        if (attempts === 1) {
+          events.publish('automation:toggled', {
+            automationId: 'auto',
+            enabled: false,
+          } satisfies AutomationToggledEventPayload);
+        }
+      },
+    });
+
+    expect(() => runtime.tick(10)).toThrow(EventBufferOverflowError);
+    expect(runtime.getCurrentStep()).toBe(0);
+    expect(runtime.getNextExecutableStep()).toBe(0);
+
+    expect(() => runtime.tick(10)).not.toThrow();
+    expect(runtime.getCurrentStep()).toBe(1);
+    expect(runtime.getNextExecutableStep()).toBe(1);
+    expect(attempts).toBe(2);
   });
 
   it('executes future-step commands on their scheduled ticks', () => {
