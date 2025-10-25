@@ -119,9 +119,10 @@ function createContext(
         if (accepted) {
           log.push({ type, payload });
         }
+        const state = accepted ? 'accepted' : 'rejected';
         return {
           accepted,
-          state: accepted ? 'accepted' : 'soft-limit',
+          state,
           type,
           channel: 0,
           bufferSize: 0,
