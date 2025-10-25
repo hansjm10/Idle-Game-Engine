@@ -274,6 +274,7 @@ describe('IdleEngineRuntime', () => {
 
     let attempts = 0;
     const publishResults: PublishResult<'automation:toggled'>[] = [];
+    let postOverflowExecuted = false;
 
     runtime.addSystem({
       id: 'overflow-producer',
@@ -288,12 +289,11 @@ describe('IdleEngineRuntime', () => {
         );
 
         if (attempts === 1) {
-          publishResults.push(
-            events.publish('automation:toggled', {
-              automationId: 'auto',
-              enabled: false,
-            } satisfies AutomationToggledEventPayload),
-          );
+          events.publish('automation:toggled', {
+            automationId: 'auto',
+            enabled: false,
+          } satisfies AutomationToggledEventPayload);
+          postOverflowExecuted = true;
         }
       },
     });
@@ -302,15 +302,17 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getCurrentStep()).toBe(0);
     expect(runtime.getNextExecutableStep()).toBe(0);
     expect(attempts).toBe(1);
+    expect(postOverflowExecuted).toBe(false);
 
-    expect(publishResults).toHaveLength(2);
+    expect(publishResults).toHaveLength(1);
     expect(publishResults[0]?.accepted).toBe(true);
     expect(publishResults[0]?.state).toBe('soft-limit');
-    expect(publishResults[1]?.accepted).toBe(false);
-    expect(publishResults[1]?.state).toBe('rejected');
 
     const overflow = runtime.getEventBus().getLastOverflowError();
     expect(overflow).toBeInstanceOf(EventBufferOverflowError);
+    expect(overflow?.result.accepted).toBe(false);
+    expect(overflow?.result.state).toBe('rejected');
+    expect(overflow?.result.remainingCapacity).toBe(0);
   });
 
   it('stops executing systems once an overflow has been detected', () => {

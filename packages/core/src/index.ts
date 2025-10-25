@@ -434,11 +434,7 @@ function createEventPublisher(bus: EventBus): EventPublisher {
       payload: RuntimeEventPayload<TType>,
       metadata?: PublishMetadata,
     ): PublishResult<TType> {
-      const result = bus.publish(eventType, payload, metadata);
-      // Allow callers to inspect rejected publishes (e.g. due to channel
-      // overflow) and implement their own retry logic. The bus already emits
-      // telemetry for overflow scenarios, so the runtime should not rethrow here.
-      return result;
+      return bus.publish(eventType, payload, metadata);
     },
   };
 }

@@ -169,12 +169,20 @@ export interface BackPressureSnapshot {
   readonly counters: BackPressureCounters;
 }
 
-export class EventBufferOverflowError extends Error {
-  readonly eventType: RuntimeEventType;
+export class EventBufferOverflowError<
+  TType extends RuntimeEventType = RuntimeEventType,
+> extends Error {
+  readonly eventType: TType;
   readonly channel: number;
   readonly capacity: number;
+  readonly result: PublishResult<TType>;
 
-  constructor(eventType: RuntimeEventType, channel: number, capacity: number) {
+  constructor(
+    eventType: TType,
+    channel: number,
+    capacity: number,
+    result: PublishResult<TType>,
+  ) {
     super(
       `Event buffer overflow on channel ${channel} for ${eventType} (capacity ${capacity}).`,
     );
@@ -182,6 +190,7 @@ export class EventBufferOverflowError extends Error {
     this.eventType = eventType;
     this.channel = channel;
     this.capacity = capacity;
+    this.result = result;
   }
 }
 
@@ -605,14 +614,7 @@ export class EventBus implements EventPublisher {
         this.lastOverflowWarningTickByChannel[descriptor.index] =
           this.currentTick;
       }
-      if (this.lastOverflowError === null) {
-        this.lastOverflowError = new EventBufferOverflowError(
-          eventType,
-          descriptor.index,
-          descriptor.capacity,
-        );
-      }
-      return {
+      const result: PublishResult<TType> = {
         accepted: false,
         state: 'rejected',
         type: eventType,
@@ -622,6 +624,14 @@ export class EventBus implements EventPublisher {
         dispatchOrder: this.dispatchCounter,
         softLimitActive,
       };
+      const overflowError = new EventBufferOverflowError(
+        eventType,
+        descriptor.index,
+        descriptor.capacity,
+        result,
+      );
+      this.lastOverflowError = overflowError;
+      throw overflowError;
     }
 
     const timestamp = metadata?.issuedAt ?? this.clock.now();

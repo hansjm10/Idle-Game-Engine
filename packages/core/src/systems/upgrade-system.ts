@@ -145,6 +145,10 @@ function applyEffect(
       ledger.applyExponential(generatorId, value);
       return;
     default:
-      throw new Error(`Unsupported upgrade modifier mode: ${mode satisfies never}`);
+      assertUnreachable(mode);
   }
+}
+
+function assertUnreachable(value: never): never {
+  throw new Error(`Unsupported upgrade modifier mode: ${value}`);
 }

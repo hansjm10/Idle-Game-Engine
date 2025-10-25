@@ -1,9 +1,12 @@
 import { performance } from 'node:perf_hooks';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EventBus } from './event-bus.js';
+import { EventBus, EventBufferOverflowError } from './event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
-import { type RuntimeEventPayload } from './runtime-event.js';
+import {
+  type RuntimeEventPayload,
+  type RuntimeEventType,
+} from './runtime-event.js';
 import { buildRuntimeEventFrame } from './runtime-event-frame.js';
 import {
   resetTelemetry,
@@ -27,6 +30,19 @@ describe('EventBus', () => {
       clock,
       channels: DEFAULT_EVENT_BUS_OPTIONS.channels,
     });
+  }
+
+  function captureOverflow<TType extends RuntimeEventType>(
+    operation: () => void,
+  ): EventBufferOverflowError<TType> {
+    let overflow: unknown;
+    try {
+      operation();
+    } catch (error) {
+      overflow = error;
+    }
+    expect(overflow).toBeInstanceOf(EventBufferOverflowError);
+    return overflow as EventBufferOverflowError<TType>;
   }
 
   it('dispatches events to subscribers in FIFO order and allows nested publishes', () => {
@@ -163,15 +179,17 @@ describe('EventBus', () => {
       expect(first.state).toBe('soft-limit');
       expect(first.softLimitActive).toBe(true);
 
-      const second = bus.publish('resource:threshold-reached', {
-        resourceId: 'energy',
-        threshold: 8,
-      } as RuntimeEventPayload<'resource:threshold-reached'>);
-
-      expect(second.accepted).toBe(false);
-      expect(second.state).toBe('rejected');
-      expect(second.remainingCapacity).toBe(0);
-      expect(second.softLimitActive).toBe(true);
+      const overflow = captureOverflow<'resource:threshold-reached'>(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 8,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      });
+      const overflowResult = overflow.result;
+      expect(overflowResult.accepted).toBe(false);
+      expect(overflowResult.state).toBe('rejected');
+      expect(overflowResult.remainingCapacity).toBe(0);
+      expect(overflowResult.softLimitActive).toBe(true);
 
       const handler = vi.fn();
       bus.on('resource:threshold-reached', handler);
@@ -240,18 +258,22 @@ describe('EventBus', () => {
       expect(first.accepted).toBe(true);
       expect(first.state).toBe('soft-limit');
 
-      const second = bus.publish('resource:threshold-reached', {
-        resourceId: 'energy',
-        threshold: 11,
-      } as RuntimeEventPayload<'resource:threshold-reached'>);
+      const second = captureOverflow<'resource:threshold-reached'>(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 11,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }).result;
 
       expect(second.accepted).toBe(false);
       expect(second.state).toBe('rejected');
 
-      const third = bus.publish('resource:threshold-reached', {
-        resourceId: 'energy',
-        threshold: 12,
-      } as RuntimeEventPayload<'resource:threshold-reached'>);
+      const third = captureOverflow<'resource:threshold-reached'>(() => {
+        bus.publish('resource:threshold-reached', {
+          resourceId: 'energy',
+          threshold: 12,
+        } as RuntimeEventPayload<'resource:threshold-reached'>);
+      }).result;
 
       expect(third.accepted).toBe(false);
       expect(third.state).toBe('rejected');
@@ -295,10 +317,12 @@ describe('EventBus', () => {
 
     bus.beginTick(2, { resetOutbound: false });
 
-    const second = bus.publish('resource:threshold-reached', {
-      resourceId: 'energy',
-      threshold: 22,
-    } as RuntimeEventPayload<'resource:threshold-reached'>);
+    const second = captureOverflow<'resource:threshold-reached'>(() => {
+      bus.publish('resource:threshold-reached', {
+        resourceId: 'energy',
+        threshold: 22,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+    }).result;
 
     expect(second.accepted).toBe(false);
     expect(second.state).toBe('rejected');
