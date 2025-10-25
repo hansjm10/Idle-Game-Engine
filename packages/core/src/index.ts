@@ -326,6 +326,14 @@ export class IdleEngineRuntime {
         tick: this.currentStep,
       };
 
+      const throwIfOverflowed = (): void => {
+        const overflowError = this.eventBus.getLastOverflowError();
+        if (overflowError !== null) {
+          this.nextExecutableStep = this.currentStep;
+          throw overflowError;
+        }
+      };
+
       this.eventBus.dispatch(dispatchContext);
 
       const commandPhaseEnd = getMonotonicTimeMs();
@@ -333,6 +341,8 @@ export class IdleEngineRuntime {
         'commands.capture',
         commandPhaseEnd - commandPhaseStart,
       );
+
+      throwIfOverflowed();
 
       const systemsPhaseStart = commandPhaseEnd;
 
@@ -343,6 +353,8 @@ export class IdleEngineRuntime {
       };
 
       for (const { system } of this.systems) {
+        throwIfOverflowed();
+
         const systemSpan = tickDiagnostics.startSystem(system.id);
         try {
           system.tick(tickContext);
@@ -362,6 +374,7 @@ export class IdleEngineRuntime {
         }
 
         this.eventBus.dispatch(dispatchContext);
+        throwIfOverflowed();
       }
 
       const systemsPhaseEnd = getMonotonicTimeMs();

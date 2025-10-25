@@ -15,6 +15,8 @@ import {
   EventBufferOverflowError,
   type PublishResult,
 } from './events/event-bus.js';
+import { createEventSystem } from './systems/event-system.js';
+import type { ResourceState } from './resource-state.js';
 import {
   buildRuntimeEventFrame,
   type RuntimeEventFrame,
@@ -309,6 +311,66 @@ describe('IdleEngineRuntime', () => {
 
     const overflow = runtime.getEventBus().getLastOverflowError();
     expect(overflow).toBeInstanceOf(EventBufferOverflowError);
+  });
+
+  it('stops executing systems once an overflow has been detected', () => {
+    const { runtime } = createRuntime({
+      eventBusOptions: {
+        ...DEFAULT_EVENT_BUS_OPTIONS,
+        channelConfigs: {
+          ...(DEFAULT_EVENT_BUS_OPTIONS.channelConfigs ?? {}),
+          'automation:toggled': {
+            capacity: 1,
+          },
+        },
+      },
+    });
+
+    const finalizeTick = vi.fn();
+    const snapshot = vi.fn();
+    const resetPerTickAccumulators = vi.fn();
+    const clearDirtyScratch = vi.fn();
+    const resources = {
+      finalizeTick,
+      snapshot,
+      resetPerTickAccumulators,
+      clearDirtyScratch,
+    } as unknown as ResourceState;
+
+    const observer = vi.fn();
+
+    runtime.addSystem({
+      id: 'overflow-producer',
+      tick({ events }) {
+        events.publish('automation:toggled', {
+          automationId: 'auto',
+          enabled: true,
+        } satisfies AutomationToggledEventPayload);
+        events.publish('automation:toggled', {
+          automationId: 'auto',
+          enabled: false,
+        } satisfies AutomationToggledEventPayload);
+      },
+    });
+
+    runtime.addSystem({
+      id: 'observer',
+      tick: observer,
+    });
+
+    runtime.addSystem(
+      createEventSystem({
+        resources,
+      }),
+    );
+
+    expect(() => runtime.tick(10)).toThrow(EventBufferOverflowError);
+
+    expect(observer).not.toHaveBeenCalled();
+    expect(finalizeTick).not.toHaveBeenCalled();
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(resetPerTickAccumulators).not.toHaveBeenCalled();
+    expect(clearDirtyScratch).not.toHaveBeenCalled();
   });
 
   it('executes future-step commands on their scheduled ticks', () => {
