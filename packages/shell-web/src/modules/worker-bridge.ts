@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import type {
   BackPressureSnapshot,
   DiagnosticTimelineResult,
-  OfflineCatchUpResult,
 } from '@idle-engine/core';
 
 export enum CommandSource {
@@ -22,14 +21,6 @@ export interface WorkerBridge<TState = unknown> {
   ): void;
   offDiagnosticsUpdate(
     callback: (diagnostics: DiagnosticTimelineResult) => void,
-  ): void;
-  setVisibilityState(visible: boolean): void;
-  requestOfflineCatchUp(elapsedMs: number): void;
-  onOfflineCatchUpResult(
-    callback: (result: OfflineCatchUpSummary) => void,
-  ): void;
-  offOfflineCatchUpResult(
-    callback: (result: OfflineCatchUpSummary) => void,
   ): void;
 }
 
@@ -61,42 +52,13 @@ interface DiagnosticsUpdateEnvelope {
   readonly diagnostics: DiagnosticTimelineResult;
 }
 
-interface VisibilityChangeEnvelope {
-  readonly type: 'VISIBILITY_CHANGE';
-  readonly visible: boolean;
-}
-
-interface OfflineCatchUpEnvelope {
-  readonly type: 'OFFLINE_CATCH_UP';
-  readonly elapsedMs: number;
-}
-
-interface OfflineCatchUpResultEnvelope {
-  readonly type: 'OFFLINE_CATCH_UP_RESULT';
-  readonly result: OfflineCatchUpResult & {
-    readonly remainingMs: number;
-  };
-}
-
 type OutboundEnvelope<TPayload> =
   | CommandEnvelope<TPayload>
   | TerminateEnvelope
-  | DiagnosticsSubscribeEnvelope
-  | VisibilityChangeEnvelope
-  | OfflineCatchUpEnvelope;
+  | DiagnosticsSubscribeEnvelope;
 type InboundEnvelope<TState> =
   | StateUpdateEnvelope<TState>
-  | DiagnosticsUpdateEnvelope
-  | OfflineCatchUpResultEnvelope;
-
-export interface OfflineCatchUpSummary {
-  readonly requestedMs: number;
-  readonly simulatedMs: number;
-  readonly executedSteps: number;
-  readonly overflowMs: number;
-  readonly backlogMs: number;
-  readonly remainingMs: number;
-}
+  | DiagnosticsUpdateEnvelope;
 
 export class WorkerBridgeImpl<TState = unknown>
   implements WorkerBridge<TState>
@@ -105,9 +67,6 @@ export class WorkerBridgeImpl<TState = unknown>
   private readonly stateUpdateCallbacks: Array<(state: TState) => void> = [];
   private readonly diagnosticsUpdateCallbacks: Array<
     (diagnostics: DiagnosticTimelineResult) => void
-  > = [];
-  private readonly offlineCatchUpCallbacks: Array<
-    (result: OfflineCatchUpSummary) => void
   > = [];
   private disposed = false;
 
@@ -128,22 +87,6 @@ export class WorkerBridgeImpl<TState = unknown>
       for (const callback of this.stateUpdateCallbacks) {
         callback(data.state);
       }
-      return;
-    }
-
-    if (data.type === 'OFFLINE_CATCH_UP_RESULT') {
-      const summary: OfflineCatchUpSummary = {
-        requestedMs: data.result.requestedMs,
-        simulatedMs: data.result.simulatedMs,
-        executedSteps: data.result.executedSteps,
-        overflowMs: data.result.overflowMs,
-        backlogMs: data.result.backlogMs,
-        remainingMs: data.result.remainingMs,
-      };
-      for (const callback of this.offlineCatchUpCallbacks) {
-        callback(summary);
-      }
-      return;
     }
   };
 
@@ -206,45 +149,6 @@ export class WorkerBridgeImpl<TState = unknown>
     }
   }
 
-  setVisibilityState(visible: boolean): void {
-    if (this.disposed) {
-      throw new Error('WorkerBridge has been disposed');
-    }
-
-    const envelope: VisibilityChangeEnvelope = {
-      type: 'VISIBILITY_CHANGE',
-      visible,
-    };
-    this.worker.postMessage(envelope as OutboundEnvelope<never>);
-  }
-
-  requestOfflineCatchUp(elapsedMs: number): void {
-    if (this.disposed) {
-      throw new Error('WorkerBridge has been disposed');
-    }
-
-    const envelope: OfflineCatchUpEnvelope = {
-      type: 'OFFLINE_CATCH_UP',
-      elapsedMs,
-    };
-    this.worker.postMessage(envelope as OutboundEnvelope<never>);
-  }
-
-  onOfflineCatchUpResult(
-    callback: (result: OfflineCatchUpSummary) => void,
-  ): void {
-    this.offlineCatchUpCallbacks.push(callback);
-  }
-
-  offOfflineCatchUpResult(
-    callback: (result: OfflineCatchUpSummary) => void,
-  ): void {
-    const index = this.offlineCatchUpCallbacks.indexOf(callback);
-    if (index !== -1) {
-      this.offlineCatchUpCallbacks.splice(index, 1);
-    }
-  }
-
   dispose(): void {
     if (this.disposed) {
       return;
@@ -256,7 +160,6 @@ export class WorkerBridgeImpl<TState = unknown>
     this.worker.terminate();
     this.stateUpdateCallbacks.length = 0;
     this.diagnosticsUpdateCallbacks.length = 0;
-    this.offlineCatchUpCallbacks.length = 0;
   }
 }
 

@@ -5,11 +5,9 @@ import {
   CommandQueue,
   CommandDispatcher,
   IdleEngineRuntime,
-  type IdleEngineRuntimeOptions,
   type BackPressureSnapshot,
   type DiagnosticTimelineResult,
   type EventBus,
-  type OfflineCatchUpResult,
 } from '@idle-engine/core';
 
 interface CommandMessage {
@@ -28,22 +26,10 @@ interface DiagnosticsSubscribeMessage {
   readonly type: 'DIAGNOSTICS_SUBSCRIBE';
 }
 
-interface VisibilityChangeMessage {
-  readonly type: 'VISIBILITY_CHANGE';
-  readonly visible: boolean;
-}
-
-interface OfflineCatchUpMessage {
-  readonly type: 'OFFLINE_CATCH_UP';
-  readonly elapsedMs: number;
-}
-
 type IncomingMessage =
   | CommandMessage
   | TerminateMessage
-  | DiagnosticsSubscribeMessage
-  | VisibilityChangeMessage
-  | OfflineCatchUpMessage;
+  | DiagnosticsSubscribeMessage;
 
 interface StateUpdateMessage {
   readonly type: 'STATE_UPDATE';
@@ -55,29 +41,17 @@ interface DiagnosticsUpdateMessage {
   readonly diagnostics: DiagnosticTimelineResult;
 }
 
-interface OfflineCatchUpResultPayload extends OfflineCatchUpResult {
-  readonly remainingMs: number;
-}
-
-interface OfflineCatchUpResultMessage {
-  readonly type: 'OFFLINE_CATCH_UP_RESULT';
-  readonly result: OfflineCatchUpResultPayload;
-}
-
 const RAF_INTERVAL_MS = 16;
 
 export interface RuntimeWorkerOptions {
   readonly context?: DedicatedWorkerGlobalScope;
   readonly now?: () => number;
   readonly scheduleTick?: (callback: () => void) => () => void;
-  readonly runtimeOptions?: IdleEngineRuntimeOptions;
 }
 
 export interface RuntimeWorkerHarness {
   readonly runtime: IdleEngineRuntime;
   readonly handleMessage: (message: IncomingMessage) => void;
-  readonly setVisibility: (visible: boolean) => void;
-  readonly requestOfflineCatchUp: (elapsedMs: number) => OfflineCatchUpResult;
   readonly tick: () => void;
   readonly dispose: () => void;
 }
@@ -113,7 +87,6 @@ export function initializeRuntimeWorker(
   const commandQueue = new CommandQueue();
   const commandDispatcher = new CommandDispatcher();
   const runtime = new IdleEngineRuntime({
-    ...options.runtimeOptions,
     commandQueue,
     commandDispatcher,
   });
@@ -154,62 +127,9 @@ export function initializeRuntimeWorker(
     postDiagnosticsUpdate(result);
   };
 
-  const emitStateSnapshot = () => {
-    const eventBus = runtime.getEventBus();
-    const events = collectOutboundEvents(eventBus);
-    const backPressure = eventBus.getBackPressureSnapshot();
-
-    const message: StateUpdateMessage = {
-      type: 'STATE_UPDATE',
-      state: {
-        currentStep: runtime.getCurrentStep(),
-        events,
-        backPressure,
-      },
-    };
-    context.postMessage(message);
-  };
-
-  let lastTimestamp = now();
-
-  const runOfflineCatchUpInternal = (
-    elapsedMs: number,
-    emitOutputs: boolean,
-  ): OfflineCatchUpResult => {
-    const normalizedElapsed = Math.max(0, elapsedMs ?? 0);
-    const result = runtime.runOfflineCatchUp(normalizedElapsed);
-    if (emitOutputs && result.executedSteps > 0) {
-      emitStateSnapshot();
-      emitDiagnosticsDelta(true);
-    }
-    return result;
-  };
-
-  const performOfflineCatchUp = (elapsedMs: number): OfflineCatchUpResult => {
-    const result = runOfflineCatchUpInternal(elapsedMs, true);
-    const currentTime = now();
-    const remainingMs = Math.max(0, result.backlogMs);
-    const baselineTimestamp = currentTime - remainingMs;
-    lastTimestamp = Number.isFinite(baselineTimestamp)
-      ? baselineTimestamp
-      : currentTime;
-    const message: OfflineCatchUpResultMessage = {
-      type: 'OFFLINE_CATCH_UP_RESULT',
-      result: {
-        ...result,
-        remainingMs,
-      },
-    };
-    context.postMessage(message);
-    return result;
-  };
-
-  const setVisibility = (visible: boolean) => {
-    runtime.setBackgroundThrottled(!visible);
-  };
-
   const monotonicClock = createMonotonicClock(now);
 
+  let lastTimestamp = now();
   const tick = () => {
     const current = now();
     const delta = current - lastTimestamp;
@@ -220,7 +140,19 @@ export function initializeRuntimeWorker(
     const after = runtime.getCurrentStep();
 
     if (after > before) {
-      emitStateSnapshot();
+      const eventBus = runtime.getEventBus();
+      const events = collectOutboundEvents(eventBus);
+      const backPressure = eventBus.getBackPressureSnapshot();
+
+      const message: StateUpdateMessage = {
+        type: 'STATE_UPDATE',
+        state: {
+          currentStep: after,
+          events,
+          backPressure,
+        },
+      };
+      context.postMessage(message);
       emitDiagnosticsDelta();
     }
   };
@@ -251,16 +183,6 @@ export function initializeRuntimeWorker(
       return;
     }
 
-    if (message.type === 'VISIBILITY_CHANGE') {
-      setVisibility(message.visible);
-      return;
-    }
-
-    if (message.type === 'OFFLINE_CATCH_UP') {
-      performOfflineCatchUp(message.elapsedMs);
-      return;
-    }
-
     if (message.type === 'TERMINATE') {
       stopTick();
       context.removeEventListener('message', messageListener);
@@ -283,8 +205,6 @@ export function initializeRuntimeWorker(
   return {
     runtime,
     handleMessage,
-    setVisibility,
-    requestOfflineCatchUp: performOfflineCatchUp,
     tick,
     dispose,
   };

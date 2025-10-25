@@ -25,11 +25,6 @@ import type {
   DiagnosticTimelineResult,
   DiagnosticTimelineEventMetrics,
 } from './diagnostics/diagnostic-timeline.js';
-import {
-  FixedTimestepScheduler,
-  type OfflineCatchUpResult,
-  type SchedulerStepExecutionContext,
-} from './tick-scheduler.js';
 
 export interface TickContext {
   readonly deltaMs: number;
@@ -58,15 +53,6 @@ export interface EngineOptions {
   readonly maxStepsPerFrame?: number;
 }
 
-export interface BackgroundSchedulerOptions {
-  readonly maxStepsPerFrame?: number;
-}
-
-export interface OfflineCatchUpOptions {
-  readonly maxElapsedMs?: number;
-  readonly maxBatchSteps?: number;
-}
-
 export interface RuntimeDependencies {
   readonly commandQueue?: CommandQueue;
   readonly commandDispatcher?: CommandDispatcher;
@@ -78,8 +64,6 @@ export interface IdleEngineRuntimeOptions
     RuntimeDependencies {
   readonly eventBusOptions?: EventBusOptions;
   readonly diagnostics?: IdleEngineRuntimeDiagnosticsOptions;
-  readonly background?: BackgroundSchedulerOptions;
-  readonly offlineCatchUp?: OfflineCatchUpOptions;
 }
 
 const DEFAULT_STEP_MS = 100;
@@ -97,7 +81,9 @@ type RegisteredSystem = {
  */
 export class IdleEngineRuntime {
   private readonly systems: RegisteredSystem[] = [];
+  private accumulator = 0;
   private readonly stepSizeMs: number;
+  private readonly maxStepsPerFrame: number;
   private readonly commandQueue: CommandQueue;
   private readonly commandDispatcher: CommandDispatcher;
   private readonly eventBus: EventBus;
@@ -105,11 +91,10 @@ export class IdleEngineRuntime {
   private currentStep = 0;
   private nextExecutableStep = 0;
   private readonly diagnostics: RuntimeDiagnosticsController;
-  private readonly scheduler: FixedTimestepScheduler;
-  private offlineCatchUpResetPending = false;
 
   constructor(options: IdleEngineRuntimeOptions = {}) {
     this.stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
+    this.maxStepsPerFrame = options.maxStepsPerFrame ?? DEFAULT_MAX_STEPS;
     this.commandQueue = options.commandQueue ?? new CommandQueue();
     this.commandDispatcher =
       options.commandDispatcher ?? new CommandDispatcher();
@@ -124,24 +109,6 @@ export class IdleEngineRuntime {
       options.diagnostics,
       {
         stepSizeMs: this.stepSizeMs,
-      },
-    );
-
-    const backgroundOptions = options.background ?? {};
-    const offlineOptions = options.offlineCatchUp ?? {};
-
-    this.scheduler = new FixedTimestepScheduler(
-      (context) => {
-        this.runStep(context);
-      },
-      {
-        stepSizeMs: this.stepSizeMs,
-        maxForegroundStepsPerFrame:
-          options.maxStepsPerFrame ?? DEFAULT_MAX_STEPS,
-        maxBackgroundStepsPerFrame:
-          backgroundOptions.maxStepsPerFrame,
-        maxOfflineCatchUpMs: offlineOptions.maxElapsedMs,
-        maxOfflineBatchSteps: offlineOptions.maxBatchSteps,
       },
     );
   }
@@ -230,173 +197,123 @@ export class IdleEngineRuntime {
     this.diagnostics.enable(options);
   }
 
-  setBackgroundThrottled(throttled: boolean): void {
-    this.scheduler.setThrottled(throttled);
-  }
-
-  runOfflineCatchUp(elapsedMs: number): OfflineCatchUpResult {
-    this.offlineCatchUpResetPending = true;
-    try {
-      return this.scheduler.catchUp(elapsedMs);
-    } finally {
-      this.offlineCatchUpResetPending = false;
-    }
-  }
-
-  getAccumulatorBacklogMs(): number {
-    return this.scheduler.getAccumulatorMs();
-  }
-
-  getStepSizeMs(): number {
-    return this.scheduler.getStepSizeMs();
-  }
-
   /**
    * Advance the simulation by `deltaMs`, clamping the number of processed
    * steps to avoid spiral of death scenarios.
    */
   tick(deltaMs: number): void {
-    const result = this.scheduler.advance(deltaMs);
-    if (result.executedSteps === 0) {
+    if (deltaMs <= 0) {
       return;
     }
-  }
 
-  private runStep(context: SchedulerStepExecutionContext): void {
-    const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
+    this.accumulator += deltaMs;
+    const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
+    const steps = Math.min(availableSteps, this.maxStepsPerFrame);
 
-    const queueSizeBefore = this.commandQueue.size;
-    let queueSizeAfter = queueSizeBefore;
-    let capturedCommands = 0;
-    let executedCommands = 0;
-    let skippedCommands = 0;
+    if (steps === 0) {
+      return;
+    }
 
-    try {
-      if (context.isCatchUp) {
-        tickDiagnostics.addPhase('mode.offline', 0);
-      }
+    this.accumulator -= steps * this.stepSizeMs;
 
-      const resetOutbound = context.isCatchUp
-        ? this.offlineCatchUpResetPending && context.isFirstInBatch
-        : context.isFirstInBatch;
+    for (let i = 0; i < steps; i += 1) {
+      const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
 
-      this.eventBus.beginTick(this.currentStep, {
-        resetOutbound,
-      });
+      const queueSizeBefore = this.commandQueue.size;
+      let queueSizeAfter = queueSizeBefore;
+      let capturedCommands = 0;
+      let executedCommands = 0;
+      let skippedCommands = 0;
 
-      if (
-        context.isCatchUp &&
-        context.isFirstInBatch &&
-        this.offlineCatchUpResetPending
-      ) {
-        this.offlineCatchUpResetPending = false;
-      }
+      try {
+        this.eventBus.beginTick(this.currentStep, {
+          resetOutbound: i === 0,
+        });
 
-      const commandPhaseStart = getMonotonicTimeMs();
+        // Accept commands for the current step until the batch is captured.
+        this.nextExecutableStep = this.currentStep;
+        const commands =
+          this.commandQueue.dequeueUpToStep(this.currentStep);
+        capturedCommands = commands.length;
 
-      this.nextExecutableStep = this.currentStep;
-      const commands =
-        this.commandQueue.dequeueUpToStep(this.currentStep);
-      capturedCommands = commands.length;
+        // Commands enqueued during execution target the next tick.
+        this.nextExecutableStep = this.currentStep + 1;
 
-      this.nextExecutableStep = this.currentStep + 1;
-
-      for (const command of commands) {
-        if (command.step !== this.currentStep) {
-          skippedCommands += 1;
-          telemetry.recordError('CommandStepMismatch', {
-            expectedStep: this.currentStep,
-            commandStep: command.step,
-            type: command.type,
-          });
-          continue;
-        }
-
-        this.commandDispatcher.execute(command as Command);
-        executedCommands += 1;
-      }
-
-      const dispatchContext: EventDispatchContext = {
-        tick: this.currentStep,
-      };
-
-      this.eventBus.dispatch(dispatchContext);
-
-      const commandPhaseEnd = getMonotonicTimeMs();
-      tickDiagnostics.addPhase(
-        'commands.capture',
-        commandPhaseEnd - commandPhaseStart,
-      );
-
-      const systemsPhaseStart = commandPhaseEnd;
-
-      const tickContext: TickContext = {
-        deltaMs: this.stepSizeMs,
-        step: this.currentStep,
-        events: this.eventPublisher,
-      };
-
-      for (const { system } of this.systems) {
-        const systemSpan = tickDiagnostics.startSystem(system.id);
-        try {
-          system.tick(tickContext);
-          systemSpan.end();
-        } catch (error) {
-          try {
-            systemSpan.fail(error);
-          } catch (annotatedError) {
-            telemetry.recordError('SystemExecutionFailed', {
-              systemId: system.id,
-              error:
-                annotatedError instanceof Error
-                  ? annotatedError
-                  : new Error(String(annotatedError)),
+        for (const command of commands) {
+          if (command.step !== this.currentStep) {
+            skippedCommands += 1;
+            telemetry.recordError('CommandStepMismatch', {
+              expectedStep: this.currentStep,
+              commandStep: command.step,
+              type: command.type,
             });
+            continue;
           }
+
+          this.commandDispatcher.execute(command as Command);
+          executedCommands += 1;
         }
+
+        const dispatchContext: EventDispatchContext = {
+          tick: this.currentStep,
+        };
 
         this.eventBus.dispatch(dispatchContext);
+
+        const context: TickContext = {
+          deltaMs: this.stepSizeMs,
+          step: this.currentStep,
+          events: this.eventPublisher,
+        };
+
+        for (const { system } of this.systems) {
+          const systemSpan = tickDiagnostics.startSystem(system.id);
+          try {
+            system.tick(context);
+            systemSpan.end();
+          } catch (error) {
+            try {
+              systemSpan.fail(error);
+            } catch (annotatedError) {
+              telemetry.recordError('SystemExecutionFailed', {
+                systemId: system.id,
+                error:
+                  annotatedError instanceof Error
+                    ? annotatedError
+                    : new Error(String(annotatedError)),
+              });
+            }
+          }
+
+          this.eventBus.dispatch(dispatchContext);
+        }
+
+        queueSizeAfter = this.commandQueue.size;
+
+        const backPressure = this.eventBus.getBackPressureSnapshot();
+
+        tickDiagnostics.recordEventMetrics(
+          toDiagnosticTimelineEventMetrics(backPressure),
+        );
+        tickDiagnostics.recordQueueMetrics({
+          sizeBefore: queueSizeBefore,
+          sizeAfter: queueSizeAfter,
+          captured: capturedCommands,
+          executed: executedCommands,
+          skipped: skippedCommands,
+        });
+        tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
+
+        recordBackPressureTelemetry(backPressure);
+
+        this.currentStep += 1;
+        this.nextExecutableStep = this.currentStep;
+        telemetry.recordTick();
+
+        tickDiagnostics.complete();
+      } catch (error) {
+        tickDiagnostics.fail(error);
       }
-
-      const systemsPhaseEnd = getMonotonicTimeMs();
-      tickDiagnostics.addPhase(
-        'systems.execute',
-        systemsPhaseEnd - systemsPhaseStart,
-      );
-
-      queueSizeAfter = this.commandQueue.size;
-
-      const backPressure = this.eventBus.getBackPressureSnapshot();
-
-      const diagnosticsPhaseStart = getMonotonicTimeMs();
-
-      tickDiagnostics.recordEventMetrics(
-        toDiagnosticTimelineEventMetrics(backPressure),
-      );
-      tickDiagnostics.recordQueueMetrics({
-        sizeBefore: queueSizeBefore,
-        sizeAfter: queueSizeAfter,
-        captured: capturedCommands,
-        executed: executedCommands,
-        skipped: skippedCommands,
-      });
-      tickDiagnostics.setAccumulatorBacklogMs(context.backlogMs);
-
-      recordBackPressureTelemetry(backPressure);
-
-      const diagnosticsPhaseEnd = getMonotonicTimeMs();
-      tickDiagnostics.addPhase(
-        'diagnostics.emit',
-        diagnosticsPhaseEnd - diagnosticsPhaseStart,
-      );
-
-      this.currentStep += 1;
-      this.nextExecutableStep = this.currentStep;
-      telemetry.recordTick();
-
-      tickDiagnostics.complete();
-    } catch (error) {
-      tickDiagnostics.fail(error);
     }
   }
 }
@@ -424,13 +341,6 @@ function recordBackPressureTelemetry(
   }
   telemetry.recordCounters('events.cooldown_ticks', cooldownCounters);
 }
-
-const getMonotonicTimeMs =
-  typeof globalThis !== 'undefined' &&
-  typeof globalThis.performance !== 'undefined' &&
-  typeof globalThis.performance.now === 'function'
-    ? () => globalThis.performance.now()
-    : () => Date.now();
 
 function toDiagnosticTimelineEventMetrics(
   snapshot: BackPressureSnapshot,
@@ -517,12 +427,6 @@ export {
   type AutomationToggledEventPayload,
   type ResourceThresholdReachedEventPayload,
 } from './events/runtime-event-catalog.js';
-export {
-  FixedTimestepScheduler,
-  type FixedTimestepSchedulerOptions,
-  type SchedulerStepExecutionContext,
-  type OfflineCatchUpResult,
-} from './tick-scheduler.js';
 export {
   computeRuntimeEventManifestHash,
   createRuntimeEvent,
