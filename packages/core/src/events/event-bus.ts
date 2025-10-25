@@ -476,7 +476,7 @@ export class EventBus implements EventPublisher {
   private dispatchCounter = 0;
   private eventsPublishedThisTick = 0;
   private firstTickPending = true;
-  private lastOverflowWarningTick = -1;
+  private readonly lastOverflowWarningTickByChannel: number[];
   private lastOverflowError: EventBufferOverflowError | null = null;
 
   constructor(options: EventBusOptions) {
@@ -515,6 +515,9 @@ export class EventBus implements EventPublisher {
       this.channelStates.length,
       options.frameExport,
     );
+    this.lastOverflowWarningTickByChannel = new Array(
+      this.channelStates.length,
+    ).fill(-1);
   }
 
   getManifest(): RuntimeEventManifest {
@@ -588,14 +591,19 @@ export class EventBus implements EventPublisher {
         channel.softLimitActive = true;
       }
       this.telemetryCounters.overflowed += 1;
-      if (this.lastOverflowWarningTick !== this.currentTick) {
+      // Track warnings per channel so simultaneous overflows still emit diagnostics once per tick.
+      if (
+        this.lastOverflowWarningTickByChannel[descriptor.index] !==
+        this.currentTick
+      ) {
         telemetry.recordWarning('EventBufferOverflow', {
           type: eventType,
           channel: descriptor.index,
           capacity: descriptor.capacity,
           tick: this.currentTick,
         });
-        this.lastOverflowWarningTick = this.currentTick;
+        this.lastOverflowWarningTickByChannel[descriptor.index] =
+          this.currentTick;
       }
       if (this.lastOverflowError === null) {
         this.lastOverflowError = new EventBufferOverflowError(
@@ -640,13 +648,15 @@ export class EventBus implements EventPublisher {
     outboundSlot.dispatchOrder = dispatchOrder;
     channel.outboundBuffer.push(outboundSlot);
 
-    const bufferOccupancy = Math.max(
-      channel.internalBuffer.length,
-      channel.outboundBuffer.length,
+    // Keep per-tick backpressure decisions tied to the live internal buffer so
+    // leftover outbound events from prior ticks cannot trigger premature soft limits.
+    const internalOccupancy = channel.internalBuffer.length;
+    const remainingCapacity = Math.max(
+      0,
+      descriptor.capacity - internalOccupancy,
     );
-    const remainingCapacity = Math.max(0, descriptor.capacity - bufferOccupancy);
-    channel.currentOccupancy = bufferOccupancy;
-    channel.highWaterMark = Math.max(channel.highWaterMark, bufferOccupancy);
+    channel.currentOccupancy = internalOccupancy;
+    channel.highWaterMark = Math.max(channel.highWaterMark, internalOccupancy);
     this.telemetryCounters.published += 1;
     this.eventsPublishedThisTick += 1;
     this.diagnostics?.recordPublish(
@@ -658,7 +668,7 @@ export class EventBus implements EventPublisher {
 
     let state: PublishState = 'accepted';
 
-    if (bufferOccupancy >= descriptor.softLimit) {
+    if (internalOccupancy >= descriptor.softLimit) {
       state = 'soft-limit';
       this.telemetryCounters.softLimited += 1;
       if (!channel.softLimitActive) {
@@ -666,7 +676,7 @@ export class EventBus implements EventPublisher {
         descriptor.onSoftLimit?.({
           type: eventType,
           channel: descriptor.index,
-          bufferSize: bufferOccupancy,
+          bufferSize: internalOccupancy,
           capacity: descriptor.capacity,
           softLimit: descriptor.softLimit,
           remainingCapacity,
@@ -677,7 +687,7 @@ export class EventBus implements EventPublisher {
           eventType,
           timestamp,
           reason: 'soft-limit',
-          bufferSize: bufferOccupancy,
+          bufferSize: internalOccupancy,
           capacity: descriptor.capacity,
           softLimit: descriptor.softLimit,
           remainingCapacity,
@@ -692,7 +702,7 @@ export class EventBus implements EventPublisher {
       state,
       type: eventType,
       channel: descriptor.index,
-      bufferSize: bufferOccupancy,
+      bufferSize: internalOccupancy,
       remainingCapacity,
       dispatchOrder,
       softLimitActive: channel.softLimitActive,

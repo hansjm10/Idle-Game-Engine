@@ -268,15 +268,6 @@ export class IdleEngineRuntime {
       return;
     }
   }
-
-  private throwIfEventBusOverflowed(): void {
-    const overflowError = this.eventBus.getLastOverflowError();
-    if (overflowError) {
-      this.nextExecutableStep = this.currentStep;
-      throw overflowError;
-    }
-  }
-
   private runStep(context: SchedulerStepExecutionContext): void {
     const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
 
@@ -336,7 +327,6 @@ export class IdleEngineRuntime {
       };
 
       this.eventBus.dispatch(dispatchContext);
-      this.throwIfEventBusOverflowed();
 
       const commandPhaseEnd = getMonotonicTimeMs();
       tickDiagnostics.addPhase(
@@ -372,7 +362,6 @@ export class IdleEngineRuntime {
         }
 
         this.eventBus.dispatch(dispatchContext);
-        this.throwIfEventBusOverflowed();
       }
 
       const systemsPhaseEnd = getMonotonicTimeMs();
@@ -426,15 +415,9 @@ function createEventPublisher(bus: EventBus): EventPublisher {
       metadata?: PublishMetadata,
     ): PublishResult<TType> {
       const result = bus.publish(eventType, payload, metadata);
-      if (!result.accepted) {
-        const overflowError = bus.getLastOverflowError();
-        if (overflowError) {
-          throw overflowError;
-        }
-        throw new Error(
-          `Event publish rejected for "${eventType}" without overflow metadata.`,
-        );
-      }
+      // Allow callers to inspect rejected publishes (e.g. due to channel
+      // overflow) and implement their own retry logic. The bus already emits
+      // telemetry for overflow scenarios, so the runtime should not rethrow here.
       return result;
     },
   };

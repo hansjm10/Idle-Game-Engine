@@ -11,7 +11,10 @@ import {
   DEFAULT_EVENT_BUS_OPTIONS,
   type AutomationToggledEventPayload,
 } from './events/runtime-event-catalog.js';
-import { EventBufferOverflowError } from './events/event-bus.js';
+import {
+  EventBufferOverflowError,
+  type PublishResult,
+} from './events/event-bus.js';
 import {
   buildRuntimeEventFrame,
   type RuntimeEventFrame,
@@ -268,34 +271,44 @@ describe('IdleEngineRuntime', () => {
     });
 
     let attempts = 0;
+    const publishResults: PublishResult<'automation:toggled'>[] = [];
 
     runtime.addSystem({
       id: 'overflow-producer',
       tick({ events }) {
         attempts += 1;
 
-        events.publish('automation:toggled', {
-          automationId: 'auto',
-          enabled: attempts % 2 === 0,
-        } satisfies AutomationToggledEventPayload);
-
-        if (attempts === 1) {
+        publishResults.push(
           events.publish('automation:toggled', {
             automationId: 'auto',
-            enabled: false,
-          } satisfies AutomationToggledEventPayload);
+            enabled: attempts % 2 === 0,
+          } satisfies AutomationToggledEventPayload),
+        );
+
+        if (attempts === 1) {
+          publishResults.push(
+            events.publish('automation:toggled', {
+              automationId: 'auto',
+              enabled: false,
+            } satisfies AutomationToggledEventPayload),
+          );
         }
       },
     });
 
-    expect(() => runtime.tick(10)).toThrow(EventBufferOverflowError);
-    expect(runtime.getCurrentStep()).toBe(0);
-    expect(runtime.getNextExecutableStep()).toBe(0);
-
     expect(() => runtime.tick(10)).not.toThrow();
     expect(runtime.getCurrentStep()).toBe(1);
     expect(runtime.getNextExecutableStep()).toBe(1);
-    expect(attempts).toBe(2);
+    expect(attempts).toBe(1);
+
+    expect(publishResults).toHaveLength(2);
+    expect(publishResults[0]?.accepted).toBe(true);
+    expect(publishResults[0]?.state).toBe('soft-limit');
+    expect(publishResults[1]?.accepted).toBe(false);
+    expect(publishResults[1]?.state).toBe('rejected');
+
+    const overflow = runtime.getEventBus().getLastOverflowError();
+    expect(overflow).toBeInstanceOf(EventBufferOverflowError);
   });
 
   it('executes future-step commands on their scheduled ticks', () => {
