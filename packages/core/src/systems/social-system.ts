@@ -1,31 +1,38 @@
 import type {
   SocialIntentQueuedEventPayload,
   SocialIntentResolvedEventPayload,
+  SocialIntentPayload,
 } from '../events/runtime-event-catalog.js';
 import type { TickContext } from './system-types.js';
 import type { SystemDefinition } from './system-types.js';
 
 export type SocialIntentStatus = 'queued' | 'confirming' | 'confirmed' | 'rejected';
 
-export interface SocialIntentDefinition<TPayload = unknown> {
+export interface SocialIntentDefinition<
+  TPayload extends SocialIntentPayload = SocialIntentPayload,
+> {
   readonly type: string;
   readonly payload: TPayload;
   readonly issuedAt?: number;
 }
 
-export interface SocialIntentRecord<TPayload = unknown> extends SocialIntentDefinition<TPayload> {
+export interface SocialIntentRecord<
+  TPayload extends SocialIntentPayload = SocialIntentPayload,
+> extends SocialIntentDefinition<TPayload> {
   readonly id: string;
   readonly issuedAt: number;
   readonly sequence: number;
   status: SocialIntentStatus;
   readonly enqueuedStep: number;
   lastConfirmedAt?: number;
-  confirmationPayload?: Record<string, unknown>;
+  confirmationPayload?: SocialIntentPayload;
   resolutionNotified?: boolean;
   dirtyReason?: 'queued' | 'status';
 }
 
-export interface SocialConfirmation<TPayload = unknown> {
+export interface SocialConfirmation<
+  TPayload extends SocialIntentPayload = SocialIntentPayload,
+> {
   readonly intentId: string;
   readonly status: Extract<SocialIntentStatus, 'confirmed' | 'rejected'>;
   readonly confirmedAt: number;
@@ -46,7 +53,10 @@ export class SocialIntentQueue {
 
   constructor(private readonly clock: () => number = () => Date.now()) {}
 
-  queue<TPayload>(definition: SocialIntentDefinition<TPayload>, step: number): SocialIntentRecord<TPayload> {
+  queue<TPayload extends SocialIntentPayload>(
+    definition: SocialIntentDefinition<TPayload>,
+    step: number,
+  ): SocialIntentRecord<TPayload> {
     const sequence = this.nextSequence();
     const id = sequence.toString(36);
     const issuedAt = definition.issuedAt ?? this.clock();
@@ -97,7 +107,9 @@ export class SocialIntentQueue {
     return items;
   }
 
-  applyConfirmation(confirmation: SocialConfirmation): SocialIntentRecord | undefined {
+  applyConfirmation(
+    confirmation: SocialConfirmation,
+  ): SocialIntentRecord | undefined {
     const intent = this.intents.get(confirmation.intentId);
     if (!intent) {
       return undefined;
@@ -116,7 +128,7 @@ export class SocialIntentQueue {
 
     intent.status = confirmation.status;
     intent.lastConfirmedAt = confirmation.confirmedAt;
-    intent.confirmationPayload = toRecord(confirmation.payload);
+    intent.confirmationPayload = confirmation.payload;
     intent.resolutionNotified = false;
     intent.dirtyReason = 'status';
     this.dirty.add(intent.id);
@@ -189,16 +201,16 @@ export function createSocialSystem(options: SocialSystemOptions): SystemDefiniti
       const dirtyIntents = queue.consumeDirty();
       for (const intent of dirtyIntents) {
         if (intent.status === 'queued') {
-          const recordPayload = toRecord(intent.payload);
           const basePayload = {
             intentId: intent.id,
             type: intent.type,
             issuedAt: intent.issuedAt,
           } satisfies Omit<SocialIntentQueuedEventPayload, 'payload'>;
 
-          const queuedPayload: SocialIntentQueuedEventPayload = recordPayload
-            ? { ...basePayload, payload: recordPayload }
-            : basePayload;
+          const queuedPayload: SocialIntentQueuedEventPayload =
+            intent.payload !== undefined
+              ? { ...basePayload, payload: intent.payload }
+              : basePayload;
 
           const result = context.events.publish('social:intent-queued', queuedPayload);
           if (!result.accepted) {
@@ -212,7 +224,8 @@ export function createSocialSystem(options: SocialSystemOptions): SystemDefiniti
         }
 
         const confirmedAt = intent.lastConfirmedAt ?? context.step;
-        const resolvedPayload: SocialIntentResolvedEventPayload = intent.confirmationPayload
+        const hasConfirmationPayload = intent.confirmationPayload !== undefined;
+        const resolvedPayload: SocialIntentResolvedEventPayload = hasConfirmationPayload
           ? {
               intentId: intent.id,
               type: intent.type,
@@ -246,7 +259,8 @@ export function createSocialSystem(options: SocialSystemOptions): SystemDefiniti
           }
 
           const confirmedAt = intent.lastConfirmedAt ?? confirmation.confirmedAt;
-          const resolvedPayload: SocialIntentResolvedEventPayload = intent.confirmationPayload
+          const hasConfirmationPayload = intent.confirmationPayload !== undefined;
+          const resolvedPayload: SocialIntentResolvedEventPayload = hasConfirmationPayload
             ? {
                 intentId: intent.id,
                 type: intent.type,
@@ -284,11 +298,4 @@ function compareIntents(left: SocialIntentRecord, right: SocialIntentRecord): nu
     return left.issuedAt - right.issuedAt;
   }
   return left.sequence - right.sequence;
-}
-
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value === 'object' && value !== null) {
-    return value as Record<string, unknown>;
-  }
-  return undefined;
 }

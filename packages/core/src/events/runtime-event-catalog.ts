@@ -24,18 +24,28 @@ export interface TaskCompletedEventPayload {
   readonly payload?: Readonly<Record<string, unknown>>;
 }
 
+export type SocialIntentPayload =
+  | string
+  | number
+  | boolean
+  | null
+  | SocialIntentPayload[]
+  | {
+      readonly [key: string]: SocialIntentPayload;
+    };
+
 export interface SocialIntentQueuedEventPayload {
   readonly intentId: string;
   readonly type: string;
   readonly issuedAt: number;
-  readonly payload?: Record<string, unknown>;
+  readonly payload?: SocialIntentPayload;
 }
 
 export interface SocialIntentResolvedEventPayload {
   readonly intentId: string;
   readonly type: string;
   readonly confirmedAt: number;
-  readonly payload?: Record<string, unknown>;
+  readonly payload?: SocialIntentPayload;
 }
 
 declare module './runtime-event.js' {

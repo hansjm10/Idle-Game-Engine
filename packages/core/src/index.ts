@@ -7,8 +7,13 @@ import {
   type EventSubscription,
   type EventSubscriptionOptions,
   type BackPressureSnapshot,
+  type PublishMetadata,
+  type PublishResult,
 } from './events/event-bus.js';
-import type { RuntimeEventType } from './events/runtime-event.js';
+import type {
+  RuntimeEventPayload,
+  RuntimeEventType,
+} from './events/runtime-event.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
 import type { Command } from './command.js';
 import { CommandDispatcher } from './command-dispatcher.js';
@@ -415,7 +420,23 @@ export class IdleEngineRuntime {
 
 function createEventPublisher(bus: EventBus): EventPublisher {
   return {
-    publish: bus.publish.bind(bus),
+    publish<TType extends RuntimeEventType>(
+      eventType: TType,
+      payload: RuntimeEventPayload<TType>,
+      metadata?: PublishMetadata,
+    ): PublishResult<TType> {
+      const result = bus.publish(eventType, payload, metadata);
+      if (!result.accepted) {
+        const overflowError = bus.getLastOverflowError();
+        if (overflowError) {
+          throw overflowError;
+        }
+        throw new Error(
+          `Event publish rejected for "${eventType}" without overflow metadata.`,
+        );
+      }
+      return result;
+    },
   };
 }
 
