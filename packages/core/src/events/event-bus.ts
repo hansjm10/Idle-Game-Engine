@@ -666,7 +666,7 @@ export class EventBus implements EventPublisher {
     }
 
     return {
-      accepted: true,
+      accepted: state === 'accepted',
       state,
       type: eventType,
       channel: descriptor.index,

@@ -74,6 +74,8 @@ function applyReset(
 ): void {
   const retention = request.resourceRetention ?? {};
 
+  resources.forceClearDirtyState();
+
   for (const resourceId of resources.collectRecords().map((record) => record.id)) {
     const index = resources.requireIndex(resourceId);
     const current = resources.getAmount(index);
