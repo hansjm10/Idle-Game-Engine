@@ -1,0 +1,185 @@
+import { describe, expect, it } from 'vitest';
+import * as fc from 'fast-check';
+
+import {
+  createDeterministicFormulaEvaluationContext,
+  createFormulaArbitrary,
+  createFormulaEvaluationContextArbitrary,
+  DEFAULT_FORMULA_PROPERTY_SEED,
+  evaluateNumericFormula,
+  type FormulaEvaluationContext,
+} from './formulas.arbitraries.js';
+import { numericFormulaSchema } from './formulas.js';
+
+const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
+  numRuns: 200,
+  seed: DEFAULT_FORMULA_PROPERTY_SEED + offset,
+});
+
+const withLevel = (base: FormulaEvaluationContext, level: number): FormulaEvaluationContext => ({
+  ...base,
+  level,
+});
+
+describe('createFormulaArbitrary', () => {
+  it('produces schemas that parse and evaluate to finite non-negative numbers', () => {
+    const formulaArb = createFormulaArbitrary();
+    const contextArb = createFormulaEvaluationContextArbitrary();
+    fc.assert(
+      fc.property(formulaArb, contextArb, (formula, context) => {
+        const parseResult = numericFormulaSchema.safeParse(formula);
+        expect(parseResult.success).toBe(true);
+
+        const value = evaluateNumericFormula(formula, context);
+        expect(Number.isFinite(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0);
+      }),
+      propertyConfig(0),
+    );
+  });
+
+  it('generates constant formulas whose evaluation matches their value', () => {
+    const formulaArb = createFormulaArbitrary({ kinds: ['constant'] });
+    const contextArb = createFormulaEvaluationContextArbitrary();
+    fc.assert(
+      fc.property(formulaArb, contextArb, (formula, context) => {
+        expect(formula.kind).toBe('constant');
+        if (formula.kind !== 'constant') {
+          return;
+        }
+        const value = evaluateNumericFormula(formula, context);
+        expect(value).toBe(formula.value);
+        expect(value).toBeGreaterThanOrEqual(0);
+      }),
+      propertyConfig(1),
+    );
+  });
+
+  it('generates linear formulas that grow monotonically with level', () => {
+    const formulaArb = createFormulaArbitrary({ kinds: ['linear'] });
+    fc.assert(
+      fc.property(
+        formulaArb,
+        fc.double({ min: 0, max: 250, noNaN: true }),
+        fc.double({ min: 0, max: 250, noNaN: true }),
+        (formula, levelA, levelB) => {
+          const lower = Math.min(levelA, levelB);
+          const upper = Math.max(levelA, levelB);
+
+          const baseContext = createDeterministicFormulaEvaluationContext();
+          const lowContext = withLevel(baseContext, lower);
+          const highContext = withLevel(baseContext, upper);
+
+          const lowValue = evaluateNumericFormula(formula, lowContext);
+          const highValue = evaluateNumericFormula(formula, highContext);
+
+          expect(lowValue).toBeGreaterThanOrEqual(0);
+          expect(highValue).toBeGreaterThanOrEqual(lowValue);
+          expect(Number.isFinite(highValue)).toBe(true);
+        },
+      ),
+      propertyConfig(2),
+    );
+  });
+
+  it('generates exponential formulas that remain finite and non-decreasing', () => {
+    const formulaArb = createFormulaArbitrary({ kinds: ['exponential'] });
+    fc.assert(
+      fc.property(
+        formulaArb,
+        fc.double({ min: 0, max: 100, noNaN: true }),
+        fc.double({ min: 0, max: 100, noNaN: true }),
+        (formula, levelA, levelB) => {
+          const lower = Math.min(levelA, levelB);
+          const upper = Math.max(levelA, levelB);
+          const baseContext = createDeterministicFormulaEvaluationContext();
+
+          const lowValue = evaluateNumericFormula(formula, withLevel(baseContext, lower));
+          const highValue = evaluateNumericFormula(formula, withLevel(baseContext, upper));
+
+          expect(Number.isFinite(lowValue)).toBe(true);
+          expect(Number.isFinite(highValue)).toBe(true);
+          expect(highValue).toBeGreaterThanOrEqual(lowValue);
+        },
+      ),
+      propertyConfig(3),
+    );
+  });
+
+  it('generates polynomial formulas with non-negative outputs for non-negative levels', () => {
+    const formulaArb = createFormulaArbitrary({ kinds: ['polynomial'] });
+    fc.assert(
+      fc.property(
+        formulaArb,
+        fc.double({ min: 0, max: 25, noNaN: true }),
+        (formula, sampleLevel) => {
+          const context = withLevel(createDeterministicFormulaEvaluationContext(), sampleLevel);
+          const value = evaluateNumericFormula(formula, context);
+          expect(Number.isFinite(value)).toBe(true);
+          expect(value).toBeGreaterThanOrEqual(0);
+        },
+      ),
+      propertyConfig(4),
+    );
+  });
+
+  it('generates piecewise formulas with ordered segments and catch-all clause', () => {
+    const formulaArb = createFormulaArbitrary({
+      kinds: ['piecewise', 'constant', 'linear'],
+    }).filter((formula) => formula.kind === 'piecewise');
+
+    fc.assert(
+      fc.property(formulaArb, (formula) => {
+        expect(formula.pieces.length).toBeGreaterThan(0);
+
+        const lastPiece = formula.pieces[formula.pieces.length - 1]!;
+        expect(lastPiece.untilLevel).toBeUndefined();
+
+        for (let index = 0; index < formula.pieces.length - 1; index += 1) {
+          const current = formula.pieces[index]!;
+          const next = formula.pieces[index + 1]!;
+          expect(current.untilLevel).toBeDefined();
+          expect(current.untilLevel).toBeLessThan(next.untilLevel ?? Infinity);
+        }
+
+        const baseContext = createDeterministicFormulaEvaluationContext();
+        const penultimate = formula.pieces.length > 1
+          ? formula.pieces[formula.pieces.length - 2]
+          : undefined;
+        const penultimateLevel =
+          penultimate && penultimate.untilLevel !== undefined
+            ? penultimate.untilLevel
+            : baseContext.level;
+
+        const sampleLevels = [
+          0,
+          ...formula.pieces
+            .slice(0, -1)
+            .map((piece) => Math.max(0, (piece.untilLevel ?? 0) - 0.5)),
+          penultimateLevel + 5,
+        ];
+
+        sampleLevels.forEach((sampleLevel) => {
+          const context = withLevel(baseContext, sampleLevel);
+          const value = evaluateNumericFormula(formula, context);
+          expect(Number.isFinite(value)).toBe(true);
+          expect(value).toBeGreaterThanOrEqual(0);
+        });
+      }),
+      propertyConfig(5),
+    );
+  });
+
+  it('generates expression formulas that evaluate to finite non-negative results', () => {
+    const formulaArb = createFormulaArbitrary({ kinds: ['expression'] });
+    const contextArb = createFormulaEvaluationContextArbitrary();
+    fc.assert(
+      fc.property(formulaArb, contextArb, (formula, context) => {
+        const value = evaluateNumericFormula(formula, context);
+        expect(Number.isFinite(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0);
+      }),
+      propertyConfig(6),
+    );
+  });
+});
