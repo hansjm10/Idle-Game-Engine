@@ -5,17 +5,17 @@ import { finiteNumberSchema } from './numbers.js';
 
 type ContentId = z.infer<typeof contentIdSchema>;
 
-type VariableReferenceTarget = {
+export type VariableReferenceTarget = {
   type: 'variable';
   name: 'level' | 'time' | 'deltaTime';
 };
 
-type EntityReferenceTarget = {
+export type EntityReferenceTarget = {
   type: 'resource' | 'generator' | 'upgrade' | 'automation' | 'prestigeLayer';
   id: ContentId;
 };
 
-type ExpressionNodeModel =
+export type ExpressionNodeModel =
   | { kind: 'literal'; value: number }
   | { kind: 'ref'; target: VariableReferenceTarget | EntityReferenceTarget }
   | {
@@ -35,7 +35,7 @@ type ExpressionNodeModel =
       args: ExpressionNodeModel[];
     };
 
-type NumericFormulaModel =
+export type NumericFormulaModel =
   | { kind: 'constant'; value: number }
   | { kind: 'linear'; base: number; slope: number }
   | {
@@ -103,7 +103,7 @@ type NumericFormulaInput =
   | { kind: 'piecewise'; pieces: PiecewiseSegmentInput[] }
   | { kind: 'expression'; expression: ExpressionNodeInput };
 
-const BINARY_OPERATORS = [
+export const BINARY_OPERATORS = [
   'add',
   'sub',
   'mul',
@@ -113,7 +113,7 @@ const BINARY_OPERATORS = [
   'max',
 ] as const;
 
-const UNARY_OPERATORS = [
+export const UNARY_OPERATORS = [
   'abs',
   'ceil',
   'floor',
@@ -123,7 +123,7 @@ const UNARY_OPERATORS = [
   'ln',
 ] as const;
 
-const CALL_FUNCTION_NAMES = [
+export const CALL_FUNCTION_NAMES = [
   'clamp',
   'lerp',
   'min3',
@@ -132,10 +132,10 @@ const CALL_FUNCTION_NAMES = [
   'root',
 ] as const;
 
-const MAX_EXPRESSION_DEPTH = 16;
-const MAX_EXPRESSION_NODE_COUNT = 256;
-const MAX_FORMULA_DEPTH = 16;
-const MAX_FORMULA_NODE_COUNT = 256;
+export const MAX_EXPRESSION_DEPTH = 16;
+export const MAX_EXPRESSION_NODE_COUNT = 256;
+export const MAX_FORMULA_DEPTH = 16;
+export const MAX_FORMULA_NODE_COUNT = 256;
 
 const variableReferenceTargetSchema = z
   .object({
