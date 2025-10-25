@@ -71,6 +71,11 @@ export function registerSystems(
           throw new Error(`System "${id}" declares unknown successor "${successor}".`);
         }
         if (!systemsById.has(successor)) {
+          if (hostHasSystem(successor)) {
+            throw new Error(
+              `System "${id}" cannot declare before already registered system "${successor}".`,
+            );
+          }
           continue;
         }
         const targets = adjacency.get(id)!;

@@ -270,6 +270,43 @@ describe('EventBus', () => {
     }
   });
 
+  it('reports outbound occupancy when rejecting publishes', () => {
+    const bus = new EventBus({
+      clock,
+      channels: [
+        {
+          definition: {
+            type: 'resource:threshold-reached',
+            version: 1,
+          },
+          capacity: 1,
+        },
+      ],
+    });
+
+    bus.beginTick(1);
+
+    const first = bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 21,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    expect(first.accepted).toBe(true);
+
+    bus.beginTick(2, { resetOutbound: false });
+
+    const second = bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 22,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    expect(second.accepted).toBe(false);
+    expect(second.state).toBe('rejected');
+    expect(second.bufferSize).toBe(1);
+    expect(second.remainingCapacity).toBe(0);
+    expect(second.softLimitActive).toBe(true);
+  });
+
   it('invokes soft limit callbacks once per tick', () => {
     const softLimitSpy = vi.fn();
     const bus = new EventBus({

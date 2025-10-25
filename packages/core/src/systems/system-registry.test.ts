@@ -66,6 +66,16 @@ describe('system-registry', () => {
     expect(order).toEqual(['achievements', 'automation']);
     expect(registered).toEqual(order);
   });
+
+  it('throws when declaring a before constraint against an existing host system', () => {
+    const host = createHost(() => {}, ['events']);
+
+    expect(() =>
+      registerSystems(host, [
+        createSystem('achievements', { before: ['events'] }),
+      ]),
+    ).toThrowError(/before already registered system "events"/);
+  });
 });
 
 function createSystem(

@@ -571,8 +571,16 @@ export class EventBus implements EventPublisher {
     const channel = this.channelStates[descriptor.index];
 
     if (channel.internalBuffer.isAtCapacity() || channel.outboundBuffer.isAtCapacity()) {
-      const bufferSize = channel.internalBuffer.length;
-      const remainingCapacity = Math.max(0, descriptor.capacity - bufferSize);
+      const bufferOccupancy = Math.max(
+        channel.internalBuffer.length,
+        channel.outboundBuffer.length,
+      );
+      const remainingCapacity = Math.max(0, descriptor.capacity - bufferOccupancy);
+      const softLimitActive =
+        channel.softLimitActive || bufferOccupancy >= descriptor.softLimit;
+      if (softLimitActive && !channel.softLimitActive) {
+        channel.softLimitActive = true;
+      }
       this.telemetryCounters.overflowed += 1;
       telemetry.recordWarning('EventBufferOverflow', {
         type: eventType,
@@ -585,11 +593,10 @@ export class EventBus implements EventPublisher {
         state: 'rejected',
         type: eventType,
         channel: descriptor.index,
-        bufferSize,
+        bufferSize: bufferOccupancy,
         remainingCapacity,
         dispatchOrder: this.dispatchCounter,
-        softLimitActive:
-          channel.softLimitActive || bufferSize >= descriptor.softLimit,
+        softLimitActive,
       };
     }
 
@@ -617,10 +624,13 @@ export class EventBus implements EventPublisher {
     outboundSlot.dispatchOrder = dispatchOrder;
     channel.outboundBuffer.push(outboundSlot);
 
-    const bufferSize = channel.internalBuffer.length;
-    const remainingCapacity = Math.max(0, descriptor.capacity - bufferSize);
-    channel.currentOccupancy = bufferSize;
-    channel.highWaterMark = Math.max(channel.highWaterMark, bufferSize);
+    const bufferOccupancy = Math.max(
+      channel.internalBuffer.length,
+      channel.outboundBuffer.length,
+    );
+    const remainingCapacity = Math.max(0, descriptor.capacity - bufferOccupancy);
+    channel.currentOccupancy = bufferOccupancy;
+    channel.highWaterMark = Math.max(channel.highWaterMark, bufferOccupancy);
     this.telemetryCounters.published += 1;
     this.eventsPublishedThisTick += 1;
     this.diagnostics?.recordPublish(
@@ -632,7 +642,7 @@ export class EventBus implements EventPublisher {
 
     let state: PublishState = 'accepted';
 
-    if (bufferSize >= descriptor.softLimit) {
+    if (bufferOccupancy >= descriptor.softLimit) {
       state = 'soft-limit';
       this.telemetryCounters.softLimited += 1;
       if (!channel.softLimitActive) {
@@ -640,7 +650,7 @@ export class EventBus implements EventPublisher {
         descriptor.onSoftLimit?.({
           type: eventType,
           channel: descriptor.index,
-          bufferSize,
+          bufferSize: bufferOccupancy,
           capacity: descriptor.capacity,
           softLimit: descriptor.softLimit,
           remainingCapacity,
@@ -651,7 +661,7 @@ export class EventBus implements EventPublisher {
           eventType,
           timestamp,
           reason: 'soft-limit',
-          bufferSize,
+          bufferSize: bufferOccupancy,
           capacity: descriptor.capacity,
           softLimit: descriptor.softLimit,
           remainingCapacity,
@@ -666,7 +676,7 @@ export class EventBus implements EventPublisher {
       state,
       type: eventType,
       channel: descriptor.index,
-      bufferSize,
+      bufferSize: bufferOccupancy,
       remainingCapacity,
       dispatchOrder,
       softLimitActive: channel.softLimitActive,
