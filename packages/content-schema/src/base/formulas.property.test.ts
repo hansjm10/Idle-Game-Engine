@@ -8,6 +8,7 @@ import {
   DEFAULT_FORMULA_PROPERTY_SEED,
   evaluateNumericFormula,
   type FormulaEvaluationContext,
+  type FormulaEntityReferenceType,
 } from './formulas.arbitraries.js';
 import { numericFormulaSchema, type ExpressionNode } from './formulas.js';
 
@@ -54,6 +55,65 @@ const collectRootDegrees = (node: ExpressionNode): number[] => {
 
 const containsRootCall = (node: ExpressionNode): boolean =>
   collectRootDegrees(node).length > 0;
+
+const collectEntityReferenceTypes = (
+  node: ExpressionNode,
+): FormulaEntityReferenceType[] => {
+  const pending: ExpressionNode[] = [node];
+  const types: FormulaEntityReferenceType[] = [];
+
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    switch (current.kind) {
+      case 'binary':
+        pending.push(current.left, current.right);
+        break;
+      case 'unary':
+        pending.push(current.operand);
+        break;
+      case 'call':
+        pending.push(...current.args);
+        break;
+      case 'ref':
+        if (current.target.type !== 'variable') {
+          types.push(current.target.type);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return types;
+};
+
+const computeExpressionDepth = (node: ExpressionNode): number => {
+  switch (node.kind) {
+    case 'literal':
+    case 'ref':
+      return 1;
+    case 'unary':
+      return 1 + computeExpressionDepth(node.operand);
+    case 'binary':
+      return (
+        1 +
+        Math.max(
+          computeExpressionDepth(node.left),
+          computeExpressionDepth(node.right),
+        )
+      );
+    case 'call':
+      return (
+        1 +
+        node.args.reduce<number>(
+          (deepest, arg) => Math.max(deepest, computeExpressionDepth(arg)),
+          0,
+        )
+      );
+    default:
+      return 1;
+  }
+};
 
 describe('createFormulaArbitrary', () => {
   it('produces schemas that parse and evaluate to finite non-negative numbers', () => {
@@ -244,6 +304,48 @@ describe('createFormulaArbitrary', () => {
     );
   });
 
+  it('keeps expression depth within caller limits when adding non-negative guards', () => {
+    const depthCaps = [1, 2, 3, 4] as const;
+    depthCaps.forEach((maxExpressionDepth, index) => {
+      const formulaArb = createFormulaArbitrary({
+        kinds: ['expression'],
+        maxExpressionDepth,
+      });
+      fc.assert(
+        fc.property(formulaArb, (formula) => {
+          expect(formula.kind).toBe('expression');
+          if (formula.kind !== 'expression') {
+            return;
+          }
+
+          const expression = formula.expression;
+          const depth = computeExpressionDepth(expression);
+          const isGuarded =
+            expression.kind === 'binary' &&
+            expression.op === 'max' &&
+            expression.left.kind === 'literal' &&
+            expression.left.value === 0;
+
+          expect(depth).toBeLessThanOrEqual(maxExpressionDepth);
+
+          if (maxExpressionDepth < 2) {
+            expect(isGuarded).toBe(false);
+            return;
+          }
+
+          if (!isGuarded) {
+            return;
+          }
+
+          const guardDepth = computeExpressionDepth(expression.right);
+          expect(depth).toBe(guardDepth + 1);
+          expect(guardDepth).toBeLessThanOrEqual(maxExpressionDepth - 1);
+        }),
+        propertyConfig(11 + index),
+      );
+    });
+  });
+
   it('respects fractional minimums for root degrees', () => {
     const rootRange = { min: 2.7, max: 5 };
     const minExpectedDegree = Math.max(1, Math.ceil(rootRange.min));
@@ -279,8 +381,35 @@ describe('createFormulaArbitrary', () => {
     );
   });
 
+  it('omits entity references for empty reference pools', () => {
+    const emptyResourcePool = { resource: [] as const };
+    const formulaArb = createFormulaArbitrary({
+      kinds: ['expression'],
+      referencePools: emptyResourcePool,
+    }).filter((formula) => formula.kind === 'expression');
+    const contextArb = createFormulaEvaluationContextArbitrary(emptyResourcePool);
+
+    fc.assert(
+      fc.property(formulaArb, contextArb, (formula, context) => {
+        expect(formula.kind).toBe('expression');
+        if (formula.kind !== 'expression') {
+          return;
+        }
+
+        const entityTypes = collectEntityReferenceTypes(formula.expression);
+        expect(entityTypes).not.toContain('resource');
+        expect(Object.keys(context.resources)).toHaveLength(0);
+
+        const value = evaluateNumericFormula(formula, context);
+        expect(Number.isFinite(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0);
+      }),
+      propertyConfig(9),
+    );
+  });
+
   it('limits piecewise thresholds to available integer levels', () => {
-    const piecewiseRange = { min: 0, max: 1 };
+    const piecewiseRange = { min: 0, max: 1.5 };
 
     const piecewiseOnlyArb = createFormulaArbitrary({
       kinds: ['piecewise'],
@@ -296,12 +425,48 @@ describe('createFormulaArbitrary', () => {
         }
 
         const levelMin = Math.ceil(piecewiseRange.min);
-        const levelMax = Math.ceil(piecewiseRange.max);
+        const levelMax = Math.floor(piecewiseRange.max);
         const availableLevels = Math.max(0, levelMax - levelMin + 1);
 
         expect(formula.pieces.length - 1).toBeLessThanOrEqual(availableLevels);
+        formula.pieces.slice(0, -1).forEach((piece) => {
+          expect(piece.untilLevel).toBeDefined();
+          expect(piece.untilLevel).toBeGreaterThanOrEqual(levelMin);
+          expect(piece.untilLevel).toBeLessThanOrEqual(levelMax);
+        });
       }),
-      { ...propertyConfig(9), numRuns: 80 },
+      { ...propertyConfig(10), numRuns: 80 },
     );
+  });
+
+  it('never generates piecewise thresholds above the floored maximum level', () => {
+    const piecewiseRange = { min: 0, max: 1.5 };
+    const piecewiseOnlyArb = createFormulaArbitrary({
+      kinds: ['piecewise'],
+      piecewiseLevelRange: piecewiseRange,
+      maxPiecewiseSegments: 4,
+    });
+
+    const samples = fc.sample(piecewiseOnlyArb, { seed: 1337, numRuns: 400 });
+    const levelMin = Math.ceil(piecewiseRange.min);
+    const levelMax = Math.floor(piecewiseRange.max);
+
+    samples.forEach((formula) => {
+      expect(formula.kind).toBe('piecewise');
+      if (formula.kind !== 'piecewise') {
+        return;
+      }
+
+      const thresholds = formula.pieces.slice(0, -1).map((piece) => piece.untilLevel);
+      thresholds.forEach((untilLevel) => {
+        expect(untilLevel).toBeDefined();
+        if (untilLevel === undefined) {
+          return;
+        }
+
+        expect(untilLevel).toBeGreaterThanOrEqual(levelMin);
+        expect(untilLevel).toBeLessThanOrEqual(levelMax);
+      });
+    });
   });
 });

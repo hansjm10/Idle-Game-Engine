@@ -63,8 +63,12 @@ const sanitizeReferencePool = (
   }
 
   ENTITY_REFERENCE_TYPES.forEach((type) => {
+    if (!Object.prototype.hasOwnProperty.call(pool, type)) {
+      return;
+    }
     const entries = pool[type];
     if (!entries || entries.length === 0) {
+      resolved[type] = [];
       return;
     }
     resolved[type] = entries.map((entry) => contentIdSchema.parse(entry));
@@ -190,11 +194,20 @@ const createExpressionArbitraryInternal = (
     .constantFrom(...VARIABLE_NAMES)
     .map((name) => createVariableRef(name));
 
-  const entityRefNode = fc
-    .constantFrom(...ENTITY_REFERENCE_TYPES)
-    .chain((type) => fc.constantFrom(...pools[type]).map((id) => createEntityRef(type, id)));
+  const referencePairs = ENTITY_REFERENCE_TYPES.flatMap((type) =>
+    pools[type].map((id) => [type, id] as const),
+  );
 
-  const leafNode = fc.oneof(literalNode, variableRefNode, entityRefNode);
+  const leafCandidates: fc.Arbitrary<ExpressionNode>[] = [literalNode, variableRefNode];
+
+  if (referencePairs.length > 0) {
+    const entityRefNode = fc
+      .constantFrom(...referencePairs)
+      .map(([type, id]) => createEntityRef(type, id));
+    leafCandidates.push(entityRefNode);
+  }
+
+  const leafNode = fc.oneof(...leafCandidates);
 
   const expressionCache = new Map<number, fc.Arbitrary<ExpressionNode>>();
   const positiveCache = new Map<number, fc.Arbitrary<ExpressionNode>>();
@@ -429,7 +442,7 @@ const createPiecewiseArbitrary = (
   subFormula: fc.Arbitrary<NumericFormula>,
 ): fc.Arbitrary<NumericFormula> => {
   const levelMin = Math.ceil(resolved.piecewiseLevelRange.min);
-  const levelMax = Math.ceil(resolved.piecewiseLevelRange.max);
+  const levelMax = Math.floor(resolved.piecewiseLevelRange.max);
   const availableLevels = Math.max(0, levelMax - levelMin + 1);
   const maxNonTerminalCount = Math.min(
     resolved.maxPiecewiseSegments - 1,
@@ -683,7 +696,15 @@ export const createFormulaArbitrary = (
 ): fc.Arbitrary<NumericFormula> => {
   const resolved = resolveOptions(options);
   const pools = sanitizeReferencePool(options?.referencePools);
-  const expressionArbitrary = createExpressionArbitraryInternal(resolved, pools);
+  const guardableExpressionDepth = resolved.maxExpressionDepth >= 2;
+  const expressionDepthBudget = guardableExpressionDepth
+    ? Math.max(0, resolved.maxExpressionDepth - 2)
+    : Math.max(0, resolved.maxExpressionDepth - 1);
+  const expressionOptions =
+    expressionDepthBudget === resolved.maxExpressionDepth
+      ? resolved
+      : { ...resolved, maxExpressionDepth: expressionDepthBudget };
+  const expressionArbitrary = createExpressionArbitraryInternal(expressionOptions, pools);
   const allowedKinds = new Set<NumericFormula['kind']>(
     (options?.kinds?.length ? options.kinds : ALL_FORMULA_KINDS) as readonly NumericFormula['kind'][],
   );
@@ -759,7 +780,9 @@ export const createFormulaArbitrary = (
       nestedFormulas.push(
         expressionArbitrary.map((expression) => ({
           kind: 'expression' as const,
-          expression: wrapWithNonNegativeGuard(expression),
+          expression: guardableExpressionDepth
+            ? wrapWithNonNegativeGuard(expression)
+            : expression,
         })),
       );
     }
