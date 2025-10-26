@@ -324,6 +324,12 @@ const createExpressionArbitraryInternal = (
       })
       .map((value) => toLiteral(value));
 
+    const minRootDegree = Math.max(1, Math.ceil(resolved.rootDegreeRange.min));
+    const maxRootDegree = Math.max(
+      minRootDegree,
+      Math.max(1, Math.floor(resolved.rootDegreeRange.max)),
+    );
+
     const binaryNodes: fc.Arbitrary<ExpressionNode>[] = [
       fc.tuple(smaller, smaller).map(([left, right]) => ({
         kind: 'binary' as const,
@@ -401,8 +407,8 @@ const createExpressionArbitraryInternal = (
         strictlyPositive,
         fc
           .integer({
-            min: Math.max(1, Math.floor(resolved.rootDegreeRange.min)),
-            max: Math.max(1, Math.floor(resolved.rootDegreeRange.max)),
+            min: minRootDegree,
+            max: maxRootDegree,
           })
           .map((value) => toLiteral(value)),
       ).map(([value, degree]) => ({
@@ -421,22 +427,33 @@ const createExpressionArbitraryInternal = (
 const createPiecewiseArbitrary = (
   resolved: ResolvedArbitraryOptions,
   subFormula: fc.Arbitrary<NumericFormula>,
-): fc.Arbitrary<NumericFormula> =>
-  fc
-    .integer({ min: 0, max: resolved.maxPiecewiseSegments - 1 })
+): fc.Arbitrary<NumericFormula> => {
+  const levelMin = Math.ceil(resolved.piecewiseLevelRange.min);
+  const levelMax = Math.ceil(resolved.piecewiseLevelRange.max);
+  const availableLevels = Math.max(0, levelMax - levelMin + 1);
+  const maxNonTerminalCount = Math.min(
+    resolved.maxPiecewiseSegments - 1,
+    availableLevels,
+  );
+
+  return fc
+    .integer({ min: 0, max: maxNonTerminalCount })
     .chain((nonTerminalCount) => {
-      const thresholdsArb = fc
-        .uniqueArray(
-          fc.integer({
-            min: Math.ceil(resolved.piecewiseLevelRange.min),
-            max: Math.ceil(resolved.piecewiseLevelRange.max),
-          }),
-          {
-            minLength: nonTerminalCount,
-            maxLength: nonTerminalCount,
-          },
-        )
-        .map((levels) => levels.slice().sort((a, b) => a - b));
+      const thresholdsArb =
+        nonTerminalCount === 0
+          ? fc.constant<number[]>([])
+          : fc
+              .uniqueArray(
+                fc.integer({
+                  min: levelMin,
+                  max: levelMax,
+                }),
+                {
+                  minLength: nonTerminalCount,
+                  maxLength: nonTerminalCount,
+                },
+              )
+              .map((levels) => levels.slice().sort((a, b) => a - b));
 
       const formulasArb = fc.array(subFormula, {
         minLength: nonTerminalCount + 1,
@@ -458,6 +475,7 @@ const createPiecewiseArbitrary = (
         } satisfies NumericFormula;
       });
     });
+};
 
 export interface FormulaEvaluationContext {
   readonly level: number;
@@ -746,9 +764,20 @@ export const createFormulaArbitrary = (
       );
     }
 
-    if (depth > 0 && allowedKinds.has('piecewise')) {
-      const smallerFormula = getFormula(depth - 1);
-      nestedFormulas.push(createPiecewiseArbitrary(resolved, smallerFormula));
+    if (allowedKinds.has('piecewise')) {
+      // Ensure piecewise segments remain constructible even when no other kinds are allowed.
+      const terminalFormula =
+        baseFormulas.length > 0
+          ? fc.oneof(...baseFormulas)
+          : nonNegativeNumber.map(
+              (value) =>
+                ({
+                  kind: 'constant' as const,
+                  value,
+                }) satisfies NumericFormula,
+            );
+      const segmentFormula = depth > 0 ? getFormula(depth - 1) : terminalFormula;
+      nestedFormulas.push(createPiecewiseArbitrary(resolved, segmentFormula));
     }
 
     if (depth <= 0) {

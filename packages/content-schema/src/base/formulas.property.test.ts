@@ -9,7 +9,7 @@ import {
   evaluateNumericFormula,
   type FormulaEvaluationContext,
 } from './formulas.arbitraries.js';
-import { numericFormulaSchema } from './formulas.js';
+import { numericFormulaSchema, type ExpressionNode } from './formulas.js';
 
 const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   numRuns: 200,
@@ -20,6 +20,40 @@ const withLevel = (base: FormulaEvaluationContext, level: number): FormulaEvalua
   ...base,
   level,
 });
+
+const collectRootDegrees = (node: ExpressionNode): number[] => {
+  const pending: ExpressionNode[] = [node];
+  const degrees: number[] = [];
+
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    switch (current.kind) {
+      case 'binary':
+        pending.push(current.left, current.right);
+        break;
+      case 'unary':
+        pending.push(current.operand);
+        break;
+      case 'call': {
+        if (current.name === 'root') {
+          const degreeArg = current.args[1];
+          if (degreeArg?.kind === 'literal') {
+            degrees.push(degreeArg.value);
+          }
+        }
+        pending.push(...current.args);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return degrees;
+};
+
+const containsRootCall = (node: ExpressionNode): boolean =>
+  collectRootDegrees(node).length > 0;
 
 describe('createFormulaArbitrary', () => {
   it('produces schemas that parse and evaluate to finite non-negative numbers', () => {
@@ -170,6 +204,33 @@ describe('createFormulaArbitrary', () => {
     );
   });
 
+  it('supports piecewise-only kind selection', () => {
+    const formulaArb = createFormulaArbitrary({ kinds: ['piecewise'] });
+
+    fc.assert(
+      fc.property(formulaArb, (formula) => {
+        expect(formula.kind).toBe('piecewise');
+        if (formula.kind !== 'piecewise') {
+          return;
+        }
+
+        expect(formula.pieces.length).toBeGreaterThan(0);
+        const lastPiece = formula.pieces[formula.pieces.length - 1]!;
+        expect(lastPiece.untilLevel).toBeUndefined();
+
+        const baseContext = createDeterministicFormulaEvaluationContext();
+        const sampleLevels = [0, baseContext.level, baseContext.level + 10];
+        sampleLevels.forEach((level) => {
+          const context = withLevel(baseContext, level);
+          const value = evaluateNumericFormula(formula, context);
+          expect(Number.isFinite(value)).toBe(true);
+          expect(value).toBeGreaterThanOrEqual(0);
+        });
+      }),
+      { ...propertyConfig(6), numRuns: 120 },
+    );
+  });
+
   it('generates expression formulas that evaluate to finite non-negative results', () => {
     const formulaArb = createFormulaArbitrary({ kinds: ['expression'] });
     const contextArb = createFormulaEvaluationContextArbitrary();
@@ -179,7 +240,68 @@ describe('createFormulaArbitrary', () => {
         expect(Number.isFinite(value)).toBe(true);
         expect(value).toBeGreaterThanOrEqual(0);
       }),
-      propertyConfig(6),
+      propertyConfig(7),
+    );
+  });
+
+  it('respects fractional minimums for root degrees', () => {
+    const rootRange = { min: 2.7, max: 5 };
+    const minExpectedDegree = Math.max(1, Math.ceil(rootRange.min));
+    const maxExpectedDegree = Math.max(
+      minExpectedDegree,
+      Math.max(1, Math.floor(rootRange.max)),
+    );
+
+    const expressionWithRootArb = createFormulaArbitrary({
+      kinds: ['expression'],
+      rootDegreeRange: rootRange,
+      maxExpressionDepth: 3,
+    }).filter(
+      (formula) =>
+        formula.kind === 'expression' && containsRootCall(formula.expression),
+    );
+
+    fc.assert(
+      fc.property(expressionWithRootArb, (formula) => {
+        expect(formula.kind).toBe('expression');
+        if (formula.kind !== 'expression') {
+          return;
+        }
+
+        const degrees = collectRootDegrees(formula.expression);
+        expect(degrees.length).toBeGreaterThan(0);
+        degrees.forEach((degree) => {
+          expect(degree).toBeGreaterThanOrEqual(minExpectedDegree);
+          expect(degree).toBeLessThanOrEqual(maxExpectedDegree);
+        });
+      }),
+      propertyConfig(8),
+    );
+  });
+
+  it('limits piecewise thresholds to available integer levels', () => {
+    const piecewiseRange = { min: 0, max: 1 };
+
+    const piecewiseOnlyArb = createFormulaArbitrary({
+      kinds: ['piecewise'],
+      piecewiseLevelRange: piecewiseRange,
+      maxPiecewiseSegments: 4,
+    });
+
+    fc.assert(
+      fc.property(piecewiseOnlyArb, (formula) => {
+        expect(formula.kind).toBe('piecewise');
+        if (formula.kind !== 'piecewise') {
+          return;
+        }
+
+        const levelMin = Math.ceil(piecewiseRange.min);
+        const levelMax = Math.ceil(piecewiseRange.max);
+        const availableLevels = Math.max(0, levelMax - levelMin + 1);
+
+        expect(formula.pieces.length - 1).toBeLessThanOrEqual(availableLevels);
+      }),
+      { ...propertyConfig(9), numRuns: 80 },
     );
   });
 });
