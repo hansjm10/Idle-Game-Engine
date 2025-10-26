@@ -41,22 +41,22 @@ export const evaluateNumericFormula = (
     case 'constant':
       return formula.value;
     case 'linear': {
-      const level = resolveVariableValue({ type: 'variable', name: 'level' }, context);
+      const level = resolveReferenceValue({ type: 'variable', name: 'level' }, context);
       return formula.base + formula.slope * level;
     }
     case 'exponential': {
-      const level = resolveVariableValue({ type: 'variable', name: 'level' }, context);
+      const level = resolveReferenceValue({ type: 'variable', name: 'level' }, context);
       const offset = formula.offset ?? 0;
       return formula.base * Math.pow(formula.growth, level) + offset;
     }
     case 'polynomial': {
-      const level = resolveVariableValue({ type: 'variable', name: 'level' }, context);
+      const level = resolveReferenceValue({ type: 'variable', name: 'level' }, context);
       return formula.coefficients.reduce((total, coefficient, index) => {
         return total + coefficient * Math.pow(level, index);
       }, 0);
     }
     case 'piecewise': {
-      const level = resolveVariableValue({ type: 'variable', name: 'level' }, context);
+      const level = resolveReferenceValue({ type: 'variable', name: 'level' }, context);
       const segment = selectPiecewiseSegment(formula.pieces, level);
       return evaluateNumericFormula(segment.formula, context);
     }

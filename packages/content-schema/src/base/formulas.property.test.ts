@@ -12,7 +12,11 @@ import {
   evaluateNumericFormula,
   type FormulaEvaluationContext,
 } from './formula-evaluator.js';
-import { numericFormulaSchema, type ExpressionNode } from './formulas.js';
+import {
+  numericFormulaSchema,
+  type ExpressionNode,
+  type NumericFormula,
+} from './formulas.js';
 
 const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   numRuns: 200,
@@ -544,5 +548,35 @@ describe('createFormulaArbitrary', () => {
         expect(untilLevel).toBeLessThanOrEqual(levelMax);
       });
     });
+  });
+
+  it('resolves implicit level references through getReferenceValue', () => {
+    const level = 7;
+    const context: FormulaEvaluationContext = {
+      getReferenceValue: (target) =>
+        target.type === 'variable' && target.name === 'level' ? level : undefined,
+    };
+
+    const samples: NumericFormula[] = [
+      { kind: 'linear', base: 3, slope: 2 },
+      { kind: 'exponential', base: 2, growth: 1.5, offset: 4 },
+      { kind: 'polynomial', coefficients: [5, 1, 0.5] },
+      {
+        kind: 'piecewise',
+        pieces: [
+          { untilLevel: 3, formula: { kind: 'constant', value: 11 } },
+          { formula: { kind: 'constant', value: 17 } },
+        ],
+      },
+    ];
+
+    expect(evaluateNumericFormula(samples[0]!, context)).toBeCloseTo(3 + 2 * level);
+    expect(evaluateNumericFormula(samples[1]!, context)).toBeCloseTo(
+      2 * Math.pow(1.5, level) + 4,
+    );
+    expect(evaluateNumericFormula(samples[2]!, context)).toBeCloseTo(
+      5 + 1 * level + 0.5 * Math.pow(level, 2),
+    );
+    expect(evaluateNumericFormula(samples[3]!, context)).toBe(17);
   });
 });
