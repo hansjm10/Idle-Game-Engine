@@ -108,6 +108,43 @@ type Range = {
 
 const DEFAULT_NUMERIC_RANGE: Range = { min: 0, max: 1_000 };
 const DEFAULT_STRICTLY_POSITIVE_RANGE: Range = { min: 0.1, max: 1_000 };
+const DEFAULT_EXPONENTIAL_GROWTH_RANGE: Range = { min: 1.01, max: 2 };
+const DEFAULT_EXPONENT_RANGE: Range = { min: 1, max: 5 };
+const DEFAULT_ROOT_DEGREE_RANGE: Range = { min: 1, max: 6 };
+const DEFAULT_PIECEWISE_LEVEL_RANGE: Range = { min: 1, max: 100 };
+
+const isFiniteNumber = (value: number): value is number => Number.isFinite(value);
+
+type RangeSanitizationOptions = {
+  readonly requireStrictlyPositiveMin?: boolean;
+};
+
+const sanitizeRange = (
+  candidate: Range | undefined,
+  fallback: Range,
+  { requireStrictlyPositiveMin = false }: RangeSanitizationOptions = {},
+): Range => {
+  if (!candidate) {
+    return fallback;
+  }
+
+  const { min: rawMin, max: rawMax } = candidate;
+
+  if (!isFiniteNumber(rawMin) || !isFiniteNumber(rawMax)) {
+    return fallback;
+  }
+
+  const lower = Math.min(rawMin, rawMax);
+  const upper = Math.max(rawMin, rawMax);
+
+  if (requireStrictlyPositiveMin) {
+    if (lower <= 0 || upper <= 0) {
+      return fallback;
+    }
+  }
+
+  return { min: lower, max: upper };
+};
 
 const createNumberArb = ({ min, max }: Range): fc.Arbitrary<number> =>
   fc.double({
@@ -161,6 +198,27 @@ const resolveOptions = (options?: FormulaArbitraryOptions): ResolvedArbitraryOpt
     options?.maxExpressionDepth ?? 5,
     MAX_EXPRESSION_DEPTH - 1,
   );
+  const numericRange = sanitizeRange(options?.numericRange, DEFAULT_NUMERIC_RANGE);
+  const strictlyPositiveRange = sanitizeRange(
+    options?.strictlyPositiveRange,
+    DEFAULT_STRICTLY_POSITIVE_RANGE,
+    { requireStrictlyPositiveMin: true },
+  );
+  const exponentialGrowthRange = sanitizeRange(
+    options?.exponentialGrowthRange,
+    DEFAULT_EXPONENTIAL_GROWTH_RANGE,
+    { requireStrictlyPositiveMin: true },
+  );
+  const exponentRange = sanitizeRange(options?.exponentRange, DEFAULT_EXPONENT_RANGE);
+  const rootDegreeRange = sanitizeRange(
+    options?.rootDegreeRange,
+    DEFAULT_ROOT_DEGREE_RANGE,
+    { requireStrictlyPositiveMin: true },
+  );
+  const piecewiseLevelRange = sanitizeRange(
+    options?.piecewiseLevelRange,
+    DEFAULT_PIECEWISE_LEVEL_RANGE,
+  );
 
   return {
     maxFormulaDepth,
@@ -170,13 +228,12 @@ const resolveOptions = (options?: FormulaArbitraryOptions): ResolvedArbitraryOpt
       1,
       Math.min(options?.maxPolynomialCoefficients ?? 5, 8),
     ),
-    numericRange: options?.numericRange ?? DEFAULT_NUMERIC_RANGE,
-    strictlyPositiveRange:
-      options?.strictlyPositiveRange ?? DEFAULT_STRICTLY_POSITIVE_RANGE,
-    exponentialGrowthRange: options?.exponentialGrowthRange ?? { min: 1.01, max: 2 },
-    exponentRange: options?.exponentRange ?? { min: 1, max: 5 },
-    rootDegreeRange: options?.rootDegreeRange ?? { min: 1, max: 6 },
-    piecewiseLevelRange: options?.piecewiseLevelRange ?? { min: 1, max: 100 },
+    numericRange,
+    strictlyPositiveRange,
+    exponentialGrowthRange,
+    exponentRange,
+    rootDegreeRange,
+    piecewiseLevelRange,
   };
 };
 

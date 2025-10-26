@@ -149,6 +149,32 @@ describe('createFormulaArbitrary', () => {
     );
   });
 
+  it('normalizes inverted numeric ranges before sampling constants', () => {
+    const invertedRange = { min: 25, max: 5 };
+    const constantArb = createFormulaArbitrary({
+      kinds: ['constant'],
+      numericRange: invertedRange,
+    });
+
+    const samples = fc.sample(constantArb, {
+      numRuns: 32,
+      seed: DEFAULT_FORMULA_PROPERTY_SEED,
+    });
+
+    const lower = Math.min(invertedRange.min, invertedRange.max);
+    const upper = Math.max(invertedRange.min, invertedRange.max);
+
+    samples.forEach((formula) => {
+      expect(formula.kind).toBe('constant');
+      if (formula.kind !== 'constant') {
+        return;
+      }
+
+      expect(formula.value).toBeGreaterThanOrEqual(lower);
+      expect(formula.value).toBeLessThanOrEqual(upper);
+    });
+  });
+
   it('generates linear formulas that grow monotonically with level', () => {
     const formulaArb = createFormulaArbitrary({ kinds: ['linear'] });
     fc.assert(
@@ -197,6 +223,25 @@ describe('createFormulaArbitrary', () => {
         },
       ),
       propertyConfig(3),
+    );
+  });
+
+  it('enforces positive exponential growth when caller bounds are invalid', () => {
+    const formulaArb = createFormulaArbitrary({
+      kinds: ['exponential'],
+      exponentialGrowthRange: { min: -5, max: -1 },
+    });
+
+    fc.assert(
+      fc.property(formulaArb, (formula) => {
+        expect(formula.kind).toBe('exponential');
+        if (formula.kind !== 'exponential') {
+          return;
+        }
+
+        expect(formula.growth).toBeGreaterThan(0);
+      }),
+      propertyConfig(15),
     );
   });
 
@@ -301,6 +346,24 @@ describe('createFormulaArbitrary', () => {
         expect(value).toBeGreaterThanOrEqual(0);
       }),
       propertyConfig(7),
+    );
+  });
+
+  it('falls back to default strictly positive literals when caller bounds are invalid', () => {
+    const formulaArb = createFormulaArbitrary({
+      kinds: ['expression'],
+      strictlyPositiveRange: { min: -3, max: -1 },
+    });
+    const contextArb = createFormulaEvaluationContextArbitrary();
+
+    fc.assert(
+      fc.property(formulaArb, contextArb, (formula, context) => {
+        expect(formula.kind).toBe('expression');
+        const value = evaluateNumericFormula(formula, context);
+        expect(Number.isFinite(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0);
+      }),
+      propertyConfig(16),
     );
   });
 
