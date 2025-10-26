@@ -903,11 +903,16 @@ export const createFormulaEvaluationContextArbitrary = (
   options?: FormulaEvaluationContextArbitraryOptions,
 ): fc.Arbitrary<FormulaEvaluationContext> => {
   const resolvedPools = sanitizeReferencePool(pools);
-  const levelRange = options?.levelRange ?? DEFAULT_CONTEXT_LEVEL_RANGE;
-  const timeRange = options?.timeRange ?? DEFAULT_CONTEXT_TIME_RANGE;
-  const deltaTimeRange = options?.deltaTimeRange ?? DEFAULT_CONTEXT_DELTA_TIME_RANGE;
-  const entityValueRange =
-    options?.entityValueRange ?? DEFAULT_CONTEXT_ENTITY_VALUE_RANGE;
+  const levelRange = sanitizeRange(options?.levelRange, DEFAULT_CONTEXT_LEVEL_RANGE);
+  const timeRange = sanitizeRange(options?.timeRange, DEFAULT_CONTEXT_TIME_RANGE);
+  const deltaTimeRange = sanitizeRange(
+    options?.deltaTimeRange,
+    DEFAULT_CONTEXT_DELTA_TIME_RANGE,
+  );
+  const entityValueRange = sanitizeRange(
+    options?.entityValueRange,
+    DEFAULT_CONTEXT_ENTITY_VALUE_RANGE,
+  );
 
   const entityValueArb = createNumberArb(entityValueRange);
 
