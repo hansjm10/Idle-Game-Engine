@@ -1,6 +1,10 @@
 import * as fc from 'fast-check';
 
 import { contentIdSchema } from './ids.js';
+import type {
+  FormulaEvaluationContext,
+  FormulaEvaluationEntities,
+} from './formula-evaluator.js';
 import {
   CALL_FUNCTION_NAMES,
   MAX_EXPRESSION_DEPTH,
@@ -547,204 +551,16 @@ const createPiecewiseArbitrary = (
     });
 };
 
-export interface FormulaEvaluationContext {
-  readonly level: number;
-  readonly time: number;
-  readonly deltaTime: number;
-  readonly resources: Readonly<Record<string, number>>;
-  readonly generators: Readonly<Record<string, number>>;
-  readonly upgrades: Readonly<Record<string, number>>;
-  readonly automations: Readonly<Record<string, number>>;
-  readonly prestigeLayers: Readonly<Record<string, number>>;
-}
-
 const createEntityValueLookup = (
   pools: Record<EntityReferenceType, readonly string[]>,
   value: number,
-): {
-  readonly resources: Record<string, number>;
-  readonly generators: Record<string, number>;
-  readonly upgrades: Record<string, number>;
-  readonly automations: Record<string, number>;
-  readonly prestigeLayers: Record<string, number>;
-} => ({
-  resources: Object.fromEntries(pools.resource.map((id) => [id, value] as const)),
-  generators: Object.fromEntries(pools.generator.map((id) => [id, value] as const)),
-  upgrades: Object.fromEntries(pools.upgrade.map((id) => [id, value] as const)),
-  automations: Object.fromEntries(pools.automation.map((id) => [id, value] as const)),
-  prestigeLayers: Object.fromEntries(pools.prestigeLayer.map((id) => [id, value] as const)),
+): FormulaEvaluationEntities => ({
+  resource: Object.fromEntries(pools.resource.map((id) => [id, value] as const)),
+  generator: Object.fromEntries(pools.generator.map((id) => [id, value] as const)),
+  upgrade: Object.fromEntries(pools.upgrade.map((id) => [id, value] as const)),
+  automation: Object.fromEntries(pools.automation.map((id) => [id, value] as const)),
+  prestigeLayer: Object.fromEntries(pools.prestigeLayer.map((id) => [id, value] as const)),
 });
-
-const getEntityValue = (
-  context: FormulaEvaluationContext,
-  type: EntityReferenceType,
-  id: string,
-): number => {
-  switch (type) {
-    case 'resource':
-      return context.resources[id] ?? 0;
-    case 'generator':
-      return context.generators[id] ?? 0;
-    case 'upgrade':
-      return context.upgrades[id] ?? 0;
-    case 'automation':
-      return context.automations[id] ?? 0;
-    case 'prestigeLayer':
-      return context.prestigeLayers[id] ?? 0;
-    default:
-      return 0;
-  }
-};
-
-const evaluateExpression = (
-  expression: ExpressionNode,
-  context: FormulaEvaluationContext,
-): number => {
-  switch (expression.kind) {
-    case 'literal':
-      return expression.value;
-    case 'ref': {
-      if (expression.target.type === 'variable') {
-        const variable = expression.target.name;
-        switch (variable) {
-          case 'level':
-            return context.level;
-          case 'time':
-            return context.time;
-          case 'deltaTime':
-            return context.deltaTime;
-          default:
-            return 0;
-        }
-      }
-      return getEntityValue(context, expression.target.type, expression.target.id);
-    }
-    case 'binary': {
-      const left = evaluateExpression(expression.left, context);
-      const right = evaluateExpression(expression.right, context);
-      switch (expression.op) {
-        case 'add':
-          return left + right;
-        case 'sub':
-          return left - right;
-        case 'mul':
-          return left * right;
-        case 'div':
-          return right === 0 ? Number.POSITIVE_INFINITY : left / right;
-        case 'pow':
-          return Math.pow(left, right);
-        case 'min':
-          return Math.min(left, right);
-        case 'max':
-          return Math.max(left, right);
-        default:
-          return Number.NaN;
-      }
-    }
-    case 'unary': {
-      const operand = evaluateExpression(expression.operand, context);
-      switch (expression.op) {
-        case 'abs':
-          return Math.abs(operand);
-        case 'ceil':
-          return Math.ceil(operand);
-        case 'floor':
-          return Math.floor(operand);
-        case 'round':
-          return Math.round(operand);
-        case 'sqrt':
-          return operand < 0 ? Number.NaN : Math.sqrt(operand);
-        case 'log10':
-          return operand <= 0 ? Number.NaN : Math.log10(operand);
-        case 'ln':
-          return operand <= 0 ? Number.NaN : Math.log(operand);
-        default:
-          return Number.NaN;
-      }
-    }
-    case 'call': {
-      const args = expression.args.map((arg) => evaluateExpression(arg, context));
-      switch (expression.name) {
-        case 'clamp': {
-          const [value, minValue, maxValue] = args;
-          if (args.length < 3) {
-            return Number.NaN;
-          }
-          const lower = Math.min(minValue, maxValue);
-          const upper = Math.max(minValue, maxValue);
-          return Math.min(Math.max(value, lower), upper);
-        }
-        case 'lerp': {
-          const [start, end, tValue = 0] = args;
-          const clampedT = Math.min(Math.max(tValue, 0), 1);
-          return start + (end - start) * clampedT;
-        }
-        case 'min3':
-          return Math.min(...args);
-        case 'max3':
-          return Math.max(...args);
-        case 'pow10': {
-          const [exponent = 0] = args;
-          return Math.pow(10, exponent);
-        }
-        case 'root': {
-          const [value, degree = 1] = args;
-          if (degree === 0) {
-            return Number.NaN;
-          }
-          return value < 0 && degree % 2 === 0
-            ? Number.NaN
-            : Math.pow(value, 1 / degree);
-        }
-        default:
-          return Number.NaN;
-      }
-    }
-    default:
-      return Number.NaN;
-  }
-};
-
-export const evaluateNumericFormula = (
-  formula: NumericFormula,
-  context: FormulaEvaluationContext,
-): number => {
-  switch (formula.kind) {
-    case 'constant':
-      return formula.value;
-    case 'linear':
-      return formula.base + formula.slope * context.level;
-    case 'exponential': {
-      const offset = formula.offset ?? 0;
-      return formula.base * Math.pow(formula.growth, context.level) + offset;
-    }
-    case 'polynomial': {
-      return formula.coefficients.reduce((total, coefficient, index) => {
-        return total + coefficient * Math.pow(context.level, index);
-      }, 0);
-    }
-    case 'piecewise': {
-      if (formula.pieces.length === 0) {
-        return Number.NaN;
-      }
-      const { level } = context;
-      const [lastPiece] = formula.pieces.slice(-1);
-      for (const piece of formula.pieces.slice(0, -1)) {
-        if (piece.untilLevel === undefined || level < piece.untilLevel) {
-          return evaluateNumericFormula(piece.formula, context);
-        }
-      }
-      if (!lastPiece) {
-        return Number.NaN;
-      }
-      return evaluateNumericFormula(lastPiece.formula, context);
-    }
-    case 'expression':
-      return evaluateExpression(formula.expression, context);
-    default:
-      return Number.NaN;
-  }
-};
 
 export const DEFAULT_FORMULA_PROPERTY_SEED = 177013;
 
@@ -924,14 +740,18 @@ export const createFormulaEvaluationContextArbitrary = (
   };
 
   return fc.record({
-    level: createNumberArb(levelRange),
-    time: createNumberArb(timeRange),
-    deltaTime: createNumberArb(deltaTimeRange),
-    resources: createEntityRecord('resource'),
-    generators: createEntityRecord('generator'),
-    upgrades: createEntityRecord('upgrade'),
-    automations: createEntityRecord('automation'),
-    prestigeLayers: createEntityRecord('prestigeLayer'),
+    variables: fc.record({
+      level: createNumberArb(levelRange),
+      time: createNumberArb(timeRange),
+      deltaTime: createNumberArb(deltaTimeRange),
+    }),
+    entities: fc.record({
+      resource: createEntityRecord('resource'),
+      generator: createEntityRecord('generator'),
+      upgrade: createEntityRecord('upgrade'),
+      automation: createEntityRecord('automation'),
+      prestigeLayer: createEntityRecord('prestigeLayer'),
+    }),
   });
 };
 
@@ -941,14 +761,12 @@ export const createDeterministicFormulaEvaluationContext = (
   const resolvedPools = sanitizeReferencePool(pools);
   const lookup = createEntityValueLookup(resolvedPools, 100);
   return {
-    level: 10,
-    time: 1_000,
-    deltaTime: 1,
-    resources: lookup.resources,
-    generators: lookup.generators,
-    upgrades: lookup.upgrades,
-    automations: lookup.automations,
-    prestigeLayers: lookup.prestigeLayers,
+    variables: {
+      level: 10,
+      time: 1_000,
+      deltaTime: 1,
+    },
+    entities: lookup,
   };
 };
 

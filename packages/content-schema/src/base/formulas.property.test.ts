@@ -6,10 +6,12 @@ import {
   createFormulaArbitrary,
   createFormulaEvaluationContextArbitrary,
   DEFAULT_FORMULA_PROPERTY_SEED,
-  evaluateNumericFormula,
-  type FormulaEvaluationContext,
   type FormulaEntityReferenceType,
 } from './formulas.arbitraries.js';
+import {
+  evaluateNumericFormula,
+  type FormulaEvaluationContext,
+} from './formula-evaluator.js';
 import { numericFormulaSchema, type ExpressionNode } from './formulas.js';
 
 const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
@@ -17,10 +19,19 @@ const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   seed: DEFAULT_FORMULA_PROPERTY_SEED + offset,
 });
 
-const withLevel = (base: FormulaEvaluationContext, level: number): FormulaEvaluationContext => ({
+const withLevel = (
+  base: FormulaEvaluationContext,
+  level: number,
+): FormulaEvaluationContext => ({
   ...base,
-  level,
+  variables: {
+    ...(base.variables ?? {}),
+    level,
+  },
 });
+
+const getLevel = (context: FormulaEvaluationContext): number =>
+  context.variables?.level ?? 0;
 
 const collectRootDegrees = (node: ExpressionNode): number[] => {
   const pending: ExpressionNode[] = [node];
@@ -288,7 +299,7 @@ describe('createFormulaArbitrary', () => {
         const penultimateLevel =
           penultimate && penultimate.untilLevel !== undefined
             ? penultimate.untilLevel
-            : baseContext.level;
+            : getLevel(baseContext);
 
         const sampleLevels = [
           0,
@@ -324,7 +335,8 @@ describe('createFormulaArbitrary', () => {
         expect(lastPiece.untilLevel).toBeUndefined();
 
         const baseContext = createDeterministicFormulaEvaluationContext();
-        const sampleLevels = [0, baseContext.level, baseContext.level + 10];
+        const baseLevel = getLevel(baseContext);
+        const sampleLevels = [0, baseLevel, baseLevel + 10];
         sampleLevels.forEach((level) => {
           const context = withLevel(baseContext, level);
           const value = evaluateNumericFormula(formula, context);
@@ -461,7 +473,8 @@ describe('createFormulaArbitrary', () => {
 
         const entityTypes = collectEntityReferenceTypes(formula.expression);
         expect(entityTypes).not.toContain('resource');
-        expect(Object.keys(context.resources)).toHaveLength(0);
+        const resourceLookup = (context.entities?.resource ?? {}) as Record<string, number>;
+        expect(Object.keys(resourceLookup)).toHaveLength(0);
 
         const value = evaluateNumericFormula(formula, context);
         expect(Number.isFinite(value)).toBe(true);
