@@ -1,5 +1,6 @@
 import {
   BINARY_OPERATORS,
+  CALL_FUNCTION_ARITY,
   CALL_FUNCTION_NAMES,
   UNARY_OPERATORS,
   type ExpressionNode,
@@ -148,29 +149,41 @@ const evaluateCall = (
 ): number => {
   switch (name) {
     case 'clamp': {
-      const [value, minValue, maxValue] = evaluateArguments(args, 3, context);
+      const [value, minValue, maxValue] = evaluateArguments(
+        args,
+        CALL_FUNCTION_ARITY.clamp,
+        context,
+      );
       const lower = Math.min(minValue, maxValue);
       const upper = Math.max(minValue, maxValue);
       return Math.min(Math.max(value, lower), upper);
     }
     case 'lerp': {
-      const [start, end, t] = evaluateArguments(args, 3, context);
+      const [start, end, t] = evaluateArguments(
+        args,
+        CALL_FUNCTION_ARITY.lerp,
+        context,
+      );
       return start + (end - start) * t;
     }
     case 'min3': {
-      const [a, b, c] = evaluateArguments(args, 3, context);
+      const [a, b, c] = evaluateArguments(args, CALL_FUNCTION_ARITY.min3, context);
       return Math.min(a, b, c);
     }
     case 'max3': {
-      const [a, b, c] = evaluateArguments(args, 3, context);
+      const [a, b, c] = evaluateArguments(args, CALL_FUNCTION_ARITY.max3, context);
       return Math.max(a, b, c);
     }
     case 'pow10': {
-      const [exponent] = evaluateArguments(args, 1, context);
+      const [exponent] = evaluateArguments(args, CALL_FUNCTION_ARITY.pow10, context);
       return Math.pow(10, exponent);
     }
     case 'root': {
-      const [value, degree] = evaluateArguments(args, 2, context);
+      const [value, degree] = evaluateArguments(
+        args,
+        CALL_FUNCTION_ARITY.root,
+        context,
+      );
       return Math.pow(value, 1 / degree);
     }
     default:

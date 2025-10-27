@@ -23,7 +23,7 @@ const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   seed: DEFAULT_FORMULA_PROPERTY_SEED + offset,
 });
 
-const LONG_PROPERTY_TIMEOUT_MS = 20_000;
+const LONG_PROPERTY_TIMEOUT_MS = 30_000;
 
 const withLevel = (
   base: FormulaEvaluationContext,

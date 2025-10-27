@@ -132,6 +132,15 @@ export const CALL_FUNCTION_NAMES = [
   'root',
 ] as const;
 
+export const CALL_FUNCTION_ARITY = {
+  clamp: 3,
+  lerp: 3,
+  min3: 3,
+  max3: 3,
+  pow10: 1,
+  root: 2,
+} as const satisfies Record<(typeof CALL_FUNCTION_NAMES)[number], number>;
+
 export const MAX_EXPRESSION_DEPTH = 16;
 export const MAX_EXPRESSION_NODE_COUNT = 256;
 export const MAX_FORMULA_DEPTH = 16;
@@ -168,39 +177,51 @@ const literalExpressionSchema = z
 const createExpressionNodeSchema = (
   self: z.ZodType<ExpressionNodeModel, z.ZodTypeDef, ExpressionNodeInput>,
 ) =>
-  z.discriminatedUnion('kind', [
-    literalExpressionSchema,
-    z
-      .object({
-        kind: z.literal('ref'),
-        target: expressionReferenceTargetSchema,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('binary'),
-        op: z.enum(BINARY_OPERATORS),
-        left: self,
-        right: self,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('unary'),
-        op: z.enum(UNARY_OPERATORS),
-        operand: self,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('call'),
-        name: z.enum(CALL_FUNCTION_NAMES),
-        args: z.array(self).min(1, {
-          message: 'Function calls must supply at least one argument.',
-        }),
-      })
-      .strict(),
-  ]);
+  z
+    .discriminatedUnion('kind', [
+      literalExpressionSchema,
+      z
+        .object({
+          kind: z.literal('ref'),
+          target: expressionReferenceTargetSchema,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('binary'),
+          op: z.enum(BINARY_OPERATORS),
+          left: self,
+          right: self,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('unary'),
+          op: z.enum(UNARY_OPERATORS),
+          operand: self,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('call'),
+          name: z.enum(CALL_FUNCTION_NAMES),
+          args: z.array(self),
+        })
+        .strict(),
+    ])
+    .superRefine((node, ctx) => {
+      if (node.kind !== 'call') {
+        return;
+      }
+      const expectedArity = CALL_FUNCTION_ARITY[node.name];
+      if (node.args.length !== expectedArity) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Function ${node.name} expects ${expectedArity} arguments, received ${node.args.length}.`,
+          path: ['args'],
+        });
+      }
+    });
 
 export const expressionNodeSchema: z.ZodType<
   ExpressionNodeModel,
