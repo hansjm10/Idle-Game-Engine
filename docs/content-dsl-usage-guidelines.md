@@ -107,6 +107,19 @@ Normalization deduplicates entries, sorts them, and blocks self-references (see
 - [ ] Re-run `pnpm generate` and confirm the CLI logs omit
   `content_pack.dependency_cycle` warnings.
 
+### Dependency compatibility matrix
+
+<!-- markdownlint-disable MD013 -->
+
+| Policy | Applies When | Enforcement | References |
+| --- | --- | --- | --- |
+| `requires` | Pack cannot function without another pack | Validation fails on missing packs; compiler blocks compilation | `docs/content-dsl-schema-design.md` (§5.5), `docs/content-compiler-design.md` (§5.6) |
+| `optional` | Integration enhances behaviour but is not mandatory | Emits warnings when absent if `ContentSchemaOptions.activePackIds` supplies the install graph | `docs/content-dsl-schema-design.md` (§5.5), `packages/content-schema/src/modules/dependencies.ts` |
+| `conflicts` | Packs must never load together | Validation errors guard against self-dependency; compiler logs failure with the conflicting slug | `docs/content-dsl-schema-design.md` (§5.5), `docs/content-compiler-design.md` (§5.6) |
+| `provides` | Pack exposes capabilities for discovery tooling | Normalisation deduplicates entries; workspace summary records capability digests | `docs/content-dsl-schema-design.md` (§5.5), `docs/content-compiler-design.md` (§5.4) |
+
+<!-- markdownlint-restore -->
+
 ## Versioning & Release Cadence
 
 Content packs carry both a pack version and a runtime compatibility range:
@@ -159,6 +172,22 @@ structured `FeatureViolation` errors or warnings (see
   compatibility adjustments are part of the change.
 - [ ] If runtime contracts evolve, update this table and the pack metadata in
   the same pull request to avoid drift.
+
+### Migration matrix
+
+Use this matrix to plan schema evolution and pack migrations in lockstep with
+the compiler and runtime guardrails described in the design docs.
+
+<!-- markdownlint-disable MD013 -->
+
+| Scenario | Expected action | References |
+| --- | --- | --- |
+| Schema fields added or behaviour changes | Run `pnpm generate` and revalidate packs; document the change in package README and update `metadata.version` to track the migration | `docs/content-dsl-schema-design.md` (§1, §5.5), `docs/content-compiler-design.md` (§5.5) |
+| Dependency graph updates (new `requires` / `optional` edges) | Refresh installation manifests, rerun validation with updated `knownPacks`, and capture any new warnings in CLI logs | `docs/content-dsl-schema-design.md` (§5.5), `docs/content-compiler-design.md` (§5.6) |
+| Runtime feature gates evolve | Synchronise this guide’s tables with `packages/content-schema/src/runtime-compat.ts`, adjust `metadata.engine`, and rerun schema tests to confirm compatibility | `packages/content-schema/src/runtime-compat.ts`, `docs/content-dsl-schema-design.md` (§5.5) |
+| Compiler format version or digest rules change | Rebuild generated artifacts, inspect workspace summary digests, and note migration requirements in release notes | `docs/content-compiler-design.md` (§5.4-§5.5), `docs/content-dsl-schema-design.md` (§5.5) |
+
+<!-- markdownlint-restore -->
 
 ## Reference Examples & Tooling
 
