@@ -41,6 +41,7 @@ const sidebars: SidebarsConfig = {
       label: 'Content Pipeline',
       items: [
         'content-dsl-schema-design',
+        'content-dsl-usage-guidelines',
         'content-compiler-design',
         'content-schema-rollout-decisions',
         'content-validation-cli-design',
