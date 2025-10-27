@@ -69,6 +69,10 @@ pre-commit:
         - "packages/core/**"
         - "packages/config-vitest/**"
         - "services/social/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
       run: pnpm --filter @idle-engine/core --filter @idle-engine/social-service run --if-present test:ci
     test-content:
       glob:
@@ -76,11 +80,19 @@ pre-commit:
         - "packages/config-vitest/**"
         - "packages/content-*/**"
         - "tools/content-*/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
       run: pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci
     test-shell-a11y:
       glob:
         - "packages/shell-web/**"
         - "tools/a11y-smoke-tests/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
       run: pnpm --filter @idle-engine/a11y-smoke-tests run test:ci
     docs-content-dsl-guidelines:
       glob: docs/content-dsl-usage-guidelines-design.md
