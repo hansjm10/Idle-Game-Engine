@@ -50,7 +50,10 @@ for (const args of commands) {
     throw result.error;
   }
 
-  if (typeof result.status === 'number' && result.status !== 0) {
-    process.exit(result.status);
+  const exitCode = typeof result.status === 'number' ? result.status : null;
+
+  if (exitCode === null || exitCode !== 0) {
+    // Fail fast so markdown lint/link errors surface in pnpm and Lefthook runs.
+    process.exit(exitCode ?? 1);
   }
 }
