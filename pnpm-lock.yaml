@@ -361,6 +361,9 @@ importers:
       '@idle-engine/config-vitest':
         specifier: workspace:*
         version: link:../../packages/config-vitest
+      fast-check:
+        specifier: ^3.19.0
+        version: 3.23.2
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.9.1)(jiti@1.21.7)(jsdom@25.0.1)(terser@5.44.0)(yaml@2.8.1)
@@ -3618,6 +3621,10 @@ packages:
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
 
+  fast-check@3.23.2:
+    resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
+    engines: {node: '>=8.0.0'}
+
   fast-check@4.3.0:
     resolution: {integrity: sha512-JVw/DJSxVKl8uhCb7GrwanT9VWsCIdBkK3WpP37B/Au4pyaspriSjtrY2ApbSFwTg3ViPfniT13n75PhzE7VEQ==}
     engines: {node: '>=12.17.0'}
@@ -5612,6 +5619,9 @@ packages:
   pupa@3.3.0:
     resolution: {integrity: sha512-LjgDO2zPtoXP2wJpDjZrGdojii1uqO0cnwKoIoUzkfS98HDmbeiGmYiXo3lXeFlq2xvne1QFQhwYXSUCLKtEuA==}
     engines: {node: '>=12.20'}
+
+  pure-rand@6.1.0:
+    resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
 
   pure-rand@7.0.1:
     resolution: {integrity: sha512-oTUZM/NAZS8p7ANR3SHh30kXB+zK2r2BPcEn/awJIbOvq82WoMN4p62AWWp3Hhw50G0xMsw1mhIBLqHw64EcNQ==}
@@ -11162,6 +11172,10 @@ snapshots:
 
   extend@3.0.2: {}
 
+  fast-check@3.23.2:
+    dependencies:
+      pure-rand: 6.1.0
+
   fast-check@4.3.0:
     dependencies:
       pure-rand: 7.0.1
@@ -13498,6 +13512,8 @@ snapshots:
   pupa@3.3.0:
     dependencies:
       escape-goat: 4.0.0
+
+  pure-rand@6.1.0: {}
 
   pure-rand@7.0.1: {}
 

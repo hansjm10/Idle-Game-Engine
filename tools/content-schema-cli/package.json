@@ -1,5 +1,5 @@
 {
-  "name": "@idle-engine/content-schema-cli",
+  "name": "@idle-engine/content-validation-cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@idle-engine/config-vitest": "workspace:*",
+    "fast-check": "^3.19.0",
     "vitest": "^3.2.4",
     "vitest-llm-reporter": "^1.2.0"
   }

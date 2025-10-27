@@ -30,7 +30,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 ## 4. Current State
 
 - `tools/content-schema-cli/src/generate.js` reads runtime event metadata, builds the manifest module, and exposes `validateContentPacks` but this function is not wired into the default command.
-- `pnpm generate` executes `pnpm --filter @idle-engine/content-schema-cli run compile`, which currently focuses on manifest regeneration and does not surface pack-level diagnostics or compiler integration.
+- `pnpm generate` executes `pnpm --filter @idle-engine/content-validation-cli run compile`, which currently focuses on manifest regeneration and does not surface pack-level diagnostics or compiler integration.
 - Structured logging guidance in `docs/idle-engine-design.md` (§10) is unmet; existing runs emit human-readable console noise that downstream automation cannot parse reliably.
 - `packages/content-compiler` can compile packs into deterministic JSON/TypeScript artifacts (`docs/content-compiler-design.md`), but nothing triggers it during workspace routines and artifacts may drift.
 - CI and Lefthook depend on `pnpm generate`; without validation wiring, schema regressions slip through local workflows.
@@ -170,6 +170,7 @@ Delivery order: steps 1 → 3 must complete before CI accepts the change; step 4
   - `--check` drift detection for manifest and compiler artifacts.
   - Top-level error handling emits `cli.unhandled_error` JSON logs instead of raw stack traces.
   - Watch mode trigger summarisation and repeated failure handling.
+  - Property-based sanitisation (`tools/content-schema-cli/src/__tests__/validation.property.test.ts`) reuses `DEFAULT_FORMULA_PROPERTY_SEED` from `@idle-engine/content-schema` with fixed offsets to keep `vitest-llm-reporter` JSON deterministic; update the documented offsets if seeds change.
 - **Integration tests** in `packages/content-compiler`: verify schema options are honoured and dependency ordering works.
 - **Manual verification**:
   - Run `pnpm generate` after editing a pack to ensure artifacts update and logs show `content_pack.compiled`.

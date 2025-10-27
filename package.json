@@ -13,7 +13,7 @@
     "docs:dev": "pnpm --filter @idle-engine/docs run start",
     "docs:build": "pnpm --filter @idle-engine/docs run build",
     "docs:serve": "pnpm --filter @idle-engine/docs run serve",
-    "generate": "pnpm --filter @idle-engine/content-schema-cli run compile",
+    "generate": "pnpm --filter @idle-engine/content-validation-cli run compile",
     "prepare": "lefthook install"
   },
   "devDependencies": {
