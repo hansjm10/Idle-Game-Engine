@@ -62,6 +62,7 @@ pre-commit:
         - "content/**"
         - "packages/content-*/**"
         - "tools/content-*/**"
+        - "packages/core/src/events/runtime-event-manifest.generated.ts"
       run: pnpm generate --check
     test-core:
       glob:
