@@ -18,6 +18,27 @@ context.
 - Lefthook hooks (`pnpm prepare`) to ensure lint, test, and build checks run
   locally before commits
 
+## Pre-commit hooks
+
+- Lefthook inspects staged files and only runs the commands they need:
+  - `pnpm lint`, `pnpm typecheck`, and `pnpm build` fire when JavaScript/TypeScript
+    workspace code or shared config changes.
+  - `pnpm generate --check` runs for `content/**`, content tooling, and schema
+    updates so packs stay fresh.
+  - Runtime/service changes trigger `pnpm --filter @idle-engine/core --filter @idle-engine/social-service run --if-present test:ci`.
+  - Content pipeline changes trigger `pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci`.
+  - Shell or a11y harness edits run `pnpm --filter @idle-engine/a11y-smoke-tests run test:ci`.
+  - The targeted markdown checks for `docs/content-dsl-usage-guidelines-design.md`
+    remain unchanged.
+- Typical warm-cache timings:
+  - Docs-only commits finish in ~3s (doc lint only).
+  - Core/runtime edits run lint/typecheck/build plus targeted Vitest in ≈17s.
+  - Content pack/schema edits (including property-based tests) finish in ≈26s.
+  - Forced full runs (`pnpm exec lefthook run pre-commit --all-files --force`)
+    still execute the entire matrix (~3m40s) for comparison with CI.
+- Use `LEFTHOOK=0 git commit ...` sparingly when you must bypass hooks; CI still
+  runs the full `pnpm test:ci` matrix and remains the ultimate gate.
+
 ## Repository layout
 
 - `packages/core` — deterministic runtime, command queue, telemetry
