@@ -58,6 +58,10 @@ console output around that summary to keep downstream tooling happy.
   commands (`pnpm test --filter <pkg>`).
 - Draft new proposals using `docs/design-document-template.md` and migrate older
   specs into that format when making substantial edits.
+- When editing `docs/content-dsl-usage-guidelines-design.md`, run
+  `pnpm --filter @idle-engine/docs lint` (or the underlying
+  `pnpm exec markdownlint` / `markdown-link-check` commands) so the markdownlint
+  and link checks pass locally; Lefthook enforces the same guardrails pre-commit.
 - Propose substantial architecture changes through the RFC process described in
   `docs/implementation-plan.md`.
 
