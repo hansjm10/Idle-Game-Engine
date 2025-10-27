@@ -5,8 +5,11 @@ import {
   CommandQueue,
   CommandDispatcher,
   IdleEngineRuntime,
+  RUNTIME_COMMAND_TYPES,
+  setGameState,
   type DiagnosticTimelineResult,
   type EventBus,
+  type SerializedResourceState,
 } from '@idle-engine/core';
 
 export type {
@@ -230,6 +233,24 @@ export function initializeRuntimeWorker(
         );
       }
 
+      if (message.resourceDeltas !== undefined) {
+        for (const [resourceId, delta] of Object.entries(
+          message.resourceDeltas,
+        )) {
+          if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+            throw Object.assign(
+              new Error(
+                'resource delta values must be finite numbers when provided',
+              ),
+              {
+                code: 'INVALID_RESTORE_RESOURCE_DELTAS' as const,
+                details: { resourceId, delta },
+              },
+            );
+          }
+        }
+      }
+
       if (
         message.state !== undefined &&
         (typeof message.state !== 'object' || message.state === null)
@@ -241,6 +262,31 @@ export function initializeRuntimeWorker(
             details: { state: message.state },
           },
         );
+      }
+
+      if (message.state !== undefined) {
+        setGameState<SerializedResourceState>(message.state);
+      }
+
+      const offlineElapsedMs = message.elapsedMs ?? 0;
+      const offlineResourceDeltas =
+        message.resourceDeltas !== undefined
+          ? { ...message.resourceDeltas }
+          : {};
+      const hasOfflineCatchup =
+        offlineElapsedMs > 0 || Object.keys(offlineResourceDeltas).length > 0;
+
+      if (hasOfflineCatchup) {
+        commandQueue.enqueue({
+          type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+          payload: {
+            elapsedMs: offlineElapsedMs,
+            resourceDeltas: offlineResourceDeltas,
+          },
+          priority: CommandPriority.SYSTEM,
+          timestamp: monotonicClock.now(),
+          step: runtime.getNextExecutableStep(),
+        });
       }
 
       sessionRestored = true;

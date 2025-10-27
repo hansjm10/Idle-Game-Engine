@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CommandPriority, CommandQueue } from '@idle-engine/core';
+import * as core from '@idle-engine/core';
 import {
   initializeRuntimeWorker,
   type RuntimeWorkerHarness,
@@ -69,12 +69,13 @@ describe('runtime.worker integration', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    core.clearGameState();
     harness?.dispose();
     harness = null;
   });
 
   it('stamps player commands with the runtime step and emits state updates', async () => {
-    const enqueueSpy = vi.spyOn(CommandQueue.prototype, 'enqueue');
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'debug').mockImplementation(() => {});
@@ -120,7 +121,7 @@ describe('runtime.worker integration', () => {
 
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const firstQueued = enqueueSpy.mock.calls[0]![0]!;
-    expect(firstQueued.priority).toBe(CommandPriority.PLAYER);
+    expect(firstQueued.priority).toBe(core.CommandPriority.PLAYER);
     expect(firstQueued.step).toBe(0);
 
     // Advance the runtime by one fixed step through the worker tick loop.
@@ -163,7 +164,7 @@ describe('runtime.worker integration', () => {
 
     expect(enqueueSpy).toHaveBeenCalledTimes(2);
     const secondQueued = enqueueSpy.mock.calls[1]![0] as {
-      priority: CommandPriority;
+      priority: core.CommandPriority;
       step: number;
     };
     expect(secondQueued.step).toBe(1);
@@ -325,7 +326,7 @@ describe('runtime.worker integration', () => {
       };
     };
 
-    const enqueueSpy = vi.spyOn(CommandQueue.prototype, 'enqueue');
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     harness = initializeRuntimeWorker({
@@ -372,6 +373,14 @@ describe('runtime.worker integration', () => {
     };
 
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+    const serializedState: core.SerializedResourceState = {
+      ids: ['energy'],
+      amounts: [5],
+      capacities: [10],
+      flags: [0],
+    };
 
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
@@ -385,8 +394,25 @@ describe('runtime.worker integration', () => {
       type: 'RESTORE_SESSION',
       schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       elapsedMs: 1200,
+      state: serializedState,
       resourceDeltas: { energy: 10 },
     });
+
+    expect(setGameStateSpy).toHaveBeenCalledWith(serializedState);
+    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+      type: string;
+      payload: { elapsedMs: number; resourceDeltas: Record<string, number> };
+      priority: core.CommandPriority;
+    };
+    expect(offlineCommand.type).toBe(
+      core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    );
+    expect(offlineCommand.payload).toMatchObject({
+      elapsedMs: 1200,
+      resourceDeltas: { energy: 10 },
+    });
+    expect(offlineCommand.priority).toBe(core.CommandPriority.SYSTEM);
 
     const restoredEnvelope = context.postMessage.mock.calls.find(
       ([payload]) =>
@@ -415,6 +441,50 @@ describe('runtime.worker integration', () => {
     expect(restoreError!.error).toMatchObject({
       code: 'RESTORE_FAILED',
     });
+    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects restore payloads with non-finite resource delta values', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: 100,
+      resourceDeltas: { energy: Number.POSITIVE_INFINITY },
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).not.toHaveBeenCalled();
   });
 
   it('drops stale commands and reports replay errors', () => {
@@ -427,7 +497,7 @@ describe('runtime.worker integration', () => {
       };
     };
 
-    const enqueueSpy = vi.spyOn(CommandQueue.prototype, 'enqueue');
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     harness = initializeRuntimeWorker({
@@ -485,7 +555,7 @@ describe('runtime.worker integration', () => {
       };
     };
 
-    const enqueueSpy = vi.spyOn(CommandQueue.prototype, 'enqueue');
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     harness = initializeRuntimeWorker({
