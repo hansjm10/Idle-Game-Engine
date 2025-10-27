@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "id": "sample-pack",
+    "id": "@idle-engine/sample-pack",
     "title": {
       "default": "Sample Content Pack",
       "variants": {}
@@ -9,12 +9,12 @@
       "default": "Reference data for the prototype milestone and automated tests.",
       "variants": {}
     },
-    "version": "0.1.0",
-    "engine": "^0.1.0",
+    "version": "0.2.0",
+    "engine": ">=0.4.0 <0.6.0",
     "authors": ["Idle Engine Team"],
     "defaultLocale": "en-US",
     "supportedLocales": ["en-US"],
-    "tags": ["Sample", "Prototype"],
+    "tags": ["sample", "prototype"],
     "links": [
       {
         "kind": "docs",
@@ -25,7 +25,7 @@
   },
   "resources": [
     {
-      "id": "energy",
+      "id": "sample-pack.energy",
       "name": {
         "default": "Energy",
         "variants": {}
@@ -39,7 +39,7 @@
       "order": 1
     },
     {
-      "id": "crystal",
+      "id": "sample-pack.crystal",
       "name": {
         "default": "Crystal",
         "variants": {}
@@ -51,7 +51,7 @@
       "unlocked": false,
       "unlockCondition": {
         "kind": "resourceThreshold",
-        "resourceId": "energy",
+        "resourceId": "sample-pack.energy",
         "comparator": "gte",
         "amount": {
           "kind": "constant",
@@ -63,14 +63,14 @@
   ],
   "generators": [
     {
-      "id": "reactor",
+      "id": "sample-pack.reactor",
       "name": {
         "default": "Reactor",
         "variants": {}
       },
       "produces": [
         {
-          "resourceId": "energy",
+          "resourceId": "sample-pack.energy",
           "rate": {
             "kind": "constant",
             "value": 1
@@ -79,7 +79,7 @@
       ],
       "consumes": [],
       "purchase": {
-        "currencyId": "energy",
+        "currencyId": "sample-pack.energy",
         "baseCost": 10,
         "costCurve": {
           "kind": "exponential",
@@ -94,14 +94,14 @@
       "order": 1
     },
     {
-      "id": "harvester",
+      "id": "sample-pack.harvester",
       "name": {
         "default": "Crystal Harvester",
         "variants": {}
       },
       "produces": [
         {
-          "resourceId": "crystal",
+          "resourceId": "sample-pack.crystal",
           "rate": {
             "kind": "constant",
             "value": 0.25
@@ -110,7 +110,7 @@
       ],
       "consumes": [
         {
-          "resourceId": "energy",
+          "resourceId": "sample-pack.energy",
           "rate": {
             "kind": "constant",
             "value": 0.5
@@ -118,7 +118,7 @@
         }
       ],
       "purchase": {
-        "currencyId": "energy",
+        "currencyId": "sample-pack.energy",
         "baseCost": 25,
         "costCurve": {
           "kind": "linear",
@@ -128,7 +128,7 @@
       },
       "baseUnlock": {
         "kind": "resourceThreshold",
-        "resourceId": "energy",
+        "resourceId": "sample-pack.energy",
         "comparator": "gte",
         "amount": {
           "kind": "constant",
@@ -141,7 +141,7 @@
   "upgrades": [],
   "metrics": [
     {
-      "id": "energy-produced",
+      "id": "sample-pack.energy-produced",
       "name": {
         "default": "Total Energy Produced",
         "variants": {}
@@ -159,7 +159,7 @@
   ],
   "achievements": [
     {
-      "id": "first-energy",
+      "id": "sample-pack.first-energy",
       "name": {
         "default": "First Spark",
         "variants": {}
@@ -172,7 +172,7 @@
       "tier": "bronze",
       "track": {
         "kind": "resource",
-        "resourceId": "energy",
+        "resourceId": "sample-pack.energy",
         "threshold": {
           "kind": "constant",
           "value": 1

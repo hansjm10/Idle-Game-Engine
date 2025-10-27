@@ -29,7 +29,7 @@ The content DSL distributed through `@idle-engine/content-schema` already return
 
 ## 4. Current State
 
-- `packages/content-sample/src/index.ts` now imports the compiler's generated module (`src/generated/sample-pack.generated.ts`), re-exporting the rehydrated pack alongside digest, summary, and module indices. Earlier revisions called `parseContentPack` on `content/pack.json` during import, re-running schema validation for every consumer.
+- `packages/content-sample/src/index.ts` now imports the compiler's generated module (`src/generated/@idle-engine/sample-pack.generated.ts`), re-exporting the rehydrated pack alongside digest, summary, and module indices. Earlier revisions called `parseContentPack` on `content/pack.json` during import, re-running schema validation for every consumer.
 - `tools/content-schema-cli/src/generate.js` builds the runtime event manifest and validates packs but does not write pack-level artifacts or logs.
 - No package currently writes `content/compiled/` or `src/generated/` outputs; a search for those directories under `packages/` returns nothing.
 - There is no shared digest registry, and Lefthook cannot assert that authored JSON matches committed outputs because none exist yet.
