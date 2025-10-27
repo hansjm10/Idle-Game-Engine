@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@idle-engine/config-vitest": "workspace:*",
-    "fast-check": "^3.19.0",
+    "fast-check": "^4.3.0",
     "vitest": "^3.2.4",
     "vitest-llm-reporter": "^1.2.0"
   }
