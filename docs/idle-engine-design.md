@@ -157,6 +157,7 @@ function runTick(deltaMs) {
 - Content described via declarative TypeScript/JSON modules and compiled into normalized definitions.
 - Support for hierarchical content packages (base game, seasonal event, micro-DLC) with dependency resolution.
 - Validation tooling to verify IDs, cyclical dependencies, formula sanity before shipping.
+- Property-based sanitization guidance lives in [`docs/content-schema-rollout-decisions.md#6-property-based-formula-sanitization-guidance`](content-schema-rollout-decisions.md#6-property-based-formula-sanitization-guidance); run the schema and CLI suites before shipping new formulas.
 - Provide CLI to bundle content, generate documentation, and run balance simulations.
 - `pnpm generate` invokes `tools/content-schema-cli`, which now validates every `content/pack.json` via `@idle-engine/content-schema` before refreshing runtime event manifests. The CLI emits structured JSON log events (`content_pack.validated`, `content_pack.compiled`, `content_pack.validation_failed`, `watch.run`, etc.) so automation can gate builds on failures, warnings, or drift.
 - Watch and check flows are first-class: `--watch` keeps the pipeline alive after failures while surfacing iteration summaries, and `--check` exits non-zero whenever validation summaries or compiled artifacts would change. Lefthook and CI invoke `pnpm generate --check` to prevent stale outputs from landing.
