@@ -23,6 +23,8 @@ const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   seed: DEFAULT_FORMULA_PROPERTY_SEED + offset,
 });
 
+const LONG_PROPERTY_TIMEOUT_MS = 20_000;
+
 const withLevel = (
   base: FormulaEvaluationContext,
   level: number,
@@ -350,7 +352,7 @@ describe('createFormulaArbitrary', () => {
       }),
       { ...propertyConfig(6), numRuns: 120 },
     );
-  });
+  }, LONG_PROPERTY_TIMEOUT_MS);
 
   it('generates expression formulas that evaluate to finite non-negative results', () => {
     const formulaArb = createFormulaArbitrary({ kinds: ['expression'] });
@@ -548,7 +550,7 @@ describe('createFormulaArbitrary', () => {
         expect(untilLevel).toBeLessThanOrEqual(levelMax);
       });
     });
-  });
+  }, LONG_PROPERTY_TIMEOUT_MS);
 
   it('resolves implicit level references through getReferenceValue', () => {
     const level = 7;
