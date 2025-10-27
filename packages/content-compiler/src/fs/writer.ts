@@ -211,28 +211,62 @@ async function collectExistingArtifacts(
     const compiledDir = path.join(packageRoot, 'content', 'compiled');
     const generatedDir = path.join(packageRoot, 'src', 'generated');
 
-    const compiledFiles = await readDirSafe(compiledDir);
-    for (const file of compiledFiles) {
-      if (!file.isFile() || !file.name.endsWith(JSON_SUFFIX)) {
-        continue;
-      }
-      const slug = file.name.slice(0, -JSON_SUFFIX.length);
+    const compiledFiles = await collectArtifactFiles(compiledDir, JSON_SUFFIX);
+    for (const filePath of compiledFiles) {
+      const slug = slugFromArtifactPath(compiledDir, filePath, JSON_SUFFIX);
       const record = ensureRecord(artifacts, slug);
-      record.json.add(path.join(compiledDir, file.name));
+      record.json.add(filePath);
     }
 
-    const generatedFiles = await readDirSafe(generatedDir);
-    for (const file of generatedFiles) {
-      if (!file.isFile() || !file.name.endsWith(MODULE_SUFFIX)) {
-        continue;
-      }
-      const slug = file.name.slice(0, -MODULE_SUFFIX.length);
+    const generatedFiles = await collectArtifactFiles(generatedDir, MODULE_SUFFIX);
+    for (const filePath of generatedFiles) {
+      const slug = slugFromArtifactPath(generatedDir, filePath, MODULE_SUFFIX);
       const record = ensureRecord(artifacts, slug);
-      record.module.add(path.join(generatedDir, file.name));
+      record.module.add(filePath);
     }
   }
 
   return artifacts;
+}
+
+async function collectArtifactFiles(
+  rootDirectory: string,
+  suffix: string,
+): Promise<string[]> {
+  const files: string[] = [];
+  const pending: string[] = [rootDirectory];
+
+  while (pending.length > 0) {
+    const currentDir = pending.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    const entries = await readDirSafe(currentDir);
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(suffix)) {
+        continue;
+      }
+      files.push(path.resolve(entryPath));
+    }
+  }
+
+  return files;
+}
+
+function slugFromArtifactPath(
+  rootDirectory: string,
+  artifactPath: string,
+  suffix: string,
+): string {
+  const relativePath = path.relative(rootDirectory, artifactPath);
+  const slugPath = relativePath.slice(0, -suffix.length);
+  return toPosixPath(slugPath);
 }
 
 function ensureRecord(

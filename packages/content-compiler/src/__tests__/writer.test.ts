@@ -114,6 +114,23 @@ describe('writeWorkspaceArtifacts', () => {
     expect(tmpFiles).toHaveLength(0);
   });
 
+  it('writes artifacts for scoped slugs into nested directories', async () => {
+    const workspace = await createWorkspace();
+    await workspace.writePack('alpha', createPackDocument('@scope/scoped-pack'));
+    const packResult = await compileFirstPack(workspace);
+    if (packResult.status !== 'compiled') throw new Error('Expected compilation success');
+
+    const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+    const writeResult = await writeWorkspaceArtifacts(fsHandle, [packResult]);
+
+    const jsonOperation = findOperation(writeResult, '@scope/scoped-pack', 'json');
+    const moduleOperation = findOperation(writeResult, '@scope/scoped-pack', 'module');
+    expect(jsonOperation?.action).toBe('written');
+    expect(moduleOperation?.action).toBe('written');
+    expect(jsonOperation?.path).toContain('@scope/scoped-pack.normalized.json');
+    expect(moduleOperation?.path).toContain('@scope/scoped-pack.generated.ts');
+  });
+
   it('does not rewrite identical artifacts', async () => {
     const workspace = await createWorkspace();
     await workspace.writePack('alpha', createPackDocument('stable-pack'));
@@ -179,6 +196,35 @@ describe('writeWorkspaceArtifacts', () => {
 
     const jsonOperation = findOperation(writeResult, 'orphan-pack', 'json');
     const moduleOperation = findOperation(writeResult, 'orphan-pack', 'module');
+    expect(jsonOperation?.action).toBe('deleted');
+    expect(moduleOperation?.action).toBe('deleted');
+    await expect(fs.access(jsonPath)).rejects.toThrow();
+    await expect(fs.access(modulePath)).rejects.toThrow();
+  });
+
+  it('removes scoped pack artifacts when packs are deleted', async () => {
+    const workspace = await createWorkspace();
+    const compiledDir = path.join(
+      workspace.rootDirectory,
+      'packages/orphan/content/compiled/@scope',
+    );
+    const generatedDir = path.join(
+      workspace.rootDirectory,
+      'packages/orphan/src/generated/@scope',
+    );
+    await fs.mkdir(compiledDir, { recursive: true });
+    await fs.mkdir(generatedDir, { recursive: true });
+
+    const jsonPath = path.join(compiledDir, 'orphan-pack.normalized.json');
+    const modulePath = path.join(generatedDir, 'orphan-pack.generated.ts');
+    await fs.writeFile(jsonPath, '{}', 'utf8');
+    await fs.writeFile(modulePath, 'export {}', 'utf8');
+
+    const fsHandle: WorkspaceFS = { rootDirectory: workspace.rootDirectory };
+    const writeResult = await writeWorkspaceArtifacts(fsHandle, []);
+
+    const jsonOperation = findOperation(writeResult, '@scope/orphan-pack', 'json');
+    const moduleOperation = findOperation(writeResult, '@scope/orphan-pack', 'module');
     expect(jsonOperation?.action).toBe('deleted');
     expect(moduleOperation?.action).toBe('deleted');
     await expect(fs.access(jsonPath)).rejects.toThrow();
