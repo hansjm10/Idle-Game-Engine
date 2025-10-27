@@ -263,6 +263,8 @@ export function initializeRuntimeWorker(
       });
     } finally {
       restoreInProgress = false;
+      // Resume ticks from current wall-clock so we do not fast-forward after restore.
+      lastTimestamp = now();
       flushQueuedCommands();
     }
   };
