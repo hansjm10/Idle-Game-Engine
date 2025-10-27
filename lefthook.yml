@@ -1,16 +1,104 @@
 pre-commit:
-  parallel: false
+  parallel: true
   commands:
     lint:
+      glob:
+        - "packages/**/*.js"
+        - "packages/**/*.jsx"
+        - "packages/**/*.ts"
+        - "packages/**/*.tsx"
+        - "packages/**/*.cjs"
+        - "packages/**/*.mjs"
+        - "packages/**/*.json"
+        - "services/**/*.js"
+        - "services/**/*.jsx"
+        - "services/**/*.ts"
+        - "services/**/*.tsx"
+        - "services/**/*.cjs"
+        - "services/**/*.mjs"
+        - "services/**/*.json"
+        - "tools/**/*.js"
+        - "tools/**/*.jsx"
+        - "tools/**/*.ts"
+        - "tools/**/*.tsx"
+        - "tools/**/*.cjs"
+        - "tools/**/*.mjs"
+        - "tools/**/*.json"
+        - "*.cjs"
+        - "*.mjs"
+        - "*.js"
+        - "*.ts"
+        - "*.tsx"
+        - "*.json"
       run: pnpm lint
     typecheck:
+      glob:
+        - "packages/**/*.ts"
+        - "packages/**/*.tsx"
+        - "packages/**/tsconfig*.json"
+        - "services/**/*.ts"
+        - "services/**/*.tsx"
+        - "services/**/tsconfig*.json"
+        - "tools/**/*.ts"
+        - "tools/**/*.tsx"
+        - "tools/**/tsconfig*.json"
+        - "*.ts"
+        - "*.tsx"
+        - "tsconfig.base.json"
+        - "tsconfig*.json"
       run: pnpm typecheck
-    test:
-      run: pnpm test:ci
     build:
+      glob:
+        - "packages/**"
+        - "services/**"
+        - "tools/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - "tsconfig.base.json"
+      exclude:
+        - "packages/**/README.md"
+        - "services/**/README.md"
+        - "tools/**/README.md"
       run: pnpm build
     generate:
+      glob:
+        - "content/**"
+        - "packages/content-*/**"
+        - "tools/content-*/**"
+        - "packages/core/src/events/runtime-event-base-metadata.json"
+        - "packages/core/src/events/runtime-event-manifest.generated.ts"
       run: pnpm generate --check
+    test-core:
+      glob:
+        - "packages/core/**"
+        - "packages/config-vitest/**"
+        - "services/social/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
+      run: pnpm --filter @idle-engine/core --filter @idle-engine/social-service run --if-present test:ci
+    test-content:
+      glob:
+        - "content/**"
+        - "packages/config-vitest/**"
+        - "packages/content-*/**"
+        - "tools/content-*/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
+      run: pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci
+    test-shell-a11y:
+      glob:
+        - "packages/shell-web/**"
+        - "tools/a11y-smoke-tests/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
+      run: pnpm --filter @idle-engine/a11y-smoke-tests run test:ci
     docs-content-dsl-guidelines:
       glob: docs/content-dsl-usage-guidelines-design.md
       run: |
