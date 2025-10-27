@@ -50,7 +50,7 @@ Responding to the directive "Create a design document for issue #16, use gh to f
   - Guard against API changes that could invalidate diagnostics consumers or content packs waiting on snapshot schemas.
 
 ## 5. Current State
-Issue #16 currently relies on a minimal Worker harness that exposes state snapshots and diagnostics updates but lacks formal documentation. The worker bootstrap constructs a runtime, handles messages, and emits state deltas (`packages/shell-web/src/runtime.worker.ts:74`). The React hook lazily instantiates `WorkerBridgeImpl`, subscribes to worker messages, and disposes on unmount (`packages/shell-web/src/modules/worker-bridge.ts:181`). The shell's `App` component consumes this hook to push commands and render simple diagnostics (`packages/shell-web/src/modules/App.tsx:14`). Architecture docs confirm alignment with the runtime lifecycle but do not specify failure handling or contract versioning (`docs/runtime-step-lifecycle.md:19`). Tests cover basic bridging scenarios (`packages/shell-web/src/runtime.worker.test.ts:1`), yet they do not address reconnection, malformed message rejection, or diagnostics gating.
+Issue #16 currently relies on a minimal Worker harness that exposes state snapshots and diagnostics updates but lacks formal documentation. The worker bootstrap constructs a runtime, handles messages, and emits state deltas (`packages/shell-web/src/runtime.worker.ts:74`). The React hook lazily instantiates `WorkerBridgeImpl`, subscribes to worker messages, and disposes on unmount (`packages/shell-web/src/modules/worker-bridge.ts:181`). The shell's `App` component consumes this hook to push commands and render simple diagnostics (`packages/shell-web/src/modules/App.tsx:14`). Architecture docs confirm alignment with the runtime lifecycle but do not specify failure handling or contract versioning (`docs/runtime-step-lifecycle.md:19`). Tests cover core bridging scenarios, including gating diagnostics updates behind a subscription handshake (`packages/shell-web/src/runtime.worker.test.ts:186`), yet they do not address reconnection resilience or malformed message rejection.
 
 ## 6. Proposed Solution
 
@@ -90,7 +90,7 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
   - Expose console warnings when commands are dropped or diagnostics are disabled by policy, guiding agents during debugging.
   - Forward runtime diagnostics deltas downstream without flooding logs; implement throttling if the UI main thread lags.
 - **Security & Compliance**
-  - Restrict Worker context to treat all UI-originating commands as `CommandPriority.PLAYER`, preventing privilege escalation (`packages/core/src/index.ts:162`).
+  - Restrict Worker context to treat all UI-originating commands as `CommandPriority.PLAYER`, preventing privilege escalation (`packages/shell-web/src/runtime.worker.ts:170`).
   - Ensure no PII crosses the bridge; payloads should remain gameplay data scoped to the local session. Clarify that the Worker runs in-browser only, limiting exposure.
 
 ## 7. Work Breakdown & Delivery Plan
