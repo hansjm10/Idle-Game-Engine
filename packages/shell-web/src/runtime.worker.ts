@@ -216,7 +216,7 @@ export function initializeRuntimeWorker(
       return;
     }
 
-    if (issuedAt <= lastAcceptedCommandIssuedAt) {
+    if (issuedAt < lastAcceptedCommandIssuedAt) {
       console.warn('[runtime.worker] Dropping stale command', {
         type,
         issuedAt,
