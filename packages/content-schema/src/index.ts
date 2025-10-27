@@ -29,6 +29,8 @@ export * from './base/ids.js';
 export * from './base/localization.js';
 export * from './base/numbers.js';
 export * from './base/formulas.js';
+export * from './base/formula-evaluator.js';
+export * from './base/formulas.arbitraries.js';
 export * from './base/conditions.js';
 
 export * from './modules/metadata.js';

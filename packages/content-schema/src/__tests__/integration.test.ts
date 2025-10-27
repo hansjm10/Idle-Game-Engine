@@ -8,7 +8,12 @@ import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import type { z } from 'zod';
 
-import { createContentPackValidator } from '../index.js';
+import {
+  evaluateNumericFormula,
+  type FormulaEvaluationContext,
+} from '../base/formula-evaluator.js';
+import { createDeterministicFormulaEvaluationContext } from '../base/formulas.arbitraries.js';
+import type { NumericFormula } from '../base/formulas.js';
 import type { ContentSchemaOptions } from '../pack.js';
 import { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import {
@@ -25,6 +30,7 @@ import {
   selfReferencingDependencyFixture,
   validComprehensivePackFixture,
 } from '../__fixtures__/integration-packs.js';
+import { createContentPackValidator } from '../index.js';
 
 type ContentId = z.infer<typeof contentIdSchema>;
 type PackId = z.infer<typeof packSlugSchema>;
@@ -208,6 +214,84 @@ describe('Integration: Cyclic Dependencies', () => {
         }),
       ]),
     );
+  });
+});
+
+describe('Integration: Formula Evaluation Context', () => {
+  it('requires variables and entities when evaluating normalized formulas', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(validComprehensivePackFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const { pack } = result.data;
+    const generator = pack.generators.find(
+      (definition) => definition.id === 'solar-panel',
+    );
+
+    expect(generator).toBeDefined();
+    if (!generator) return;
+
+    const production = generator.produces[0];
+    expect(production).toBeDefined();
+    if (!production) return;
+
+    expect(production.rate.kind).toBe('linear');
+    if (production.rate.kind !== 'linear') return;
+
+    const baseContext = createDeterministicFormulaEvaluationContext({
+      resource: pack.resources.map((resource) => resource.id),
+      generator: pack.generators.map((definition) => definition.id),
+    });
+
+    const level = 4;
+    const evaluationContext: FormulaEvaluationContext = {
+      ...baseContext,
+      variables: {
+        ...baseContext.variables,
+        level,
+      },
+    };
+
+    const emptyContext: FormulaEvaluationContext = {};
+    expect(() =>
+      evaluateNumericFormula(production.rate, emptyContext),
+    ).toThrowError(
+      /Missing variable "level" in formula evaluation context/,
+    );
+
+    const rate = evaluateNumericFormula(production.rate, evaluationContext);
+    expect(rate).toBeCloseTo(
+      production.rate.base + production.rate.slope * level,
+    );
+
+    const resourceId = production.resourceId;
+    const resourceValueFormula: NumericFormula = {
+      kind: 'expression',
+      expression: {
+        kind: 'ref',
+        target: {
+          type: 'resource',
+          id: resourceId,
+        },
+      },
+    };
+
+    const missingEntityContext: FormulaEvaluationContext = {
+      variables: evaluationContext.variables,
+    };
+    expect(() =>
+      evaluateNumericFormula(resourceValueFormula, missingEntityContext),
+    ).toThrowError(
+      /Missing entity lookup for type "resource" while resolving "energy"/,
+    );
+
+    const resourceValue = evaluateNumericFormula(
+      resourceValueFormula,
+      evaluationContext,
+    );
+    expect(resourceValue).toBe(100);
   });
 });
 

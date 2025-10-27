@@ -5,17 +5,17 @@ import { finiteNumberSchema } from './numbers.js';
 
 type ContentId = z.infer<typeof contentIdSchema>;
 
-type VariableReferenceTarget = {
+export type VariableReferenceTarget = {
   type: 'variable';
   name: 'level' | 'time' | 'deltaTime';
 };
 
-type EntityReferenceTarget = {
+export type EntityReferenceTarget = {
   type: 'resource' | 'generator' | 'upgrade' | 'automation' | 'prestigeLayer';
   id: ContentId;
 };
 
-type ExpressionNodeModel =
+export type ExpressionNodeModel =
   | { kind: 'literal'; value: number }
   | { kind: 'ref'; target: VariableReferenceTarget | EntityReferenceTarget }
   | {
@@ -35,7 +35,7 @@ type ExpressionNodeModel =
       args: ExpressionNodeModel[];
     };
 
-type NumericFormulaModel =
+export type NumericFormulaModel =
   | { kind: 'constant'; value: number }
   | { kind: 'linear'; base: number; slope: number }
   | {
@@ -103,7 +103,7 @@ type NumericFormulaInput =
   | { kind: 'piecewise'; pieces: PiecewiseSegmentInput[] }
   | { kind: 'expression'; expression: ExpressionNodeInput };
 
-const BINARY_OPERATORS = [
+export const BINARY_OPERATORS = [
   'add',
   'sub',
   'mul',
@@ -113,7 +113,7 @@ const BINARY_OPERATORS = [
   'max',
 ] as const;
 
-const UNARY_OPERATORS = [
+export const UNARY_OPERATORS = [
   'abs',
   'ceil',
   'floor',
@@ -123,7 +123,7 @@ const UNARY_OPERATORS = [
   'ln',
 ] as const;
 
-const CALL_FUNCTION_NAMES = [
+export const CALL_FUNCTION_NAMES = [
   'clamp',
   'lerp',
   'min3',
@@ -132,10 +132,19 @@ const CALL_FUNCTION_NAMES = [
   'root',
 ] as const;
 
-const MAX_EXPRESSION_DEPTH = 16;
-const MAX_EXPRESSION_NODE_COUNT = 256;
-const MAX_FORMULA_DEPTH = 16;
-const MAX_FORMULA_NODE_COUNT = 256;
+export const CALL_FUNCTION_ARITY = {
+  clamp: 3,
+  lerp: 3,
+  min3: 3,
+  max3: 3,
+  pow10: 1,
+  root: 2,
+} as const satisfies Record<(typeof CALL_FUNCTION_NAMES)[number], number>;
+
+export const MAX_EXPRESSION_DEPTH = 16;
+export const MAX_EXPRESSION_NODE_COUNT = 256;
+export const MAX_FORMULA_DEPTH = 16;
+export const MAX_FORMULA_NODE_COUNT = 256;
 
 const variableReferenceTargetSchema = z
   .object({
@@ -168,39 +177,51 @@ const literalExpressionSchema = z
 const createExpressionNodeSchema = (
   self: z.ZodType<ExpressionNodeModel, z.ZodTypeDef, ExpressionNodeInput>,
 ) =>
-  z.discriminatedUnion('kind', [
-    literalExpressionSchema,
-    z
-      .object({
-        kind: z.literal('ref'),
-        target: expressionReferenceTargetSchema,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('binary'),
-        op: z.enum(BINARY_OPERATORS),
-        left: self,
-        right: self,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('unary'),
-        op: z.enum(UNARY_OPERATORS),
-        operand: self,
-      })
-      .strict(),
-    z
-      .object({
-        kind: z.literal('call'),
-        name: z.enum(CALL_FUNCTION_NAMES),
-        args: z.array(self).min(1, {
-          message: 'Function calls must supply at least one argument.',
-        }),
-      })
-      .strict(),
-  ]);
+  z
+    .discriminatedUnion('kind', [
+      literalExpressionSchema,
+      z
+        .object({
+          kind: z.literal('ref'),
+          target: expressionReferenceTargetSchema,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('binary'),
+          op: z.enum(BINARY_OPERATORS),
+          left: self,
+          right: self,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('unary'),
+          op: z.enum(UNARY_OPERATORS),
+          operand: self,
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal('call'),
+          name: z.enum(CALL_FUNCTION_NAMES),
+          args: z.array(self),
+        })
+        .strict(),
+    ])
+    .superRefine((node, ctx) => {
+      if (node.kind !== 'call') {
+        return;
+      }
+      const expectedArity = CALL_FUNCTION_ARITY[node.name];
+      if (node.args.length !== expectedArity) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Function ${node.name} expects ${expectedArity} arguments, received ${node.args.length}.`,
+          path: ['args'],
+        });
+      }
+    });
 
 export const expressionNodeSchema: z.ZodType<
   ExpressionNodeModel,
