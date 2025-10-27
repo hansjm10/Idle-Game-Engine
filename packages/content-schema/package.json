@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "fast-check": "^4.3.0",
     "semver": "^7.6.3",
     "zod": "^3.24.1"
   },
@@ -33,7 +34,6 @@
     "@types/node": "^24.9.1",
     "@types/semver": "^7.5.8",
     "eslint": "^9.37.0",
-    "fast-check": "^4.3.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
