@@ -728,7 +728,7 @@ function parseArgs(argv) {
 function printUsage() {
   console.log(
     [
-      'Usage: pnpm --filter @idle-engine/content-schema-cli run compile [options]',
+      'Usage: pnpm --filter @idle-engine/content-validation-cli run compile [options]',
       '',
       'Options:',
       '  --check             Run without writing files; exits 1 when drift detected.',

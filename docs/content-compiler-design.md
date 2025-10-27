@@ -255,7 +255,7 @@ export interface ModuleIndexTables {
 
 ### 5.8 Developer Experience & Adoption
 
-- `tools/content-schema-cli` gains a `compile` command (`pnpm --filter @idle-engine/content-schema-cli run compile`) and updates `generate` to execute manifest regeneration → validation → compilation in order.
+- `tools/content-schema-cli` gains a `compile` command (`pnpm --filter @idle-engine/content-validation-cli run compile`) and updates `generate` to execute manifest regeneration → validation → compilation in order.
 - `--watch` uses `chokidar` to observe authoring JSON and schema inputs, debouncing writes and ignoring compiler-owned outputs (`**/content/compiled/**`, `**/src/generated/*.generated.ts`) to avoid loops.
 - `packages/content-sample` switches to importing the generated module, keeping the direct JSON import only as a fallback test helper.
 - Documentation (`docs/content-schema-rollout-decisions.md`, `docs/implementation-plan.md`) and READMEs will be updated once the compiler ships, so contributors know to run `pnpm generate` after editing content.
