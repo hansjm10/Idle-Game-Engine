@@ -35,13 +35,17 @@ pre-commit:
       glob:
         - "packages/**/*.ts"
         - "packages/**/*.tsx"
+        - "packages/**/tsconfig*.json"
         - "services/**/*.ts"
         - "services/**/*.tsx"
+        - "services/**/tsconfig*.json"
         - "tools/**/*.ts"
         - "tools/**/*.tsx"
+        - "tools/**/tsconfig*.json"
         - "*.ts"
         - "*.tsx"
         - "tsconfig.base.json"
+        - "tsconfig*.json"
       run: pnpm typecheck
     build:
       glob:
@@ -62,6 +66,7 @@ pre-commit:
         - "content/**"
         - "packages/content-*/**"
         - "tools/content-*/**"
+        - "packages/core/src/events/runtime-event-base-metadata.json"
         - "packages/core/src/events/runtime-event-manifest.generated.ts"
       run: pnpm generate --check
     test-core:
