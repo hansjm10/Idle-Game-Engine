@@ -6,7 +6,9 @@ import {
   CommandSource,
   WorkerBridgeImpl,
   type RuntimeStateSnapshot,
+  type WorkerBridgeErrorDetails,
 } from './worker-bridge.js';
+import { WORKER_MESSAGE_SCHEMA_VERSION } from './runtime-worker-protocol.js';
 
 type MessageListener<TData = unknown> = (event: { data: TData }) => void;
 
@@ -50,28 +52,42 @@ class MockWorker {
 }
 
 describe('WorkerBridgeImpl', () => {
-  it('wraps player commands and posts them to the worker', () => {
+  it('queues commands until the worker sends READY', async () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const readyPromise = bridge.awaitReady();
 
-    bridge.sendCommand('PING', { issuedAt: 123 });
+    bridge.sendCommand('PING', { iteration: 1 });
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    await readyPromise;
 
     expect(worker.postMessage).toHaveBeenCalledTimes(1);
     const envelope = worker.postMessage.mock.calls[0]![0] as {
       type: string;
+      schemaVersion: number;
+      requestId?: string;
       source: CommandSource;
-      command: { type: string; payload: unknown; timestamp: number };
+      command: { type: string; payload: unknown; issuedAt: number };
     };
 
     expect(envelope).toMatchObject({
       type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       source: CommandSource.PLAYER,
       command: {
         type: 'PING',
-        payload: { issuedAt: 123 },
+        payload: { iteration: 1 },
       },
     });
-    expect(typeof envelope.command.timestamp).toBe('number');
+    expect(typeof envelope.command.issuedAt).toBe('number');
+    expect(typeof envelope.requestId).toBe('string');
   });
 
   it('notifies subscribers when state updates arrive from the worker', () => {
@@ -80,6 +96,11 @@ describe('WorkerBridgeImpl', () => {
       new WorkerBridgeImpl<RuntimeStateSnapshot>(worker as unknown as Worker);
     const handler = vi.fn<void, [RuntimeStateSnapshot]>();
     bridge.onStateUpdate(handler);
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
 
     const snapshot: RuntimeStateSnapshot = {
       currentStep: 7,
@@ -98,6 +119,7 @@ describe('WorkerBridgeImpl', () => {
 
     worker.emitMessage('message', {
       type: 'STATE_UPDATE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       state: snapshot,
     });
 
@@ -107,6 +129,7 @@ describe('WorkerBridgeImpl', () => {
     bridge.offStateUpdate(handler);
     worker.emitMessage('message', {
       type: 'STATE_UPDATE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       state: snapshot,
     });
 
@@ -117,12 +140,20 @@ describe('WorkerBridgeImpl', () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
 
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
     expect(worker.listenerCount('message')).toBe(1);
 
     bridge.dispose();
 
     expect(worker.listenerCount('message')).toBe(0);
-    expect(worker.postMessage).toHaveBeenCalledWith({ type: 'TERMINATE' });
+    expect(worker.postMessage).toHaveBeenCalledWith({
+      type: 'TERMINATE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(() => bridge.sendCommand('PING', {})).toThrow(
       'WorkerBridge has been disposed',
@@ -132,18 +163,28 @@ describe('WorkerBridgeImpl', () => {
     );
   });
 
-  it('subscribes to diagnostics updates and forwards payloads', () => {
+  it('subscribes to diagnostics updates and forwards payloads', async () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
 
     const handler = vi.fn<void, [DiagnosticTimelineResult]>();
+    const readyPromise = bridge.awaitReady();
     bridge.onDiagnosticsUpdate(handler);
     bridge.enableDiagnostics();
 
-    const subscribeEnvelope = worker.postMessage.mock.calls.at(-1)?.[0] as {
-      type?: string;
-    };
-    expect(subscribeEnvelope?.type).toBe('DIAGNOSTICS_SUBSCRIBE');
+    expect(worker.postMessage).not.toHaveBeenCalled();
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    await readyPromise;
+
+    expect(worker.postMessage.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: 'DIAGNOSTICS_SUBSCRIBE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
 
     const diagnosticsPayload = Object.freeze({
       entries: Object.freeze([]),
@@ -161,6 +202,7 @@ describe('WorkerBridgeImpl', () => {
 
     worker.emitMessage('message', {
       type: 'DIAGNOSTICS_UPDATE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       diagnostics: diagnosticsPayload,
     });
 
@@ -170,9 +212,42 @@ describe('WorkerBridgeImpl', () => {
     bridge.offDiagnosticsUpdate(handler);
     worker.emitMessage('message', {
       type: 'DIAGNOSTICS_UPDATE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       diagnostics: diagnosticsPayload,
     });
 
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits error events when the worker reports failures', () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    bridge.onError(errorHandler);
+
+    const errorPayload = {
+      type: 'ERROR',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      error: {
+        code: 'INVALID_COMMAND_PAYLOAD',
+        message: 'Invalid payload',
+        requestId: 'test-0',
+      },
+    } satisfies {
+      type: string;
+      schemaVersion: number;
+      error: WorkerBridgeErrorDetails;
+    };
+
+    worker.emitMessage('message', errorPayload);
+
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler).toHaveBeenCalledWith(errorPayload.error);
+
+    bridge.offError(errorHandler);
+    worker.emitMessage('message', errorPayload);
+    expect(errorHandler).toHaveBeenCalledTimes(1);
   });
 });
