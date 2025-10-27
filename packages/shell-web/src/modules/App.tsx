@@ -51,7 +51,8 @@ export function App() {
     };
   }, [bridge]);
 
-  const handleSendCommand = () => {
+  const handleSendCommand = async () => {
+    await bridge.awaitReady();
     bridge.sendCommand('PING', { issuedAt: performance.now() });
   };
 
