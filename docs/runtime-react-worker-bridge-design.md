@@ -71,12 +71,16 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
     - `COMMAND` (UI->Worker): `{type, payload, requestId, source, issuedAt}`
     - `STATE_UPDATE` (Worker->UI): `{currentStep, events[], backPressure}`
     - `DIAGNOSTICS_UPDATE` (Worker->UI): timeline delta snapshot
+    - `RESTORE_SESSION` (UI->Worker): `{state?, elapsedMs?, resourceDeltas?}` session resume payload
+    - `SESSION_RESTORED` (Worker->UI): acknowledgement that queueing may resume
     - `DIAGNOSTICS_SUBSCRIBE` / `DIAGNOSTICS_UNSUBSCRIBE`
     - `READY`, `ERROR`, and `TERMINATE` control messages
   - Maintain schema definitions in `packages/shell-web/src/modules/worker-bridge.ts` with TypeScript discriminated unions for agent reuse (`packages/shell-web/src/modules/worker-bridge.ts:55`).
 - **APIs & Contracts**
-  - Expand `WorkerBridge` interface to expose `awaitReady()` and `onError` callbacks while keeping existing `sendCommand`, `onStateUpdate`, and diagnostics methods (`packages/shell-web/src/modules/worker-bridge.ts:14`).
+  - Expand `WorkerBridge` interface to expose `awaitReady()`, `restoreSession()`, `disableDiagnostics()`, and `onError` callbacks while keeping existing `sendCommand`, `onStateUpdate`, and diagnostics observers (`packages/shell-web/src/modules/worker-bridge.ts:14`).
+  - Queue outbound traffic while a session restore is pending so UI code can emit user commands without racing the worker handshake.
   - Provide typed event emitters so React components receive strongly typed snapshots (`RuntimeStateSnapshot`) and diagnostics payloads.
+  - Surface worker errors through the optional `__IDLE_ENGINE_TELEMETRY__` facade so hosts can forward incidents without bundling server-only dependencies.
   - Document contract versioning in `/docs` with change log entries referencing issue #16.
 - **Tooling & Automation**
   - Update Vitest suites to cover handshake, replay protection, diagnostics gating, and disposal semantics (`packages/shell-web/src/runtime.worker.test.ts:1`).
@@ -161,10 +165,10 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
   - Announce bridge availability in weekly status report; include testing commands.
   - Update onboarding documentation to reference new bridge once rollout completes.
 
-## 13. Open Questions
-- What telemetry destination should receive Worker-side error logs? TODO (Observability Owner).
-- Are there content pack events requiring additional message types beyond STATE_UPDATE? TODO (Content Pipeline Lead).
-- Should we expose a resumable session handshake for offline progression? TODO (Product Strategy).
+## 13. Decisions Since Draft
+- Worker-side errors now surface through a lightweight telemetry hook (`__IDLE_ENGINE_TELEMETRY__`) so hosts can forward incidents to their preferred sink without pulling Node-only dependencies into the browser bundle (`packages/shell-web/src/modules/worker-bridge.ts:126`).
+- Presentation shells continue to consume content-pack events solely through the `STATE_UPDATE.state.events` array; no additional message envelopes are required for pack-defined channels.
+- A resumable session handshake ships via the `RESTORE_SESSION` / `SESSION_RESTORED` messages and the `WorkerBridge.restoreSession()` helper so offline progression can hydrate state before UI commands resume.
 
 ## 14. Follow-Up Work
 - Design persistent storage handoff between Worker and shell for save/load scenarios. Owner: TODO (Runtime Core Liaison).

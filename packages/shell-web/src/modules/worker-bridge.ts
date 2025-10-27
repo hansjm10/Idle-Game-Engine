@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 
-import type { DiagnosticTimelineResult } from '@idle-engine/core';
+import type {
+  DiagnosticTimelineResult,
+  SerializedResourceState,
+} from '@idle-engine/core';
 
 import {
   CommandSource,
@@ -9,17 +12,52 @@ import {
   type RuntimeStatePayload,
   type RuntimeWorkerCommand,
   type RuntimeWorkerDiagnosticsSubscribe,
+  type RuntimeWorkerDiagnosticsUnsubscribe,
   type RuntimeWorkerErrorDetails,
   type RuntimeWorkerInboundMessage,
   type RuntimeWorkerOutboundMessage,
+  type RuntimeWorkerRestoreSession,
+  type RuntimeWorkerSessionRestored,
 } from './runtime-worker-protocol.js';
+
+export interface WorkerRestoreSessionPayload {
+  readonly state?: SerializedResourceState;
+  readonly elapsedMs?: number;
+  readonly resourceDeltas?: Readonly<Record<string, number>>;
+}
+
+interface WorkerBridgeRestoreError extends Error {
+  details?: Record<string, unknown>;
+}
+
+type TelemetryFacadeLike = {
+  recordError?: (
+    event: string,
+    data?: Record<string, unknown>,
+  ) => void;
+};
+
+function recordTelemetryError(
+  event: string,
+  data: Record<string, unknown>,
+): void {
+  const telemetry = (globalThis as {
+    __IDLE_ENGINE_TELEMETRY__?: TelemetryFacadeLike;
+  }).__IDLE_ENGINE_TELEMETRY__;
+
+  telemetry?.recordError?.(event, data);
+}
 
 export interface WorkerBridge<TState = unknown> {
   awaitReady(): Promise<void>;
+  restoreSession(
+    payload?: WorkerRestoreSessionPayload,
+  ): Promise<void>;
   sendCommand<TPayload = unknown>(type: string, payload: TPayload): void;
   onStateUpdate(callback: (state: TState) => void): void;
   offStateUpdate(callback: (state: TState) => void): void;
   enableDiagnostics(): void;
+  disableDiagnostics(): void;
   onDiagnosticsUpdate(
     callback: (diagnostics: DiagnosticTimelineResult) => void,
   ): void;
@@ -47,6 +85,13 @@ export class WorkerBridgeImpl<TState = unknown>
   private disposed = false;
   private ready = false;
   private nextRequestId = 0;
+  private sessionReady = true;
+  private restoreDeferred:
+    | {
+        resolve: () => void;
+        reject: (error: Error) => void;
+      }
+    | null = null;
 
   private readonly handleMessage = (
     event: MessageEvent<RuntimeWorkerOutboundMessage<TState>>,
@@ -70,7 +115,33 @@ export class WorkerBridgeImpl<TState = unknown>
       return;
     }
 
+    if (envelope.type === 'SESSION_RESTORED') {
+      this.sessionReady = true;
+      const deferred = this.restoreDeferred;
+      this.restoreDeferred = null;
+      deferred?.resolve();
+      this.flushPendingMessages();
+      return;
+    }
+
     if (envelope.type === 'ERROR') {
+      if (
+        envelope.error.code === 'RESTORE_FAILED' &&
+        this.restoreDeferred
+      ) {
+        const deferred = this.restoreDeferred;
+        this.restoreDeferred = null;
+        const error: WorkerBridgeRestoreError = new Error(
+          envelope.error.message,
+        );
+        error.name = 'WorkerRestoreError';
+        if (envelope.error.details) {
+          error.details = envelope.error.details;
+        }
+        deferred.reject(error);
+        this.sessionReady = true;
+        this.flushPendingMessages();
+      }
       this.emitError(envelope.error);
       return;
     }
@@ -103,14 +174,27 @@ export class WorkerBridgeImpl<TState = unknown>
     if (!this.ready || this.disposed || this.pendingMessages.length === 0) {
       return;
     }
+    const stillQueued: RuntimeWorkerInboundMessage[] = [];
     for (const message of this.pendingMessages) {
+      if (!this.sessionReady && message.type !== 'RESTORE_SESSION') {
+        stillQueued.push(message);
+        continue;
+      }
       this.worker.postMessage(message);
     }
     this.pendingMessages.length = 0;
+    if (stillQueued.length > 0) {
+      this.pendingMessages.push(...stillQueued);
+    }
   }
 
   private emitError(error: RuntimeWorkerErrorDetails): void {
     console.error('[WorkerBridge] Worker error received', error);
+    recordTelemetryError('WorkerBridgeError', {
+      code: error.code,
+      message: error.message,
+      requestId: error.requestId ?? null,
+    });
     for (const callback of this.errorCallbacks) {
       callback(error);
     }
@@ -131,12 +215,82 @@ export class WorkerBridgeImpl<TState = unknown>
     return this.readyPromise;
   }
 
+  restoreSession(
+    payload: WorkerRestoreSessionPayload = {},
+  ): Promise<void> {
+    if (this.disposed) {
+      return Promise.reject(
+        new Error('WorkerBridge has been disposed'),
+      );
+    }
+
+    if (this.restoreDeferred) {
+      return Promise.reject(
+        new Error('A session restore is already in progress'),
+      );
+    }
+
+    if (
+      payload.elapsedMs !== undefined &&
+      (!Number.isFinite(payload.elapsedMs) || payload.elapsedMs < 0)
+    ) {
+      return Promise.reject(
+        new Error('elapsedMs must be a non-negative finite number'),
+      );
+    }
+
+    if (
+      payload.resourceDeltas !== undefined &&
+      (typeof payload.resourceDeltas !== 'object' ||
+        payload.resourceDeltas === null)
+    ) {
+      return Promise.reject(
+        new Error('resourceDeltas must be an object when provided'),
+      );
+    }
+
+    this.sessionReady = false;
+
+    const envelope: RuntimeWorkerRestoreSession = {
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      ...(payload.state !== undefined && { state: payload.state }),
+      ...(payload.elapsedMs !== undefined && {
+        elapsedMs: payload.elapsedMs,
+      }),
+      ...(payload.resourceDeltas !== undefined && {
+        resourceDeltas: payload.resourceDeltas,
+      }),
+    };
+
+    const restorePromise = new Promise<void>((resolve, reject) => {
+      this.restoreDeferred = {
+        resolve: () => {
+          this.restoreDeferred = null;
+          resolve();
+        },
+        reject: (error) => {
+          this.restoreDeferred = null;
+          reject(error);
+        },
+      };
+    });
+
+    this.postOrQueue(envelope);
+    this.flushPendingMessages();
+
+    return restorePromise;
+  }
+
   private postOrQueue(message: RuntimeWorkerInboundMessage): void {
     if (this.disposed) {
       throw new Error('WorkerBridge has been disposed');
     }
 
-    if (!this.ready) {
+    if (
+      !this.ready ||
+      (!this.sessionReady && message.type !== 'RESTORE_SESSION')
+    ) {
       this.pendingMessages.push(message);
       return;
     }
@@ -190,6 +344,18 @@ export class WorkerBridgeImpl<TState = unknown>
     this.postOrQueue(envelope);
   }
 
+  disableDiagnostics(): void {
+    if (this.disposed) {
+      throw new Error('WorkerBridge has been disposed');
+    }
+
+    const envelope: RuntimeWorkerDiagnosticsUnsubscribe = {
+      type: 'DIAGNOSTICS_UNSUBSCRIBE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    };
+    this.postOrQueue(envelope);
+  }
+
   onDiagnosticsUpdate(
     callback: (diagnostics: DiagnosticTimelineResult) => void,
   ): void {
@@ -233,6 +399,12 @@ export class WorkerBridgeImpl<TState = unknown>
     this.stateUpdateCallbacks.length = 0;
     this.diagnosticsUpdateCallbacks.length = 0;
     this.errorCallbacks.clear();
+    if (this.restoreDeferred) {
+      const deferred = this.restoreDeferred;
+      this.restoreDeferred = null;
+      deferred.reject(new Error('WorkerBridge has been disposed'));
+    }
+    this.sessionReady = true;
   }
 }
 

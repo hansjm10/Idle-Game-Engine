@@ -281,6 +281,40 @@ describe('runtime.worker integration', () => {
     expect(stateUpdateCall).toBeDefined();
   });
 
+  it('disables diagnostics when unsubscribe message is received', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    const enableSpy = vi.spyOn(harness.runtime, 'enableDiagnostics');
+
+    context.dispatch({
+      type: 'DIAGNOSTICS_SUBSCRIBE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+    expect(enableSpy).toHaveBeenCalledTimes(1);
+    expect(enableSpy.mock.calls.at(-1)).toEqual([]);
+
+    context.dispatch({
+      type: 'DIAGNOSTICS_UNSUBSCRIBE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    expect(enableSpy).toHaveBeenCalledTimes(2);
+    expect(enableSpy.mock.calls.at(-1)).toEqual([false]);
+  });
+
   it('emits structured errors when command payloads are invalid', () => {
     const scheduleTick = (callback: () => void) => {
       scheduledTick = callback;
@@ -324,6 +358,62 @@ describe('runtime.worker integration', () => {
         code: 'INVALID_COMMAND_PAYLOAD',
         requestId: 'invalid-0',
       }),
+    });
+  });
+
+  it('acknowledges session restore requests and validates payloads', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: 1200,
+      resourceDeltas: { energy: 10 },
+    });
+
+    const restoredEnvelope = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type ===
+        'SESSION_RESTORED',
+    )?.[0];
+    expect(restoredEnvelope).toMatchObject({
+      type: 'SESSION_RESTORED',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: -10,
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
     });
   });
 

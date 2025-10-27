@@ -26,6 +26,8 @@ import {
   type RuntimeWorkerError,
   type RuntimeStatePayload,
   type RuntimeEventSnapshot,
+  type RuntimeWorkerRestoreSession,
+  type RuntimeWorkerSessionRestored,
 } from './modules/runtime-worker-protocol.js';
 
 const RAF_INTERVAL_MS = 16;
@@ -69,6 +71,12 @@ export function initializeRuntimeWorker(
   let diagnosticsConfiguration:
     | DiagnosticTimelineResult['configuration']
     | undefined;
+  let restoreInProgress = false;
+  let sessionRestored = false;
+  const queuedCommandsDuringRestore: Array<{
+    readonly message: Record<string, unknown>;
+    readonly requestId?: string;
+  }> = [];
 
   const postDiagnosticsUpdate = (result: DiagnosticTimelineResult) => {
     diagnosticsHead = result.head;
@@ -105,6 +113,10 @@ export function initializeRuntimeWorker(
 
   let lastTimestamp = now();
   const tick = () => {
+    if (restoreInProgress) {
+      return;
+    }
+
     const current = now();
     const delta = current - lastTimestamp;
     lastTimestamp = current;
@@ -158,10 +170,115 @@ export function initializeRuntimeWorker(
     value === CommandSource.AUTOMATION ||
     value === CommandSource.SYSTEM;
 
+  const flushQueuedCommands = () => {
+    if (queuedCommandsDuringRestore.length === 0) {
+      return;
+    }
+
+    for (const pending of queuedCommandsDuringRestore.splice(0)) {
+      handleCommandMessage(pending.message, pending.requestId);
+    }
+  };
+
+  const handleRestoreSessionMessage = (
+    message: RuntimeWorkerRestoreSession,
+  ) => {
+    if (
+      sessionRestored &&
+      message.state === undefined &&
+      message.elapsedMs === undefined &&
+      message.resourceDeltas === undefined
+    ) {
+      const restoredEnvelope: RuntimeWorkerSessionRestored = {
+        type: 'SESSION_RESTORED',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      };
+      context.postMessage(restoredEnvelope);
+      return;
+    }
+
+    restoreInProgress = true;
+
+    try {
+      if (
+        Object.prototype.hasOwnProperty.call(message, 'elapsedMs') &&
+        message.elapsedMs !== undefined &&
+        (typeof message.elapsedMs !== 'number' ||
+          !Number.isFinite(message.elapsedMs) ||
+          message.elapsedMs < 0)
+      ) {
+        throw Object.assign(
+          new Error('elapsedMs must be a non-negative finite number'),
+          {
+            code: 'INVALID_RESTORE_ELAPSED_MS' as const,
+            details: { elapsedMs: message.elapsedMs },
+          },
+        );
+      }
+
+      if (
+        message.resourceDeltas !== undefined &&
+        (typeof message.resourceDeltas !== 'object' ||
+          message.resourceDeltas === null)
+      ) {
+        throw Object.assign(
+          new Error('resourceDeltas must be an object when provided'),
+          {
+            code: 'INVALID_RESTORE_RESOURCE_DELTAS' as const,
+            details: { resourceDeltas: message.resourceDeltas },
+          },
+        );
+      }
+
+      if (
+        message.state !== undefined &&
+        (typeof message.state !== 'object' || message.state === null)
+      ) {
+        throw Object.assign(
+          new Error('Serialized resource state must be an object'),
+          {
+            code: 'INVALID_RESTORE_STATE' as const,
+            details: { state: message.state },
+          },
+        );
+      }
+
+      sessionRestored = true;
+      const restoredEnvelope: RuntimeWorkerSessionRestored = {
+        type: 'SESSION_RESTORED',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      };
+      context.postMessage(restoredEnvelope);
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : String(error);
+      const details =
+        error && typeof error === 'object' && 'details' in error
+          ? (error as { details?: Record<string, unknown> }).details
+          : undefined;
+      postError({
+        code: 'RESTORE_FAILED',
+        message: `Failed to restore session: ${reason}`,
+        details,
+      });
+    } finally {
+      restoreInProgress = false;
+      flushQueuedCommands();
+    }
+  };
+
   const handleCommandMessage = (
     raw: Record<string, unknown>,
     requestId?: string,
   ) => {
+    if (restoreInProgress) {
+      queuedCommandsDuringRestore.push({
+        message: raw,
+        requestId,
+      });
+      return;
+    }
+
     const source = raw.source;
     if (!isValidCommandSource(source)) {
       postError({
@@ -282,6 +399,21 @@ export function initializeRuntimeWorker(
       diagnosticsConfiguration = undefined;
       runtime.enableDiagnostics();
       emitDiagnosticsDelta(true);
+      return;
+    }
+
+    if (type === 'DIAGNOSTICS_UNSUBSCRIBE') {
+      diagnosticsEnabled = false;
+      diagnosticsHead = undefined;
+      diagnosticsConfiguration = undefined;
+      runtime.enableDiagnostics(false);
+      return;
+    }
+
+    if (type === 'RESTORE_SESSION') {
+      handleRestoreSessionMessage(
+        message as RuntimeWorkerRestoreSession,
+      );
       return;
     }
 
