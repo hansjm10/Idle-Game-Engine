@@ -21,13 +21,13 @@ export interface GeneratedRuntimeEventDefinition {
 
 export const CONTENT_EVENT_DEFINITIONS = [
   {
-    packSlug: 'sample-pack',
+    packSlug: '@idle-engine/sample-pack',
     type: 'sample:harvester-deployed' as RuntimeEventType,
     version: 1,
     schema: 'packages/content-sample/content/schemas/events/harvester-deployed.schema.json',
   },
   {
-    packSlug: 'sample-pack',
+    packSlug: '@idle-engine/sample-pack',
     type: 'sample:reactor-primed' as RuntimeEventType,
     version: 1,
     schema: 'packages/content-sample/content/schemas/events/reactor-primed.schema.json',
@@ -66,14 +66,14 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
     channel: 2,
     type: 'sample:harvester-deployed' as RuntimeEventType,
     version: 1,
-    packSlug: 'sample-pack',
+    packSlug: '@idle-engine/sample-pack',
     schema: 'packages/content-sample/content/schemas/events/harvester-deployed.schema.json',
   },
   {
     channel: 3,
     type: 'sample:reactor-primed' as RuntimeEventType,
     version: 1,
-    packSlug: 'sample-pack',
+    packSlug: '@idle-engine/sample-pack',
     schema: 'packages/content-sample/content/schemas/events/reactor-primed.schema.json',
   },
 ] as const satisfies readonly GeneratedRuntimeEventDefinition[];

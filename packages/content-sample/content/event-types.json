@@ -1,5 +1,5 @@
 {
-  "packSlug": "sample-pack",
+  "packSlug": "@idle-engine/sample-pack",
   "eventTypes": [
     {
       "namespace": "sample",
