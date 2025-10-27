@@ -1,14 +1,14 @@
 {
   "packs": [
     {
-      "slug": "sample-pack",
+      "slug": "@idle-engine/sample-pack",
       "status": "compiled",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "digest": {
         "version": 1,
-        "hash": "fnv1a-ae9b401a"
+        "hash": "fnv1a-ee949ca5"
       },
-      "artifactHash": "ef07b1adf4b4225e03e7e8bae65706a3eaeb34a515574d7ecd5f9ac54ee83589",
+      "artifactHash": "2da1fd87197e04331700933cb8f423c34473b8c1eb8ce9dc95c93b0c867388a8",
       "warnings": [],
       "dependencies": {
         "requires": [],
@@ -16,8 +16,8 @@
         "conflicts": []
       },
       "artifacts": {
-        "json": "packages/content-sample/content/compiled/sample-pack.normalized.json",
-        "module": "packages/content-sample/src/generated/sample-pack.generated.ts"
+        "json": "packages/content-sample/content/compiled/@idle-engine/sample-pack.normalized.json",
+        "module": "packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts"
       }
     }
   ]

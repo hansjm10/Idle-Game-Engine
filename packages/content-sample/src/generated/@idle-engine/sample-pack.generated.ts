@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "ef07b1adf4b4225e03e7e8bae65706a3eaeb34a515574d7ecd5f9ac54ee83589",
+  "artifactHash": "2da1fd87197e04331700933cb8f423c34473b8c1eb8ce9dc95c93b0c867388a8",
   "digest": {
-    "hash": "fnv1a-ae9b401a",
+    "hash": "fnv1a-ee949ca5",
     "version": 1
   },
   "formatVersion": 1,
@@ -18,8 +18,8 @@ const serialized = {
       "Idle Engine Team"
     ],
     "defaultLocale": "en-US",
-    "engine": ">=0.1.0-0 <0.2.0-0",
-    "id": "sample-pack",
+    "engine": ">=0.4.0 <0.6.0",
+    "id": "@idle-engine/sample-pack",
     "links": [
       {
         "href": "https://github.com/hansjm10/Idle-Game-Engine/blob/main/docs/content-dsl-schema-design.md",
@@ -46,7 +46,7 @@ const serialized = {
         "en-US": "Sample Content Pack"
       }
     },
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "modules": {
     "achievements": [
@@ -58,7 +58,7 @@ const serialized = {
             "en-US": "Generate one unit of energy."
           }
         },
-        "id": "first-energy",
+        "id": "sample-pack.first-energy",
         "name": {
           "default": "First Spark",
           "variants": {
@@ -78,7 +78,7 @@ const serialized = {
         "track": {
           "comparator": "gte",
           "kind": "resource",
-          "resourceId": "energy",
+          "resourceId": "sample-pack.energy",
           "threshold": {
             "kind": "constant",
             "value": 1
@@ -94,7 +94,7 @@ const serialized = {
         },
         "consumes": [],
         "effects": [],
-        "id": "reactor",
+        "id": "sample-pack.reactor",
         "name": {
           "default": "Reactor",
           "variants": {
@@ -108,7 +108,7 @@ const serialized = {
               "kind": "constant",
               "value": 1
             },
-            "resourceId": "energy"
+            "resourceId": "sample-pack.energy"
           }
         ],
         "purchase": {
@@ -119,7 +119,7 @@ const serialized = {
             "kind": "exponential",
             "offset": 0
           },
-          "currencyId": "energy"
+          "currencyId": "sample-pack.energy"
         },
         "tags": []
       },
@@ -131,7 +131,7 @@ const serialized = {
           },
           "comparator": "gte",
           "kind": "resourceThreshold",
-          "resourceId": "energy"
+          "resourceId": "sample-pack.energy"
         },
         "consumes": [
           {
@@ -139,11 +139,11 @@ const serialized = {
               "kind": "constant",
               "value": 0.5
             },
-            "resourceId": "energy"
+            "resourceId": "sample-pack.energy"
           }
         ],
         "effects": [],
-        "id": "harvester",
+        "id": "sample-pack.harvester",
         "name": {
           "default": "Crystal Harvester",
           "variants": {
@@ -157,7 +157,7 @@ const serialized = {
               "kind": "constant",
               "value": 0.25
             },
-            "resourceId": "crystal"
+            "resourceId": "sample-pack.crystal"
           }
         ],
         "purchase": {
@@ -167,7 +167,7 @@ const serialized = {
             "kind": "linear",
             "slope": 5
           },
-          "currencyId": "energy"
+          "currencyId": "sample-pack.energy"
         },
         "tags": []
       }
@@ -182,7 +182,7 @@ const serialized = {
             "en-US": "Cumulative energy yield tracked across all runs."
           }
         },
-        "id": "energy-produced",
+        "id": "sample-pack.energy-produced",
         "kind": "counter",
         "name": {
           "default": "Total Energy Produced",
@@ -201,7 +201,7 @@ const serialized = {
       {
         "capacity": 100,
         "category": "primary",
-        "id": "energy",
+        "id": "sample-pack.energy",
         "name": {
           "default": "Energy",
           "variants": {
@@ -218,7 +218,7 @@ const serialized = {
       {
         "capacity": 0,
         "category": "currency",
-        "id": "crystal",
+        "id": "sample-pack.crystal",
         "name": {
           "default": "Crystal",
           "variants": {
@@ -236,7 +236,7 @@ const serialized = {
           },
           "comparator": "gte",
           "kind": "resourceThreshold",
-          "resourceId": "energy"
+          "resourceId": "sample-pack.energy"
         },
         "unlocked": false,
         "visible": true
@@ -255,13 +255,13 @@ const runtimeEnv = (globalThis as typeof globalThis & {
 
 const shouldVerifyDigest = runtimeEnv?.env?.NODE_ENV !== 'production';
 
-export const SAMPLE_U2D_PACK = rehydrateNormalizedPack(serialized, {
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK = rehydrateNormalizedPack(serialized, {
   verifyDigest: shouldVerifyDigest,
 });
-export const SAMPLE_U2D_PACK_DIGEST = serialized.digest;
-export const SAMPLE_U2D_PACK_ARTIFACT_HASH = serialized.artifactHash;
-export const SAMPLE_U2D_PACK_INDICES = createModuleIndices(SAMPLE_U2D_PACK);
-export const SAMPLE_U2D_PACK_SUMMARY = Object.freeze({
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK_DIGEST = serialized.digest;
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK_ARTIFACT_HASH = serialized.artifactHash;
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK_INDICES = createModuleIndices(PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK);
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK_SUMMARY = Object.freeze({
   slug: serialized.metadata.id,
   version: serialized.metadata.version,
   digest: serialized.digest,

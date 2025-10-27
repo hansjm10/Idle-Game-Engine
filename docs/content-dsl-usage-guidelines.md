@@ -195,7 +195,7 @@ Use the sample pack as a living reference:
 
 - `packages/content-sample/content/pack.json` illustrates metadata layout,
   dependency declarations, and module IDs.
-- `packages/content-sample/src/generated/sample-pack.generated.ts` shows the
+- `packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts` shows the
   compiler outputs that should accompany every content change.
 - `packages/content-sample/src/index.ts` demonstrates import-time guards that
   throw when compiler warnings slip through.
