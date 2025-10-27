@@ -11,3 +11,8 @@ pre-commit:
       run: pnpm build
     generate:
       run: pnpm generate --check
+    docs-content-dsl-guidelines:
+      glob: docs/content-dsl-usage-guidelines-design.md
+      run: |
+        pnpm exec markdownlint --config packages/docs/.markdownlint.jsonc {staged_files}
+        pnpm exec markdown-link-check --config packages/docs/markdown-link-check.json {staged_files}
