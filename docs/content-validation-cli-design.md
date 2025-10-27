@@ -170,7 +170,7 @@ Delivery order: steps 1 → 3 must complete before CI accepts the change; step 4
   - `--check` drift detection for manifest and compiler artifacts.
   - Top-level error handling emits `cli.unhandled_error` JSON logs instead of raw stack traces.
   - Watch mode trigger summarisation and repeated failure handling.
-  - Property-based sanitisation (`tools/content-schema-cli/src/__tests__/validation.property.test.ts`) reuses `DEFAULT_FORMULA_PROPERTY_SEED` from `@idle-engine/content-schema` with fixed offsets to keep `vitest-llm-reporter` JSON deterministic; update the documented offsets if seeds change.
+  - Property-based sanitisation (`tools/content-schema-cli/src/__tests__/validation.property.test.ts`) reuses `DEFAULT_FORMULA_PROPERTY_SEED` from `@idle-engine/content-schema` with fixed offsets to keep `vitest-llm-reporter` JSON deterministic; update the documented offsets if seeds change. Authoring guidance lives in `docs/content-schema-rollout-decisions.md#6-property-based-formula-sanitization-guidance`.
 - **Integration tests** in `packages/content-compiler`: verify schema options are honoured and dependency ordering works.
 - **Manual verification**:
   - Run `pnpm generate` after editing a pack to ensure artifacts update and logs show `content_pack.compiled`.
