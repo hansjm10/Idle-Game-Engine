@@ -7,8 +7,10 @@ import {
   WorkerBridgeImpl,
   type RuntimeStateSnapshot,
   type WorkerBridgeErrorDetails,
+  SOCIAL_COMMAND_TYPES,
 } from './worker-bridge.js';
 import { WORKER_MESSAGE_SCHEMA_VERSION } from './runtime-worker-protocol.js';
+import { setSocialConfigOverrideForTesting } from './social-config.js';
 
 type MessageListener<TData = unknown> = (event: { data: TData }) => void;
 
@@ -58,6 +60,7 @@ describe('WorkerBridgeImpl', () => {
         recordError: (event: string, data?: Record<string, unknown>) => void;
       };
     }).__IDLE_ENGINE_TELEMETRY__;
+    setSocialConfigOverrideForTesting(null);
     vi.restoreAllMocks();
   });
 
@@ -370,5 +373,131 @@ describe('WorkerBridgeImpl', () => {
     bridge.offError(errorHandler);
     worker.emitMessage('message', errorPayload);
     expect(errorHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects social commands when the feature flag is disabled', async () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    await expect(
+      bridge.sendSocialCommand(SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD, {
+        leaderboardId: 'daily',
+        accessToken: 'token',
+      }),
+    ).rejects.toThrow('Social commands are disabled');
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('sends social commands through the worker when enabled', async () => {
+    setSocialConfigOverrideForTesting({
+      enabled: true,
+      baseUrl: 'https://social.example',
+    });
+
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    const responsePromise = bridge.sendSocialCommand(
+      SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+      {
+        leaderboardId: 'daily',
+        accessToken: 'token',
+      },
+    );
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    const socialEnvelope = worker.postMessage.mock.calls[0]![0] as {
+      type: string;
+      requestId: string;
+      command: { kind: string; payload: unknown };
+    };
+
+    expect(socialEnvelope.type).toBe('SOCIAL_COMMAND');
+    expect(socialEnvelope.command.kind).toBe(
+      SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+    );
+
+    const successPayload = {
+      type: 'SOCIAL_COMMAND_RESULT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: socialEnvelope.requestId,
+      status: 'success',
+      kind: SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+      data: {
+        leaderboardId: 'daily',
+        entries: [],
+      },
+    } as const;
+
+    worker.emitMessage('message', successPayload);
+
+    await expect(responsePromise).resolves.toEqual(successPayload.data);
+  });
+
+  it('rejects social command promises when the worker reports an error', async () => {
+    setSocialConfigOverrideForTesting({
+      enabled: true,
+      baseUrl: 'https://social.example',
+    });
+
+    const telemetrySpy = vi.fn();
+    (globalThis as {
+      __IDLE_ENGINE_TELEMETRY__?: {
+        recordError: (event: string, data?: Record<string, unknown>) => void;
+      };
+    }).__IDLE_ENGINE_TELEMETRY__ = {
+      recordError: telemetrySpy,
+    };
+
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    const responsePromise = bridge.sendSocialCommand(
+      SOCIAL_COMMAND_TYPES.CREATE_GUILD,
+      {
+        name: 'Guild',
+        description: 'Test guild',
+        accessToken: 'token',
+      },
+    );
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    const socialEnvelope = worker.postMessage.mock.calls[0]![0] as {
+      requestId: string;
+    };
+
+    worker.emitMessage('message', {
+      type: 'SOCIAL_COMMAND_RESULT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: socialEnvelope.requestId,
+      status: 'error',
+      kind: SOCIAL_COMMAND_TYPES.CREATE_GUILD,
+      error: {
+        code: 'SOCIAL_COMMAND_FAILED',
+        message: 'Social command failed: request rejected',
+        details: { status: 401 },
+      },
+    });
+
+    await expect(responsePromise).rejects.toThrow(
+      'Social command failed: request rejected',
+    );
+
+    expect(telemetrySpy).toHaveBeenCalledWith('SocialCommandFailed', {
+      code: 'SOCIAL_COMMAND_FAILED',
+      kind: SOCIAL_COMMAND_TYPES.CREATE_GUILD,
+      requestId: socialEnvelope.requestId,
+    });
   });
 });

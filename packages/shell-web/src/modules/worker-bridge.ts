@@ -17,8 +17,15 @@ import {
   type RuntimeWorkerInboundMessage,
   type RuntimeWorkerOutboundMessage,
   type RuntimeWorkerRestoreSession,
-  type RuntimeWorkerSessionRestored,
+  type RuntimeWorkerSocialCommand,
+  type RuntimeWorkerSocialCommandResult,
+  type SocialCommandPayloads,
+  type SocialCommandResults,
+  type SocialCommandType,
+  type RuntimeWorkerSocialCommandFailure,
+  SOCIAL_COMMAND_TYPES,
 } from './runtime-worker-protocol.js';
+import { isSocialCommandsEnabled } from './social-config.js';
 
 export interface WorkerRestoreSessionPayload {
   readonly state?: SerializedResourceState;
@@ -48,12 +55,44 @@ function recordTelemetryError(
   telemetry?.recordError?.(event, data);
 }
 
+interface WorkerBridgeSocialCommandError extends Error {
+  code: RuntimeWorkerSocialCommandFailure['error']['code'];
+  details?: Record<string, unknown>;
+  kind?: SocialCommandType;
+  requestId?: string;
+}
+
+interface PendingSocialRequest {
+  readonly kind: SocialCommandType;
+  readonly resolve: (
+    value: SocialCommandResults[SocialCommandType],
+  ) => void;
+  readonly reject: (error: Error) => void;
+}
+
+const SUPPORTED_SOCIAL_COMMAND_KINDS = new Set<SocialCommandType>([
+  SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+  SOCIAL_COMMAND_TYPES.SUBMIT_LEADERBOARD_SCORE,
+  SOCIAL_COMMAND_TYPES.FETCH_GUILD_PROFILE,
+  SOCIAL_COMMAND_TYPES.CREATE_GUILD,
+]);
+
+function isSupportedSocialCommandKind(
+  value: unknown,
+): value is SocialCommandType {
+  return typeof value === 'string' && SUPPORTED_SOCIAL_COMMAND_KINDS.has(value as SocialCommandType);
+}
+
 export interface WorkerBridge<TState = unknown> {
   awaitReady(): Promise<void>;
   restoreSession(
     payload?: WorkerRestoreSessionPayload,
   ): Promise<void>;
   sendCommand<TPayload = unknown>(type: string, payload: TPayload): void;
+  sendSocialCommand<TCommand extends SocialCommandType>(
+    kind: TCommand,
+    payload: SocialCommandPayloads[TCommand],
+  ): Promise<SocialCommandResults[TCommand]>;
   onStateUpdate(callback: (state: TState) => void): void;
   offStateUpdate(callback: (state: TState) => void): void;
   enableDiagnostics(): void;
@@ -66,6 +105,7 @@ export interface WorkerBridge<TState = unknown> {
   ): void;
   onError(callback: (error: RuntimeWorkerErrorDetails) => void): void;
   offError(callback: (error: RuntimeWorkerErrorDetails) => void): void;
+  isSocialFeatureEnabled(): boolean;
 }
 
 export class WorkerBridgeImpl<TState = unknown>
@@ -80,6 +120,11 @@ export class WorkerBridgeImpl<TState = unknown>
   private readonly errorCallbacks = new Set<
     (error: RuntimeWorkerErrorDetails) => void
   >();
+  private readonly pendingSocialRequests = new Map<
+    string,
+    PendingSocialRequest
+  >();
+  private readonly socialEnabled = isSocialCommandsEnabled();
   private readonly readyPromise: Promise<void>;
   private resolveReady: (() => void) | null = null;
   private disposed = false;
@@ -143,6 +188,26 @@ export class WorkerBridgeImpl<TState = unknown>
         this.flushPendingMessages();
       }
       this.emitError(envelope.error);
+      if (envelope.error.requestId) {
+        const bridgeError: WorkerBridgeSocialCommandError = Object.assign(
+          new Error(envelope.error.message),
+          {
+            name: 'WorkerBridgeSocialCommandError',
+            code: envelope.error.code,
+            details: envelope.error.details,
+            requestId: envelope.error.requestId,
+          },
+        );
+        this.rejectPendingSocialRequest(
+          envelope.error.requestId,
+          bridgeError,
+        );
+      }
+      return;
+    }
+
+    if (envelope.type === 'SOCIAL_COMMAND_RESULT') {
+      this.handleSocialCommandResult(envelope);
       return;
     }
 
@@ -198,6 +263,55 @@ export class WorkerBridgeImpl<TState = unknown>
     for (const callback of this.errorCallbacks) {
       callback(error);
     }
+  }
+
+  private rejectPendingSocialRequest(requestId: string, error: Error): void {
+    const pending = this.pendingSocialRequests.get(requestId);
+    if (!pending) {
+      return;
+    }
+    this.pendingSocialRequests.delete(requestId);
+    pending.reject(error);
+  }
+
+  private handleSocialCommandResult(
+    envelope: RuntimeWorkerSocialCommandResult,
+  ): void {
+    const pending = this.pendingSocialRequests.get(envelope.requestId);
+    if (!pending) {
+      console.warn('[WorkerBridge] Received social result for unknown request', {
+        requestId: envelope.requestId,
+        status: envelope.status,
+      });
+      return;
+    }
+    this.pendingSocialRequests.delete(envelope.requestId);
+
+    if (envelope.status === 'success') {
+      pending.resolve(
+        envelope.data as SocialCommandResults[SocialCommandType],
+      );
+      return;
+    }
+
+    const error: WorkerBridgeSocialCommandError = Object.assign(
+      new Error(envelope.error.message),
+      {
+        name: 'WorkerBridgeSocialCommandError',
+        code: envelope.error.code,
+        details: envelope.error.details,
+        kind: envelope.kind,
+        requestId: envelope.requestId,
+      },
+    );
+
+    recordTelemetryError('SocialCommandFailed', {
+      code: envelope.error.code,
+      kind: envelope.kind ?? null,
+      requestId: envelope.requestId,
+    });
+
+    pending.reject(error);
   }
 
   constructor(worker: Worker) {
@@ -321,6 +435,57 @@ export class WorkerBridgeImpl<TState = unknown>
     this.postOrQueue(envelope);
   }
 
+  sendSocialCommand<TCommand extends SocialCommandType>(
+    kind: TCommand,
+    payload: SocialCommandPayloads[TCommand],
+  ): Promise<SocialCommandResults[TCommand]> {
+    if (this.disposed) {
+      return Promise.reject(
+        new Error('WorkerBridge has been disposed'),
+      );
+    }
+
+    if (!this.socialEnabled) {
+      return Promise.reject(
+        new Error('Social commands are disabled in this shell'),
+      );
+    }
+
+    if (!isSupportedSocialCommandKind(kind)) {
+      return Promise.reject(
+        new Error(`Unsupported social command kind: ${String(kind)}`),
+      );
+    }
+
+    const requestId = `social:${this.nextRequestId++}`;
+    const envelope: RuntimeWorkerSocialCommand<TCommand> = {
+      type: 'SOCIAL_COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId,
+      command: {
+        kind,
+        payload,
+      },
+    };
+
+    return new Promise<SocialCommandResults[TCommand]>((resolve, reject) => {
+      this.pendingSocialRequests.set(requestId, {
+        kind,
+        resolve: resolve as (
+          value: SocialCommandResults[SocialCommandType],
+        ) => void,
+        reject,
+      });
+      try {
+        this.postOrQueue(envelope);
+        this.flushPendingMessages();
+      } catch (error) {
+        this.pendingSocialRequests.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
   onStateUpdate(callback: (state: TState) => void): void {
     this.stateUpdateCallbacks.push(callback);
   }
@@ -379,6 +544,10 @@ export class WorkerBridgeImpl<TState = unknown>
     this.errorCallbacks.delete(callback);
   }
 
+  isSocialFeatureEnabled(): boolean {
+    return this.socialEnabled;
+  }
+
   dispose(): void {
     if (this.disposed) {
       return;
@@ -399,6 +568,15 @@ export class WorkerBridgeImpl<TState = unknown>
     this.stateUpdateCallbacks.length = 0;
     this.diagnosticsUpdateCallbacks.length = 0;
     this.errorCallbacks.clear();
+    for (const [requestId, pending] of this.pendingSocialRequests) {
+      pending.reject(
+        new Error(
+          'WorkerBridge has been disposed before the social command completed',
+        ),
+      );
+      this.pendingSocialRequests.delete(requestId);
+    }
+    this.pendingSocialRequests.clear();
     if (this.restoreDeferred) {
       const deferred = this.restoreDeferred;
       this.restoreDeferred = null;
@@ -415,6 +593,12 @@ export type RuntimeStateSnapshot = RuntimeStatePayload;
 export type WorkerBridgeErrorDetails = RuntimeWorkerErrorDetails;
 
 export { CommandSource };
+export {
+  SOCIAL_COMMAND_TYPES,
+  type SocialCommandType,
+  type SocialCommandPayloads,
+  type SocialCommandResults,
+};
 
 export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeImpl<TState> {
   const bridgeRef = useRef<WorkerBridgeImpl<TState>>();
