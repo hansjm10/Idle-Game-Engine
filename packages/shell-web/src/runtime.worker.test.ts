@@ -883,6 +883,61 @@ describe('runtime.worker integration', () => {
     );
   });
 
+  it('preserves configured base query parameters when executing social commands', async () => {
+    setSocialConfigOverrideForTesting({
+      enabled: true,
+      baseUrl: 'https://social.test/api?tenant=alpha&token=secret',
+    });
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({ leaderboardId: 'daily', entries: [] }),
+    }));
+
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      fetch: fetchMock,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'SOCIAL_COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'social-base-query',
+      command: {
+        kind: SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+        payload: {
+          leaderboardId: 'daily',
+          accessToken: 'token',
+        },
+      },
+    });
+
+    await flushAsync();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://social.test/api/leaderboard/daily?tenant=alpha&token=secret',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Authorization: 'Bearer token' },
+      }),
+    );
+  });
+
   it('surfaces social command failures with structured errors', async () => {
     setSocialConfigOverrideForTesting({
       enabled: true,

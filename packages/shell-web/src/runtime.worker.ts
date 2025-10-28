@@ -353,7 +353,20 @@ export function initializeRuntimeWorker(
     const baseWithTrailingSlash = normalizedBase.toString();
     const buildSocialUrl = (path: string) => {
       const relativePath = path.startsWith('/') ? path.slice(1) : path;
-      return new URL(relativePath, baseWithTrailingSlash);
+      const resolved = new URL(relativePath, baseWithTrailingSlash);
+      const finalUrl = new URL(baseWithTrailingSlash);
+      finalUrl.pathname = resolved.pathname;
+      finalUrl.hash = resolved.hash;
+      if (resolved.search) {
+        const mergedSearch = new URLSearchParams(finalUrl.search);
+        resolved.searchParams.forEach((value, key) => {
+          if (!mergedSearch.getAll(key).includes(value)) {
+            mergedSearch.append(key, value);
+          }
+        });
+        finalUrl.search = mergedSearch.toString();
+      }
+      return finalUrl;
     };
 
     const execute = async <TResult>(
