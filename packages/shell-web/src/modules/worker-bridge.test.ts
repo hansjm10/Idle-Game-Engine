@@ -52,6 +52,15 @@ class MockWorker {
 }
 
 describe('WorkerBridgeImpl', () => {
+  afterEach(() => {
+    delete (globalThis as {
+      __IDLE_ENGINE_TELEMETRY__?: {
+        recordError: (event: string, data?: Record<string, unknown>) => void;
+      };
+    }).__IDLE_ENGINE_TELEMETRY__;
+    vi.restoreAllMocks();
+  });
+
   it('queues commands until the worker sends READY', async () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
@@ -161,6 +170,9 @@ describe('WorkerBridgeImpl', () => {
     expect(() => bridge.enableDiagnostics()).toThrow(
       'WorkerBridge has been disposed',
     );
+    expect(() => bridge.disableDiagnostics()).toThrow(
+      'WorkerBridge has been disposed',
+    );
   });
 
   it('subscribes to diagnostics updates and forwards payloads', async () => {
@@ -217,6 +229,111 @@ describe('WorkerBridgeImpl', () => {
     });
 
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores session and flushes queued commands after acknowledgement', async () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    const restorePromise = bridge.restoreSession({ elapsedMs: 42 });
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+    await bridge.awaitReady();
+
+    expect(worker.postMessage).toHaveBeenCalledTimes(1);
+    const restoreEnvelope = worker.postMessage.mock.calls[0]![0] as {
+      type: string;
+      schemaVersion: number;
+      elapsedMs?: number;
+    };
+    expect(restoreEnvelope).toMatchObject({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: 42,
+    });
+
+    bridge.sendCommand('PING', { data: true });
+    expect(worker.postMessage).toHaveBeenCalledTimes(1);
+
+    worker.emitMessage('message', {
+      type: 'SESSION_RESTORED',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    await restorePromise;
+
+    expect(worker.postMessage).toHaveBeenCalledTimes(2);
+    const commandEnvelope = worker.postMessage.mock.calls[1]![0] as {
+      type: string;
+    };
+    expect(commandEnvelope.type).toBe('COMMAND');
+  });
+
+  it('rejects session restore when the worker reports a failure', async () => {
+    const telemetrySpy = vi.fn();
+    (globalThis as {
+      __IDLE_ENGINE_TELEMETRY__?: {
+        recordError: (event: string, data?: Record<string, unknown>) => void;
+      };
+    }).__IDLE_ENGINE_TELEMETRY__ = {
+      recordError: telemetrySpy,
+    };
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
+    bridge.onError(errorHandler);
+
+    const restorePromise = bridge.restoreSession();
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    worker.emitMessage('message', {
+      type: 'ERROR',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      error: {
+        code: 'RESTORE_FAILED',
+        message: 'restore failed',
+        requestId: 'restore:1',
+      },
+    });
+
+    await expect(restorePromise).rejects.toThrow('restore failed');
+    expect(errorHandler).toHaveBeenCalledWith({
+      code: 'RESTORE_FAILED',
+      message: 'restore failed',
+      requestId: 'restore:1',
+    });
+    expect(telemetrySpy).toHaveBeenCalledWith('WorkerBridgeError', {
+      code: 'RESTORE_FAILED',
+      message: 'restore failed',
+      requestId: 'restore:1',
+    });
+  });
+
+  it('sends diagnostics unsubscribe messages', async () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+    await bridge.awaitReady();
+
+    bridge.disableDiagnostics();
+
+    expect(worker.postMessage).toHaveBeenCalledWith({
+      type: 'DIAGNOSTICS_UNSUBSCRIBE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
   });
 
   it('emits error events when the worker reports failures', () => {

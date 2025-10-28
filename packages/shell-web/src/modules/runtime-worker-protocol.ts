@@ -1,9 +1,10 @@
 import type {
   BackPressureSnapshot,
   DiagnosticTimelineResult,
+  SerializedResourceState,
 } from '@idle-engine/core';
 
-export const WORKER_MESSAGE_SCHEMA_VERSION = 1;
+export const WORKER_MESSAGE_SCHEMA_VERSION = 2;
 
 export enum CommandSource {
   PLAYER = 'PLAYER',
@@ -48,10 +49,25 @@ export interface RuntimeWorkerDiagnosticsSubscribe {
   readonly schemaVersion: number;
 }
 
+export interface RuntimeWorkerDiagnosticsUnsubscribe {
+  readonly type: 'DIAGNOSTICS_UNSUBSCRIBE';
+  readonly schemaVersion: number;
+}
+
+export interface RuntimeWorkerRestoreSession {
+  readonly type: 'RESTORE_SESSION';
+  readonly schemaVersion: number;
+  readonly state?: SerializedResourceState;
+  readonly elapsedMs?: number;
+  readonly resourceDeltas?: Readonly<Record<string, number>>;
+}
+
 export type RuntimeWorkerInboundMessage<TPayload = unknown> =
   | RuntimeWorkerCommand<TPayload>
   | RuntimeWorkerTerminate
-  | RuntimeWorkerDiagnosticsSubscribe;
+  | RuntimeWorkerDiagnosticsSubscribe
+  | RuntimeWorkerDiagnosticsUnsubscribe
+  | RuntimeWorkerRestoreSession;
 
 export interface RuntimeWorkerReady {
   readonly type: 'READY';
@@ -64,7 +80,8 @@ export interface RuntimeWorkerErrorDetails {
     | 'SCHEMA_VERSION_MISMATCH'
     | 'INVALID_COMMAND_PAYLOAD'
     | 'STALE_COMMAND'
-    | 'UNSUPPORTED_MESSAGE';
+    | 'UNSUPPORTED_MESSAGE'
+    | 'RESTORE_FAILED';
   readonly message: string;
   readonly requestId?: string;
   readonly details?: Record<string, unknown>;
@@ -88,8 +105,14 @@ export interface RuntimeWorkerDiagnosticsUpdate {
   readonly diagnostics: DiagnosticTimelineResult;
 }
 
+export interface RuntimeWorkerSessionRestored {
+  readonly type: 'SESSION_RESTORED';
+  readonly schemaVersion: number;
+}
+
 export type RuntimeWorkerOutboundMessage<TState = RuntimeStatePayload> =
   | RuntimeWorkerReady
   | RuntimeWorkerError
   | RuntimeWorkerStateUpdate<TState>
-  | RuntimeWorkerDiagnosticsUpdate;
+  | RuntimeWorkerDiagnosticsUpdate
+  | RuntimeWorkerSessionRestored;

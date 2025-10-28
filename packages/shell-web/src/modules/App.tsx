@@ -20,6 +20,20 @@ export function App() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    bridge
+      .restoreSession()
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('[App] Failed to restore worker session', error);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
+
+  useEffect(() => {
     const handleState = (state: RuntimeStateSnapshot) => {
       setCurrentStep(state.currentStep);
       setBackPressure(state.backPressure);
