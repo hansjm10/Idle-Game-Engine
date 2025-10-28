@@ -340,7 +340,7 @@ describe('WorkerBridgeImpl', () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
     const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errorLogSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     bridge.onError(errorHandler);
 
@@ -362,6 +362,10 @@ describe('WorkerBridgeImpl', () => {
 
     expect(errorHandler).toHaveBeenCalledTimes(1);
     expect(errorHandler).toHaveBeenCalledWith(errorPayload.error);
+    expect(errorLogSpy).toHaveBeenCalledWith(
+      '[WorkerBridge] Worker error received',
+      errorPayload.error,
+    );
 
     bridge.offError(errorHandler);
     worker.emitMessage('message', errorPayload);
