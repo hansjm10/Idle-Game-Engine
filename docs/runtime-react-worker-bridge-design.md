@@ -202,7 +202,83 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
 - **Resumable session handshake** *(Owner: Runtime Core liaison)* — The `RESTORE_SESSION` / `SESSION_RESTORED` sequence and `WorkerBridge.restoreSession()` helper are considered ready for rollout. Coordination with the persistence work in [#258](https://github.com/hansjm10/Idle-Game-Engine/issues/258) will cover storage handoff requirements before enabling offline progression in production.
 
 ## 14. Follow-Up Work
-- Design persistent storage handoff between Worker and shell for save/load scenarios. Owner: Runtime Core Liaison. Tracked in [#258](https://github.com/hansjm10/Idle-Game-Engine/issues/258).
+
+### 14.1 Worker↔Shell Persistence Handoff (Issue #258)
+
+**Goals**
+- Persist authoritative runtime state so the shell can restore sessions without violating determinism or the existing `RESTORE_SESSION` contract.
+- Support offline catch-up by capturing wall-clock metadata alongside the serialized state.
+- Keep persistence infrastructure reusable across shells (web, native wrappers) and tolerant of future content pack migrations.
+
+**Constraints**
+- The worker must remain deterministic and cannot touch DOM-only APIs such as `localStorage`; all storage I/O runs on the shell side.
+- Existing validation in `runtime.worker.ts:200` expects `SerializedResourceState` payloads that pass `reconcileSaveAgainstDefinitions`; storage must never mutate those structures.
+- Autosave cadence cannot interfere with the simulation tick loop—snapshot requests must be explicit and queued through the bridge.
+
+**Storage Evaluation**
+
+| Option | Pros | Cons | Notes |
+| --- | --- | --- | --- |
+| IndexedDB (Recommended) | Available in dedicated workers and windows, async, structured-clone friendly, ~50 MB quota in most browsers | Needs promise-based wrapper, requires schema/version bookkeeping | Use a single `idle-engine.sessions` database with version upgrades handled by the shell |
+| Cache API | Streams suited to HTTP responses, versioned caches | Cannot store arbitrary structured data without manual serialization, unclear worker support for our use case | Rejected; better for asset caching than game state |
+| localStorage | Simple API | Not accessible inside workers, synchronous (janks UI), ~5 MB quota | Rejected; fails worker requirement and risks deadlocks |
+
+**Chosen Strategy: Shell-managed IndexedDB**
+- Introduce a `SessionPersistenceAdapter` in the React shell that owns all IndexedDB access. The worker exposes a new `SESSION_SNAPSHOT` outbound message and `REQUEST_SESSION_SNAPSHOT` inbound command so snapshot requests travel over the existing bridge.
+- Persisted entries store raw `SerializedResourceState`, offline metadata, and runtime/content digests. The worker never performs I/O; it only marshals deterministic data.
+- Provide a thin abstraction (`PersistenceDriver`) so native shells can swap in filesystem-backed implementations while reusing message flow and schema.
+
+**Message Flow**
+
+**Save / Autosave**
+1. Shell calls `WorkerBridge.requestSessionSnapshot(reason)` (new API) when autosave timers, user actions, or shutdown events fire. The bridge enqueues a `REQUEST_SESSION_SNAPSHOT` message after `awaitReady()` and outside `restoreSession` windows.
+2. Worker captures deterministic data: `SerializedResourceState` via `resourceState.exportForSave()`, current tick step, and monotonic clock reference. It responds with `SESSION_SNAPSHOT { requestId, capturedAt, state, step, monotonicNow }`.
+3. Shell adapter normalises metadata (e.g., converts `capturedAt` to UTC, clamps offline caps) and writes the entry to the `sessions` object store within a single IndexedDB transaction. On error it surfaces telemetry through the existing `WorkerBridge` error channel.
+
+**Restore**
+1. Shell reads the latest slot at startup (or when the user selects a save) and validates it against current content definitions using `reconcileSaveAgainstDefinitions`.
+2. Shell computes offline elapsed time as `min(now - capturedAt, OFFLINE_CAP_MS)` and derives optional `resourceDeltas` if migrations supply them.
+3. Shell calls `WorkerBridge.restoreSession({ state, elapsedMs, resourceDeltas })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`.
+4. On success the shell resumes normal command flow; on failure it records telemetry, surfaces UI prompts, and may retry after running migrations.
+
+**Stored Payload (v1)**
+- `schemaVersion`: number (start at `1` to decouple from `WORKER_MESSAGE_SCHEMA_VERSION`).
+- `slotId`: string (`"default"` initially; enables future multi-slot UI).
+- `capturedAt`: ISO timestamp.
+- `workerStep`: number (runtime `currentStep` for diagnostics).
+- `monotonicMs`: number captured from worker to help derive elapsed time safely.
+- `state`: `SerializedResourceState` (immutable snapshot).
+- `runtimeVersion`: semver string of `@idle-engine/core`.
+- `contentDigest`: `ResourceDefinitionDigest` for compatibility checks.
+- `flags`: `{ pendingMigration?: boolean; abortedRestore?: boolean }`.
+
+**Migration Considerations**
+- Content packs publish digests; the adapter compares stored `contentDigest` against the live pack before restore. When digests diverge but a pack-supplied migration exists, the adapter runs it prior to calling `restoreSession`.
+- Schema upgrades use IndexedDB version migrations. Each bump records a deterministic transform function so older saves can be rewritten in place without loading them into the worker.
+- Record `runtimeVersion` and `persistenceSchemaVersion` to gate restores when the runtime introduces breaking changes. Future workers can advertise supported versions via `READY { supportedPersistence }`.
+
+**Risks & Mitigations**
+- *Quota exhaustion*: add size guards (e.g., trim history to `MAX_SNAPSHOTS_PER_SLOT`) and surface telemetry when writes fail. Provide user-facing guidance to clear space.
+- *Cross-tab conflicts*: namespace keys by `profileId` and use IndexedDB transactions with `versionchange` listeners to detect concurrent schema upgrades. Future enhancement: advisory locking via BroadcastChannel.
+- *Snapshot cost*: snapshot export is synchronous in the worker; autosave cadence must respect frame budgets. Default schedule is every 60 s or on significant events; shells throttle additional requests during high back-pressure.
+- *Data corruption*: persist a checksum (e.g., SHA-256 over the serialized payload) and verify before restore; fallback to previous snapshot when verification fails.
+
+**Testing & Telemetry**
+- Add Vitest suites with mocked `IDBFactory` to cover happy-path save/restore, schema upgrades, and corruption fallbacks.
+- Integration tests should spin up the worker harness, request a snapshot, round-trip through an in-memory IndexedDB polyfill, and assert the worker accepts the restored session.
+- Extend telemetry to record `PersistenceSaveFailed`, `PersistenceRestoreFailed`, and `PersistenceMigrationApplied` events routed through `__IDLE_ENGINE_TELEMETRY__`.
+
+**Follow-Up Tasks**
+1. Extend `runtime-worker-protocol.ts` with `REQUEST_SESSION_SNAPSHOT` / `SESSION_SNAPSHOT` message definitions and update runtime.worker harness.
+2. Implement `SessionPersistenceAdapter` and autosave controller inside `packages/shell-web`, including IndexedDB schema management (`sessions` store keyed by slot/profile).
+3. Ship shell UI affordances for manual save/load, error reporting, and migration prompts (flagged behind dev toggle until persistence stabilises).
+4. Document migration authoring guidelines for content pack maintainers alongside updated CLI scaffolding.
+
+**Open Questions**
+- Do we need encryption or obfuscation for competitive modes? (Out of scope for v1, document in security backlog.)
+- Should command replay logs be persisted alongside resource snapshots for richer debugging? (Candidate for follow-up issue once save slots land.)
+
+### 14.2 Remaining Items
 - Integrate social-service command hooks after bridge stabilises. Owner: Social Services Lead.
 - Produce developer tutorial documenting how to extend the bridge for custom commands. Owner: React Bridge Integration Agent (post-delivery).
 - Implement shell analytics sink for worker bridge telemetry routing. Owner: Presentation Shell analytics lead. Tracked in [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267).
@@ -223,3 +299,4 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-10-27 | Idle Engine Design Authoring Agent (AI) | Initial draft for issue #16 bridge design |
+| 2025-10-28 | Codex Agent (AI) | Added worker↔shell persistence handoff mini-spec (Fixes #258) |
