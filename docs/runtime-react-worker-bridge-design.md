@@ -9,6 +9,7 @@ Issue: #16 (implementation) / #251 (design doc) - Presentation Shell Workstream
 - **Status**: Draft
 - **Last Updated**: 2025-10-27
 - **Related Issues**: [#16](https://github.com/hansjm10/Idle-Game-Engine/issues/16), [#251](https://github.com/hansjm10/Idle-Game-Engine/issues/251)
+- **Operational Runbook**: [Runtime->React Worker Bridge Operational Runbook](runtime-worker-bridge-runbook.md)
 - **Execution Mode**: AI-led
 
 ## 1. Summary
@@ -119,6 +120,7 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
   - Ensure `pnpm test --filter shell-web` becomes the canonical validation command for agents, aligning with doc guidance.
 
 ### 6.3 Operational Considerations
+Full build, rollout, and troubleshooting procedures live in the [Runtime->React Worker Bridge Operational Runbook](runtime-worker-bridge-runbook.md); keep that guide updated alongside the contract changes described below.
 - **Deployment**
   - Incorporate Worker bundle into Vite build pipeline, verifying production builds include hashed worker assets. Document `pnpm build --filter shell-web` as the release artifact generator.
 - **Telemetry & Observability**

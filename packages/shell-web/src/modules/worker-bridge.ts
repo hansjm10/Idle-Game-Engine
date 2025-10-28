@@ -108,6 +108,12 @@ export interface WorkerBridge<TState = unknown> {
   isSocialFeatureEnabled(): boolean;
 }
 
+declare global {
+  interface Window {
+    __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
+  }
+}
+
 export class WorkerBridgeImpl<TState = unknown>
   implements WorkerBridge<TState>
 {
@@ -582,6 +588,12 @@ export class WorkerBridgeImpl<TState = unknown>
       this.restoreDeferred = null;
       deferred.reject(new Error('WorkerBridge has been disposed'));
     }
+    const bridgeGlobal = globalThis as typeof globalThis & {
+      __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
+    };
+    if (bridgeGlobal.__IDLE_WORKER_BRIDGE__ === this) {
+      bridgeGlobal.__IDLE_WORKER_BRIDGE__ = undefined;
+    }
     this.sessionReady = true;
   }
 }
@@ -609,6 +621,10 @@ export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeIm
       { type: 'module' },
     );
     bridgeRef.current = new WorkerBridgeImpl<TState>(worker);
+    const bridgeGlobal = globalThis as typeof globalThis & {
+      __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
+    };
+    bridgeGlobal.__IDLE_WORKER_BRIDGE__ = bridgeRef.current;
   }
 
   const bridge = bridgeRef.current;
