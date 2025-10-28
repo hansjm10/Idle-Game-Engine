@@ -77,19 +77,25 @@ pnpm build --filter shell-web
 | Commands silently dropped | Non-monotonic `issuedAt` or commands queued during restore | Ensure callers await `bridge.awaitReady()` and reuse `sendCommand`. Monitor worker warnings for `Dropping stale command`. |
 | Diagnostics callbacks never fire | `enableDiagnostics` not invoked or subscription removed | Confirm subscription sequence (enable → onDiagnosticsUpdate) and ensure diagnostics remains enabled in the worker. Remember diagnostics are disabled if the bridge disposes between renders. |
 | Worker leaks after navigation | Hook unmounted without disposing or multiple bridges instantiated | Verify only one `useWorkerBridge` consumer is active; ensure providers unmount on route changes. Use React DevTools to confirm no lingering bridge instance. |
-| Social commands reject with `FEATURE_DISABLED` | `VITE_ENABLE_SOCIAL_COMMANDS` not set in the build environment | Enable the env var (or launch flag) and redeploy; social command support stays off by default. |
+| Social commands reject with `"Social commands are disabled in this shell"` / worker error code `SOCIAL_COMMANDS_DISABLED` | `VITE_ENABLE_SOCIAL_COMMANDS` not set in the build environment | Enable the env var (or launch flag) and redeploy; social command support stays off by default. |
 
 ## 7. Verification Artifacts
 - Automated coverage: `packages/shell-web/src/runtime.worker.test.ts` (handshake, diagnostics, command validation) and `packages/shell-web/src/modules/worker-bridge.test.ts` (bridge queueing, disposal, social command gating). These correspond to implementations expected by issues #253 and #254.
 - Manual smoke (record in release notes):
   1. Launch `pnpm --filter shell-web dev`, open http://localhost:5173, and confirm commands increment the runtime step counter.
-  2. Toggle diagnostics via DevTools snippet:
+  2. Toggle diagnostics via DevTools snippet (run after the shell mounts):
      ```js
-     const bridge = window.__IDLE_WORKER_BRIDGE__;
-     bridge.enableDiagnostics();
-     bridge.onDiagnosticsUpdate(console.log);
+     (async () => {
+       const bridge = window.__IDLE_WORKER_BRIDGE__;
+       if (!bridge) {
+         throw new Error('Worker bridge has not initialised yet');
+       }
+       await bridge.awaitReady();
+       bridge.enableDiagnostics();
+       bridge.onDiagnosticsUpdate(console.log);
+     })();
      ```
-     Ensure console prints deltas and no dropped-entry spikes after idling 30s.
+     Ensure console prints deltas and no dropped-entry spikes after idling 30s. Call `bridge.disableDiagnostics()` when finished.
   3. Flip the deployment feature flag off/on in staging to validate rollback path.
 
 ## 8. Follow-Up & Assumptions
