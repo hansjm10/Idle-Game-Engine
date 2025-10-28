@@ -197,14 +197,15 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
   - Update onboarding documentation to reference new bridge once rollout completes.
 
 ## 13. Decisions Since Draft
-- Worker-side errors now surface through a lightweight telemetry hook (`__IDLE_ENGINE_TELEMETRY__`) so hosts can forward incidents to their preferred sink without pulling Node-only dependencies into the browser bundle (`packages/shell-web/src/modules/worker-bridge.ts:126`).
-- Presentation shells continue to consume content-pack events solely through the `STATE_UPDATE.state.events` array; no additional message envelopes are required for pack-defined channels.
-- A resumable session handshake ships via the `RESTORE_SESSION` / `SESSION_RESTORED` messages and the `WorkerBridge.restoreSession()` helper so offline progression can hydrate state before UI commands resume.
+- **Telemetry routing** *(Owner: Presentation Shell analytics lead)* — Worker-side errors publish through the shell analytics pipeline via the global `__IDLE_ENGINE_TELEMETRY__` facade (`packages/shell-web/src/modules/worker-bridge.ts:126`). Implementation is tracked in [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267) and will register the shell analytics sink during bridge bootstrap so runtime incidents flow into shell dashboards.
+- **Content pack messaging** *(Owner: Content Systems integration lead)* — Presentation shells continue to consume pack-provided events exclusively through the `STATE_UPDATE.state.events` array; no additional message envelopes are required. We verified this against existing pack samples and worker emission logic, so downstream agents can rely on the current contract without schema changes.
+- **Resumable session handshake** *(Owner: Runtime Core liaison)* — The `RESTORE_SESSION` / `SESSION_RESTORED` sequence and `WorkerBridge.restoreSession()` helper are considered ready for rollout. Coordination with the persistence work in [#258](https://github.com/hansjm10/Idle-Game-Engine/issues/258) will cover storage handoff requirements before enabling offline progression in production.
 
 ## 14. Follow-Up Work
-- Design persistent storage handoff between Worker and shell for save/load scenarios. Owner: TODO (Runtime Core Liaison).
-- Integrate social-service command hooks after bridge stabilises. Owner: TODO (Social Services Lead).
+- Design persistent storage handoff between Worker and shell for save/load scenarios. Owner: Runtime Core Liaison. Tracked in [#258](https://github.com/hansjm10/Idle-Game-Engine/issues/258).
+- Integrate social-service command hooks after bridge stabilises. Owner: Social Services Lead.
 - Produce developer tutorial documenting how to extend the bridge for custom commands. Owner: React Bridge Integration Agent (post-delivery).
+- Implement shell analytics sink for worker bridge telemetry routing. Owner: Presentation Shell analytics lead. Tracked in [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267).
 
 ## 15. References
 - `docs/implementation-plan.md:18`
