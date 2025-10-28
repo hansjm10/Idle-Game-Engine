@@ -40,6 +40,13 @@ class StubWorkerContext {
       listener({ data } as MessageEvent<unknown>);
     }
   }
+
+  listenerCount(type: string): number {
+    if (type !== 'message') {
+      return 0;
+    }
+    return this.listeners.size;
+  }
 }
 
 describe('runtime.worker integration', () => {
@@ -251,6 +258,7 @@ describe('runtime.worker integration', () => {
       schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
     });
     expect(enableSpy).toHaveBeenCalledTimes(1);
+    expect(enableSpy.mock.calls[0]).toEqual([]);
 
     const baselineCall = context.postMessage.mock.calls.find(
       ([payload]) => (payload as { type?: string } | undefined)?.type === 'DIAGNOSTICS_UPDATE',
@@ -280,6 +288,102 @@ describe('runtime.worker integration', () => {
       ([payload]) => (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
     );
     expect(stateUpdateCall).toBeDefined();
+  });
+
+  it('only emits diagnostics updates when the timeline changes', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    const enableSpy = vi.spyOn(harness.runtime, 'enableDiagnostics');
+    const diagnosticsConfiguration = {
+      capacity: 120,
+      enabled: true,
+      slowTickBudgetMs: 50,
+      slowSystemBudgetMs: 16,
+      systemHistorySize: 60,
+      tickBudgetMs: 100,
+    } satisfies core.DiagnosticTimelineResult['configuration'];
+    const readDiagnosticsSpy = vi
+      .spyOn(harness.runtime, 'readDiagnosticsDelta')
+      .mockImplementationOnce(() => {
+        return {
+          head: 1,
+          dropped: 0,
+          entries: [],
+          configuration: diagnosticsConfiguration,
+        } satisfies core.DiagnosticTimelineResult;
+      })
+      .mockImplementation(() => ({
+        head: 1,
+        dropped: 0,
+        entries: [],
+        configuration: diagnosticsConfiguration,
+      }));
+
+    let currentStep = 0;
+    vi.spyOn(harness.runtime, 'tick').mockImplementation(() => {
+      currentStep += 1;
+    });
+    vi.spyOn(harness.runtime, 'getCurrentStep').mockImplementation(
+      () => currentStep,
+    );
+    const eventBusStub = {
+      getManifest: () => ({ entries: [] }),
+      getOutboundBuffer: () => [],
+      getBackPressureSnapshot: () => ({
+        tick: currentStep,
+        counters: {
+          published: 0,
+          softLimited: 0,
+          overflowed: 0,
+          subscribers: 0,
+        },
+        channels: [],
+      }),
+    };
+    vi.spyOn(harness.runtime, 'getEventBus').mockReturnValue(
+      eventBusStub as never,
+    );
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'DIAGNOSTICS_SUBSCRIBE',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    expect(enableSpy).toHaveBeenCalledTimes(1);
+    const baselineCall = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type ===
+        'DIAGNOSTICS_UPDATE',
+    );
+    expect(baselineCall).toBeDefined();
+    expect(readDiagnosticsSpy).toHaveBeenCalledTimes(1);
+
+    context.postMessage.mockClear();
+    advanceTime(110);
+    runTick();
+
+    const diagnosticsCalls = context.postMessage.mock.calls.filter(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type ===
+        'DIAGNOSTICS_UPDATE',
+    );
+    expect(diagnosticsCalls).toHaveLength(0);
+    expect(readDiagnosticsSpy).toHaveBeenCalledTimes(2);
   });
 
   it('disables diagnostics when unsubscribe message is received', () => {
@@ -327,7 +431,7 @@ describe('runtime.worker integration', () => {
     };
 
     const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
@@ -360,6 +464,14 @@ describe('runtime.worker integration', () => {
         requestId: 'invalid-0',
       }),
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[runtime.worker] %s',
+      'Command type must be a non-empty string',
+      expect.objectContaining({
+        code: 'INVALID_COMMAND_PAYLOAD',
+        requestId: 'invalid-0',
+      }),
+    );
   });
 
   it('acknowledges session restore requests and validates payloads', () => {
@@ -589,5 +701,32 @@ describe('runtime.worker integration', () => {
         requestId: 'schema-0',
       }),
     });
+  });
+
+  it('stops the tick loop and detaches listeners when disposed', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    expect(scheduledTick).not.toBeNull();
+    expect(context.listenerCount('message')).toBe(1);
+
+    harness.dispose();
+
+    expect(scheduledTick).toBeNull();
+    expect(context.listenerCount('message')).toBe(0);
+
+    harness = null;
   });
 });
