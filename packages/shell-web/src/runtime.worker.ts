@@ -346,11 +346,21 @@ export function initializeRuntimeWorker(
     kind: TCommand,
     payload: SocialCommandPayloads[TCommand],
   ): Promise<SocialCommandResults[TCommand]> {
+    const normalizedBase = new URL(baseUrl);
+    if (!normalizedBase.pathname.endsWith('/')) {
+      normalizedBase.pathname = `${normalizedBase.pathname}/`;
+    }
+    const baseWithTrailingSlash = normalizedBase.toString();
+    const buildSocialUrl = (path: string) => {
+      const relativePath = path.startsWith('/') ? path.slice(1) : path;
+      return new URL(relativePath, baseWithTrailingSlash);
+    };
+
     const execute = async <TResult>(
       path: string,
       init: RequestInit,
     ): Promise<TResult> => {
-      const url = new URL(path, baseUrl);
+      const url = buildSocialUrl(path);
       const response = await fetchFn(url.toString(), init);
       const bodyText = await response.text();
       const parseJson = () => {
