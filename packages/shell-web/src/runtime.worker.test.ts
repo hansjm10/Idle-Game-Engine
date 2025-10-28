@@ -9,7 +9,10 @@ import {
   CommandSource,
   WORKER_MESSAGE_SCHEMA_VERSION,
   type RuntimeWorkerError,
+  SOCIAL_COMMAND_TYPES,
+  type RuntimeWorkerSocialCommandResult,
 } from './modules/runtime-worker-protocol.js';
+import { setSocialConfigOverrideForTesting } from './modules/social-config.js';
 
 type MessageHandler = (event: MessageEvent<unknown>) => void;
 
@@ -49,6 +52,8 @@ class StubWorkerContext {
   }
 }
 
+const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 describe('runtime.worker integration', () => {
   let currentTime = 0;
   let scheduledTick: (() => void) | null = null;
@@ -79,6 +84,7 @@ describe('runtime.worker integration', () => {
     core.clearGameState();
     harness?.dispose();
     harness = null;
+    setSocialConfigOverrideForTesting(null);
   });
 
   it('stamps player commands with the runtime step and emits state updates', async () => {
@@ -699,6 +705,191 @@ describe('runtime.worker integration', () => {
       error: expect.objectContaining({
         code: 'SCHEMA_VERSION_MISMATCH',
         requestId: 'schema-0',
+      }),
+    });
+  });
+
+  it('returns an error when social commands are disabled', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'SOCIAL_COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'social-disabled',
+      command: {
+        kind: SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+        payload: {
+          leaderboardId: 'daily',
+          accessToken: 'token',
+        },
+      },
+    });
+
+    const socialResult = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SOCIAL_COMMAND_RESULT') as
+      | RuntimeWorkerSocialCommandResult
+      | undefined;
+
+    expect(socialResult).toMatchObject({
+      type: 'SOCIAL_COMMAND_RESULT',
+      requestId: 'social-disabled',
+      status: 'error',
+      error: expect.objectContaining({
+        code: 'SOCIAL_COMMANDS_DISABLED',
+      }),
+    });
+  });
+
+  it('executes social commands via fetch when enabled', async () => {
+    setSocialConfigOverrideForTesting({
+      enabled: true,
+      baseUrl: 'https://social.test',
+    });
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({ leaderboardId: 'daily', entries: [] }),
+    }));
+
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      fetch: fetchMock,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'SOCIAL_COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'social-success',
+      command: {
+        kind: SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+        payload: {
+          leaderboardId: 'daily',
+          accessToken: 'token',
+        },
+      },
+    });
+
+    await flushAsync();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://social.test/leaderboard/daily',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Authorization: 'Bearer token' },
+      }),
+    );
+
+    const socialResult = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SOCIAL_COMMAND_RESULT') as
+      | RuntimeWorkerSocialCommandResult
+      | undefined;
+
+    expect(socialResult).toMatchObject({
+      type: 'SOCIAL_COMMAND_RESULT',
+      requestId: 'social-success',
+      status: 'success',
+      kind: SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
+      data: {
+        leaderboardId: 'daily',
+        entries: [],
+      },
+    });
+  });
+
+  it('surfaces social command failures with structured errors', async () => {
+    setSocialConfigOverrideForTesting({
+      enabled: true,
+      baseUrl: 'https://social.test',
+    });
+
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      text: async () => 'Unauthorized',
+    }));
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      fetch: fetchMock,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'SOCIAL_COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'social-failure',
+      command: {
+        kind: SOCIAL_COMMAND_TYPES.CREATE_GUILD,
+        payload: {
+          name: 'Guild',
+          description: 'Test guild',
+          accessToken: 'token',
+        },
+      },
+    });
+
+    await flushAsync();
+
+    const socialResult = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SOCIAL_COMMAND_RESULT') as
+      | RuntimeWorkerSocialCommandResult
+      | undefined;
+
+    expect(socialResult).toMatchObject({
+      type: 'SOCIAL_COMMAND_RESULT',
+      requestId: 'social-failure',
+      status: 'error',
+      kind: SOCIAL_COMMAND_TYPES.CREATE_GUILD,
+      error: expect.objectContaining({
+        code: 'SOCIAL_COMMAND_FAILED',
+        message: expect.stringContaining('Social service responded with HTTP 401'),
       }),
     });
   });

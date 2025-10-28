@@ -27,11 +27,21 @@ import {
   type RuntimeWorkerReady,
   type RuntimeWorkerErrorDetails,
   type RuntimeWorkerError,
-  type RuntimeStatePayload,
   type RuntimeEventSnapshot,
   type RuntimeWorkerRestoreSession,
   type RuntimeWorkerSessionRestored,
+  type RuntimeWorkerSocialCommand,
+  type RuntimeWorkerSocialCommandResult,
+  type RuntimeWorkerSocialCommandFailure,
+  SOCIAL_COMMAND_TYPES,
+  type SocialCommandType,
+  type SocialCommandPayloads,
+  type SocialCommandResults,
 } from './modules/runtime-worker-protocol.js';
+import {
+  getSocialServiceBaseUrl,
+  isSocialCommandsEnabled,
+} from './modules/social-config.js';
 
 const RAF_INTERVAL_MS = 16;
 
@@ -40,6 +50,7 @@ export interface RuntimeWorkerOptions {
   readonly now?: () => number;
   readonly scheduleTick?: (callback: () => void) => () => void;
   readonly handshakeId?: string;
+  readonly fetch?: typeof fetch;
 }
 
 export interface RuntimeWorkerHarness {
@@ -168,6 +179,34 @@ export function initializeRuntimeWorker(
     context.postMessage(envelope);
   };
 
+  const socialConfig = {
+    enabled: isSocialCommandsEnabled(),
+    baseUrl: getSocialServiceBaseUrl(),
+  };
+
+  const fetchImpl: typeof fetch | undefined =
+    options.fetch ??
+    (typeof (context as unknown as { fetch?: typeof fetch }).fetch ===
+    'function'
+      ? (context as unknown as { fetch: typeof fetch }).fetch.bind(context)
+      : typeof fetch === 'function'
+        ? fetch.bind(context)
+        : undefined);
+
+  const postSocialCommandResult = (
+    envelope: RuntimeWorkerSocialCommandResult,
+  ) => {
+    context.postMessage(envelope);
+  };
+
+  const isSupportedSocialCommand = (
+    value: unknown,
+  ): value is SocialCommandType =>
+    value === SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD ||
+    value === SOCIAL_COMMAND_TYPES.SUBMIT_LEADERBOARD_SCORE ||
+    value === SOCIAL_COMMAND_TYPES.FETCH_GUILD_PROFILE ||
+    value === SOCIAL_COMMAND_TYPES.CREATE_GUILD;
+
   const isValidCommandSource = (value: unknown): value is CommandSource =>
     value === CommandSource.PLAYER ||
     value === CommandSource.AUTOMATION ||
@@ -182,6 +221,322 @@ export function initializeRuntimeWorker(
       handleCommandMessage(pending.message, pending.requestId);
     }
   };
+
+  const validateString = (
+    value: unknown,
+    message: string,
+    details: Record<string, unknown>,
+  ): string => {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw Object.assign(new Error(message), { details });
+    }
+    return value.trim();
+  };
+
+  const postSocialCommandFailure = (
+    requestId: string,
+    message: string,
+    code: RuntimeWorkerSocialCommandFailure['error']['code'],
+    kind?: SocialCommandType,
+    details?: Record<string, unknown>,
+  ) => {
+    postSocialCommandResult({
+      type: 'SOCIAL_COMMAND_RESULT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId,
+      status: 'error',
+      kind,
+      error: {
+        code,
+        message,
+        ...(details ? { details } : {}),
+      },
+    });
+  };
+
+  const handleSocialCommandMessage = async (
+    message: RuntimeWorkerSocialCommand,
+  ) => {
+    const requestId = validateString(
+      message.requestId,
+      'Social command requestId must be a non-empty string',
+      { requestId: message.requestId },
+    );
+
+    if (!socialConfig.enabled) {
+      postSocialCommandFailure(
+        requestId,
+        'Social commands are disabled',
+        'SOCIAL_COMMANDS_DISABLED',
+      );
+      return;
+    }
+
+    if (!fetchImpl) {
+      postSocialCommandFailure(
+        requestId,
+        'Fetch API is not available in this worker context',
+        'SOCIAL_COMMAND_FAILED',
+      );
+      return;
+    }
+
+    if (!isRecord(message.command)) {
+      postSocialCommandFailure(
+        requestId,
+        'Social command payload is missing',
+        'INVALID_SOCIAL_COMMAND_PAYLOAD',
+        undefined,
+        { command: message.command },
+      );
+      return;
+    }
+
+    const kind = message.command.kind;
+    if (!isSupportedSocialCommand(kind)) {
+      postSocialCommandFailure(
+        requestId,
+        `Unsupported social command: ${String(kind)}`,
+        'SOCIAL_COMMAND_UNSUPPORTED',
+        undefined,
+        { kind },
+      );
+      return;
+    }
+
+    const payload = message.command.payload;
+
+    try {
+      const data = await dispatchSocialCommand(
+        fetchImpl,
+        socialConfig.baseUrl,
+        kind,
+        payload,
+      );
+
+      postSocialCommandResult({
+        type: 'SOCIAL_COMMAND_RESULT',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        requestId,
+        status: 'success',
+        kind,
+        data,
+      });
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : String(error);
+      const details =
+        error && typeof error === 'object' && 'details' in error
+          ? (error as { details?: Record<string, unknown> }).details
+          : undefined;
+
+      postSocialCommandFailure(
+        requestId,
+        `Social command failed: ${reason}`,
+        'SOCIAL_COMMAND_FAILED',
+        kind,
+        details,
+      );
+    }
+  };
+
+  async function dispatchSocialCommand<TCommand extends SocialCommandType>(
+    fetchFn: typeof fetch,
+    baseUrl: string,
+    kind: TCommand,
+    payload: SocialCommandPayloads[TCommand],
+  ): Promise<SocialCommandResults[TCommand]> {
+    const execute = async <TResult>(
+      path: string,
+      init: RequestInit,
+    ): Promise<TResult> => {
+      const url = new URL(path, baseUrl);
+      const response = await fetchFn(url.toString(), init);
+      const bodyText = await response.text();
+      const parseJson = () => {
+        if (!bodyText) {
+          return null;
+        }
+        try {
+          return JSON.parse(bodyText) as TResult;
+        } catch {
+          throw Object.assign(
+            new Error('Failed to parse social-service response as JSON'),
+            {
+              details: {
+                path: url.toString(),
+                status: response.status,
+                body: bodyText,
+              },
+            },
+          );
+        }
+      };
+
+      if (!response.ok) {
+        throw Object.assign(
+          new Error(
+            `Social service responded with HTTP ${response.status}`,
+          ),
+          {
+            details: {
+              path: url.toString(),
+              status: response.status,
+              body: bodyText,
+            },
+          },
+        );
+      }
+
+      const parsed = parseJson();
+      if (parsed === null) {
+        throw Object.assign(
+          new Error('Social-service response was empty'),
+          {
+            details: {
+              path: url.toString(),
+              status: response.status,
+            },
+          },
+        );
+      }
+      return parsed;
+    };
+
+    switch (kind) {
+      case SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD: {
+        const rawPayload =
+          payload as SocialCommandPayloads['fetchLeaderboard'];
+        const leaderboardId = validateString(
+          rawPayload.leaderboardId,
+          'leaderboardId must be a non-empty string',
+          { leaderboardId: rawPayload.leaderboardId },
+        );
+        const accessToken = validateString(
+          rawPayload.accessToken,
+          'accessToken must be provided',
+          { accessToken: rawPayload.accessToken },
+        );
+        const result = await execute(
+          `/leaderboard/${encodeURIComponent(leaderboardId)}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+        return result as SocialCommandResults[TCommand];
+      }
+      case SOCIAL_COMMAND_TYPES.SUBMIT_LEADERBOARD_SCORE: {
+        const submitPayload =
+          payload as SocialCommandPayloads['submitLeaderboardScore'];
+        const leaderboardId = validateString(
+          submitPayload.leaderboardId,
+          'leaderboardId must be a non-empty string',
+          { leaderboardId: submitPayload.leaderboardId },
+        );
+        if (
+          typeof submitPayload.score !== 'number' ||
+          !Number.isFinite(submitPayload.score) ||
+          submitPayload.score < 0
+        ) {
+          throw Object.assign(
+            new Error('score must be a non-negative finite number'),
+            {
+              details: { score: submitPayload.score },
+            },
+          );
+        }
+        const accessToken = validateString(
+          submitPayload.accessToken,
+          'accessToken must be provided',
+          { accessToken: submitPayload.accessToken },
+        );
+
+        const body: Record<string, unknown> = {
+          leaderboardId,
+          score: submitPayload.score,
+        };
+        if (submitPayload.metadata) {
+          body.metadata = submitPayload.metadata;
+        }
+
+        const result = await execute('/leaderboard/submit', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+        return result as SocialCommandResults[TCommand];
+      }
+      case SOCIAL_COMMAND_TYPES.FETCH_GUILD_PROFILE: {
+        const guildPayload =
+          payload as SocialCommandPayloads['fetchGuildProfile'];
+        const accessToken = validateString(
+          guildPayload.accessToken,
+          'accessToken must be provided',
+          { accessToken: guildPayload.accessToken },
+        );
+        const result = await execute('/guilds/mine', {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        return result as SocialCommandResults[TCommand];
+      }
+      case SOCIAL_COMMAND_TYPES.CREATE_GUILD: {
+        const createPayload =
+          payload as SocialCommandPayloads['createGuild'];
+        const name = validateString(
+          createPayload.name,
+          'Guild name must be at least one character',
+          { name: createPayload.name },
+        );
+        const accessToken = validateString(
+          createPayload.accessToken,
+          'accessToken must be provided',
+          { accessToken: createPayload.accessToken },
+        );
+        if (
+          createPayload.description !== undefined &&
+          typeof createPayload.description !== 'string'
+        ) {
+          throw Object.assign(
+            new Error('description must be a string when provided'),
+            {
+              details: { description: createPayload.description },
+            },
+          );
+        }
+
+        const result = await execute('/guilds', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name,
+            ...(createPayload.description
+              ? { description: createPayload.description }
+              : {}),
+          }),
+        });
+        return result as SocialCommandResults[TCommand];
+      }
+      default:
+        throw Object.assign(
+          new Error(`Unhandled social command: ${String(kind)}`),
+          {
+            details: { kind },
+          },
+        );
+    }
+  }
 
   const handleRestoreSessionMessage = (
     message: RuntimeWorkerRestoreSession,
@@ -438,6 +793,13 @@ export function initializeRuntimeWorker(
 
     if (type === 'COMMAND') {
       handleCommandMessage(message, requestId);
+      return;
+    }
+
+    if (type === 'SOCIAL_COMMAND') {
+      void handleSocialCommandMessage(
+        message as RuntimeWorkerSocialCommand,
+      );
       return;
     }
 

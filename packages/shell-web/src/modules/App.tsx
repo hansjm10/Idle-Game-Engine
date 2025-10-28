@@ -8,11 +8,13 @@ import {
   type RuntimeStateSnapshot,
 } from './worker-bridge.js';
 import { EventInspector } from './EventInspector.js';
+import { SocialDevPanel } from './SocialDevPanel.js';
 
 const MAX_EVENT_HISTORY = 50;
 
 export function App() {
   const bridge = useWorkerBridge();
+  const socialEnabled = bridge.isSocialFeatureEnabled();
   const [currentStep, setCurrentStep] = useState(0);
   const [events, setEvents] = useState<RuntimeEventSnapshot[]>([]);
   const [backPressure, setBackPressure] = useState<BackPressureSnapshot | null>(
@@ -82,6 +84,8 @@ export function App() {
       </button>
 
       <EventInspector events={events} backPressure={backPressure} />
+
+      {socialEnabled ? <SocialDevPanel bridge={bridge} /> : null}
     </main>
   );
 }
