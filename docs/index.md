@@ -19,6 +19,9 @@ place.
 - Browse **Core Runtime** and **Content Pipeline** sections for in-depth design
   notes and current implementation status. Each design doc links back to the
   relevant source files in `packages/`.
+- Extending the presentation shell? Follow the
+  [Worker Bridge Extension Tutorial](worker-bridge-extension-tutorial.md) to add
+  new commands end-to-end.
 - Use the **Design Document Template** when drafting new proposals or migrating
   historical specs so the archive stays consistent.
 - Check the **Decisions** section when you need historical context before
