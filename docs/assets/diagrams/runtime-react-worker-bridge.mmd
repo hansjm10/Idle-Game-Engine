@@ -1,0 +1,26 @@
+sequenceDiagram
+  autonumber
+  participant React as React Shell
+  participant Bridge as WorkerBridge
+  participant Worker as Runtime Worker
+  participant Runtime as IdleEngineRuntime
+
+  React->>Bridge: instantiate WorkerBridge & awaitReady()
+  Bridge->>Worker: create worker(module)
+  Worker-->>Bridge: READY {handshakeId}
+  Bridge-->>React: resolve awaitReady()
+
+  React->>Bridge: sendCommand(type, payload)
+  Note right of Bridge: Wraps payload with requestId,<br/>source, issuedAt (performance.now())
+  Bridge->>Worker: COMMAND {schemaVersion, requestId, source, command}
+  Worker->>Runtime: enqueue(command)
+
+  Worker-->>Bridge: STATE_UPDATE {state snapshot}
+  Bridge-->>React: onStateUpdate(state)
+
+  React->>Bridge: enableDiagnostics()
+  Bridge->>Worker: DIAGNOSTICS_SUBSCRIBE
+  Worker->>Runtime: enableDiagnostics()
+  Runtime-->>Worker: diagnostics delta
+  Worker-->>Bridge: DIAGNOSTICS_UPDATE {timeline}
+  Bridge-->>React: onDiagnosticsUpdate(diagnostics)

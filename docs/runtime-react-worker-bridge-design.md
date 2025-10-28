@@ -59,7 +59,38 @@ Issue #16 currently relies on a minimal Worker harness that exposes state snapsh
   - Dedicated Worker hosts `IdleEngineRuntime` and orchestrates command queue execution, pushing deterministic state snapshots to the UI. The React bridge encapsulates Worker lifecycle, exposes subscription hooks, and ensures commands cross the thread boundary with consistent metadata.
   - Message envelopes are versioned and validated before entering the runtime queue, safeguarding the runtime from malformed UI input. Diagnostics remain opt-in to avoid unnecessary load.
 - **Diagram**
-  - TODO (Design Systems): Supply a runtime->React sequence diagram illustrating command dispatch, state snapshots, and diagnostics flow.
+
+  Runtime worker ↔ React bridge message flow covering READY, COMMAND, STATE_UPDATE, and DIAGNOSTICS envelopes. Source: `docs/assets/diagrams/runtime-react-worker-bridge.mmd` (keep in sync).
+
+  ```mermaid
+  %% Source of truth also stored at docs/assets/diagrams/runtime-react-worker-bridge.mmd
+  sequenceDiagram
+    autonumber
+    participant React as React Shell
+    participant Bridge as WorkerBridge
+    participant Worker as Runtime Worker
+    participant Runtime as IdleEngineRuntime
+
+    React->>Bridge: instantiate WorkerBridge & awaitReady()
+    Bridge->>Worker: create worker(module)
+    Worker-->>Bridge: READY {handshakeId}
+    Bridge-->>React: resolve awaitReady()
+
+    React->>Bridge: sendCommand(type, payload)
+    Note right of Bridge: Wraps payload with requestId,<br/>source, issuedAt (performance.now())
+    Bridge->>Worker: COMMAND {schemaVersion, requestId, source, command}
+    Worker->>Runtime: enqueue(command)
+
+    Worker-->>Bridge: STATE_UPDATE {state snapshot}
+    Bridge-->>React: onStateUpdate(state)
+
+    React->>Bridge: enableDiagnostics()
+    Bridge->>Worker: DIAGNOSTICS_SUBSCRIBE
+    Worker->>Runtime: enableDiagnostics()
+    Runtime-->>Worker: diagnostics delta
+    Worker-->>Bridge: DIAGNOSTICS_UPDATE {timeline}
+    Bridge-->>React: onDiagnosticsUpdate(diagnostics)
+  ```
 
 ### 6.2 Detailed Design
 - **Runtime Changes**
