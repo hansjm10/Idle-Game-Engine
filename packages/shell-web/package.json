@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@idle-engine/core": "workspace:*",
+    "process": "^0.11.10",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -21,10 +22,10 @@
     "@types/react-dom": "^19.2.1",
     "@vitejs/plugin-react": "^5.0.4",
     "eslint": "^9.37.0",
+    "jsdom": "^25.0.1",
     "typescript": "^5.9.3",
     "vite": "^7.1.9",
     "vitest": "^3.2.4",
-    "vitest-llm-reporter": "^1.2.0",
-    "jsdom": "^25.0.1"
+    "vitest-llm-reporter": "^1.2.0"
   }
 }

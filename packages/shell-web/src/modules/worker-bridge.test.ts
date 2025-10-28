@@ -8,13 +8,15 @@ import {
   type RuntimeStateSnapshot,
   type WorkerBridgeErrorDetails,
   SOCIAL_COMMAND_TYPES,
+  type WorkerBridgeWorker,
 } from './worker-bridge.js';
+import { createInlineRuntimeWorker } from './inline-runtime-worker.js';
 import { WORKER_MESSAGE_SCHEMA_VERSION } from './runtime-worker-protocol.js';
 import { setSocialConfigOverrideForTesting } from './social-config.js';
 
 type MessageListener<TData = unknown> = (event: { data: TData }) => void;
 
-class MockWorker {
+class MockWorker implements WorkerBridgeWorker {
   public readonly postMessage = vi.fn<(data: unknown) => void>();
   public readonly terminate = vi.fn<void, []>();
 
@@ -66,7 +68,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('queues commands until the worker sends READY', async () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
     const readyPromise = bridge.awaitReady();
 
     bridge.sendCommand('PING', { iteration: 1 });
@@ -105,7 +107,7 @@ describe('WorkerBridgeImpl', () => {
   it('notifies subscribers when state updates arrive from the worker', () => {
     const worker = new MockWorker();
     const bridge =
-      new WorkerBridgeImpl<RuntimeStateSnapshot>(worker as unknown as Worker);
+      new WorkerBridgeImpl<RuntimeStateSnapshot>(worker as WorkerBridgeWorker);
     const handler = vi.fn<void, [RuntimeStateSnapshot]>();
     bridge.onStateUpdate(handler);
 
@@ -150,7 +152,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('disposes the worker and prevents additional commands', () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     worker.emitMessage('message', {
       type: 'READY',
@@ -180,7 +182,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('subscribes to diagnostics updates and forwards payloads', async () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     const handler = vi.fn<void, [DiagnosticTimelineResult]>();
     const readyPromise = bridge.awaitReady();
@@ -236,7 +238,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('restores session and flushes queued commands after acknowledgement', async () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     const restorePromise = bridge.restoreSession({ elapsedMs: 42 });
 
@@ -287,7 +289,7 @@ describe('WorkerBridgeImpl', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
     const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
     bridge.onError(errorHandler);
 
@@ -323,7 +325,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('sends diagnostics unsubscribe messages', async () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     worker.emitMessage('message', {
       type: 'READY',
@@ -341,7 +343,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('emits error events when the worker reports failures', () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
     const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
     const errorLogSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -377,7 +379,7 @@ describe('WorkerBridgeImpl', () => {
 
   it('rejects social commands when the feature flag is disabled', async () => {
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     await expect(
       bridge.sendSocialCommand(SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD, {
@@ -396,7 +398,7 @@ describe('WorkerBridgeImpl', () => {
     });
 
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     const responsePromise = bridge.sendSocialCommand(
       SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
@@ -457,7 +459,7 @@ describe('WorkerBridgeImpl', () => {
     };
 
     const worker = new MockWorker();
-    const bridge = new WorkerBridgeImpl(worker as unknown as Worker);
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
     const responsePromise = bridge.sendSocialCommand(
       SOCIAL_COMMAND_TYPES.CREATE_GUILD,
@@ -499,5 +501,32 @@ describe('WorkerBridgeImpl', () => {
       kind: SOCIAL_COMMAND_TYPES.CREATE_GUILD,
       requestId: socialEnvelope.requestId,
     });
+  });
+});
+
+describe('Inline runtime worker integration', () => {
+  it('resolves READY and emits state updates when using the inline legacy path', async () => {
+    vi.useFakeTimers();
+    const worker = createInlineRuntimeWorker();
+    const bridge =
+      new WorkerBridgeImpl<RuntimeStateSnapshot>(worker);
+
+    try {
+      await bridge.awaitReady();
+
+      const updates: RuntimeStateSnapshot[] = [];
+      bridge.onStateUpdate((state) => {
+        updates.push(state);
+      });
+
+      await vi.advanceTimersByTimeAsync(48);
+      await Promise.resolve();
+
+      expect(updates.length).toBeGreaterThan(0);
+      expect(updates.at(-1)?.currentStep ?? 0).toBeGreaterThan(0);
+    } finally {
+      bridge.dispose();
+      vi.useRealTimers();
+    }
   });
 });

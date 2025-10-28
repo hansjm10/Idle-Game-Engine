@@ -192,7 +192,7 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
   - Milestone 2: Enable new React bridge in dev builds; monitor for regressions.
   - Milestone 3: Promote to production build once tests and manual smoke pass.
 - **Migration Strategy**
-  - Introduce a feature flag allowing fallback to legacy bridge until confidence is established.
+  - Introduce the `VITE_ENABLE_WORKER_BRIDGE` (`ENABLE_WORKER_BRIDGE`) flag so shells can fall back to the inline legacy bridge until confidence is established; leave it disabled by default and retire it after Phase 3 sign-off.
   - Provide migration notes for agents touching UI components.
 - **Communication**
   - Announce bridge availability in weekly status report; include testing commands.

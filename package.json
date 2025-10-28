@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "./tools/scripts/run-workspace-build.sh",
     "lint": "./tools/scripts/run-workspace-lint.sh",
     "test": "./tools/scripts/run-workspace-test.sh",
     "test:ci": "pnpm -r run test:ci",

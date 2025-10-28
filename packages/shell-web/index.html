@@ -7,6 +7,11 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      var process =
+        window.process ||
+        (window.process = { env: { NODE_ENV: 'production' } });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
