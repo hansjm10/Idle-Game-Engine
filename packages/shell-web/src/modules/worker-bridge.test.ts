@@ -11,7 +11,10 @@ import {
   type WorkerBridgeWorker,
 } from './worker-bridge.js';
 import { createInlineRuntimeWorker } from './inline-runtime-worker.js';
-import { WORKER_MESSAGE_SCHEMA_VERSION } from './runtime-worker-protocol.js';
+import {
+  WORKER_MESSAGE_SCHEMA_VERSION,
+  type RuntimeWorkerReady,
+} from './runtime-worker-protocol.js';
 import { setSocialConfigOverrideForTesting } from './social-config.js';
 
 type MessageListener<TData = unknown> = (event: { data: TData }) => void;
@@ -504,6 +507,35 @@ describe('WorkerBridgeImpl', () => {
   });
 });
 
+describe('createInlineRuntimeWorker', () => {
+  it('boots the runtime harness when the worker bridge flag is disabled', async () => {
+    const worker = createInlineRuntimeWorker();
+
+    const readyEnvelope = await new Promise<RuntimeWorkerReady>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        worker.terminate();
+        reject(new Error('Inline runtime worker did not emit READY'));
+      }, 1_000);
+
+      const listener = (event: MessageEvent<unknown>) => {
+        const payload = event.data as { type?: string } | null;
+        if (payload?.type === 'READY') {
+          clearTimeout(timeout);
+          worker.removeEventListener('message', listener);
+          resolve(payload as RuntimeWorkerReady);
+        }
+      };
+
+      worker.addEventListener('message', listener);
+    });
+
+    expect(readyEnvelope.type).toBe('READY');
+    expect(readyEnvelope.schemaVersion).toBe(WORKER_MESSAGE_SCHEMA_VERSION);
+
+    worker.terminate();
+  });
+});
+
 describe('Inline runtime worker integration', () => {
   it('resolves READY and emits state updates when using the inline legacy path', async () => {
     vi.useFakeTimers();
@@ -519,7 +551,8 @@ describe('Inline runtime worker integration', () => {
         updates.push(state);
       });
 
-      await vi.advanceTimersByTimeAsync(48);
+      // IdleEngineRuntime emits STATE_UPDATE only after completing a 100ms step.
+      await vi.advanceTimersByTimeAsync(160);
       await Promise.resolve();
 
       expect(updates.length).toBeGreaterThan(0);

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as core from '@idle-engine/core';
 import {
   initializeRuntimeWorker,
+  isDedicatedWorkerScope,
   type RuntimeWorkerHarness,
 } from './runtime.worker';
 import {
@@ -1029,5 +1030,17 @@ describe('runtime.worker integration', () => {
     expect(context.listenerCount('message')).toBe(0);
 
     harness = null;
+  });
+});
+
+describe('isDedicatedWorkerScope', () => {
+  it('returns false for window-like objects', () => {
+    const windowLike = { document: {}, importScripts: undefined };
+    expect(isDedicatedWorkerScope(windowLike)).toBe(false);
+  });
+
+  it('returns true when importScripts is a function', () => {
+    const workerLike = { importScripts: vi.fn() };
+    expect(isDedicatedWorkerScope(workerLike)).toBe(true);
   });
 });
