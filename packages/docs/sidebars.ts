@@ -50,7 +50,10 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Shell Integration',
-      items: ['accessibility-smoke-tests-design'],
+      items: [
+        'accessibility-smoke-tests-design',
+        'worker-bridge-extension-tutorial',
+      ],
     },
     {
       type: 'category',
