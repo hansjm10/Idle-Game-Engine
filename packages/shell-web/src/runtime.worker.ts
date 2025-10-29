@@ -69,8 +69,10 @@ export function isDedicatedWorkerScope(
   if (typeof DedicatedWorkerGlobalScope !== 'undefined') {
     return value instanceof DedicatedWorkerGlobalScope;
   }
-  const prototype = Object.getPrototypeOf(value);
-  return prototype?.constructor?.name === 'DedicatedWorkerGlobalScope';
+  const candidate = value as {
+    importScripts?: unknown;
+  };
+  return typeof candidate.importScripts === 'function';
 }
 
 export function initializeRuntimeWorker(
