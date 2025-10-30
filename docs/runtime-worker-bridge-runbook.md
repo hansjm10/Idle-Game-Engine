@@ -29,6 +29,7 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
 ### 3.3 Configuration knobs
 - `VITE_ENABLE_WORKER_BRIDGE` / `ENABLE_WORKER_BRIDGE` – default `false`. When `true`, `useWorkerBridge` spins up the worker in a dedicated thread; when `false`, it runs the inline legacy runtime.
 - `VITE_ENABLE_SOCIAL_COMMANDS` / `VITE_SOCIAL_SERVICE_BASE_URL` – opt-in to social-worker calls; default is disabled (see `packages/shell-web/src/modules/social-config.ts`).
+- `VITE_SHELL_ANALYTICS_ENDPOINT` / `SHELL_ANALYTICS_ENDPOINT` – optional HTTPS endpoint for browser telemetry. When present, the shell analytics facade posts worker errors via `navigator.sendBeacon` (or fetch fallback); omit to rely on local console output and the `idle-engine:telemetry` DOM event stream.
 - `__IDLE_ENGINE_TELEMETRY__` – optional global injected by hosts for telemetry forwarding (errors surfaced through the bridge call this automatically).
 
 ### 3.4 Rollout phases & notes
@@ -52,7 +53,7 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
 ### 4.3 Diagnostics opt-in
 - Call `bridge.enableDiagnostics()` to subscribe; pair it with `bridge.onDiagnosticsUpdate(handler)` to receive `DiagnosticTimelineResult` deltas. Updates throttle automatically and include dropped-entry counters (`runtime.worker.ts:90-118`).
 - Disable streaming via `bridge.disableDiagnostics()` and `bridge.offDiagnosticsUpdate(handler)` to reduce noise. Diagnostics are opt-in by default to preserve the main-thread budget (§6.3).
-- For automated analysis, register `__IDLE_ENGINE_TELEMETRY__.recordError` so worker-surfaced errors federate into the hosting app’s pipeline (`worker-bridge.ts:30-44`).
+- The shell now auto-installs `packages/shell-web/src/modules/shell-analytics.ts`, wiring `__IDLE_ENGINE_TELEMETRY__.recordError` to the configured analytics transport and dispatching the `idle-engine:telemetry` DOM event. Hosts can still override the global to fan out or enrich telemetry; when doing so, delegate back to the default facade to keep dashboards in sync.
 
 ### 4.4 READY/ERROR signalling
 - Monitor the console for `[runtime.worker]` warnings. Errors propagate through `bridge.onError` callbacks with typed detail (`RuntimeWorkerErrorDetails`) and request IDs for social commands.
@@ -107,6 +108,6 @@ pnpm build --filter shell-web
 ## 8. Follow-Up & Assumptions
 - **Flag retirement**: plan to remove `VITE_ENABLE_WORKER_BRIDGE` once rollout Phase 3 completes and production monitoring stays green; track the cleanup under issue #262 and delete the inline fallback at the same time.
 - **Persistence integration**: coordinate with issue #258 (Worker↔Shell persistence handoff) before enabling offline progression; the runbook will require updates once snapshot flows ship.
-- **Telemetry completeness**: register the analytics sink tracked in issue #267 so worker errors reach dashboards; document the configuration here when available.
+- **Telemetry completeness**: telemetry sink delivered in issue [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267). Configure `VITE_SHELL_ANALYTICS_ENDPOINT` (or `SHELL_ANALYTICS_ENDPOINT`) per environment and monitor the `idle-engine:telemetry` event stream for local validation before flipping production flags.
 
 Maintain this runbook alongside bridge code changes—update sections 3–6 whenever the worker protocol, diagnostics behaviour, or deployment strategy evolves. Tag both leads for review to keep operational guidance authoritative.
