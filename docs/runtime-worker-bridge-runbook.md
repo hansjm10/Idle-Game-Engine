@@ -22,14 +22,20 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
 
 ### 3.2 Feature flag rollout
 - **Release staging**: publish the built assets to your CDN under a canary prefix (e.g. `/shell/worker-canary/`). Keep the previous non-worker build available so flips are instant.
-- **Flag control**: gate the shell’s HTML entrypoint behind a deployment-level flag such as `presentationShell.workerBridge.enabled`. When false, serve the legacy build; when true, serve the worker-backed bundle. This mirrors the design requirement in §12 to promote behind a feature guard. (A runtime toggle inside the React shell does not exist yet—track that follow-up separately.)
+- **Flag control**: flip `VITE_ENABLE_WORKER_BRIDGE` (or `ENABLE_WORKER_BRIDGE` in non-Vite Node environments) to `true` to instantiate the worker-backed bridge inside the React shell. Leave the variable unset/`false` to fall back to the inline legacy bridge implemented in `packages/shell-web/src/modules/inline-runtime-worker.ts`. Hosts can layer a deployment-level flag such as `presentationShell.workerBridge.enabled` on top when orchestrating asset rollouts.
 - **Rollback**: disable the flag to fall back to the legacy artifact, or redeploy the last known-good bundle. No code change is required provided both builds remain in storage.
 - **Environment parity**: enable the flag progressively (dev → staging → canary → production). Each promotion should include the validation checklist in Section 5 and sign-off from both leads.
 
 ### 3.3 Configuration knobs
+- `VITE_ENABLE_WORKER_BRIDGE` / `ENABLE_WORKER_BRIDGE` – default `false`. When `true`, `useWorkerBridge` spins up the worker in a dedicated thread; when `false`, it runs the inline legacy runtime.
 - `VITE_ENABLE_SOCIAL_COMMANDS` / `VITE_SOCIAL_SERVICE_BASE_URL` – opt-in to social-worker calls; default is disabled (see `packages/shell-web/src/modules/social-config.ts`).
 - `__IDLE_ENGINE_TELEMETRY__` – optional global injected by hosts for telemetry forwarding (errors surfaced through the bridge call this automatically).
-- Future runtime toggle: design §12 calls for a dedicated worker bridge flag inside the shell; document and wire it when implemented.
+
+### 3.4 Rollout phases & notes
+- **Phase 1 – Dev canary**: enable `VITE_ENABLE_WORKER_BRIDGE=true` in local/dev builds, run `pnpm lint`, `pnpm test --filter shell-web`, and `pnpm build --filter shell-web`. Capture results plus owners (Presentation Shell lead, Runtime Core maintainer) in the weekly status update.
+- **Phase 2 – Staging/canary**: promote the worker bundle behind a staging flag, execute the validation checklist in Section 5, and monitor diagnostics/telemetry dashboards for 48 hours. Document contact points for on-call coverage in the rollout notes.
+- **Phase 3 – Production enablement**: flip the production flag, announce availability in the weekly status update, and note the rollback plan (disable `VITE_ENABLE_WORKER_BRIDGE`) alongside escalation contacts.
+- When drafting rollout notes, include the commands executed above, current flag state, and the runtime/presentation contacts listed in Section 2 so downstream agents can coordinate escalation.
 
 ## 4. Operational Procedures
 ### 4.1 Worker lifecycle
@@ -96,10 +102,10 @@ pnpm build --filter shell-web
      })();
      ```
      Ensure console prints deltas and no dropped-entry spikes after idling 30s. Call `bridge.disableDiagnostics()` when finished.
-  3. Flip the deployment feature flag off/on in staging to validate rollback path.
+  3. Toggle `VITE_ENABLE_WORKER_BRIDGE` (or deployment-level equivalent) off/on in staging to validate both the worker path and the inline fallback before promoting to production.
 
 ## 8. Follow-Up & Assumptions
-- **Pending runtime toggle**: implement an explicit worker bridge feature flag in the shell to satisfy design §12 without relying solely on CDN routing.
+- **Flag retirement**: plan to remove `VITE_ENABLE_WORKER_BRIDGE` once rollout Phase 3 completes and production monitoring stays green; track the cleanup under issue #262 and delete the inline fallback at the same time.
 - **Persistence integration**: coordinate with issue #258 (Worker↔Shell persistence handoff) before enabling offline progression; the runbook will require updates once snapshot flows ship.
 - **Telemetry completeness**: register the analytics sink tracked in issue #267 so worker errors reach dashboards; document the configuration here when available.
 

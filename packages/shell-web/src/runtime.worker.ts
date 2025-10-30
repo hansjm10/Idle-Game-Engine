@@ -60,6 +60,21 @@ export interface RuntimeWorkerHarness {
   readonly dispose: () => void;
 }
 
+export function isDedicatedWorkerScope(
+  value: unknown,
+): value is DedicatedWorkerGlobalScope {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  if (typeof DedicatedWorkerGlobalScope !== 'undefined') {
+    return value instanceof DedicatedWorkerGlobalScope;
+  }
+  const candidate = value as {
+    importScripts?: unknown;
+  };
+  return typeof candidate.importScripts === 'function';
+}
+
 export function initializeRuntimeWorker(
   options: RuntimeWorkerOptions = {},
 ): RuntimeWorkerHarness {
@@ -911,7 +926,11 @@ function createMonotonicClock(now: () => number) {
 }
 
 if (!import.meta.vitest) {
-  initializeRuntimeWorker();
+  const bootstrapScope =
+    typeof self !== 'undefined' ? (self as unknown) : globalThis;
+  if (isDedicatedWorkerScope(bootstrapScope)) {
+    initializeRuntimeWorker();
+  }
 }
 
 function collectOutboundEvents(bus: EventBus): RuntimeEventSnapshot[] {

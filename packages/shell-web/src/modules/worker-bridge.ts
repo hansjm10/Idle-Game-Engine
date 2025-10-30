@@ -26,6 +26,9 @@ import {
   SOCIAL_COMMAND_TYPES,
 } from './runtime-worker-protocol.js';
 import { isSocialCommandsEnabled } from './social-config.js';
+import { isWorkerBridgeEnabled } from './worker-bridge-config.js';
+import type { WorkerBridgeWorker } from './worker-bridge-worker.js';
+import { createInlineRuntimeWorker } from './inline-runtime-worker.js';
 
 export interface WorkerRestoreSessionPayload {
   readonly state?: SerializedResourceState;
@@ -117,7 +120,7 @@ declare global {
 export class WorkerBridgeImpl<TState = unknown>
   implements WorkerBridge<TState>
 {
-  private readonly worker: Worker;
+  private readonly worker: WorkerBridgeWorker;
   private readonly pendingMessages: RuntimeWorkerInboundMessage[] = [];
   private readonly stateUpdateCallbacks: Array<(state: TState) => void> = [];
   private readonly diagnosticsUpdateCallbacks: Array<
@@ -320,7 +323,7 @@ export class WorkerBridgeImpl<TState = unknown>
     pending.reject(error);
   }
 
-  constructor(worker: Worker) {
+  constructor(worker: WorkerBridgeWorker) {
     this.worker = worker;
     this.readyPromise = new Promise<void>((resolve) => {
       this.resolveReady = resolve;
@@ -611,15 +614,20 @@ export {
   type SocialCommandPayloads,
   type SocialCommandResults,
 };
+export type { WorkerBridgeWorker } from './worker-bridge-worker.js';
 
 export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeImpl<TState> {
   const bridgeRef = useRef<WorkerBridgeImpl<TState>>();
 
   if (!bridgeRef.current) {
-    const worker = new Worker(
-      new URL('../runtime.worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    // Feature flag keeps the worker bridge opt-in during rollout (docs/runtime-react-worker-bridge-design.md §12).
+    const worker: WorkerBridgeWorker = isWorkerBridgeEnabled()
+      ? (new Worker(
+          new URL('../runtime.worker.ts', import.meta.url),
+          { type: 'module' },
+        ) as unknown as WorkerBridgeWorker)
+      : createInlineRuntimeWorker();
+
     bridgeRef.current = new WorkerBridgeImpl<TState>(worker);
     const bridgeGlobal = globalThis as typeof globalThis & {
       __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
