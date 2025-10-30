@@ -145,14 +145,25 @@ function createShellAnalyticsFacade(
 ): ShellAnalyticsFacade & {
   [TELEMETRY_FACADE_MARKER]: true;
 } {
-  const facade: ShellAnalyticsFacade & {
+  const existingRecordError =
+    typeof previousFacade?.recordError === 'function' ? previousFacade.recordError : undefined;
+
+  const baseFacade =
+    previousFacade ??
+    ({
+      recordError(event, data) {
+        emitBrowserTelemetry(event, data);
+      },
+    } satisfies ShellAnalyticsFacade);
+
+  const facade = baseFacade as ShellAnalyticsFacade & {
     [TELEMETRY_FACADE_MARKER]: true;
-  } = {
-    [TELEMETRY_FACADE_MARKER]: true,
-    recordError(event, data) {
-      emitBrowserTelemetry(event, data);
-      previousFacade?.recordError(event, data);
-    },
+  };
+
+  facade[TELEMETRY_FACADE_MARKER] = true;
+  facade.recordError = (event, data) => {
+    emitBrowserTelemetry(event, data);
+    existingRecordError?.call(previousFacade, event, data);
   };
 
   return facade;
