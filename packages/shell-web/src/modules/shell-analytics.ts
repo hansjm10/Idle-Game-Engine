@@ -149,12 +149,18 @@ function createShellAnalyticsFacade(
     typeof previousFacade?.recordError === 'function' ? previousFacade.recordError : undefined;
 
   const baseFacade =
-    previousFacade ??
-    ({
-      recordError(event, data) {
-        emitBrowserTelemetry(event, data);
-      },
-    } satisfies ShellAnalyticsFacade);
+    previousFacade !== undefined
+      ? Object.assign(
+          Object.create(
+            Object.getPrototypeOf(previousFacade) ?? Object.prototype,
+          ),
+          previousFacade,
+        )
+      : ({
+          recordError(event, data) {
+            emitBrowserTelemetry(event, data);
+          },
+        } satisfies ShellAnalyticsFacade);
 
   const facade = baseFacade as ShellAnalyticsFacade & {
     [TELEMETRY_FACADE_MARKER]: true;
