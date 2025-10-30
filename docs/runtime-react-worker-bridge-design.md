@@ -199,7 +199,7 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
   - Update onboarding documentation to reference new bridge once rollout completes.
 
 ## 13. Decisions Since Draft
-- **Telemetry routing** *(Owner: Presentation Shell analytics lead)* — Worker-side errors publish through the shell analytics pipeline via the global `__IDLE_ENGINE_TELEMETRY__` facade (`packages/shell-web/src/modules/worker-bridge.ts:126`). Implementation is tracked in [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267) and will register the shell analytics sink during bridge bootstrap so runtime incidents flow into shell dashboards.
+- **Telemetry routing** *(Owner: Presentation Shell analytics lead)* — Worker-side errors publish through the shell analytics pipeline via the global `__IDLE_ENGINE_TELEMETRY__` facade (`packages/shell-web/src/modules/worker-bridge.ts:126`). Implementation completed in [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267) installs the browser shell analytics facade (`packages/shell-web/src/modules/shell-analytics.ts`), wiring worker bridge telemetry into dashboards and exposing the `VITE_SHELL_ANALYTICS_ENDPOINT` fallback for hosts that rely on sendBeacon/fetch delivery.
 - **Content pack messaging** *(Owner: Content Systems integration lead)* — Presentation shells continue to consume pack-provided events exclusively through the `STATE_UPDATE.state.events` array; no additional message envelopes are required. We verified this against existing pack samples and worker emission logic, so downstream agents can rely on the current contract without schema changes.
 - **Resumable session handshake** *(Owner: Runtime Core liaison)* — The `RESTORE_SESSION` / `SESSION_RESTORED` sequence and `WorkerBridge.restoreSession()` helper are considered ready for rollout. Coordination with the persistence work in [#258](https://github.com/hansjm10/Idle-Game-Engine/issues/258) will cover storage handoff requirements before enabling offline progression in production.
 
@@ -283,7 +283,7 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 ### 14.2 Remaining Items
 - Integrate social-service command hooks after bridge stabilises. Owner: Social Services Lead.
 - Produce developer tutorial documenting how to extend the bridge for custom commands. Owner: React Bridge Integration Agent (post-delivery).
-- Implement shell analytics sink for worker bridge telemetry routing. Owner: Presentation Shell analytics lead. Tracked in [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267).
+- Implement shell analytics sink for worker bridge telemetry routing. Owner: Presentation Shell analytics lead. **Status**: Completed via [#267](https://github.com/hansjm10/Idle-Game-Engine/issues/267); configure hosts with `VITE_SHELL_ANALYTICS_ENDPOINT` (or `SHELL_ANALYTICS_ENDPOINT`) when routing through custom collectors.
 
 ## 15. References
 - `docs/implementation-plan.md:18`

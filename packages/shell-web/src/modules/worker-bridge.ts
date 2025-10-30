@@ -29,6 +29,9 @@ import { isSocialCommandsEnabled } from './social-config.js';
 import { isWorkerBridgeEnabled } from './worker-bridge-config.js';
 import type { WorkerBridgeWorker } from './worker-bridge-worker.js';
 import { createInlineRuntimeWorker } from './inline-runtime-worker.js';
+import { installShellTelemetryFacade } from './shell-analytics.js';
+
+installShellTelemetryFacade();
 
 export interface WorkerRestoreSessionPayload {
   readonly state?: SerializedResourceState;
