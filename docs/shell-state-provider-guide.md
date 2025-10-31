@@ -108,17 +108,14 @@ Diagnostics fan out to subscribers while the provider manages worker reference c
 const { latest, subscribe, isEnabled } = useShellDiagnostics();
 
 useEffect(() => {
-  if (isEnabled) {
-    return;
-  }
   const unsubscribe = subscribe((timeline) => {
     // Render charts or persist snapshots.
   });
   return unsubscribe;
-}, [isEnabled, subscribe]);
+}, [subscribe]);
 ```
 
-- Subscribing automatically calls `bridge.enableDiagnostics()` when the first listener registers and disables diagnostics when the last listener unsubscribes (guarding the risk listed in [design §11](shell-state-provider-design.md#11-risks--mitigations)).
+- Subscribing automatically calls `bridge.enableDiagnostics()` when the first listener registers and disables diagnostics when the last listener unsubscribes (guarding the risk listed in [design §11](shell-state-provider-design.md#11-risks--mitigations)). Use `isEnabled` to reflect UI state, not to skip subscription.
 - Guard subscription callbacks; exceptions are reported as `ShellStateProviderDiagnosticsSubscriberError` with phase metadata.
 - Access `latest` for immediate renders—`subscribe` emits the current timeline before the worker sends updates.
 
@@ -148,7 +145,7 @@ pnpm test:a11y
 - The Vitest suites (e.g., `ShellStateProvider.telemetry.test.tsx`) assert telemetry coverage promised in [design §6.2](shell-state-provider-design.md#62-detailed-design). Extend them if you introduce new reducer events or telemetry codes.
 - Keep console output clean so the `vitest-llm-reporter` summary remains parseable.
 
-If you uncover provider gaps (new reducer cases, telemetry fields, or diagnostics channels), document assumptions in your PR and sync with the Presentation Shell Lead—the acceptance criteria for Issue #285 require that review.
+If you uncover provider gaps (new reducer cases, telemetry fields, or diagnostics channels), document assumptions in your PR and sync with the Presentation Shell Lead as outlined in [design §7.3 Coordination Notes](shell-state-provider-design.md#73-coordination-notes).
 
 ## 7. Reference Summary
 
