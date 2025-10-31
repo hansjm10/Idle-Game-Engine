@@ -52,7 +52,7 @@ export function App() {
 
 ### Restore Payloads
 
-If you need to hydrate from a saved session, pass a `restorePayload` prop. The provider invokes `restoreSession(payload)` once on mount, surfacing loading state through `ShellState.bridge.isRestoring`. Catch errors via telemetry (`ShellStateProviderRestoreFailed` / `ShellStateProviderRestoreEffectFailed`) instead of wrapping restore in component-level try/catch. This behaviour matches the session flow described in [design §6.2 APIs & Contracts](shell-state-provider-design.md#62-detailed-design).
+If you need to hydrate from a saved session, pass a `restorePayload` prop. The provider invokes `restoreSession(payload)` on mount and again whenever the `restorePayload` reference changes, surfacing loading state through `ShellState.bridge.isRestoring`. Keep the payload stable (e.g., via `useMemo`) unless you intend to trigger another restore. Catch errors via telemetry (`ShellStateProviderRestoreFailed` / `ShellStateProviderRestoreEffectFailed`) instead of wrapping restore in component-level try/catch. This behaviour matches the session flow described in [design §6.2 APIs & Contracts](shell-state-provider-design.md#62-detailed-design).
 
 ## 2. Consume Runtime State
 
