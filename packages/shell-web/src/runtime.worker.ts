@@ -10,6 +10,7 @@ import {
   getGameState,
   buildProgressionSnapshot,
   type ProgressionAuthoritativeState,
+  type ProgressionResourceState,
   type DiagnosticTimelineResult,
   type EventBus,
 } from '@idle-engine/core';
@@ -60,6 +61,10 @@ interface WorkerGameState {
   progression: ProgressionAuthoritativeState;
   [key: string]: unknown;
 }
+
+type Mutable<T> = {
+  -readonly [K in keyof T]: T[K];
+};
 
 export interface RuntimeWorkerHarness {
   readonly runtime: IdleEngineRuntime;
@@ -698,14 +703,13 @@ export function initializeRuntimeWorker(
       }
 
       if (message.state !== undefined) {
-        const currentResources = gameState.progression.resources ?? {};
-        gameState.progression = {
-          ...gameState.progression,
-          resources: {
-            ...currentResources,
-            serialized: message.state,
-          },
-        };
+        const progression =
+          gameState.progression as Mutable<ProgressionAuthoritativeState>;
+        const resources =
+          (progression.resources as Mutable<ProgressionResourceState> | undefined) ??
+          (progression.resources =
+            {} as Mutable<ProgressionResourceState>);
+        resources.serialized = message.state;
         setGameState(gameState);
       }
 
