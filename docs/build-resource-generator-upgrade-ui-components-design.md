@@ -3,7 +3,7 @@
 ## Document Control
 - **Title**: Build resource/generator/upgrade UI components
 - **Authors**: Idle Engine Design-Authoring Agent (Autonomous Delivery)
-- **Reviewers**: TODO (Shell UX Maintainer); TODO (Runtime Core Maintainer)
+- **Reviewers**: Shell UX Maintainers (Presentation Shell Workstream); Runtime Core Maintainers
 - **Status**: Draft
 - **Last Updated**: 2025-10-31
 - **Related Issues**: Idle-Game-Engine#18
@@ -61,9 +61,9 @@ The progression UI initiative replaces the placeholder shell with production-rea
 #### Field Sourcing
 - **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. `perTick` is computed as `resourceState.getNetPerSecond(index) * (runtime.getStepSizeMs() / 1000)` so UI consumers receive the net delta per runtime step.
 - **Generators**: Hydrate generator rows from the authoritative progression systems (existing handlers in `packages/core/src/resource-command-handlers.ts:54`), including the next purchase price calculated via the generator definition’s cost curve helpers. Expose `nextPurchaseReadyAtStep` as `currentStep + 1` when no cooldown applies, mirroring the command queue’s deterministic “next tick” execution window.
-- **Upgrades**: Surface upgrade visibility, availability, and purchase pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, mark snapshot entries with `status: 'locked' | 'available' | 'purchased'` to match the future data contract.
+- **Upgrades**: Surface upgrade visibility, availability, and purchase pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, mark snapshot entries with `status: 'locked' | 'available' | 'purchased'` to match the future data contract, and gate any `available` state behind real economics shipped from `packages/content-sample`.
 - **APIs & Contracts**: Add `PURCHASE_UPGRADE` command type (TODO owner: Runtime Protocol Agent) mirroring `PurchaseGeneratorPayload` (`packages/core/src/command.ts:121`); expose read-only view helpers on the shell bridge for the progression UI; guarantee schema version negotiation.
-- **Tooling & Automation**: Update Vitest suites for worker and shell modules (`packages/shell-web/src/modules/runtime.worker.test.ts`) to assert new payloads; add component unit tests for the progression UI using React Testing Library; ensure `pnpm test --filter shell-web` remains primary validation (`docs/runtime-react-worker-bridge-design.md:164`).
+- **Tooling & Automation**: Update Vitest suites for worker and shell modules (`packages/shell-web/src/runtime.worker.test.ts`) to assert new payloads and rejection flows; add component unit tests for the progression UI using React Testing Library; ensure `pnpm test --filter shell-web` remains primary validation (`docs/runtime-react-worker-bridge-design.md:164`).
 
 #### Example Snapshot & Command Flow
 ```typescript
@@ -114,6 +114,7 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.energy",
       "displayName": "Energy",
       "amount": 125.5,
+      "capacity": 250,
       "perTick": 0.55
     },
     {
@@ -166,18 +167,28 @@ type UpgradeView = Readonly<{
       "status": "available",
       "purchasePrice": 75,
       "currencyId": "sample-pack.energy"
+    },
+    {
+      "id": "sample-pack.reactor-overclock",
+      "displayName": "Reactor Overclock",
+      "status": "purchased"
     }
   ]
 }
 ```
 
-Upgrades in the snapshot illustration use placeholder IDs; update them once `packages/content-sample` adds real upgrade definitions alongside the generator content.
+Upgrades in the snapshot illustration use placeholder IDs; update them once `packages/content-sample` adds real upgrade definitions alongside the generator content. The example covers locked, available, and purchased states so UI consumers can map every variant.
 
 1. Player clicks “Buy Reactor” in `GeneratorPanel`.
 2. Component calls `bridge.sendCommand('PURCHASE_GENERATOR', { generatorId: 'sample-pack.reactor', count: 1 })`.
 3. Worker validates funds, applies the purchase through `resource-command-handlers.ts`, emits telemetry, and republishes the snapshot at `step + 1`.
 4. `ShellStateProvider` receives the updated snapshot, recomputes memoized selectors, and re-renders the dashboard with optimistic feedback already reflected because the component staged the delta while awaiting confirmation.
 5. Analytics facade logs `generator.purchase.confirmed` with the request latency once the worker response arrives.
+
+#### Failure & Mismatch Handling
+- If the worker rejects a purchase (insufficient currency, invalid generator, or upgrade lock), the snapshot emitted on the next tick omits the optimistic delta. `ShellStateProvider` rolls back the pending state and surfaces a toast summarising the denial while logging `generator.purchase.denied` / `upgrade.purchase.denied` through `packages/shell-web/src/modules/shell-analytics.ts:1`.
+- When the bridge receives an `ERROR` envelope with a `requestId`, it cancels the pending optimistic entry, emits `progression-ui.command-error`, and replays the authoritative snapshot once available (`packages/shell-web/src/modules/worker-bridge.ts:246`). Components must treat the rollback as deterministic and keep focus in place for accessibility.
+- Schema mismatches still hit the guardrail at `packages/shell-web/src/modules/worker-bridge.ts:223`; emit `progression-ui.schema-mismatch`, show the fatal notification described in §4, and revert to the inline runtime until the refresh path succeeds.
 
 #### Upgrade Purchase Contract
 - Introduce `RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE` in `packages/core/src/command.ts`, pairing it with a `PurchaseUpgradePayload` containing `upgradeId` and optional `metadata` for future side effects. The shell bridge stamps the command with `CommandPriority.PLAYER`, matching `PURCHASE_GENERATOR`.
@@ -197,8 +208,8 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 | feat(core): emit progression snapshot | Add `ProgressionSnapshot` export, worker serialization, schema bump for the progression UI | Runtime Protocol Agent | Telemetry scaffolding ready | Vitest worker-suite validates snapshot; schema version doc updated |
 | feat(shell-web): integrate progression state | Extend `ShellStateProvider`, selectors, context for the progression UI | Shell UI Implementation Agent | Progression snapshot merged | Shell hook tests prove memoization; bridge still passes diagnostics tests |
 | feat(shell-web): resource dashboard UI | Render resource list with capacities, rates, accessibility hooks | Shell UI Implementation Agent | Progression hook available | Component tests cover locked/unlocked states; passes `pnpm test --filter shell-web` |
-| feat(shell-web): generator & upgrade interactions | Create generator cards, command dispatch, upgrade modal | Shell UI Implementation Agent | Dashboard UI merged | Commands fire with optimistic updates; telemetry events asserted in tests; QA sign-off captured |
-| docs/content-sample: enrich progression data | Backfill generators, upgrades, localization for the progression UI showcase | Content Data Agent | Progression snapshot contract final | Content tests regenerate artifacts; docs note new content |
+| feat(shell-web): generator & upgrade interactions | Create generator cards, command dispatch, upgrade modal | Shell UI Implementation Agent | Dashboard UI merged | Commands fire with optimistic updates; rejected purchases revert UI with toast + telemetry assertions; QA sign-off captured |
+| docs/content-sample: enrich progression data | Backfill generators, upgrades, localization for the progression UI showcase | Content Data Agent | Progression snapshot contract final | Content tests regenerate artifacts; upgrade economics and unlocks ship before flag enablement; docs note new content |
 
 ### 7.2 Milestones
 - **Phase 1**: Finalize progression snapshot contract, raise schema version, land worker tests; exit when progression UI data flows to shell.
@@ -228,7 +239,7 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 ## 11. Risks & Mitigations
 - Schema drift between worker and shell for the progression UI; mitigate via shared types and compile-time checks.
 - Feature flag left disabled in production leading to dead code; mitigate by tracking rollout issue and gating removal in Follow-Up Work.
-- Upgrade economics missing until content team supplies data; mitigate via TODO owner assignment and stub entries flagged in Open Questions.
+- Upgrade economics missing until content team supplies data; mitigate via the Content Systems deliverable documented in §13 and block flag enablement until it lands.
 
 ## 12. Rollout Plan
 - **Milestones**: Enable flag in `dev` after Phase 2 once Release Gates pass on a `pnpm test --filter shell-web` focused run; promote to `main` after the telemetry dashboard confirms no `progression-ui.schema-mismatch` events for 72 hours; remove the flag after two stable releases and a green rerun of `pnpm test:a11y` on the enabled build.
@@ -236,9 +247,9 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 - **Communication**: Announce progression UI availability in weekly status reports; update onboarding documentation post-rollout.
 
 ## 13. Open Questions
-- TODO (Content Systems): Confirm upgrade catalog and unlock sequencing needed for the progression UI.
-- TODO (UX Lead): Provide visual hierarchy guidelines and iconography requirements.
-- TODO (Runtime Protocol Agent): Decide on upgrade purchase command semantics and refund behaviour.
+- Content Systems (Issue #18 checkpoint): Deliver the definitive upgrade catalog and unlock sequencing before Phase 2 exits; progression flag cannot flip without this data set.
+- UX Lead: Provide visual hierarchy guidelines and iconography requirements so GeneratorPanel/UpgradeModal align with shell patterns.
+- Runtime Protocol Agent: Finalise upgrade purchase command semantics and refund behaviour, then codify them in `packages/core/src/command.ts` alongside regression tests.
 
 ## 14. Follow-Up Work
 - Document automation toggles and prestige integration once the progression UI stabilizes.
