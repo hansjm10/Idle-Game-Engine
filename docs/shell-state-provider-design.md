@@ -59,8 +59,8 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 
 ### 6.2 Detailed Design
 - **Runtime Changes**: No structural updates to the runtime worker; the provider listens to `STATE_UPDATE` envelopes already emitted (`packages/shell-web/src/runtime.worker.ts:162`). Guardrails ensure provider consumers cannot mutate runtime state directly.
-- **Data & Schemas**: Define `ShellState` with fields for `runtime` (step, events, backPressure), `bridge` (ready flags, lastUpdateAt, error queue), and `social` (pending request map). Move the `MAX_EVENT_HISTORY` constant from `App.tsx:13` into the provider with configurability via props. Type definitions live in `packages/shell-web/src/modules/shell-state.types.ts`.
-- **APIs & Contracts**: Export `ShellStateProvider`, `useShellState`, `useShellBridge`, and `useShellDiagnostics`. Hooks throw descriptive errors if misused outside the provider. Session restore fires once during provider mount, respecting existing `WorkerBridge` promise semantics. Social commands resolve through provider-managed `pendingRequests` to expose optimistic UI state mirroring `packages/shell-web/src/modules/worker-bridge.ts:340`.
+- **Data & Schemas**: Define `ShellState` with fields for `runtime` (step, events, backPressure, and the latest `lastSnapshot` pointer), `bridge` (ready flags, lastUpdateAt, error queue), and `social` (pending request map plus the most recent `lastFailure` metadata). Move the `MAX_EVENT_HISTORY` constant from `App.tsx:13` into the provider with configurability via props. Type definitions live in `packages/shell-web/src/modules/shell-state.types.ts`.
+- **APIs & Contracts**: Export `ShellStateProvider`, `useShellState`, `useShellBridge`, and `useShellDiagnostics`. Hooks throw descriptive errors if misused outside the provider. Session restore fires once during provider mount, respecting existing `WorkerBridge` promise semantics. Social commands resolve through provider-managed `pendingRequests` to expose optimistic UI state mirroring `packages/shell-web/src/modules/worker-bridge.ts:340`. `runtime.lastSnapshot` remains `undefined` until the first `STATE_UPDATE`, then mirrors the latest reducer snapshot so consumers can derive memoised selectors. `social.lastFailure` surfaces the last failed request and persists until a subsequent failure overwrites it, allowing telemetry to inspect the most recent error without implicitly clearing on success.
 - **Tooling & Automation**: Add Vitest suites covering reducer transitions, event history bounds, and error propagation. Extend analytics tests (`packages/shell-web/src/modules/shell-analytics.test.ts`) with provider-driven telemetry assertions. Update any stories or samples to mount components under the provider.
 
 ### 6.3 Operational Considerations
@@ -117,7 +117,7 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 
 ## 14. Follow-Up Work
 - Schedule persistence integration design to extend the provider with save/load channels.
-- Draft tutorial documentation for new contributors explaining provider usage.
+- Publish and maintain the [Shell State Provider Integration Guide](shell-state-provider-guide.md) so new contributors understand provider usage.
 - Plan future localisation-aware selectors once UI strings are externalised.
 
 ## 15. References

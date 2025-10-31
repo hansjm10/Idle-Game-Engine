@@ -22,6 +22,9 @@ place.
 - Extending the presentation shell? Follow the
   [Worker Bridge Extension Tutorial](worker-bridge-extension-tutorial.md) to add
   new commands end-to-end.
+- Consuming shared shell state? Read the
+  [Shell State Provider Integration Guide](shell-state-provider-guide.md) for
+  hook usage, diagnostics, and migration practices.
 - Use the **Design Document Template** when drafting new proposals or migrating
   historical specs so the archive stays consistent.
 - Check the **Decisions** section when you need historical context before
