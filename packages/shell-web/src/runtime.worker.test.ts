@@ -199,7 +199,7 @@ describe('runtime.worker integration', () => {
     expect(scheduledTick).toBeNull();
   });
 
-  it('includes progression snapshot data sourced from game state', () => {
+  it('hydrates progression snapshot from sample content state', () => {
     const scheduleTick = (callback: () => void) => {
       scheduledTick = callback;
       return () => {
@@ -208,81 +208,6 @@ describe('runtime.worker integration', () => {
         }
       };
     };
-
-    const resourceState = core.createResourceState([
-      {
-        id: 'energy',
-        startAmount: 90,
-        capacity: 150,
-        unlocked: true,
-        visible: true,
-      },
-    ]);
-    const energyIndex = resourceState.requireIndex('energy');
-    resourceState.applyIncome(energyIndex, 2);
-
-    const generatorEvaluator: core.GeneratorPurchaseEvaluator = {
-      getPurchaseQuote: (generatorId, count) => {
-        if (generatorId !== 'sample.reactor' || count !== 1) {
-          return undefined;
-        }
-        return {
-          generatorId,
-          costs: [{ resourceId: 'energy', amount: 25 }],
-        };
-      },
-      applyPurchase: vi.fn(),
-    };
-
-    const upgradeEvaluator: core.UpgradePurchaseEvaluator = {
-      getPurchaseQuote: (upgradeId) => {
-        if (upgradeId !== 'sample.reactor-insulation') {
-          return undefined;
-        }
-        return {
-          upgradeId,
-          status: 'available',
-          costs: [{ resourceId: 'energy', amount: 30 }],
-        };
-      },
-      applyPurchase: vi.fn(),
-    };
-
-    core.setGameState({
-      progression: {
-        stepDurationMs: 100,
-        resources: {
-          state: resourceState,
-          metadata: new Map([
-            ['energy', { displayName: 'Energy' }],
-          ]),
-        },
-        generators: [
-          {
-            id: 'sample.reactor',
-            displayName: 'Reactor',
-            owned: 3,
-            isUnlocked: true,
-            isVisible: true,
-            produces: [{ resourceId: 'energy', rate: 1 }],
-            consumes: [],
-            nextPurchaseReadyAtStep: 8,
-          },
-        ],
-        generatorPurchases: generatorEvaluator,
-        upgrades: [
-          {
-            id: 'sample.reactor-insulation',
-            displayName: 'Insulation',
-            status: 'available',
-            isVisible: true,
-            unlockHint: 'Collect 10 energy',
-            costs: [{ resourceId: 'energy', amount: 30 }],
-          },
-        ],
-        upgradePurchases: upgradeEvaluator,
-      } satisfies ProgressionAuthoritativeState,
-    });
 
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
@@ -306,7 +231,12 @@ describe('runtime.worker integration', () => {
             perTick: number;
           }>;
           generators: Array<{
-            costs: Array<{ amount: number }>
+            id: string;
+            owned: number;
+            costs: Array<{ resourceId: string; amount: number }>;
+            isUnlocked: boolean;
+            isVisible: boolean;
+            nextPurchaseReadyAtStep: number;
           }>;
           upgrades: Array<{
             costs?: Array<{ amount: number }>;
@@ -318,31 +248,202 @@ describe('runtime.worker integration', () => {
 
     expect(stateEnvelope).not.toBeNull();
     const progression = stateEnvelope!.state.progression;
-    expect(progression.resources).toEqual([
-      expect.objectContaining({
-        id: 'energy',
-        displayName: 'Energy',
-        amount: 90,
-        capacity: 150,
-        perTick: 0.2,
-      }),
-    ]);
-    expect(progression.generators).toEqual([
-      expect.objectContaining({
-        id: 'sample.reactor',
-        owned: 3,
-        costs: [{ resourceId: 'energy', amount: 25 }],
-        nextPurchaseReadyAtStep: 8,
-      }),
-    ]);
-    expect(progression.upgrades).toEqual([
-      expect.objectContaining({
-        id: 'sample.reactor-insulation',
-        status: 'available',
-        costs: [{ resourceId: 'energy', amount: 30 }],
-        unlockHint: 'Collect 10 energy',
-      }),
-    ]);
+    expect(progression.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'sample-pack.energy',
+          displayName: 'Energy',
+          amount: 10,
+          isUnlocked: true,
+          isVisible: true,
+        }),
+        expect.objectContaining({
+          id: 'sample-pack.crystal',
+          displayName: 'Crystal',
+          amount: 0,
+        }),
+      ]),
+    );
+    expect(progression.generators).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'sample-pack.reactor',
+          owned: 0,
+          isUnlocked: true,
+          isVisible: true,
+          costs: [{ resourceId: 'sample-pack.energy', amount: 100 }],
+          nextPurchaseReadyAtStep: 1,
+        }),
+        expect.objectContaining({
+          id: 'sample-pack.harvester',
+          owned: 0,
+          isUnlocked: false,
+          isVisible: true,
+          costs: [],
+          nextPurchaseReadyAtStep: 1,
+        }),
+      ]),
+    );
+    expect(progression.upgrades).toHaveLength(0);
+
+    const runtimeState = core.getGameState<{
+      progression: ProgressionAuthoritativeState;
+    }>();
+    const resourceState = runtimeState.progression.resources?.state;
+    expect(resourceState).toBeDefined();
+
+    const energyIndex = resourceState?.requireIndex('sample-pack.energy') ?? 0;
+    resourceState?.addAmount(energyIndex, 10);
+
+    context.postMessage.mockClear();
+    advanceTime(110);
+    runTick();
+
+    const updatedEnvelope = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+    )?.[0] as {
+      state: {
+        progression: {
+          generators: Array<{
+            id: string;
+            isUnlocked: boolean;
+            nextPurchaseReadyAtStep: number;
+          }>;
+        };
+      };
+    } | null;
+
+    expect(updatedEnvelope).not.toBeNull();
+    const updatedGenerators = updatedEnvelope!.state.progression.generators;
+    const harvester = updatedGenerators.find(
+      (generator) => generator.id === 'sample-pack.harvester',
+    );
+    expect(harvester).toBeDefined();
+    expect(harvester?.isUnlocked).toBe(true);
+    expect(harvester?.nextPurchaseReadyAtStep).toBe(3);
+  });
+
+  it('hydrates live resource state from serialized progression when reusing game state', () => {
+    const serializedState: core.SerializedResourceState = {
+      ids: ['sample-pack.energy'],
+      amounts: [42],
+      capacities: [100],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+    };
+
+    core.setGameState<{
+      progression: ProgressionAuthoritativeState;
+    }>({
+      progression: {
+        stepDurationMs: 100,
+        resources: {
+          serialized: serializedState,
+        },
+      },
+    });
+
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      stepSizeMs: 100,
+    });
+
+    const runtimeState = core.getGameState<{
+      progression: ProgressionAuthoritativeState;
+    }>();
+    const resourceState = runtimeState.progression.resources?.state;
+    expect(resourceState).toBeDefined();
+    const energyIndex = resourceState?.requireIndex('sample-pack.energy') ?? 0;
+    expect(resourceState?.getAmount(energyIndex)).toBe(42);
+    expect(resourceState?.getCapacity(energyIndex)).toBe(100);
+    expect(resourceState?.isUnlocked(energyIndex)).toBe(true);
+    expect(resourceState?.isVisible(energyIndex)).toBe(true);
+  });
+
+  it('preserves resource metadata when restoring a session', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      stepSizeMs: 100,
+    });
+
+    const runtimeStateBefore = core.getGameState<{
+      progression: ProgressionAuthoritativeState;
+    }>();
+    const metadataBefore =
+      runtimeStateBefore.progression.resources?.metadata;
+    expect(metadataBefore?.get('sample-pack.energy')?.displayName).toBe(
+      'Energy',
+    );
+
+    const serializedState: core.SerializedResourceState = {
+      ids: ['sample-pack.energy'],
+      amounts: [5],
+      capacities: [25],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+    };
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      state: serializedState,
+    });
+
+    const runtimeStateAfter = core.getGameState<{
+      progression: ProgressionAuthoritativeState;
+    }>();
+    const metadataAfter =
+      runtimeStateAfter.progression.resources?.metadata;
+    expect(metadataAfter?.get('sample-pack.energy')?.displayName).toBe(
+      'Energy',
+    );
+
+    advanceTime(110);
+    runTick();
+
+    const stateEnvelope = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+    )?.[0] as {
+      state: {
+        progression: {
+          resources: Array<{ id: string; displayName?: string }>;
+        };
+      };
+    } | null;
+
+    expect(stateEnvelope).not.toBeNull();
+    const energyResource = stateEnvelope!.state.progression.resources.find(
+      (resource) => resource.id === 'sample-pack.energy',
+    );
+    expect(energyResource?.displayName).toBe('Energy');
   });
 
   it('creates monotonic timestamps when the clock stalls', () => {
@@ -648,7 +749,7 @@ describe('runtime.worker integration', () => {
     const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
     const setGameStateSpy = vi.spyOn(core, 'setGameState');
     const serializedState: core.SerializedResourceState = {
-      ids: ['energy'],
+      ids: ['sample-pack.energy'],
       amounts: [5],
       capacities: [10],
       flags: [0],
@@ -667,7 +768,7 @@ describe('runtime.worker integration', () => {
       schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       elapsedMs: 1200,
       state: serializedState,
-      resourceDeltas: { energy: 10 },
+      resourceDeltas: { 'sample-pack.energy': 10 },
     });
 
     expect(setGameStateSpy).toHaveBeenCalled();
@@ -677,6 +778,14 @@ describe('runtime.worker integration', () => {
     expect(updatedState?.progression?.resources?.serialized).toEqual(
       serializedState,
     );
+    const liveState = core.getGameState<{
+      progression: ProgressionAuthoritativeState;
+    }>();
+    const liveResourceState = liveState.progression.resources?.state;
+    expect(liveResourceState).toBeDefined();
+    const energyIndex =
+      liveResourceState?.requireIndex('sample-pack.energy') ?? 0;
+    expect(liveResourceState?.getAmount(energyIndex)).toBe(5);
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
       type: string;
@@ -688,7 +797,7 @@ describe('runtime.worker integration', () => {
     );
     expect(offlineCommand.payload).toMatchObject({
       elapsedMs: 1200,
-      resourceDeltas: { energy: 10 },
+      resourceDeltas: { 'sample-pack.energy': 10 },
     });
     expect(offlineCommand.priority).toBe(core.CommandPriority.SYSTEM);
 
