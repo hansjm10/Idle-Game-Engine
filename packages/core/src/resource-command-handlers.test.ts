@@ -18,6 +18,8 @@ import {
   type GeneratorResourceCost,
   type GeneratorPurchaseQuote,
   type GeneratorPurchaseEvaluator,
+  type UpgradePurchaseEvaluator,
+  type UpgradePurchaseQuote,
 } from './resource-command-handlers.js';
 import {
   createResourceState,
@@ -61,6 +63,46 @@ class StubGeneratorPurchases implements GeneratorPurchaseEvaluator {
   }
 }
 
+class StubUpgradePurchases implements UpgradePurchaseEvaluator {
+  public readonly definitions = new Map<
+    string,
+    { readonly status: 'locked' | 'available' | 'purchased'; readonly costs: readonly { resourceId: string; amount: number }[] }
+  >();
+
+  public readonly applied: Array<{
+    readonly upgradeId: string;
+    readonly metadata?: Readonly<Record<string, unknown>>;
+  }> = [];
+
+  public readonly quotes: Array<{ upgradeId: string }> = [];
+
+  getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined {
+    this.quotes.push({ upgradeId });
+    const definition = this.definitions.get(upgradeId);
+    if (!definition) {
+      return undefined;
+    }
+    return {
+      upgradeId,
+      status: definition.status,
+      costs: definition.costs.map((cost) => ({
+        resourceId: cost.resourceId,
+        amount: cost.amount,
+      })),
+    };
+  }
+
+  applyPurchase(
+    upgradeId: string,
+    options?: { metadata?: Readonly<Record<string, unknown>> },
+  ): void {
+    this.applied.push({
+      upgradeId,
+      metadata: options?.metadata,
+    });
+  }
+}
+
 function createCommand<TPayload>(
   overrides: Partial<Command<TPayload>> & { payload: TPayload },
 ): Command<TPayload> {
@@ -78,6 +120,7 @@ describe('resource command handlers', () => {
   let resources: ResourceState;
   let telemetryStub: TelemetryFacade;
   let purchases: StubGeneratorPurchases;
+  let upgrades: StubUpgradePurchases;
 
   beforeEach(() => {
     dispatcher = new CommandDispatcher();
@@ -86,9 +129,15 @@ describe('resource command handlers', () => {
       { id: 'crystal', startAmount: 0 },
     ]);
     purchases = new StubGeneratorPurchases();
+    upgrades = new StubUpgradePurchases();
 
     purchases.definitions.set('reactor', {
       costs: [{ resourceId: 'energy', amount: 10 }],
+    });
+
+    upgrades.definitions.set('reactor-insulation', {
+      status: 'available',
+      costs: [{ resourceId: 'energy', amount: 15 }],
     });
 
     telemetryStub = {
@@ -105,6 +154,7 @@ describe('resource command handlers', () => {
       resources,
       generatorPurchases: purchases,
       automationSystemId: 'auto-buy',
+      upgradePurchases: upgrades,
     });
   });
 
@@ -261,6 +311,153 @@ describe('resource command handlers', () => {
         expect.objectContaining({ count: 0 }),
       );
       expect(purchases.applied).toHaveLength(0);
+    });
+  });
+
+  describe('PURCHASE_UPGRADE', () => {
+    it('spends resources and applies upgrade purchase with metadata', () => {
+      const energyIndex = resources.requireIndex('energy');
+      resources.addAmount(energyIndex, 50);
+
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+          payload: {
+            upgradeId: 'reactor-insulation',
+            metadata: { source: 'test' },
+          },
+        }),
+      );
+
+      expect(resources.getAmount(energyIndex)).toBe(35);
+      expect(upgrades.applied).toEqual([
+        {
+          upgradeId: 'reactor-insulation',
+          metadata: { source: 'test' },
+        },
+      ]);
+      expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+        'UpgradePurchaseConfirmed',
+        expect.objectContaining({
+          upgradeId: 'reactor-insulation',
+        }),
+      );
+    });
+
+    it('records telemetry and refunds when resources are insufficient', () => {
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+          payload: { upgradeId: 'reactor-insulation' },
+        }),
+      );
+
+      expect(upgrades.applied).toHaveLength(0);
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'UpgradePurchaseDenied',
+        expect.objectContaining({
+          upgradeId: 'reactor-insulation',
+          reason: 'insufficient-resources',
+        }),
+      );
+    });
+
+    it('rejects locked upgrades without spending resources', () => {
+      upgrades.definitions.set('reactor-insulation', {
+        status: 'locked',
+        costs: [{ resourceId: 'energy', amount: 1 }],
+      });
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+          payload: { upgradeId: 'reactor-insulation' },
+        }),
+      );
+
+      expect(upgrades.applied).toHaveLength(0);
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'UpgradePurchaseLocked',
+        expect.objectContaining({
+          upgradeId: 'reactor-insulation',
+        }),
+      );
+    });
+
+    it('rejects already purchased upgrades without side effects', () => {
+      upgrades.definitions.set('reactor-insulation', {
+        status: 'purchased',
+        costs: [],
+      });
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+          payload: { upgradeId: 'reactor-insulation' },
+        }),
+      );
+
+      expect(upgrades.applied).toHaveLength(0);
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'UpgradePurchaseAlreadyOwned',
+        expect.objectContaining({
+          upgradeId: 'reactor-insulation',
+        }),
+      );
+    });
+
+    it('records errors for invalid quotes', () => {
+      upgrades.definitions.set('reactor-insulation', {
+        status: 'available',
+        costs: [{ resourceId: 'energy', amount: Number.NaN }],
+      });
+
+      expect(() =>
+        execute(
+          createCommand({
+            type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+            payload: { upgradeId: 'reactor-insulation' },
+          }),
+        ),
+      ).not.toThrow();
+
+      expect(telemetryStub.recordError).toHaveBeenCalledWith(
+        'UpgradePurchaseInvalidQuote',
+        expect.objectContaining({
+          upgradeId: 'reactor-insulation',
+          reason: 'cost-invalid',
+        }),
+      );
+    });
+
+    it('records errors when upgrade definitions are missing', () => {
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+          payload: { upgradeId: 'missing-upgrade' },
+        }),
+      );
+
+      expect(telemetryStub.recordError).toHaveBeenCalledWith(
+        'UpgradePurchaseUnknown',
+        expect.objectContaining({
+          upgradeId: 'missing-upgrade',
+        }),
+      );
+    });
+
+    it('records errors for invalid upgrade identifiers', () => {
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+          payload: { upgradeId: '  ' },
+        }),
+      );
+
+      expect(telemetryStub.recordError).toHaveBeenCalledWith(
+        'UpgradePurchaseInvalidId',
+        expect.objectContaining({
+          upgradeId: '  ',
+        }),
+      );
     });
   });
 });

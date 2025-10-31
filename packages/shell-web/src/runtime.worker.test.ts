@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as core from '@idle-engine/core';
+import type { ProgressionAuthoritativeState } from '@idle-engine/core';
 import {
   initializeRuntimeWorker,
   isDedicatedWorkerScope,
@@ -159,6 +160,12 @@ describe('runtime.worker integration', () => {
         currentStep: 1,
         events: expect.any(Array),
         backPressure: expect.any(Object),
+        progression: expect.objectContaining({
+          step: 1,
+          resources: expect.any(Array),
+          generators: expect.any(Array),
+          upgrades: expect.any(Array),
+        }),
       }),
     });
 
@@ -190,6 +197,152 @@ describe('runtime.worker integration', () => {
     });
     expect(context.close).toHaveBeenCalledTimes(1);
     expect(scheduledTick).toBeNull();
+  });
+
+  it('includes progression snapshot data sourced from game state', () => {
+    const scheduleTick = (callback: () => void) => {
+      scheduledTick = callback;
+      return () => {
+        if (scheduledTick === callback) {
+          scheduledTick = null;
+        }
+      };
+    };
+
+    const resourceState = core.createResourceState([
+      {
+        id: 'energy',
+        startAmount: 90,
+        capacity: 150,
+        unlocked: true,
+        visible: true,
+      },
+    ]);
+    const energyIndex = resourceState.requireIndex('energy');
+    resourceState.applyIncome(energyIndex, 2);
+
+    const generatorEvaluator: core.GeneratorPurchaseEvaluator = {
+      getPurchaseQuote: (generatorId, count) => {
+        if (generatorId !== 'sample.reactor' || count !== 1) {
+          return undefined;
+        }
+        return {
+          generatorId,
+          costs: [{ resourceId: 'energy', amount: 25 }],
+        };
+      },
+      applyPurchase: vi.fn(),
+    };
+
+    const upgradeEvaluator: core.UpgradePurchaseEvaluator = {
+      getPurchaseQuote: (upgradeId) => {
+        if (upgradeId !== 'sample.reactor-insulation') {
+          return undefined;
+        }
+        return {
+          upgradeId,
+          status: 'available',
+          costs: [{ resourceId: 'energy', amount: 30 }],
+        };
+      },
+      applyPurchase: vi.fn(),
+    };
+
+    core.setGameState({
+      progression: {
+        stepDurationMs: 100,
+        resources: {
+          state: resourceState,
+          metadata: new Map([
+            ['energy', { displayName: 'Energy' }],
+          ]),
+        },
+        generators: [
+          {
+            id: 'sample.reactor',
+            displayName: 'Reactor',
+            owned: 3,
+            isUnlocked: true,
+            isVisible: true,
+            produces: [{ resourceId: 'energy', rate: 1 }],
+            consumes: [],
+            nextPurchaseReadyAtStep: 8,
+          },
+        ],
+        generatorPurchases: generatorEvaluator,
+        upgrades: [
+          {
+            id: 'sample.reactor-insulation',
+            displayName: 'Insulation',
+            status: 'available',
+            isVisible: true,
+            unlockHint: 'Collect 10 energy',
+            costs: [{ resourceId: 'energy', amount: 30 }],
+          },
+        ],
+        upgradePurchases: upgradeEvaluator,
+      } satisfies ProgressionAuthoritativeState,
+    });
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: () => currentTime,
+      scheduleTick,
+      stepSizeMs: 100,
+    });
+
+    context.postMessage.mockClear();
+    advanceTime(110);
+    runTick();
+
+    const stateEnvelope = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+    )?.[0] as {
+      state: {
+        progression: {
+          resources: Array<{
+            id: string;
+            perTick: number;
+          }>;
+          generators: Array<{
+            costs: Array<{ amount: number }>
+          }>;
+          upgrades: Array<{
+            costs?: Array<{ amount: number }>;
+            status: string;
+          }>;
+        };
+      };
+    } | null;
+
+    expect(stateEnvelope).not.toBeNull();
+    const progression = stateEnvelope!.state.progression;
+    expect(progression.resources).toEqual([
+      expect.objectContaining({
+        id: 'energy',
+        displayName: 'Energy',
+        amount: 90,
+        capacity: 150,
+        perTick: 0.2,
+      }),
+    ]);
+    expect(progression.generators).toEqual([
+      expect.objectContaining({
+        id: 'sample.reactor',
+        owned: 3,
+        costs: [{ resourceId: 'energy', amount: 25 }],
+        nextPurchaseReadyAtStep: 8,
+      }),
+    ]);
+    expect(progression.upgrades).toEqual([
+      expect.objectContaining({
+        id: 'sample.reactor-insulation',
+        status: 'available',
+        costs: [{ resourceId: 'energy', amount: 30 }],
+        unlockHint: 'Collect 10 energy',
+      }),
+    ]);
   });
 
   it('creates monotonic timestamps when the clock stalls', () => {
@@ -517,7 +670,13 @@ describe('runtime.worker integration', () => {
       resourceDeltas: { energy: 10 },
     });
 
-    expect(setGameStateSpy).toHaveBeenCalledWith(serializedState);
+    expect(setGameStateSpy).toHaveBeenCalled();
+    const updatedState = setGameStateSpy.mock.calls.at(-1)?.[0] as
+      | { progression?: { resources?: { serialized?: core.SerializedResourceState } } }
+      | undefined;
+    expect(updatedState?.progression?.resources?.serialized).toEqual(
+      serializedState,
+    );
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
     const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
       type: string;
@@ -561,7 +720,7 @@ describe('runtime.worker integration', () => {
       code: 'RESTORE_FAILED',
     });
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
-    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+    expect(setGameStateSpy).toHaveBeenCalledTimes(2);
   });
 
   it('rejects restore payloads with non-finite resource delta values', () => {
@@ -603,7 +762,7 @@ describe('runtime.worker integration', () => {
       code: 'RESTORE_FAILED',
     });
     expect(enqueueSpy).not.toHaveBeenCalled();
-    expect(setGameStateSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('drops stale commands and reports replay errors', () => {
