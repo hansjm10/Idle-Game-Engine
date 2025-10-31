@@ -98,7 +98,7 @@ const handlePing = async () => {
 
 - Always call `awaitReady()` before the first command or social operation to honour the worker handshake. Failed awaits raise `ShellStateProviderAwaitReadyFailed`.
 - For social operations, prefer `sendSocialCommand(kind, payload)`. The provider tracks optimistic state in `ShellState.social.pendingRequests` and records telemetry if the worker responds with domain-specific errors (`ShellStateProviderSocialCommandFailed`). Display `ShellState.social.lastFailure` to keep the operator informed.
-- When gating UI on feature availability, use `bridge.isSocialFeatureEnabled()` rather than importing feature flags manually—this remains the single source of truth per [design §6.2](shell-state-provider-design.md#62-detailed-design).
+- When gating UI on feature availability, use `bridge.isSocialFeatureEnabled()` rather than importing feature flags manually—the bridge reflects the env toggle documented in [Runtime->React Worker Bridge Runbook §3.3 Configuration Knobs](runtime-worker-bridge-runbook.md#33-configuration-knobs).
 
 ## 4. Integrate Diagnostics
 
