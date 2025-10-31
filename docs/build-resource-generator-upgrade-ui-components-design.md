@@ -25,7 +25,7 @@ The progression UI initiative replaces the placeholder shell with production-rea
 - **Primary Stakeholders**: Presentation Shell maintainers; Runtime Core systems leads; Content authoring team enabling the progression UI.
 - **Agent Roles**: Design Authoring Agent (this document) sets guardrails; Runtime Protocol Agent updates worker payloads; Shell UI Implementation Agent builds components; Progression QA & A11y Agent validates progression UI flows.
 - **Affected Packages/Services**: `packages/core`; `packages/shell-web`; `packages/content-sample`; `docs/`.
-- **Compatibility Considerations**: Bump `WORKER_MESSAGE_SCHEMA_VERSION` (`packages/shell-web/src/modules/runtime-worker-protocol.ts:7`) with backward opt-out; rely on the `SCHEMA_VERSION_MISMATCH` guard in `packages/shell-web/src/runtime.worker.ts:818` and the bridge-side filter (`packages/shell-web/src/modules/worker-bridge.ts:223`) to block incompatible envelopes while logging telemetry; surface a fatal notification in the shell and fall back to the inline runtime path when the first READY message fails; maintain command contracts from `docs/runtime-command-queue-design.md:1034`; ensure serialized saves remain forward-compatible.
+- **Compatibility Considerations**: Bump `WORKER_MESSAGE_SCHEMA_VERSION` (`packages/shell-web/src/modules/runtime-worker-protocol.ts:7`) with backward opt-out; rely on the `SCHEMA_VERSION_MISMATCH` guard in `packages/shell-web/src/runtime.worker.ts:818` and the bridge-side filter (`packages/shell-web/src/modules/worker-bridge.ts:223`) to block incompatible envelopes while logging telemetry; surface a fatal notification in the shell and block worker-driven progression UI until the bundles are rebuilt (the inline runtime remains feature-flag gated); maintain command contracts from `docs/runtime-command-queue-design.md:1034`; ensure serialized saves remain forward-compatible.
 
 ## 5. Current State
 - Shell shows only tick count and event inspector (`packages/shell-web/src/modules/App.tsx:32`), blocking progression UI usage.
@@ -59,9 +59,9 @@ The progression UI initiative replaces the placeholder shell with production-rea
 - **Data & Schemas**: Introduce `ProgressionSnapshot` TypeScript types exported from `@idle-engine/core` for the progression UI; align generator cost curves with sample pack schema (`packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:114`) and reserve upgrade schema wiring as TODO (Content Systems owner).
 
 #### Field Sourcing
-- **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. `perTick` is computed as `resourceState.getNetPerSecond(index) * (runtime.getStepSizeMs() / 1000)` so UI consumers receive the net delta per runtime step.
-- **Generators**: Hydrate generator rows from the authoritative progression systems (existing handlers in `packages/core/src/resource-command-handlers.ts:54`), including the next purchase price calculated via the generator definition’s cost curve helpers. Expose `nextPurchaseReadyAtStep` as `currentStep + 1` when no cooldown applies, mirroring the command queue’s deterministic “next tick” execution window.
-- **Upgrades**: Surface upgrade visibility, availability, and purchase pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, mark snapshot entries with `status: 'locked' | 'available' | 'purchased'` to match the future data contract, and gate any `available` state behind real economics shipped from `packages/content-sample`.
+- **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. Carry forward `isUnlocked`/`isVisible` flags so UI can respect gating, and compute `perTick` as `resourceState.getNetPerSecond(index) * (stepDurationMs / 1000)`, where `stepDurationMs` is the step size provided when constructing the worker runtime (the worker currently defaults this to 100 ms).
+- **Generators**: Hydrate generator rows from the authoritative progression systems (existing handlers in `packages/core/src/resource-command-handlers.ts:54`). Instead of collapsing pricing, surface the full `GeneratorPurchaseQuote.costs` array (resource ID + amount) so UI remains accurate for future multi-resource definitions. Expose `nextPurchaseReadyAtStep` as `currentStep + 1` when no cooldown applies, mirroring the command queue’s deterministic “next tick” execution window.
+- **Upgrades**: Surface upgrade visibility, availability, and multi-resource pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, keep snapshot entries aligned with `status: 'locked' | 'available' | 'purchased'`, attach `costs` arrays when pricing exists, carry an `isVisible` flag, and gate any `available` state behind real economics shipped from `packages/content-sample`.
 - **APIs & Contracts**: Add `PURCHASE_UPGRADE` command type (TODO owner: Runtime Protocol Agent) mirroring `PurchaseGeneratorPayload` (`packages/core/src/command.ts:121`); expose read-only view helpers on the shell bridge for the progression UI; guarantee schema version negotiation.
 - **Tooling & Automation**: Update Vitest suites for worker and shell modules (`packages/shell-web/src/runtime.worker.test.ts`) to assert new payloads and rejection flows; add component unit tests for the progression UI using React Testing Library; ensure `pnpm test --filter shell-web` remains primary validation (`docs/runtime-react-worker-bridge-design.md:164`).
 
@@ -79,8 +79,15 @@ type ResourceView = Readonly<{
   id: string;
   displayName: string;
   amount: number;
+  isUnlocked: boolean;
+  isVisible: boolean;
   capacity?: number;
   perTick: number;
+}>;
+
+type GeneratorCostView = Readonly<{
+  resourceId: string;
+  amount: number;
 }>;
 
 type GeneratorView = Readonly<{
@@ -88,20 +95,25 @@ type GeneratorView = Readonly<{
   displayName: string;
   owned: number;
   isUnlocked: boolean;
-  purchasePrice: number;
-  currencyId: string;
+  isVisible: boolean;
+  costs: readonly GeneratorCostView[];
   produces: readonly { resourceId: string; rate: number }[];
   consumes: readonly { resourceId: string; rate: number }[];
   nextPurchaseReadyAtStep: number;
+}>;
+
+type UpgradeCostView = Readonly<{
+  resourceId: string;
+  amount: number;
 }>;
 
 type UpgradeView = Readonly<{
   id: string;
   displayName: string;
   status: 'locked' | 'available' | 'purchased';
-  purchasePrice?: number;
-  currencyId?: string;
+  costs?: readonly UpgradeCostView[];
   unlockHint?: string;
+  isVisible: boolean;
 }>;
 ```
 
@@ -114,6 +126,8 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.energy",
       "displayName": "Energy",
       "amount": 125.5,
+      "isUnlocked": true,
+      "isVisible": true,
       "capacity": 250,
       "perTick": 0.55
     },
@@ -121,6 +135,8 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.crystal",
       "displayName": "Crystal",
       "amount": 4,
+      "isUnlocked": true,
+      "isVisible": true,
       "perTick": 0.025
     }
   ],
@@ -130,8 +146,10 @@ type UpgradeView = Readonly<{
       "displayName": "Reactor",
       "owned": 6,
       "isUnlocked": true,
-      "purchasePrice": 23.13,
-      "currencyId": "sample-pack.energy",
+      "isVisible": true,
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 23.13 }
+      ],
       "produces": [
         { "resourceId": "sample-pack.energy", "rate": 1 }
       ],
@@ -143,8 +161,10 @@ type UpgradeView = Readonly<{
       "displayName": "Crystal Harvester",
       "owned": 1,
       "isUnlocked": true,
-      "purchasePrice": 30,
-      "currencyId": "sample-pack.energy",
+      "isVisible": true,
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 30 }
+      ],
       "produces": [
         { "resourceId": "sample-pack.crystal", "rate": 0.25 }
       ],
@@ -159,19 +179,23 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.harvester-efficiency",
       "displayName": "Harvester Efficiency",
       "status": "locked",
-      "unlockHint": "Accumulate 20 crystal to reveal this upgrade."
+      "unlockHint": "Accumulate 20 crystal to reveal this upgrade.",
+      "isVisible": false
     },
     {
       "id": "sample-pack.reactor-insulation",
       "displayName": "Reactor Insulation",
       "status": "available",
-      "purchasePrice": 75,
-      "currencyId": "sample-pack.energy"
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 75 }
+      ],
+      "isVisible": true
     },
     {
       "id": "sample-pack.reactor-overclock",
       "displayName": "Reactor Overclock",
-      "status": "purchased"
+      "status": "purchased",
+      "isVisible": true
     }
   ]
 }
@@ -183,21 +207,21 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 2. Component calls `bridge.sendCommand('PURCHASE_GENERATOR', { generatorId: 'sample-pack.reactor', count: 1 })`.
 3. Worker validates funds, applies the purchase through `resource-command-handlers.ts`, emits telemetry, and republishes the snapshot at `step + 1`.
 4. `ShellStateProvider` receives the updated snapshot, recomputes memoized selectors, and re-renders the dashboard with optimistic feedback already reflected because the component staged the delta while awaiting confirmation.
-5. Analytics facade logs `generator.purchase.confirmed` with the request latency once the worker response arrives.
+5. Analytics facade logs `GeneratorPurchaseConfirmed` with the request latency once the worker response arrives.
 
 #### Failure & Mismatch Handling
-- If the worker rejects a purchase (insufficient currency, invalid generator, or upgrade lock), the snapshot emitted on the next tick omits the optimistic delta. `ShellStateProvider` rolls back the pending state and surfaces a toast summarising the denial while logging `generator.purchase.denied` / `upgrade.purchase.denied` through `packages/shell-web/src/modules/shell-analytics.ts:1`.
-- When the bridge receives an `ERROR` envelope with a `requestId`, it cancels the pending optimistic entry, emits `progression-ui.command-error`, and replays the authoritative snapshot once available (`packages/shell-web/src/modules/worker-bridge.ts:246`). Components must treat the rollback as deterministic and keep focus in place for accessibility.
-- Schema mismatches still hit the guardrail at `packages/shell-web/src/modules/worker-bridge.ts:223`; emit `progression-ui.schema-mismatch`, show the fatal notification described in §4, and revert to the inline runtime until the refresh path succeeds.
+- If the worker rejects a purchase (insufficient currency, invalid generator, or upgrade lock), the snapshot emitted on the next tick omits the optimistic delta. `ShellStateProvider` rolls back the pending state and surfaces a toast summarising the denial while logging `GeneratorPurchaseDenied` / `UpgradePurchaseDenied` through `packages/shell-web/src/modules/shell-analytics.ts:1`.
+- When the bridge receives an `ERROR` envelope with a `requestId`, it cancels the pending optimistic entry, emits `ProgressionUiCommandError`, and replays the authoritative snapshot once available (`packages/shell-web/src/modules/worker-bridge.ts:246`). Components must treat the rollback as deterministic and keep focus in place for accessibility.
+- Schema mismatches still hit the guardrail at `packages/shell-web/src/modules/worker-bridge.ts:223`; emit `ProgressionUiSchemaMismatch`, show the fatal notification described in §4, and block progression UI interactions until the refreshed worker reports READY.
 
 #### Upgrade Purchase Contract
 - Introduce `RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE` in `packages/core/src/command.ts`, pairing it with a `PurchaseUpgradePayload` containing `upgradeId` and optional `metadata` for future side effects. The shell bridge stamps the command with `CommandPriority.PLAYER`, matching `PURCHASE_GENERATOR`.
-- Worker-side handlers mirror generator purchases: validate availability, evaluate resource costs using the same currency resolver, and, on success, emit an updated `ProgressionSnapshot` alongside telemetry (`upgrade.purchase.confirmed` / `upgrade.purchase.denied`).
+- Worker-side handlers mirror generator purchases: validate availability, evaluate resource costs using the same currency resolver, and, on success, emit an updated `ProgressionSnapshot` alongside telemetry (`UpgradePurchaseConfirmed` / `UpgradePurchaseDenied`).
 - Extend `ShellStateProvider` optimistic handling to stage upgrade status as `pending` until the next snapshot arrives, ensuring UI feedback is consistent with generator purchases.
 
 ### 6.3 Operational Considerations
 - **Deployment**: Roll out under `VITE_ENABLE_PROGRESSION_UI` flag defaulting to false until progression UI tests pass in CI, then enable for dev and production sequentially.
-- **Telemetry & Observability**: Emit shell analytics events through existing facade (`packages/shell-web/src/modules/shell-analytics.ts:1`) for resource purchases and upgrade actions; fire a `progression-ui.schema-mismatch` event when the bridge filters worker envelopes so rollout monitors highlight version skew; gauge adoption via weekly reports.
+- **Telemetry & Observability**: Emit shell analytics events through existing facade (`packages/shell-web/src/modules/shell-analytics.ts:1`) for resource purchases and upgrade actions; fire a `ProgressionUiSchemaMismatch` event when the bridge filters worker envelopes so rollout monitors highlight version skew; gauge adoption via weekly reports.
 - **Security & Compliance**: Ensure no PII in snapshots; honour command authorization policies during progression UI interactions; maintain worker isolation per security guidelines.
 
 ## 7. Work Breakdown & Delivery Plan
@@ -234,7 +258,7 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 - **Unit / Integration**: Expand worker serialization tests and React component snapshots; ensure progression UI hooks handle locked/unlocked transitions.
 - **Performance**: Profile resource list rendering with 100+ nodes; ensure updates stay below 16 ms using memoization.
 - **Tooling / A11y**: Re-run Playwright smoke once the progression UI ships (`docs/accessibility-smoke-tests-design.md:57`); add axe assertions for modal focus traps.
-- **Release Gates**: Block feature-flag promotion until `pnpm lint`, `pnpm test --filter core`, `pnpm test --filter shell-web`, and `pnpm test:a11y` complete without flake; record a manual scenario covering first generator purchase and upgrade reveal to validate optimistic UI against the example snapshot.
+- **Release Gates**: Block feature-flag promotion until `pnpm lint`, `pnpm test --filter core`, `pnpm test --filter shell-web`, and `pnpm test:a11y` complete without flake; record a manual scenario covering first generator purchase and upgrade reveal to validate optimistic UI against the example snapshot and confirm `ProgressionUiSchemaMismatch` remains absent.
 
 ## 11. Risks & Mitigations
 - Schema drift between worker and shell for the progression UI; mitigate via shared types and compile-time checks.
@@ -242,7 +266,7 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 - Upgrade economics missing until content team supplies data; mitigate via the Content Systems deliverable documented in §13 and block flag enablement until it lands.
 
 ## 12. Rollout Plan
-- **Milestones**: Enable flag in `dev` after Phase 2 once Release Gates pass on a `pnpm test --filter shell-web` focused run; promote to `main` after the telemetry dashboard confirms no `progression-ui.schema-mismatch` events for 72 hours; remove the flag after two stable releases and a green rerun of `pnpm test:a11y` on the enabled build.
+- **Milestones**: Enable flag in `dev` after Phase 2 once Release Gates pass on a `pnpm test --filter shell-web` focused run; promote to `main` after the telemetry dashboard confirms no `ProgressionUiSchemaMismatch` events for 72 hours; remove the flag after two stable releases and a green rerun of `pnpm test:a11y` on the enabled build.
 - **Migration Strategy**: Maintain fallback to old shell layout by gating new components; provide migration doc for any third-party shells.
 - **Communication**: Announce progression UI availability in weekly status reports; update onboarding documentation post-rollout.
 
