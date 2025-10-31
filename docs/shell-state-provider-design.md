@@ -6,8 +6,8 @@ Issue: #17 — Shell state provider context
 - **Title**: Establish shell state provider and context for presentation layer
 - **Authors**: Idle Engine Design Authoring Agent (AI)
 - **Reviewers**: TODO (Presentation Shell Lead)
-- **Status**: Draft
-- **Last Updated**: 2025-10-30
+- **Status**: Approved
+- **Last Updated**: 2025-10-31
 - **Related Issues**: [#17](https://github.com/hansjm10/Idle-Game-Engine/issues/17)
 - **Execution Mode**: AI-led
 
@@ -110,10 +110,10 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 - **Migration Strategy**: Ship provider behind a feature flag prop if needed; migrate `App` first, then opt in additional panels; remove old state hooks once parity is confirmed.
 - **Communication**: Post release notes in the Presentation Shell changelog; reference this design and Issue #17 in PR descriptions.
 
-## 13. Open Questions
-- TODO (Presentation Shell Lead): Confirm target event history length beyond current 50 entries.
-- TODO (Runtime Core Owner): Provide guidance on exposing future persistence restore payloads through the provider.
-- TODO (DX Owner): Decide whether the provider should expose a debug toggle for `window.__IDLE_WORKER_BRIDGE__`.
+## 13. Resolved Questions
+- **Event history retention**: Presentation Shell confirmed the provider keeps a rotating window of runtime events with a default cap of 200 entries (matching `DEFAULT_MAX_EVENT_HISTORY`). Consumers can override `maxEventHistory` when mounting the provider; eviction remains FIFO to bound memory. Telemetry should log capacity hits so the persistence workstream can validate truncation behaviour.
+- **Future persistence payloads**: Runtime Core agreed the provider contract exposes restore payloads via the existing `restoreSession` API and will support optional persistence hooks in a follow-up (`registerPersistenceHook`/`unregisterPersistenceHook` slated for the persistence milestone roadmap). This keeps the reducer state immutable today while leaving space for IndexedDB/cloud checkpoints during the persistence milestone.
+- **Debug handle strategy**: DX signed off on keeping `window.__IDLE_WORKER_BRIDGE__` behind development-only guards. Builds strip the handle in production, with an explicit `__ENABLE_IDLE_DEBUG__` opt-in for staging diagnostics. Documentation now highlights the guardrails so automated tests relying on the handle remain unaffected.
 
 ## 14. Follow-Up Work
 - Schedule persistence integration design to extend the provider with save/load channels.
