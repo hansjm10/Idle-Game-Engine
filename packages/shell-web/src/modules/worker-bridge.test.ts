@@ -5,10 +5,12 @@ import type { DiagnosticTimelineResult } from '@idle-engine/core';
 import {
   CommandSource,
   WorkerBridgeImpl,
+  type WorkerBridge,
   type RuntimeStateSnapshot,
   type WorkerBridgeErrorDetails,
   SOCIAL_COMMAND_TYPES,
   type WorkerBridgeWorker,
+  registerWorkerBridgeDebugHandleForTesting,
 } from './worker-bridge.js';
 import { createInlineRuntimeWorker } from './inline-runtime-worker.js';
 import {
@@ -57,6 +59,11 @@ class MockWorker implements WorkerBridgeWorker {
     return this.listeners.get(type)?.size ?? 0;
   }
 }
+
+type WorkerBridgeDebugGlobal = typeof globalThis & {
+  __ENABLE_IDLE_DEBUG__?: unknown;
+  __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
+};
 
 describe('WorkerBridgeImpl', () => {
   afterEach(() => {
@@ -561,5 +568,48 @@ describe('Inline runtime worker integration', () => {
       bridge.dispose();
       vi.useRealTimers();
     }
+  });
+});
+
+describe('worker bridge debug handle guard', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const debugGlobal = globalThis as WorkerBridgeDebugGlobal;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+    delete debugGlobal.__ENABLE_IDLE_DEBUG__;
+    delete debugGlobal.__IDLE_WORKER_BRIDGE__;
+  });
+
+  it('skips exposing the debug handle in production without opt-in', () => {
+    process.env.NODE_ENV = 'production';
+    const bridge = {} as WorkerBridge<unknown>;
+
+    registerWorkerBridgeDebugHandleForTesting(debugGlobal, bridge);
+
+    expect(debugGlobal.__IDLE_WORKER_BRIDGE__).toBeUndefined();
+  });
+
+  it('exposes the debug handle in production when __ENABLE_IDLE_DEBUG__ is truthy', () => {
+    process.env.NODE_ENV = 'production';
+    debugGlobal.__ENABLE_IDLE_DEBUG__ = 'true';
+    const bridge = {} as WorkerBridge<unknown>;
+
+    registerWorkerBridgeDebugHandleForTesting(debugGlobal, bridge);
+
+    expect(debugGlobal.__IDLE_WORKER_BRIDGE__).toBe(bridge);
+  });
+
+  it('exposes the debug handle outside of production environments', () => {
+    process.env.NODE_ENV = 'test';
+    const bridge = {} as WorkerBridge<unknown>;
+
+    registerWorkerBridgeDebugHandleForTesting(debugGlobal, bridge);
+
+    expect(debugGlobal.__IDLE_WORKER_BRIDGE__).toBe(bridge);
   });
 });
