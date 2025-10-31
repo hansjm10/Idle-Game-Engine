@@ -117,7 +117,7 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 
 ## 14. Follow-Up Work
 - Schedule persistence integration design to extend the provider with save/load channels.
-- Draft tutorial documentation for new contributors explaining provider usage.
+- Publish and maintain the [Shell State Provider Integration Guide](shell-state-provider-guide.md) so new contributors understand provider usage.
 - Plan future localisation-aware selectors once UI strings are externalised.
 
 ## 15. References
