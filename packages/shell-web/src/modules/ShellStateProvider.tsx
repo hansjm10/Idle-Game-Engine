@@ -106,18 +106,7 @@ export function ShellStateProvider({
           message,
         });
 
-        dispatch({
-          type: 'bridge-error',
-          error: {
-            code: 'RESTORE_FAILED',
-            message,
-            details: {
-              source: 'ShellStateProvider.restoreSession',
-            },
-          },
-          timestamp: Date.now(),
-        });
-
+        // bridge.onError listener records the failure with worker-supplied details.
         dispatch({
           type: 'restore-complete',
           timestamp: Date.now(),
