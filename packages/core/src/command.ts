@@ -105,6 +105,7 @@ export interface CommandQueueEntry<TCommand = Command> {
  */
 export const RUNTIME_COMMAND_TYPES = Object.freeze({
   PURCHASE_GENERATOR: 'PURCHASE_GENERATOR',
+  PURCHASE_UPGRADE: 'PURCHASE_UPGRADE',
   TOGGLE_GENERATOR: 'TOGGLE_GENERATOR',
   COLLECT_RESOURCE: 'COLLECT_RESOURCE',
   PRESTIGE_RESET: 'PRESTIGE_RESET',
@@ -121,6 +122,14 @@ export type RuntimeCommandType =
 export interface PurchaseGeneratorPayload {
   readonly generatorId: string;
   readonly count: number;
+}
+
+/**
+ * Player purchases an upgrade (docs/runtime-command-queue-design.md §5.1).
+ */
+export interface PurchaseUpgradePayload {
+  readonly upgradeId: string;
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -175,6 +184,7 @@ export interface ApplyMigrationPayload {
  */
 export interface RuntimeCommandPayloads {
   readonly PURCHASE_GENERATOR: PurchaseGeneratorPayload;
+  readonly PURCHASE_UPGRADE: PurchaseUpgradePayload;
   readonly TOGGLE_GENERATOR: ToggleGeneratorPayload;
   readonly COLLECT_RESOURCE: CollectResourcePayload;
   readonly PRESTIGE_RESET: PrestigeResetPayload;
@@ -215,6 +225,12 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     allowedPriorities: COMMAND_PRIORITY_ORDER,
     rationale:
       'Purchases are gated by resource costs; any priority may attempt them.',
+  },
+  PURCHASE_UPGRADE: {
+    type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Upgrades share the purchase gating model and may originate from any priority.',
   },
   TOGGLE_GENERATOR: {
     type: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,

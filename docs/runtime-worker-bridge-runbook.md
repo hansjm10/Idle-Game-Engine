@@ -59,7 +59,7 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
 - Monitor the console for `[runtime.worker]` warnings. Errors propagate through `bridge.onError` callbacks with typed detail (`RuntimeWorkerErrorDetails`) and request IDs for social commands.
 - Common codes:
   - `INVALID_COMMAND_PAYLOAD` – schema/version mismatch or malformed payload.
-  - `SCHEMA_VERSION_MISMATCH` – client bundle using different `WORKER_MESSAGE_SCHEMA_VERSION` (currently `2`).
+  - `SCHEMA_VERSION_MISMATCH` – client bundle using different `WORKER_MESSAGE_SCHEMA_VERSION` (currently `3`).
   - `RESTORE_FAILED` – session payload rejected; inspect `.details` for reconciliation logs.
   - `STALE_COMMAND` – command `issuedAt` < last accepted; ensure callers use the bridge helpers.
 

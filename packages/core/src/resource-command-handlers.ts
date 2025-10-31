@@ -3,6 +3,7 @@ import {
   RUNTIME_COMMAND_TYPES,
   type CollectResourcePayload,
   type PurchaseGeneratorPayload,
+  type PurchaseUpgradePayload,
 } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
 import type { ResourceState, ResourceSpendAttemptContext } from './resource-state.js';
@@ -26,6 +27,27 @@ export interface GeneratorPurchaseEvaluator {
   applyPurchase(generatorId: string, count: number): void;
 }
 
+export type UpgradeStatus = 'locked' | 'available' | 'purchased';
+
+export interface UpgradeResourceCost {
+  readonly resourceId: string;
+  readonly amount: number;
+}
+
+export interface UpgradePurchaseQuote {
+  readonly upgradeId: string;
+  readonly status: UpgradeStatus;
+  readonly costs: readonly UpgradeResourceCost[];
+}
+
+export interface UpgradePurchaseEvaluator {
+  getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined;
+  applyPurchase(
+    upgradeId: string,
+    options?: { metadata?: Readonly<Record<string, unknown>> },
+  ): void;
+}
+
 export interface ResourceCommandHandlerOptions {
   readonly dispatcher: CommandDispatcher;
   readonly resources: ResourceState;
@@ -35,6 +57,7 @@ export interface ResourceCommandHandlerOptions {
    * purchase generators. Defaults to "automation" when omitted.
    */
   readonly automationSystemId?: string;
+  readonly upgradePurchases?: UpgradePurchaseEvaluator;
 }
 
 const DEFAULT_AUTOMATION_SYSTEM_ID = 'automation';
@@ -57,6 +80,15 @@ export function registerResourceCommandHandlers(
       automationSystemId,
     }),
   );
+
+  if (options.upgradePurchases) {
+    dispatcher.register<PurchaseUpgradePayload>(
+      RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+      createPurchaseUpgradeHandler(resources, options.upgradePurchases, {
+        automationSystemId,
+      }),
+    );
+  }
 }
 
 function createCollectResourceHandler(resources: ResourceState): CommandHandler<CollectResourcePayload> {
@@ -196,6 +228,144 @@ function createPurchaseGeneratorHandler(
       refund(resources, spendContext, successfulSpends);
       throw error;
     }
+  };
+}
+
+function createPurchaseUpgradeHandler(
+  resources: ResourceState,
+  upgradePurchases: UpgradePurchaseEvaluator,
+  options: PurchaseHandlerOptions,
+): CommandHandler<PurchaseUpgradePayload> {
+  const { automationSystemId } = options;
+
+  return (payload, context) => {
+    if (
+      typeof payload.upgradeId !== 'string' ||
+      payload.upgradeId.trim().length === 0
+    ) {
+      telemetry.recordError('UpgradePurchaseInvalidId', {
+        upgradeId: payload.upgradeId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    const upgradeId = payload.upgradeId.trim();
+    const quote = upgradePurchases.getPurchaseQuote(upgradeId);
+
+    if (!quote) {
+      telemetry.recordError('UpgradePurchaseUnknown', {
+        upgradeId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    if (quote.status === 'purchased') {
+      telemetry.recordWarning('UpgradePurchaseAlreadyOwned', {
+        upgradeId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    if (quote.status === 'locked') {
+      telemetry.recordWarning('UpgradePurchaseLocked', {
+        upgradeId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    if (!Array.isArray(quote.costs)) {
+      telemetry.recordError('UpgradePurchaseInvalidQuote', {
+        upgradeId,
+        reason: 'costs-missing',
+      });
+      return;
+    }
+
+    const spendContext: ResourceSpendAttemptContext = {
+      commandId: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+      systemId:
+        context.priority === CommandPriority.AUTOMATION
+          ? automationSystemId
+          : undefined,
+    };
+
+    const successfulSpends: Array<{ index: number; amount: number }> = [];
+
+    for (const cost of quote.costs) {
+      if (!isFiniteNonNegative(cost.amount)) {
+        telemetry.recordError('UpgradePurchaseInvalidQuote', {
+          upgradeId,
+          reason: 'cost-invalid',
+          resourceId: cost.resourceId,
+          amount: cost.amount,
+        });
+        refund(resources, spendContext, successfulSpends);
+        return;
+      }
+
+      if (cost.amount === 0) {
+        continue;
+      }
+
+      let resourceIndex: number;
+      try {
+        resourceIndex = resources.requireIndex(cost.resourceId);
+      } catch (error) {
+        refund(resources, spendContext, successfulSpends);
+        throw error;
+      }
+
+      const spendSucceeded = resources.spendAmount(
+        resourceIndex,
+        cost.amount,
+        spendContext,
+      );
+
+      if (!spendSucceeded) {
+        telemetry.recordWarning('UpgradePurchaseDenied', {
+          upgradeId,
+          resourceId: cost.resourceId,
+          required: cost.amount,
+          step: context.step,
+          priority: context.priority,
+          reason: 'insufficient-resources',
+        });
+        refund(resources, spendContext, successfulSpends);
+        return;
+      }
+
+      successfulSpends.push({
+        index: resourceIndex,
+        amount: cost.amount,
+      });
+    }
+
+    try {
+      upgradePurchases.applyPurchase(upgradeId, {
+        metadata: payload.metadata,
+      });
+    } catch (error) {
+      telemetry.recordError('UpgradePurchaseApplyFailed', {
+        upgradeId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      refund(resources, spendContext, successfulSpends);
+      throw error;
+    }
+
+    telemetry.recordProgress('UpgradePurchaseConfirmed', {
+      upgradeId,
+      step: context.step,
+      priority: context.priority,
+    });
   };
 }
 

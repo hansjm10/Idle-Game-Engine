@@ -2,9 +2,10 @@ import type {
   BackPressureSnapshot,
   DiagnosticTimelineResult,
   SerializedResourceState,
+  ProgressionSnapshot,
 } from '@idle-engine/core';
 
-export const WORKER_MESSAGE_SCHEMA_VERSION = 2;
+export const WORKER_MESSAGE_SCHEMA_VERSION = 3;
 
 export enum CommandSource {
   PLAYER = 'PLAYER',
@@ -25,6 +26,7 @@ export interface RuntimeStatePayload {
   readonly currentStep: number;
   readonly events: readonly RuntimeEventSnapshot[];
   readonly backPressure: BackPressureSnapshot;
+  readonly progression: ProgressionSnapshot;
 }
 
 export interface RuntimeWorkerCommand<TPayload = unknown> {

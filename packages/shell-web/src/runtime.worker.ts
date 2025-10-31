@@ -7,9 +7,11 @@ import {
   IdleEngineRuntime,
   RUNTIME_COMMAND_TYPES,
   setGameState,
+  getGameState,
+  buildProgressionSnapshot,
+  type ProgressionAuthoritativeState,
   type DiagnosticTimelineResult,
   type EventBus,
-  type SerializedResourceState,
 } from '@idle-engine/core';
 
 export type {
@@ -51,6 +53,12 @@ export interface RuntimeWorkerOptions {
   readonly scheduleTick?: (callback: () => void) => () => void;
   readonly handshakeId?: string;
   readonly fetch?: typeof fetch;
+  readonly stepSizeMs?: number;
+}
+
+interface WorkerGameState {
+  progression: ProgressionAuthoritativeState;
+  [key: string]: unknown;
 }
 
 export interface RuntimeWorkerHarness {
@@ -88,12 +96,36 @@ export function initializeRuntimeWorker(
       return () => clearInterval(id);
     });
 
+  const stepDurationMs = options.stepSizeMs ?? 100;
   const commandQueue = new CommandQueue();
   const commandDispatcher = new CommandDispatcher();
   const runtime = new IdleEngineRuntime({
     commandQueue,
     commandDispatcher,
+    stepSizeMs: stepDurationMs,
   });
+
+  let gameState: WorkerGameState;
+
+  try {
+    const existing = getGameState<WorkerGameState>();
+    if (!existing || typeof existing !== 'object') {
+      throw new Error('invalid-state');
+    }
+    if (!('progression' in existing) || existing.progression == null) {
+      gameState = setGameState<WorkerGameState>({
+        ...existing,
+        progression: createDefaultProgressionState(stepDurationMs),
+      });
+    } else {
+      existing.progression.stepDurationMs = stepDurationMs;
+      gameState = existing;
+    }
+  } catch {
+    gameState = setGameState<WorkerGameState>({
+      progression: createDefaultProgressionState(stepDurationMs),
+    });
+  }
 
   let diagnosticsEnabled = false;
   let diagnosticsHead: number | undefined;
@@ -158,6 +190,13 @@ export function initializeRuntimeWorker(
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
+      gameState.progression.stepDurationMs = stepDurationMs;
+      const publishedAt = monotonicClock.now();
+      const progression = buildProgressionSnapshot(
+        after,
+        publishedAt,
+        gameState.progression,
+      );
 
       const message: RuntimeWorkerStateUpdate = {
         type: 'STATE_UPDATE',
@@ -166,6 +205,7 @@ export function initializeRuntimeWorker(
           currentStep: after,
           events,
           backPressure,
+          progression,
         },
       };
       context.postMessage(message);
@@ -658,7 +698,15 @@ export function initializeRuntimeWorker(
       }
 
       if (message.state !== undefined) {
-        setGameState<SerializedResourceState>(message.state);
+        const currentResources = gameState.progression.resources ?? {};
+        gameState.progression = {
+          ...gameState.progression,
+          resources: {
+            ...currentResources,
+            serialized: message.state,
+          },
+        };
+        setGameState(gameState);
       }
 
       const offlineElapsedMs = message.elapsedMs ?? 0;
@@ -931,6 +979,19 @@ if (!import.meta.vitest) {
   if (isDedicatedWorkerScope(bootstrapScope)) {
     initializeRuntimeWorker();
   }
+}
+
+function createDefaultProgressionState(
+  stepDurationMs: number,
+): ProgressionAuthoritativeState {
+  return {
+    stepDurationMs,
+    resources: undefined,
+    generatorPurchases: undefined,
+    generators: [],
+    upgradePurchases: undefined,
+    upgrades: [],
+  };
 }
 
 function collectOutboundEvents(bus: EventBus): RuntimeEventSnapshot[] {
