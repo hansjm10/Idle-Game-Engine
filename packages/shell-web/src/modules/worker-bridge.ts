@@ -120,6 +120,68 @@ declare global {
   }
 }
 
+type WorkerBridgeDebugGlobal = typeof globalThis & {
+  __ENABLE_IDLE_DEBUG__?: unknown;
+  __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
+};
+
+function coerceDebugOptIn(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1';
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  return false;
+}
+
+function shouldExposeWorkerBridgeDebugHandle(
+  target: WorkerBridgeDebugGlobal,
+): boolean {
+  if (coerceDebugOptIn(target.__ENABLE_IDLE_DEBUG__)) {
+    return true;
+  }
+
+  const nodeEnv =
+    typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
+  if (typeof nodeEnv === 'string') {
+    return nodeEnv.toLowerCase() !== 'production';
+  }
+
+  if (typeof import.meta !== 'undefined') {
+    if (import.meta.env?.DEV) {
+      return true;
+    }
+    const mode =
+      typeof import.meta.env?.MODE === 'string'
+        ? import.meta.env.MODE.toLowerCase()
+        : undefined;
+    if (mode === 'development' || mode === 'test') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function registerWorkerBridgeDebugHandle(
+  target: WorkerBridgeDebugGlobal,
+  bridge: WorkerBridge<unknown>,
+): void {
+  if (shouldExposeWorkerBridgeDebugHandle(target)) {
+    target.__IDLE_WORKER_BRIDGE__ = bridge;
+    return;
+  }
+
+  if ('__IDLE_WORKER_BRIDGE__' in target) {
+    delete target.__IDLE_WORKER_BRIDGE__;
+  }
+}
+
 export class WorkerBridgeImpl<TState = unknown>
   implements WorkerBridge<TState>
 {
@@ -594,9 +656,7 @@ export class WorkerBridgeImpl<TState = unknown>
       this.restoreDeferred = null;
       deferred.reject(new Error('WorkerBridge has been disposed'));
     }
-    const bridgeGlobal = globalThis as typeof globalThis & {
-      __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
-    };
+    const bridgeGlobal = globalThis as WorkerBridgeDebugGlobal;
     if (bridgeGlobal.__IDLE_WORKER_BRIDGE__ === this) {
       bridgeGlobal.__IDLE_WORKER_BRIDGE__ = undefined;
     }
@@ -618,6 +678,10 @@ export {
   type SocialCommandResults,
 };
 export type { WorkerBridgeWorker } from './worker-bridge-worker.js';
+export {
+  registerWorkerBridgeDebugHandle as registerWorkerBridgeDebugHandleForTesting,
+  shouldExposeWorkerBridgeDebugHandle as shouldExposeWorkerBridgeDebugHandleForTesting,
+};
 
 export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeImpl<TState> {
   const bridgeRef = useRef<WorkerBridgeImpl<TState>>();
@@ -632,10 +696,10 @@ export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeIm
       : createInlineRuntimeWorker();
 
     bridgeRef.current = new WorkerBridgeImpl<TState>(worker);
-    const bridgeGlobal = globalThis as typeof globalThis & {
-      __IDLE_WORKER_BRIDGE__?: WorkerBridge<unknown>;
-    };
-    bridgeGlobal.__IDLE_WORKER_BRIDGE__ = bridgeRef.current;
+    registerWorkerBridgeDebugHandle(
+      globalThis as WorkerBridgeDebugGlobal,
+      bridgeRef.current,
+    );
   }
 
   const bridge = bridgeRef.current;
