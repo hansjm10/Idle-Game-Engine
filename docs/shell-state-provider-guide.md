@@ -59,7 +59,7 @@ If you need to hydrate from a saved session, pass a `restorePayload` prop. The p
 `ShellState.runtime` exposes a derived snapshot assembled in the reducer. Typical patterns:
 
 ```tsx
-import { useShellState } from '@idle-engine/shell-web/modules';
+import { useShellState } from '@idle-engine/shell-web';
 
 export function TickCounter(): JSX.Element {
   const {
