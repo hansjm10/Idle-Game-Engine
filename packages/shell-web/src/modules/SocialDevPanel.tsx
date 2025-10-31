@@ -2,15 +2,13 @@ import { useCallback, useMemo, useState } from 'react';
 
 import {
   SOCIAL_COMMAND_TYPES,
-  type WorkerBridge,
-  type RuntimeStateSnapshot,
   type SocialCommandPayloads,
   type SocialCommandType,
 } from './worker-bridge.js';
-
-interface SocialDevPanelProps {
-  readonly bridge: WorkerBridge<RuntimeStateSnapshot>;
-}
+import {
+  useShellBridge,
+  useShellState,
+} from './ShellStateProvider.js';
 
 function formatResult(value: unknown): string {
   if (value === undefined) {
@@ -24,16 +22,18 @@ function formatResult(value: unknown): string {
   }
 }
 
-export function SocialDevPanel({ bridge }: SocialDevPanelProps) {
+export function SocialDevPanel(): JSX.Element {
+  const bridge = useShellBridge();
+  const { social } = useShellState();
   const [accessToken, setAccessToken] = useState('');
   const [leaderboardId, setLeaderboardId] = useState('daily');
   const [score, setScore] = useState('0');
   const [guildName, setGuildName] = useState('');
   const [guildDescription, setGuildDescription] = useState('');
-  const [isPending, setIsPending] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
 
   const scoreValue = useMemo(() => Number(score), [score]);
+  const isPending = social.pendingRequests.size > 0;
 
   const runSocialCommand = useCallback(
     async <TCommand extends SocialCommandType>(
@@ -45,7 +45,6 @@ export function SocialDevPanel({ bridge }: SocialDevPanelProps) {
         return;
       }
 
-      setIsPending(true);
       setOutput(null);
       try {
         await bridge.awaitReady();
@@ -65,8 +64,6 @@ export function SocialDevPanel({ bridge }: SocialDevPanelProps) {
             ? `\nDetails: ${JSON.stringify(error.details)}`
             : '';
         setOutput(`Error: ${message}${details}`);
-      } finally {
-        setIsPending(false);
       }
     },
     [accessToken, bridge],

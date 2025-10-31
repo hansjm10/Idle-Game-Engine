@@ -1,18 +1,11 @@
 import type { ReactNode } from 'react';
 
-import type { BackPressureSnapshot } from '@idle-engine/core';
+import { useShellState } from './ShellStateProvider.js';
 
-import type { RuntimeEventSnapshot } from './worker-bridge.js';
+export function EventInspector(): JSX.Element {
+  const { runtime } = useShellState();
+  const { events, backPressure } = runtime;
 
-interface EventInspectorProps {
-  readonly events: readonly RuntimeEventSnapshot[];
-  readonly backPressure: BackPressureSnapshot | null;
-}
-
-export function EventInspector({
-  events,
-  backPressure,
-}: EventInspectorProps): JSX.Element {
   const counters = backPressure?.counters;
   const channels = backPressure?.channels ?? [];
 
