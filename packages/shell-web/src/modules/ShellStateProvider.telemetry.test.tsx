@@ -157,7 +157,8 @@ vi.mock('./worker-bridge.js', async () => {
   };
 });
 
-import { Fragment, act } from 'react';
+import { Fragment } from 'react';
+import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import {
   ShellStateProvider,
