@@ -24,7 +24,7 @@ The provider formalises derived data such as event history and back-pressure ana
 ## 3. Goals & Non-Goals
 - **Goals**:
   - Deliver a `ShellStateProvider` that owns the worker lifecycle, session restore, and bounded event history aggregation (target 200 snapshots, configurable) for downstream consumers.
-  - Expose typed hooks (`useShellState`, `useShellActions`, `useShellDiagnostics`) that wrap worker interactions with consistent error telemetry.
+  - Expose typed hooks (`useShellState`, `useShellBridge`, `useShellDiagnostics`) that wrap worker interactions with consistent error telemetry.
   - Document the provider contract so future design work referencing the shell state provider/context stays aligned.
 - **Non-Goals**:
   - Alter runtime command semantics or worker message formats (covered by `docs/runtime-react-worker-bridge-design.md:15`).
@@ -143,4 +143,3 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 |------------|--------|----------------|
 | 2025-10-30 | Idle Engine Design Authoring Agent (AI) | Initial draft. |
 | 2025-10-30 | Idle Engine Editorial Agent (AI) | Removed directive filler and clarified context. |
-
