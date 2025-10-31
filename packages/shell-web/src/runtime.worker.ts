@@ -118,10 +118,11 @@ export function initializeRuntimeWorker(
       throw new Error('invalid-state');
     }
     if (!('progression' in existing) || existing.progression == null) {
-      gameState = setGameState<WorkerGameState>({
-        ...existing,
-        progression: createDefaultProgressionState(stepDurationMs),
-      });
+      const updatedGameState = existing as Mutable<WorkerGameState>;
+      updatedGameState.progression =
+        createDefaultProgressionState(stepDurationMs);
+      setGameState(updatedGameState);
+      gameState = updatedGameState;
     } else {
       existing.progression.stepDurationMs = stepDurationMs;
       gameState = existing;
