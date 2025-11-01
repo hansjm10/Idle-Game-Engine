@@ -1299,6 +1299,458 @@ describe('runtime.worker integration', () => {
 
     harness = null;
   });
+
+  describe('Integration: concurrent operations', () => {
+    it('handles multiple purchase commands queued simultaneously in order', () => {
+      const scheduleTick = (callback: () => void) => {
+        scheduledTick = callback;
+        return () => {
+          if (scheduledTick === callback) {
+            scheduledTick = null;
+          }
+        };
+      };
+
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: () => currentTime,
+        scheduleTick,
+      });
+
+      // Queue multiple commands simultaneously
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.PLAYER,
+        requestId: 'player-1',
+        command: {
+          type: 'PURCHASE_GENERATOR',
+          payload: { generatorId: 'sample-pack.reactor', count: 1 },
+          issuedAt: 1,
+        },
+      });
+
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.AUTOMATION,
+        requestId: 'auto-1',
+        command: {
+          type: 'PURCHASE_GENERATOR',
+          payload: { generatorId: 'sample-pack.reactor', count: 1 },
+          issuedAt: 2,
+        },
+      });
+
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.PLAYER,
+        requestId: 'player-2',
+        command: {
+          type: 'PURCHASE_GENERATOR',
+          payload: { generatorId: 'sample-pack.reactor', count: 1 },
+          issuedAt: 3,
+        },
+      });
+
+      // Verify all commands were enqueued
+      expect(enqueueSpy).toHaveBeenCalledTimes(3);
+
+      // All commands from worker bridge are enqueued with PLAYER priority
+      const calls = enqueueSpy.mock.calls;
+      expect(calls[0]![0]!.priority).toBe(core.CommandPriority.PLAYER);
+      expect(calls[1]![0]!.priority).toBe(core.CommandPriority.PLAYER);
+      expect(calls[2]![0]!.priority).toBe(core.CommandPriority.PLAYER);
+
+      // Advance time and run tick
+      advanceTime(110);
+      runTick();
+
+      // Verify state update was emitted
+      const stateUpdate = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+      );
+      expect(stateUpdate).toBeDefined();
+    });
+
+    it('handles hydration and game tick processing without errors', () => {
+      const scheduleTick = (callback: () => void) => {
+        scheduledTick = callback;
+        return () => {
+          if (scheduledTick === callback) {
+            scheduledTick = null;
+          }
+        };
+      };
+
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: () => currentTime,
+        scheduleTick,
+      });
+
+      // Run initial tick
+      advanceTime(110);
+      runTick();
+
+      context.postMessage.mockClear();
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [100],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      // Restore session
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+      });
+
+      // Should handle gracefully without crashing
+      expect(setGameStateSpy).toHaveBeenCalled();
+
+      // Verify session was restored
+      const sessionRestored = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type ===
+          'SESSION_RESTORED',
+      );
+      expect(sessionRestored).toBeDefined();
+
+      // Run another tick after hydration
+      context.postMessage.mockClear();
+      advanceTime(110);
+      runTick();
+
+      // Verify state update was emitted after hydration
+      const stateUpdate = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+      );
+      expect(stateUpdate).toBeDefined();
+    });
+
+    it('processes multiple RESTORE_SESSION messages in quick succession correctly', () => {
+      const scheduleTick = (callback: () => void) => {
+        scheduledTick = callback;
+        return () => {
+          if (scheduledTick === callback) {
+            scheduledTick = null;
+          }
+        };
+      };
+
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const setGameStateSpy = vi.spyOn(core, 'setGameState');
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: () => currentTime,
+        scheduleTick,
+      });
+
+      context.postMessage.mockClear();
+
+      const serializedState1: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [50],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      const serializedState2: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [200],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      // Dispatch multiple restore messages rapidly
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState1,
+      });
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 2000,
+        state: serializedState2,
+      });
+
+      // Both should be processed
+      expect(setGameStateSpy).toHaveBeenCalledTimes(3); // Initial + 2 restores
+      expect(enqueueSpy).toHaveBeenCalledTimes(2); // 2 offline catchup commands
+
+      // Last restore should win
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBe(200);
+
+      // Verify both SESSION_RESTORED messages were sent
+      const restoreMessages = context.postMessage.mock.calls.filter(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type ===
+          'SESSION_RESTORED',
+      );
+      expect(restoreMessages).toHaveLength(2);
+    });
+
+    it('maintains command queue integrity with SYSTEM and PLAYER priorities', () => {
+      const scheduleTick = (callback: () => void) => {
+        scheduledTick = callback;
+        return () => {
+          if (scheduledTick === callback) {
+            scheduledTick = null;
+          }
+        };
+      };
+
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: () => currentTime,
+        scheduleTick,
+      });
+
+      // Queue regular commands (all get PLAYER priority from worker bridge)
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.AUTOMATION,
+        requestId: 'auto-cmd',
+        command: { type: 'AUTO_BUY', payload: {}, issuedAt: 1 },
+      });
+
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.PLAYER,
+        requestId: 'player-cmd',
+        command: { type: 'PURCHASE', payload: {}, issuedAt: 2 },
+      });
+
+      // RESTORE_SESSION triggers SYSTEM priority offline catchup command
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [100],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 5000,
+        state: serializedState,
+      });
+
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.PLAYER,
+        requestId: 'player-cmd-2',
+        command: { type: 'PURCHASE_2', payload: {}, issuedAt: 3 },
+      });
+
+      // Verify enqueue was called for all commands
+      expect(enqueueSpy).toHaveBeenCalledTimes(4); // 3 PLAYER commands + 1 SYSTEM offline catchup
+
+      // Verify priority values - SYSTEM priority (0) from offline catchup, PLAYER (1) from commands
+      const priorities = enqueueSpy.mock.calls.map(
+        (call) => call[0]!.priority,
+      );
+      expect(priorities).toContain(core.CommandPriority.PLAYER); // Regular commands
+      expect(priorities).toContain(core.CommandPriority.SYSTEM); // Offline catchup
+
+      // Run tick and verify execution completes
+      advanceTime(110);
+      runTick();
+
+      const stateUpdate = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+      );
+      expect(stateUpdate).toBeDefined();
+    });
+
+    it('handles rapid command dispatch without dropping messages', () => {
+      const scheduleTick = (callback: () => void) => {
+        scheduledTick = callback;
+        return () => {
+          if (scheduledTick === callback) {
+            scheduledTick = null;
+          }
+        };
+      };
+
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: () => currentTime,
+        scheduleTick,
+      });
+
+      // Dispatch 20 commands rapidly
+      const commandCount = 20;
+      for (let i = 0; i < commandCount; i++) {
+        context.dispatch({
+          type: 'COMMAND',
+          schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+          source: CommandSource.PLAYER,
+          requestId: `rapid-${i}`,
+          command: {
+            type: 'TEST_COMMAND',
+            payload: { iteration: i },
+            issuedAt: i + 1,
+          },
+        });
+      }
+
+      // All commands should be enqueued
+      expect(enqueueSpy).toHaveBeenCalledTimes(commandCount);
+
+      // Verify all commands have correct step stamps
+      for (let i = 0; i < commandCount; i++) {
+        const call = enqueueSpy.mock.calls[i];
+        expect(call![0]!.step).toBe(0); // All stamped for current step
+        expect(call![0]!.priority).toBe(core.CommandPriority.PLAYER);
+      }
+
+      // Process tick
+      advanceTime(110);
+      runTick();
+
+      // Verify state update emitted
+      const stateUpdate = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+      );
+      expect(stateUpdate).toBeDefined();
+    });
+
+    it('handles interleaved commands and restore operations without state corruption', async () => {
+      const scheduleTick = (callback: () => void) => {
+        scheduledTick = callback;
+        return () => {
+          if (scheduledTick === callback) {
+            scheduledTick = null;
+          }
+        };
+      };
+
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: () => currentTime,
+        scheduleTick,
+      });
+
+      context.postMessage.mockClear();
+
+      // Command 1
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.PLAYER,
+        requestId: 'cmd-1',
+        command: { type: 'ACTION_1', payload: {}, issuedAt: 1 },
+      });
+
+      // Restore session
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [75],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 3000,
+        state: serializedState,
+      });
+
+      // Command 2 after restore
+      context.dispatch({
+        type: 'COMMAND',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        source: CommandSource.PLAYER,
+        requestId: 'cmd-2',
+        command: { type: 'ACTION_2', payload: {}, issuedAt: 2 },
+      });
+
+      // Should have 1 player cmd + 1 offline catchup (SYSTEM) + 1 player cmd
+      expect(enqueueSpy).toHaveBeenCalledTimes(3);
+
+      // Verify resource state is correct
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBe(75);
+
+      // Run tick
+      advanceTime(110);
+      runTick();
+
+      // Verify state update and session restored messages
+      const stateUpdate = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type === 'STATE_UPDATE',
+      );
+      expect(stateUpdate).toBeDefined();
+
+      const sessionRestored = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as { type?: string } | undefined)?.type ===
+          'SESSION_RESTORED',
+      );
+      expect(sessionRestored).toBeDefined();
+
+      // Verify no state corruption - energy should still be 75 (plus any tick updates)
+      const finalAmount = resourceState?.getAmount(energyIndex) ?? 0;
+      expect(finalAmount).toBeGreaterThanOrEqual(75);
+    });
+  });
 });
 
 describe('isDedicatedWorkerScope', () => {

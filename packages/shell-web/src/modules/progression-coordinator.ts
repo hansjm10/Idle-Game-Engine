@@ -19,6 +19,7 @@ import {
   type UpgradeStatus,
 } from '@idle-engine/core';
 import type {
+  Condition,
   NormalizedContentPack,
   NormalizedGenerator,
   NormalizedResource,
@@ -137,6 +138,12 @@ export interface ProgressionCoordinatorOptions {
    * If omitted, creates a fresh state from content definitions.
    */
   readonly initialState?: ProgressionAuthoritativeState;
+
+  /**
+   * Optional callback for reporting errors encountered during cost calculations.
+   * Called when invalid costs are detected (non-finite or negative values).
+   */
+  readonly onError?: (error: Error) => void;
 }
 
 /**
@@ -183,9 +190,11 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly upgrades: Map<string, UpgradeRecord>;
   private readonly upgradeList: UpgradeRecord[];
   private readonly conditionContext: ConditionContext;
+  private readonly onError?: (error: Error) => void;
 
   constructor(options: ProgressionCoordinatorOptions) {
     this.content = options.content;
+    this.onError = options.onError;
 
     const initialState = options.initialState
       ? (options.initialState as Mutable<ProgressionAuthoritativeState>)
@@ -311,10 +320,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         record.state.isUnlocked = true;
       }
 
-      const visibleCondition = record.definition.visibilityCondition;
-      record.state.isVisible = visibleCondition
-        ? evaluateCondition(visibleCondition, this.conditionContext)
-        : true;
+      record.state.isVisible = this.evaluateVisibility(
+        record.definition.visibilityCondition,
+      );
 
       if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
         record.state.nextPurchaseReadyAtStep = step + 1;
@@ -331,10 +339,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     for (const record of this.upgradeList) {
       const status = this.resolveUpgradeStatus(record);
       record.state.status = status;
-      const visibilityCondition = record.definition.visibilityCondition;
-      record.state.isVisible = visibilityCondition
-        ? evaluateCondition(visibilityCondition, this.conditionContext)
-        : true;
+      record.state.isVisible = this.evaluateVisibility(
+        record.definition.visibilityCondition,
+      );
 
       record.state.unlockHint =
         status === 'locked'
@@ -398,10 +405,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   ): number | undefined {
     const record = this.generators.get(generatorId);
     if (!record) {
+      const error = new Error(
+        `Generator cost calculation failed: generator "${generatorId}" not found`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     const baseCost = record.definition.purchase.baseCost;
     if (!Number.isFinite(baseCost) || baseCost < 0) {
+      const error = new Error(
+        `Generator cost calculation failed for "${generatorId}": baseCost is invalid (${baseCost})`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     const evaluatedCost = evaluateCostFormula(
@@ -409,10 +424,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       purchaseIndex,
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
+      const error = new Error(
+        `Generator cost calculation failed for "${generatorId}" at purchase index ${purchaseIndex}: cost curve evaluation returned ${evaluatedCost}`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     const cost = evaluatedCost * baseCost;
     if (!Number.isFinite(cost) || cost < 0) {
+      const error = new Error(
+        `Generator cost calculation failed for "${generatorId}" at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     return cost;
@@ -421,9 +444,14 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   computeUpgradeCosts(record: UpgradeRecord): readonly UpgradeResourceCost[] | undefined {
     const costs: UpgradeResourceCost[] = [];
     const purchaseLevel = record.purchases;
+    const upgradeId = record.definition.id;
 
     const baseCost = record.definition.cost.baseCost;
     if (!Number.isFinite(baseCost) || baseCost < 0) {
+      const error = new Error(
+        `Upgrade cost calculation failed for "${upgradeId}": baseCost is invalid (${baseCost})`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     const evaluatedCost = evaluateCostFormula(
@@ -431,6 +459,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       purchaseLevel,
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
+      const error = new Error(
+        `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: cost curve evaluation returned ${evaluatedCost}`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     let amount = evaluatedCost * baseCost;
@@ -441,11 +473,19 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         purchaseLevel,
       );
       if (repeatableAdjustment === undefined || repeatableAdjustment < 0) {
+        const error = new Error(
+          `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: repeatable cost curve evaluation returned ${repeatableAdjustment}`,
+        );
+        this.onError?.(error);
         return undefined;
       }
       amount *= repeatableAdjustment;
     }
     if (!Number.isFinite(amount) || amount < 0) {
+      const error = new Error(
+        `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: final amount is invalid (${amount})`,
+      );
+      this.onError?.(error);
       return undefined;
     }
     costs.push({
@@ -453,6 +493,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       amount,
     });
     return costs;
+  }
+
+  /**
+   * Evaluates visibility condition for generators and upgrades.
+   *
+   * @param condition - Optional visibility condition to evaluate
+   * @returns true if condition passes or is undefined (default visible), false otherwise
+   */
+  private evaluateVisibility(condition: Condition | undefined): boolean {
+    return condition
+      ? evaluateCondition(condition, this.conditionContext)
+      : true;
   }
 
   resolveUpgradeStatus(record: UpgradeRecord): UpgradeStatus {

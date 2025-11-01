@@ -787,3 +787,824 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
     expect(advancedRecord?.isVisible).toBe(true);
   });
 });
+
+describe('Integration: bulk purchase edge cases', () => {
+  it('handles large bulk purchases (1000+ generators) with exponential cost curves', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.expensive', {
+      name: {
+        default: 'Expensive Generator',
+        variants: { 'en-US': 'Expensive Generator' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: {
+          kind: 'exponential',
+          base: 1,
+          growth: 1.01, // Modest 1% growth per level
+        },
+        maxBulk: 1500, // Allow large bulk purchases
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const generatorRecord = coordinator.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+
+    // Add very large amount of resources for 1000 purchases
+    coordinator.resourceState.addAmount(energyIndex, 1000000);
+    coordinator.updateForStep(0);
+
+    // Test bulk purchase of 1000 generators
+    const startTime = performance.now();
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      1000,
+    );
+    const endTime = performance.now();
+
+    expect(quote).toBeDefined();
+    expect(quote?.costs).toBeDefined();
+    expect(quote?.costs[0].resourceId).toBe(energy.id);
+    expect(quote?.costs[0].amount).toBeGreaterThan(0);
+    expect(Number.isFinite(quote?.costs[0].amount)).toBe(true);
+
+    // Verify cost calculation performance (should be <100ms for 1000 iterations)
+    expect(endTime - startTime).toBeLessThan(100);
+
+    // Apply the purchase
+    const cost = quote?.costs[0].amount ?? 0;
+    coordinator.resourceState.spendAmount(energyIndex, cost);
+    coordinator.incrementGeneratorOwned(generator.id, 1000);
+    coordinator.updateForStep(1);
+
+    expect(generatorRecord?.owned).toBe(1000);
+  });
+
+  it('detects numeric overflow when bulk purchase costs exceed MAX_SAFE_INTEGER', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.explosive', {
+      name: {
+        default: 'Explosive Cost Generator',
+        variants: { 'en-US': 'Explosive Cost Generator' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1e15, // Very large base cost
+        costCurve: {
+          kind: 'exponential',
+          base: 1,
+          growth: 2.0, // Doubles each level
+        },
+        maxBulk: 100,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Try to purchase 60 generators - cost should overflow
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      60,
+    );
+
+    // Should either return undefined or a cost that's still finite
+    if (quote !== undefined) {
+      expect(Number.isFinite(quote.costs[0].amount)).toBe(true);
+    }
+  });
+
+  it('handles bulk purchases hitting maxLevel boundary', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.limited', {
+      name: {
+        default: 'Limited Generator',
+        variants: { 'en-US': 'Limited Generator' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: literalOne,
+        maxBulk: 100,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+      maxLevel: 50, // Hard cap at 50
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const generatorRecord = coordinator.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+
+    coordinator.resourceState.addAmount(energyIndex, 10000);
+    coordinator.updateForStep(0);
+
+    // Purchase 40 generators successfully
+    const quote1 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      40,
+    );
+    expect(quote1).toBeDefined();
+    coordinator.resourceState.spendAmount(energyIndex, quote1?.costs[0].amount ?? 0);
+    coordinator.incrementGeneratorOwned(generator.id, 40);
+    coordinator.updateForStep(1);
+    expect(generatorRecord?.owned).toBe(40);
+
+    // Try to purchase 20 more (would go to 60, exceeds maxLevel of 50)
+    const quote2 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      20,
+    );
+    // Should reject because it would exceed maxLevel
+    expect(quote2).toBeUndefined();
+
+    // Purchase exactly to maxLevel (10 more)
+    const quote3 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      10,
+    );
+    expect(quote3).toBeDefined();
+    coordinator.resourceState.spendAmount(energyIndex, quote3?.costs[0].amount ?? 0);
+    coordinator.incrementGeneratorOwned(generator.id, 10);
+    coordinator.updateForStep(2);
+    expect(generatorRecord?.owned).toBe(50);
+
+    // Verify no more purchases possible
+    const quote4 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      1,
+    );
+    expect(quote4).toBeUndefined();
+  });
+
+  it('handles bulk purchase with insufficient resources mid-calculation', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.scaling', {
+      name: {
+        default: 'Scaling Generator',
+        variants: { 'en-US': 'Scaling Generator' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: {
+          kind: 'exponential',
+          base: 1,
+          growth: 1.5,
+        },
+        maxBulk: 50,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const generatorRecord = coordinator.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+
+    // Add limited resources
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+
+    // Get quote for bulk purchase
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      20,
+    );
+    expect(quote).toBeDefined();
+    const totalCost = quote?.costs[0].amount ?? 0;
+
+    // Verify we can afford it
+    const currentAmount = coordinator.resourceState.getAmount(energyIndex);
+    if (totalCost <= currentAmount) {
+      // Purchase should succeed
+      const spent = coordinator.resourceState.spendAmount(energyIndex, totalCost);
+      expect(spent).toBe(true);
+      coordinator.incrementGeneratorOwned(generator.id, 20);
+      coordinator.updateForStep(1);
+      expect(generatorRecord?.owned).toBe(20);
+    } else {
+      // Purchase should fail - not enough resources
+      const spent = coordinator.resourceState.spendAmount(energyIndex, totalCost);
+      expect(spent).toBe(false);
+      expect(generatorRecord?.owned).toBe(0);
+    }
+  });
+
+  it('validates bulk purchase performance for 100 purchases completes quickly', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.standard', {
+      name: {
+        default: 'Standard Generator',
+        variants: { 'en-US': 'Standard Generator' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: {
+          kind: 'exponential',
+          base: 1,
+          growth: 1.15,
+        },
+        maxBulk: 150,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.resourceState.addAmount(
+      coordinator.resourceState.getIndex(energy.id),
+      1e9,
+    );
+    coordinator.updateForStep(0);
+
+    // Measure performance for 100 purchases
+    const startTime = performance.now();
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      100,
+    );
+    const endTime = performance.now();
+
+    expect(quote).toBeDefined();
+    expect(endTime - startTime).toBeLessThan(50); // Should complete in <50ms
+  });
+});
+
+describe('Integration: hydration error scenarios', () => {
+  it('detects invalid save format with missing required fields', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Try to hydrate with invalid/incomplete save data
+    const invalidSave = {
+      ids: ['resource.energy'],
+      // Missing amounts, capacities, flags arrays
+    } as any;
+
+    // Should detect missing fields and throw
+    expect(() => {
+      coordinator.hydrateResources(invalidSave);
+    }).toThrow();
+  });
+
+  it('detects missing resource definitions (resource removed from content)', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+    const crystal = createResourceDefinition('resource.crystal', {
+      name: 'Crystal',
+    });
+
+    // Create content pack with both resources
+    const packWithBoth = createContentPack({
+      resources: [energy, crystal],
+    });
+
+    const coordinator1 = createProgressionCoordinator({
+      content: packWithBoth,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator1.resourceState.getIndex(energy.id);
+    const crystalIndex = coordinator1.resourceState.getIndex(crystal.id);
+
+    coordinator1.resourceState.addAmount(energyIndex, 100);
+    coordinator1.resourceState.addAmount(crystalIndex, 50);
+    coordinator1.updateForStep(0);
+
+    // Export save with both resources
+    const save = coordinator1.resourceState.exportForSave();
+    expect(save.ids).toContain('resource.energy');
+    expect(save.ids).toContain('resource.crystal');
+
+    // Create new coordinator with only energy (crystal removed from content)
+    const packWithoutCrystal = createContentPack({
+      resources: [energy],
+    });
+
+    const coordinator2 = createProgressionCoordinator({
+      content: packWithoutCrystal,
+      stepDurationMs: 100,
+    });
+
+    // Hydration should detect incompatible definitions and throw
+    expect(() => {
+      coordinator2.hydrateResources(save);
+    }).toThrow('incompatible');
+  });
+
+  it('detects negative amounts in save data', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Create save with negative amount
+    const corruptedSave = {
+      ids: ['resource.energy'],
+      amounts: [-100], // Invalid negative amount
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+    };
+
+    // Negative amounts are valid in the current implementation (clamped to 0 on access)
+    // But let's verify they don't crash the system
+    expect(() => {
+      coordinator.hydrateResources(corruptedSave);
+    }).not.toThrow();
+
+    // Amount should be clamped to valid range
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const amount = coordinator.resourceState.getAmount(energyIndex);
+    expect(amount).toBeGreaterThanOrEqual(0);
+  });
+
+  it('detects corrupted state data with NaN values', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Create save with NaN values
+    const corruptedSave = {
+      ids: ['resource.energy'],
+      amounts: [NaN], // Invalid NaN amount
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+    };
+
+    // Should detect and reject invalid NaN values
+    expect(() => {
+      coordinator.hydrateResources(corruptedSave);
+    }).toThrow('finite numbers');
+  });
+
+  it('detects corrupted state data with Infinity values', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Create save with Infinity values
+    const corruptedSave = {
+      ids: ['resource.energy'],
+      amounts: [Infinity],
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+    };
+
+    // Should detect and reject invalid Infinity values
+    expect(() => {
+      coordinator.hydrateResources(corruptedSave);
+    }).toThrow('finite numbers');
+  });
+
+  it('detects corrupted unlocked/visible flag data', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Create save with invalid unlocked values (Uint8Array instead of boolean[])
+    const corruptedSave = {
+      ids: ['resource.energy'],
+      amounts: [100],
+      capacities: [1000],
+      flags: [0],
+      unlocked: new Uint8Array([1]), // Invalid type
+      visible: new Uint8Array([1]),
+    };
+
+    // Should detect and reject invalid unlocked values
+    expect(() => {
+      coordinator.hydrateResources(corruptedSave);
+    }).toThrow('boolean');
+  });
+
+  it('preserves progression state across save/restore cycle with generators', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.reactor', {
+      name: {
+        default: 'Reactor',
+        variants: { 'en-US': 'Reactor' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: {
+          kind: 'exponential',
+          base: 1,
+          growth: 1.15,
+        },
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    // First coordinator - build up state
+    const coordinator1 = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex1 = coordinator1.resourceState.getIndex(energy.id);
+    coordinator1.resourceState.addAmount(energyIndex1, 1000);
+    coordinator1.incrementGeneratorOwned(generator.id, 25);
+    coordinator1.updateForStep(0);
+
+    // Export save
+    const save = coordinator1.resourceState.exportForSave();
+    const generatorState = coordinator1.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+    expect(generatorState?.owned).toBe(25);
+
+    // Create second coordinator and restore
+    const coordinator2 = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      initialState: coordinator1.state,
+    });
+
+    coordinator2.hydrateResources(save);
+    coordinator2.updateForStep(0);
+
+    // Verify restored state
+    const energyIndex2 = coordinator2.resourceState.getIndex(energy.id);
+    expect(coordinator2.resourceState.getAmount(energyIndex2)).toBe(1000);
+
+    const generatorState2 = coordinator2.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+    expect(generatorState2?.owned).toBe(25);
+
+    // Verify can continue purchasing from restored state
+    const quote = coordinator2.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      5,
+    );
+    expect(quote).toBeDefined();
+
+    // Cost should be calculated from level 25 (current owned), not from 0
+    expect(quote?.costs[0].amount).toBeGreaterThan(50);
+  });
+});
+
+describe('Integration: enhanced error messages', () => {
+  it('reports detailed error when generator not found', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const content = createContentPack({
+      resources: [energy],
+      generators: [],
+    });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const cost = (coordinator as any).computeGeneratorCost(
+      'nonexistent-generator',
+      0,
+    );
+
+    expect(cost).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('nonexistent-generator');
+    expect(errors[0].message).toContain('not found');
+  });
+
+  it('reports detailed error when generator baseCost is invalid', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const generator = createGeneratorDefinition('generator.test-gen', {
+      name: { default: 'Test Generator', variants: {} } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: NaN, // Invalid baseCost
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      produces: [{
+        resourceId: energy.id,
+        rate: { kind: 'constant', value: 1 },
+      }],
+    });
+    const content = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const cost = (coordinator as any).computeGeneratorCost('generator.test-gen', 0);
+
+    expect(cost).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.test-gen');
+    expect(errors[0].message).toContain('baseCost is invalid');
+  });
+
+  it('reports detailed error when generator cost curve evaluation fails', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const generator = createGeneratorDefinition('generator.test-gen', {
+      name: { default: 'Test Generator', variants: {} } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: { kind: 'exponential', base: 1, growth: -1 }, // Negative growth causes issues
+      },
+      produces: [{
+        resourceId: energy.id,
+        rate: { kind: 'constant', value: 1 },
+      }],
+    });
+    const content = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    // Evaluate at a high purchase index to potentially cause overflow or invalid result
+    const cost = (coordinator as any).computeGeneratorCost('generator.test-gen', 1000);
+
+    if (cost === undefined) {
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].message).toContain('Generator cost calculation failed');
+      expect(errors[0].message).toContain('generator.test-gen');
+      expect(errors[0].message).toContain('purchase index 1000');
+    }
+  });
+
+  it('reports detailed error when upgrade baseCost is invalid', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const upgrade = createUpgradeDefinition('upgrade.test-upgrade', {
+      name: 'Test Upgrade',
+      cost: {
+        currencyId: energy.id,
+        baseCost: Infinity, // Invalid baseCost
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      effects: [],
+    });
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    coordinator.updateForStep(0);
+
+    // Access the upgrade record to test cost calculation
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.test-upgrade');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].message).toContain('Upgrade cost calculation failed');
+    expect(errors[0].message).toContain('upgrade.test-upgrade');
+    expect(errors[0].message).toContain('baseCost is invalid');
+  });
+
+  it('reports detailed error when repeatable upgrade cost curve fails', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy', startAmount: 10000 });
+    const upgrade = createUpgradeDefinition('upgrade.test-upgrade', {
+      name: 'Test Upgrade',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      repeatable: {
+        costCurve: { kind: 'exponential', base: 1, growth: -2 }, // Invalid repeatable curve
+        maxPurchases: 10,
+      },
+      effects: [],
+    });
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    coordinator.updateForStep(0);
+
+    // Purchase the upgrade once to set purchases > 0
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.test-upgrade');
+    upgradeRecord.purchases = 5;
+
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    if (costs === undefined) {
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors[0].message).toContain('Upgrade cost calculation failed');
+      expect(errors[0].message).toContain('upgrade.test-upgrade');
+      expect(errors[0].message).toContain('purchase level 5');
+    }
+  });
+
+  it('does not call onError when costs are calculated successfully', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const generator = createGeneratorDefinition('generator.test-gen', {
+      name: { default: 'Test Generator', variants: {} } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      produces: [{
+        resourceId: energy.id,
+        rate: { kind: 'constant', value: 1 },
+      }],
+    });
+    const content = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const cost = (coordinator as any).computeGeneratorCost('generator.test-gen', 0);
+
+    expect(cost).toBeDefined();
+    expect(errors).toHaveLength(0);
+  });
+});

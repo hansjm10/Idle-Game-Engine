@@ -8,8 +8,28 @@ import { evaluateNumericFormula } from '@idle-engine/content-schema';
  * Unlock conditions use constant thresholds that don't scale with progression,
  * unlike dynamic cost curves that increase with level. This constant makes the
  * intent explicit when evaluating formulas for unlock/visibility checks.
+ *
+ * Value is 0 because unlock thresholds represent absolute gates (e.g., "unlock when
+ * you have 100 energy") rather than scaling requirements. Using 0 ensures formulas
+ * like `{ kind: 'constant', value: 100 }` evaluate to their base value without
+ * level-based scaling.
  */
 const STATIC_THRESHOLD_LEVEL = 0;
+
+/**
+ * Maximum allowed recursion depth for condition evaluation.
+ *
+ * @remarks
+ * This prevents infinite recursion from circular condition dependencies.
+ * Conditions exceeding this depth will return false and report an error.
+ *
+ * Value of 100 provides generous headroom for legitimately complex condition trees
+ * (e.g., nested `allOf`/`anyOf` combinations) while catching circular dependencies
+ * early enough to preserve stack space. In practice, well-designed content should
+ * rarely exceed 10-20 levels. Deeply nested conditions (50+) likely indicate
+ * content authoring issues or circular references.
+ */
+const MAX_CONDITION_DEPTH = 100;
 
 /**
  * Context providing access to game state for condition evaluation
@@ -30,11 +50,15 @@ export type ConditionContext = {
  *
  * @param condition - The condition to evaluate, or undefined (which evaluates to true)
  * @param context - Context providing access to game state
+ * @param depth - Internal recursion depth tracker (defaults to 0)
  * @returns true if the condition is met, false otherwise
  *
  * @remarks
  * Unknown condition kinds will return false as a fail-safe default.
  * This ensures graceful degradation if the schema contains unrecognized condition types.
+ *
+ * Conditions exceeding MAX_CONDITION_DEPTH will return false and report an error
+ * to prevent infinite recursion from circular dependencies.
  *
  * @example
  * ```typescript
@@ -50,9 +74,25 @@ export type ConditionContext = {
 export function evaluateCondition(
   condition: Condition | undefined,
   context: ConditionContext,
+  depth = 0,
 ): boolean {
   if (!condition) {
     return true;
+  }
+
+  // Check for excessive recursion depth (potential circular dependencies)
+  if (depth > MAX_CONDITION_DEPTH) {
+    const conditionInfo = condition ? ` (condition kind: "${condition.kind}")` : '';
+    const error = new Error(
+      `Condition evaluation exceeded maximum depth of ${MAX_CONDITION_DEPTH} at recursion level ${depth}${conditionInfo}. Possible circular dependency detected. Check for conditions that reference each other in a cycle.`,
+    );
+    if (process.env.NODE_ENV !== 'production') {
+      context.onError?.(error);
+    } else {
+      // eslint-disable-next-line no-console -- Graceful degradation: log circular dependency warning in production
+      console.warn(error.message);
+    }
+    return false;
   }
 
   switch (condition.kind) {
@@ -80,14 +120,14 @@ export function evaluateCondition(
     }
     case 'allOf':
       return condition.conditions.every((nested) =>
-        evaluateCondition(nested, context),
+        evaluateCondition(nested, context, depth + 1),
       );
     case 'anyOf':
       return condition.conditions.some((nested) =>
-        evaluateCondition(nested, context),
+        evaluateCondition(nested, context, depth + 1),
       );
     case 'not':
-      return !evaluateCondition(condition.condition, context);
+      return !evaluateCondition(condition.condition, context, depth + 1);
     default: {
       // Exhaustive check: if we reach here, TypeScript knows this should never happen
       const _exhaustive: never = condition;

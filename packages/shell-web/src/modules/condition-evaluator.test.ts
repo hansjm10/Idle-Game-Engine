@@ -303,6 +303,121 @@ describe('evaluateCondition', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toContain('Unknown condition kind: unknown');
   });
+
+  it('detects excessive recursion depth with deeply nested allOf conditions', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      onError: (error) => errors.push(error),
+    });
+
+    // Create a condition nested 101 levels deep (exceeds MAX_CONDITION_DEPTH of 100)
+    let condition: Condition = { kind: 'always' };
+    for (let i = 0; i < 101; i++) {
+      condition = { kind: 'allOf', conditions: [condition] };
+    }
+
+    const result = evaluateCondition(condition, context);
+
+    expect(result).toBe(false);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('exceeded maximum depth');
+    expect(errors[0].message).toContain('circular dependency');
+  });
+
+  it('detects excessive recursion depth with deeply nested anyOf conditions', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      onError: (error) => errors.push(error),
+    });
+
+    // Create a condition nested 101 levels deep (exceeds MAX_CONDITION_DEPTH of 100)
+    let condition: Condition = { kind: 'never' };
+    for (let i = 0; i < 101; i++) {
+      condition = { kind: 'anyOf', conditions: [condition] };
+    }
+
+    const result = evaluateCondition(condition, context);
+
+    expect(result).toBe(false);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('exceeded maximum depth');
+  });
+
+  it('detects excessive recursion depth with deeply nested not conditions', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      onError: (error) => errors.push(error),
+    });
+
+    // Create a condition nested 101 levels deep (exceeds MAX_CONDITION_DEPTH of 100)
+    let condition: Condition = { kind: 'always' };
+    for (let i = 0; i < 101; i++) {
+      condition = { kind: 'not', condition };
+    }
+
+    evaluateCondition(condition, context);
+
+    // The exact result depends on the parity of negations after depth check,
+    // but we care that an error was reported
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('exceeded maximum depth');
+    expect(errors[0].message).toContain('circular dependency');
+  });
+
+  it('handles moderately nested conditions within depth limit', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      getResourceAmount: () => 100,
+      onError: (error) => errors.push(error),
+    });
+
+    // Create a condition nested 50 levels deep (within MAX_CONDITION_DEPTH of 100)
+    let condition: Condition = {
+      kind: 'resourceThreshold',
+      resourceId: 'energy',
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 50 },
+    };
+    for (let i = 0; i < 50; i++) {
+      condition = { kind: 'allOf', conditions: [condition] };
+    }
+
+    const result = evaluateCondition(condition, context);
+
+    expect(result).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('handles mixed recursive conditions approaching depth limit', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      getResourceAmount: () => 100,
+      onError: (error) => errors.push(error),
+    });
+
+    // Create a condition with mixed nesting (allOf, anyOf, not) at 99 depth
+    let condition: Condition = {
+      kind: 'resourceThreshold',
+      resourceId: 'energy',
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 50 },
+    };
+    for (let i = 0; i < 33; i++) {
+      condition = { kind: 'allOf', conditions: [condition] };
+    }
+    for (let i = 0; i < 33; i++) {
+      condition = { kind: 'anyOf', conditions: [condition] };
+    }
+    for (let i = 0; i < 33; i++) {
+      condition = { kind: 'not', condition };
+    }
+
+    const result = evaluateCondition(condition, context);
+
+    // Should succeed (depth = 99, limit = 100)
+    expect(result).toBe(false); // false because of odd number of 'not' wrappers
+    expect(errors).toHaveLength(0);
+  });
 });
 
 describe('compareWithComparator', () => {

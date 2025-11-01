@@ -12,6 +12,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@idle-engine/core': path.resolve(
+        projectRoot,
+        '../core/src/index.ts',
+      ),
       '@idle-engine/content-schema/runtime-helpers': path.resolve(
         projectRoot,
         '../content-schema/src/runtime-helpers.ts',
