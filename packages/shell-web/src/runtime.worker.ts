@@ -36,6 +36,8 @@ import {
   type RuntimeEventSnapshot,
   type RuntimeWorkerRestoreSession,
   type RuntimeWorkerSessionRestored,
+  type RuntimeWorkerRequestSessionSnapshot,
+  type RuntimeWorkerSessionSnapshot,
   type RuntimeWorkerSocialCommand,
   type RuntimeWorkerSocialCommandResult,
   type RuntimeWorkerSocialCommandFailure,
@@ -51,6 +53,8 @@ import {
 import { createProgressionCoordinator } from './modules/progression-coordinator.js';
 
 const RAF_INTERVAL_MS = 16;
+const RUNTIME_VERSION = '0.1.0';
+const PERSISTENCE_SCHEMA_VERSION = 1;
 
 export interface RuntimeWorkerOptions {
   readonly context?: DedicatedWorkerGlobalScope;
@@ -798,6 +802,60 @@ export function initializeRuntimeWorker(
     }
   };
 
+  const handleSessionSnapshotRequest = (
+    message: RuntimeWorkerRequestSessionSnapshot,
+  ) => {
+    const requestId = message.requestId;
+
+    if (restoreInProgress) {
+      postError({
+        code: 'SNAPSHOT_FAILED',
+        message: 'Cannot capture snapshot during session restoration',
+        requestId,
+        details: { reason: 'RESTORE_IN_PROGRESS' },
+      });
+      return;
+    }
+
+    try {
+      const state = progressionCoordinator.resourceState.exportForSave();
+      const currentStep = runtime.getCurrentStep();
+      const monotonicMs = monotonicClock.now();
+      const capturedAt = new Date().toISOString();
+      const contentDigest = progressionCoordinator.resourceState.getDefinitionDigest();
+
+      const snapshotEnvelope: RuntimeWorkerSessionSnapshot = {
+        type: 'SESSION_SNAPSHOT',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        requestId,
+        snapshot: {
+          persistenceSchemaVersion: PERSISTENCE_SCHEMA_VERSION,
+          slotId: 'default',
+          capturedAt,
+          workerStep: currentStep,
+          monotonicMs,
+          state,
+          runtimeVersion: RUNTIME_VERSION,
+          contentDigest,
+        },
+      };
+      context.postMessage(snapshotEnvelope);
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : String(error);
+      const details =
+        error && typeof error === 'object' && 'details' in error
+          ? (error as { details?: Record<string, unknown> }).details
+          : undefined;
+      postError({
+        code: 'SNAPSHOT_FAILED',
+        message: `Failed to capture session snapshot: ${reason}`,
+        requestId,
+        details,
+      });
+    }
+  };
+
   const handleCommandMessage = (
     raw: Record<string, unknown>,
     requestId?: string,
@@ -952,6 +1010,13 @@ export function initializeRuntimeWorker(
     if (type === 'RESTORE_SESSION') {
       handleRestoreSessionMessage(
         message as RuntimeWorkerRestoreSession,
+      );
+      return;
+    }
+
+    if (type === 'REQUEST_SESSION_SNAPSHOT') {
+      handleSessionSnapshotRequest(
+        message as RuntimeWorkerRequestSessionSnapshot,
       );
       return;
     }
