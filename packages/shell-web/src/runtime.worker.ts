@@ -814,11 +814,23 @@ export function initializeRuntimeWorker(
     // which means the snapshot metadata (step, timestamp) wouldn't match the
     // actual runtime state. Wait for SESSION_RESTORED before requesting snapshots.
     if (restoreInProgress) {
+      const currentStep = runtime.getCurrentStep();
+
+      // Record telemetry for blocked snapshot attempts
+      telemetry.recordWarning('worker.session_snapshot_blocked', {
+        reason: 'RESTORE_IN_PROGRESS',
+        workerStep: currentStep,
+        requestId: requestId ?? 'none',
+      });
+
       postError({
         code: 'SNAPSHOT_FAILED',
         message: 'Cannot capture snapshot during session restoration. Wait for restoration to complete.',
         requestId,
-        details: { reason: 'RESTORE_IN_PROGRESS' },
+        details: {
+          reason: 'RESTORE_IN_PROGRESS',
+          workerStep: currentStep,
+        },
       });
       return;
     }
@@ -873,13 +885,27 @@ export function initializeRuntimeWorker(
 
       context.postMessage(snapshotEnvelope);
     } catch (error) {
+      const currentStep = runtime.getCurrentStep();
       const reason =
         error instanceof Error ? error.message : String(error);
+
+      // Record telemetry for snapshot export failures
+      telemetry.recordError('worker.session_snapshot_failed', {
+        reason: 'EXPORT_FAILED',
+        errorMessage: reason,
+        workerStep: currentStep,
+        requestId: requestId ?? 'none',
+      });
+
       postError({
         code: 'SNAPSHOT_FAILED',
         message: `Failed to capture session snapshot: ${reason}`,
         requestId,
-        details: extractErrorDetails(error),
+        details: {
+          ...extractErrorDetails(error),
+          reason: 'EXPORT_FAILED',
+          workerStep: currentStep,
+        },
       });
     }
   };

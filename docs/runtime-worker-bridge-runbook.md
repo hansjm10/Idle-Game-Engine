@@ -62,6 +62,32 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
   - `SCHEMA_VERSION_MISMATCH` – client bundle using different `WORKER_MESSAGE_SCHEMA_VERSION` (currently `3`).
   - `RESTORE_FAILED` – session payload rejected; inspect `.details` for reconciliation logs.
   - `STALE_COMMAND` – command `issuedAt` < last accepted; ensure callers use the bridge helpers.
+  - `SNAPSHOT_FAILED` – session snapshot capture failed; see §4.5 for details.
+
+### 4.5 Session snapshots
+- **Capture performance**: Snapshot serialization is **synchronous** and blocks the worker tick loop. The worker captures the current runtime state via `exportForSave()` and emits a `SESSION_SNAPSHOT` message with the complete payload (state, metadata, content digest).
+- **Expected snapshot sizes**:
+  - Small games (~10 resources): **1-5 KB**
+  - Medium games (~50 resources): **5-25 KB**
+  - Large games (~200+ resources): **25-100 KB**
+  - Resource count is the primary driver of snapshot size. Monitor `worker.session_snapshot_captured` telemetry events for `snapshotBytes` and `resourceCount` to track growth trends.
+- **Capture duration**: Typically **&lt;5ms** for small-to-medium games. Snapshots blocking longer than **&gt;10ms** may indicate state bloat or serialization bottlenecks; consider profiling `exportForSave()`.
+- **Concurrency behavior**:
+  - Multiple snapshot requests are processed **sequentially** in message order. Each snapshot captures the state at its processing time (same `workerStep` if no ticks occur between requests).
+  - Snapshots are **gated during session restoration** (`RESTORE_IN_PROGRESS` check at `runtime.worker.ts:816`) to avoid capturing inconsistent state. Requests during restore fail immediately with `SNAPSHOT_FAILED` error code and `details.reason: 'RESTORE_IN_PROGRESS'`. Wait for `SESSION_RESTORED` before requesting snapshots.
+- **Telemetry monitoring**:
+  - **Success**: `worker.session_snapshot_captured` events include `snapshotBytes`, `snapshotKB`, `workerStep`, `reason`, `requestId`, `resourceCount`. Use these metrics to establish baselines and detect anomalies (e.g., sudden size spikes).
+  - **Failure**: `worker.session_snapshot_failed` events include `reason` (`'EXPORT_FAILED'`), `errorMessage`, `workerStep`, `requestId`. Investigate export failures for corrupted state or serialization bugs.
+  - **Blocked**: `worker.session_snapshot_blocked` warnings fire when snapshots are requested during restoration (`reason: 'RESTORE_IN_PROGRESS'`). This is expected behavior; ensure callers wait for `SESSION_RESTORED`.
+- **Error details structure**:
+  - `SNAPSHOT_FAILED` errors include structured `details`:
+    - `reason`: `'RESTORE_IN_PROGRESS'` (blocked during restore) or `'EXPORT_FAILED'` (serialization error)
+    - `workerStep`: Current runtime step when the error occurred
+    - Additional fields from the underlying error (via `extractErrorDetails()`)
+- **Troubleshooting**:
+  - If snapshots consistently fail with `'EXPORT_FAILED'`, check for circular references or non-serializable objects in game state.
+  - If snapshot sizes grow unexpectedly, audit resource definitions for memory leaks (e.g., unbounded arrays in modifiers).
+  - If snapshots block the tick loop (&gt;10ms), consider deferring capture to idle periods or implementing incremental serialization.
 
 ## 5. Validation Checklist
 Run these commands from the repository root before promoting or flipping the feature flag:
@@ -85,6 +111,10 @@ pnpm build --filter shell-web
 | Diagnostics callbacks never fire | `enableDiagnostics` not invoked or subscription removed | Confirm subscription sequence (enable → onDiagnosticsUpdate) and ensure diagnostics remains enabled in the worker. Remember diagnostics are disabled if the bridge disposes between renders. |
 | Worker leaks after navigation | Hook unmounted without disposing or multiple bridges instantiated | Verify only one `useWorkerBridge` consumer is active; ensure providers unmount on route changes. Use React DevTools to confirm no lingering bridge instance. |
 | Social commands reject with `"Social commands are disabled in this shell"` / worker error code `SOCIAL_COMMANDS_DISABLED` | `VITE_ENABLE_SOCIAL_COMMANDS` not set in the build environment | Enable the env var (or launch flag) and redeploy; social command support stays off by default. |
+| `SNAPSHOT_FAILED` with `reason: 'RESTORE_IN_PROGRESS'` | Snapshot requested during active session restoration | Wait for `SESSION_RESTORED` message before requesting snapshots. Check telemetry for `worker.session_snapshot_blocked` warnings. Normal behavior when snapshots race with restore operations. |
+| `SNAPSHOT_FAILED` with `reason: 'EXPORT_FAILED'` | State serialization error (circular refs, non-serializable objects) | Inspect `error.details` for the underlying cause. Check for circular references in game state or modifiers. Review resource definitions for objects that can't be JSON-serialized. |
+| Snapshot sizes unexpectedly large (&gt;100 KB) | State bloat or memory leaks in resource modifiers | Monitor `worker.session_snapshot_captured` telemetry for `snapshotBytes` and `resourceCount`. Audit resource definitions for unbounded arrays or large data structures. Profile `exportForSave()` to identify serialization bottlenecks. |
+| Snapshots block worker tick loop (&gt;10ms) | Large game state or slow serialization | Check `worker.session_snapshot_captured` telemetry for capture duration. Consider deferring snapshots to idle periods or implementing incremental serialization. Profile `exportForSave()` for performance bottlenecks. |
 
 ## 7. Verification Artifacts
 - Automated coverage: `packages/shell-web/src/runtime.worker.test.ts` (handshake, diagnostics, command validation) and `packages/shell-web/src/modules/worker-bridge.test.ts` (bridge queueing, disposal, social command gating). These correspond to implementations expected by issues #253 and #254.

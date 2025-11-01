@@ -1720,6 +1720,66 @@ describe('session snapshot protocol', () => {
       expect.stringContaining('reason=autosave'),
     );
   });
+
+  it('handles multiple concurrent snapshot requests', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    // Advance runtime to create some state
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    context.postMessage.mockClear();
+
+    // Dispatch two snapshot requests rapidly (without waiting)
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-1',
+      reason: 'autosave',
+    });
+
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-2',
+      reason: 'manual-save',
+    });
+
+    // Verify both SESSION_SNAPSHOT messages were emitted
+    const snapshotCalls = context.postMessage.mock.calls.filter(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'SESSION_SNAPSHOT',
+    );
+
+    expect(snapshotCalls).toHaveLength(2);
+
+    // Verify each snapshot has the correct requestId correlation
+    const snapshot1 = snapshotCalls[0][0] as {
+      type: string;
+      requestId: string;
+      snapshot: { workerStep: number };
+    };
+    const snapshot2 = snapshotCalls[1][0] as {
+      type: string;
+      requestId: string;
+      snapshot: { workerStep: number };
+    };
+
+    expect(snapshot1.requestId).toBe('snap-1');
+    expect(snapshot2.requestId).toBe('snap-2');
+
+    // Both snapshots should capture the same workerStep since no ticks occurred between requests
+    expect(snapshot1.snapshot.workerStep).toBe(1);
+    expect(snapshot2.snapshot.workerStep).toBe(1);
+  });
 });
 
 describe('isDedicatedWorkerScope', () => {
