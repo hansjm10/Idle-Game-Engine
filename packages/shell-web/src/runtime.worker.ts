@@ -6,10 +6,13 @@ import {
   CommandDispatcher,
   IdleEngineRuntime,
   RUNTIME_COMMAND_TYPES,
+  RUNTIME_VERSION,
+  PERSISTENCE_SCHEMA_VERSION,
   setGameState,
   getGameState,
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
+  telemetry,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
@@ -36,6 +39,8 @@ import {
   type RuntimeEventSnapshot,
   type RuntimeWorkerRestoreSession,
   type RuntimeWorkerSessionRestored,
+  type RuntimeWorkerRequestSessionSnapshot,
+  type RuntimeWorkerSessionSnapshot,
   type RuntimeWorkerSocialCommand,
   type RuntimeWorkerSocialCommandResult,
   type RuntimeWorkerSocialCommandFailure,
@@ -49,6 +54,7 @@ import {
   isSocialCommandsEnabled,
 } from './modules/social-config.js';
 import { createProgressionCoordinator } from './modules/progression-coordinator.js';
+import { extractErrorDetails } from './modules/error-utils.js';
 
 const RAF_INTERVAL_MS = 16;
 
@@ -798,6 +804,112 @@ export function initializeRuntimeWorker(
     }
   };
 
+  const handleSessionSnapshotRequest = (
+    message: RuntimeWorkerRequestSessionSnapshot,
+  ) => {
+    const requestId = message.requestId;
+
+    // Block snapshots during restoration to avoid capturing inconsistent state.
+    // During restoration, the runtime is replaying commands and rebuilding state,
+    // which means the snapshot metadata (step, timestamp) wouldn't match the
+    // actual runtime state. Wait for SESSION_RESTORED before requesting snapshots.
+    if (restoreInProgress) {
+      const currentStep = runtime.getCurrentStep();
+
+      // Record telemetry for blocked snapshot attempts
+      telemetry.recordWarning('worker.session_snapshot_blocked', {
+        reason: 'RESTORE_IN_PROGRESS',
+        workerStep: currentStep,
+        requestId: requestId ?? 'none',
+      });
+
+      postError({
+        code: 'SNAPSHOT_FAILED',
+        message: 'Cannot capture snapshot during session restoration. Wait for restoration to complete.',
+        requestId,
+        details: {
+          reason: 'RESTORE_IN_PROGRESS',
+          workerStep: currentStep,
+        },
+      });
+      return;
+    }
+
+    try {
+      const state = progressionCoordinator.resourceState.exportForSave();
+      const currentStep = runtime.getCurrentStep();
+      const monotonicMs = monotonicClock.now();
+      const capturedAt = new Date().toISOString();
+      const contentDigest = progressionCoordinator.resourceState.getDefinitionDigest();
+
+      const snapshotEnvelope: RuntimeWorkerSessionSnapshot = {
+        type: 'SESSION_SNAPSHOT',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        requestId,
+        snapshot: {
+          persistenceSchemaVersion: PERSISTENCE_SCHEMA_VERSION,
+          slotId: 'default',
+          capturedAt,
+          workerStep: currentStep,
+          monotonicMs,
+          state,
+          runtimeVersion: RUNTIME_VERSION,
+          contentDigest,
+        },
+      };
+
+      // Telemetry: Record snapshot size and capture metadata for monitoring
+      const snapshotBytes = JSON.stringify(state).length;
+      const snapshotKB = (snapshotBytes / 1024).toFixed(2);
+
+      // Record snapshot event with metadata for production monitoring
+      telemetry.recordProgress('worker.session_snapshot_captured', {
+        snapshotBytes,
+        snapshotKB,
+        workerStep: currentStep,
+        reason: message.reason ?? 'unspecified',
+        requestId: requestId ?? 'none',
+        resourceCount: state.resources?.length ?? 0,
+      });
+
+      // Record snapshot size metrics for aggregation and alerting
+      telemetry.recordCounters('worker.session_snapshot', {
+        capture_count: 1,
+        total_bytes: snapshotBytes,
+      });
+
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[Worker] Session snapshot captured: ${snapshotKB} KB, step=${currentStep}, reason=${message.reason ?? 'unspecified'}`,
+      );
+
+      context.postMessage(snapshotEnvelope);
+    } catch (error) {
+      const currentStep = runtime.getCurrentStep();
+      const reason =
+        error instanceof Error ? error.message : String(error);
+
+      // Record telemetry for snapshot export failures
+      telemetry.recordError('worker.session_snapshot_failed', {
+        reason: 'EXPORT_FAILED',
+        errorMessage: reason,
+        workerStep: currentStep,
+        requestId: requestId ?? 'none',
+      });
+
+      postError({
+        code: 'SNAPSHOT_FAILED',
+        message: `Failed to capture session snapshot: ${reason}`,
+        requestId,
+        details: {
+          ...extractErrorDetails(error),
+          reason: 'EXPORT_FAILED',
+          workerStep: currentStep,
+        },
+      });
+    }
+  };
+
   const handleCommandMessage = (
     raw: Record<string, unknown>,
     requestId?: string,
@@ -952,6 +1064,13 @@ export function initializeRuntimeWorker(
     if (type === 'RESTORE_SESSION') {
       handleRestoreSessionMessage(
         message as RuntimeWorkerRestoreSession,
+      );
+      return;
+    }
+
+    if (type === 'REQUEST_SESSION_SNAPSHOT') {
+      handleSessionSnapshotRequest(
+        message as RuntimeWorkerRequestSessionSnapshot,
       );
       return;
     }

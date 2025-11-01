@@ -3,6 +3,7 @@ import type {
   DiagnosticTimelineResult,
   SerializedResourceState,
   ProgressionSnapshot,
+  ResourceDefinitionDigest,
 } from '@idle-engine/core';
 
 export const WORKER_MESSAGE_SCHEMA_VERSION = 3;
@@ -186,12 +187,20 @@ export interface RuntimeWorkerRestoreSession {
   readonly resourceDeltas?: Readonly<Record<string, number>>;
 }
 
+export interface RuntimeWorkerRequestSessionSnapshot {
+  readonly type: 'REQUEST_SESSION_SNAPSHOT';
+  readonly schemaVersion: number;
+  readonly requestId?: string;
+  readonly reason?: string;
+}
+
 export type RuntimeWorkerInboundMessage<TPayload = unknown> =
   | RuntimeWorkerCommand<TPayload>
   | RuntimeWorkerTerminate
   | RuntimeWorkerDiagnosticsSubscribe
   | RuntimeWorkerDiagnosticsUnsubscribe
   | RuntimeWorkerRestoreSession
+  | RuntimeWorkerRequestSessionSnapshot
   | RuntimeWorkerSocialCommand;
 
 export interface RuntimeWorkerReady {
@@ -206,7 +215,8 @@ export interface RuntimeWorkerErrorDetails {
     | 'INVALID_COMMAND_PAYLOAD'
     | 'STALE_COMMAND'
     | 'UNSUPPORTED_MESSAGE'
-    | 'RESTORE_FAILED';
+    | 'RESTORE_FAILED'
+    | 'SNAPSHOT_FAILED';
   readonly message: string;
   readonly requestId?: string;
   readonly details?: Record<string, unknown>;
@@ -235,10 +245,31 @@ export interface RuntimeWorkerSessionRestored {
   readonly schemaVersion: number;
 }
 
+export interface RuntimeWorkerSessionSnapshot {
+  readonly type: 'SESSION_SNAPSHOT';
+  readonly schemaVersion: number;
+  readonly requestId?: string;
+  readonly snapshot: {
+    readonly persistenceSchemaVersion: number;
+    readonly slotId: string;
+    readonly capturedAt: string;
+    readonly workerStep: number;
+    readonly monotonicMs: number;
+    readonly state: SerializedResourceState;
+    readonly runtimeVersion: string;
+    readonly contentDigest: ResourceDefinitionDigest;
+    readonly flags?: {
+      readonly pendingMigration?: boolean;
+      readonly abortedRestore?: boolean;
+    };
+  };
+}
+
 export type RuntimeWorkerOutboundMessage<TState = RuntimeStatePayload> =
   | RuntimeWorkerReady
   | RuntimeWorkerError
   | RuntimeWorkerStateUpdate<TState>
   | RuntimeWorkerDiagnosticsUpdate
   | RuntimeWorkerSessionRestored
+  | RuntimeWorkerSessionSnapshot
   | RuntimeWorkerSocialCommandResult;

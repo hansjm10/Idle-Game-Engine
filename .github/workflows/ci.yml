@@ -43,6 +43,12 @@ jobs:
       - name: Type-check
         run: pnpm typecheck
 
+      - name: Validate Runtime Version
+        run: node tools/scripts/validate-runtime-version.mjs
+
+      - name: Validate Generated Version File
+        run: node tools/scripts/generate-version.mjs --check
+
       - name: Build
         run: pnpm build
 
