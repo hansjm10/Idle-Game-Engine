@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
+import { sampleContent } from '@idle-engine/content-sample';
 
 import { EventInspector } from './EventInspector.js';
 import { SocialDevPanel } from './SocialDevPanel.js';
+import { PersistenceIntegration } from './PersistenceIntegration.js';
 import {
   ShellStateProvider,
   useShellBridge,
@@ -42,6 +44,11 @@ function ShellAppSurface(): JSX.Element {
       <EventInspector />
 
       {socialEnabled ? <SocialDevPanel /> : null}
+
+      <PersistenceIntegration
+        bridge={bridge}
+        definitions={sampleContent.resources}
+      />
     </main>
   );
 }
