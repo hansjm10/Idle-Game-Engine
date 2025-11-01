@@ -1,29 +1,22 @@
-import type { NormalizedContentPack, NumericFormula } from '@idle-engine/content-schema';
+import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import { describe, expect, it } from 'vitest';
 
 import { createProgressionCoordinator } from './progression-coordinator.js';
-
-const literalOne: NumericFormula = { kind: 'constant', value: 1 };
+import {
+  createContentPack,
+  createGeneratorDefinition,
+  createResourceDefinition,
+  createUpgradeDefinition,
+  literalOne,
+} from './test-helpers.js';
 
 function createRepeatableContentPack(): NormalizedContentPack {
-  const resource = {
-    id: 'resource.test',
+  const resource = createResourceDefinition('resource.test', {
     name: 'Test Resource',
-    category: 'currency',
-    tier: 1,
-    startAmount: 0,
-    capacity: null,
-    visible: true,
-    unlocked: true,
-    tags: [],
-  };
+  });
 
-  const repeatableUpgrade = {
-    id: 'upgrade.repeatable',
+  const repeatableUpgrade = createUpgradeDefinition('upgrade.repeatable', {
     name: 'Repeatable Upgrade',
-    category: 'global',
-    tags: [],
-    targets: [{ kind: 'global' }],
     cost: {
       currencyId: resource.id,
       baseCost: 1,
@@ -32,7 +25,6 @@ function createRepeatableContentPack(): NormalizedContentPack {
     repeatable: {
       costCurve: literalOne,
     },
-    prerequisites: [],
     effects: [
       {
         kind: 'grantFlag',
@@ -40,96 +32,24 @@ function createRepeatableContentPack(): NormalizedContentPack {
         value: true,
       },
     ],
-  };
+  });
 
-  return {
-    metadata: {
-      id: 'pack.test',
-      title: 'Test Pack',
-      version: '1.0.0',
-      engine: '>=0.0.0',
-      authors: [],
-      defaultLocale: 'en-US',
-      supportedLocales: ['en-US'],
-      tags: [],
-      links: [],
-    },
+  return createContentPack({
     resources: [resource],
-    generators: [],
     upgrades: [repeatableUpgrade],
-    metrics: [],
-    achievements: [],
-    automations: [],
-    transforms: [],
-    prestigeLayers: [],
-    guildPerks: [],
-    runtimeEvents: [],
-    lookup: {
-      resources: new Map([[resource.id, resource]]),
-      generators: new Map(),
-      upgrades: new Map([[repeatableUpgrade.id, repeatableUpgrade]]),
-      metrics: new Map(),
-      achievements: new Map(),
-      automations: new Map(),
-      transforms: new Map(),
-      prestigeLayers: new Map(),
-      guildPerks: new Map(),
-      runtimeEvents: new Map(),
-    },
-    serializedLookup: {
-      resourceById: { [resource.id]: resource },
-      generatorById: {},
-      upgradeById: { [repeatableUpgrade.id]: repeatableUpgrade },
-      metricById: {},
-      achievementById: {},
-      automationById: {},
-      transformById: {},
-      prestigeLayerById: {},
-      guildPerkById: {},
-      runtimeEventById: {},
-    },
-    digest: {
-      version: 'test',
-      hash: 'test-hash',
-    },
-  } as unknown as NormalizedContentPack;
+  });
 }
 
 function createGeneratorUnlockContentPack(): NormalizedContentPack {
-  const energy = {
-    id: 'resource.energy',
+  const energy = createResourceDefinition('resource.energy', {
     name: 'Energy',
-    category: 'currency',
-    tier: 1,
-    startAmount: 0,
-    capacity: null,
-    visible: true,
-    unlocked: true,
-    tags: [],
-  };
+  });
 
-  const generator = {
-    id: 'generator.unlockable',
+  const generator = createGeneratorDefinition('generator.unlockable', {
     name: {
       default: 'Unlockable Generator',
       variants: { 'en-US': 'Unlockable Generator' },
-    },
-    baseUnlock: {
-      kind: 'resourceThreshold',
-      resourceId: energy.id,
-      comparator: 'gte',
-      amount: { kind: 'constant', value: 15 },
-    },
-    produces: [
-      {
-        resourceId: energy.id,
-        rate: {
-          kind: 'constant',
-          value: 1,
-        },
-      },
-    ],
-    consumes: [],
+    } as any,
     purchase: {
       currencyId: energy.id,
       baseCost: 25,
@@ -139,93 +59,50 @@ function createGeneratorUnlockContentPack(): NormalizedContentPack {
         slope: 0,
       },
     },
-    order: 1,
-    effects: [],
-    tags: [],
-  };
-
-  return {
-    metadata: {
-      id: 'pack.unlockable',
-      title: 'Unlockable Pack',
-      version: '1.0.0',
-      engine: '>=0.0.0',
-      authors: [],
-      defaultLocale: 'en-US',
-      supportedLocales: ['en-US'],
-      tags: [],
-      links: [],
-    },
-    resources: [energy],
-    generators: [generator],
-    upgrades: [],
-    metrics: [],
-    achievements: [],
-    automations: [],
-    transforms: [],
-    prestigeLayers: [],
-    guildPerks: [],
-    runtimeEvents: [],
-    lookup: {
-      resources: new Map([[energy.id, energy]]),
-      generators: new Map([[generator.id, generator]]),
-      upgrades: new Map(),
-      metrics: new Map(),
-      achievements: new Map(),
-      automations: new Map(),
-      transforms: new Map(),
-      prestigeLayers: new Map(),
-      guildPerks: new Map(),
-      runtimeEvents: new Map(),
-    },
-    serializedLookup: {
-      resourceById: { [energy.id]: energy },
-      generatorById: { [generator.id]: generator },
-      upgradeById: {},
-      metricById: {},
-      achievementById: {},
-      automationById: {},
-      transformById: {},
-      prestigeLayerById: {},
-      guildPerkById: {},
-      runtimeEventById: {},
-    },
-    digest: {
-      version: 'test',
-      hash: 'test-hash',
-    },
-  } as unknown as NormalizedContentPack;
-}
-
-function createInvisibleGeneratorContentPack(): NormalizedContentPack {
-  const energy = {
-    id: 'resource.hidden.energy',
-    name: 'Hidden Energy',
-    category: 'currency',
-    tier: 1,
-    startAmount: 0,
-    capacity: null,
-    visible: true,
-    unlocked: true,
-    tags: [],
-  };
-
-  const generator = {
-    id: 'generator.hidden',
-    name: {
-      default: 'Hidden Generator',
-      variants: { 'en-US': 'Hidden Generator' },
-    },
+    produces: [
+      {
+        resourceId: energy.id,
+        rate: {
+          kind: 'constant',
+          value: 1,
+        },
+      },
+    ],
     baseUnlock: {
-      kind: 'always',
-    },
-    visibilityCondition: {
       kind: 'resourceThreshold',
       resourceId: energy.id,
       comparator: 'gte',
-      amount: {
-        kind: 'constant',
-        value: 1,
+      amount: { kind: 'constant', value: 15 },
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [generator],
+    metadata: {
+      id: 'pack.unlockable',
+      title: 'Unlockable Pack',
+    },
+  });
+}
+
+function createInvisibleGeneratorContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.hidden.energy', {
+    name: 'Hidden Energy',
+  });
+
+  const generator = createGeneratorDefinition('generator.hidden', {
+    name: {
+      default: 'Hidden Generator',
+      variants: { 'en-US': 'Hidden Generator' },
+    } as any,
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 10,
+      costCurve: {
+        kind: 'linear',
+        base: 10,
+        slope: 0,
       },
     },
     produces: [
@@ -237,189 +114,72 @@ function createInvisibleGeneratorContentPack(): NormalizedContentPack {
         },
       },
     ],
-    consumes: [],
-    purchase: {
-      currencyId: energy.id,
-      baseCost: 10,
-      costCurve: {
-        kind: 'linear',
-        base: 10,
-        slope: 0,
+    visibilityCondition: {
+      kind: 'resourceThreshold',
+      resourceId: energy.id,
+      comparator: 'gte',
+      amount: {
+        kind: 'constant',
+        value: 1,
       },
-    },
-    order: 1,
-    effects: [],
-    tags: [],
-  };
+    } as any,
+  });
 
-  return {
+  return createContentPack({
+    resources: [energy],
+    generators: [generator],
     metadata: {
       id: 'pack.hidden',
       title: 'Hidden Pack',
-      version: '1.0.0',
-      engine: '>=0.0.0',
-      authors: [],
-      defaultLocale: 'en-US',
-      supportedLocales: ['en-US'],
-      tags: [],
-      links: [],
     },
-    resources: [energy],
-    generators: [generator],
-    upgrades: [],
-    metrics: [],
-    achievements: [],
-    automations: [],
-    transforms: [],
-    prestigeLayers: [],
-    guildPerks: [],
-    runtimeEvents: [],
-    lookup: {
-      resources: new Map([[energy.id, energy]]),
-      generators: new Map([[generator.id, generator]]),
-      upgrades: new Map(),
-      metrics: new Map(),
-      achievements: new Map(),
-      automations: new Map(),
-      transforms: new Map(),
-      prestigeLayers: new Map(),
-      guildPerks: new Map(),
-      runtimeEvents: new Map(),
-    },
-    serializedLookup: {
-      resourceById: { [energy.id]: energy },
-      generatorById: { [generator.id]: generator },
-      upgradeById: {},
-      metricById: {},
-      achievementById: {},
-      automationById: {},
-      transformById: {},
-      prestigeLayerById: {},
-      guildPerkById: {},
-      runtimeEventById: {},
-    },
-    digest: {
-      version: 'test',
-      hash: 'test-hash',
-    },
-  } as unknown as NormalizedContentPack;
+  });
 }
 
 function createBaseCostGeneratorContentPack(): NormalizedContentPack {
-  const currency = {
-    id: 'resource.currency',
+  const currency = createResourceDefinition('resource.currency', {
     name: 'Currency',
-    category: 'currency',
-    tier: 1,
-    startAmount: 0,
-    capacity: null,
-    visible: true,
-    unlocked: true,
-    tags: [],
-  };
+  });
 
-  const generator = {
-    id: 'generator.base-cost',
+  const generator = createGeneratorDefinition('generator.base-cost', {
     name: {
       default: 'Base Cost Generator',
       variants: { 'en-US': 'Base Cost Generator' },
+    } as any,
+    purchase: {
+      currencyId: currency.id,
+      baseCost: 100,
+      costCurve: literalOne,
     },
-    baseUnlock: { kind: 'always' },
     produces: [
       {
         resourceId: currency.id,
         rate: literalOne,
       },
     ],
-    consumes: [],
-    purchase: {
-      currencyId: currency.id,
-      baseCost: 100,
-      costCurve: literalOne,
-    },
-    order: 1,
-    effects: [],
-    tags: [],
-  };
+  });
 
-  return {
+  return createContentPack({
+    resources: [currency],
+    generators: [generator],
     metadata: {
       id: 'pack.generator.base-cost',
       title: 'Generator Base Cost Pack',
-      version: '1.0.0',
-      engine: '>=0.0.0',
-      authors: [],
-      defaultLocale: 'en-US',
-      supportedLocales: ['en-US'],
-      tags: [],
-      links: [],
     },
-    resources: [currency],
-    generators: [generator],
-    upgrades: [],
-    metrics: [],
-    achievements: [],
-    automations: [],
-    transforms: [],
-    prestigeLayers: [],
-    guildPerks: [],
-    runtimeEvents: [],
-    lookup: {
-      resources: new Map([[currency.id, currency]]),
-      generators: new Map([[generator.id, generator]]),
-      upgrades: new Map(),
-      metrics: new Map(),
-      achievements: new Map(),
-      automations: new Map(),
-      transforms: new Map(),
-      prestigeLayers: new Map(),
-      guildPerks: new Map(),
-      runtimeEvents: new Map(),
-    },
-    serializedLookup: {
-      resourceById: { [currency.id]: currency },
-      generatorById: { [generator.id]: generator },
-      upgradeById: {},
-      metricById: {},
-      achievementById: {},
-      automationById: {},
-      transformById: {},
-      prestigeLayerById: {},
-      guildPerkById: {},
-      runtimeEventById: {},
-    },
-    digest: {
-      version: 'test',
-      hash: 'test-hash',
-    },
-  } as unknown as NormalizedContentPack;
+  });
 }
 
 function createBaseCostUpgradeContentPack(): NormalizedContentPack {
-  const currency = {
-    id: 'resource.currency',
+  const currency = createResourceDefinition('resource.currency', {
     name: 'Currency',
-    category: 'currency',
-    tier: 1,
-    startAmount: 0,
-    capacity: null,
-    visible: true,
-    unlocked: true,
-    tags: [],
-  };
+  });
 
-  const upgrade = {
-    id: 'upgrade.base-cost',
+  const upgrade = createUpgradeDefinition('upgrade.base-cost', {
     name: 'Base Cost Upgrade',
-    category: 'global',
-    tags: [],
-    targets: [{ kind: 'global' as const }],
     cost: {
       currencyId: currency.id,
       baseCost: 250,
       costCurve: literalOne,
     },
-    prerequisites: [],
     effects: [
       {
         kind: 'grantFlag',
@@ -427,59 +187,16 @@ function createBaseCostUpgradeContentPack(): NormalizedContentPack {
         value: true,
       },
     ],
-  };
+  });
 
-  return {
+  return createContentPack({
+    resources: [currency],
+    upgrades: [upgrade],
     metadata: {
       id: 'pack.upgrade.base-cost',
       title: 'Upgrade Base Cost Pack',
-      version: '1.0.0',
-      engine: '>=0.0.0',
-      authors: [],
-      defaultLocale: 'en-US',
-      supportedLocales: ['en-US'],
-      tags: [],
-      links: [],
     },
-    resources: [currency],
-    generators: [],
-    upgrades: [upgrade],
-    metrics: [],
-    achievements: [],
-    automations: [],
-    transforms: [],
-    prestigeLayers: [],
-    guildPerks: [],
-    runtimeEvents: [],
-    lookup: {
-      resources: new Map([[currency.id, currency]]),
-      generators: new Map(),
-      upgrades: new Map([[upgrade.id, upgrade]]),
-      metrics: new Map(),
-      achievements: new Map(),
-      automations: new Map(),
-      transforms: new Map(),
-      prestigeLayers: new Map(),
-      guildPerks: new Map(),
-      runtimeEvents: new Map(),
-    },
-    serializedLookup: {
-      resourceById: { [currency.id]: currency },
-      generatorById: {},
-      upgradeById: { [upgrade.id]: upgrade },
-      metricById: {},
-      achievementById: {},
-      automationById: {},
-      transformById: {},
-      prestigeLayerById: {},
-      guildPerkById: {},
-      runtimeEventById: {},
-    },
-    digest: {
-      version: 'test',
-      hash: 'test-hash',
-    },
-  } as unknown as NormalizedContentPack;
+  });
 }
 
 describe('progression-coordinator', () => {
@@ -659,5 +376,414 @@ describe('progression-coordinator', () => {
     expect(quote?.costs).toEqual([
       { resourceId: 'resource.currency', amount: 200 },
     ]);
+  });
+});
+
+describe('Integration: coordinator + condition evaluation game loop', () => {
+  it('simulates resource accumulation unlocking generators over multiple steps', () => {
+    // Create a game with energy resource and generator that unlocks at 15 energy
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.reactor', {
+      name: {
+        default: 'Reactor',
+        variants: { 'en-US': 'Reactor' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 2 },
+        },
+      ],
+      baseUnlock: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 15 },
+      } as any,
+      visibilityCondition: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 15 },
+      } as any,
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const generatorRecord = coordinator.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+
+    // Step 0: Start with 0 energy - generator should be locked and invisible
+    coordinator.updateForStep(0);
+    expect(generatorRecord?.isUnlocked).toBe(false);
+    expect(generatorRecord?.isVisible).toBe(false);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(0);
+
+    // Step 1: Add 10 energy - still below unlock threshold
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(1);
+    expect(generatorRecord?.isUnlocked).toBe(false);
+    expect(generatorRecord?.isVisible).toBe(false);
+
+    // Step 2: Add 5 more energy (total 15) - generator unlocks
+    coordinator.resourceState.addAmount(energyIndex, 5);
+    coordinator.updateForStep(2);
+    expect(generatorRecord?.isUnlocked).toBe(true);
+    expect(generatorRecord?.isVisible).toBe(true);
+
+    // Step 3: Purchase generator - verify quote and spend resources
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      1,
+    );
+    expect(quote).toBeDefined();
+    expect(quote?.costs).toEqual([{ resourceId: energy.id, amount: 10 }]);
+
+    const spent = coordinator.resourceState.spendAmount(energyIndex, 10);
+    expect(spent).toBe(true);
+    coordinator.incrementGeneratorOwned(generator.id, 1);
+    coordinator.updateForStep(3);
+
+    expect(generatorRecord?.owned).toBe(1);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(5);
+  });
+
+  it('simulates upgrade purchases affecting generator unlock conditions', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.efficiency', {
+      name: 'Efficiency Boost',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 20,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.efficiency',
+          value: true,
+        },
+      ],
+    });
+
+    const advancedGenerator = createGeneratorDefinition(
+      'generator.advanced',
+      {
+        name: {
+          default: 'Advanced Generator',
+          variants: { 'en-US': 'Advanced Generator' },
+        } as any,
+        purchase: {
+          currencyId: energy.id,
+          baseCost: 50,
+          costCurve: literalOne,
+        },
+        produces: [
+          {
+            resourceId: energy.id,
+            rate: { kind: 'constant', value: 5 },
+          },
+        ],
+        baseUnlock: {
+          kind: 'upgradeOwned',
+          upgradeId: upgrade.id,
+          requiredPurchases: 1,
+        } as any,
+      },
+    );
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [advancedGenerator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const generatorRecord = coordinator.state.generators.find(
+      (g) => g.id === advancedGenerator.id,
+    );
+    const upgradeRecord = coordinator.state.upgrades?.find(
+      (u) => u.id === upgrade.id,
+    );
+
+    // Step 0: Generator locked, upgrade available
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+    expect(generatorRecord?.isUnlocked).toBe(false);
+    expect(upgradeRecord?.status).toBe('available');
+
+    // Step 1: Purchase upgrade
+    const upgradeQuote = coordinator.upgradeEvaluator?.getPurchaseQuote(
+      upgrade.id,
+      1,
+    );
+    expect(upgradeQuote?.status).toBe('available');
+    expect(upgradeQuote?.costs).toEqual([{ resourceId: energy.id, amount: 20 }]);
+
+    coordinator.resourceState.spendAmount(energyIndex, 20);
+    coordinator.incrementUpgradePurchases(upgrade.id, 1);
+    coordinator.updateForStep(1);
+
+    // Step 2: Generator unlocks after upgrade purchase
+    coordinator.updateForStep(2);
+    expect(generatorRecord?.isUnlocked).toBe(true);
+    expect(generatorRecord?.isVisible).toBe(true);
+
+    // Verify generator purchase is now possible
+    const generatorQuote = coordinator.generatorEvaluator.getPurchaseQuote(
+      advancedGenerator.id,
+      1,
+    );
+    expect(generatorQuote).toBeDefined();
+    expect(generatorQuote?.costs).toEqual([
+      { resourceId: energy.id, amount: 50 },
+    ]);
+  });
+
+  it('simulates multiple generator purchases with persistent state', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.reactor', {
+      name: {
+        default: 'Reactor',
+        variants: { 'en-US': 'Reactor' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: {
+          kind: 'linear',
+          base: 10,
+          slope: 5, // Cost increases by 5 per level
+        },
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const generatorRecord = coordinator.state.generators.find(
+      (g) => g.id === generator.id,
+    );
+
+    // Start with resources
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+
+    // Step 1: Purchase first generator (cost: 10)
+    const quote1 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      1,
+    );
+    expect(quote1).toBeDefined();
+    expect(quote1?.costs).toEqual([{ resourceId: energy.id, amount: 10 }]);
+
+    coordinator.resourceState.spendAmount(energyIndex, 10);
+    coordinator.incrementGeneratorOwned(generator.id, 1);
+    coordinator.updateForStep(1);
+
+    expect(generatorRecord?.owned).toBe(1);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(90);
+
+    // Step 2: Purchase second generator (cost should be higher due to cost curve)
+    const quote2 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      2,
+    );
+    expect(quote2).toBeDefined();
+    // Verify cost increases with level
+    expect(quote2?.costs[0].amount).toBeGreaterThan(10);
+
+    const cost2 = quote2?.costs[0].amount ?? 0;
+    coordinator.resourceState.spendAmount(energyIndex, cost2);
+    coordinator.incrementGeneratorOwned(generator.id, 1);
+    coordinator.updateForStep(2);
+
+    expect(generatorRecord?.owned).toBe(2);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(100 - 10 - cost2);
+
+    // Step 3: Verify third purchase quote has increased cost further
+    const quote3 = coordinator.generatorEvaluator.getPurchaseQuote(
+      generator.id,
+      3,
+    );
+    expect(quote3).toBeDefined();
+    // Verify cost continues to increase
+    expect(quote3?.costs[0].amount).toBeGreaterThan(cost2);
+  });
+
+  it('simulates complex condition evaluation with multiple nested conditions', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const crystal = createResourceDefinition('resource.crystal', {
+      name: 'Crystal',
+    });
+
+    const basicUpgrade = createUpgradeDefinition('upgrade.basic', {
+      name: 'Basic Upgrade',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.basic',
+          value: true,
+        },
+      ],
+    });
+
+    const basicGenerator = createGeneratorDefinition('generator.basic', {
+      name: {
+        default: 'Basic Generator',
+        variants: { 'en-US': 'Basic Generator' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 15,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: crystal.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    // Advanced generator requires: energy >= 50 AND crystal >= 10 AND (basic upgrade OR basic generator level >= 3)
+    const advancedGenerator = createGeneratorDefinition(
+      'generator.advanced',
+      {
+        name: {
+          default: 'Advanced Generator',
+          variants: { 'en-US': 'Advanced Generator' },
+        } as any,
+        purchase: {
+          currencyId: crystal.id,
+          baseCost: 25,
+          costCurve: literalOne,
+        },
+        produces: [
+          {
+            resourceId: energy.id,
+            rate: { kind: 'constant', value: 3 },
+          },
+        ],
+        baseUnlock: {
+          kind: 'allOf',
+          conditions: [
+            {
+              kind: 'resourceThreshold',
+              resourceId: energy.id,
+              comparator: 'gte',
+              amount: { kind: 'constant', value: 50 },
+            },
+            {
+              kind: 'resourceThreshold',
+              resourceId: crystal.id,
+              comparator: 'gte',
+              amount: { kind: 'constant', value: 10 },
+            },
+            {
+              kind: 'anyOf',
+              conditions: [
+                {
+                  kind: 'upgradeOwned',
+                  upgradeId: basicUpgrade.id,
+                  requiredPurchases: 1,
+                },
+                {
+                  kind: 'generatorLevel',
+                  generatorId: basicGenerator.id,
+                  comparator: 'gte',
+                  level: { kind: 'constant', value: 3 },
+                },
+              ],
+            },
+          ],
+        } as any,
+      },
+    );
+
+    const pack = createContentPack({
+      resources: [energy, crystal],
+      generators: [basicGenerator, advancedGenerator],
+      upgrades: [basicUpgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const crystalIndex = coordinator.resourceState.getIndex(crystal.id);
+    const advancedRecord = coordinator.state.generators.find(
+      (g) => g.id === advancedGenerator.id,
+    );
+
+    // Step 0: No conditions met
+    coordinator.updateForStep(0);
+    expect(advancedRecord?.isUnlocked).toBe(false);
+
+    // Step 1: Add resources but no upgrade/generator
+    coordinator.resourceState.addAmount(energyIndex, 60);
+    coordinator.resourceState.addAmount(crystalIndex, 15);
+    coordinator.updateForStep(1);
+    expect(advancedRecord?.isUnlocked).toBe(false);
+
+    // Step 2: Purchase basic upgrade - all conditions met
+    coordinator.resourceState.spendAmount(energyIndex, 10);
+    coordinator.incrementUpgradePurchases(basicUpgrade.id, 1);
+    coordinator.updateForStep(2);
+    expect(advancedRecord?.isUnlocked).toBe(true);
+    expect(advancedRecord?.isVisible).toBe(true);
   });
 });

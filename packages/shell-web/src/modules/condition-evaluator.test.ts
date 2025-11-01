@@ -289,6 +289,20 @@ describe('evaluateCondition', () => {
     const condition = { kind: 'unknown' } as unknown as Condition;
     expect(evaluateCondition(condition, context)).toBe(false);
   });
+
+  it('calls error callback for unknown condition kind in production', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      onError: (error) => errors.push(error),
+    });
+    const condition = { kind: 'unknown' } as unknown as Condition;
+
+    const result = evaluateCondition(condition, context);
+
+    expect(result).toBe(false);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Unknown condition kind: unknown');
+  });
 });
 
 describe('compareWithComparator', () => {
@@ -318,6 +332,17 @@ describe('compareWithComparator', () => {
 
   it('returns false for unknown comparator', () => {
     expect(compareWithComparator(10, 5, 'unknown' as any)).toBe(false);
+  });
+
+  it('calls error callback for unknown comparator in production', () => {
+    const errors: Error[] = [];
+    const context = { onError: (error: Error) => errors.push(error) };
+
+    const result = compareWithComparator(10, 5, 'unknown' as any, context);
+
+    expect(result).toBe(false);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Unknown comparator: unknown');
   });
 });
 

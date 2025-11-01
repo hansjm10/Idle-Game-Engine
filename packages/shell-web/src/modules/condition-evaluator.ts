@@ -1,5 +1,15 @@
-import type { Condition, NumericFormula } from '@idle-engine/content-schema';
+import type { Condition } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
+
+/**
+ * Level value used for evaluating static unlock thresholds.
+ *
+ * @remarks
+ * Unlock conditions use constant thresholds that don't scale with progression,
+ * unlike dynamic cost curves that increase with level. This constant makes the
+ * intent explicit when evaluating formulas for unlock/visibility checks.
+ */
+const STATIC_THRESHOLD_LEVEL = 0;
 
 /**
  * Context providing access to game state for condition evaluation
@@ -8,6 +18,11 @@ export type ConditionContext = {
   readonly getResourceAmount: (resourceId: string) => number;
   readonly getGeneratorLevel: (generatorId: string) => number;
   readonly getUpgradePurchases: (upgradeId: string) => number;
+  /**
+   * Optional callback for reporting errors encountered during evaluation.
+   * Called when unknown condition kinds or comparators are encountered.
+   */
+  readonly onError?: (error: Error) => void;
 };
 
 /**
@@ -16,6 +31,10 @@ export type ConditionContext = {
  * @param condition - The condition to evaluate, or undefined (which evaluates to true)
  * @param context - Context providing access to game state
  * @returns true if the condition is met, false otherwise
+ *
+ * @remarks
+ * Unknown condition kinds will return false as a fail-safe default.
+ * This ensures graceful degradation if the schema contains unrecognized condition types.
  *
  * @example
  * ```typescript
@@ -44,16 +63,16 @@ export function evaluateCondition(
     case 'resourceThreshold': {
       const left = context.getResourceAmount(condition.resourceId);
       const target = evaluateNumericFormula(condition.amount, {
-        variables: { level: 0 },
+        variables: { level: STATIC_THRESHOLD_LEVEL },
       });
-      return compareWithComparator(left, target, condition.comparator);
+      return compareWithComparator(left, target, condition.comparator, context);
     }
     case 'generatorLevel': {
       const owned = context.getGeneratorLevel(condition.generatorId);
       const required = evaluateNumericFormula(condition.level, {
-        variables: { level: 0 },
+        variables: { level: STATIC_THRESHOLD_LEVEL },
       });
-      return compareWithComparator(owned, required, condition.comparator);
+      return compareWithComparator(owned, required, condition.comparator, context);
     }
     case 'upgradeOwned': {
       const purchases = context.getUpgradePurchases(condition.upgradeId);
@@ -69,8 +88,20 @@ export function evaluateCondition(
       );
     case 'not':
       return !evaluateCondition(condition.condition, context);
-    default:
+    default: {
+      // Exhaustive check: if we reach here, TypeScript knows this should never happen
+      const _exhaustive: never = condition;
+      const error = new Error(
+        `Unknown condition kind: ${(_exhaustive as Condition).kind}`,
+      );
+      if (process.env.NODE_ENV !== 'production') {
+        context.onError?.(error);
+      } else {
+        // eslint-disable-next-line no-console -- Graceful degradation: log unknown condition types in production
+        console.warn(error.message);
+      }
       return false;
+    }
   }
 }
 
@@ -80,12 +111,17 @@ export function evaluateCondition(
  * @param left - Left operand
  * @param right - Right operand
  * @param comparator - Comparison operator
+ * @param context - Optional context for error reporting
  * @returns true if the comparison holds, false otherwise
+ *
+ * @remarks
+ * Unknown comparators return false as a fail-safe default.
  */
 export function compareWithComparator(
   left: number,
   right: number,
   comparator: 'gte' | 'gt' | 'lte' | 'lt',
+  context?: Pick<ConditionContext, 'onError'>,
 ): boolean {
   switch (comparator) {
     case 'gt':
@@ -96,8 +132,18 @@ export function compareWithComparator(
       return left < right;
     case 'lte':
       return left <= right;
-    default:
+    default: {
+      // Exhaustive check: if we reach here, TypeScript knows this should never happen
+      const _exhaustive: never = comparator;
+      const error = new Error(`Unknown comparator: ${_exhaustive}`);
+      if (process.env.NODE_ENV !== 'production') {
+        context?.onError?.(error);
+      } else {
+        // eslint-disable-next-line no-console -- Graceful degradation: log unknown comparators in production
+        console.warn(error.message);
+      }
       return false;
+    }
   }
 }
 
@@ -154,7 +200,7 @@ export function describeCondition(
       return 'Unavailable in this build';
     case 'resourceThreshold': {
       const amount = evaluateNumericFormula(condition.amount, {
-        variables: { level: 0 },
+        variables: { level: STATIC_THRESHOLD_LEVEL },
       });
       return `Requires ${condition.resourceId} ${formatComparator(
         condition.comparator,
@@ -162,7 +208,7 @@ export function describeCondition(
     }
     case 'generatorLevel': {
       const level = evaluateNumericFormula(condition.level, {
-        variables: { level: 0 },
+        variables: { level: STATIC_THRESHOLD_LEVEL },
       });
       return `Requires ${condition.generatorId} ${formatComparator(
         condition.comparator,

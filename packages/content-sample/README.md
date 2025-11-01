@@ -10,6 +10,14 @@ Sample content pack used by the prototype milestone. The definitions here will u
 - `src/index.ts` re-exports the generated pack, digest, indices, and summary. It throws during import when the compiler recorded schema warnings, keeping the sample pack warning-free by default.
 - The compiler emits structured `content_pack.*` log lines; treat any new warning as a regression and resolve it before committing.
 
+## Package exports
+
+The package.json exports configuration provides multiple entry points:
+
+- **Main export** (`"."`) - The primary entry point at `dist/index.js` that re-exports the generated content pack, digest, indices, and summary metadata. Use this for standard imports: `import { samplePack } from '@idle-engine/content-sample'`
+- **Dist wildcard** (`"./dist/*"`) - Direct access to compiled TypeScript output for advanced use cases
+- **Generated sources** (`"./src/generated/*"`) - Forward-looking infrastructure for potential direct imports of generated content files from build tools like Vite. **Currently unused externally**—the generated module is only imported internally via `src/index.ts`. This export was added to support proper ESM module resolution and Vite path aliasing, but no packages currently import from this path.
+
 ## Runtime event manifests
 
 Custom runtime events for the sample pack live in `content/event-types.json`. After editing the manifest (or associated schema files) run `pnpm generate` from the repository root to regenerate:
