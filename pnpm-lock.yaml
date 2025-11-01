@@ -272,6 +272,9 @@ importers:
       eslint:
         specifier: ^9.37.0
         version: 9.37.0(jiti@1.21.7)
+      fake-indexeddb:
+        specifier: ^6.0.0
+        version: 6.2.4
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
@@ -3689,6 +3692,10 @@ packages:
 
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
+
+  fake-indexeddb@6.2.4:
+    resolution: {integrity: sha512-INKeIKEtSViN4yVtEWEUqbsqmaIy7Ls+MfU0yxQVXg67pOJ/sH1ZxcVrP8XrKULUFohcPD9gnmym+qBfEybACw==}
+    engines: {node: '>=18'}
 
   fast-check@4.3.0:
     resolution: {integrity: sha512-JVw/DJSxVKl8uhCb7GrwanT9VWsCIdBkK3WpP37B/Au4pyaspriSjtrY2ApbSFwTg3ViPfniT13n75PhzE7VEQ==}
@@ -11427,6 +11434,8 @@ snapshots:
       is-extendable: 0.1.1
 
   extend@3.0.2: {}
+
+  fake-indexeddb@6.2.4: {}
 
   fast-check@4.3.0:
     dependencies:
