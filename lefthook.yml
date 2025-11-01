@@ -104,3 +104,8 @@ pre-commit:
       run: |
         pnpm exec markdownlint --config packages/docs/.markdownlint.jsonc {staged_files}
         pnpm exec markdown-link-check --config packages/docs/markdown-link-check.json {staged_files}
+    validate-runtime-version:
+      glob:
+        - "packages/core/package.json"
+        - "packages/core/src/version.ts"
+      run: node tools/scripts/validate-runtime-version.mjs
