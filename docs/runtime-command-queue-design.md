@@ -1335,6 +1335,151 @@ const prestigeResetHandler = (
 
 **Security Note**: The `CommandSource` enum exists for documentation purposes, but the Worker **never trusts the source field from external messages**. All `postMessage()` commands are treated as PLAYER priority, regardless of what the sender claims. Only code running inside the Worker can enqueue SYSTEM or AUTOMATION commands.
 
+#### 7.2.1 Purchase Evaluator Pattern (Existing Implementation)
+
+> **Note**: This subsection documents the **existing purchase evaluator pattern** as shipped in PR #303 (`packages/shell-web/src/modules/progression-coordinator.ts:483-604`). This is retroactive documentation of production code.
+
+**Separation of Quote vs. Application**:
+
+The purchase handler pattern separates **cost calculation** (quote) from **purchase application** (state mutation). This separation enables:
+- UI to display accurate costs before purchase
+- Command handlers to validate affordability before mutating state
+- Consistent cost calculation between preview and execution
+- Testing cost formulas independently from state mutation
+
+**Purchase Evaluator Interfaces**:
+
+Defined in `@idle-engine/core`:
+
+```typescript
+interface GeneratorPurchaseEvaluator {
+  getPurchaseQuote(generatorId: string, count: number): GeneratorPurchaseQuote | undefined;
+  applyPurchase(generatorId: string, count: number): void;
+}
+
+interface UpgradePurchaseEvaluator {
+  getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined;
+  applyPurchase(upgradeId: string): void;
+}
+
+type GeneratorPurchaseQuote = {
+  generatorId: string;
+  costs: readonly { resourceId: string; amount: number }[];
+};
+
+type UpgradePurchaseQuote = {
+  upgradeId: string;
+  status: 'locked' | 'available' | 'purchased';
+  costs: readonly { resourceId: string; amount: number }[];
+};
+```
+
+**Evaluator Implementation**:
+
+The progression coordinator (`packages/shell-web/src/modules/progression-coordinator.ts`) provides concrete implementations:
+
+```typescript
+class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
+  getPurchaseQuote(generatorId: string, count: number): GeneratorPurchaseQuote | undefined {
+    const record = this.coordinator.getGeneratorRecord(generatorId);
+    if (!record?.state.isUnlocked || !record?.state.isVisible) {
+      return undefined; // Cannot purchase locked/hidden generators
+    }
+
+    // Compute total cost by summing individual purchase costs
+    let totalCost = 0;
+    for (let offset = 0; offset < count; offset++) {
+      const purchaseLevel = record.state.owned + offset;
+      const cost = this.coordinator.computeGeneratorCost(generatorId, purchaseLevel);
+      if (cost === undefined) return undefined;
+      totalCost += cost;
+    }
+
+    return {
+      generatorId,
+      costs: [{ resourceId: record.definition.purchase.currencyId, amount: totalCost }]
+    };
+  }
+
+  applyPurchase(generatorId: string, count: number): void {
+    this.coordinator.incrementGeneratorOwned(generatorId, count);
+  }
+}
+```
+
+**Command Handler Integration**:
+
+Purchase command handlers delegate to evaluators:
+
+```typescript
+function registerResourceCommandHandlers(options: {
+  dispatcher: CommandDispatcher;
+  resources: ResourceState;
+  generatorPurchases: GeneratorPurchaseEvaluator;
+  upgradePurchases?: UpgradePurchaseEvaluator;
+}): void {
+  dispatcher.register('PURCHASE_GENERATOR', (payload, ctx) => {
+    // Get quote from evaluator
+    const quote = options.generatorPurchases.getPurchaseQuote(
+      payload.generatorId,
+      payload.count
+    );
+
+    if (!quote) {
+      telemetry.recordWarning('GeneratorPurchaseQuoteUnavailable', { payload });
+      return; // Quote failed (locked, invalid, etc.)
+    }
+
+    // Validate affordability by attempting to spend all costs
+    for (const cost of quote.costs) {
+      const index = options.resources.requireIndex(cost.resourceId);
+      const spendSucceeded = options.resources.spendAmount(index, cost.amount, {
+        commandId: 'PURCHASE_GENERATOR',
+        systemId: ctx.priority === CommandPriority.AUTOMATION ? 'auto-buy' : undefined
+      });
+
+      if (!spendSucceeded) {
+        telemetry.recordWarning('InsufficientResources', { payload, cost });
+        return; // Insufficient resources, no state mutation
+      }
+    }
+
+    // Apply purchase (increment owned count)
+    options.generatorPurchases.applyPurchase(payload.generatorId, payload.count);
+  });
+}
+```
+
+**Error Handling**:
+
+Evaluators return `undefined` when quotes cannot be generated:
+- Generator is locked or hidden
+- Purchase would exceed `maxLevel`
+- Bulk purchase count exceeds `maxBulk`
+- Cost formula evaluation fails (non-finite result)
+
+Command handlers treat `undefined` quotes as validation failures and no-op without mutating state.
+
+**Integration Points**:
+
+1. **Progression Coordinator**: Creates evaluator instances and provides them to command handlers (`packages/shell-web/src/runtime.worker.ts:151-160`)
+2. **Progression Snapshot**: Snapshot builder calls evaluators to populate `costs` arrays in UI views (`packages/core/src/progression.ts:220-251`)
+3. **Command Handlers**: Resource command handlers delegate validation and application to evaluators (`packages/core/src/resource-command-handlers.ts`)
+
+**Implementation Reference**:
+- Generator evaluator: `packages/shell-web/src/modules/progression-coordinator.ts:483-557`
+- Upgrade evaluator: `packages/shell-web/src/modules/progression-coordinator.ts:559-604`
+- Command handler registration: `packages/shell-web/src/runtime.worker.ts:151-160`
+- Evaluator interfaces: `packages/core/src/progression.ts` (type exports)
+
+**Design Rationale**:
+
+Separating quote from application provides:
+- **Determinism**: Cost calculation is pure (same inputs → same outputs)
+- **Testability**: Evaluators can be tested independently from command queue
+- **UI accuracy**: Presentation layer displays exact costs that will be charged
+- **Extensibility**: Future evaluators can override cost calculation without changing handlers
+
 ### 7.3 Usage in React Components
 
 ```typescript

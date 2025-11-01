@@ -288,10 +288,117 @@ type Condition =
   creating non-monotonic cycles that would otherwise surface as false positives
   during validation.[^non-monotonic]
 
-[^non-monotonic]: “Non-monotonic logic” — Wikipedia. Notes that adding new
+[^non-monotonic]: "Non-monotonic logic" — Wikipedia. Notes that adding new
 information can invalidate prior inferences, so negative knowledge behaves
 non-monotonically and must be modelled separately from positive dependency
 edges. https://en.wikipedia.org/wiki/Non-monotonic_logic
+
+#### 5.4.1 Condition Evaluation Semantics (Runtime Behavior)
+
+> **Note**: This subsection documents the **existing runtime implementation** of condition evaluation as shipped in PR #303 (`packages/shell-web/src/modules/condition-evaluator.ts`). This is retroactive documentation of production code.
+
+**Evaluation Context**:
+
+Conditions are evaluated against live game state via a `ConditionContext` interface that provides:
+- `getResourceAmount(resourceId: string): number` - Current resource amount
+- `getGeneratorLevel(generatorId: string): number` - Generator owned count
+- `getUpgradePurchases(upgradeId: string): number` - Upgrade purchase count
+- `onError?: (error: Error) => void` - Optional error callback for telemetry
+
+**Static Threshold Evaluation**:
+
+Unlock conditions (used for `baseUnlock` and `visibilityCondition` on generators/upgrades) use **static thresholds** that do not scale with progression. All numeric formulas in unlock conditions are evaluated with `level: 0`:
+
+```typescript
+const amount = evaluateNumericFormula(condition.amount, {
+  variables: { level: 0 }  // STATIC_THRESHOLD_LEVEL constant
+});
+```
+
+This differs from **dynamic cost curves** which evaluate with `level: purchaseIndex` to scale costs as players buy more units. The distinction is intentional: unlock thresholds are constant gates (e.g., "unlock when you have 100 energy"), while costs increase with purchases (e.g., "10th generator costs 1000 energy").
+
+**Evaluation Rules by Condition Type**:
+
+- **`always`**: Returns `true` immediately without evaluating game state
+- **`never`**: Returns `false` (used for content disabled in specific builds)
+- **`resourceThreshold`**:
+  - Retrieves current resource amount via context
+  - Evaluates `amount` formula with `level: 0`
+  - Compares using specified comparator (`gte | gt | lte | lt`)
+  - Example: `{ kind: 'resourceThreshold', resourceId: 'energy', comparator: 'gte', amount: { kind: 'constant', value: 100 } }` checks if player has ≥100 energy
+- **`generatorLevel`**:
+  - Retrieves generator owned count via context
+  - Evaluates `level` formula with `level: 0`
+  - Compares using specified comparator
+  - Example: `{ kind: 'generatorLevel', generatorId: 'reactor', comparator: 'gte', level: { kind: 'constant', value: 5 } }` checks if player owns ≥5 reactors
+- **`upgradeOwned`**:
+  - Retrieves upgrade purchase count via context
+  - Checks if purchases ≥ `requiredPurchases` (defaults to 1)
+  - Example: `{ kind: 'upgradeOwned', upgradeId: 'efficiency', requiredPurchases: 3 }` checks if upgrade purchased ≥3 times
+- **`allOf`**:
+  - Evaluates all nested conditions recursively
+  - Returns `true` only if **every** condition passes (logical AND)
+  - Short-circuits on first failure
+- **`anyOf`**:
+  - Evaluates nested conditions recursively
+  - Returns `true` if **any** condition passes (logical OR)
+  - Short-circuits on first success
+- **`not`**:
+  - Evaluates nested condition recursively
+  - Inverts the result
+  - Example: `{ kind: 'not', condition: resourceThreshold }` passes if threshold NOT met
+
+**Error Handling**:
+
+Unknown condition kinds or comparators trigger fail-safe behavior:
+- **Development**: Calls `context.onError(error)` for test assertions and strict validation
+- **Production**: Logs `console.warn(error.message)` and returns `false`
+- **Rationale**: Graceful degradation prevents crashes when content contains unrecognized condition types (e.g., from newer schema versions)
+
+**Persistent Unlock Semantics**:
+
+When conditions are used for `baseUnlock` on generators, the progression coordinator implements **persistent unlock** behavior:
+
+```typescript
+// packages/shell-web/src/modules/progression-coordinator.ts:310-312
+if (!record.state.isUnlocked && baseUnlock) {
+  record.state.isUnlocked = true;  // Never reverts!
+}
+```
+
+Once a generator's `baseUnlock` condition evaluates to `true`, the `isUnlocked` flag **never reverts to `false`**, even if the condition later fails (e.g., player spends resources below the threshold). This ensures generators remain available after being discovered.
+
+In contrast, `visibilityCondition` is re-evaluated every game step and can toggle between `true` and `false`, allowing dynamic hiding/showing of content based on current state.
+
+**Human-Readable Descriptions**:
+
+The runtime generates unlock hints for locked content using `describeCondition()`:
+
+- `resourceThreshold` → `"Requires energy >= 100"`
+- `generatorLevel` → `"Requires reactor >= 5"`
+- `upgradeOwned` → `"Requires owning 3× efficiency"`
+- `allOf` → `"Requires energy >= 100, Requires reactor >= 5"` (comma-separated)
+- `anyOf` → `"Requires any of: energy >= 100 or reactor >= 5"`
+- `not` → `"Not (Requires energy >= 100)"`
+- `always` → `undefined` (no hint needed)
+- `never` → `"Unavailable in this build"`
+
+These hints are displayed in progression UI when upgrades are locked, helping players understand unlock requirements.
+
+**Implementation Reference**:
+- Condition evaluator: `packages/shell-web/src/modules/condition-evaluator.ts:1-283`
+- Condition evaluation tests: `packages/shell-web/src/modules/condition-evaluator.test.ts:1-556`
+- Progression coordinator integration: `packages/shell-web/src/modules/progression-coordinator.ts:305-318, 331-349`
+- Persistent unlock behavior: Documented in `docs/progression-coordinator-design.md` §6.2.4
+
+**Content Authoring Guidelines**:
+
+1. **Use `always` for unconditionally unlocked content**: Set `baseUnlock: { kind: 'always' }` for starting generators
+2. **Avoid circular dependencies**: Don't create unlock chains where A requires B and B requires A
+3. **Prefer simple thresholds**: Use `resourceThreshold` or `generatorLevel` rather than complex `allOf` nesting when possible
+4. **Test negative conditions carefully**: `not` and `anyOf` introduce non-monotonic logic; ensure they don't create confusing unlock sequences
+5. **Consider persistent unlocks**: Remember that `baseUnlock` is persistent—don't use it for temporary gates
+6. **Use `visibilityCondition` for temporary gates**: If content should hide again after discovery, use `visibilityCondition` instead of `baseUnlock`
 
 ### 5.5 Metadata Schema
 
