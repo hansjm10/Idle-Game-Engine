@@ -12,6 +12,7 @@ import {
   getGameState,
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
+  telemetry,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
@@ -808,10 +809,14 @@ export function initializeRuntimeWorker(
   ) => {
     const requestId = message.requestId;
 
+    // Block snapshots during restoration to avoid capturing inconsistent state.
+    // During restoration, the runtime is replaying commands and rebuilding state,
+    // which means the snapshot metadata (step, timestamp) wouldn't match the
+    // actual runtime state. Wait for SESSION_RESTORED before requesting snapshots.
     if (restoreInProgress) {
       postError({
         code: 'SNAPSHOT_FAILED',
-        message: 'Cannot capture snapshot during session restoration',
+        message: 'Cannot capture snapshot during session restoration. Wait for restoration to complete.',
         requestId,
         details: { reason: 'RESTORE_IN_PROGRESS' },
       });
@@ -841,11 +846,29 @@ export function initializeRuntimeWorker(
         },
       };
 
-      // Telemetry: Record snapshot size for debugging and monitoring
+      // Telemetry: Record snapshot size and capture metadata for monitoring
       const snapshotBytes = JSON.stringify(state).length;
+      const snapshotKB = (snapshotBytes / 1024).toFixed(2);
+
+      // Record snapshot event with metadata for production monitoring
+      telemetry.recordProgress('worker.session_snapshot_captured', {
+        snapshotBytes,
+        snapshotKB,
+        workerStep: currentStep,
+        reason: message.reason ?? 'unspecified',
+        requestId: requestId ?? 'none',
+        resourceCount: state.resources?.length ?? 0,
+      });
+
+      // Record snapshot size metrics for aggregation and alerting
+      telemetry.recordCounters('worker.session_snapshot', {
+        capture_count: 1,
+        total_bytes: snapshotBytes,
+      });
+
       // eslint-disable-next-line no-console
       console.debug(
-        `[Worker] Session snapshot captured: ${snapshotBytes} bytes, step=${currentStep}, reason=${message.reason ?? 'unspecified'}`,
+        `[Worker] Session snapshot captured: ${snapshotKB} KB, step=${currentStep}, reason=${message.reason ?? 'unspecified'}`,
       );
 
       context.postMessage(snapshotEnvelope);

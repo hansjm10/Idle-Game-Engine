@@ -1711,7 +1711,7 @@ describe('session snapshot protocol', () => {
       expect.stringContaining('[Worker] Session snapshot captured:'),
     );
     expect(consoleDebugSpy).toHaveBeenCalledWith(
-      expect.stringContaining('bytes'),
+      expect.stringContaining('KB'),
     );
     expect(consoleDebugSpy).toHaveBeenCalledWith(
       expect.stringContaining('step=1'),
