@@ -227,6 +227,7 @@ export function initializeRuntimeWorker(
   let lastAcceptedCommandIssuedAt = Number.NEGATIVE_INFINITY;
 
   const postError = (details: RuntimeWorkerErrorDetails) => {
+    // eslint-disable-next-line no-console
     console.warn('[runtime.worker] %s', details.message, {
       code: details.code,
       requestId: details.requestId,
@@ -828,6 +829,7 @@ export function initializeRuntimeWorker(
     }
 
     if (issuedAt < lastAcceptedCommandIssuedAt) {
+      // eslint-disable-next-line no-console
       console.warn('[runtime.worker] Dropping stale command', {
         type,
         issuedAt,

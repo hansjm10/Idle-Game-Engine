@@ -66,6 +66,7 @@ function postWithFetch(
     body: payload,
     keepalive: true,
   }).catch((error) => {
+    // eslint-disable-next-line no-console
     console.warn('[shell-analytics] Failed to POST analytics payload', {
       endpoint,
       error,
@@ -97,6 +98,7 @@ function emitBrowserTelemetry(event: string, data: TelemetryEventData | undefine
       try {
         delivered = navigatorWithBeacon.sendBeacon(endpoint, serialized);
       } catch (error) {
+        // eslint-disable-next-line no-console
         console.warn('[shell-analytics] sendBeacon failed, falling back to fetch', {
           endpoint,
           error,
@@ -110,6 +112,7 @@ function emitBrowserTelemetry(event: string, data: TelemetryEventData | undefine
     }
 
     if (!delivered) {
+      // eslint-disable-next-line no-console
       console.warn('[shell-analytics] No transport available for analytics payload', {
         endpoint,
       });
@@ -128,11 +131,13 @@ function emitBrowserTelemetry(event: string, data: TelemetryEventData | undefine
         }),
       );
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.warn('[shell-analytics] Failed to dispatch telemetry event', error);
     }
   }
 
   if (!endpoint) {
+    // eslint-disable-next-line no-console
     console.info('[shell-analytics] Worker error telemetry (no endpoint configured)', {
       event,
       data: data ?? {},

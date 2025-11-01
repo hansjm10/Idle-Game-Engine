@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "lint": "eslint 'src/**/*.ts'",
+    "lint": "eslint --max-warnings=0 'src/**/*.ts'",
     "test": "vitest",
     "test:ci": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.test.json"

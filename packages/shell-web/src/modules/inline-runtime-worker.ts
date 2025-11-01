@@ -77,6 +77,7 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
         }
       })
       .catch((error) => {
+        // eslint-disable-next-line no-console
         console.error('[InlineRuntimeWorker] Failed to initialize runtime worker', error);
       });
   }
