@@ -18,6 +18,7 @@ const commands = [
   [
     'exec',
     'eslint',
+    '--max-warnings=0',
     '--config',
     path.relative(repoRoot, eslintConfig),
     'docs',

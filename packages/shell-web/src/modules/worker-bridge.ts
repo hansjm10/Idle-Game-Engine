@@ -221,6 +221,7 @@ export class WorkerBridgeImpl<TState = unknown>
     }
 
     if (envelope.schemaVersion !== WORKER_MESSAGE_SCHEMA_VERSION) {
+      // eslint-disable-next-line no-console
       console.error('[WorkerBridge] Ignoring message with unknown schema', {
         expected: WORKER_MESSAGE_SCHEMA_VERSION,
         received: envelope.schemaVersion,
@@ -328,6 +329,7 @@ export class WorkerBridgeImpl<TState = unknown>
   }
 
   private emitError(error: RuntimeWorkerErrorDetails): void {
+    // eslint-disable-next-line no-console
     console.error('[WorkerBridge] Worker error received', error);
     recordTelemetryError('WorkerBridgeError', {
       code: error.code,
@@ -353,6 +355,7 @@ export class WorkerBridgeImpl<TState = unknown>
   ): void {
     const pending = this.pendingSocialRequests.get(envelope.requestId);
     if (!pending) {
+      // eslint-disable-next-line no-console
       console.warn('[WorkerBridge] Received social result for unknown request', {
         requestId: envelope.requestId,
         status: envelope.status,
@@ -635,6 +638,7 @@ export class WorkerBridgeImpl<TState = unknown>
     try {
       this.worker.postMessage(terminate);
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.warn('[WorkerBridge] Failed to post terminate message', error);
     }
     this.worker.terminate();
