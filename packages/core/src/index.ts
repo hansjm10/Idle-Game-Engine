@@ -536,6 +536,10 @@ export {
   setTelemetry,
 } from './telemetry.js';
 export {
+  RUNTIME_VERSION,
+  PERSISTENCE_SCHEMA_VERSION,
+} from './version.js';
+export {
   createDiagnosticTimelineRecorder,
   createNoopDiagnosticTimelineRecorder,
   getDefaultHighResolutionClock,

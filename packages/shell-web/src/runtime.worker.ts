@@ -6,6 +6,8 @@ import {
   CommandDispatcher,
   IdleEngineRuntime,
   RUNTIME_COMMAND_TYPES,
+  RUNTIME_VERSION,
+  PERSISTENCE_SCHEMA_VERSION,
   setGameState,
   getGameState,
   buildProgressionSnapshot,
@@ -51,10 +53,9 @@ import {
   isSocialCommandsEnabled,
 } from './modules/social-config.js';
 import { createProgressionCoordinator } from './modules/progression-coordinator.js';
+import { extractErrorDetails } from './modules/error-utils.js';
 
 const RAF_INTERVAL_MS = 16;
-const RUNTIME_VERSION = '0.1.0';
-const PERSISTENCE_SCHEMA_VERSION = 1;
 
 export interface RuntimeWorkerOptions {
   readonly context?: DedicatedWorkerGlobalScope;
@@ -839,19 +840,23 @@ export function initializeRuntimeWorker(
           contentDigest,
         },
       };
+
+      // Telemetry: Record snapshot size for debugging and monitoring
+      const snapshotBytes = JSON.stringify(state).length;
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[Worker] Session snapshot captured: ${snapshotBytes} bytes, step=${currentStep}, reason=${message.reason ?? 'unspecified'}`,
+      );
+
       context.postMessage(snapshotEnvelope);
     } catch (error) {
       const reason =
         error instanceof Error ? error.message : String(error);
-      const details =
-        error && typeof error === 'object' && 'details' in error
-          ? (error as { details?: Record<string, unknown> }).details
-          : undefined;
       postError({
         code: 'SNAPSHOT_FAILED',
         message: `Failed to capture session snapshot: ${reason}`,
         requestId,
-        details,
+        details: extractErrorDetails(error),
       });
     }
   };
