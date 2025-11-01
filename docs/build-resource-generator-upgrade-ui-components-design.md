@@ -203,7 +203,76 @@ type UpgradeView = Readonly<{
 
 Upgrades in the snapshot illustration use placeholder IDs; update them once `packages/content-sample` adds real upgrade definitions alongside the generator content. The example covers locked, available, and purchased states so UI consumers can map every variant.
 
-1. Player clicks “Buy Reactor” in `GeneratorPanel`.
+#### Cost Calculation Formulas (Existing Implementation)
+
+> **Note**: This subsection documents the **existing cost calculation implementation** as shipped in PR #303 (`packages/shell-web/src/modules/progression-coordinator.ts:395-456`). This is retroactive documentation of production code.
+
+**Generator Costs**:
+
+Generator purchase costs scale with the number already owned. The cost for purchasing a generator at a specific level is calculated as:
+
+```
+cost = baseCost × evaluateCostFormula(costCurve, purchaseIndex)
+```
+
+Where:
+- `baseCost` is the base cost defined in the generator's `purchase.baseCost`
+- `costCurve` is the numeric formula from `purchase.costCurve`
+- `purchaseIndex` is the current owned count (the level being purchased)
+
+For bulk purchases, costs are summed individually:
+
+```typescript
+for (let offset = 0; offset < count; offset++) {
+  const purchaseLevel = owned + offset;
+  totalCost += baseCost × evaluateCostFormula(costCurve, purchaseLevel);
+}
+```
+
+**Example**: If a generator has `baseCost: 10` and `costCurve: { kind: 'exponential', base: 1, growth: 1.15 }`, the 5th purchase (when owned=5) costs `10 × 1.15^5 = 20.11`.
+
+**Upgrade Costs**:
+
+Upgrade costs are calculated based on the current purchase count. For **non-repeatable upgrades** (one-time purchases):
+
+```
+cost = baseCost × evaluateCostFormula(costCurve, purchaseLevel)
+```
+
+For **repeatable upgrades** (upgrades with `repeatable` configuration), an additional cost multiplier applies:
+
+```
+amount = baseCost × evaluateCostFormula(costCurve, purchaseLevel) × evaluateCostFormula(repeatableCostCurve, purchaseLevel)
+```
+
+Where:
+- `baseCost` is from `cost.baseCost`
+- `costCurve` is from `cost.costCurve`
+- `purchaseLevel` is the current `purchases` count
+- `repeatableCostCurve` is from `repeatable.costCurve` (if upgrade is repeatable)
+
+This composition allows both the base cost and the repeatable multiplier to scale independently with purchase count.
+
+**Example**: A repeatable upgrade with `baseCost: 100`, `costCurve: { kind: 'linear', base: 1, slope: 0.1 }`, and `repeatable.costCurve: { kind: 'exponential', base: 1, growth: 1.2 }` would cost at purchase level 3:
+```
+100 × (1 + 0.1×3) × 1.2^3 = 100 × 1.3 × 1.728 = 224.64
+```
+
+**Repeatable Upgrade Status**:
+
+Repeatable upgrades remain `status: 'available'` after purchase as long as `purchases < maxPurchases`. If `maxPurchases` is undefined or `Infinity`, the upgrade stays perpetually available. This allows upgrades to be purchased multiple times with escalating costs.
+
+Tested in `packages/shell-web/src/modules/progression-coordinator.test.ts:203-260`.
+
+**Implementation Reference**:
+- Generator cost calculation: `packages/shell-web/src/modules/progression-coordinator.ts:395-419`
+- Upgrade cost calculation: `packages/shell-web/src/modules/progression-coordinator.ts:421-456`
+- Bulk purchase accumulation: `packages/shell-web/src/modules/progression-coordinator.ts:520-536`
+- Repeatable upgrade test: `packages/shell-web/src/modules/progression-coordinator.test.ts:203-260`
+
+#### Example Snapshot & Command Flow
+
+1. Player clicks "Buy Reactor" in `GeneratorPanel`.
 2. Component calls `bridge.sendCommand('PURCHASE_GENERATOR', { generatorId: 'sample-pack.reactor', count: 1 })`.
 3. Worker validates funds, applies the purchase through `resource-command-handlers.ts`, emits telemetry, and republishes the snapshot at `step + 1`.
 4. `ShellStateProvider` receives the updated snapshot, recomputes memoized selectors, and re-renders the dashboard with optimistic feedback already reflected because the component staged the delta while awaiting confirmation.

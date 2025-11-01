@@ -9,11 +9,14 @@ import {
   setGameState,
   getGameState,
   buildProgressionSnapshot,
+  registerResourceCommandHandlers,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
   type EventBus,
+  type ResourceCommandHandlerOptions,
 } from '@idle-engine/core';
+import { sampleContent } from '@idle-engine/content-sample';
 
 export type {
   RuntimeEventSnapshot,
@@ -45,6 +48,7 @@ import {
   getSocialServiceBaseUrl,
   isSocialCommandsEnabled,
 } from './modules/social-config.js';
+import { createProgressionCoordinator } from './modules/progression-coordinator.js';
 
 const RAF_INTERVAL_MS = 16;
 
@@ -110,28 +114,50 @@ export function initializeRuntimeWorker(
     stepSizeMs: stepDurationMs,
   });
 
-  let gameState: WorkerGameState;
+  let existingState: WorkerGameState | undefined;
+  let initialProgression: ProgressionAuthoritativeState | undefined;
 
   try {
     const existing = getGameState<WorkerGameState>();
-    if (!existing || typeof existing !== 'object') {
-      throw new Error('invalid-state');
-    }
-    if (!('progression' in existing) || existing.progression == null) {
-      const updatedGameState = existing as Mutable<WorkerGameState>;
-      updatedGameState.progression =
-        createDefaultProgressionState(stepDurationMs);
-      setGameState(updatedGameState);
-      gameState = updatedGameState;
-    } else {
-      existing.progression.stepDurationMs = stepDurationMs;
-      gameState = existing;
+    if (existing && typeof existing === 'object') {
+      existingState = existing;
+      const candidate = (existing as { progression?: unknown }).progression;
+      if (candidate && typeof candidate === 'object') {
+        initialProgression = candidate as ProgressionAuthoritativeState;
+      }
     }
   } catch {
+    existingState = undefined;
+    initialProgression = undefined;
+  }
+
+  const progressionCoordinator = createProgressionCoordinator({
+    content: sampleContent,
+    stepDurationMs,
+    initialState: initialProgression,
+  });
+
+  let gameState: WorkerGameState;
+  if (existingState) {
+    const updated = existingState as Mutable<WorkerGameState>;
+    updated.progression = progressionCoordinator.state;
+    gameState = setGameState<WorkerGameState>(updated);
+  } else {
     gameState = setGameState<WorkerGameState>({
-      progression: createDefaultProgressionState(stepDurationMs),
+      progression: progressionCoordinator.state,
     });
   }
+
+  const commandHandlerOptions: ResourceCommandHandlerOptions = {
+    dispatcher: runtime.getCommandDispatcher(),
+    resources: progressionCoordinator.resourceState,
+    generatorPurchases: progressionCoordinator.generatorEvaluator,
+  };
+  if (progressionCoordinator.upgradeEvaluator) {
+    commandHandlerOptions.upgradePurchases =
+      progressionCoordinator.upgradeEvaluator;
+  }
+  registerResourceCommandHandlers(commandHandlerOptions);
 
   let diagnosticsEnabled = false;
   let diagnosticsHead: number | undefined;
@@ -196,12 +222,13 @@ export function initializeRuntimeWorker(
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
-      gameState.progression.stepDurationMs = stepDurationMs;
+      progressionCoordinator.updateForStep(after);
+      progressionCoordinator.state.stepDurationMs = stepDurationMs;
       const publishedAt = monotonicClock.now();
       const progression = buildProgressionSnapshot(
         after,
         publishedAt,
-        gameState.progression,
+        progressionCoordinator.state,
       );
 
       const message: RuntimeWorkerStateUpdate = {
@@ -707,11 +734,20 @@ export function initializeRuntimeWorker(
       if (message.state !== undefined) {
         const progression =
           gameState.progression as Mutable<ProgressionAuthoritativeState>;
+        const coordinatorResources =
+          progressionCoordinator.state
+            .resources as Mutable<ProgressionResourceState> | undefined;
         const resources =
           (progression.resources as Mutable<ProgressionResourceState> | undefined) ??
           (progression.resources =
-            {} as Mutable<ProgressionResourceState>);
+            (coordinatorResources ??
+              ({} as Mutable<ProgressionResourceState>)));
+        if (coordinatorResources?.metadata) {
+          resources.metadata = coordinatorResources.metadata;
+        }
         resources.serialized = message.state;
+        resources.state = progressionCoordinator.resourceState;
+        progressionCoordinator.hydrateResources(message.state);
         setGameState(gameState);
       }
 
@@ -986,19 +1022,6 @@ if (!import.meta.vitest) {
   if (isDedicatedWorkerScope(bootstrapScope)) {
     initializeRuntimeWorker();
   }
-}
-
-function createDefaultProgressionState(
-  stepDurationMs: number,
-): ProgressionAuthoritativeState {
-  return {
-    stepDurationMs,
-    resources: undefined,
-    generatorPurchases: undefined,
-    generators: [],
-    upgradePurchases: undefined,
-    upgrades: [],
-  };
 }
 
 function collectOutboundEvents(bus: EventBus): RuntimeEventSnapshot[] {

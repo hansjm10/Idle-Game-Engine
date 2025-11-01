@@ -577,6 +577,97 @@ regenerates fresh rates during the next tick.
   as the single source of truth, rebuilding the convenience arrays from the mask
   so the emitted snapshot always reflects the authoritative bits.
 
+#### Dual-Mode Progression Snapshot Support (Existing Implementation)
+
+> **Note**: This subsection documents **existing progression snapshot behavior** as shipped in PR #303 (`packages/core/src/progression.ts:138-214`). This is retroactive documentation of production code.
+
+The `buildProgressionSnapshot()` function supports **dual-mode snapshot generation**, consuming either live `ResourceState` or serialized `SerializedResourceState` to build UI-ready `ProgressionSnapshot` data. This enables both runtime snapshot publishing and save file preview.
+
+**Live State Mode**:
+
+When `ProgressionAuthoritativeState.resources.state` contains a live `ResourceState` instance:
+
+```typescript
+const snapshot = state.snapshot({ mode: 'publish' });
+
+const resourceView = {
+  id: resourceId,
+  displayName: metadata.get(resourceId)?.displayName ?? resourceId,
+  amount: snapshot.amounts[index],
+  capacity: snapshot.capacities[index],
+  isUnlocked: (snapshot.flags[index] & UNLOCKED_BIT) !== 0,
+  isVisible: (snapshot.flags[index] & VISIBLE_BIT) !== 0,
+  perTick: state.getNetPerSecond(index) * (stepDurationMs / 1000), // Live rate data
+};
+```
+
+**Serialized State Mode**:
+
+When `ProgressionAuthoritativeState.resources.serialized` contains `SerializedResourceState` (during save preview or session restore):
+
+```typescript
+const serialized = state.resources.serialized;
+
+const resourceView = {
+  id: serialized.ids[index],
+  displayName: metadata.get(serialized.ids[index])?.displayName ?? serialized.ids[index],
+  amount: serialized.amounts[index],
+  capacity: serialized.capacities[index] ?? Infinity,
+  isUnlocked: serialized.unlocked?.[index] ?? false,
+  isVisible: serialized.visible?.[index] ?? false,
+  perTick: 0, // No rate data in serialized state
+};
+```
+
+**Key Differences**:
+
+| Aspect | Live State Mode | Serialized State Mode |
+|--------|----------------|----------------------|
+| **Data Source** | `ResourceState.snapshot({ mode: 'publish' })` | `SerializedResourceState` from save file |
+| **Rate Data** | `perTick` calculated from `getNetPerSecond()` | `perTick = 0` (rates not persisted) |
+| **Flag Access** | Bit masks from `snapshot.flags` typed array | Boolean arrays `unlocked`/`visible` |
+| **Capacity** | Live typed array value | POJO number array with `null` → `Infinity` |
+| **Use Case** | Runtime worker snapshot publishing | Save file preview, session hydration |
+
+**Implementation**:
+
+The snapshot builder detects which mode to use by checking for live state first:
+
+```typescript
+// packages/core/src/progression.ts:146-211
+const liveState = state.resources?.state;
+const serializedState = state.resources?.serialized;
+
+if (liveState) {
+  // Live mode: use ResourceState snapshot
+  const snapshot = liveState.snapshot({ mode: 'publish' });
+  // Build resource views from typed arrays...
+} else if (serializedState) {
+  // Serialized mode: use save file data
+  // Build resource views from POJO arrays...
+}
+```
+
+**Rationale**:
+
+Dual-mode support enables:
+- **Runtime publishing**: Worker emits progression snapshots every tick using live state
+- **Save preview**: UI can display save file contents without loading into live runtime
+- **Session restoration**: Initial snapshot after hydration uses serialized state before first tick
+- **Consistent UI contract**: Both modes produce identical `ProgressionSnapshot` structure
+
+**Integration**:
+
+1. **Worker Runtime**: Calls `buildProgressionSnapshot()` with live coordinator state after each tick (`packages/shell-web/src/runtime.worker.ts:228-232`)
+2. **Session Restore**: Initial snapshot uses serialized state from save file before coordinator rehydrates (`packages/shell-web/src/runtime.worker.ts:652-798`)
+3. **Save Preview** (future): Tooling can display save file contents by passing `SerializedResourceState` directly
+
+**Implementation Reference**:
+- Dual-mode snapshot builder: `packages/core/src/progression.ts:138-214`
+- Live state path: `packages/core/src/progression.ts:146-176`
+- Serialized state path: `packages/core/src/progression.ts:178-211`
+- Integration in worker: `packages/shell-web/src/runtime.worker.ts:228-232`
+
 Consumers should continue to respect the dirty index list when emitting deltas,
  and because the publish path zeros `targetPublish.tickDelta` only for the
  explicitly dirty candidates (step 1 below), a resource that resolves to clean

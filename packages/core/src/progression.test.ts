@@ -204,4 +204,123 @@ describe('buildProgressionSnapshot', () => {
     expect(snapshot.generators).toHaveLength(0);
     expect(snapshot.upgrades).toHaveLength(0);
   });
+
+  it('defaults nextPurchaseReadyAtStep to current step plus one when omitted', () => {
+    const generatorEvaluator = new StubGeneratorEvaluator();
+    generatorEvaluator.quotes.set('sample.generator', {
+      generatorId: 'sample.generator',
+      costs: [{ resourceId: 'energy', amount: 12 }],
+    });
+
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 50,
+      generators: [
+        {
+          id: 'sample.generator',
+          displayName: 'Generator',
+          owned: 1,
+          isUnlocked: true,
+          isVisible: true,
+          produces: [],
+          consumes: [],
+        },
+      ],
+      generatorPurchases: generatorEvaluator,
+    };
+
+    const snapshot = buildProgressionSnapshot(7, 321, state);
+    expect(snapshot.generators).toEqual([
+      expect.objectContaining({
+        id: 'sample.generator',
+        nextPurchaseReadyAtStep: 8,
+      }),
+    ]);
+  });
+
+  it('preserves explicit nextPurchaseReadyAtStep when set to current step', () => {
+    const generatorEvaluator = new StubGeneratorEvaluator();
+    generatorEvaluator.quotes.set('sample.generator', {
+      generatorId: 'sample.generator',
+      costs: [{ resourceId: 'energy', amount: 12 }],
+    });
+
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 50,
+      generators: [
+        {
+          id: 'sample.generator',
+          displayName: 'Generator',
+          owned: 1,
+          isUnlocked: true,
+          isVisible: true,
+          produces: [],
+          consumes: [],
+          nextPurchaseReadyAtStep: 7,
+        },
+      ],
+      generatorPurchases: generatorEvaluator,
+    };
+
+    const snapshot = buildProgressionSnapshot(7, 321, state);
+    expect(snapshot.generators).toEqual([
+      expect.objectContaining({
+        id: 'sample.generator',
+        nextPurchaseReadyAtStep: 7,
+      }),
+    ]);
+  });
+
+  it('propagates upgrade state costs when no evaluator is available', () => {
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      upgrades: [
+        {
+          id: 'sample-upgrade',
+          displayName: 'Upgrade',
+          status: 'locked',
+          isVisible: false,
+          costs: [{ resourceId: 'energy', amount: 42 }],
+        },
+      ],
+    };
+
+    const snapshot = buildProgressionSnapshot(3, 900, state);
+    expect(snapshot.upgrades).toEqual([
+      expect.objectContaining({
+        id: 'sample-upgrade',
+        costs: [{ resourceId: 'energy', amount: 42 }],
+      }),
+    ]);
+  });
+
+  it('uses upgrade evaluator costs when available', () => {
+    const upgradeEvaluator = new StubUpgradeEvaluator();
+    upgradeEvaluator.quotes.set('sample-upgrade', {
+      upgradeId: 'sample-upgrade',
+      status: 'available',
+      costs: [{ resourceId: 'crystal', amount: 100 }],
+    });
+
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      upgrades: [
+        {
+          id: 'sample-upgrade',
+          displayName: 'Upgrade',
+          status: 'available',
+          isVisible: true,
+          costs: [{ resourceId: 'energy', amount: 42 }],
+        },
+      ],
+      upgradePurchases: upgradeEvaluator,
+    };
+
+    const snapshot = buildProgressionSnapshot(3, 900, state);
+    expect(snapshot.upgrades).toEqual([
+      expect.objectContaining({
+        id: 'sample-upgrade',
+        costs: [{ resourceId: 'crystal', amount: 100 }],
+      }),
+    ]);
+  });
 });

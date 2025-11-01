@@ -235,6 +235,12 @@ importers:
 
   packages/shell-web:
     dependencies:
+      '@idle-engine/content-sample':
+        specifier: workspace:*
+        version: link:../content-sample
+      '@idle-engine/content-schema':
+        specifier: workspace:*
+        version: link:../content-schema
       '@idle-engine/core':
         specifier: workspace:*
         version: link:../core
