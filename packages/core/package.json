@@ -6,6 +6,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
+    "prebuild": "node ../../tools/scripts/generate-version.mjs",
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "lint": "eslint --max-warnings=0 'src/**/*.ts'",
