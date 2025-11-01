@@ -36,3 +36,6 @@ artifacts/accessibility/
 # Local LLM
 configs/
 output/
+
+# Claude Code
+CLAUDE.md
