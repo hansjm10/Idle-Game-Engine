@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import type {
   DiagnosticTimelineResult,
   SerializedResourceState,
+  ResourceDefinitionDigest,
 } from '@idle-engine/core';
 
 import {
@@ -16,6 +17,7 @@ import {
   type RuntimeWorkerErrorDetails,
   type RuntimeWorkerInboundMessage,
   type RuntimeWorkerOutboundMessage,
+  type RuntimeWorkerRequestSessionSnapshot,
   type RuntimeWorkerRestoreSession,
   type RuntimeWorkerSocialCommand,
   type RuntimeWorkerSocialCommandResult,
@@ -76,6 +78,11 @@ interface PendingSocialRequest {
   readonly reject: (error: Error) => void;
 }
 
+interface PendingSnapshotRequest {
+  readonly resolve: (snapshot: SessionSnapshotPayload) => void;
+  readonly reject: (error: Error) => void;
+}
+
 const SUPPORTED_SOCIAL_COMMAND_KINDS = new Set<SocialCommandType>([
   SOCIAL_COMMAND_TYPES.FETCH_LEADERBOARD,
   SOCIAL_COMMAND_TYPES.SUBMIT_LEADERBOARD_SCORE,
@@ -89,11 +96,29 @@ function isSupportedSocialCommandKind(
   return typeof value === 'string' && SUPPORTED_SOCIAL_COMMAND_KINDS.has(value as SocialCommandType);
 }
 
+export interface SessionSnapshotPayload {
+  readonly persistenceSchemaVersion: number;
+  readonly slotId: string;
+  readonly capturedAt: string;
+  readonly workerStep: number;
+  readonly monotonicMs: number;
+  readonly state: SerializedResourceState;
+  readonly runtimeVersion: string;
+  readonly contentDigest: ResourceDefinitionDigest;
+  readonly flags?: {
+    readonly pendingMigration?: boolean;
+    readonly abortedRestore?: boolean;
+  };
+}
+
 export interface WorkerBridge<TState = unknown> {
   awaitReady(): Promise<void>;
   restoreSession(
     payload?: WorkerRestoreSessionPayload,
   ): Promise<void>;
+  requestSessionSnapshot(
+    reason?: string,
+  ): Promise<SessionSnapshotPayload>;
   sendCommand<TPayload = unknown>(type: string, payload: TPayload): void;
   sendSocialCommand<TCommand extends SocialCommandType>(
     kind: TCommand,
@@ -198,6 +223,10 @@ export class WorkerBridgeImpl<TState = unknown>
     string,
     PendingSocialRequest
   >();
+  private readonly pendingSnapshotRequests = new Map<
+    string,
+    PendingSnapshotRequest
+  >();
   private readonly socialEnabled = isSocialCommandsEnabled();
   private readonly readyPromise: Promise<void>;
   private resolveReady: (() => void) | null = null;
@@ -283,6 +312,11 @@ export class WorkerBridgeImpl<TState = unknown>
 
     if (envelope.type === 'SOCIAL_COMMAND_RESULT') {
       this.handleSocialCommandResult(envelope);
+      return;
+    }
+
+    if (envelope.type === 'SESSION_SNAPSHOT') {
+      this.handleSessionSnapshot(envelope);
       return;
     }
 
@@ -391,6 +425,29 @@ export class WorkerBridgeImpl<TState = unknown>
     pending.reject(error);
   }
 
+  private handleSessionSnapshot(
+    envelope: { type: 'SESSION_SNAPSHOT'; requestId?: string; snapshot: SessionSnapshotPayload },
+  ): void {
+    const requestId = envelope.requestId;
+    if (!requestId) {
+      // eslint-disable-next-line no-console
+      console.warn('[WorkerBridge] Received session snapshot without requestId');
+      return;
+    }
+
+    const pending = this.pendingSnapshotRequests.get(requestId);
+    if (!pending) {
+      // eslint-disable-next-line no-console
+      console.warn('[WorkerBridge] Received session snapshot for unknown request', {
+        requestId,
+      });
+      return;
+    }
+
+    this.pendingSnapshotRequests.delete(requestId);
+    pending.resolve(envelope.snapshot);
+  }
+
   constructor(worker: WorkerBridgeWorker) {
     this.worker = worker;
     this.readyPromise = new Promise<void>((resolve) => {
@@ -471,6 +528,37 @@ export class WorkerBridgeImpl<TState = unknown>
     this.flushPendingMessages();
 
     return restorePromise;
+  }
+
+  requestSessionSnapshot(reason?: string): Promise<SessionSnapshotPayload> {
+    if (this.disposed) {
+      return Promise.reject(
+        new Error('WorkerBridge has been disposed'),
+      );
+    }
+
+    const requestId = `snapshot:${this.nextRequestId++}`;
+    const envelope: RuntimeWorkerRequestSessionSnapshot = {
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId,
+      ...(reason !== undefined && { reason }),
+    };
+
+    return new Promise<SessionSnapshotPayload>((resolve, reject) => {
+      this.pendingSnapshotRequests.set(requestId, {
+        resolve,
+        reject,
+      });
+
+      try {
+        this.postOrQueue(envelope);
+        this.flushPendingMessages();
+      } catch (error) {
+        this.pendingSnapshotRequests.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
   }
 
   private postOrQueue(message: RuntimeWorkerInboundMessage): void {
@@ -655,6 +743,15 @@ export class WorkerBridgeImpl<TState = unknown>
       this.pendingSocialRequests.delete(requestId);
     }
     this.pendingSocialRequests.clear();
+    for (const [requestId, pending] of this.pendingSnapshotRequests) {
+      pending.reject(
+        new Error(
+          'WorkerBridge has been disposed before the snapshot request completed',
+        ),
+      );
+      this.pendingSnapshotRequests.delete(requestId);
+    }
+    this.pendingSnapshotRequests.clear();
     if (this.restoreDeferred) {
       const deferred = this.restoreDeferred;
       this.restoreDeferred = null;
