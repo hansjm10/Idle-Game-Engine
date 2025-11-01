@@ -165,7 +165,12 @@ describe('PersistencePanel', () => {
     );
 
     // Simulate bridge error
-    const errorHandler = (mockBridge.onError as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(mockBridge.onError).toHaveBeenCalled();
+    const onErrorCalls = (mockBridge.onError as ReturnType<typeof vi.fn>).mock.calls;
+    expect(onErrorCalls.length).toBeGreaterThan(0);
+    const errorHandler = onErrorCalls[0]?.[0];
+    expect(errorHandler).toBeDefined();
+
     errorHandler({ code: 'RESTORE_FAILED', message: 'Restore failed due to validation error' });
 
     await waitFor(() => {
@@ -185,7 +190,12 @@ describe('PersistencePanel', () => {
     );
 
     // Simulate bridge error
-    const errorHandler = (mockBridge.onError as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(mockBridge.onError).toHaveBeenCalled();
+    const onErrorCalls = (mockBridge.onError as ReturnType<typeof vi.fn>).mock.calls;
+    expect(onErrorCalls.length).toBeGreaterThan(0);
+    const errorHandler = onErrorCalls[0]?.[0];
+    expect(errorHandler).toBeDefined();
+
     errorHandler({ code: 'RESTORE_FAILED', message: 'Restore failed' });
 
     await waitFor(() => {

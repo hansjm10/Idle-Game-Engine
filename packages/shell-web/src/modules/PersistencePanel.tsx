@@ -4,6 +4,26 @@ import type { WorkerBridge } from './worker-bridge.js';
 import { SessionPersistenceError } from './session-persistence-adapter.js';
 
 /**
+ * Telemetry facade interface for recording persistence events.
+ */
+type TelemetryFacade = {
+  recordError?: (event: string, data?: Record<string, unknown>) => void;
+  recordEvent?: (event: string, data?: Record<string, unknown>) => void;
+};
+
+function getTelemetryFacade(): TelemetryFacade | undefined {
+  return (globalThis as { __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade })
+    .__IDLE_ENGINE_TELEMETRY__;
+}
+
+function recordTelemetryEvent(
+  event: string,
+  data: Record<string, unknown>,
+): void {
+  getTelemetryFacade()?.recordEvent?.(event, data);
+}
+
+/**
  * Toast notification type for persistence operations.
  */
 interface PersistenceToast {
@@ -14,6 +34,11 @@ interface PersistenceToast {
 }
 
 /**
+ * Default toast timeout: 10 seconds (WCAG 2.1 compliant).
+ */
+const DEFAULT_TOAST_TIMEOUT_MS = 10000;
+
+/**
  * Persistence panel props.
  */
 export interface PersistencePanelProps {
@@ -21,6 +46,7 @@ export interface PersistencePanelProps {
   onSave?: (snapshot: SessionSnapshotPayload) => Promise<void>;
   onLoad?: () => Promise<void>;
   onClear?: () => Promise<void>;
+  toastTimeoutMs?: number;
 }
 
 /**
@@ -39,6 +65,7 @@ export function PersistencePanel({
   onSave,
   onLoad,
   onClear,
+  toastTimeoutMs = DEFAULT_TOAST_TIMEOUT_MS,
 }: PersistencePanelProps): JSX.Element {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,11 +77,14 @@ export function PersistencePanel({
     const id = `toast-${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { ...toast, id }]);
 
-    // Auto-dismiss after 5 seconds
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
-  }, []);
+    // Auto-dismiss success and info toasts after timeout.
+    // Error toasts persist until manually dismissed for accessibility.
+    if (toast.type !== 'error') {
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, toastTimeoutMs);
+    }
+  }, [toastTimeoutMs]);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -64,6 +94,8 @@ export function PersistencePanel({
     if (isSaving) {
       return;
     }
+
+    recordTelemetryEvent('PersistenceUIManualSaveClicked', {});
 
     setIsSaving(true);
     try {
@@ -101,6 +133,8 @@ export function PersistencePanel({
       return;
     }
 
+    recordTelemetryEvent('PersistenceUIManualLoadClicked', {});
+
     setIsLoading(true);
     setRestoreError(null);
 
@@ -131,9 +165,14 @@ export function PersistencePanel({
   }, [isLoading, onLoad, addToast]);
 
   const handleClear = useCallback(async () => {
+    recordTelemetryEvent('PersistenceUIClearDataClicked', {});
+
     if (!window.confirm('Are you sure you want to clear all saved data? This cannot be undone.')) {
+      recordTelemetryEvent('PersistenceUIClearDataCancelled', {});
       return;
     }
+
+    recordTelemetryEvent('PersistenceUIClearDataConfirmed', {});
 
     try {
       if (onClear) {
@@ -162,6 +201,7 @@ export function PersistencePanel({
   }, [onClear, addToast]);
 
   const handleRetryRestore = useCallback(() => {
+    recordTelemetryEvent('PersistenceUIRestoreRetried', {});
     setRestoreError(null);
     void handleLoad();
   }, [handleLoad]);

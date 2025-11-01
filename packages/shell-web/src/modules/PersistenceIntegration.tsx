@@ -9,6 +9,26 @@ import { PersistencePanel } from './PersistencePanel.js';
 import { isPersistenceUIEnabled } from './persistence-config.js';
 
 /**
+ * Telemetry facade interface for recording persistence events.
+ */
+type TelemetryFacade = {
+  recordError?: (event: string, data?: Record<string, unknown>) => void;
+  recordEvent?: (event: string, data?: Record<string, unknown>) => void;
+};
+
+function getTelemetryFacade(): TelemetryFacade | undefined {
+  return (globalThis as { __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade })
+    .__IDLE_ENGINE_TELEMETRY__;
+}
+
+function recordTelemetryEvent(
+  event: string,
+  data: Record<string, unknown>,
+): void {
+  getTelemetryFacade()?.recordEvent?.(event, data);
+}
+
+/**
  * Props for PersistenceIntegration component.
  */
 export interface PersistenceIntegrationProps {
@@ -58,10 +78,18 @@ export function PersistenceIntegration({
     // Mark as initialized immediately to not block rendering
     setIsInitialized(true);
 
+    recordTelemetryEvent('PersistenceUIInitialized', {
+      slotId,
+      autosaveIntervalMs: autosaveIntervalMs ?? 'default',
+    });
+
     // Restore session on mount (non-blocking)
     void (async () => {
+      let restoreSucceeded = false;
       try {
         await adapter.open();
+
+        recordTelemetryEvent('PersistenceUIRestoreAttempted', { slotId });
 
         const result = await performRestore(bridge, adapter, {
           slotId,
@@ -69,23 +97,39 @@ export function PersistenceIntegration({
         });
 
         if (result.success) {
-          // Start autosave after successful restore
-          autosave.start();
+          restoreSucceeded = true;
+          recordTelemetryEvent('PersistenceUIRestoreSucceeded', { slotId });
         } else if (result.error) {
+          recordTelemetryEvent('PersistenceUIRestoreFailed', {
+            slotId,
+            error: result.error.message,
+            errorCode: result.error instanceof Error ? result.error.name : 'Unknown',
+          });
           // eslint-disable-next-line no-console
           console.error('[PersistenceIntegration] Restore failed on mount', result.error);
-          // Still start autosave even if restore failed
-          autosave.start();
         }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        recordTelemetryEvent('PersistenceUIInitializationFailed', {
+          slotId,
+          error: errorMessage,
+        });
         // eslint-disable-next-line no-console
         console.error('[PersistenceIntegration] Initialization failed', error);
-        // Still start autosave even if initialization failed
+      } finally {
+        // Always start autosave after initialization attempt.
+        // AutosaveController.start() is idempotent, so this is safe.
+        // We start autosave even if restore failed to enable future saves.
         autosave.start();
+        recordTelemetryEvent('PersistenceUIAutosaveStarted', {
+          slotId,
+          afterSuccessfulRestore: restoreSucceeded,
+        });
       }
     })();
 
     return () => {
+      recordTelemetryEvent('PersistenceUIUnmounted', { slotId });
       autosave.stop();
       adapter.close();
       adapterRef.current = null;
@@ -98,6 +142,11 @@ export function PersistenceIntegration({
     if (!adapter) {
       throw new Error('Persistence adapter not initialized');
     }
+
+    recordTelemetryEvent('PersistenceUIManualSaveInitiated', {
+      slotId: snapshot.slotId,
+      workerStep: snapshot.workerStep,
+    });
 
     await adapter.save({
       schemaVersion: snapshot.persistenceSchemaVersion,
@@ -118,6 +167,8 @@ export function PersistenceIntegration({
       throw new Error('Persistence adapter not initialized');
     }
 
+    recordTelemetryEvent('PersistenceUIManualLoadInitiated', { slotId });
+
     const result = await performRestore(bridge, adapter, {
       slotId,
       definitions,
@@ -133,6 +184,8 @@ export function PersistenceIntegration({
     if (!adapter) {
       throw new Error('Persistence adapter not initialized');
     }
+
+    recordTelemetryEvent('PersistenceUIClearInitiated', { slotId });
 
     await adapter.deleteSlot(slotId);
   }, [slotId]);
