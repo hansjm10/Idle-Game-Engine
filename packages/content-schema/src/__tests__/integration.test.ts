@@ -17,6 +17,9 @@ import type { NumericFormula } from '../base/formulas.js';
 import type { ContentSchemaOptions } from '../pack.js';
 import { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import {
+  cyclicTransformDirectFixture,
+  cyclicTransformIndirectFixture,
+  cyclicTransformMultiResourceFixture,
   cyclicUnlockConditionsFixture,
   dependencyLoopFixture,
   duplicateResourceIdsFixture,
@@ -158,18 +161,68 @@ describe('Integration: Cyclic Dependencies', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(cyclicUnlockConditionsFixture);
 
-    // TODO: Cycle detection may not be fully implemented yet
-    // For now, verify the fixture structure is valid
-    if (!result.success) {
-      // If it fails, it should mention cycles
-      expect(result.error.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            message: expect.stringMatching(/cycl/i),
-          }),
-        ]),
-      );
-    }
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle between resource-a and resource-b
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/unlock condition cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects direct transform chain cycles (A → B → A)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicTransformDirectFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle between transform-a and transform-b
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects indirect transform chain cycles (A → B → C → A)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicTransformIndirectFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle through transform-a, transform-b, and transform-c
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects multi-resource transform chain cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicTransformMultiResourceFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle with multiple resources involved
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
   });
 
   it('detects self-referencing pack dependencies', () => {

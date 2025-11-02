@@ -1482,6 +1482,12 @@ const validateCrossReferences = (
       });
     }
   });
+
+  // Validate transform chains for cycles
+  validateTransformCycles(pack, ctx);
+
+  // Validate unlock conditions for cycles
+  validateUnlockConditionCycles(pack, ctx);
 };
 
 const ensureFormulaReference = (
@@ -1837,6 +1843,334 @@ const validateDependencies = (
       path: toMutablePath(['metadata', 'dependencies', 'requires'] as const),
       message: 'Dependency graph contains a cycle involving this pack.',
     });
+  }
+};
+
+const validateTransformCycles = (
+  pack: ParsedContentPack,
+  ctx: z.RefinementCtx,
+) => {
+  // Build a graph where nodes are transforms and edges are resource dependencies
+  // Edge from transform A to transform B exists when:
+  // A produces a resource that B consumes as input
+  const adjacency = new Map<string, Set<string>>();
+  const transformIndex = new Map<string, number>();
+
+  // Index all transforms by their output resources
+  const resourceProducers = new Map<string, Set<string>>();
+
+  pack.transforms.forEach((transform, index) => {
+    transformIndex.set(transform.id, index);
+
+    transform.outputs.forEach((output) => {
+      if (!resourceProducers.has(output.resourceId)) {
+        resourceProducers.set(output.resourceId, new Set());
+      }
+      resourceProducers.get(output.resourceId)?.add(transform.id);
+    });
+  });
+
+  // Build the adjacency graph based on resource dependencies
+  pack.transforms.forEach((transform) => {
+    transform.inputs.forEach((input) => {
+      const producers = resourceProducers.get(input.resourceId);
+      if (producers) {
+        producers.forEach((producerId) => {
+          // Add edge from producer to consumer
+          if (!adjacency.has(producerId)) {
+            adjacency.set(producerId, new Set());
+          }
+          adjacency.get(producerId)?.add(transform.id);
+        });
+      }
+    });
+  });
+
+  // Detect cycles using DFS with path tracking for better error messages
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+  const path: string[] = [];
+
+  const visit = (node: string): boolean => {
+    if (stack.has(node)) {
+      // Cycle detected! Build the cycle path for error message
+      const cycleStartIndex = path.indexOf(node);
+      const cyclePath = [...path.slice(cycleStartIndex), node];
+      const cycleDescription = cyclePath.join(' → ');
+
+      const index = transformIndex.get(node);
+      if (index !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath(['transforms', index] as const),
+          message: `Transform cycle detected: ${cycleDescription}`,
+        });
+      }
+      return true;
+    }
+
+    if (visited.has(node)) {
+      return false;
+    }
+
+    visited.add(node);
+    stack.add(node);
+    path.push(node);
+
+    const edges = adjacency.get(node);
+    if (edges) {
+      for (const target of edges) {
+        if (visit(target)) {
+          return true;
+        }
+      }
+    }
+
+    stack.delete(node);
+    path.pop();
+    return false;
+  };
+
+  // Check all transforms for cycles
+  for (const transform of pack.transforms) {
+    if (!visited.has(transform.id)) {
+      if (visit(transform.id)) {
+        // Only report the first cycle found to avoid noise
+        break;
+      }
+    }
+  }
+};
+
+const validateUnlockConditionCycles = (
+  pack: ParsedContentPack,
+  ctx: z.RefinementCtx,
+) => {
+  // Build a graph where nodes are entities (resources, generators, upgrades, etc.)
+  // and edges represent unlock dependencies
+  const adjacency = new Map<string, Set<string>>();
+
+  // Track entity types and indices for error reporting
+  type EntityInfo = {
+    type: 'resource' | 'generator' | 'upgrade' | 'achievement' | 'transform' | 'prestige';
+    index: number;
+  };
+  const entityMap = new Map<string, EntityInfo>();
+
+  // Helper to extract entity references from conditions
+  const extractConditionReferences = (condition: Condition | undefined): Set<string> => {
+    const refs = new Set<string>();
+
+    if (!condition) {
+      return refs;
+    }
+
+    const visit = (node: Condition) => {
+      switch (node.kind) {
+        case 'resourceThreshold':
+          refs.add(node.resourceId);
+          break;
+        case 'generatorLevel':
+          refs.add(node.generatorId);
+          break;
+        case 'upgradeOwned':
+          refs.add(node.upgradeId);
+          break;
+        case 'prestigeUnlocked':
+          refs.add(node.prestigeLayerId);
+          break;
+        case 'allOf':
+        case 'anyOf':
+          node.conditions.forEach(visit);
+          break;
+        case 'not':
+          visit(node.condition);
+          break;
+        default:
+          break;
+      }
+    };
+
+    visit(condition);
+    return refs;
+  };
+
+  // Index all entities
+  pack.resources.forEach((resource, index) => {
+    entityMap.set(resource.id, { type: 'resource', index });
+  });
+  pack.generators.forEach((generator, index) => {
+    entityMap.set(generator.id, { type: 'generator', index });
+  });
+  pack.upgrades.forEach((upgrade, index) => {
+    entityMap.set(upgrade.id, { type: 'upgrade', index });
+  });
+  pack.achievements.forEach((achievement, index) => {
+    entityMap.set(achievement.id, { type: 'achievement', index });
+  });
+  pack.transforms.forEach((transform, index) => {
+    entityMap.set(transform.id, { type: 'transform', index });
+  });
+  pack.prestigeLayers.forEach((layer, index) => {
+    entityMap.set(layer.id, { type: 'prestige', index });
+  });
+
+  // Build adjacency graph for resources
+  pack.resources.forEach((resource) => {
+    if (resource.unlockCondition) {
+      const refs = extractConditionReferences(resource.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(resource.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for generators
+  pack.generators.forEach((generator) => {
+    if (generator.baseUnlock) {
+      const refs = extractConditionReferences(generator.baseUnlock);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(generator.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for upgrades
+  pack.upgrades.forEach((upgrade) => {
+    if (upgrade.unlockCondition) {
+      const refs = extractConditionReferences(upgrade.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(upgrade.id);
+      });
+    }
+    // Also check prerequisites (which are Condition objects)
+    upgrade.prerequisites.forEach((prereqCondition) => {
+      const refs = extractConditionReferences(prereqCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(upgrade.id);
+      });
+    });
+  });
+
+  // Build adjacency graph for achievements
+  pack.achievements.forEach((achievement) => {
+    if (achievement.unlockCondition) {
+      const refs = extractConditionReferences(achievement.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(achievement.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for transforms
+  pack.transforms.forEach((transform) => {
+    if (transform.unlockCondition) {
+      const refs = extractConditionReferences(transform.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(transform.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for prestige layers
+  pack.prestigeLayers.forEach((layer) => {
+    if (layer.unlockCondition) {
+      const refs = extractConditionReferences(layer.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(layer.id);
+      });
+    }
+  });
+
+  // Detect cycles using DFS with path tracking
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+  const path: string[] = [];
+
+  const visit = (node: string): boolean => {
+    if (stack.has(node)) {
+      // Cycle detected! Build the cycle path for error message
+      const cycleStartIndex = path.indexOf(node);
+      const cyclePath = [...path.slice(cycleStartIndex), node];
+      const cycleDescription = cyclePath.join(' → ');
+
+      const entityInfo = entityMap.get(node);
+      if (entityInfo) {
+        let pathPrefix: readonly (string | number)[];
+        if (entityInfo.type === 'resource') {
+          pathPrefix = ['resources', entityInfo.index] as const;
+        } else if (entityInfo.type === 'generator') {
+          pathPrefix = ['generators', entityInfo.index] as const;
+        } else if (entityInfo.type === 'upgrade') {
+          pathPrefix = ['upgrades', entityInfo.index] as const;
+        } else if (entityInfo.type === 'achievement') {
+          pathPrefix = ['achievements', entityInfo.index] as const;
+        } else if (entityInfo.type === 'transform') {
+          pathPrefix = ['transforms', entityInfo.index] as const;
+        } else {
+          pathPrefix = ['prestigeLayers', entityInfo.index] as const;
+        }
+
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath(pathPrefix),
+          message: `Unlock condition cycle detected: ${cycleDescription}`,
+        });
+      }
+      return true;
+    }
+
+    if (visited.has(node)) {
+      return false;
+    }
+
+    visited.add(node);
+    stack.add(node);
+    path.push(node);
+
+    const edges = adjacency.get(node);
+    if (edges) {
+      for (const target of edges) {
+        if (visit(target)) {
+          return true;
+        }
+      }
+    }
+
+    stack.delete(node);
+    path.pop();
+    return false;
+  };
+
+  // Check all entities for cycles
+  for (const [entityId] of entityMap) {
+    if (!visited.has(entityId)) {
+      if (visit(entityId)) {
+        // Only report the first cycle found to avoid noise
+        break;
+      }
+    }
   }
 };
 
