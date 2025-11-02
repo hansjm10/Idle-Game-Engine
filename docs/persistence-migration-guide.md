@@ -1,5 +1,8 @@
 # Persistence Migration Guide
 
+**Last Updated:** 2025-11-02
+**Status:** Migration execution not yet implemented (see Issue #155)
+
 This guide explains how to author migrations for persisted game state in the Idle Game Engine. It covers the migration system architecture, authoring workflow, testing practices, and current implementation status.
 
 ## Table of Contents
@@ -114,7 +117,7 @@ When `reconcileSaveAgainstDefinitions()` detects incompatibility (removed resour
 
 1. Compare `snapshot.contentDigest` against known content pack versions
 2. Find applicable migration transforms
-3. Apply transforms to `snapshot.state.values` arrays
+3. Apply transforms to `snapshot.state` (amounts, capacities, flags arrays, etc.)
 4. Re-validate after transformation
 
 ## Migration Authoring Workflow
@@ -122,6 +125,8 @@ When `reconcileSaveAgainstDefinitions()` detects incompatibility (removed resour
 ### Where to Place Migrations
 
 **Current Status:** ⚠️ Migration execution infrastructure not yet implemented. This section describes the intended design.
+
+**Note:** The `registerMigration()` and `applyMigration()` APIs shown below are **placeholder examples** for the future migration system. These functions do not currently exist in `@idle-engine/shell-web`.
 
 Content pack migrations should be registered at pack initialization:
 
@@ -172,21 +177,23 @@ Test migrations using the existing test infrastructure in `packages/shell-web/sr
 ```typescript
 // Example: In your content pack's test suite
 import { describe, it, expect } from 'vitest';
-import { applyMigration } from '@idle-engine/shell-web';
+import { applyMigration } from '@idle-engine/shell-web'; // Placeholder API
 
 describe('resource rename migration', () => {
   it('should transform old resource ID to new ID', () => {
     const oldState: SerializedResourceState = {
       ids: ['old-resource-id', 'other-resource'],
-      values: [[100], [200]],
-      definitionDigest: { hash: 'abc123...', version: 2, ids: [...] },
+      amounts: [100, 200],
+      capacities: [1000, 2000],
+      flags: [0, 0],
+      definitionDigest: { hash: 'abc123...', version: 2, ids: ['old-resource-id', 'other-resource'] },
     };
 
     const newState = applyMigration('my-pack-v2-resource-rename', oldState);
 
     expect(newState.ids).toContain('new-resource-id');
     expect(newState.ids).not.toContain('old-resource-id');
-    expect(newState.values[0][0]).toBe(100); // Value preserved
+    expect(newState.amounts[0]).toBe(100); // Value preserved
   });
 });
 ```
@@ -202,7 +209,7 @@ describe('resource rename migration', () => {
 
 ### Pattern: Resource Rename
 
-Renaming a resource requires migrating its ID and preserving all state values:
+Renaming a resource requires migrating its ID and preserving all state arrays at the same index:
 
 ```typescript
 function migrateResourceRename(state: SerializedResourceState): SerializedResourceState {
@@ -218,18 +225,21 @@ function migrateResourceRename(state: SerializedResourceState): SerializedResour
   const newIds = [...state.ids];
   newIds[oldIndex] = newId;
 
-  // Values array remains unchanged (same index)
+  // All other arrays (amounts, capacities, flags, etc.) remain unchanged
+  // since we're only renaming the ID, not changing the index position
   return {
+    ...state,
     ids: newIds,
-    values: state.values,
-    definitionDigest: createDefinitionDigest(newIds),
+    // definitionDigest will be recomputed automatically by the engine
   };
 }
 ```
 
+**Note:** The `definitionDigest` is automatically recomputed by the engine during validation, so migrations don't need to manually set it.
+
 ### Pattern: Resource Merge
 
-Merging two resources into one requires combining state values:
+Merging two resources into one requires combining state values from multiple arrays:
 
 ```typescript
 function migrateResourceMerge(state: SerializedResourceState): SerializedResourceState {
@@ -244,48 +254,104 @@ function migrateResourceMerge(state: SerializedResourceState): SerializedResourc
     throw new Error('Migration expected to find both source resources');
   }
 
-  // Remove both old IDs, add new one
-  const newIds = state.ids.filter((id) => id !== sourceId1 && id !== sourceId2);
-  newIds.push(targetId);
+  // Helper to remove elements at two indices and append a new value
+  const mergeArrays = <T>(arr: readonly T[], newValue: T): T[] => {
+    return arr.filter((_, i) => i !== idx1 && i !== idx2).concat([newValue]);
+  };
 
-  // Combine values (example: sum the counts)
-  const newValues = state.values
-    .filter((_, i) => i !== idx1 && i !== idx2)
-    .concat([[
-      (state.values[idx1][0] ?? 0) + (state.values[idx2][0] ?? 0)
-    ]]);
+  // Remove both old IDs, add new one
+  const newIds = mergeArrays(state.ids, targetId);
+
+  // Combine amounts (example: sum them)
+  const newAmounts = mergeArrays(
+    state.amounts,
+    state.amounts[idx1] + state.amounts[idx2]
+  );
+
+  // Combine capacities (example: take the maximum)
+  const capacity1 = state.capacities[idx1];
+  const capacity2 = state.capacities[idx2];
+  const mergedCapacity =
+    capacity1 == null || capacity2 == null
+      ? null
+      : Math.max(capacity1, capacity2);
+  const newCapacities = mergeArrays(state.capacities, mergedCapacity);
+
+  // Combine flags (example: bitwise OR)
+  const newFlags = mergeArrays(
+    state.flags,
+    state.flags[idx1] | state.flags[idx2]
+  );
+
+  // Handle optional arrays
+  const newUnlocked = state.unlocked
+    ? mergeArrays(state.unlocked, state.unlocked[idx1] || state.unlocked[idx2])
+    : undefined;
+
+  const newVisible = state.visible
+    ? mergeArrays(state.visible, state.visible[idx1] || state.visible[idx2])
+    : undefined;
 
   return {
     ids: newIds,
-    values: newValues,
-    definitionDigest: createDefinitionDigest(newIds),
+    amounts: newAmounts,
+    capacities: newCapacities,
+    flags: newFlags,
+    ...(newUnlocked !== undefined && { unlocked: newUnlocked }),
+    ...(newVisible !== undefined && { visible: newVisible }),
   };
 }
 ```
 
+**Note:** When merging resources, carefully consider how to combine each field (sum amounts, max capacities, OR flags, etc.) based on your game's semantics.
+
 ### Pattern: State Value Transformation
 
-Changing the structure of state values (e.g., adding fields, changing units):
+Transforming specific resource values (e.g., changing units, applying fixes):
 
 ```typescript
 function migrateStateStructure(state: SerializedResourceState): SerializedResourceState {
-  // Example: Converting from seconds to milliseconds
+  // Example: Converting elapsed-time resource from seconds to milliseconds
   const timeResourceIndex = state.ids.indexOf('elapsed-time');
 
   if (timeResourceIndex === -1) {
     throw new Error('Migration expected to find "elapsed-time" resource');
   }
 
-  const newValues = state.values.map((vals, i) => {
+  // Transform the amount for the time resource
+  const newAmounts = state.amounts.map((amount, i) => {
     if (i === timeResourceIndex) {
-      return vals.map((v) => v * 1000); // Convert seconds to ms
+      return amount * 1000; // Convert seconds to ms
     }
-    return vals;
+    return amount;
+  });
+
+  // If capacities also need scaling, transform them too
+  const newCapacities = state.capacities.map((capacity, i) => {
+    if (i === timeResourceIndex && capacity != null) {
+      return capacity * 1000;
+    }
+    return capacity;
   });
 
   return {
     ...state,
-    values: newValues,
+    amounts: newAmounts,
+    capacities: newCapacities,
+  };
+}
+```
+
+**Example: Bulk transformation across all resources**
+
+```typescript
+function migrateClampNegativeAmounts(state: SerializedResourceState): SerializedResourceState {
+  // Fix corrupted saves where amounts became negative
+  const newAmounts = state.amounts.map(amount => Math.max(0, amount));
+
+  return {
+    ...state,
+    amounts: newAmounts,
   };
 }
 ```
@@ -324,20 +390,26 @@ describe('resource rename migration', () => {
   it('should rename resource ID while preserving values', () => {
     const input: SerializedResourceState = {
       ids: ['old-id', 'other-resource'],
-      values: [[42], [100]],
+      amounts: [42, 100],
+      capacities: [1000, 2000],
+      flags: [0, 0],
       definitionDigest: { hash: 'old-hash', version: 2, ids: ['old-id', 'other-resource'] },
     };
 
     const output = migrateResourceRename(input);
 
     expect(output.ids).toEqual(['new-id', 'other-resource']);
-    expect(output.values).toEqual([[42], [100]]);
+    expect(output.amounts).toEqual([42, 100]); // Values preserved
+    expect(output.capacities).toEqual([1000, 2000]);
+    expect(output.flags).toEqual([0, 0]);
   });
 
   it('should fail when expected resource is missing', () => {
     const input: SerializedResourceState = {
       ids: ['wrong-id'],
-      values: [[0]],
+      amounts: [0],
+      capacities: [100],
+      flags: [0],
       definitionDigest: { hash: 'hash', version: 1, ids: ['wrong-id'] },
     };
 
@@ -348,14 +420,14 @@ describe('resource rename migration', () => {
 
 #### 2. Integration Tests with SessionPersistenceAdapter
 
-Test full save/migrate/restore flow:
+Test full save/migrate/restore flow (when migration execution is implemented):
 
 ```typescript
 // migration-integration.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto'; // Mock IndexedDB
 import { SessionPersistenceAdapter } from '../modules/session-persistence-adapter';
-import { StubWorkerContext } from '../test-utils';
+import { registerMigration } from '../modules/migration-registry'; // Placeholder - not yet implemented
 
 describe('migration integration', () => {
   let adapter: SessionPersistenceAdapter;
@@ -365,6 +437,19 @@ describe('migration integration', () => {
   });
 
   it('should apply migration when loading incompatible save', async () => {
+    // Helper to create old-format state
+    const createOldState = (): SerializedResourceState => ({
+      ids: ['old-resource-id'],
+      amounts: [999],
+      capacities: [1000],
+      flags: [0],
+      definitionDigest: {
+        hash: 'old-hash',
+        version: 1,
+        ids: ['old-resource-id']
+      },
+    });
+
     // 1. Save state with old content digest
     const oldSnapshot = {
       schemaVersion: 1,
@@ -372,46 +457,68 @@ describe('migration integration', () => {
       capturedAt: new Date().toISOString(),
       workerStep: 100,
       monotonicMs: 1000,
-      state: createOldState(), // Old resource IDs
+      state: createOldState(),
       runtimeVersion: '1.0.0',
-      contentDigest: oldDigest,
+      contentDigest: {
+        hash: 'old-hash',
+        version: 1,
+        ids: ['old-resource-id']
+      },
     };
     await adapter.save(oldSnapshot);
 
-    // 2. Register migration
+    // 2. Register migration (placeholder API)
+    const newDigest = { hash: 'new-hash', version: 1, ids: ['new-resource-id'] };
     registerMigration({
       id: 'test-migration',
-      fromDigest: oldDigest,
+      fromDigest: oldSnapshot.contentDigest,
       toDigest: newDigest,
       transform: migrateResourceRename,
     });
 
-    // 3. Load with new definitions
+    // 3. Load with new definitions (migration should auto-apply)
+    const newDefinitions = [/* new resource definitions */];
     const loaded = await adapter.load('test-slot', newDefinitions);
 
     // 4. Verify migration was applied
-    expect(loaded.state.ids).toContain('new-id');
-    expect(loaded.state.ids).not.toContain('old-id');
+    expect(loaded.state.ids).toContain('new-resource-id');
+    expect(loaded.state.ids).not.toContain('old-resource-id');
+    expect(loaded.state.amounts[0]).toBe(999); // Value preserved
   });
 });
 ```
+
+**Note:** Integration tests will work once the migration registry (Issue #155) is implemented.
 
 #### 3. Fixture-Based Testing
 
 Create fixture snapshots for regression testing:
 
-```typescript
+```json
 // fixtures/saves/v1-to-v2-migration.json
 {
   "schemaVersion": 1,
   "slotId": "fixture-v1",
   "state": {
     "ids": ["old-resource-id"],
-    "values": [[999]],
-    "definitionDigest": { "hash": "old-hash", "version": 1, "ids": ["old-resource-id"] }
+    "amounts": [999],
+    "capacities": [1000],
+    "flags": [0],
+    "definitionDigest": {
+      "hash": "old-hash",
+      "version": 1,
+      "ids": ["old-resource-id"]
+    }
   },
   "runtimeVersion": "1.0.0",
-  "contentDigest": { "hash": "old-hash", "version": 1, "ids": ["old-resource-id"] }
+  "contentDigest": {
+    "hash": "old-hash",
+    "version": 1,
+    "ids": ["old-resource-id"]
+  },
+  "capturedAt": "2024-01-15T10:30:00.000Z",
+  "workerStep": 1000,
+  "monotonicMs": 60000
 }
 ```
 
@@ -421,9 +528,12 @@ Test against fixtures:
 import fixtureV1 from './fixtures/saves/v1-to-v2-migration.json';
 
 it('should migrate v1 fixture to v2', () => {
-  const migrated = applyMigration('v1-to-v2', fixtureV1.state);
+  const migrated = applyMigration('v1-to-v2', fixtureV1.state); // Placeholder API
+
   expect(migrated.ids).toEqual(['new-resource-id']);
-  expect(migrated.values).toEqual([[999]]);
+  expect(migrated.amounts).toEqual([999]); // Value preserved
+  expect(migrated.capacities).toEqual([1000]);
+  expect(migrated.flags).toEqual([0]);
 });
 ```
 
@@ -537,7 +647,7 @@ The `runtimeVersion` is **automatically set** from `@idle-engine/core`'s `packag
 
 Track these in issues:
 
-- **Migration registry** (Issue #271) - API for registering and chaining migrations
+- **Migration registry** (Issue #155) - API for registering and chaining migrations
 - **CLI scaffold generator** - `npx idle-engine generate migration` command
 - **Checksum helpers** - Utilities for computing and verifying migration determinism
 - **Migration path solver** - Automatically compute shortest migration chain
@@ -565,9 +675,10 @@ Track these in issues:
 ### Related Issues
 
 - Issue #273 - This documentation (migration authoring guide)
-- Issue #271 - Migration registry implementation
+- Issue #155 - Save file format with content pack manifests and migrations
+- Issue #271 - Session persistence adapter (completed)
 - Issue #16 - Original persistence tracking issue
 
 ---
 
-**Note:** This guide documents the intended migration system design. Several critical components are not yet implemented (see [Current Implementation Status](#current-implementation-status--tooling-gaps)). Content pack authors should be aware that migration execution is planned but not available until Issue #271 is resolved.
+**Note:** This guide documents the intended migration system design. Several critical components are not yet implemented (see [Current Implementation Status](#current-implementation-status--tooling-gaps)). Content pack authors should be aware that migration execution is planned but not available until Issue #155 is resolved.
