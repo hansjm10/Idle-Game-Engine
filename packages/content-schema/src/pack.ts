@@ -1847,29 +1847,76 @@ const validateDependencies = (
 };
 
 /**
+ * Normalizes a cycle path to its canonical form for deduplication.
+ * The canonical form starts with the lexicographically smallest element.
+ * For example: [B, C, A, B] becomes [A, B, C, A]
+ */
+const normalizeCyclePath = (cyclePath: string[]): string => {
+  if (cyclePath.length <= 1) {
+    return cyclePath.join('→');
+  }
+
+  // Remove the duplicate last element for rotation
+  const cycle = cyclePath.slice(0, -1);
+
+  // Find the index of the lexicographically smallest element
+  let minIndex = 0;
+  for (let i = 1; i < cycle.length; i++) {
+    if (cycle[i] < cycle[minIndex]) {
+      minIndex = i;
+    }
+  }
+
+  // Rotate the cycle to start with the smallest element
+  const normalized = [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)];
+  // Add the first element again to close the cycle
+  normalized.push(normalized[0]);
+
+  return normalized.join('→');
+};
+
+/**
  * Generic cycle detection using DFS with path tracking.
- * Returns all detected cycles.
+ * Returns detected cycles (deduplicated and optionally stopping at first cycle).
+ *
+ * @param adjacency - The graph represented as an adjacency list
+ * @param nodes - The nodes to check for cycles
+ * @param stopAtFirst - If true, stops after finding the first cycle (default: true for performance)
+ * @returns Array of cycle paths
  */
 const detectCycles = (
   adjacency: Map<string, Set<string>>,
   nodes: Iterable<string>,
+  stopAtFirst = true,
 ): string[][] => {
   const visited = new Set<string>();
   const stack = new Set<string>();
   const path: string[] = [];
   const cycles: string[][] = [];
+  const seenCycles = new Set<string>();
 
-  const visit = (node: string): void => {
+  const visit = (node: string): boolean => {
     if (stack.has(node)) {
       // Cycle detected! Build the cycle path
       const cycleStartIndex = path.indexOf(node);
       const cyclePath = [...path.slice(cycleStartIndex), node];
-      cycles.push(cyclePath);
-      return;
+
+      // Normalize and deduplicate
+      const normalizedCycle = normalizeCyclePath(cyclePath);
+      if (!seenCycles.has(normalizedCycle)) {
+        seenCycles.add(normalizedCycle);
+        cycles.push(cyclePath);
+
+        // Early termination if requested
+        if (stopAtFirst) {
+          return true; // Signal to stop
+        }
+      }
+      return false;
     }
 
     if (visited.has(node)) {
-      return;
+      return false;
     }
 
     visited.add(node);
@@ -1879,18 +1926,23 @@ const detectCycles = (
     const edges = adjacency.get(node);
     if (edges) {
       for (const target of edges) {
-        visit(target);
+        if (visit(target)) {
+          return true; // Propagate early termination
+        }
       }
     }
 
     stack.delete(node);
     path.pop();
+    return false;
   };
 
   // Check all nodes for cycles
   for (const nodeId of nodes) {
     if (!visited.has(nodeId)) {
-      visit(nodeId);
+      if (visit(nodeId)) {
+        break; // Early termination
+      }
     }
   }
 
@@ -1938,12 +1990,13 @@ const validateTransformCycles = (
   });
 
   // Detect cycles using the generic helper
+  // Uses early termination (stopAtFirst=true by default) for performance
   const cycles = detectCycles(
     adjacency,
     pack.transforms.map((t) => t.id),
   );
 
-  // Report all detected cycles
+  // Report detected cycle (at most one due to early termination)
   for (const cyclePath of cycles) {
     const cycleDescription = cyclePath.join(' → ');
     const firstNodeInCycle = cyclePath[0];
@@ -2130,9 +2183,10 @@ const validateUnlockConditionCycles = (
   };
 
   // Detect cycles using the generic helper
+  // Uses early termination (stopAtFirst=true by default) for performance
   const cycles = detectCycles(adjacency, entityMap.keys());
 
-  // Report all detected cycles
+  // Report detected cycle (at most one due to early termination)
   for (const cyclePath of cycles) {
     const cycleDescription = cyclePath.join(' → ');
     const firstNodeInCycle = cyclePath[0];
