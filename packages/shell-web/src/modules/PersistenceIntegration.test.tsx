@@ -215,15 +215,7 @@ describe('PersistenceIntegration', () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(mockAdapter.open).toHaveBeenCalled();
-    });
-
-    // Wait to ensure autosave.start() is NOT called
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    expect(mockAutosave.start).not.toHaveBeenCalled();
-
+    // Wait for initialization to complete (evidenced by telemetry events)
     await waitFor(() => {
       expect(telemetryEvents).toContainEqual({
         event: 'PersistenceUIInitializationFailed',
@@ -235,7 +227,7 @@ describe('PersistenceIntegration', () => {
       });
     });
 
-    // Verify autosave was never started
+    // Verify autosave was never started (checked after initialization completes)
     expect(mockAutosave.start).not.toHaveBeenCalled();
   });
 
@@ -251,13 +243,15 @@ describe('PersistenceIntegration', () => {
       />,
     );
 
+    // Wait for autosave to start and initialization to complete (evidenced by telemetry)
     await waitFor(() => {
-      expect(mockAutosave.start).toHaveBeenCalled();
+      expect(telemetryEvents).toContainEqual({
+        event: 'PersistenceUIAutosaveStarted',
+        data: expect.objectContaining({ afterSuccessfulRestore: true }),
+      });
     });
 
-    // Wait a bit to ensure no duplicate calls
-    await new Promise(resolve => setTimeout(resolve, 50));
-
+    // Verify autosave.start() was called exactly once (checked after initialization completes)
     expect(mockAutosave.start).toHaveBeenCalledTimes(1);
   });
 
