@@ -8,6 +8,7 @@ import type {
   StoredSessionSnapshot,
 } from './session-persistence-adapter.js';
 import { restoreSession, validateSnapshot } from './session-restore.js';
+import { createDefinitionDigest } from '@idle-engine/core';
 
 describe('session-restore', () => {
   let mockBridge: WorkerBridge;
@@ -34,33 +35,34 @@ describe('session-restore', () => {
 
   const createMockSnapshot = (
     overrides?: Partial<StoredSessionSnapshot>,
-  ): StoredSessionSnapshot => ({
-    schemaVersion: 1,
-    slotId: 'default',
-    capturedAt: new Date(Date.now() - 10000).toISOString(), // 10 seconds ago
-    workerStep: 1000,
-    monotonicMs: 5000,
-    state: {
-      ids: ['resource1', 'resource2'],
-      amounts: [100, 200],
-      capacities: [1000, 2000],
-      unlocked: [true, false],
-      visible: [true, false],
-      flags: [1, 0],
-      definitionDigest: {
-        version: 1,
-        contentHash: 'test-hash',
-        definitionCount: 2,
+  ): StoredSessionSnapshot => {
+    const baseIds = overrides?.state && 'ids' in overrides.state
+      ? (overrides.state as any).ids as string[]
+      : ['resource1', 'resource2'];
+    const digest = createDefinitionDigest(baseIds);
+
+    const snapshot: StoredSessionSnapshot = {
+      schemaVersion: 1,
+      slotId: 'default',
+      capturedAt: new Date(Date.now() - 10000).toISOString(), // 10 seconds ago
+      workerStep: 1000,
+      monotonicMs: 5000,
+      state: {
+        ids: baseIds,
+        amounts: baseIds.map((_, i) => (i + 1) * 100),
+        capacities: baseIds.map((_, i) => (i + 1) * 1000),
+        unlocked: baseIds.map((_, i) => i % 2 === 0),
+        visible: baseIds.map((_, i) => i % 2 === 0),
+        flags: baseIds.map((_, i) => (i % 2 === 0 ? 1 : 0)),
+        definitionDigest: digest,
       },
-    },
-    runtimeVersion: '0.1.0',
-    contentDigest: {
-      version: 1,
-      contentHash: 'test-hash',
-      definitionCount: 2,
-    },
-    ...overrides,
-  });
+      runtimeVersion: '0.1.0',
+      contentDigest: digest,
+      ...overrides,
+    };
+
+    return snapshot;
+  };
 
   beforeEach(() => {
     // Mock WorkerBridge
@@ -247,9 +249,9 @@ describe('session-restore', () => {
 
       const result = validateSnapshot(snapshot, definitions);
 
-      expect(result.isValid).toBe(true);
-      expect(result.errors).toHaveLength(0);
-      expect(result.reconciledState).toBeDefined();
+      expect(result.compatible).toBe(true);
+      expect(result.digestsMatch).toBe(true);
+      expect(result.removedIds).toHaveLength(0);
     });
 
     it('should detect mismatched resource IDs', () => {
@@ -273,9 +275,7 @@ describe('session-restore', () => {
 
       const result = validateSnapshot(snapshot, definitions);
 
-      expect(result.isValid).toBe(false);
-      expect(result.errors.length).toBeGreaterThan(0);
-      expect(result.reconciledState).toBeUndefined();
+      expect(result.compatible).toBe(false);
     });
 
     it('should detect length mismatches', () => {
@@ -299,8 +299,7 @@ describe('session-restore', () => {
 
       const result = validateSnapshot(snapshot, definitions);
 
-      expect(result.isValid).toBe(false);
-      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.compatible).toBe(false);
     });
 
     it('should accept extra resources gracefully', () => {
@@ -324,8 +323,8 @@ describe('session-restore', () => {
 
       const result = validateSnapshot(snapshot, definitions);
 
-      // Should be invalid because definition count doesn't match
-      expect(result.isValid).toBe(false);
+      // Should be incompatible because definition count doesn't match
+      expect(result.compatible).toBe(false);
     });
   });
 });

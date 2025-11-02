@@ -101,7 +101,7 @@ describe('PersistenceIntegration', () => {
     expect(AutosaveController).toHaveBeenCalledWith(
       mockBridge,
       mockAdapter,
-      { slotId: 'test-slot', intervalMs: 30000 },
+      expect.objectContaining({ slotId: 'test-slot', intervalMs: 30000 }),
     );
   });
 

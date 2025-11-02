@@ -221,9 +221,9 @@ describe('AutosaveController', () => {
       // Should still be only 1 request
       expect(mockBridge.requestSessionSnapshot).toHaveBeenCalledTimes(1);
 
-      // Complete the first save
+      // Complete the first save and flush pending microtasks
       resolveSnapshot!(createMockSnapshot());
-      await vi.runAllTimersAsync();
+      await Promise.resolve();
 
       // Next interval should succeed
       await vi.advanceTimersByTimeAsync(60000);
