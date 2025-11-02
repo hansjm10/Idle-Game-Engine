@@ -685,7 +685,7 @@ The `runtimeVersion` is **automatically set** from `@idle-engine/core`'s `packag
 ⚠️ **No CLI tooling** - No commands to generate migration scaffolds or validate determinism
 ⚠️ **No migration templates** - No example migrations in real content packs yet (coming soon)
 ⚠️ **No resourceDeltas support** - `RESTORE_SESSION` message accepts deltas but they're never populated
-⚠️ **Content pack manifest population** - Field exists but not yet populated during save operations
+⚠️ **Content pack manifest population** - `StoredSessionSnapshot.contentPacks` field is defined but worker does not yet supply content pack metadata. Reserved for future multi-pack support in runtime.
 
 ### Follow-Up Tooling (Future Work)
 

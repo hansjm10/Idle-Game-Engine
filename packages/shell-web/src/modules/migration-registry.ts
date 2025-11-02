@@ -126,10 +126,10 @@ class MigrationRegistry {
       );
     }
 
-    // Validate version is positive
-    if (descriptor.fromDigest.version <= 0 || descriptor.toDigest.version <= 0) {
+    // Validate version is non-negative
+    if (descriptor.fromDigest.version < 0 || descriptor.toDigest.version < 0) {
       throw new Error(
-        `Migration "${descriptor.id}" has invalid digest version (must be > 0)`,
+        `Migration "${descriptor.id}" has invalid digest version (must be >= 0)`,
       );
     }
 

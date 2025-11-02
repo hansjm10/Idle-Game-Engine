@@ -1,6 +1,7 @@
 import {
   reconcileSaveAgainstDefinitions,
   createDefinitionDigest,
+  computeStableDigest,
   type ResourceDefinition,
   type ResourceDefinitionReconciliation,
   type SerializedResourceState,
@@ -498,6 +499,19 @@ async function attemptMigration(
 
     // Apply migrations
     let migratedState = applyMigrations(snapshot.state, migrationPath.migrations);
+
+    // Validate that migrated state IDs match the target digest (defensive check)
+    const targetDigest = migrationPath.migrations[migrationPath.migrations.length - 1].toDigest;
+    const migratedHash = computeStableDigest(migratedState.ids);
+    if (migratedHash !== targetDigest.hash) {
+      // Emit telemetry warning but don't fail - revalidation will catch real issues
+      recordTelemetryEvent('PersistenceMigrationDigestMismatch', {
+        slotId,
+        expectedHash: targetDigest.hash,
+        actualHash: migratedHash,
+        migrationCount: migrationPath.migrations.length,
+      });
+    }
 
     // Strip the old definitionDigest so reconcileSaveAgainstDefinitions can reconstruct it
     // from the new IDs. This ensures the digest matches the migrated state.

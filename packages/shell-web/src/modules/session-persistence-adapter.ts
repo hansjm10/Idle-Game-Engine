@@ -76,6 +76,11 @@ export interface StoredSessionSnapshot {
    * Each entry captures the pack's identity, version, and digest at save time.
    * Used to detect content changes and trigger migrations on load.
    *
+   * @remarks
+   * Reserved for future use. The worker does not yet supply content pack metadata,
+   * so this field will be undefined in current snapshots. Planned for implementation
+   * when multi-pack support is added to the runtime.
+   *
    * @since schemaVersion 1 (Issue #155)
    */
   readonly contentPacks?: readonly ContentPackManifest[];
@@ -182,8 +187,8 @@ export class SessionPersistenceAdapter {
   async open(): Promise<void> {
     if (this.closed) {
       throw new SessionPersistenceError(
-        'Database not initialized',
-        'DB_NOT_INITIALIZED',
+        'Adapter has been closed and cannot be reopened',
+        'DB_CLOSED',
       );
     }
 
@@ -228,6 +233,11 @@ export class SessionPersistenceAdapter {
 
   /**
    * Closes the database connection.
+   *
+   * @remarks
+   * This is a one-shot operation. Once closed, the adapter cannot be reopened.
+   * Subsequent calls to `open()` will throw a `DB_CLOSED` error.
+   * Create a new adapter instance if you need to reconnect to the database.
    */
   close(): void {
     if (this.db) {

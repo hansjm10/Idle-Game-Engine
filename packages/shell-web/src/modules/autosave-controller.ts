@@ -205,6 +205,8 @@ export class AutosaveController {
       state: snapshot.state,
       runtimeVersion: snapshot.runtimeVersion,
       contentDigest: snapshot.contentDigest,
+      // TODO: Populate contentPacks field when worker supplies content pack metadata
+      // This will enable multi-pack migration tracking (planned for future runtime enhancement)
       flags: snapshot.flags,
     };
   }

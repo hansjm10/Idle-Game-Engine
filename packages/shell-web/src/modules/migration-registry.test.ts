@@ -94,24 +94,24 @@ describe('MigrationRegistry', () => {
       ).toThrow('has identical source and target digests');
     });
 
-    it('should throw if version is zero or negative', () => {
+    it('should throw if version is negative', () => {
       expect(() =>
         registerMigration({
-          id: 'bad-version',
-          fromDigest: { hash: 'fnv1a-00000001', version: 0, ids: [] },
+          id: 'negative-version-from',
+          fromDigest: { hash: 'fnv1a-00000001', version: -1, ids: [] },
           toDigest: createDigest('fnv1a-00000002', ['b']),
           transform: (state) => state,
         }),
-      ).toThrow('invalid digest version (must be > 0)');
+      ).toThrow('invalid digest version (must be >= 0)');
 
       expect(() =>
         registerMigration({
-          id: 'negative-version',
+          id: 'negative-version-to',
           fromDigest: createDigest('fnv1a-00000001', ['a']),
           toDigest: { hash: 'fnv1a-00000002', version: -1, ids: ['b'] },
           transform: (state) => state,
         }),
-      ).toThrow('invalid digest version (must be > 0)');
+      ).toThrow('invalid digest version (must be >= 0)');
     });
 
     it('should throw if version does not match ids.length', () => {

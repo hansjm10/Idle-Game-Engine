@@ -218,7 +218,8 @@ describe('SessionPersistenceAdapter', () => {
       expect(loaded?.workerStep).toBe(42);
 
       // Verify listSnapshots also works
-      const snapshots = await adapter.listSnapshots(slotId);
+      // Note: listSnapshots is private, but we test it here to verify internal behavior
+      const snapshots = await (adapter as any).listSnapshots(slotId);
       expect(snapshots).toHaveLength(1);
       expect(snapshots[0].slotId).toBe(slotId);
     });
@@ -358,12 +359,12 @@ describe('SessionPersistenceAdapter', () => {
   });
 
   describe('error handling', () => {
-    it('should throw DB_NOT_INITIALIZED when operating on closed adapter', async () => {
+    it('should throw DB_CLOSED when operating on closed adapter', async () => {
       const closedAdapter = new SessionPersistenceAdapter();
       closedAdapter.close();
 
       await expect(closedAdapter.load('test')).rejects.toMatchObject({
-        code: 'DB_NOT_INITIALIZED',
+        code: 'DB_CLOSED',
       });
     });
   });
