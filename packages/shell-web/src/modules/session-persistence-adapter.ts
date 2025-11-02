@@ -166,6 +166,7 @@ export class SessionPersistenceError extends Error {
 export class SessionPersistenceAdapter {
   private db: IDBDatabase | null = null;
   private readonly offlineCapMs: number;
+  private closed = false;
 
   constructor(options: { offlineCapMs?: number } = {}) {
     this.offlineCapMs = options.offlineCapMs ?? DEFAULT_OFFLINE_CAP_MS;
@@ -176,6 +177,13 @@ export class SessionPersistenceAdapter {
    * Handles schema migrations via the onupgradeneeded event.
    */
   async open(): Promise<void> {
+    if (this.closed) {
+      throw new SessionPersistenceError(
+        'Database not initialized',
+        'DB_NOT_INITIALIZED',
+      );
+    }
+
     if (this.db) {
       return;
     }
@@ -223,6 +231,7 @@ export class SessionPersistenceAdapter {
       this.db.close();
       this.db = null;
     }
+    this.closed = true;
   }
 
   /**

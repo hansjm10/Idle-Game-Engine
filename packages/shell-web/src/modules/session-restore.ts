@@ -563,7 +563,12 @@ export function validateSnapshot(
     );
 
     return {
-      compatible: reconciliation.removedIds.length === 0,
+      // Compatible only when nothing was removed AND digests match.
+      // This aligns with restoreSession, which requires matching digests
+      // (additions change the digest and therefore still require migration).
+      compatible:
+        reconciliation.removedIds.length === 0 &&
+        reconciliation.digestsMatch === true,
       removedIds: reconciliation.removedIds,
       addedIds: reconciliation.addedIds,
       digestsMatch: reconciliation.digestsMatch,
@@ -601,7 +606,10 @@ export function validateSaveCompatibility(
   // Validate against current definitions
   const validation = validateSnapshot(snapshot, definitions);
 
-  if (validation.compatible) {
+  const hasPendingMigrationFlag = Boolean(snapshot.flags?.pendingMigration);
+  const needsMigration = !validation.compatible || hasPendingMigrationFlag;
+
+  if (!needsMigration) {
     return {
       compatible: true,
       requiresMigration: false,

@@ -156,6 +156,65 @@ describe('Session Restore with Migration', () => {
       expect(result.requiresMigration).toBe(true);
       expect(result.migrationAvailable).toBe(true);
     });
+
+    it('should require migration when definitions add resources (digest mismatch)', async () => {
+      // Snapshot with 1 resource; definitions add a new resource but remove none
+      const snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 1000,
+        state: {
+          ids: ['wood'],
+          amounts: [10],
+          capacities: [null],
+          flags: [0],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: createDigest(['wood']),
+      };
+
+      // Current definitions include the original id plus a new one
+      const definitions = createDefinitions(['wood', 'stone']);
+
+      const result = validateSaveCompatibility(snapshot, definitions);
+
+      expect(result.compatible).toBe(false);
+      expect(result.requiresMigration).toBe(true);
+      // No migration registered for this addition-only change
+      expect(result.migrationAvailable).toBe(false);
+      expect(result.removedIds).toEqual([]);
+      expect(result.addedIds).toEqual(['stone']);
+      expect(result.digestsMatch).toBe(false);
+    });
+
+    it('should require migration when pendingMigration flag is set', async () => {
+      const definitions = createDefinitions(['wood']);
+      const digest = createDigest(['wood']);
+
+      const snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 1000,
+        state: {
+          ids: ['wood'],
+          amounts: [50],
+          capacities: [null],
+          flags: [0],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: digest,
+        flags: { pendingMigration: true },
+      };
+
+      const result = validateSaveCompatibility(snapshot, definitions);
+
+      expect(result.compatible).toBe(false);
+      expect(result.requiresMigration).toBe(true);
+    });
   });
 
   describe('restoreSession with migration', () => {
