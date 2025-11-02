@@ -192,9 +192,15 @@ the compiler and runtime guardrails described in the design docs.
 ## Transform Patterns & Cycle Detection
 
 The content schema validates transform chains and unlock conditions for cycles
-to prevent runaway production loops and deadlocked progression. Understanding
-these validation rules helps authors design safe and functional transform
-networks.
+at **build time** (during `pnpm generate`) to prevent content packs that would
+cause runaway production loops or deadlocked progression at runtime.
+Understanding these validation rules helps authors design safe and functional
+transform networks.
+
+**Important**: Cycle detection is a **build-time safety check** that runs
+during content pack validation. Content packs containing cycles will be
+rejected before they can be loaded into the game engine, ensuring problematic
+configurations never reach runtime.
 
 ### What Constitutes a Cycle
 

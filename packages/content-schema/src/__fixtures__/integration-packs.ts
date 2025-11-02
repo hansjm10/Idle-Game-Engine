@@ -281,6 +281,64 @@ export const cyclicUnlockConditionsFixture = {
 };
 
 /**
+ * CYCLIC UNLOCK CONDITIONS - CROSS-ENTITY-TYPE
+ * Resource unlocks via generator threshold, generator unlocks via resource threshold
+ */
+export const cyclicUnlockCrossEntityFixture = {
+  metadata: {
+    id: 'cyclic-unlock-cross-entity',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'energy',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+      unlockCondition: {
+        kind: 'generatorLevel' as const,
+        generatorId: 'solar-panel',
+        comparator: 'gte' as const,
+        level: { kind: 'constant', value: 1 },
+      },
+    },
+  ],
+  generators: [
+    {
+      id: 'solar-panel',
+      name: baseTitle,
+      produces: [
+        {
+          resourceId: 'energy',
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+      purchase: {
+        currencyId: 'energy',
+        baseCost: 10,
+        costCurve: {
+          kind: 'exponential' as const,
+          base: 10,
+          growth: 1.15,
+          offset: 0,
+        },
+      },
+      baseUnlock: {
+        kind: 'resourceThreshold' as const,
+        resourceId: 'energy',
+        comparator: 'gte' as const,
+        amount: { kind: 'constant', value: 50 },
+      },
+    },
+  ],
+  upgrades: [],
+};
+
+/**
  * LOCALIZATION GAPS: Missing translations for declared supported locales
  */
 export const localizationGapsFixture = {

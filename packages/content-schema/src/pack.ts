@@ -2037,7 +2037,7 @@ const validateTransformCycles = (
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: toMutablePath(['transforms', index] as const),
-        message: `Transform cycle detected: ${cycleDescription}${resourceContext}`,
+        message: `Transform cycle detected: ${cycleDescription}${resourceContext}. Consider breaking the cycle by: (1) introducing external resource sources via generators or initial grants, (2) converting to a linear transformation chain, or (3) adding intermediate resources to create a clear flow direction.`,
       });
     }
   }
@@ -2252,7 +2252,7 @@ const validateUnlockConditionCycles = (
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: toMutablePath(pathPrefix),
-        message: `Unlock condition cycle detected: ${cycleDescription}${typeContext}`,
+        message: `Unlock condition cycle detected: ${cycleDescription}${typeContext}. Consider fixing by: (1) introducing a base entity that both depend on, (2) removing one unlock condition to create a hierarchical progression, or (3) using a flag or other non-entity condition to break the cycle.`,
       });
     }
   }

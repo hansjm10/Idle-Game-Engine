@@ -22,6 +22,7 @@ import {
   cyclicTransformIndirectFixture,
   cyclicTransformMultiResourceFixture,
   cyclicUnlockConditionsFixture,
+  cyclicUnlockCrossEntityFixture,
   dependencyLoopFixture,
   duplicateResourceIdsFixture,
   featureGateViolationFixture,
@@ -169,6 +170,23 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle between resource-a and resource-b
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/unlock condition cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects unlock condition cycles across entity types (resource-generator)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicUnlockCrossEntityFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle between energy resource and solar-panel generator
     expect(result.error.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
