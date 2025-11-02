@@ -345,19 +345,20 @@ describe('Session Persistence Integration', () => {
 
       expect(snapshotRequests).toContain('periodic');
 
+      // Switch to real timers before IndexedDB operations
+      // (fake timers interfere with fake-indexeddb's promise handling)
+      vi.useRealTimers();
+
       // Verify snapshot was persisted
       const loaded = await adapter.load(DEFAULT_SLOT_ID);
       expect(loaded).not.toBeNull();
 
       controller.stop();
-      vi.useRealTimers();
     });
   });
 
   describe('full round-trip flow', () => {
     it('should save, restore, and continue from persisted state', async () => {
-      vi.useFakeTimers();
-
       // Initialize worker
       harness = initializeRuntimeWorker({
         context: context as unknown as DedicatedWorkerGlobalScope,
@@ -454,8 +455,6 @@ describe('Session Persistence Integration', () => {
 
       // Step should have progressed from original
       expect(verifyEnvelope.snapshot.workerStep).toBeGreaterThanOrEqual(originalStep);
-
-      vi.useRealTimers();
     });
   });
 });

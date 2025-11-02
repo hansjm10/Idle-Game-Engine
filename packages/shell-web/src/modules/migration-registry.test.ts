@@ -479,4 +479,261 @@ describe('MigrationRegistry', () => {
       expect(result1).toEqual(result2);
     });
   });
+
+  describe('performance and scalability', () => {
+    it('should handle 100+ migrations in long linear chain efficiently', () => {
+      // Create a chain of 100 migrations: v0 -> v1 -> v2 -> ... -> v100
+      const chainLength = 100;
+
+      for (let i = 0; i < chainLength; i++) {
+        const fromDigest = createDigest(`fnv1a-chain-${i}`, [`resource-v${i}`]);
+        const toDigest = createDigest(`fnv1a-chain-${i + 1}`, [`resource-v${i + 1}`]);
+
+        registerMigration({
+          id: `chain-step-${i}`,
+          fromDigest,
+          toDigest,
+          transform: (state) => ({
+            ...state,
+            ids: [`resource-v${i + 1}`],
+            amounts: [state.amounts[0] + 1],
+          }),
+        });
+      }
+
+      const startDigest = createDigest('fnv1a-chain-0', ['resource-v0']);
+      const endDigest = createDigest('fnv1a-chain-100', ['resource-v100']);
+
+      // Measure pathfinding performance
+      const startTime = performance.now();
+      const path = findMigrationPath(startDigest, endDigest);
+      const pathfindingTime = performance.now() - startTime;
+
+      expect(path.found).toBe(true);
+      expect(path.migrations).toHaveLength(chainLength);
+      // Pathfinding should complete in under 100ms even for 100-step chain
+      expect(pathfindingTime).toBeLessThan(100);
+
+      // Measure migration application performance
+      const initialState = createState(['resource-v0'], [0]);
+      const applyStartTime = performance.now();
+      const finalState = applyMigrations(initialState, path.migrations);
+      const applyTime = performance.now() - applyStartTime;
+
+      expect(finalState.ids).toEqual(['resource-v100']);
+      expect(finalState.amounts).toEqual([chainLength]);
+      // Application should complete in reasonable time
+      expect(applyTime).toBeLessThan(200);
+    });
+
+    it('should handle complex migration graph with multiple paths', () => {
+      // Create a graph with multiple paths from v1 to v10
+      // Structure: diamond pattern with 10 source nodes, 10 intermediate nodes, 10 target nodes
+
+      for (let i = 1; i <= 10; i++) {
+        // Source to intermediate (10 paths)
+        registerMigration({
+          id: `stress-src-${i}-to-mid`,
+          fromDigest: createDigest(`fnv1a-stress-src`, [`src-${i}`]),
+          toDigest: createDigest(`fnv1a-stress-mid-${i}`, [`mid-${i}`]),
+          transform: (state) => ({
+            ...state,
+            ids: [`mid-${i}`],
+          }),
+        });
+
+        // Intermediate to target (10 paths)
+        registerMigration({
+          id: `stress-mid-${i}-to-tgt`,
+          fromDigest: createDigest(`fnv1a-stress-mid-${i}`, [`mid-${i}`]),
+          toDigest: createDigest(`fnv1a-stress-tgt`, [`target`]),
+          transform: (state) => ({
+            ...state,
+            ids: ['target'],
+          }),
+        });
+      }
+
+      const startDigest = createDigest('fnv1a-stress-src', ['src-1']);
+      const endDigest = createDigest('fnv1a-stress-tgt', ['target']);
+
+      const startTime = performance.now();
+      const path = findMigrationPath(startDigest, endDigest);
+      const pathfindingTime = performance.now() - startTime;
+
+      expect(path.found).toBe(true);
+      expect(path.migrations).toHaveLength(2); // Should find shortest 2-hop path
+      expect(pathfindingTime).toBeLessThan(50);
+    });
+  });
+
+  describe('circular dependency handling', () => {
+    it('should handle cycles in migration graph without infinite loop', () => {
+      const v1 = createDigest('fnv1a-cycle-1', ['a']);
+      const v2 = createDigest('fnv1a-cycle-2', ['b']);
+      const v3 = createDigest('fnv1a-cycle-3', ['c']);
+
+      // Create a cycle: v1 -> v2 -> v3 -> v1
+      registerMigration({
+        id: 'cycle-1-to-2',
+        fromDigest: v1,
+        toDigest: v2,
+        transform: (state) => ({ ...state, ids: ['b'] }),
+      });
+
+      registerMigration({
+        id: 'cycle-2-to-3',
+        fromDigest: v2,
+        toDigest: v3,
+        transform: (state) => ({ ...state, ids: ['c'] }),
+      });
+
+      registerMigration({
+        id: 'cycle-3-to-1',
+        fromDigest: v3,
+        toDigest: v1,
+        transform: (state) => ({ ...state, ids: ['a'] }),
+      });
+
+      // Searching within the cycle should terminate
+      const path = findMigrationPath(v1, v2);
+      expect(path.found).toBe(true);
+      expect(path.migrations).toHaveLength(1);
+
+      // Searching for non-existent target should terminate
+      const v4 = createDigest('fnv1a-cycle-4', ['d']);
+      const noPath = findMigrationPath(v1, v4);
+      expect(noPath.found).toBe(false);
+    });
+
+    it('should find shortest path through cycles', () => {
+      const v1 = createDigest('fnv1a-shortcycle-1', ['a']);
+      const v2 = createDigest('fnv1a-shortcycle-2', ['b']);
+      const v3 = createDigest('fnv1a-shortcycle-3', ['c']);
+      const v4 = createDigest('fnv1a-shortcycle-4', ['d']);
+
+      // Create cycle with shortcut: v1 -> v2 -> v3 -> v2 (cycle), but also v1 -> v4
+      registerMigration({
+        id: 'shortcycle-1-to-2',
+        fromDigest: v1,
+        toDigest: v2,
+        transform: (state) => ({ ...state, ids: ['b'] }),
+      });
+
+      registerMigration({
+        id: 'shortcycle-2-to-3',
+        fromDigest: v2,
+        toDigest: v3,
+        transform: (state) => ({ ...state, ids: ['c'] }),
+      });
+
+      registerMigration({
+        id: 'shortcycle-3-to-2',
+        fromDigest: v3,
+        toDigest: v2,
+        transform: (state) => ({ ...state, ids: ['b'] }),
+      });
+
+      registerMigration({
+        id: 'shortcycle-1-to-4',
+        fromDigest: v1,
+        toDigest: v4,
+        transform: (state) => ({ ...state, ids: ['d'] }),
+      });
+
+      // Should find the direct path v1 -> v4 (length 1), not v1 -> v2 -> v3 (length 2)
+      const path = findMigrationPath(v1, v4);
+      expect(path.found).toBe(true);
+      expect(path.migrations).toHaveLength(1);
+      expect(path.migrations[0].id).toBe('shortcycle-1-to-4');
+    });
+  });
+
+  describe('registry memory management', () => {
+    it('should clear all migrations without leaks', () => {
+      // Register many migrations
+      for (let i = 0; i < 1000; i++) {
+        registerMigration({
+          id: `leak-test-${i}`,
+          fromDigest: createDigest(`fnv1a-leak-${i}`, [`v${i}`]),
+          toDigest: createDigest(`fnv1a-leak-${i + 1}`, [`v${i + 1}`]),
+          transform: (state) => state,
+        });
+      }
+
+      expect(migrationRegistry.size).toBe(1000);
+
+      // Clear registry
+      migrationRegistry.clear();
+
+      expect(migrationRegistry.size).toBe(0);
+      expect(migrationRegistry.listMigrations()).toEqual([]);
+
+      // Verify registry is usable after clear
+      registerMigration({
+        id: 'after-clear',
+        fromDigest: createDigest('fnv1a-new-1', ['x']),
+        toDigest: createDigest('fnv1a-new-2', ['y']),
+        transform: (state) => ({ ...state, ids: ['y'] }),
+      });
+
+      expect(migrationRegistry.size).toBe(1);
+    });
+
+    it('should handle repeated register/clear cycles', () => {
+      for (let cycle = 0; cycle < 10; cycle++) {
+        // Register 100 migrations
+        for (let i = 0; i < 100; i++) {
+          registerMigration({
+            id: `cycle-${cycle}-migration-${i}`,
+            fromDigest: createDigest(`fnv1a-c${cycle}-${i}`, [`v${i}`]),
+            toDigest: createDigest(`fnv1a-c${cycle}-${i + 1}`, [`v${i + 1}`]),
+            transform: (state) => state,
+          });
+        }
+
+        expect(migrationRegistry.size).toBe(100);
+
+        // Clear
+        migrationRegistry.clear();
+        expect(migrationRegistry.size).toBe(0);
+      }
+
+      // Verify final state is clean
+      expect(migrationRegistry.size).toBe(0);
+      expect(migrationRegistry.listMigrations()).toEqual([]);
+    });
+
+    it('should not retain old migrations after clear', () => {
+      // Register migration with specific ID
+      registerMigration({
+        id: 'retention-test',
+        fromDigest: createDigest('fnv1a-ret-1', ['old']),
+        toDigest: createDigest('fnv1a-ret-2', ['new']),
+        transform: (state) => ({ ...state, ids: ['new'] }),
+      });
+
+      const oldMigration = migrationRegistry.getMigration('retention-test');
+      expect(oldMigration).toBeDefined();
+
+      // Clear registry
+      migrationRegistry.clear();
+
+      // Old migration should not be retrievable
+      const afterClear = migrationRegistry.getMigration('retention-test');
+      expect(afterClear).toBeUndefined();
+
+      // Register new migration with same ID (should work)
+      registerMigration({
+        id: 'retention-test',
+        fromDigest: createDigest('fnv1a-ret-3', ['newer']),
+        toDigest: createDigest('fnv1a-ret-4', ['newest']),
+        transform: (state) => ({ ...state, ids: ['newest'] }),
+      });
+
+      const newMigration = migrationRegistry.getMigration('retention-test');
+      expect(newMigration).toBeDefined();
+      expect(newMigration?.fromDigest.hash).toBe('fnv1a-ret-3');
+    });
+  });
 });
