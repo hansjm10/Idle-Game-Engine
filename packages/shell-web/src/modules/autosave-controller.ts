@@ -4,6 +4,7 @@ import type {
   StoredSessionSnapshot,
 } from './session-persistence-adapter.js';
 import { PERSISTENCE_SCHEMA_VERSION } from './session-persistence-adapter.js';
+import { recordTelemetryError, recordTelemetryEvent } from './telemetry-utils.js';
 
 /**
  * Default autosave interval: 60 seconds.
@@ -21,30 +22,13 @@ const MIN_AUTOSAVE_INTERVAL_MS = 5 * 1000;
 export const DEFAULT_SLOT_ID = 'default';
 
 /**
- * Telemetry facade interface for recording persistence events.
+ * Autosave status information.
  */
-type TelemetryFacade = {
-  recordError?: (event: string, data?: Record<string, unknown>) => void;
-  recordEvent?: (event: string, data?: Record<string, unknown>) => void;
-};
-
-function getTelemetryFacade(): TelemetryFacade | undefined {
-  return (globalThis as { __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade })
-    .__IDLE_ENGINE_TELEMETRY__;
-}
-
-function recordTelemetryError(
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  getTelemetryFacade()?.recordError?.(event, data);
-}
-
-function recordTelemetryEvent(
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  getTelemetryFacade()?.recordEvent?.(event, data);
+export interface AutosaveStatus {
+  readonly isActive: boolean;
+  readonly isSaving: boolean;
+  readonly lastSaveTimestamp: number | null;
+  readonly intervalMs: number;
 }
 
 /**
@@ -54,6 +38,7 @@ export interface AutosaveControllerOptions {
   readonly intervalMs?: number;
   readonly slotId?: string;
   readonly enableBeforeUnload?: boolean;
+  readonly onStatusChange?: (status: AutosaveStatus) => void;
 }
 
 /**
@@ -73,8 +58,9 @@ export class AutosaveController {
   private readonly intervalMs: number;
   private readonly slotId: string;
   private readonly enableBeforeUnload: boolean;
+  private readonly onStatusChange?: (status: AutosaveStatus) => void;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
-  private lastSaveTimestamp = 0;
+  private lastSaveTimestamp: number | null = null;
   private saveInProgress = false;
   private isActive = false;
 
@@ -91,6 +77,7 @@ export class AutosaveController {
     );
     this.slotId = options.slotId ?? DEFAULT_SLOT_ID;
     this.enableBeforeUnload = options.enableBeforeUnload ?? true;
+    this.onStatusChange = options.onStatusChange;
   }
 
   /**
@@ -112,6 +99,9 @@ export class AutosaveController {
     if (this.enableBeforeUnload && typeof window !== 'undefined') {
       window.addEventListener('beforeunload', this.handleBeforeUnload);
     }
+
+    // Notify listeners of status change
+    this.notifyStatusChange();
   }
 
   /**
@@ -132,6 +122,9 @@ export class AutosaveController {
     if (this.enableBeforeUnload && typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', this.handleBeforeUnload);
     }
+
+    // Notify listeners of status change
+    this.notifyStatusChange();
   }
 
   /**
@@ -156,13 +149,14 @@ export class AutosaveController {
 
     // Throttle saves unless forced
     if (!force) {
-      const elapsed = Date.now() - this.lastSaveTimestamp;
+      const elapsed = this.lastSaveTimestamp !== null ? Date.now() - this.lastSaveTimestamp : Infinity;
       if (elapsed < MIN_AUTOSAVE_INTERVAL_MS) {
         return;
       }
     }
 
     this.saveInProgress = true;
+    this.notifyStatusChange();
 
     try {
       // Request snapshot from worker
@@ -192,6 +186,7 @@ export class AutosaveController {
       });
     } finally {
       this.saveInProgress = false;
+      this.notifyStatusChange();
     }
   }
 
@@ -239,5 +234,38 @@ export class AutosaveController {
    */
   getIntervalMs(): number {
     return this.intervalMs;
+  }
+
+  /**
+   * Returns whether a save operation is currently in progress.
+   */
+  isSaving(): boolean {
+    return this.saveInProgress;
+  }
+
+  /**
+   * Returns the timestamp of the last successful save, or null if no save has occurred.
+   */
+  getLastSaveTimestamp(): number | null {
+    return this.lastSaveTimestamp;
+  }
+
+  /**
+   * Returns the current autosave status.
+   */
+  getStatus(): AutosaveStatus {
+    return {
+      isActive: this.isActive,
+      isSaving: this.saveInProgress,
+      lastSaveTimestamp: this.lastSaveTimestamp,
+      intervalMs: this.intervalMs,
+    };
+  }
+
+  /**
+   * Notifies listeners of status changes.
+   */
+  private notifyStatusChange(): void {
+    this.onStatusChange?.(this.getStatus());
   }
 }

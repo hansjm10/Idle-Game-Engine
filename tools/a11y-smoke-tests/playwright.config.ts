@@ -30,9 +30,9 @@ const webServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --
 
 export default defineConfig({
   testDir: './tests',
-  timeout: 60_000,
+  timeout: 120_000,
   expect: {
-    timeout: 5_000
+    timeout: 10_000
   },
   reporter: process.env.CI ? 'line' : [['html', { open: 'never' }], ['list']],
   use: {

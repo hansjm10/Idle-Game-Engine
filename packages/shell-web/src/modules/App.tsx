@@ -1,12 +1,17 @@
 import { useCallback } from 'react';
+import { sampleContent } from '@idle-engine/content-sample';
 
 import { EventInspector } from './EventInspector.js';
 import { SocialDevPanel } from './SocialDevPanel.js';
+import { PersistenceIntegration } from './PersistenceIntegration.js';
+import { ErrorBoundary } from './ErrorBoundary.js';
 import {
   ShellStateProvider,
   useShellBridge,
   useShellState,
 } from './ShellStateProvider.js';
+import errorStyles from './ErrorBoundary.module.css';
+import appStyles from './App.module.css';
 
 const EVENT_HISTORY_LIMIT = 50;
 
@@ -42,6 +47,48 @@ function ShellAppSurface(): JSX.Element {
       <EventInspector />
 
       {socialEnabled ? <SocialDevPanel /> : null}
+
+      <ErrorBoundary
+        boundaryName="PersistenceUI"
+        fallback={(error, retry, dismiss) => (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className={errorStyles.errorAlert}
+          >
+            <h3 className={errorStyles.errorHeading}>
+              Persistence System Error
+            </h3>
+            <p className={errorStyles.errorMessage}>
+              The save/load system encountered an error: {error.message}
+            </p>
+            <p className={appStyles.persistenceWarning}>
+              You can continue playing, but save/load features may be unavailable.
+            </p>
+            <div className={errorStyles.errorActions}>
+              <button
+                onClick={retry}
+                className={errorStyles.retryButton}
+                type="button"
+              >
+                Retry
+              </button>
+              <button
+                onClick={dismiss}
+                className={errorStyles.dismissButton}
+                type="button"
+              >
+                Hide
+              </button>
+            </div>
+          </div>
+        )}
+      >
+        <PersistenceIntegration
+          bridge={bridge}
+          definitions={sampleContent.resources}
+        />
+      </ErrorBoundary>
     </main>
   );
 }

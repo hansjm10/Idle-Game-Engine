@@ -1,0 +1,77 @@
+/**
+ * Main Entry Point Styles
+ *
+ * CSS Module for the root-level error boundary fallback UI.
+ * This handles critical application failures that prevent the app from loading.
+ *
+ * Design:
+ * - Full viewport height centered layout
+ * - Card-based container for error content
+ * - High visibility with red error theming
+ * - Uses CSS variables from variables.css for consistent theming
+ */
+
+/* Full viewport centered container */
+.rootErrorContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--spacing-xl);
+  font-family: system-ui;
+  background-color: var(--color-error-bg);
+}
+
+/* Error card/panel */
+.rootErrorCard {
+  max-width: 32rem;
+  padding: var(--spacing-xl);
+  border: 2px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-white);
+}
+
+/* Main heading */
+.rootErrorHeading {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-error-text);
+}
+
+/* Description paragraph */
+.rootErrorDescription {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 1rem;
+  color: var(--color-error-text-light);
+}
+
+/* Error message */
+.rootErrorMessage {
+  margin: 0 0 var(--spacing-lg) 0;
+  font-size: 0.875rem;
+  color: var(--color-error-text);
+}
+
+/* Reload button */
+.rootErrorButton {
+  width: 100%;
+  padding: 0.75rem var(--spacing-lg);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-bg-white);
+  background-color: var(--color-error-border);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.rootErrorButton:hover {
+  background-color: var(--color-error-hover);
+}
+
+.rootErrorButton:focus-visible {
+  outline: 2px solid var(--color-error-border);
+  outline-offset: 2px;
+}
