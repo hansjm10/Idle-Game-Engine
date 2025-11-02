@@ -1,7 +1,7 @@
 # Persistence Migration Guide
 
 **Last Updated:** 2025-11-02
-**Status:** Migration execution not yet implemented (see Issue #155)
+**Status:** ✅ Migration execution fully implemented (Issue #155)
 
 This guide explains how to author migrations for persisted game state in the Idle Game Engine. It covers the migration system architecture, authoring workflow, testing practices, and current implementation status.
 
@@ -124,9 +124,9 @@ When `reconcileSaveAgainstDefinitions()` detects incompatibility (removed resour
 
 ### Where to Place Migrations
 
-**Current Status:** ⚠️ Migration execution infrastructure not yet implemented. This section describes the intended design.
+**Current Status:** ✅ Migration registration API is implemented and available.
 
-**Note:** The `registerMigration()` and `applyMigration()` APIs shown below are **placeholder examples** for the future migration system. These functions do not currently exist in `@idle-engine/shell-web`.
+**Note:** The `registerMigration()` and `findMigrationPath()` APIs are now available in `@idle-engine/shell-web`. Content packs can register migrations at initialization time.
 
 Content pack migrations should be registered at pack initialization:
 
@@ -230,12 +230,11 @@ function migrateResourceRename(state: SerializedResourceState): SerializedResour
   return {
     ...state,
     ids: newIds,
-    // definitionDigest will be recomputed automatically by the engine
   };
 }
 ```
 
-**Note:** The `definitionDigest` is automatically recomputed by the engine during validation, so migrations don't need to manually set it.
+**IMPORTANT:** Do NOT manually set the `definitionDigest` field in migration transforms. The digest is automatically stripped and recomputed by the engine during validation to ensure it matches the migrated IDs. If you include a stale digest, re-validation will fail.
 
 ### Pattern: Resource Merge
 
@@ -626,32 +625,29 @@ The `runtimeVersion` is **automatically set** from `@idle-engine/core`'s `packag
 ✅ **Content digest computation and validation** - Detects when definitions change
 ✅ **Graceful handling of added resources** - New resources initialize to defaults
 ✅ **Checksum validation** - Detects corrupted snapshots using SHA-256
-✅ **Telemetry for migration events** - `PersistenceMigrationRequired` emitted when needed
+✅ **Telemetry for migration events** - `PersistenceMigrationRequired`, `PersistenceMigrationApplied`, `PersistenceMigrationFailed` emitted
 ✅ **Comprehensive test infrastructure** - Unit, integration, and fixture tests
+✅ **Migration registry** - `packages/shell-web/src/modules/migration-registry.ts` with BFS pathfinding
+✅ **Migration execution** - `session-restore.ts:attemptMigration()` applies transforms and re-validates
+✅ **Public API** - `registerMigration()`, `findMigrationPath()`, `applyMigrations()` exported
+✅ **Content pack manifests** - `StoredSessionSnapshot.contentPacks` field for tracking pack versions
 
-### Critical Gaps ⚠️
+### Known Limitations
 
-❌ **No migration execution** - `session-restore.ts:101-113` contains only a stub that throws "migration not yet implemented"
-❌ **No migration registry** - No API to register or discover content pack migrations
-❌ **No CLI tooling** - No commands to generate migration scaffolds or validate determinism
-❌ **No migration templates** - No example migrations to use as reference
-❌ **No resourceDeltas support** - `RESTORE_SESSION` message accepts deltas but they're never populated
-
-### Partially Implemented
-
-⚠️ **Migration flag detection** - System correctly identifies when migration is needed, but can't execute it
-⚠️ **Validation infrastructure** - `reconcileSaveAgainstDefinitions()` works for simple cases but can't apply transforms
-⚠️ **Telemetry events** - `PersistenceMigrationApplied` defined but never emitted
+⚠️ **No CLI tooling** - No commands to generate migration scaffolds or validate determinism
+⚠️ **No migration templates** - No example migrations in real content packs yet (coming soon)
+⚠️ **No resourceDeltas support** - `RESTORE_SESSION` message accepts deltas but they're never populated
+⚠️ **Content pack manifest population** - Field exists but not yet populated during save operations
 
 ### Follow-Up Tooling (Future Work)
 
-Track these in issues:
+Track these in future issues:
 
-- **Migration registry** (Issue #155) - API for registering and chaining migrations
 - **CLI scaffold generator** - `npx idle-engine generate migration` command
 - **Checksum helpers** - Utilities for computing and verifying migration determinism
-- **Migration path solver** - Automatically compute shortest migration chain
 - **Diagnostic tools** - CLI to inspect save files and test migrations offline
+- **Content pack manifest population** - Auto-populate `contentPacks` during save operations
+- **Example migrations** - Add real migration examples to sample content pack
 
 ## References
 
@@ -681,4 +677,4 @@ Track these in issues:
 
 ---
 
-**Note:** This guide documents the intended migration system design. Several critical components are not yet implemented (see [Current Implementation Status](#current-implementation-status--tooling-gaps)). Content pack authors should be aware that migration execution is planned but not available until Issue #155 is resolved.
+**Note:** The migration system is fully implemented as of Issue #155. The core registry, pathfinding, and execution logic are complete and tested. Content pack authors can register migrations using the `registerMigration()` API. Remember that migration transforms should NOT manually set the `definitionDigest` field - it is automatically stripped and recomputed during validation to ensure correctness.

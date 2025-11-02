@@ -36,8 +36,31 @@ const STORE_NAME = 'sessions';
 const MAX_SNAPSHOTS_PER_SLOT = 5;
 
 /**
+ * Content pack manifest embedded in save files for migration tracking.
+ * Captures pack identity, version, and content digest at save time.
+ */
+export interface ContentPackManifest {
+  /**
+   * Content pack identifier (slug).
+   */
+  readonly id: string;
+
+  /**
+   * Semantic version of the content pack.
+   */
+  readonly version: string;
+
+  /**
+   * Content digest capturing resource definitions at save time.
+   */
+  readonly digest: ResourceDefinitionDigest;
+}
+
+/**
  * Stored session snapshot payload matching the schema from
  * docs/runtime-react-worker-bridge-design.md §14.1.
+ *
+ * Extended to include content pack manifests for migration support (Issue #155).
  */
 export interface StoredSessionSnapshot {
   readonly schemaVersion: number;
@@ -48,6 +71,14 @@ export interface StoredSessionSnapshot {
   readonly state: SerializedResourceState;
   readonly runtimeVersion: string;
   readonly contentDigest: ResourceDefinitionDigest;
+  /**
+   * Content pack manifests for migration tracking.
+   * Each entry captures the pack's identity, version, and digest at save time.
+   * Used to detect content changes and trigger migrations on load.
+   *
+   * @since schemaVersion 1 (Issue #155)
+   */
+  readonly contentPacks?: readonly ContentPackManifest[];
   readonly flags?: {
     readonly pendingMigration?: boolean;
     readonly abortedRestore?: boolean;
