@@ -1,7 +1,8 @@
 import {
   reconcileSaveAgainstDefinitions,
+  createDefinitionDigest,
   type ResourceDefinition,
-  type ResourceDefinitionDigest,
+  type ResourceDefinitionReconciliation,
   type SerializedResourceState,
 } from '@idle-engine/core';
 
@@ -309,6 +310,101 @@ interface MigrationAttemptResult {
 }
 
 /**
+ * Result of revalidating migrated state.
+ */
+interface RevalidationResult {
+  readonly success: boolean;
+  readonly reconciliation?: ResourceDefinitionReconciliation;
+  readonly error?: SessionPersistenceError;
+}
+
+/**
+ * Revalidates migrated state against current definitions.
+ *
+ * This helper encapsulates the complex validation and compatibility checking
+ * logic that occurs after migration transforms are applied.
+ *
+ * @param migratedState - State after migration transforms
+ * @param definitions - Current resource definitions
+ * @param slotId - Slot ID for telemetry and logging
+ * @returns Validation result with reconciliation data or error
+ */
+function revalidateMigratedState(
+  migratedState: SerializedResourceState,
+  definitions: readonly ResourceDefinition[],
+  slotId: string,
+): RevalidationResult {
+  // Attempt reconciliation against current definitions
+  let reconciliation: ResourceDefinitionReconciliation;
+  try {
+    reconciliation = reconcileSaveAgainstDefinitions(
+      migratedState,
+      definitions,
+    );
+  } catch (error) {
+    // Migration produced state that throws during validation
+    const validationError = error instanceof Error ? error : new Error(String(error));
+
+    // eslint-disable-next-line no-console
+    console.error('[SessionRestore] Migration produced invalid state', {
+      slotId,
+      error: validationError.message,
+    });
+
+    recordTelemetryError('PersistenceMigrationFailed', {
+      reason: 'validation_failed_after_migration',
+      slotId,
+      error: validationError.message,
+    });
+
+    return {
+      success: false,
+      error: new SessionPersistenceError(
+        'Migration completed but state is still invalid',
+        'MIGRATION_VALIDATION_FAILED',
+        { error: validationError.message },
+      ),
+    };
+  }
+
+  // Check if migration result is compatible
+  const stillIncompatible = reconciliation.removedIds.length > 0;
+  if (stillIncompatible) {
+    // eslint-disable-next-line no-console
+    console.error('[SessionRestore] Migration did not resolve incompatibilities', {
+      slotId,
+      removedIds: reconciliation.removedIds,
+      addedIds: reconciliation.addedIds,
+      digestsMatch: reconciliation.digestsMatch,
+    });
+
+    recordTelemetryError('PersistenceMigrationFailed', {
+      reason: 'still_incompatible_after_migration',
+      slotId,
+      removedIds: reconciliation.removedIds,
+    });
+
+    return {
+      success: false,
+      error: new SessionPersistenceError(
+        'Migration completed but state still has incompatibilities',
+        'MIGRATION_INCOMPLETE',
+        {
+          removedIds: reconciliation.removedIds,
+          digestsMatch: reconciliation.digestsMatch,
+        },
+      ),
+    };
+  }
+
+  // Validation succeeded
+  return {
+    success: true,
+    reconciliation,
+  };
+}
+
+/**
  * Attempts to migrate a snapshot to be compatible with current definitions.
  *
  * Process:
@@ -329,7 +425,9 @@ async function attemptMigration(
 ): Promise<MigrationAttemptResult> {
   try {
     // Compute current digest from definitions
-    const currentDigest = computeDigestFromDefinitions(definitions);
+    const currentDigest = createDefinitionDigest(
+      definitions.map((def) => def.id),
+    );
 
     // Find migration path from snapshot digest to current digest
     const migrationPath = findMigrationPath(
@@ -393,69 +491,20 @@ async function attemptMigration(
 
     // Strip the old definitionDigest so reconcileSaveAgainstDefinitions can reconstruct it
     // from the new IDs. This ensures the digest matches the migrated state.
-    const { definitionDigest: _unusedDigest, ...stateWithoutDigest } = migratedState;
+    const { definitionDigest: _oldDigest, ...stateWithoutDigest } = migratedState;
     migratedState = stateWithoutDigest as SerializedResourceState;
 
     // Re-validate after migration
-    let revalidation;
-    try {
-      revalidation = reconcileSaveAgainstDefinitions(
-        migratedState,
-        definitions,
-      );
-    } catch (error) {
-      // Migration produced state that throws during validation
-      const validationError = error instanceof Error ? error : new Error(String(error));
+    const revalidationResult = revalidateMigratedState(
+      migratedState,
+      definitions,
+      slotId,
+    );
 
-      // eslint-disable-next-line no-console
-      console.error('[SessionRestore] Migration produced invalid state', {
-        slotId,
-        error: validationError.message,
-      });
-
-      recordTelemetryError('PersistenceMigrationFailed', {
-        reason: 'validation_failed_after_migration',
-        slotId,
-        error: validationError.message,
-      });
-
+    if (!revalidationResult.success) {
       return {
         success: false,
-        error: new SessionPersistenceError(
-          'Migration completed but state is still invalid',
-          'MIGRATION_VALIDATION_FAILED',
-          { error: validationError.message },
-        ),
-      };
-    }
-
-    // Check if migration result is compatible
-    const stillIncompatible = revalidation.removedIds.length > 0;
-    if (stillIncompatible) {
-      // eslint-disable-next-line no-console
-      console.error('[SessionRestore] Migration did not resolve incompatibilities', {
-        slotId,
-        removedIds: revalidation.removedIds,
-        addedIds: revalidation.addedIds,
-        digestsMatch: revalidation.digestsMatch,
-      });
-
-      recordTelemetryError('PersistenceMigrationFailed', {
-        reason: 'still_incompatible_after_migration',
-        slotId,
-        removedIds: revalidation.removedIds,
-      });
-
-      return {
-        success: false,
-        error: new SessionPersistenceError(
-          'Migration completed but state still has incompatibilities',
-          'MIGRATION_INCOMPLETE',
-          {
-            removedIds: revalidation.removedIds,
-            digestsMatch: revalidation.digestsMatch,
-          },
-        ),
+        error: revalidationResult.error,
       };
     }
 
@@ -492,46 +541,6 @@ async function attemptMigration(
         : new Error(String(error)),
     };
   }
-}
-
-/**
- * Computes a content digest from resource definitions.
- * Mirrors the digest computation in the core runtime.
- *
- * @param definitions - Resource definitions
- * @returns Content digest
- */
-function computeDigestFromDefinitions(
-  definitions: readonly ResourceDefinition[],
-): ResourceDefinitionDigest {
-  const ids = definitions.map((def) => def.id);
-  return {
-    ids,
-    version: ids.length,
-    hash: computeStableDigest(ids),
-  };
-}
-
-/**
- * Computes FNV-1a hash of resource IDs.
- * Must match the implementation in packages/core/src/resource-state.ts:1828-1841.
- *
- * @param ids - Ordered resource IDs
- * @returns Hash string in format "fnv1a-{hex}"
- */
-function computeStableDigest(ids: readonly string[]): string {
-  let hash = 0x811c9dc5;
-  for (const id of ids) {
-    for (let i = 0; i < id.length; i += 1) {
-      hash ^= id.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193);
-      hash >>>= 0;
-    }
-    hash ^= 0xff;
-    hash = Math.imul(hash, 0x01000193);
-    hash >>>= 0;
-  }
-  return `fnv1a-${hash.toString(16).padStart(8, '0')}`;
 }
 
 /**
@@ -604,7 +613,9 @@ export function validateSaveCompatibility(
   }
 
   // Check if migration is available
-  const currentDigest = computeDigestFromDefinitions(definitions);
+  const currentDigest = createDefinitionDigest(
+    definitions.map((def) => def.id),
+  );
   const migrationPath = findMigrationPath(
     snapshot.contentDigest,
     currentDigest,
