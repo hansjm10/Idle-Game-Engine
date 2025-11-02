@@ -2055,8 +2055,17 @@ const validateUnlockConditionCycles = (
         case 'not':
           visit(node.condition);
           break;
-        default:
+        case 'always':
+        case 'never':
+        case 'flag':
+        case 'script':
+          // These conditions don't reference game entities, so no unlock dependencies
           break;
+        default: {
+          // Exhaustive check - TypeScript will error if new kinds are added
+          const _exhaustive: never = node;
+          return _exhaustive;
+        }
       }
     };
 
