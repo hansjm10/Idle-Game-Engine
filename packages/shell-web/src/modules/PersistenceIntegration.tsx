@@ -3,30 +3,11 @@ import type { ResourceDefinition } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';
 import { SessionPersistenceAdapter } from './session-persistence-adapter.js';
-import { AutosaveController, DEFAULT_SLOT_ID } from './autosave-controller.js';
+import { AutosaveController, DEFAULT_SLOT_ID, type AutosaveStatus } from './autosave-controller.js';
 import { restoreSession as performRestore } from './session-restore.js';
 import { PersistencePanel } from './PersistencePanel.js';
 import { isPersistenceUIEnabled } from './persistence-config.js';
-
-/**
- * Telemetry facade interface for recording persistence events.
- */
-type TelemetryFacade = {
-  recordError?: (event: string, data?: Record<string, unknown>) => void;
-  recordEvent?: (event: string, data?: Record<string, unknown>) => void;
-};
-
-function getTelemetryFacade(): TelemetryFacade | undefined {
-  return (globalThis as { __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade })
-    .__IDLE_ENGINE_TELEMETRY__;
-}
-
-function recordTelemetryEvent(
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  getTelemetryFacade()?.recordEvent?.(event, data);
-}
+import { recordTelemetryEvent } from './telemetry-utils.js';
 
 /**
  * Props for PersistenceIntegration component.
@@ -59,6 +40,12 @@ export function PersistenceIntegration({
   const adapterRef = useRef<SessionPersistenceAdapter | null>(null);
   const autosaveRef = useRef<AutosaveController | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus | null>(null);
+
+  // Callback to update autosave status
+  const handleAutosaveStatusChange = useCallback((status: AutosaveStatus) => {
+    setAutosaveStatus(status);
+  }, []);
 
   // Initialize adapter and autosave controller
   useEffect(() => {
@@ -72,6 +59,7 @@ export function PersistenceIntegration({
     const autosave = new AutosaveController(bridge, adapter, {
       slotId,
       intervalMs: autosaveIntervalMs,
+      onStatusChange: handleAutosaveStatusChange,
     });
     autosaveRef.current = autosave;
 
@@ -148,7 +136,7 @@ export function PersistenceIntegration({
       adapterRef.current = null;
       autosaveRef.current = null;
     };
-  }, [bridge, definitions, slotId, autosaveIntervalMs, isEnabled]);
+  }, [bridge, definitions, slotId, autosaveIntervalMs, isEnabled, handleAutosaveStatusChange]);
 
   const handleSave = useCallback(async (snapshot: SessionSnapshotPayload) => {
     const adapter = adapterRef.current;
@@ -213,6 +201,7 @@ export function PersistenceIntegration({
       onSave={handleSave}
       onLoad={handleLoad}
       onClear={handleClear}
+      autosaveStatus={autosaveStatus}
     />
   );
 }

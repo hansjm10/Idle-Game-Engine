@@ -1,31 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-/**
- * Telemetry facade interface for recording error boundary events.
- */
-type TelemetryFacade = {
-  recordError?: (event: string, data?: Record<string, unknown>) => void;
-  recordEvent?: (event: string, data?: Record<string, unknown>) => void;
-};
-
-function getTelemetryFacade(): TelemetryFacade | undefined {
-  return (globalThis as { __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade })
-    .__IDLE_ENGINE_TELEMETRY__;
-}
-
-function recordTelemetryError(
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  getTelemetryFacade()?.recordError?.(event, data);
-}
-
-function recordTelemetryEvent(
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  getTelemetryFacade()?.recordEvent?.(event, data);
-}
+import { recordTelemetryError, recordTelemetryEvent } from './telemetry-utils.js';
 
 /**
  * Props for ErrorBoundary component.

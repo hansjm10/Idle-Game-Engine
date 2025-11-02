@@ -1,27 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SessionSnapshotPayload } from './worker-bridge.js';
 import type { WorkerBridge } from './worker-bridge.js';
 import { SessionPersistenceError } from './session-persistence-adapter.js';
-
-/**
- * Telemetry facade interface for recording persistence events.
- */
-type TelemetryFacade = {
-  recordError?: (event: string, data?: Record<string, unknown>) => void;
-  recordEvent?: (event: string, data?: Record<string, unknown>) => void;
-};
-
-function getTelemetryFacade(): TelemetryFacade | undefined {
-  return (globalThis as { __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade })
-    .__IDLE_ENGINE_TELEMETRY__;
-}
-
-function recordTelemetryEvent(
-  event: string,
-  data: Record<string, unknown>,
-): void {
-  getTelemetryFacade()?.recordEvent?.(event, data);
-}
+import { recordTelemetryEvent } from './telemetry-utils.js';
+import type { AutosaveStatus } from './autosave-controller.js';
 
 /**
  * Toast notification type for persistence operations.
@@ -47,6 +29,7 @@ export interface PersistencePanelProps {
   onLoad?: () => Promise<void>;
   onClear?: () => Promise<void>;
   toastTimeoutMs?: number;
+  autosaveStatus?: AutosaveStatus | null;
 }
 
 /**
@@ -66,12 +49,16 @@ export function PersistencePanel({
   onLoad,
   onClear,
   toastTimeoutMs = DEFAULT_TOAST_TIMEOUT_MS,
+  autosaveStatus,
 }: PersistencePanelProps): JSX.Element {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [toasts, setToasts] = useState<PersistenceToast[]>([]);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // Track timeout IDs to clean them up on unmount or manual dismissal
+  const timeoutIdsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const addToast = useCallback((toast: Omit<PersistenceToast, 'id'>) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
@@ -80,14 +67,24 @@ export function PersistencePanel({
     // Auto-dismiss success and info toasts after timeout.
     // Error toasts persist until manually dismissed for accessibility.
     if (toast.type !== 'error') {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
+        timeoutIdsRef.current.delete(id);
       }, toastTimeoutMs);
+
+      timeoutIdsRef.current.set(id, timeoutId);
     }
   }, [toastTimeoutMs]);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+
+    // Clear timeout if exists
+    const timeoutId = timeoutIdsRef.current.get(id);
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+      timeoutIdsRef.current.delete(id);
+    }
   }, []);
 
   const handleManualSave = useCallback(async () => {
@@ -225,6 +222,16 @@ export function PersistencePanel({
     };
   }, [bridge, addToast]);
 
+  // Clean up all pending toast timeouts on unmount
+  useEffect(() => {
+    return () => {
+      timeoutIdsRef.current.forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      timeoutIdsRef.current.clear();
+    };
+  }, []);
+
   return (
     <section
       aria-labelledby="persistence-panel-heading"
@@ -298,12 +305,48 @@ export function PersistencePanel({
       </div>
 
       {lastSaved && (
-        <p style={{ fontSize: 14, color: '#666', margin: 0 }}>
-          <strong>Last saved:</strong>{' '}
+        <p style={{ fontSize: 14, color: '#666', margin: '8px 0 0 0' }}>
+          <strong>Last manual save:</strong>{' '}
           <time dateTime={lastSaved.toISOString()}>
             {lastSaved.toLocaleString()}
           </time>
         </p>
+      )}
+
+      {autosaveStatus && (
+        <div style={{ fontSize: 14, color: '#666', marginTop: 8 }}>
+          <p style={{ margin: 0 }}>
+            <strong>Autosave:</strong>{' '}
+            {autosaveStatus.isActive ? (
+              <span>
+                {autosaveStatus.isSaving ? (
+                  <span style={{ color: '#2563eb' }}>
+                    Saving...{' '}
+                    <span
+                      aria-label="Autosave in progress"
+                      style={{ display: 'inline-block', animation: 'pulse 1.5s ease-in-out infinite' }}
+                    >
+                      ●
+                    </span>
+                  </span>
+                ) : (
+                  <span style={{ color: '#059669' }}>Active</span>
+                )}
+                {' '}(every {Math.round(autosaveStatus.intervalMs / 1000)}s)
+              </span>
+            ) : (
+              <span style={{ color: '#6b7280' }}>Idle</span>
+            )}
+          </p>
+          {autosaveStatus.lastSaveTimestamp && (
+            <p style={{ margin: '4px 0 0 0', fontSize: 13 }}>
+              Last autosave:{' '}
+              <time dateTime={new Date(autosaveStatus.lastSaveTimestamp).toISOString()}>
+                {new Date(autosaveStatus.lastSaveTimestamp).toLocaleString()}
+              </time>
+            </p>
+          )}
+        </div>
       )}
 
       {isSaving && (
@@ -312,7 +355,7 @@ export function PersistencePanel({
           aria-live="polite"
           style={{ fontSize: 14, color: '#666', marginTop: 8 }}
         >
-          Saving in progress...
+          Manual save in progress...
         </div>
       )}
 
