@@ -258,6 +258,7 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 - Content packs publish digests; the adapter compares stored `contentDigest` against the live pack before restore. When digests diverge but a pack-supplied migration exists, the adapter runs it prior to calling `restoreSession`.
 - Schema upgrades use IndexedDB version migrations. Each bump records a deterministic transform function so older saves can be rewritten in place without loading them into the worker.
 - Record `runtimeVersion` and `persistenceSchemaVersion` to gate restores when the runtime introduces breaking changes. Future workers can advertise supported versions via `READY { supportedPersistence }`.
+- For detailed guidance on authoring migrations, see [Persistence Migration Guide](./persistence-migration-guide.md).
 
 **Risks & Mitigations**
 - *Quota exhaustion*: add size guards (e.g., trim history to `MAX_SNAPSHOTS_PER_SLOT`) and surface telemetry when writes fail. Provide user-facing guidance to clear space.
@@ -274,7 +275,7 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 1. Extend `runtime-worker-protocol.ts` with `REQUEST_SESSION_SNAPSHOT` / `SESSION_SNAPSHOT` message definitions and update runtime.worker harness.
 2. Implement `SessionPersistenceAdapter` and autosave controller inside `packages/shell-web`, including IndexedDB schema management (`sessions` store keyed by slot/profile).
 3. Ship shell UI affordances for manual save/load, error reporting, and migration prompts (flagged behind dev toggle until persistence stabilises).
-4. Document migration authoring guidelines for content pack maintainers alongside updated CLI scaffolding.
+4. ~~Document migration authoring guidelines for content pack maintainers alongside updated CLI scaffolding.~~ **Completed**: See [Persistence Migration Guide](./persistence-migration-guide.md) (Issue [#273](https://github.com/hansjm10/Idle-Game-Engine/issues/273)).
 
 **Open Questions**
 - Do we need encryption or obfuscation for competitive modes? (Out of scope for v1, document in security backlog.)
