@@ -125,10 +125,47 @@ class MigrationRegistry {
       );
     }
 
-    if (descriptor.fromDigest.hash === descriptor.toDigest.hash) {
+    // Validate version is positive
+    if (descriptor.fromDigest.version <= 0 || descriptor.toDigest.version <= 0) {
+      throw new Error(
+        `Migration "${descriptor.id}" has invalid digest version (must be > 0)`,
+      );
+    }
+
+    // Validate version matches ids.length
+    if (descriptor.fromDigest.version !== descriptor.fromDigest.ids.length) {
+      throw new Error(
+        `Migration "${descriptor.id}" fromDigest version (${descriptor.fromDigest.version}) must equal ids.length (${descriptor.fromDigest.ids.length})`,
+      );
+    }
+
+    if (descriptor.toDigest.version !== descriptor.toDigest.ids.length) {
+      throw new Error(
+        `Migration "${descriptor.id}" toDigest version (${descriptor.toDigest.version}) must equal ids.length (${descriptor.toDigest.ids.length})`,
+      );
+    }
+
+    if (
+      descriptor.fromDigest.hash === descriptor.toDigest.hash &&
+      descriptor.fromDigest.version === descriptor.toDigest.version
+    ) {
       throw new Error(
         `Migration "${descriptor.id}" has identical source and target digests. No migration needed.`,
       );
+    }
+
+    // Prevent duplicate edges (same fromDigest->toDigest path)
+    for (const existing of this.migrations.values()) {
+      if (
+        existing.fromDigest.hash === descriptor.fromDigest.hash &&
+        existing.fromDigest.version === descriptor.fromDigest.version &&
+        existing.toDigest.hash === descriptor.toDigest.hash &&
+        existing.toDigest.version === descriptor.toDigest.version
+      ) {
+        throw new Error(
+          `Migration "${descriptor.id}" creates duplicate edge from ${descriptor.fromDigest.hash}:${descriptor.fromDigest.version} to ${descriptor.toDigest.hash}:${descriptor.toDigest.version}. Existing migration "${existing.id}" already covers this path.`,
+        );
+      }
     }
 
     this.migrations.set(descriptor.id, descriptor);
@@ -157,8 +194,15 @@ class MigrationRegistry {
     fromDigest: ResourceDefinitionDigest,
     toDigest: ResourceDefinitionDigest,
   ): MigrationPath {
-    // If digests match, no migration needed
-    if (fromDigest.hash === toDigest.hash) {
+    // Helper to create composite key from digest (prevents hash collisions)
+    const digestKey = (digest: ResourceDefinitionDigest): string =>
+      `${digest.hash}:${digest.version}`;
+
+    // If digests match (both hash and version), no migration needed
+    if (
+      fromDigest.hash === toDigest.hash &&
+      fromDigest.version === toDigest.version
+    ) {
       return {
         migrations: [],
         fromDigest,
@@ -167,27 +211,27 @@ class MigrationRegistry {
       };
     }
 
-    // Build adjacency graph: hash -> list of migrations starting from that hash
+    // Build adjacency graph: composite key -> list of migrations starting from that digest
     const graph = new Map<string, MigrationDescriptor[]>();
     for (const migration of this.migrations.values()) {
-      const sourceHash = migration.fromDigest.hash;
-      if (!graph.has(sourceHash)) {
-        graph.set(sourceHash, []);
+      const sourceKey = digestKey(migration.fromDigest);
+      if (!graph.has(sourceKey)) {
+        graph.set(sourceKey, []);
       }
-      graph.get(sourceHash)!.push(migration);
+      graph.get(sourceKey)!.push(migration);
     }
 
     // BFS to find shortest path
-    const queue: Array<{ hash: string; path: MigrationDescriptor[] }> = [
-      { hash: fromDigest.hash, path: [] },
+    const queue: Array<{ key: string; path: MigrationDescriptor[] }> = [
+      { key: digestKey(fromDigest), path: [] },
     ];
-    const visited = new Set<string>([fromDigest.hash]);
+    const visited = new Set<string>([digestKey(fromDigest)]);
 
     while (queue.length > 0) {
       const current = queue.shift()!;
 
       // Check if we reached target
-      if (current.hash === toDigest.hash) {
+      if (current.key === digestKey(toDigest)) {
         return {
           migrations: current.path,
           fromDigest,
@@ -197,13 +241,13 @@ class MigrationRegistry {
       }
 
       // Explore neighbors
-      const neighbors = graph.get(current.hash) ?? [];
+      const neighbors = graph.get(current.key) ?? [];
       for (const migration of neighbors) {
-        const nextHash = migration.toDigest.hash;
-        if (!visited.has(nextHash)) {
-          visited.add(nextHash);
+        const nextKey = digestKey(migration.toDigest);
+        if (!visited.has(nextKey)) {
+          visited.add(nextKey);
           queue.push({
-            hash: nextHash,
+            key: nextKey,
             path: [...current.path, migration],
           });
         }

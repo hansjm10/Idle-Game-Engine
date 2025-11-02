@@ -77,7 +77,7 @@ interface StoredSessionSnapshot {
    ↓
 4. Check if migration required (digest mismatch, removed resources)
    ↓
-5. Apply content pack migrations (if registered) ⚠️ NOT YET IMPLEMENTED
+5. Apply content pack migrations (if registered)
    ↓
 6. bridge.restoreSession({ state, elapsedMs, resourceDeltas })
 ```
@@ -96,7 +96,7 @@ interface ResourceDefinitionDigest {
 }
 ```
 
-The digest is computed using **FNV-1a hash** for determinism across environments (see `packages/core/src/resource-state.ts:1818-1826`).
+The digest is computed using **FNV-1a hash** for determinism across environments (see `createDefinitionDigest()` in `packages/core/src/resource-state.ts`).
 
 ### Validation Rules
 
@@ -109,7 +109,7 @@ When loading a save, the engine compares the saved digest against the current co
 | **Resources reordered** | Hash mismatch, same IDs | Warning logged, gracefully handled via remapping | No |
 | **Resources renamed** | Old ID removed, new ID added | **FAILS** validation | Yes (migration must transform state) |
 
-Validation logic is implemented in `reconcileSaveAgainstDefinitions()` at `packages/core/src/resource-state.ts:1194-1300`.
+Validation logic is implemented in `reconcileSaveAgainstDefinitions()` in `packages/core/src/resource-state.ts`.
 
 ### How Digest Changes Trigger Migrations
 
@@ -177,19 +177,43 @@ Test migrations using the existing test infrastructure in `packages/shell-web/sr
 ```typescript
 // Example: In your content pack's test suite
 import { describe, it, expect } from 'vitest';
-import { applyMigration } from '@idle-engine/shell-web'; // Placeholder API
+import { registerMigration, findMigrationPath, applyMigrations } from '@idle-engine/shell-web';
+import type { ResourceDefinitionDigest, SerializedResourceState } from '@idle-engine/core';
 
 describe('resource rename migration', () => {
   it('should transform old resource ID to new ID', () => {
+    const oldDigest: ResourceDefinitionDigest = {
+      hash: 'abc123...',
+      version: 2,
+      ids: ['old-resource-id', 'other-resource'],
+    };
+    const newDigest: ResourceDefinitionDigest = {
+      hash: 'def456...',
+      version: 2,
+      ids: ['new-resource-id', 'other-resource'],
+    };
+
+    registerMigration({
+      id: 'my-pack-v2-resource-rename',
+      fromDigest: oldDigest,
+      toDigest: newDigest,
+      transform: (state) => ({
+        ...state,
+        ids: state.ids.map((id) => (id === 'old-resource-id' ? 'new-resource-id' : id)),
+      }),
+    });
+
     const oldState: SerializedResourceState = {
       ids: ['old-resource-id', 'other-resource'],
       amounts: [100, 200],
       capacities: [1000, 2000],
       flags: [0, 0],
-      definitionDigest: { hash: 'abc123...', version: 2, ids: ['old-resource-id', 'other-resource'] },
     };
 
-    const newState = applyMigration('my-pack-v2-resource-rename', oldState);
+    const path = findMigrationPath(oldDigest, newDigest);
+    expect(path.found).toBe(true);
+
+    const newState = applyMigrations(oldState, path.migrations);
 
     expect(newState.ids).toContain('new-resource-id');
     expect(newState.ids).not.toContain('old-resource-id');
@@ -363,11 +387,14 @@ Ensure migrations are deterministic by running them multiple times and verifying
 it('should produce identical results on repeated application', () => {
   const originalState = createTestState();
 
-  const result1 = applyMigration('my-migration', originalState);
-  const result2 = applyMigration('my-migration', originalState);
+  // Get the registered migration
+  const path = findMigrationPath(oldDigest, newDigest);
+  expect(path.found).toBe(true);
+
+  const result1 = applyMigrations(originalState, path.migrations);
+  const result2 = applyMigrations(originalState, path.migrations);
 
   expect(result1).toEqual(result2);
-  expect(result1.definitionDigest.hash).toBe(result2.definitionDigest.hash);
 });
 ```
 
@@ -525,9 +552,16 @@ Test against fixtures:
 
 ```typescript
 import fixtureV1 from './fixtures/saves/v1-to-v2-migration.json';
+import { findMigrationPath, applyMigrations } from '@idle-engine/shell-web';
 
 it('should migrate v1 fixture to v2', () => {
-  const migrated = applyMigration('v1-to-v2', fixtureV1.state); // Placeholder API
+  const oldDigest = fixtureV1.contentDigest;
+  const newDigest = { hash: 'new-hash', version: 1, ids: ['new-resource-id'] };
+
+  const path = findMigrationPath(oldDigest, newDigest);
+  expect(path.found).toBe(true);
+
+  const migrated = applyMigrations(fixtureV1.state, path.migrations);
 
   expect(migrated.ids).toEqual(['new-resource-id']);
   expect(migrated.amounts).toEqual([999]); // Value preserved
@@ -542,16 +576,16 @@ Run migration tests using Vitest:
 
 ```bash
 # Run all migration tests
-npm test -- migration
+pnpm test migration
 
 # Run tests in watch mode during development
-npm test -- --watch migration
+pnpm test --watch migration
 
 # Run specific test file
-npm test -- packages/shell-web/src/migrations/my-pack-migrations.test.ts
+pnpm --filter @idle-engine/shell-web test my-pack-migrations
 
 # Generate coverage report
-npm test -- --coverage migration
+pnpm test --coverage migration
 ```
 
 ### Example Test Cases

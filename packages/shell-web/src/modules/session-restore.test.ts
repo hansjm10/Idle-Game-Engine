@@ -240,6 +240,48 @@ describe('session-restore', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     });
+
+    it('should NOT require migration for digest mismatch when no resources removed (additions only)', async () => {
+      // Create snapshot with old digest but all resources still present
+      const oldDigest = createDefinitionDigest(['resource1', 'resource2']);
+      const snapshot = createMockSnapshot({
+        contentDigest: oldDigest,
+        state: {
+          ids: ['resource1', 'resource2'],
+          amounts: [100, 200],
+          capacities: [1000, 2000],
+          unlocked: [true, false],
+          visible: [true, false],
+          flags: [1, 0],
+          definitionDigest: oldDigest,
+        },
+      });
+
+      mockAdapter.load = vi.fn().mockResolvedValue(snapshot);
+
+      // Current definitions have new resource added (digest will differ)
+      const definitions = [
+        ...createMockDefinitions(),
+        {
+          id: 'resource3',
+          name: 'Resource 3',
+          initialAmount: 0,
+          capacity: 3000,
+          unlocked: false,
+          visible: false,
+        },
+      ];
+
+      const result = await restoreSession(mockBridge, mockAdapter, {
+        slotId: 'default',
+        definitions,
+      });
+
+      // Should succeed without migration since no resources removed
+      expect(result.success).toBe(true);
+      expect(result.validationStatus).toBe('valid'); // NOT 'migrated'
+      expect(mockBridge.restoreSession).toHaveBeenCalled();
+    });
   });
 
   describe('validateSnapshot', () => {

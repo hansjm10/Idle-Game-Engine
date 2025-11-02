@@ -79,7 +79,7 @@ export async function restoreSession(
     }
 
     // Validate snapshot against current resource definitions
-    let reconciliation;
+    let reconciliation: ResourceDefinitionReconciliation | undefined;
     let validationError: Error | undefined;
     try {
       reconciliation = reconcileSaveAgainstDefinitions(
@@ -168,10 +168,11 @@ export async function restoreSession(
     }
 
     // Validation succeeded (no exception), check reconciliation results
+    // Only require migration if resources were removed OR pendingMigration flag is set
+    // Note: Digest mismatches from additions/reordering are handled gracefully by reconciliation
     const needsMigration =
       reconciliation.removedIds.length > 0 ||
-      !reconciliation.digestsMatch ||
-      snapshot.flags?.pendingMigration;
+      snapshot.flags?.pendingMigration === true;
 
     if (needsMigration) {
       // eslint-disable-next-line no-console

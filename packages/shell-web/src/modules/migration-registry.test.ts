@@ -92,6 +92,67 @@ describe('MigrationRegistry', () => {
         }),
       ).toThrow('has identical source and target digests');
     });
+
+    it('should throw if version is zero or negative', () => {
+      expect(() =>
+        registerMigration({
+          id: 'bad-version',
+          fromDigest: { hash: 'fnv1a-00000001', version: 0, ids: [] },
+          toDigest: createDigest('fnv1a-00000002', ['b']),
+          transform: (state) => state,
+        }),
+      ).toThrow('invalid digest version (must be > 0)');
+
+      expect(() =>
+        registerMigration({
+          id: 'negative-version',
+          fromDigest: createDigest('fnv1a-00000001', ['a']),
+          toDigest: { hash: 'fnv1a-00000002', version: -1, ids: ['b'] },
+          transform: (state) => state,
+        }),
+      ).toThrow('invalid digest version (must be > 0)');
+    });
+
+    it('should throw if version does not match ids.length', () => {
+      expect(() =>
+        registerMigration({
+          id: 'version-mismatch-from',
+          fromDigest: { hash: 'fnv1a-00000001', version: 5, ids: ['a', 'b'] }, // version 5 != length 2
+          toDigest: createDigest('fnv1a-00000002', ['c']),
+          transform: (state) => state,
+        }),
+      ).toThrow('fromDigest version (5) must equal ids.length (2)');
+
+      expect(() =>
+        registerMigration({
+          id: 'version-mismatch-to',
+          fromDigest: createDigest('fnv1a-00000001', ['a']),
+          toDigest: { hash: 'fnv1a-00000002', version: 3, ids: ['b'] }, // version 3 != length 1
+          transform: (state) => state,
+        }),
+      ).toThrow('toDigest version (3) must equal ids.length (1)');
+    });
+
+    it('should throw if duplicate edge is registered', () => {
+      const from = createDigest('fnv1a-00000001', ['a']);
+      const to = createDigest('fnv1a-00000002', ['b']);
+
+      registerMigration({
+        id: 'first',
+        fromDigest: from,
+        toDigest: to,
+        transform: (state) => state,
+      });
+
+      expect(() =>
+        registerMigration({
+          id: 'duplicate-edge',
+          fromDigest: from,
+          toDigest: to,
+          transform: (state) => state,
+        }),
+      ).toThrow('creates duplicate edge');
+    });
   });
 
   describe('findMigrationPath', () => {
