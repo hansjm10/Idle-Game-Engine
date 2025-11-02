@@ -39,15 +39,10 @@ describe('Session Restore with Migration', () => {
   const createDefinitions = (ids: string[]): ResourceDefinition[] =>
     ids.map((id) => ({
       id,
-      displayName: id,
-      description: '',
-      icon: '',
-      category: 'currency' as const,
-      initialAmount: 0,
-      maxAmount: null,
-      isPrimary: false,
-      precision: 2,
-      formatting: { type: 'decimal' as const },
+      startAmount: 0,
+      capacity: null,
+      unlocked: true,
+      visible: true,
     }));
 
   beforeEach(() => {
@@ -215,6 +210,39 @@ describe('Session Restore with Migration', () => {
 
       expect(result.compatible).toBe(false);
       expect(result.requiresMigration).toBe(true);
+    });
+
+    it('should report migrationAvailable=true for zero-step path with pendingMigration flag', async () => {
+      const digest = createDigest(['wood']);
+      const definitions = createDefinitions(['wood']);
+
+      // Zero-step scenario: snapshot digest matches current definitions,
+      // but pendingMigration flag forces migration check.
+      // findMigrationPath returns found=true with empty migrations array.
+      const snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 1000,
+        state: {
+          ids: ['wood'],
+          amounts: [50],
+          capacities: [null],
+          flags: [0],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: digest,
+        flags: { pendingMigration: true },
+      };
+
+      const result = validateSaveCompatibility(snapshot, definitions);
+
+      expect(result.compatible).toBe(false);
+      expect(result.requiresMigration).toBe(true);
+      // Zero-step path is always "available" (trivial path where from==to)
+      expect(result.migrationAvailable).toBe(true);
+      expect(result.digestsMatch).toBe(true);
     });
   });
 
@@ -806,6 +834,157 @@ describe('Session Restore with Migration', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('Transformation array alignment edge cases', () => {
+    it('should detect misaligned unlocked array after migration', async () => {
+      const oldDigest = createDigest(['wood', 'stone']);
+      const newDigest = createDigest(['lumber', 'gravel']);
+
+      // Migration that incorrectly transforms only some arrays
+      registerMigration({
+        id: 'broken-unlocked-alignment',
+        fromDigest: oldDigest,
+        toDigest: newDigest,
+        transform: (state) => ({
+          ...state,
+          ids: ['lumber', 'gravel'],
+          amounts: [state.amounts[0], state.amounts[1]],
+          capacities: [state.capacities[0], state.capacities[1]],
+          flags: [state.flags[0], state.flags[1]],
+          // Missing unlocked array! This breaks alignment
+          unlocked: [], // Empty instead of matching length
+        }),
+      });
+
+      const snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 1000,
+        state: {
+          ids: ['wood', 'stone'],
+          amounts: [10, 20],
+          capacities: [null, null],
+          flags: [0, 0],
+          unlocked: [true, false],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: oldDigest,
+      };
+
+      await adapter.save(snapshot);
+
+      const result = await restoreSession(mockBridge, adapter, {
+        slotId: 'test',
+        definitions: createDefinitions(['lumber', 'gravel']),
+        allowMigration: true,
+      });
+
+      // Migration should fail validation due to array length mismatch
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toMatch(/invalid|length/i);
+    });
+
+    it('should detect misaligned visible array after migration', async () => {
+      const oldDigest = createDigest(['a']);
+      const newDigest = createDigest(['b', 'c']);
+
+      // Migration that adds a resource but forgets to extend visible array
+      registerMigration({
+        id: 'broken-visible-alignment',
+        fromDigest: oldDigest,
+        toDigest: newDigest,
+        transform: (state) => ({
+          ...state,
+          ids: ['b', 'c'],
+          amounts: [state.amounts[0], 0],
+          capacities: [state.capacities[0], null],
+          flags: [state.flags[0], 0],
+          visible: [true], // Only 1 element instead of 2!
+        }),
+      });
+
+      const snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 1000,
+        state: {
+          ids: ['a'],
+          amounts: [50],
+          capacities: [null],
+          flags: [0],
+          visible: [true],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: oldDigest,
+      };
+
+      await adapter.save(snapshot);
+
+      const result = await restoreSession(mockBridge, adapter, {
+        slotId: 'test',
+        definitions: createDefinitions(['b', 'c']),
+        allowMigration: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toMatch(/invalid|length/i);
+    });
+
+    it('should detect when migration produces inconsistent optional field lengths', async () => {
+      const oldDigest = createDigest(['x', 'y', 'z']);
+      const newDigest = createDigest(['x', 'y']);
+
+      // Migration that removes a resource but inconsistently updates optional arrays
+      registerMigration({
+        id: 'broken-optional-alignment',
+        fromDigest: oldDigest,
+        toDigest: newDigest,
+        transform: (state) => ({
+          ids: ['x', 'y'],
+          amounts: [state.amounts[0], state.amounts[1]],
+          capacities: [state.capacities[0], state.capacities[1]],
+          flags: [state.flags[0], state.flags[1]],
+          // unlocked is correctly sized
+          unlocked: [true, false],
+          // visible has wrong length (3 instead of 2)
+          visible: [true, false, true],
+        }),
+      });
+
+      const snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 1000,
+        state: {
+          ids: ['x', 'y', 'z'],
+          amounts: [1, 2, 3],
+          capacities: [null, null, null],
+          flags: [0, 0, 0],
+          unlocked: [true, true, true],
+          visible: [true, false, true],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: oldDigest,
+      };
+
+      await adapter.save(snapshot);
+
+      const result = await restoreSession(mockBridge, adapter, {
+        slotId: 'test',
+        definitions: createDefinitions(['x', 'y']),
+        allowMigration: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toMatch(/invalid|length/i);
     });
   });
 });

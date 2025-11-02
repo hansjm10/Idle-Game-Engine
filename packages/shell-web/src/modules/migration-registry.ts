@@ -203,7 +203,25 @@ class MigrationRegistry {
       }
     }
 
-    this.migrations.set(descriptor.id, descriptor);
+    // Create frozen copy of descriptor with immutable digests to prevent
+    // post-registration mutation that would break digestKeyCache invariants
+    const frozenDescriptor: MigrationDescriptor = {
+      id: descriptor.id,
+      fromDigest: Object.freeze({
+        hash: descriptor.fromDigest.hash,
+        version: descriptor.fromDigest.version,
+        ids: Object.freeze([...descriptor.fromDigest.ids]),
+      }),
+      toDigest: Object.freeze({
+        hash: descriptor.toDigest.hash,
+        version: descriptor.toDigest.version,
+        ids: Object.freeze([...descriptor.toDigest.ids]),
+      }),
+      transform: descriptor.transform,
+      description: descriptor.description,
+    };
+
+    this.migrations.set(descriptor.id, frozenDescriptor);
     // Cache the composite keys to avoid recomputing during pathfinding
     this.digestKeyCache.set(descriptor.id, { fromKey, toKey });
   }

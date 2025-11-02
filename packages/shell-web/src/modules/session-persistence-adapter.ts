@@ -210,8 +210,28 @@ export class SessionPersistenceAdapter {
         );
       };
 
+      request.onblocked = () => {
+        // onblocked fires when database upgrade is blocked by open connections
+        // from other tabs/windows. Reject with specific error for diagnostics.
+        reject(
+          new SessionPersistenceError(
+            'IndexedDB upgrade blocked by another connection. Close other tabs and retry.',
+            'DB_UPGRADE_BLOCKED',
+          ),
+        );
+      };
+
       request.onsuccess = () => {
         this.db = request.result;
+
+        // Handle unexpected close/abort events on the database connection
+        this.db.onabort = () => {
+          recordTelemetryError('SessionPersistenceError', {
+            code: 'DB_CONNECTION_ABORTED',
+            message: 'IndexedDB connection aborted unexpectedly',
+          });
+        };
+
         resolve();
       };
 

@@ -17,16 +17,14 @@ describe('session-restore', () => {
   const createMockDefinitions = (): ResourceDefinition[] => [
     {
       id: 'resource1',
-      name: 'Resource 1',
-      initialAmount: 0,
+      startAmount: 0,
       capacity: 1000,
       unlocked: true,
       visible: true,
     },
     {
       id: 'resource2',
-      name: 'Resource 2',
-      initialAmount: 0,
+      startAmount: 0,
       capacity: 2000,
       unlocked: false,
       visible: false,

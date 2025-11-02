@@ -588,6 +588,36 @@ describe('ResourceState', () => {
     expect(telemetryStub.recordError).not.toHaveBeenCalled();
   });
 
+  it('rejects save with mismatched digest hash (corruption/tamper detection)', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'energy' },
+      { id: 'crystal' },
+    ];
+    const state = createResourceState(definitions);
+    const save = state.exportForSave();
+
+    // Create corrupted save with wrong hash
+    const corrupted: SerializedResourceState = {
+      ...save,
+      definitionDigest: {
+        ...save.definitionDigest!,
+        hash: 'fnv1a-deadbeef', // Wrong hash for these ids
+      },
+    };
+
+    expect(() =>
+      reconcileSaveAgainstDefinitions(corrupted, definitions),
+    ).toThrowError(/digest hash mismatch/);
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'ResourceHydrationInvalidData',
+      expect.objectContaining({
+        reason: 'digest-hash-mismatch',
+        digestHash: 'fnv1a-deadbeef',
+      }),
+    );
+  });
+
   it('preserves definition order and stable index mapping', () => {
     const definitions: ResourceDefinition[] = [
       { id: 'alpha', startAmount: 1 },

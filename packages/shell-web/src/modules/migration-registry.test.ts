@@ -42,7 +42,11 @@ describe('MigrationRegistry', () => {
       registerMigration(migration);
 
       expect(migrationRegistry.size).toBe(1);
-      expect(migrationRegistry.getMigration('test-migration')).toBe(migration);
+      const registered = migrationRegistry.getMigration('test-migration');
+      expect(registered).toBeDefined();
+      expect(registered?.id).toBe(migration.id);
+      expect(registered?.fromDigest).toEqual(migration.fromDigest);
+      expect(registered?.toDigest).toEqual(migration.toDigest);
     });
 
     it('should throw if migration ID is already registered', () => {
@@ -204,7 +208,7 @@ describe('MigrationRegistry', () => {
 
       expect(path.found).toBe(true);
       expect(path.migrations).toHaveLength(1);
-      expect(path.migrations[0]).toBe(migration);
+      expect(path.migrations[0]?.id).toBe(migration.id);
     });
 
     it('should find chained migration path (v1 -> v2 -> v3)', () => {
@@ -233,8 +237,8 @@ describe('MigrationRegistry', () => {
 
       expect(path.found).toBe(true);
       expect(path.migrations).toHaveLength(2);
-      expect(path.migrations[0]).toBe(migration1);
-      expect(path.migrations[1]).toBe(migration2);
+      expect(path.migrations[0]?.id).toBe(migration1.id);
+      expect(path.migrations[1]?.id).toBe(migration2.id);
     });
 
     it('should find shortest path when multiple routes exist', () => {
@@ -430,8 +434,8 @@ describe('MigrationRegistry', () => {
       const list = migrationRegistry.listMigrations();
 
       expect(list).toHaveLength(2);
-      expect(list).toContain(migration1);
-      expect(list).toContain(migration2);
+      expect(list.map(m => m.id)).toContain(migration1.id);
+      expect(list.map(m => m.id)).toContain(migration2.id);
     });
   });
 
@@ -822,6 +826,41 @@ describe('MigrationRegistry', () => {
       expect(newMigration).toBeDefined();
       expect(newMigration?.fromDigest.ids).toEqual(['newer']);
       expect(newMigration?.fromDigest.hash).toBe(computeStableDigest(['newer']));
+    });
+
+    it('should protect against post-registration mutation of descriptor digests', () => {
+      const fromDigest = createDigest('fnv1a-mut-1', ['original']);
+      const toDigest = createDigest('fnv1a-mut-2', ['updated']);
+
+      const descriptor: MigrationDescriptor = {
+        id: 'mutation-test',
+        fromDigest,
+        toDigest,
+        transform: (state) => ({ ...state, ids: ['updated'] }),
+      };
+
+      registerMigration(descriptor);
+
+      // Attempt to mutate the original descriptor's digest after registration
+      // This should not affect the registry's internal state due to defensive copying
+      const mutableIds = fromDigest.ids as string[];
+      mutableIds.push('malicious');
+
+      // Retrieve the registered migration
+      const registered = migrationRegistry.getMigration('mutation-test');
+      expect(registered).toBeDefined();
+
+      // Verify the registered migration's digest was not affected by mutation
+      expect(registered!.fromDigest.ids).toEqual(['original']);
+      expect(registered!.fromDigest.ids).not.toContain('malicious');
+
+      // Verify pathfinding still works correctly with unmutated digest
+      const path = findMigrationPath(
+        createDigest('fnv1a-mut-1', ['original']),
+        createDigest('fnv1a-mut-2', ['updated']),
+      );
+      expect(path.found).toBe(true);
+      expect(path.migrations).toHaveLength(1);
     });
   });
 });
