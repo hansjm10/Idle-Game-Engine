@@ -928,3 +928,323 @@ export const cyclicTransformMultiResourceFixture = {
     },
   ],
 };
+
+/**
+ * NON-CYCLIC TRANSFORM CHAIN - LINEAR: Transform A → Transform B → Transform C
+ * Transform A consumes X, produces Y
+ * Transform B consumes Y, produces Z
+ * Transform C consumes Z, produces W
+ * This is a valid non-cyclic chain.
+ */
+export const linearTransformChainFixture = {
+  metadata: {
+    id: 'linear-transform-chain',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-z',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-w',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-c',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-w',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * NON-CYCLIC TRANSFORM CHAIN - CONVERGENT TREE
+ * Transform A consumes X, produces Z
+ * Transform B consumes Y, produces Z
+ * Transform C consumes Z, produces W
+ * Multiple streams converge but never loop back.
+ */
+export const convergentTransformTreeFixture = {
+  metadata: {
+    id: 'convergent-transform-tree',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-z',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-w',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-c',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 2 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-w',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * NON-CYCLIC TRANSFORM CHAIN - RESOURCE SINK
+ * Transforms consume resources but don't regenerate them.
+ * This creates a one-way flow with no cycles.
+ */
+export const resourceSinkTransformFixture = {
+  metadata: {
+    id: 'resource-sink-transform',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'mana',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'essence',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'boost-item',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'craft-boost',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'mana',
+          amount: { kind: 'constant', value: 100 },
+        },
+        {
+          resourceId: 'essence',
+          amount: { kind: 'constant', value: 10 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'boost-item',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * EDGE CASE - SELF-REFERENCING TRANSFORM
+ * Transform A consumes X and produces X
+ * This creates a self-loop.
+ */
+export const selfReferencingTransformFixture = {
+  metadata: {
+    id: 'self-referencing-transform',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};

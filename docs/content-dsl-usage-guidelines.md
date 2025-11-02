@@ -392,6 +392,38 @@ Clear one-way progression through tiers.
 - [ ] Test unlock progressions manually to confirm resources become available in
   the expected order
 
+### Migrating Existing Content with Cycles
+
+If `pnpm generate` fails with cycle detection errors after upgrading:
+
+1. **Identify the cycle**: Read the error message carefully. It shows the
+   complete cycle path (e.g., `transform-a → transform-b → transform-a`).
+
+2. **Understand the dependencies**: Map out which resources each transform
+   consumes and produces. Draw a diagram if helpful.
+
+3. **Break the cycle** using one of these strategies:
+   - **Add source resources**: Introduce generators or initial grants to provide
+     resources from outside the cycle
+   - **Convert to linear chain**: Redesign bidirectional transforms as one-way
+     progression (A → B → C instead of A ⇄ B)
+   - **Add intermediate resources**: Insert new resources in the chain to create
+     a clear flow direction
+   - **Remove problematic transforms**: If a transform creates an unwanted loop,
+     consider removing it or replacing it with a different game mechanic
+
+4. **For unlock condition cycles**: Similar approach applies. If Resource A
+   requires Resource B to unlock, and Resource B requires Resource A, redesign
+   the unlock progression to be hierarchical (introduce a Resource C that both
+   depend on, or remove one unlock condition).
+
+5. **Re-run validation**: After making changes, run `pnpm generate` again to
+   verify all cycles are resolved.
+
+**Implementation details**: Cycle detection is implemented in
+`packages/content-schema/src/pack.ts` (lines 1849-2149) using depth-first search
+with path tracking to provide detailed error messages.
+
 ### Safety Guardrails
 
 In addition to cycle detection, transforms include runtime safety limits defined

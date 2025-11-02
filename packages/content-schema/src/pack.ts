@@ -1846,6 +1846,57 @@ const validateDependencies = (
   }
 };
 
+/**
+ * Generic cycle detection using DFS with path tracking.
+ * Returns all detected cycles.
+ */
+const detectCycles = (
+  adjacency: Map<string, Set<string>>,
+  nodes: Iterable<string>,
+): string[][] => {
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+  const path: string[] = [];
+  const cycles: string[][] = [];
+
+  const visit = (node: string): void => {
+    if (stack.has(node)) {
+      // Cycle detected! Build the cycle path
+      const cycleStartIndex = path.indexOf(node);
+      const cyclePath = [...path.slice(cycleStartIndex), node];
+      cycles.push(cyclePath);
+      return;
+    }
+
+    if (visited.has(node)) {
+      return;
+    }
+
+    visited.add(node);
+    stack.add(node);
+    path.push(node);
+
+    const edges = adjacency.get(node);
+    if (edges) {
+      for (const target of edges) {
+        visit(target);
+      }
+    }
+
+    stack.delete(node);
+    path.pop();
+  };
+
+  // Check all nodes for cycles
+  for (const nodeId of nodes) {
+    if (!visited.has(nodeId)) {
+      visit(nodeId);
+    }
+  }
+
+  return cycles;
+};
+
 const validateTransformCycles = (
   pack: ParsedContentPack,
   ctx: z.RefinementCtx,
@@ -1886,58 +1937,23 @@ const validateTransformCycles = (
     });
   });
 
-  // Detect cycles using DFS with path tracking for better error messages
-  const visited = new Set<string>();
-  const stack = new Set<string>();
-  const path: string[] = [];
+  // Detect cycles using the generic helper
+  const cycles = detectCycles(
+    adjacency,
+    pack.transforms.map((t) => t.id),
+  );
 
-  const visit = (node: string): boolean => {
-    if (stack.has(node)) {
-      // Cycle detected! Build the cycle path for error message
-      const cycleStartIndex = path.indexOf(node);
-      const cyclePath = [...path.slice(cycleStartIndex), node];
-      const cycleDescription = cyclePath.join(' → ');
-
-      const index = transformIndex.get(node);
-      if (index !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: toMutablePath(['transforms', index] as const),
-          message: `Transform cycle detected: ${cycleDescription}`,
-        });
-      }
-      return true;
-    }
-
-    if (visited.has(node)) {
-      return false;
-    }
-
-    visited.add(node);
-    stack.add(node);
-    path.push(node);
-
-    const edges = adjacency.get(node);
-    if (edges) {
-      for (const target of edges) {
-        if (visit(target)) {
-          return true;
-        }
-      }
-    }
-
-    stack.delete(node);
-    path.pop();
-    return false;
-  };
-
-  // Check all transforms for cycles
-  for (const transform of pack.transforms) {
-    if (!visited.has(transform.id)) {
-      if (visit(transform.id)) {
-        // Only report the first cycle found to avoid noise
-        break;
-      }
+  // Report all detected cycles
+  for (const cyclePath of cycles) {
+    const cycleDescription = cyclePath.join(' → ');
+    const firstNodeInCycle = cyclePath[0];
+    const index = transformIndex.get(firstNodeInCycle);
+    if (index !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: toMutablePath(['transforms', index] as const),
+        message: `Transform cycle detected: ${cycleDescription}`,
+      });
     }
   }
 };
@@ -2103,73 +2119,31 @@ const validateUnlockConditionCycles = (
     }
   });
 
-  // Detect cycles using DFS with path tracking
-  const visited = new Set<string>();
-  const stack = new Set<string>();
-  const path: string[] = [];
-
-  const visit = (node: string): boolean => {
-    if (stack.has(node)) {
-      // Cycle detected! Build the cycle path for error message
-      const cycleStartIndex = path.indexOf(node);
-      const cyclePath = [...path.slice(cycleStartIndex), node];
-      const cycleDescription = cyclePath.join(' → ');
-
-      const entityInfo = entityMap.get(node);
-      if (entityInfo) {
-        let pathPrefix: readonly (string | number)[];
-        if (entityInfo.type === 'resource') {
-          pathPrefix = ['resources', entityInfo.index] as const;
-        } else if (entityInfo.type === 'generator') {
-          pathPrefix = ['generators', entityInfo.index] as const;
-        } else if (entityInfo.type === 'upgrade') {
-          pathPrefix = ['upgrades', entityInfo.index] as const;
-        } else if (entityInfo.type === 'achievement') {
-          pathPrefix = ['achievements', entityInfo.index] as const;
-        } else if (entityInfo.type === 'transform') {
-          pathPrefix = ['transforms', entityInfo.index] as const;
-        } else {
-          pathPrefix = ['prestigeLayers', entityInfo.index] as const;
-        }
-
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: toMutablePath(pathPrefix),
-          message: `Unlock condition cycle detected: ${cycleDescription}`,
-        });
-      }
-      return true;
-    }
-
-    if (visited.has(node)) {
-      return false;
-    }
-
-    visited.add(node);
-    stack.add(node);
-    path.push(node);
-
-    const edges = adjacency.get(node);
-    if (edges) {
-      for (const target of edges) {
-        if (visit(target)) {
-          return true;
-        }
-      }
-    }
-
-    stack.delete(node);
-    path.pop();
-    return false;
+  // Mapping from entity type to pack array property name
+  const entityTypePaths: Record<EntityInfo['type'], string> = {
+    resource: 'resources',
+    generator: 'generators',
+    upgrade: 'upgrades',
+    achievement: 'achievements',
+    transform: 'transforms',
+    prestige: 'prestigeLayers',
   };
 
-  // Check all entities for cycles
-  for (const [entityId] of entityMap) {
-    if (!visited.has(entityId)) {
-      if (visit(entityId)) {
-        // Only report the first cycle found to avoid noise
-        break;
-      }
+  // Detect cycles using the generic helper
+  const cycles = detectCycles(adjacency, entityMap.keys());
+
+  // Report all detected cycles
+  for (const cyclePath of cycles) {
+    const cycleDescription = cyclePath.join(' → ');
+    const firstNodeInCycle = cyclePath[0];
+    const entityInfo = entityMap.get(firstNodeInCycle);
+    if (entityInfo) {
+      const pathPrefix = [entityTypePaths[entityInfo.type], entityInfo.index] as const;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: toMutablePath(pathPrefix),
+        message: `Unlock condition cycle detected: ${cycleDescription}`,
+      });
     }
   }
 };

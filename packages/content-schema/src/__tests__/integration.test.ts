@@ -17,6 +17,7 @@ import type { NumericFormula } from '../base/formulas.js';
 import type { ContentSchemaOptions } from '../pack.js';
 import { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import {
+  convergentTransformTreeFixture,
   cyclicTransformDirectFixture,
   cyclicTransformIndirectFixture,
   cyclicTransformMultiResourceFixture,
@@ -27,10 +28,13 @@ import {
   invalidAllowlistReferenceFixture,
   invalidFormulaReferencesFixture,
   invalidRuntimeEventContributionsFixture,
+  linearTransformChainFixture,
   localizationGapsFixture,
   missingMetricReferenceFixture,
   missingResourceReferenceFixture,
+  resourceSinkTransformFixture,
   selfReferencingDependencyFixture,
+  selfReferencingTransformFixture,
   validComprehensivePackFixture,
 } from '../__fixtures__/integration-packs.js';
 import { createContentPackValidator } from '../index.js';
@@ -216,6 +220,53 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle with multiple resources involved
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('allows linear transform chains without cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(linearTransformChainFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', result.error.issues);
+    }
+  });
+
+  it('allows convergent production trees without cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(convergentTransformTreeFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', result.error.issues);
+    }
+  });
+
+  it('allows resource sink patterns without cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(resourceSinkTransformFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', result.error.issues);
+    }
+  });
+
+  it('detects self-referencing transforms as cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(selfReferencingTransformFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the self-loop
     expect(result.error.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
