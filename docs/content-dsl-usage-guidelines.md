@@ -421,8 +421,9 @@ If `pnpm generate` fails with cycle detection errors after upgrading:
    verify all cycles are resolved.
 
 **Implementation details**: Cycle detection is implemented in
-`packages/content-schema/src/pack.ts` (lines 1849-2149) using depth-first search
-with path tracking to provide detailed error messages.
+`packages/content-schema/src/pack.ts` via `validateTransformCycles()` and
+`validateUnlockConditionCycles()` functions, using depth-first search with path
+tracking to provide detailed error messages.
 
 ### Safety Guardrails
 

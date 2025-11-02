@@ -1847,11 +1847,17 @@ const validateDependencies = (
 };
 
 /**
+ * Type definitions for cycle detection
+ */
+type AdjacencyGraph = Map<string, Set<string>>;
+type CyclePath = string[];
+
+/**
  * Normalizes a cycle path to its canonical form for deduplication.
  * The canonical form starts with the lexicographically smallest element.
  * For example: [B, C, A, B] becomes [A, B, C, A]
  */
-const normalizeCyclePath = (cyclePath: string[]): string => {
+const normalizeCyclePath = (cyclePath: CyclePath): string => {
   if (cyclePath.length <= 1) {
     return cyclePath.join('→');
   }
@@ -1885,21 +1891,21 @@ const normalizeCyclePath = (cyclePath: string[]): string => {
  * @returns Array of cycle paths
  */
 const detectCycles = (
-  adjacency: Map<string, Set<string>>,
+  adjacency: AdjacencyGraph,
   nodes: Iterable<string>,
   stopAtFirst = true,
-): string[][] => {
+): CyclePath[] => {
   const visited = new Set<string>();
   const stack = new Set<string>();
-  const path: string[] = [];
-  const cycles: string[][] = [];
+  const path: CyclePath = [];
+  const cycles: CyclePath[] = [];
   const seenCycles = new Set<string>();
 
   const visit = (node: string): boolean => {
     if (stack.has(node)) {
       // Cycle detected! Build the cycle path
       const cycleStartIndex = path.indexOf(node);
-      const cyclePath = [...path.slice(cycleStartIndex), node];
+      const cyclePath: CyclePath = [...path.slice(cycleStartIndex), node];
 
       // Normalize and deduplicate
       const normalizedCycle = normalizeCyclePath(cyclePath);
@@ -2001,11 +2007,37 @@ const validateTransformCycles = (
     const cycleDescription = cyclePath.join(' → ');
     const firstNodeInCycle = cyclePath[0];
     const index = transformIndex.get(firstNodeInCycle);
+
+    // Collect resources involved in the cycle
+    const involvedResources = new Set<string>();
+    for (let i = 0; i < cyclePath.length - 1; i++) {
+      const currentTransformId = cyclePath[i];
+      const nextTransformId = cyclePath[i + 1];
+
+      // Find the transform objects
+      const currentTransform = pack.transforms.find((t) => t.id === currentTransformId);
+      const nextTransform = pack.transforms.find((t) => t.id === nextTransformId);
+
+      if (currentTransform && nextTransform) {
+        // Find resources produced by current that are consumed by next
+        currentTransform.outputs.forEach((output) => {
+          if (nextTransform.inputs.some((input) => input.resourceId === output.resourceId)) {
+            involvedResources.add(output.resourceId);
+          }
+        });
+      }
+    }
+
+    const resourceList = Array.from(involvedResources).sort().join(', ');
+    const resourceContext = involvedResources.size > 0
+      ? ` (involves resources: ${resourceList})`
+      : '';
+
     if (index !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: toMutablePath(['transforms', index] as const),
-        message: `Transform cycle detected: ${cycleDescription}`,
+        message: `Transform cycle detected: ${cycleDescription}${resourceContext}`,
       });
     }
   }
@@ -2200,12 +2232,27 @@ const validateUnlockConditionCycles = (
     const cycleDescription = cyclePath.join(' → ');
     const firstNodeInCycle = cyclePath[0];
     const entityInfo = entityMap.get(firstNodeInCycle);
+
+    // Collect entity types involved in the cycle
+    const involvedTypes = new Set<string>();
+    cyclePath.forEach((entityId) => {
+      const info = entityMap.get(entityId);
+      if (info) {
+        involvedTypes.add(info.type);
+      }
+    });
+
+    const typeList = Array.from(involvedTypes).sort().join(', ');
+    const typeContext = involvedTypes.size > 0
+      ? ` (involves ${involvedTypes.size === 1 ? typeList : `entity types: ${typeList}`})`
+      : '';
+
     if (entityInfo) {
       const pathPrefix = [entityTypePaths[entityInfo.type], entityInfo.index] as const;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: toMutablePath(pathPrefix),
-        message: `Unlock condition cycle detected: ${cycleDescription}`,
+        message: `Unlock condition cycle detected: ${cycleDescription}${typeContext}`,
       });
     }
   }
