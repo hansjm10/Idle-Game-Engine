@@ -155,15 +155,21 @@ class MigrationRegistry {
     }
 
     // Prevent duplicate edges (same fromDigest->toDigest path)
+    // Compare full digest including ids to prevent collisions
+    // Use JSON.stringify for safe comparison even if ids contain special chars
     for (const existing of this.migrations.values()) {
       if (
         existing.fromDigest.hash === descriptor.fromDigest.hash &&
         existing.fromDigest.version === descriptor.fromDigest.version &&
+        JSON.stringify(existing.fromDigest.ids) === JSON.stringify(descriptor.fromDigest.ids) &&
         existing.toDigest.hash === descriptor.toDigest.hash &&
-        existing.toDigest.version === descriptor.toDigest.version
+        existing.toDigest.version === descriptor.toDigest.version &&
+        JSON.stringify(existing.toDigest.ids) === JSON.stringify(descriptor.toDigest.ids)
       ) {
+        const fromKey = `${descriptor.fromDigest.hash}:${descriptor.fromDigest.version}:${JSON.stringify(descriptor.fromDigest.ids)}`;
+        const toKey = `${descriptor.toDigest.hash}:${descriptor.toDigest.version}:${JSON.stringify(descriptor.toDigest.ids)}`;
         throw new Error(
-          `Migration "${descriptor.id}" creates duplicate edge from ${descriptor.fromDigest.hash}:${descriptor.fromDigest.version} to ${descriptor.toDigest.hash}:${descriptor.toDigest.version}. Existing migration "${existing.id}" already covers this path.`,
+          `Migration "${descriptor.id}" creates duplicate edge from ${fromKey} to ${toKey}. Existing migration "${existing.id}" already covers this path.`,
         );
       }
     }
@@ -195,14 +201,13 @@ class MigrationRegistry {
     toDigest: ResourceDefinitionDigest,
   ): MigrationPath {
     // Helper to create composite key from digest (prevents hash collisions)
+    // Include ids to fully disambiguate digests with same hash+version
+    // Use JSON.stringify to avoid delimiter ambiguity if ids contain special chars
     const digestKey = (digest: ResourceDefinitionDigest): string =>
-      `${digest.hash}:${digest.version}`;
+      `${digest.hash}:${digest.version}:${JSON.stringify(digest.ids)}`;
 
-    // If digests match (both hash and version), no migration needed
-    if (
-      fromDigest.hash === toDigest.hash &&
-      fromDigest.version === toDigest.version
-    ) {
+    // If digests match (full composite key), no migration needed
+    if (digestKey(fromDigest) === digestKey(toDigest)) {
       return {
         migrations: [],
         fromDigest,

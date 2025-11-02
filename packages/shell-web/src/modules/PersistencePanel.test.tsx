@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createDefinitionDigest } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';
 import { PersistencePanel } from './PersistencePanel.js';
@@ -24,9 +25,17 @@ describe('PersistencePanel', () => {
         capturedAt: new Date().toISOString(),
         workerStep: 100,
         monotonicMs: 1000,
-        state: { resources: {} },
+        state: {
+          ids: ['resource1'],
+          amounts: [100],
+          capacities: [1000],
+          unlocked: [true],
+          visible: [true],
+          flags: [1],
+          definitionDigest: createDefinitionDigest(['resource1']),
+        },
         runtimeVersion: '0.1.0',
-        contentDigest: { hash: 'abc123', timestamp: Date.now() },
+        contentDigest: createDefinitionDigest(['resource1']),
       } as SessionSnapshotPayload),
       onError: vi.fn(),
       offError: vi.fn(),

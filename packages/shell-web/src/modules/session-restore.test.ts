@@ -119,11 +119,12 @@ describe('session-restore', () => {
           unlocked: [true, false],
           visible: [true, false],
           flags: [1, 0],
+          // Intentionally malformed digest with legacy shape for negative testing
           definitionDigest: {
             version: 1,
             contentHash: 'test-hash',
             definitionCount: 2,
-          },
+          } as any,
         },
       });
 
@@ -153,11 +154,12 @@ describe('session-restore', () => {
           unlocked: [true, false],
           visible: [true, false],
           flags: [1, 0],
+          // Intentionally malformed digest with legacy shape for negative testing
           definitionDigest: {
             version: 1,
             contentHash: 'old-hash',
             definitionCount: 2,
-          },
+          } as any,
         },
       });
 
@@ -187,11 +189,12 @@ describe('session-restore', () => {
           unlocked: [true, false],
           visible: [true, false],
           flags: [1, 0],
+          // Intentionally malformed digest with legacy shape for negative testing
           definitionDigest: {
             version: 1,
             contentHash: 'old-hash',
             definitionCount: 2,
-          },
+          } as any,
         },
       });
 
@@ -305,11 +308,12 @@ describe('session-restore', () => {
           unlocked: [true, false],
           visible: [true, false],
           flags: [1, 0],
+          // Intentionally malformed digest with legacy shape for negative testing
           definitionDigest: {
             version: 1,
             contentHash: 'test-hash',
             definitionCount: 2,
-          },
+          } as any,
         },
       });
 
@@ -329,11 +333,12 @@ describe('session-restore', () => {
           unlocked: [true],
           visible: [true],
           flags: [1],
+          // Intentionally malformed digest with legacy shape for negative testing
           definitionDigest: {
             version: 1,
             contentHash: 'test-hash',
             definitionCount: 1,
-          },
+          } as any,
         },
       });
 
@@ -353,11 +358,12 @@ describe('session-restore', () => {
           unlocked: [true, false, true],
           visible: [true, false, true],
           flags: [1, 0, 1],
+          // Intentionally malformed digest with legacy shape for negative testing
           definitionDigest: {
             version: 1,
             contentHash: 'test-hash',
             definitionCount: 3,
-          },
+          } as any,
         },
       });
 

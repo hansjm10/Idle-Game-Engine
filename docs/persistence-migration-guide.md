@@ -113,10 +113,19 @@ Validation logic is implemented in `reconcileSaveAgainstDefinitions()` in `packa
 
 ### How Digest Changes Trigger Migrations
 
-When `reconcileSaveAgainstDefinitions()` detects incompatibility (removed resources), it sets `snapshot.flags.pendingMigration = true`. Future migration execution will:
+When `reconcileSaveAgainstDefinitions()` detects incompatibility, it returns reconciliation results containing:
+- `addedIds`: Resources in current definitions but not in save
+- `removedIds`: Resources in save but not in current definitions (triggers migration requirement)
+- `digestsMatch`: Whether the saved and current digests match
+
+The restore logic in `session-restore.ts` uses these results to determine if migration is needed:
+- Migration is required when `removedIds.length > 0` (resources were removed/renamed)
+- Migration can also be triggered by a pre-set `snapshot.flags.pendingMigration` flag
+
+When migration is triggered:
 
 1. Compare `snapshot.contentDigest` against known content pack versions
-2. Find applicable migration transforms
+2. Find applicable migration transforms using the migration registry
 3. Apply transforms to `snapshot.state` (amounts, capacities, flags arrays, etc.)
 4. Re-validate after transformation
 
@@ -140,20 +149,25 @@ registerMigration({
 
   // Source content digest (before migration)
   fromDigest: {
-    hash: 'abc123...',
-    version: 42,
+    hash: 'fnv1a-abc123',
+    version: 2,
+    ids: ['old-resource-id', 'other-resource'],
   },
 
   // Target content digest (after migration)
   toDigest: {
-    hash: 'def456...',
-    version: 43,
+    hash: 'fnv1a-def456',
+    version: 2,
+    ids: ['new-resource-id', 'other-resource'],
   },
 
   // Transform function
   transform: (state: SerializedResourceState): SerializedResourceState => {
-    // Migration logic here
-    return transformedState;
+    // Rename old-resource-id to new-resource-id in the state
+    return {
+      ...state,
+      ids: state.ids.map(id => id === 'old-resource-id' ? 'new-resource-id' : id),
+    };
   },
 });
 ```
@@ -693,8 +707,9 @@ Track these in future issues:
 ### Implementation Files
 
 - `packages/shell-web/src/modules/session-persistence-adapter.ts` - IndexedDB adapter API
-- `packages/shell-web/src/modules/session-restore.ts` - Validation and migration flow (stub at line 108)
-- `packages/core/src/resource-state.ts` - Digest computation (line 1818) and reconciliation (line 1194)
+- `packages/shell-web/src/modules/session-restore.ts` - Validation and migration flow
+- `packages/shell-web/src/modules/migration-registry.ts` - Migration registration and pathfinding
+- `packages/core/src/resource-state.ts` - Digest computation (`createDefinitionDigest`) and reconciliation (`reconcileSaveAgainstDefinitions`)
 
 ### Test Files
 

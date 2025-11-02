@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 
+import { createDefinitionDigest } from '@idle-engine/core';
 import type { SerializedResourceState } from '@idle-engine/core';
 
 import {
@@ -32,11 +33,7 @@ describe('SessionPersistenceAdapter', () => {
     unlocked: [true, false],
     visible: [true, false],
     flags: [1, 0],
-    definitionDigest: {
-      version: 1,
-      contentHash: 'test-hash-123',
-      definitionCount: 2,
-    },
+    definitionDigest: createDefinitionDigest(['resource1', 'resource2']),
   });
 
   const createMockSnapshot = (
@@ -49,11 +46,7 @@ describe('SessionPersistenceAdapter', () => {
     monotonicMs: 5000,
     state: createMockState(),
     runtimeVersion: '0.1.0',
-    contentDigest: {
-      version: 1,
-      contentHash: 'test-hash-123',
-      definitionCount: 2,
-    },
+    contentDigest: createDefinitionDigest(['resource1', 'resource2']),
     ...overrides,
   });
 

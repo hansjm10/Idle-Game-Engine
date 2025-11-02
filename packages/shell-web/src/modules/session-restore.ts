@@ -490,13 +490,6 @@ async function attemptMigration(
       };
     }
 
-    // eslint-disable-next-line no-console
-    console.log('[SessionRestore] Applying migrations', {
-      slotId,
-      count: migrationPath.migrations.length,
-      path: migrationPath.migrations.map((m) => m.id),
-    });
-
     recordTelemetryEvent('PersistenceMigrationStarted', {
       slotId,
       migrationCount: migrationPath.migrations.length,
