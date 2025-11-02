@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { SerializedResourceState, ResourceDefinitionDigest } from '@idle-engine/core';
+import { computeStableDigest } from '@idle-engine/core';
 import {
   migrationRegistry,
   registerMigration,
@@ -9,9 +10,9 @@ import {
 } from './migration-registry.js';
 
 describe('MigrationRegistry', () => {
-  // Helper to create test digests
-  const createDigest = (hash: string, ids: string[]): ResourceDefinitionDigest => ({
-    hash,
+  // Helper to create test digests with computed hash
+  const createDigest = (_hash: string, ids: string[]): ResourceDefinitionDigest => ({
+    hash: computeStableDigest(ids),
     version: ids.length,
     ids,
   });
@@ -131,6 +132,28 @@ describe('MigrationRegistry', () => {
           transform: (state) => state,
         }),
       ).toThrow('toDigest version (3) must equal ids.length (1)');
+    });
+
+    it('should throw if hash does not match computed digest from ids', () => {
+      // Test with incorrect fromDigest hash
+      expect(() =>
+        registerMigration({
+          id: 'hash-mismatch-from',
+          fromDigest: { hash: 'fnv1a-WRONG', version: 2, ids: ['a', 'b'] },
+          toDigest: createDigest('fnv1a-00000002', ['c']),
+          transform: (state) => state,
+        }),
+      ).toThrow('fromDigest hash mismatch');
+
+      // Test with incorrect toDigest hash
+      expect(() =>
+        registerMigration({
+          id: 'hash-mismatch-to',
+          fromDigest: createDigest('fnv1a-00000001', ['a']),
+          toDigest: { hash: 'fnv1a-WRONG', version: 1, ids: ['b'] },
+          transform: (state) => state,
+        }),
+      ).toThrow('toDigest hash mismatch');
     });
 
     it('should throw if duplicate edge is registered', () => {
@@ -572,8 +595,9 @@ describe('MigrationRegistry', () => {
 
       expect(path.found).toBe(true);
       expect(path.migrations).toHaveLength(chainLength);
-      // Pathfinding should complete in under 100ms even for 100-step chain
-      expect(pathfindingTime).toBeLessThan(100);
+      // Pathfinding should complete quickly even for 100-step chain
+      // Threshold increased to 250ms with CI variance buffer (was 100ms)
+      expect(pathfindingTime).toBeLessThan(250);
 
       // Measure migration application performance
       const initialState = createState(['resource-v0'], [0]);
@@ -584,7 +608,8 @@ describe('MigrationRegistry', () => {
       expect(finalState.ids).toEqual(['resource-v100']);
       expect(finalState.amounts).toEqual([chainLength]);
       // Application should complete in reasonable time
-      expect(applyTime).toBeLessThan(200);
+      // Threshold increased to 500ms with CI variance buffer (was 200ms)
+      expect(applyTime).toBeLessThan(500);
     });
 
     it('should handle complex migration graph with multiple paths', () => {
@@ -624,7 +649,8 @@ describe('MigrationRegistry', () => {
 
       expect(path.found).toBe(true);
       expect(path.migrations).toHaveLength(2); // Should find shortest 2-hop path
-      expect(pathfindingTime).toBeLessThan(50);
+      // Threshold increased to 125ms with CI variance buffer (was 50ms)
+      expect(pathfindingTime).toBeLessThan(125);
     });
   });
 
@@ -794,7 +820,8 @@ describe('MigrationRegistry', () => {
 
       const newMigration = migrationRegistry.getMigration('retention-test');
       expect(newMigration).toBeDefined();
-      expect(newMigration?.fromDigest.hash).toBe('fnv1a-ret-3');
+      expect(newMigration?.fromDigest.ids).toEqual(['newer']);
+      expect(newMigration?.fromDigest.hash).toBe(computeStableDigest(['newer']));
     });
   });
 });

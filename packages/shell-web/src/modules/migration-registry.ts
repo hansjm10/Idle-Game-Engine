@@ -2,6 +2,7 @@ import type {
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
+import { computeStableDigest } from '@idle-engine/core';
 
 /**
  * Pure transformation function that migrates resource state from one content
@@ -142,6 +143,21 @@ class MigrationRegistry {
     if (descriptor.toDigest.version !== descriptor.toDigest.ids.length) {
       throw new Error(
         `Migration "${descriptor.id}" toDigest version (${descriptor.toDigest.version}) must equal ids.length (${descriptor.toDigest.ids.length})`,
+      );
+    }
+
+    // Validate hash matches computed digest from ids
+    const expectedFromHash = computeStableDigest(descriptor.fromDigest.ids);
+    if (descriptor.fromDigest.hash !== expectedFromHash) {
+      throw new Error(
+        `Migration "${descriptor.id}" fromDigest hash mismatch: expected "${expectedFromHash}" but got "${descriptor.fromDigest.hash}"`,
+      );
+    }
+
+    const expectedToHash = computeStableDigest(descriptor.toDigest.ids);
+    if (descriptor.toDigest.hash !== expectedToHash) {
+      throw new Error(
+        `Migration "${descriptor.id}" toDigest hash mismatch: expected "${expectedToHash}" but got "${descriptor.toDigest.hash}"`,
       );
     }
 

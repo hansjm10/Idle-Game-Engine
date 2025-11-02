@@ -573,12 +573,11 @@ export function validateSnapshot(
     );
 
     return {
-      // Compatible only when nothing was removed AND digests match.
-      // This aligns with restoreSession, which requires matching digests
-      // (additions change the digest and therefore still require migration).
-      compatible:
-        reconciliation.removedIds.length === 0 &&
-        reconciliation.digestsMatch === true,
+      // Compatible only when nothing was removed.
+      // This aligns with restoreSession and docs: additions/reordering are
+      // handled gracefully by reconciliation and don't require migration.
+      // Only resource removals require migration.
+      compatible: reconciliation.removedIds.length === 0,
       removedIds: reconciliation.removedIds,
       addedIds: reconciliation.addedIds,
       digestsMatch: reconciliation.digestsMatch,
@@ -642,7 +641,9 @@ export function validateSaveCompatibility(
   return {
     compatible: false,
     requiresMigration: true,
-    migrationAvailable: migrationPath.found,
+    // Only report migration as available if there are actual steps to apply
+    // (zero-step paths mean digests already match, so no migration needed)
+    migrationAvailable: migrationPath.found && migrationPath.migrations.length > 0,
     removedIds: validation.removedIds,
     addedIds: validation.addedIds,
     digestsMatch: validation.digestsMatch,

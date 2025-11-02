@@ -200,6 +200,28 @@ describe('SessionPersistenceAdapter', () => {
         code: 'CHECKSUM_VALIDATION_FAILED',
       });
     });
+
+    it('should handle slotIds containing colons', async () => {
+      // Test that slotIds with colons are correctly encoded/decoded
+      const slotId = 'user:123:session';
+      const snapshot = createMockSnapshot({
+        slotId,
+        capturedAt: new Date(Date.now()).toISOString(),
+        workerStep: 42,
+      });
+
+      await adapter.save(snapshot);
+
+      const loaded = await adapter.load(slotId);
+      expect(loaded).not.toBeNull();
+      expect(loaded?.slotId).toBe(slotId);
+      expect(loaded?.workerStep).toBe(42);
+
+      // Verify listSnapshots also works
+      const snapshots = await adapter.listSnapshots(slotId);
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0].slotId).toBe(slotId);
+    });
   });
 
   describe('delete', () => {

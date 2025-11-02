@@ -100,15 +100,18 @@ function encodeKey(slotId: string, timestamp: number): string {
 }
 
 function decodeKey(key: string): SessionKey | null {
-  const parts = key.split(':');
-  if (parts.length !== 2) {
+  // Split on last colon to handle slotIds that contain colons
+  const lastColonIndex = key.lastIndexOf(':');
+  if (lastColonIndex === -1) {
     return null;
   }
-  const timestamp = Number.parseInt(parts[1], 10);
+  const slotId = key.slice(0, lastColonIndex);
+  const timestampStr = key.slice(lastColonIndex + 1);
+  const timestamp = Number.parseInt(timestampStr, 10);
   if (!Number.isFinite(timestamp)) {
     return null;
   }
-  return { slotId: parts[0], timestamp };
+  return { slotId, timestamp };
 }
 
 /**

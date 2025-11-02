@@ -157,7 +157,7 @@ describe('Session Restore with Migration', () => {
       expect(result.migrationAvailable).toBe(true);
     });
 
-    it('should require migration when definitions add resources (digest mismatch)', async () => {
+    it('should NOT require migration when definitions only add resources', async () => {
       // Snapshot with 1 resource; definitions add a new resource but remove none
       const snapshot: StoredSessionSnapshot = {
         schemaVersion: 1,
@@ -180,9 +180,10 @@ describe('Session Restore with Migration', () => {
 
       const result = validateSaveCompatibility(snapshot, definitions);
 
-      expect(result.compatible).toBe(false);
-      expect(result.requiresMigration).toBe(true);
-      // No migration registered for this addition-only change
+      // Addition-only changes are compatible and don't require migration
+      // (new resources initialize to defaults gracefully)
+      expect(result.compatible).toBe(true);
+      expect(result.requiresMigration).toBe(false);
       expect(result.migrationAvailable).toBe(false);
       expect(result.removedIds).toEqual([]);
       expect(result.addedIds).toEqual(['stone']);
