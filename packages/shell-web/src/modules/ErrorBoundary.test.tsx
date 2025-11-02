@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 
 import { ErrorBoundary } from './ErrorBoundary.js';
 
@@ -9,9 +10,23 @@ import { ErrorBoundary } from './ErrorBoundary.js';
  */
 function ThrowError({ throwError, message }: { throwError: boolean; message?: string }): JSX.Element {
   if (throwError) {
-    throw new Error(message || 'Test error');
+    throw new Error(message !== undefined ? message : 'Test error');
   }
   return <div>Child component</div>;
+}
+
+/**
+ * Wrapper component with state for testing retry/dismiss behavior.
+ */
+function TestWrapper({
+  children,
+  initialShouldThrow = true
+}: {
+  children: (shouldThrow: boolean, setShouldThrow: (value: boolean) => void) => React.ReactNode;
+  initialShouldThrow?: boolean;
+}): JSX.Element {
+  const [shouldThrow, setShouldThrow] = useState(initialShouldThrow);
+  return <>{children(shouldThrow, setShouldThrow)}</>;
 }
 
 describe('ErrorBoundary', () => {
@@ -109,34 +124,38 @@ describe('ErrorBoundary', () => {
 
   it('retries rendering when retry button is clicked', async () => {
     const user = userEvent.setup();
-    let shouldThrow = true;
 
-    const { rerender } = render(
-      <ErrorBoundary>
-        <ThrowError throwError={shouldThrow} />
-      </ErrorBoundary>,
+    render(
+      <TestWrapper>
+        {(shouldThrow, setShouldThrow) => (
+          <div>
+            <button onClick={() => setShouldThrow(false)} data-testid="fix-button">
+              Fix Error
+            </button>
+            <ErrorBoundary>
+              <ThrowError throwError={shouldThrow} />
+            </ErrorBoundary>
+          </div>
+        )}
+      </TestWrapper>,
     );
 
     // Error is displayed
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
     // Fix the error condition
-    shouldThrow = false;
+    const fixButton = screen.getByTestId('fix-button');
+    await user.click(fixButton);
 
     // Click retry button
     const retryButton = screen.getByRole('button', { name: /try again/i });
     await user.click(retryButton);
 
-    // Rerender with fixed condition
-    rerender(
-      <ErrorBoundary>
-        <ThrowError throwError={shouldThrow} />
-      </ErrorBoundary>,
-    );
-
     // Child should render successfully now
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.getByText('Child component')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByText('Child component')).toBeInTheDocument();
+    });
   });
 
   it('records telemetry when retry button is clicked', async () => {
@@ -153,6 +172,7 @@ describe('ErrorBoundary', () => {
 
     const retryEvent = telemetryEvents.find((e) => e.name === 'ErrorBoundaryRetryClicked');
     expect(retryEvent).toBeDefined();
+    expect(retryEvent?.type).toBe('event'); // User action should be recorded as event, not error
     expect(retryEvent?.data.boundaryName).toBe('TestBoundary');
   });
 
@@ -160,20 +180,36 @@ describe('ErrorBoundary', () => {
     const user = userEvent.setup();
 
     render(
-      <ErrorBoundary>
-        <ThrowError throwError={true} />
-      </ErrorBoundary>,
+      <TestWrapper>
+        {(shouldThrow, setShouldThrow) => (
+          <div>
+            <button onClick={() => setShouldThrow(false)} data-testid="fix-button">
+              Fix Error
+            </button>
+            <ErrorBoundary>
+              <ThrowError throwError={shouldThrow} />
+            </ErrorBoundary>
+          </div>
+        )}
+      </TestWrapper>,
     );
 
     // Error is displayed
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
-    // Click dismiss button
+    // Fix the error condition
+    const fixButton = screen.getByTestId('fix-button');
+    await user.click(fixButton);
+
+    // Click dismiss button - this will remount children
     const dismissButton = screen.getByRole('button', { name: /dismiss/i });
     await user.click(dismissButton);
 
-    // Error should be dismissed
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // Error should be dismissed since we fixed the error condition
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByText('Child component')).toBeInTheDocument();
+    });
   });
 
   it('records telemetry when dismiss button is clicked', async () => {
@@ -190,6 +226,7 @@ describe('ErrorBoundary', () => {
 
     const dismissEvent = telemetryEvents.find((e) => e.name === 'ErrorBoundaryDismissClicked');
     expect(dismissEvent).toBeDefined();
+    expect(dismissEvent?.type).toBe('event'); // User action should be recorded as event, not error
     expect(dismissEvent?.data.boundaryName).toBe('TestBoundary');
   });
 
@@ -216,32 +253,38 @@ describe('ErrorBoundary', () => {
 
   it('custom fallback retry calls the correct handler', async () => {
     const user = userEvent.setup();
-    let shouldThrow = true;
 
     const customFallback = (_error: Error, retry: () => void) => (
       <button onClick={retry}>Custom Retry</button>
     );
 
-    const { rerender } = render(
-      <ErrorBoundary fallback={customFallback}>
-        <ThrowError throwError={shouldThrow} />
-      </ErrorBoundary>,
+    render(
+      <TestWrapper>
+        {(shouldThrow, setShouldThrow) => (
+          <div>
+            <button onClick={() => setShouldThrow(false)} data-testid="fix-button">
+              Fix Error
+            </button>
+            <ErrorBoundary fallback={customFallback}>
+              <ThrowError throwError={shouldThrow} />
+            </ErrorBoundary>
+          </div>
+        )}
+      </TestWrapper>,
     );
+
+    // Fix the error condition
+    const fixButton = screen.getByTestId('fix-button');
+    await user.click(fixButton);
 
     // Click custom retry button
     const retryButton = screen.getByRole('button', { name: /custom retry/i });
     await user.click(retryButton);
 
-    // Fix the error condition and rerender
-    shouldThrow = false;
-    rerender(
-      <ErrorBoundary fallback={customFallback}>
-        <ThrowError throwError={shouldThrow} />
-      </ErrorBoundary>,
-    );
-
     // Should render child successfully
-    expect(screen.getByText('Child component')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Child component')).toBeInTheDocument();
+    });
   });
 
   it('handles errors with no message gracefully', () => {

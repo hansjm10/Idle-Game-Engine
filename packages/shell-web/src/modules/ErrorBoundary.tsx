@@ -20,6 +20,13 @@ function recordTelemetryError(
   getTelemetryFacade()?.recordError?.(event, data);
 }
 
+function recordTelemetryEvent(
+  event: string,
+  data: Record<string, unknown>,
+): void {
+  getTelemetryFacade()?.recordEvent?.(event, data);
+}
+
 /**
  * Props for ErrorBoundary component.
  */
@@ -116,7 +123,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   handleRetry = (): void => {
     const { boundaryName = 'ErrorBoundary' } = this.props;
 
-    recordTelemetryError('ErrorBoundaryRetryClicked', {
+    recordTelemetryEvent('ErrorBoundaryRetryClicked', {
       boundaryName,
     });
 
@@ -132,7 +139,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   handleDismiss = (): void => {
     const { boundaryName = 'ErrorBoundary' } = this.props;
 
-    recordTelemetryError('ErrorBoundaryDismissClicked', {
+    recordTelemetryEvent('ErrorBoundaryDismissClicked', {
       boundaryName,
     });
 
