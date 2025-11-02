@@ -218,6 +218,46 @@ describe('Session Restore with Migration', () => {
   });
 
   describe('restoreSession with migration', () => {
+    it('should not treat zero-step migration as success when validation fails', async () => {
+      // Snapshot content digest already matches current definitions, but the
+      // serialized state is corrupted (length mismatch). Validation initially
+      // throws, and since no migration steps are available, we must revalidate
+      // and propagate the failure instead of restoring.
+
+      const digest = createDigest(['wood']);
+
+      const corruptedSnapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test-slot',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 10000,
+        state: {
+          ids: ['wood'],
+          // amounts length does not match ids length -> validation error
+          amounts: [],
+          capacities: [null],
+          flags: [0],
+        },
+        runtimeVersion: '1.0.0',
+        // Digest matches the current content definitions (zero-step path)
+        contentDigest: digest,
+      };
+
+      await adapter.save(corruptedSnapshot);
+
+      const definitions = createDefinitions(['wood']);
+      const result = await restoreSession(mockBridge, adapter, {
+        slotId: 'test-slot',
+        definitions,
+        allowMigration: true,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.validationStatus).toBe('invalid');
+      expect(result.error).toBeDefined();
+      expect(mockBridge.restoreSession).not.toHaveBeenCalled();
+    });
     it('should successfully migrate and restore when migration is registered', async () => {
       const oldDigest = createDigest(['wood']);
       const newDigest = createDigest(['lumber']);

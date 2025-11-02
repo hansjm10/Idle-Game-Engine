@@ -464,8 +464,24 @@ async function attemptMigration(
     }
 
     if (migrationPath.migrations.length === 0) {
-      // Digests match, no migration needed
-      // This shouldn't happen in practice since we only attempt migration when invalid
+      // Digests match, no migration steps to apply. However, we reached
+      // attemptMigration() because validation previously failed or flagged
+      // pending migration. Re-run the same validation path to ensure we do
+      // not treat corrupted snapshots as successfully migrated.
+      const revalidation = revalidateMigratedState(
+        snapshot.state,
+        definitions,
+        slotId,
+      );
+
+      if (!revalidation.success) {
+        return {
+          success: false,
+          error: revalidation.error,
+        };
+      }
+
+      // Revalidation passed: treat as a no-op migration and continue.
       return {
         success: true,
         migratedState: snapshot.state,
