@@ -106,8 +106,8 @@ describe('persistence-config', () => {
         delete process.env.VITE_ENABLE_PERSISTENCE_UI;
         // @ts-expect-error - testing runtime behavior with non-string value
         process.env.ENABLE_PERSISTENCE_UI = 1;
-        process.env.NODE_ENV = 'test';
-        // Non-string assignment doesn't set the env var, falls back to import.meta.env
+        process.env.NODE_ENV = 'production';
+        // In test environment, non-string assignment doesn't set the env var, falls back to NODE_ENV
         expect(isPersistenceUIEnabled()).toBe(false);
       });
     });

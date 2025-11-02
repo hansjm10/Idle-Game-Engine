@@ -2,6 +2,7 @@ import type {
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
+import { recordTelemetryError } from './telemetry-utils.js';
 
 /**
  * Persistence schema version for stored session snapshots.
@@ -300,6 +301,10 @@ export class SessionPersistenceAdapter {
           await this.trimOldSnapshots(snapshot.slotId);
         } catch (error) {
           // Log but don't fail the save operation
+          recordTelemetryError('PersistenceTrimSnapshotsFailed', {
+            slotId: snapshot.slotId,
+            error: error instanceof Error ? error.message : String(error),
+          });
           // eslint-disable-next-line no-console
           console.warn('[SessionPersistence] Failed to trim old snapshots', error);
         }

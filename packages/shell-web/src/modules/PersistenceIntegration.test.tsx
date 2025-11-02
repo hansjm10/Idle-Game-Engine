@@ -42,7 +42,7 @@ describe('PersistenceIntegration', () => {
     } as unknown as WorkerBridge;
 
     mockDefinitions = [
-      { id: 'gold', name: 'Gold', initial: 0 },
+      { id: 'gold', startAmount: 0 },
     ] as ResourceDefinition[];
 
     // Mock adapter
