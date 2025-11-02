@@ -89,6 +89,22 @@ class MigrationRegistry {
   private migrations = new Map<string, MigrationDescriptor>();
 
   /**
+   * Cache of precomputed composite keys for migration digests.
+   * Maps migration ID to { fromKey, toKey } to avoid repeated JSON.stringify
+   * calls during BFS pathfinding.
+   */
+  private digestKeyCache = new Map<string, { fromKey: string; toKey: string }>();
+
+  /**
+   * Helper to create composite key from digest (prevents hash collisions).
+   * Include ids to fully disambiguate digests with same hash+version.
+   * Use JSON.stringify to avoid delimiter ambiguity if ids contain special chars.
+   */
+  private digestKey(digest: ResourceDefinitionDigest): string {
+    return `${digest.hash}:${digest.version}:${JSON.stringify(digest.ids)}`;
+  }
+
+  /**
    * Registers a migration transform.
    *
    * @param descriptor - Migration metadata and transform function
@@ -170,20 +186,17 @@ class MigrationRegistry {
       );
     }
 
+    // Compute composite keys for caching and duplicate detection
+    const fromKey = this.digestKey(descriptor.fromDigest);
+    const toKey = this.digestKey(descriptor.toDigest);
+
     // Prevent duplicate edges (same fromDigest->toDigest path)
     // Compare full digest including ids to prevent collisions
-    // Use JSON.stringify for safe comparison even if ids contain special chars
     for (const existing of this.migrations.values()) {
-      if (
-        existing.fromDigest.hash === descriptor.fromDigest.hash &&
-        existing.fromDigest.version === descriptor.fromDigest.version &&
-        JSON.stringify(existing.fromDigest.ids) === JSON.stringify(descriptor.fromDigest.ids) &&
-        existing.toDigest.hash === descriptor.toDigest.hash &&
-        existing.toDigest.version === descriptor.toDigest.version &&
-        JSON.stringify(existing.toDigest.ids) === JSON.stringify(descriptor.toDigest.ids)
-      ) {
-        const fromKey = `${descriptor.fromDigest.hash}:${descriptor.fromDigest.version}:${JSON.stringify(descriptor.fromDigest.ids)}`;
-        const toKey = `${descriptor.toDigest.hash}:${descriptor.toDigest.version}:${JSON.stringify(descriptor.toDigest.ids)}`;
+      const existingFromKey = this.digestKey(existing.fromDigest);
+      const existingToKey = this.digestKey(existing.toDigest);
+
+      if (existingFromKey === fromKey && existingToKey === toKey) {
         throw new Error(
           `Migration "${descriptor.id}" creates duplicate edge from ${fromKey} to ${toKey}. Existing migration "${existing.id}" already covers this path.`,
         );
@@ -191,6 +204,8 @@ class MigrationRegistry {
     }
 
     this.migrations.set(descriptor.id, descriptor);
+    // Cache the composite keys to avoid recomputing during pathfinding
+    this.digestKeyCache.set(descriptor.id, { fromKey, toKey });
   }
 
   /**
@@ -216,14 +231,12 @@ class MigrationRegistry {
     fromDigest: ResourceDefinitionDigest,
     toDigest: ResourceDefinitionDigest,
   ): MigrationPath {
-    // Helper to create composite key from digest (prevents hash collisions)
-    // Include ids to fully disambiguate digests with same hash+version
-    // Use JSON.stringify to avoid delimiter ambiguity if ids contain special chars
-    const digestKey = (digest: ResourceDefinitionDigest): string =>
-      `${digest.hash}:${digest.version}:${JSON.stringify(digest.ids)}`;
+    // Compute keys for source and target digests
+    const fromKey = this.digestKey(fromDigest);
+    const toKey = this.digestKey(toDigest);
 
     // If digests match (full composite key), no migration needed
-    if (digestKey(fromDigest) === digestKey(toDigest)) {
+    if (fromKey === toKey) {
       return {
         migrations: [],
         fromDigest,
@@ -233,29 +246,35 @@ class MigrationRegistry {
     }
 
     // Build adjacency graph: composite key -> list of migrations starting from that digest
+    // Use cached keys for registered migrations to avoid recomputing
     const graph = new Map<string, MigrationDescriptor[]>();
     for (const migration of this.migrations.values()) {
-      const sourceKey = digestKey(migration.fromDigest);
-      if (!graph.has(sourceKey)) {
-        graph.set(sourceKey, []);
+      const cached = this.digestKeyCache.get(migration.id);
+      if (!cached) {
+        // Should never happen if migrations are properly registered
+        throw new Error(`Missing cached digest key for migration "${migration.id}"`);
       }
-      graph.get(sourceKey)!.push(migration);
+
+      if (!graph.has(cached.fromKey)) {
+        graph.set(cached.fromKey, []);
+      }
+      graph.get(cached.fromKey)!.push(migration);
     }
 
     // BFS to find shortest path
     // Use index-based dequeue for O(1) performance instead of Array.shift() which is O(n)
     const queue: Array<{ key: string; path: MigrationDescriptor[] }> = [
-      { key: digestKey(fromDigest), path: [] },
+      { key: fromKey, path: [] },
     ];
     let queueIndex = 0;
-    const visited = new Set<string>([digestKey(fromDigest)]);
+    const visited = new Set<string>([fromKey]);
 
     while (queueIndex < queue.length) {
       const current = queue[queueIndex]!;
       queueIndex += 1;
 
       // Check if we reached target
-      if (current.key === digestKey(toDigest)) {
+      if (current.key === toKey) {
         return {
           migrations: current.path,
           fromDigest,
@@ -267,7 +286,12 @@ class MigrationRegistry {
       // Explore neighbors
       const neighbors = graph.get(current.key) ?? [];
       for (const migration of neighbors) {
-        const nextKey = digestKey(migration.toDigest);
+        const cached = this.digestKeyCache.get(migration.id);
+        if (!cached) {
+          throw new Error(`Missing cached digest key for migration "${migration.id}"`);
+        }
+
+        const nextKey = cached.toKey;
         if (!visited.has(nextKey)) {
           visited.add(nextKey);
           queue.push({
@@ -312,6 +336,7 @@ class MigrationRegistry {
    */
   clear(): void {
     this.migrations.clear();
+    this.digestKeyCache.clear();
   }
 
   /**

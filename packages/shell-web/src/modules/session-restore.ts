@@ -600,12 +600,35 @@ export function validateSnapshot(
       addedIds: reconciliation.addedIds,
       digestsMatch: reconciliation.digestsMatch,
     };
-  } catch {
-    // reconcileSaveAgainstDefinitions throws for severe incompatibilities
+  } catch (error) {
+    // reconcileSaveAgainstDefinitions throws for severe incompatibilities.
+    // When it throws due to removed resources, the removedIds are computed but
+    // not included in the error. Try to compute them ourselves for diagnostics.
+    // eslint-disable-next-line no-console
+    console.warn('[SessionRestore] Snapshot validation failed during reconciliation', {
+      error: error instanceof Error ? error.message : String(error),
+      snapshotIds: snapshot.state.ids,
+    });
+
+    // Try to compute removedIds by comparing snapshot IDs with definition IDs
+    const definitionIds = new Set(definitions.map((def) => def.id));
+    const removedIds = snapshot.state.ids.filter((id) => !definitionIds.has(id));
+    const addedIds = definitions
+      .map((def) => def.id)
+      .filter((id) => !snapshot.state.ids.includes(id));
+
+    recordTelemetryError('PersistenceValidationFailed', {
+      reason: 'reconciliation_error',
+      error: error instanceof Error ? error.message : String(error),
+      idsCount: snapshot.state.ids.length,
+      removedIds,
+      addedIds,
+    });
+
     return {
       compatible: false,
-      removedIds: ['<validation error>'],
-      addedIds: [],
+      removedIds,
+      addedIds,
       digestsMatch: false,
     };
   }
@@ -659,9 +682,14 @@ export function validateSaveCompatibility(
   return {
     compatible: false,
     requiresMigration: true,
-    // Only report migration as available if there are actual steps to apply
-    // (zero-step paths mean digests already match, so no migration needed)
-    migrationAvailable: migrationPath.found && migrationPath.migrations.length > 0,
+    // Report migration as available if:
+    // 1. A path was found AND has actual steps to apply, OR
+    // 2. Zero-step path (digests match) but pendingMigration flag is set
+    //    (attemptMigration will revalidate and clear the flag)
+    migrationAvailable: migrationPath.found && (
+      migrationPath.migrations.length > 0 ||
+      hasPendingMigrationFlag
+    ),
     removedIds: validation.removedIds,
     addedIds: validation.addedIds,
     digestsMatch: validation.digestsMatch,
