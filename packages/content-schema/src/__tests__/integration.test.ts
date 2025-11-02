@@ -17,17 +17,25 @@ import type { NumericFormula } from '../base/formulas.js';
 import type { ContentSchemaOptions } from '../pack.js';
 import { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import {
+  convergentTransformTreeFixture,
+  cyclicTransformDirectFixture,
+  cyclicTransformIndirectFixture,
+  cyclicTransformMultiResourceFixture,
   cyclicUnlockConditionsFixture,
+  cyclicUnlockCrossEntityFixture,
   dependencyLoopFixture,
   duplicateResourceIdsFixture,
   featureGateViolationFixture,
   invalidAllowlistReferenceFixture,
   invalidFormulaReferencesFixture,
   invalidRuntimeEventContributionsFixture,
+  linearTransformChainFixture,
   localizationGapsFixture,
   missingMetricReferenceFixture,
   missingResourceReferenceFixture,
+  resourceSinkTransformFixture,
   selfReferencingDependencyFixture,
+  selfReferencingTransformFixture,
   validComprehensivePackFixture,
 } from '../__fixtures__/integration-packs.js';
 import { createContentPackValidator } from '../index.js';
@@ -158,18 +166,132 @@ describe('Integration: Cyclic Dependencies', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(cyclicUnlockConditionsFixture);
 
-    // TODO: Cycle detection may not be fully implemented yet
-    // For now, verify the fixture structure is valid
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle between resource-a and resource-b
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/unlock condition cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects unlock condition cycles across entity types (resource-generator)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicUnlockCrossEntityFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle between energy resource and solar-panel generator
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/unlock condition cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects direct transform chain cycles (A → B → A)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicTransformDirectFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle between transform-a and transform-b
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects indirect transform chain cycles (A → B → C → A)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicTransformIndirectFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle through transform-a, transform-b, and transform-c
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('detects multi-resource transform chain cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(cyclicTransformMultiResourceFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the cycle with multiple resources involved
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+  });
+
+  it('allows linear transform chains without cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(linearTransformChainFixture);
+
+    expect(result.success).toBe(true);
     if (!result.success) {
-      // If it fails, it should mention cycles
-      expect(result.error.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            message: expect.stringMatching(/cycl/i),
-          }),
-        ]),
-      );
+      console.error('Validation errors:', result.error.issues);
     }
+  });
+
+  it('allows convergent production trees without cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(convergentTransformTreeFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', result.error.issues);
+    }
+  });
+
+  it('allows resource sink patterns without cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(resourceSinkTransformFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', result.error.issues);
+    }
+  });
+
+  it('detects self-referencing transforms as cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(selfReferencingTransformFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the self-loop
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
   });
 
   it('detects self-referencing pack dependencies', () => {

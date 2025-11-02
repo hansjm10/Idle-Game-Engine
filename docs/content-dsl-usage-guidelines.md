@@ -189,6 +189,262 @@ the compiler and runtime guardrails described in the design docs.
 
 <!-- markdownlint-restore -->
 
+## Transform Patterns & Cycle Detection
+
+The content schema validates transform chains and unlock conditions for cycles
+at **build time** (during `pnpm generate`) to prevent content packs that would
+cause runaway production loops or deadlocked progression at runtime.
+Understanding these validation rules helps authors design safe and functional
+transform networks.
+
+**Important**: Cycle detection is a **build-time safety check** that runs
+during content pack validation. Content packs containing cycles will be
+rejected before they can be loaded into the game engine, ensuring problematic
+configurations never reach runtime.
+
+### What Constitutes a Cycle
+
+A **transform cycle** exists when transforms form a closed loop through their
+resource dependencies:
+
+- **Direct cycle (A → B → A)**: Transform A produces a resource that Transform B
+  consumes, and Transform B produces a resource that Transform A consumes.
+- **Indirect cycle (A → B → C → A)**: A chain of transforms that eventually
+  feeds back to the starting transform through intermediate resources.
+- **Multi-resource cycle**: Transforms with multiple inputs/outputs that create
+  circular dependencies (for example Transform A consumes X + Y and produces Z,
+  while Transforms B and C consume Z to produce X and Y respectively).
+
+An **unlock condition cycle** exists when entities have circular unlock
+dependencies:
+
+- Resource A unlocks when Resource B ≥ threshold
+- Resource B unlocks when Resource A ≥ threshold
+- Similar patterns exist for generators, upgrades, achievements, and other
+  entities with `unlockCondition` fields
+
+Both types of cycles are **detected automatically** during validation and will
+cause `pnpm generate` to fail with detailed error messages showing the cycle
+path.
+
+### Safe Transform Patterns
+
+Design transforms using these patterns to avoid cycles:
+
+#### ✅ Linear transformation chains
+
+```json
+{
+  "transforms": [
+    {
+      "id": "raw-to-refined",
+      "inputs": [{ "resourceId": "raw-ore", "amount": { "kind": "constant", "value": 1 } }],
+      "outputs": [{ "resourceId": "refined-metal", "amount": { "kind": "constant", "value": 1 } }]
+    },
+    {
+      "id": "refined-to-alloy",
+      "inputs": [{ "resourceId": "refined-metal", "amount": { "kind": "constant", "value": 2 } }],
+      "outputs": [{ "resourceId": "alloy", "amount": { "kind": "constant", "value": 1 } }]
+    }
+  ]
+}
+```
+
+This creates a one-way progression: raw-ore → refined-metal → alloy.
+
+#### ✅ Resource sinks (consumables)
+
+```json
+{
+  "transforms": [
+    {
+      "id": "craft-boost",
+      "inputs": [
+        { "resourceId": "mana", "amount": { "kind": "constant", "value": 100 } },
+        { "resourceId": "essence", "amount": { "kind": "constant", "value": 10 } }
+      ],
+      "outputs": [{ "resourceId": "boost-item", "amount": { "kind": "constant", "value": 1 } }]
+    }
+  ]
+}
+```
+
+Resources are consumed but not regenerated through transforms, creating a
+one-way flow.
+
+#### ✅ Convergent production trees
+
+```json
+{
+  "transforms": [
+    {
+      "id": "wood-to-planks",
+      "inputs": [{ "resourceId": "wood", "amount": { "kind": "constant", "value": 1 } }],
+      "outputs": [{ "resourceId": "planks", "amount": { "kind": "constant", "value": 4 } }]
+    },
+    {
+      "id": "stone-to-bricks",
+      "inputs": [{ "resourceId": "stone", "amount": { "kind": "constant", "value": 1 } }],
+      "outputs": [{ "resourceId": "bricks", "amount": { "kind": "constant", "value": 2 } }]
+    },
+    {
+      "id": "build-house",
+      "inputs": [
+        { "resourceId": "planks", "amount": { "kind": "constant", "value": 20 } },
+        { "resourceId": "bricks", "amount": { "kind": "constant", "value": 10 } }
+      ],
+      "outputs": [{ "resourceId": "house", "amount": { "kind": "constant", "value": 1 } }]
+    }
+  ]
+}
+```
+
+Multiple resource streams converge but never loop back to their sources.
+
+#### ❌ Circular transform chains
+
+```json
+{
+  "transforms": [
+    {
+      "id": "water-to-steam",
+      "inputs": [{ "resourceId": "water", "amount": { "kind": "constant", "value": 1 } }],
+      "outputs": [{ "resourceId": "steam", "amount": { "kind": "constant", "value": 1 } }]
+    },
+    {
+      "id": "steam-to-water",
+      "inputs": [{ "resourceId": "steam", "amount": { "kind": "constant", "value": 1 } }],
+      "outputs": [{ "resourceId": "water", "amount": { "kind": "constant", "value": 1 } }]
+    }
+  ]
+}
+```
+
+**Validation error**: `Transform cycle detected: water-to-steam → steam-to-water → water-to-steam`
+
+### Safe Unlock Condition Patterns
+
+Design unlock conditions that form directed acyclic graphs (DAGs):
+
+#### ✅ Progressive unlocks
+
+```json
+{
+  "resources": [
+    { "id": "tier-1-resource" },
+    {
+      "id": "tier-2-resource",
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "tier-1-resource",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 100 }
+      }
+    },
+    {
+      "id": "tier-3-resource",
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "tier-2-resource",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 50 }
+      }
+    }
+  ]
+}
+```
+
+Clear one-way progression through tiers.
+
+#### ❌ Circular unlock dependencies
+
+```json
+{
+  "resources": [
+    {
+      "id": "resource-a",
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "resource-b",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 10 }
+      }
+    },
+    {
+      "id": "resource-b",
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "resource-a",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 10 }
+      }
+    }
+  ]
+}
+```
+
+**Validation error**: `Unlock condition cycle detected: resource-a → resource-b → resource-a`
+
+### Transform Cycle Detection Checklist
+
+- [ ] Map out resource flow graphs on paper before implementing complex
+  transform networks
+- [ ] Ensure all transform chains have clear "source" resources (from generators
+  or initial grants) and "sink" resources (consumed but not regenerated)
+- [ ] Avoid bidirectional transforms between the same pair of resources unless
+  mediated by additional resources or conditions
+- [ ] Run `pnpm generate` after adding transforms and address any cycle
+  detection errors immediately
+- [ ] Test unlock progressions manually to confirm resources become available in
+  the expected order
+
+### Migrating Existing Content with Cycles
+
+If `pnpm generate` fails with cycle detection errors after upgrading:
+
+1. **Identify the cycle**: Read the error message carefully. It shows the
+   complete cycle path (e.g., `transform-a → transform-b → transform-a`).
+
+2. **Understand the dependencies**: Map out which resources each transform
+   consumes and produces. Draw a diagram if helpful.
+
+3. **Break the cycle** using one of these strategies:
+   - **Add source resources**: Introduce generators or initial grants to provide
+     resources from outside the cycle
+   - **Convert to linear chain**: Redesign bidirectional transforms as one-way
+     progression (A → B → C instead of A ⇄ B)
+   - **Add intermediate resources**: Insert new resources in the chain to create
+     a clear flow direction
+   - **Remove problematic transforms**: If a transform creates an unwanted loop,
+     consider removing it or replacing it with a different game mechanic
+
+4. **For unlock condition cycles**: Similar approach applies. If Resource A
+   requires Resource B to unlock, and Resource B requires Resource A, redesign
+   the unlock progression to be hierarchical (introduce a Resource C that both
+   depend on, or remove one unlock condition).
+
+5. **Re-run validation**: After making changes, run `pnpm generate` again to
+   verify all cycles are resolved.
+
+**Implementation details**: Cycle detection is implemented in
+`packages/content-schema/src/pack.ts` via `validateTransformCycles()` and
+`validateUnlockConditionCycles()` functions, using depth-first search with path
+tracking to provide detailed error messages.
+
+### Safety Guardrails
+
+In addition to cycle detection, transforms include runtime safety limits defined
+in the transform schema:
+
+- `maxRunsPerTick`: Caps executions per simulation step (default and max values
+  enforced)
+- `maxOutstandingBatches`: Limits queued batch transforms (prevents unbounded
+  queue growth)
+
+These guards complement cycle detection by preventing runaway transforms even in
+edge cases. See `packages/content-schema/src/modules/transforms.ts` for
+enforcement details.
+
 ## Reference Examples & Tooling
 
 Use the sample pack as a living reference:

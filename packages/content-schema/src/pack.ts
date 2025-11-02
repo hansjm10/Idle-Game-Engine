@@ -1482,6 +1482,12 @@ const validateCrossReferences = (
       });
     }
   });
+
+  // Validate transform chains for cycles
+  validateTransformCycles(pack, ctx);
+
+  // Validate unlock conditions for cycles
+  validateUnlockConditionCycles(pack, ctx);
 };
 
 const ensureFormulaReference = (
@@ -1837,6 +1843,418 @@ const validateDependencies = (
       path: toMutablePath(['metadata', 'dependencies', 'requires'] as const),
       message: 'Dependency graph contains a cycle involving this pack.',
     });
+  }
+};
+
+/**
+ * Type definitions for cycle detection
+ */
+type AdjacencyGraph = Map<string, Set<string>>;
+type CyclePath = string[];
+
+/**
+ * Normalizes a cycle path to its canonical form for deduplication.
+ * The canonical form starts with the lexicographically smallest element.
+ * For example: [B, C, A, B] becomes [A, B, C, A]
+ */
+const normalizeCyclePath = (cyclePath: CyclePath): string => {
+  if (cyclePath.length <= 1) {
+    return cyclePath.join('→');
+  }
+
+  // Remove the duplicate last element for rotation
+  const cycle = cyclePath.slice(0, -1);
+
+  // Find the index of the lexicographically smallest element
+  let minIndex = 0;
+  for (let i = 1; i < cycle.length; i++) {
+    if (cycle[i] < cycle[minIndex]) {
+      minIndex = i;
+    }
+  }
+
+  // Rotate the cycle to start with the smallest element
+  const normalized = [...cycle.slice(minIndex), ...cycle.slice(0, minIndex)];
+  // Add the first element again to close the cycle
+  normalized.push(normalized[0]);
+
+  return normalized.join('→');
+};
+
+/**
+ * Generic cycle detection using DFS with path tracking.
+ * Returns detected cycles (deduplicated and optionally stopping at first cycle).
+ *
+ * @param adjacency - The graph represented as an adjacency list
+ * @param nodes - The nodes to check for cycles
+ * @param stopAtFirst - If true, stops after finding the first cycle (default: true for performance)
+ * @returns Array of cycle paths
+ */
+const detectCycles = (
+  adjacency: AdjacencyGraph,
+  nodes: Iterable<string>,
+  stopAtFirst = true,
+): CyclePath[] => {
+  const visited = new Set<string>();
+  const stack = new Set<string>();
+  const path: CyclePath = [];
+  const cycles: CyclePath[] = [];
+  const seenCycles = new Set<string>();
+
+  const visit = (node: string): boolean => {
+    if (stack.has(node)) {
+      // Cycle detected! Build the cycle path
+      const cycleStartIndex = path.indexOf(node);
+      const cyclePath: CyclePath = [...path.slice(cycleStartIndex), node];
+
+      // Normalize and deduplicate
+      const normalizedCycle = normalizeCyclePath(cyclePath);
+      if (!seenCycles.has(normalizedCycle)) {
+        seenCycles.add(normalizedCycle);
+        cycles.push(cyclePath);
+
+        // Early termination if requested
+        if (stopAtFirst) {
+          return true; // Signal to stop
+        }
+      }
+      return false;
+    }
+
+    if (visited.has(node)) {
+      return false;
+    }
+
+    visited.add(node);
+    stack.add(node);
+    path.push(node);
+
+    const edges = adjacency.get(node);
+    if (edges) {
+      for (const target of edges) {
+        if (visit(target)) {
+          return true; // Propagate early termination
+        }
+      }
+    }
+
+    stack.delete(node);
+    path.pop();
+    return false;
+  };
+
+  // Check all nodes for cycles
+  for (const nodeId of nodes) {
+    if (!visited.has(nodeId)) {
+      if (visit(nodeId)) {
+        break; // Early termination
+      }
+    }
+  }
+
+  return cycles;
+};
+
+const validateTransformCycles = (
+  pack: ParsedContentPack,
+  ctx: z.RefinementCtx,
+) => {
+  // Build a graph where nodes are transforms and edges are resource dependencies
+  // Edge from transform A to transform B exists when:
+  // A produces a resource that B consumes as input
+  const adjacency = new Map<string, Set<string>>();
+  const transformIndex = new Map<string, number>();
+
+  // Index all transforms by their output resources
+  const resourceProducers = new Map<string, Set<string>>();
+
+  pack.transforms.forEach((transform, index) => {
+    transformIndex.set(transform.id, index);
+
+    transform.outputs.forEach((output) => {
+      if (!resourceProducers.has(output.resourceId)) {
+        resourceProducers.set(output.resourceId, new Set());
+      }
+      resourceProducers.get(output.resourceId)?.add(transform.id);
+    });
+  });
+
+  // Build the adjacency graph based on resource dependencies
+  pack.transforms.forEach((transform) => {
+    transform.inputs.forEach((input) => {
+      const producers = resourceProducers.get(input.resourceId);
+      if (producers) {
+        producers.forEach((producerId) => {
+          // Add edge from producer to consumer
+          if (!adjacency.has(producerId)) {
+            adjacency.set(producerId, new Set());
+          }
+          adjacency.get(producerId)?.add(transform.id);
+        });
+      }
+    });
+  });
+
+  // Detect cycles using the generic helper
+  // Uses early termination (stopAtFirst=true by default) for performance
+  const cycles = detectCycles(
+    adjacency,
+    pack.transforms.map((t) => t.id),
+  );
+
+  // Report detected cycle (at most one due to early termination)
+  for (const cyclePath of cycles) {
+    const cycleDescription = cyclePath.join(' → ');
+    const firstNodeInCycle = cyclePath[0];
+    const index = transformIndex.get(firstNodeInCycle);
+
+    // Collect resources involved in the cycle
+    const involvedResources = new Set<string>();
+    for (let i = 0; i < cyclePath.length - 1; i++) {
+      const currentTransformId = cyclePath[i];
+      const nextTransformId = cyclePath[i + 1];
+
+      // Find the transform objects
+      const currentTransform = pack.transforms.find((t) => t.id === currentTransformId);
+      const nextTransform = pack.transforms.find((t) => t.id === nextTransformId);
+
+      if (currentTransform && nextTransform) {
+        // Find resources produced by current that are consumed by next
+        currentTransform.outputs.forEach((output) => {
+          if (nextTransform.inputs.some((input) => input.resourceId === output.resourceId)) {
+            involvedResources.add(output.resourceId);
+          }
+        });
+      }
+    }
+
+    const resourceList = Array.from(involvedResources).sort().join(', ');
+    const resourceContext = involvedResources.size > 0
+      ? ` (involves resources: ${resourceList})`
+      : '';
+
+    if (index !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: toMutablePath(['transforms', index] as const),
+        message: `Transform cycle detected: ${cycleDescription}${resourceContext}. Consider breaking the cycle by: (1) introducing external resource sources via generators or initial grants, (2) converting to a linear transformation chain, or (3) adding intermediate resources to create a clear flow direction.`,
+      });
+    }
+  }
+};
+
+const validateUnlockConditionCycles = (
+  pack: ParsedContentPack,
+  ctx: z.RefinementCtx,
+) => {
+  // Build a graph where nodes are entities (resources, generators, upgrades, etc.)
+  // and edges represent unlock dependencies
+  const adjacency = new Map<string, Set<string>>();
+
+  // Track entity types and indices for error reporting
+  type EntityInfo = {
+    type: 'resource' | 'generator' | 'upgrade' | 'achievement' | 'transform' | 'prestige';
+    index: number;
+  };
+  const entityMap = new Map<string, EntityInfo>();
+
+  // Helper to extract entity references from conditions
+  const extractConditionReferences = (condition: Condition | undefined): Set<string> => {
+    const refs = new Set<string>();
+
+    if (!condition) {
+      return refs;
+    }
+
+    const visit = (node: Condition) => {
+      switch (node.kind) {
+        case 'resourceThreshold':
+          refs.add(node.resourceId);
+          break;
+        case 'generatorLevel':
+          refs.add(node.generatorId);
+          break;
+        case 'upgradeOwned':
+          refs.add(node.upgradeId);
+          break;
+        case 'prestigeUnlocked':
+          refs.add(node.prestigeLayerId);
+          break;
+        case 'allOf':
+        case 'anyOf':
+          node.conditions.forEach(visit);
+          break;
+        case 'not':
+          visit(node.condition);
+          break;
+        case 'always':
+        case 'never':
+        case 'flag':
+        case 'script':
+          // These conditions don't reference game entities, so no unlock dependencies
+          break;
+        default: {
+          // Exhaustive check - TypeScript will error if new kinds are added
+          const _exhaustive: never = node;
+          return _exhaustive;
+        }
+      }
+    };
+
+    visit(condition);
+    return refs;
+  };
+
+  // Index all entities
+  pack.resources.forEach((resource, index) => {
+    entityMap.set(resource.id, { type: 'resource', index });
+  });
+  pack.generators.forEach((generator, index) => {
+    entityMap.set(generator.id, { type: 'generator', index });
+  });
+  pack.upgrades.forEach((upgrade, index) => {
+    entityMap.set(upgrade.id, { type: 'upgrade', index });
+  });
+  pack.achievements.forEach((achievement, index) => {
+    entityMap.set(achievement.id, { type: 'achievement', index });
+  });
+  pack.transforms.forEach((transform, index) => {
+    entityMap.set(transform.id, { type: 'transform', index });
+  });
+  pack.prestigeLayers.forEach((layer, index) => {
+    entityMap.set(layer.id, { type: 'prestige', index });
+  });
+
+  // Build adjacency graph for resources
+  pack.resources.forEach((resource) => {
+    if (resource.unlockCondition) {
+      const refs = extractConditionReferences(resource.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(resource.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for generators
+  pack.generators.forEach((generator) => {
+    if (generator.baseUnlock) {
+      const refs = extractConditionReferences(generator.baseUnlock);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(generator.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for upgrades
+  pack.upgrades.forEach((upgrade) => {
+    if (upgrade.unlockCondition) {
+      const refs = extractConditionReferences(upgrade.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(upgrade.id);
+      });
+    }
+    // Also check prerequisites (which are Condition objects)
+    upgrade.prerequisites.forEach((prereqCondition) => {
+      const refs = extractConditionReferences(prereqCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(upgrade.id);
+      });
+    });
+  });
+
+  // Build adjacency graph for achievements
+  pack.achievements.forEach((achievement) => {
+    if (achievement.unlockCondition) {
+      const refs = extractConditionReferences(achievement.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(achievement.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for transforms
+  pack.transforms.forEach((transform) => {
+    if (transform.unlockCondition) {
+      const refs = extractConditionReferences(transform.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(transform.id);
+      });
+    }
+  });
+
+  // Build adjacency graph for prestige layers
+  pack.prestigeLayers.forEach((layer) => {
+    if (layer.unlockCondition) {
+      const refs = extractConditionReferences(layer.unlockCondition);
+      refs.forEach((ref) => {
+        if (!adjacency.has(ref)) {
+          adjacency.set(ref, new Set());
+        }
+        adjacency.get(ref)?.add(layer.id);
+      });
+    }
+  });
+
+  // Mapping from entity type to pack array property name
+  const entityTypePaths: Record<EntityInfo['type'], string> = {
+    resource: 'resources',
+    generator: 'generators',
+    upgrade: 'upgrades',
+    achievement: 'achievements',
+    transform: 'transforms',
+    prestige: 'prestigeLayers',
+  };
+
+  // Detect cycles using the generic helper
+  // Uses early termination (stopAtFirst=true by default) for performance
+  const cycles = detectCycles(adjacency, entityMap.keys());
+
+  // Report detected cycle (at most one due to early termination)
+  for (const cyclePath of cycles) {
+    const cycleDescription = cyclePath.join(' → ');
+    const firstNodeInCycle = cyclePath[0];
+    const entityInfo = entityMap.get(firstNodeInCycle);
+
+    // Collect entity types involved in the cycle
+    const involvedTypes = new Set<string>();
+    cyclePath.forEach((entityId) => {
+      const info = entityMap.get(entityId);
+      if (info) {
+        involvedTypes.add(info.type);
+      }
+    });
+
+    const typeList = Array.from(involvedTypes).sort().join(', ');
+    const typeContext = involvedTypes.size > 0
+      ? ` (involves ${involvedTypes.size === 1 ? typeList : `entity types: ${typeList}`})`
+      : '';
+
+    if (entityInfo) {
+      const pathPrefix = [entityTypePaths[entityInfo.type], entityInfo.index] as const;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: toMutablePath(pathPrefix),
+        message: `Unlock condition cycle detected: ${cycleDescription}${typeContext}. Consider fixing by: (1) introducing a base entity that both depend on, (2) removing one unlock condition to create a hierarchical progression, or (3) using a flag or other non-entity condition to break the cycle.`,
+      });
+    }
   }
 };
 
