@@ -4,6 +4,7 @@ import type { WorkerBridge } from './worker-bridge.js';
 import { SessionPersistenceError } from './session-persistence-adapter.js';
 import { recordTelemetryEvent } from './telemetry-utils.js';
 import type { AutosaveStatus } from './autosave-controller.js';
+import styles from './PersistencePanel.module.css';
 
 /**
  * Toast notification type for persistence operations.
@@ -232,17 +233,15 @@ export function PersistencePanel({
     };
   }, []);
 
+  // Determine if any error toasts are present for accessibility
+  const hasErrorToast = toasts.some((toast) => toast.type === 'error');
+
   return (
     <section
       aria-labelledby="persistence-panel-heading"
-      style={{
-        border: '1px solid #ccc',
-        borderRadius: 4,
-        padding: 16,
-        marginTop: 24,
-      }}
+      className={styles.panel}
     >
-      <h2 id="persistence-panel-heading" style={{ marginTop: 0 }}>
+      <h2 id="persistence-panel-heading" className={styles.heading}>
         Save / Load
       </h2>
 
@@ -250,20 +249,14 @@ export function PersistencePanel({
         <div
           role="alert"
           aria-live="assertive"
-          style={{
-            backgroundColor: '#fee',
-            border: '1px solid #c33',
-            borderRadius: 4,
-            padding: 12,
-            marginBottom: 16,
-          }}
+          className={styles.restoreError}
         >
           <strong>Restore Error:</strong> {restoreError}
-          <div style={{ marginTop: 8 }}>
+          <div className={styles.restoreErrorActions}>
             <button
               onClick={handleRetryRestore}
               type="button"
-              style={{ marginRight: 8 }}
+              className={styles.retryButton}
             >
               Retry
             </button>
@@ -274,13 +267,13 @@ export function PersistencePanel({
         </div>
       )}
 
-      <div style={{ marginBottom: 16 }}>
+      <div className={styles.actions}>
         <button
           onClick={handleManualSave}
           disabled={isSaving}
           type="button"
           aria-label="Save game manually"
-          style={{ marginRight: 8 }}
+          className={styles.actionButton}
         >
           {isSaving ? 'Saving...' : 'Save Now'}
         </button>
@@ -290,7 +283,7 @@ export function PersistencePanel({
           disabled={isLoading}
           type="button"
           aria-label="Load saved game"
-          style={{ marginRight: 8 }}
+          className={styles.actionButton}
         >
           {isLoading ? 'Loading...' : 'Load Game'}
         </button>
@@ -305,7 +298,7 @@ export function PersistencePanel({
       </div>
 
       {lastSaved && (
-        <p style={{ fontSize: 14, color: '#666', margin: '8px 0 0 0' }}>
+        <p className={styles.lastSaved}>
           <strong>Last manual save:</strong>{' '}
           <time dateTime={lastSaved.toISOString()}>
             {lastSaved.toLocaleString()}
@@ -314,32 +307,32 @@ export function PersistencePanel({
       )}
 
       {autosaveStatus && (
-        <div style={{ fontSize: 14, color: '#666', marginTop: 8 }}>
-          <p style={{ margin: 0 }}>
+        <div className={styles.autosaveStatus}>
+          <p className={styles.autosaveStatusText}>
             <strong>Autosave:</strong>{' '}
             {autosaveStatus.isActive ? (
               <span>
                 {autosaveStatus.isSaving ? (
-                  <span style={{ color: '#2563eb' }}>
+                  <span className={styles.autosaveSaving}>
                     Saving...{' '}
                     <span
                       aria-label="Autosave in progress"
-                      style={{ display: 'inline-block', animation: 'pulse 1.5s ease-in-out infinite' }}
+                      className={styles.autosaveIndicator}
                     >
                       ●
                     </span>
                   </span>
                 ) : (
-                  <span style={{ color: '#059669' }}>Active</span>
+                  <span className={styles.autosaveActive}>Active</span>
                 )}
                 {' '}(every {Math.round(autosaveStatus.intervalMs / 1000)}s)
               </span>
             ) : (
-              <span style={{ color: '#6b7280' }}>Idle</span>
+              <span className={styles.autosaveIdle}>Idle</span>
             )}
           </p>
           {autosaveStatus.lastSaveTimestamp && (
-            <p style={{ margin: '4px 0 0 0', fontSize: 13 }}>
+            <p className={styles.autosaveLastSave}>
               Last autosave:{' '}
               <time dateTime={new Date(autosaveStatus.lastSaveTimestamp).toISOString()}>
                 {new Date(autosaveStatus.lastSaveTimestamp).toLocaleString()}
@@ -353,7 +346,7 @@ export function PersistencePanel({
         <div
           role="status"
           aria-live="polite"
-          style={{ fontSize: 14, color: '#666', marginTop: 8 }}
+          className={styles.savingProgress}
         >
           Manual save in progress...
         </div>
@@ -361,67 +354,43 @@ export function PersistencePanel({
 
       {toasts.length > 0 && (
         <div
-          aria-live="polite"
+          aria-live={hasErrorToast ? 'assertive' : 'polite'}
           aria-atomic="true"
-          style={{
-            position: 'fixed',
-            bottom: 16,
-            right: 16,
-            zIndex: 1000,
-          }}
+          className={styles.toastContainer}
         >
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              role="alert"
-              style={{
-                backgroundColor:
-                  toast.type === 'error'
-                    ? '#fee'
-                    : toast.type === 'success'
-                      ? '#efe'
-                      : '#eef',
-                border: `1px solid ${
-                  toast.type === 'error'
-                    ? '#c33'
-                    : toast.type === 'success'
-                      ? '#3c3'
-                      : '#33c'
-                }`,
-                borderRadius: 4,
-                padding: 12,
-                marginBottom: 8,
-                minWidth: 250,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                <div>
-                  <strong>{toast.message}</strong>
-                  {toast.details && (
-                    <div style={{ fontSize: 12, marginTop: 4 }}>
-                      {toast.details}
-                    </div>
-                  )}
+          {toasts.map((toast) => {
+            const toastClass =
+              toast.type === 'error' ? styles.toastError :
+              toast.type === 'success' ? styles.toastSuccess :
+              styles.toastInfo;
+
+            return (
+              <div
+                key={toast.id}
+                role="alert"
+                className={`${styles.toast} ${toastClass}`}
+              >
+                <div className={styles.toastContent}>
+                  <div>
+                    <strong>{toast.message}</strong>
+                    {toast.details && (
+                      <div className={styles.toastDetails}>
+                        {toast.details}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => dismissToast(toast.id)}
+                    type="button"
+                    aria-label="Dismiss notification"
+                    className={styles.toastDismissButton}
+                  >
+                    ×
+                  </button>
                 </div>
-                <button
-                  onClick={() => dismissToast(toast.id)}
-                  type="button"
-                  aria-label="Dismiss notification"
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    fontSize: 16,
-                    cursor: 'pointer',
-                    padding: 0,
-                    marginLeft: 8,
-                  }}
-                >
-                  ×
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

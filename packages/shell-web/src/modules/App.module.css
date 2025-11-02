@@ -1,0 +1,16 @@
+/**
+ * App Component Styles
+ *
+ * CSS Module for the main App component including:
+ * - Persistence error boundary custom fallback
+ *
+ * Note: This component reuses most error styles from ErrorBoundary.module.css
+ * and only defines additional specific styles needed for the custom fallback.
+ */
+
+/* Additional warning text for persistence errors (lighter brown tone) */
+.persistenceWarning {
+  margin: 0 0 1rem 0;
+  font-size: 0.875rem;
+  color: #7c2d12;
+}

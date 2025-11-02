@@ -1,0 +1,162 @@
+/**
+ * PersistencePanel Component Styles
+ *
+ * CSS Module for the persistence panel UI including:
+ * - Main panel container and layout
+ * - Toast notifications with type-based styling (success, error, info)
+ * - Restore error alert
+ * - Autosave status indicators
+ * - Manual save progress states
+ *
+ * Colors follow a consistent palette:
+ * - Error: Red tones (#fee, #c33, #dc2626, #991b1b)
+ * - Success: Green tones (#efe, #3c3, #059669)
+ * - Info: Blue tones (#eef, #33c, #2563eb)
+ * - Neutral: Gray tones (#666, #6b7280, #ccc)
+ */
+
+/* Main panel container */
+.panel {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 16px;
+  margin-top: 24px;
+}
+
+.heading {
+  margin-top: 0;
+}
+
+/* Restore error alert */
+.restoreError {
+  background-color: #fee;
+  border: 1px solid #c33;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.restoreErrorActions {
+  margin-top: 8px;
+}
+
+.retryButton {
+  margin-right: 8px;
+}
+
+/* Action buttons container */
+.actions {
+  margin-bottom: 16px;
+}
+
+.actionButton {
+  margin-right: 8px;
+}
+
+/* Last saved timestamp */
+.lastSaved {
+  font-size: 14px;
+  color: #666;
+  margin: 8px 0 0 0;
+}
+
+/* Autosave status */
+.autosaveStatus {
+  font-size: 14px;
+  color: #666;
+  margin-top: 8px;
+}
+
+.autosaveStatusText {
+  margin: 0;
+}
+
+.autosaveActive {
+  color: #059669;
+}
+
+.autosaveSaving {
+  color: #2563eb;
+}
+
+.autosaveIdle {
+  color: #6b7280;
+}
+
+.autosaveIndicator {
+  display: inline-block;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.autosaveLastSave {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+}
+
+/* Manual save progress */
+.savingProgress {
+  font-size: 14px;
+  color: #666;
+  margin-top: 8px;
+}
+
+/* Toast notifications container */
+.toastContainer {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+}
+
+/* Individual toast */
+.toast {
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 8px;
+  min-width: 250px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.toastError {
+  background-color: #fee;
+  border: 1px solid #c33;
+}
+
+.toastSuccess {
+  background-color: #efe;
+  border: 1px solid #3c3;
+}
+
+.toastInfo {
+  background-color: #eef;
+  border: 1px solid #33c;
+}
+
+.toastContent {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+
+.toastDetails {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.toastDismissButton {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 8px;
+}

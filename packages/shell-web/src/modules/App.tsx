@@ -10,6 +10,8 @@ import {
   useShellBridge,
   useShellState,
 } from './ShellStateProvider.js';
+import errorStyles from './ErrorBoundary.module.css';
+import appStyles from './App.module.css';
 
 const EVENT_HISTORY_LIMIT = 50;
 
@@ -52,53 +54,28 @@ function ShellAppSurface(): JSX.Element {
           <div
             role="alert"
             aria-live="assertive"
-            style={{
-              padding: '1rem',
-              margin: '1rem 0',
-              border: '2px solid #dc2626',
-              borderRadius: '0.5rem',
-              backgroundColor: '#fef2f2',
-              color: '#991b1b',
-            }}
+            className={errorStyles.errorAlert}
           >
-            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.125rem', fontWeight: 600 }}>
+            <h3 className={errorStyles.errorHeading}>
               Persistence System Error
             </h3>
-            <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem' }}>
+            <p className={errorStyles.errorMessage}>
               The save/load system encountered an error: {error.message}
             </p>
-            <p style={{ margin: '0 0 1rem 0', fontSize: '0.875rem', color: '#7c2d12' }}>
+            <p className={appStyles.persistenceWarning}>
               You can continue playing, but save/load features may be unavailable.
             </p>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className={errorStyles.errorActions}>
               <button
                 onClick={retry}
-                style={{
-                  padding: '0.5rem 1rem',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: '#fff',
-                  backgroundColor: '#dc2626',
-                  border: 'none',
-                  borderRadius: '0.375rem',
-                  cursor: 'pointer',
-                }}
+                className={errorStyles.retryButton}
                 type="button"
               >
                 Retry
               </button>
               <button
                 onClick={dismiss}
-                style={{
-                  padding: '0.5rem 1rem',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: '#991b1b',
-                  backgroundColor: 'transparent',
-                  border: '1px solid #991b1b',
-                  borderRadius: '0.375rem',
-                  cursor: 'pointer',
-                }}
+                className={errorStyles.dismissButton}
                 type="button"
               >
                 Hide
