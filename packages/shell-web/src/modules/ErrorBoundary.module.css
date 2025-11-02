@@ -4,11 +4,7 @@
  * CSS Module for the error boundary component's default fallback UI.
  * Provides consistent error styling across the application.
  *
- * Colors use red error palette:
- * - Background: #fef2f2 (very light red)
- * - Border: #dc2626 (medium red)
- * - Text: #991b1b (dark red)
- * - Button: #dc2626 (medium red for primary action)
+ * Colors use CSS variables from variables.css for easy theming.
  *
  * Note: Custom fallback UIs provided via the fallback prop
  * can use these same classes or define their own styles.
@@ -16,12 +12,12 @@
 
 /* Error alert container */
 .errorAlert {
-  padding: 1rem;
-  margin: 1rem 0;
-  border: 2px solid #dc2626;
-  border-radius: 0.5rem;
-  background-color: #fef2f2;
-  color: #991b1b;
+  padding: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  border: 2px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-error-bg);
+  color: var(--color-error-text);
 }
 
 /* Error heading */
@@ -40,47 +36,47 @@
 /* Button container */
 .errorActions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--spacing-sm);
 }
 
 /* Primary action button (retry) */
 .retryButton {
-  padding: 0.5rem 1rem;
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: 0.875rem;
   font-weight: 500;
-  color: #fff;
-  background-color: #dc2626;
+  color: var(--color-bg-white);
+  background-color: var(--color-error-border);
   border: none;
-  border-radius: 0.375rem;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .retryButton:hover {
-  background-color: #b91c1c;
+  background-color: var(--color-error-hover);
 }
 
 .retryButton:focus-visible {
-  outline: 2px solid #dc2626;
+  outline: 2px solid var(--color-error-border);
   outline-offset: 2px;
 }
 
 /* Secondary action button (dismiss) */
 .dismissButton {
-  padding: 0.5rem 1rem;
+  padding: var(--spacing-sm) var(--spacing-md);
   font-size: 0.875rem;
   font-weight: 500;
-  color: #991b1b;
+  color: var(--color-error-text);
   background-color: transparent;
-  border: 1px solid #991b1b;
-  border-radius: 0.375rem;
+  border: 1px solid var(--color-error-text);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .dismissButton:hover {
-  background-color: #fef2f2;
+  background-color: var(--color-error-bg);
 }
 
 .dismissButton:focus-visible {
-  outline: 2px solid #991b1b;
+  outline: 2px solid var(--color-error-text);
   outline-offset: 2px;
 }

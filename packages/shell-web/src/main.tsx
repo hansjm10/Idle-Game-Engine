@@ -1,4 +1,5 @@
 import './modules/process-shim.js';
+import './variables.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './modules/App';

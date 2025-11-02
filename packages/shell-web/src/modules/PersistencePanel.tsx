@@ -17,9 +17,19 @@ interface PersistenceToast {
 }
 
 /**
- * Default toast timeout: 10 seconds (WCAG 2.1 compliant).
+ * Maximum number of toasts to display simultaneously.
  */
-const DEFAULT_TOAST_TIMEOUT_MS = 10000;
+const MAX_TOASTS = 5;
+
+/**
+ * Auto-dismiss timeouts for different toast types.
+ * Success toasts dismiss quickly (3s), info toasts persist longer (5s).
+ * Error toasts require manual dismissal for accessibility.
+ */
+const TOAST_TIMEOUT_MS = {
+  success: 3000,
+  info: 5000,
+} as const;
 
 /**
  * Persistence panel props.
@@ -29,7 +39,6 @@ export interface PersistencePanelProps {
   onSave?: (snapshot: SessionSnapshotPayload) => Promise<void>;
   onLoad?: () => Promise<void>;
   onClear?: () => Promise<void>;
-  toastTimeoutMs?: number;
   autosaveStatus?: AutosaveStatus | null;
 }
 
@@ -49,7 +58,6 @@ export function PersistencePanel({
   onSave,
   onLoad,
   onClear,
-  toastTimeoutMs = DEFAULT_TOAST_TIMEOUT_MS,
   autosaveStatus,
 }: PersistencePanelProps): JSX.Element {
   const [isSaving, setIsSaving] = useState(false);
@@ -63,19 +71,39 @@ export function PersistencePanel({
 
   const addToast = useCallback((toast: Omit<PersistenceToast, 'id'>) => {
     const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { ...toast, id }]);
+    setToasts((prev) => {
+      // Add new toast
+      const newToasts = [...prev, { ...toast, id }];
 
-    // Auto-dismiss success and info toasts after timeout.
+      // Limit to MAX_TOASTS by removing oldest toasts
+      if (newToasts.length > MAX_TOASTS) {
+        const removed = newToasts.slice(0, newToasts.length - MAX_TOASTS);
+        // Clean up timeouts for removed toasts
+        removed.forEach((t) => {
+          const timeoutId = timeoutIdsRef.current.get(t.id);
+          if (timeoutId !== undefined) {
+            clearTimeout(timeoutId);
+            timeoutIdsRef.current.delete(t.id);
+          }
+        });
+        return newToasts.slice(-MAX_TOASTS);
+      }
+
+      return newToasts;
+    });
+
+    // Auto-dismiss success and info toasts after their respective timeouts.
     // Error toasts persist until manually dismissed for accessibility.
     if (toast.type !== 'error') {
+      const timeout = TOAST_TIMEOUT_MS[toast.type];
       const timeoutId = setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
         timeoutIdsRef.current.delete(id);
-      }, toastTimeoutMs);
+      }, timeout);
 
       timeoutIdsRef.current.set(id, timeoutId);
     }
-  }, [toastTimeoutMs]);
+  }, []);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
