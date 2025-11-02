@@ -75,28 +75,31 @@ const toastClass =
 
 ## Color Palette
 
-The persistence UI components use a consistent error-focused color palette:
+The persistence UI components use a consistent error-focused color palette. **All colors are defined as CSS variables in `variables.css`** - the hex values below are for reference only.
 
 ### Error/Alert Colors
-- **Light Red Background**: `#fef2f2` - Used for error alert backgrounds
-- **Medium Red Border**: `#dc2626` - Used for error borders and primary error buttons
-- **Dark Red Text**: `#991b1b` - Used for error headings and important text
-- **Brown-Red Warning**: `#7c2d12` - Used for warning text
+- **Light Red Background**: `#fef2f2` → `var(--color-error-bg)` - Used for error alert backgrounds
+- **Medium Red Border**: `#dc2626` → `var(--color-error-border)` - Used for error borders and primary error buttons
+- **Dark Red Text**: `#991b1b` → `var(--color-error-text)` - Used for error headings and important text
+- **Brown-Red Warning**: `#7c2d12` → `var(--color-error-text-light)` - Used for warning text
 
 ### Success Colors
-- **Light Green Background**: `#efe` - Used for success toast backgrounds
-- **Medium Green Border**: `#3c3` - Used for success borders
-- **Dark Green Text**: `#059669` - Used for active/success status indicators
+- **Light Green Background**: `#efe` → `var(--color-success-bg)` - Used for success toast backgrounds
+- **Medium Green Border**: `#3c3` → `var(--color-success-border)` - Used for success borders
+- **Dark Green Text**: `#059669` → `var(--color-success-text)` - Used for active/success status indicators
 
 ### Info Colors
-- **Light Blue Background**: `#eef` - Used for info toast backgrounds
-- **Medium Blue Border**: `#33c` - Used for info borders
-- **Medium Blue Text**: `#2563eb` - Used for in-progress indicators
+- **Light Blue Background**: `#eef` → `var(--color-info-bg)` - Used for info toast backgrounds
+- **Medium Blue Border**: `#33c` → `var(--color-info-border)` - Used for info borders
+- **Medium Blue Text**: `#2563eb` → `var(--color-info-text)` - Used for in-progress indicators
 
 ### Neutral Colors
-- **Gray Text**: `#666` - Used for secondary text and metadata
-- **Medium Gray**: `#6b7280` - Used for inactive status
-- **Border Gray**: `#ccc` - Used for panel borders
+- **Gray Text**: `#666` → `var(--color-text-secondary)` - Used for secondary text and metadata
+- **Medium Gray**: `#6b7280` → `var(--color-text-muted)` - Used for inactive status
+- **Border Gray**: `#ccc` → `var(--color-border)` - Used for panel borders
+
+### Shadow Values
+- **Small Shadow**: `0 2px 8px rgba(0, 0, 0, 0.1)` → `var(--shadow-sm)` - Used for toast elevation
 
 ## Component Styling Examples
 
