@@ -1362,6 +1362,20 @@ function validateDefinitionDigest(
     });
     throw new Error('Serialized resource digest ids diverge from the saved ids.');
   }
+
+  // Verify digest hash consistency to detect spoofed or corrupted digests
+  const expectedHash = computeStableDigest(ids);
+  if (digest.hash !== expectedHash) {
+    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'digest-hash-mismatch',
+      digestHash: digest.hash,
+      expectedHash,
+    });
+    throw new Error(
+      `Serialized resource digest hash mismatch: expected "${expectedHash}" but got "${digest.hash}". ` +
+      'This may indicate a corrupted or tampered save file.',
+    );
+  }
 }
 
 function validateSerializedValues(

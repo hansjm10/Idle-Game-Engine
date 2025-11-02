@@ -551,6 +551,132 @@ describe('Session Restore with Migration', () => {
       expect(result.error?.message).toContain('Migration failed');
       expect(mockBridge.restoreSession).not.toHaveBeenCalled();
     });
+
+    it('should verify final digest hash matches after multi-step migration', async () => {
+      // This test ensures the defensive telemetry check doesn't fire
+      // when migrations are correctly implemented
+      const v1 = createDigest(['a', 'b']);
+      const v2 = createDigest(['a', 'c']);
+      const v3 = createDigest(['d', 'c']);
+
+      registerMigration({
+        id: 'v1-to-v2',
+        fromDigest: v1,
+        toDigest: v2,
+        transform: (state) => ({
+          ...state,
+          ids: ['a', 'c'],
+          amounts: [state.amounts[0], state.amounts[1]],
+        }),
+      });
+
+      registerMigration({
+        id: 'v2-to-v3',
+        fromDigest: v2,
+        toDigest: v3,
+        transform: (state) => ({
+          ...state,
+          ids: ['d', 'c'],
+          amounts: [state.amounts[0], state.amounts[1]],
+        }),
+      });
+
+      const v1Snapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test-slot',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 10000,
+        state: {
+          ids: ['a', 'b'],
+          amounts: [10, 20],
+          capacities: [null, null],
+          flags: [0, 0],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: v1,
+      };
+
+      await adapter.save(v1Snapshot);
+
+      const v3Definitions = createDefinitions(['d', 'c']);
+
+      const result = await restoreSession(mockBridge, adapter, {
+        slotId: 'test-slot',
+        definitions: v3Definitions,
+        allowMigration: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.validationStatus).toBe('migrated');
+
+      // Verify the final state passed to bridge has correct ids
+      expect(mockBridge.restoreSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: expect.objectContaining({
+            ids: ['d', 'c'],
+            amounts: [10, 20],
+          }),
+        }),
+      );
+
+      // Verify final hash matches expected v3 digest
+      const restoredCall = vi.mocked(mockBridge.restoreSession).mock.calls[0][0];
+      const finalHash = computeDigest(restoredCall.state.ids);
+      expect(finalHash).toBe(v3.hash);
+    });
+
+    it('should fail when migration transform breaks array structure', async () => {
+      const oldDigest = createDigest(['wood']);
+      const newDigest = createDigest(['lumber']);
+
+      // Register a migration that produces structurally invalid state
+      registerMigration({
+        id: 'broken-migration',
+        fromDigest: oldDigest,
+        toDigest: newDigest,
+        transform: (state) => ({
+          ...state,
+          ids: ['lumber'],
+          // Intentionally break structure: amounts length doesn't match ids
+          amounts: [],
+          capacities: [null],
+          flags: [0],
+        }),
+      });
+
+      const oldSnapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'test-slot',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 10000,
+        state: {
+          ids: ['wood'],
+          amounts: [100],
+          capacities: [null],
+          flags: [0],
+        },
+        runtimeVersion: '1.0.0',
+        contentDigest: oldDigest,
+      };
+
+      await adapter.save(oldSnapshot);
+
+      const newDefinitions = createDefinitions(['lumber']);
+
+      const result = await restoreSession(mockBridge, adapter, {
+        slotId: 'test-slot',
+        definitions: newDefinitions,
+        allowMigration: true,
+      });
+
+      // Should fail due to revalidation catching the structural error
+      expect(result.success).toBe(false);
+      expect(result.validationStatus).toBe('invalid');
+      expect(result.error).toBeDefined();
+      expect(mockBridge.restoreSession).not.toHaveBeenCalled();
+    });
   });
 
   describe('real-world migration scenarios', () => {

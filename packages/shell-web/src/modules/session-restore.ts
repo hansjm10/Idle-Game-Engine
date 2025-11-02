@@ -170,7 +170,11 @@ export async function restoreSession(
 
     // Validation succeeded (no exception), check reconciliation results
     // Only require migration if resources were removed OR pendingMigration flag is set
-    // Note: Digest mismatches from additions/reordering are handled gracefully by reconciliation
+    //
+    // Note: Digest mismatches are acceptable when caused by additions only (no removals).
+    // When new resources are added to definitions but none are removed, reconciliation
+    // gracefully initializes the new resources to defaults without requiring migration.
+    // This additions-only case is treated as valid restore, not incompatibility.
     const needsMigration =
       reconciliation.removedIds.length > 0 ||
       snapshot.flags?.pendingMigration === true;

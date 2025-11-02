@@ -243,13 +243,16 @@ class MigrationRegistry {
     }
 
     // BFS to find shortest path
+    // Use index-based dequeue for O(1) performance instead of Array.shift() which is O(n)
     const queue: Array<{ key: string; path: MigrationDescriptor[] }> = [
       { key: digestKey(fromDigest), path: [] },
     ];
+    let queueIndex = 0;
     const visited = new Set<string>([digestKey(fromDigest)]);
 
-    while (queue.length > 0) {
-      const current = queue.shift()!;
+    while (queueIndex < queue.length) {
+      const current = queue[queueIndex]!;
+      queueIndex += 1;
 
       // Check if we reached target
       if (current.key === digestKey(toDigest)) {
