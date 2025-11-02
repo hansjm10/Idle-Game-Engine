@@ -86,8 +86,10 @@ export function PersistenceIntegration({
     // Restore session on mount (non-blocking)
     void (async () => {
       let restoreSucceeded = false;
+      let adapterInitialized = false;
       try {
         await adapter.open();
+        adapterInitialized = true;
 
         recordTelemetryEvent('PersistenceUIRestoreAttempted', { slotId });
 
@@ -108,23 +110,34 @@ export function PersistenceIntegration({
           // eslint-disable-next-line no-console
           console.error('[PersistenceIntegration] Restore failed on mount', result.error);
         }
+
+        // Start autosave only after successful adapter initialization.
+        // We start autosave regardless of restore success/failure, as long as
+        // the adapter is ready to accept save operations.
+        autosave.start();
+        recordTelemetryEvent('PersistenceUIAutosaveStarted', {
+          slotId,
+          afterSuccessfulRestore: restoreSucceeded,
+          adapterInitialized: true,
+        });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         recordTelemetryEvent('PersistenceUIInitializationFailed', {
           slotId,
           error: errorMessage,
+          adapterInitialized,
         });
         // eslint-disable-next-line no-console
         console.error('[PersistenceIntegration] Initialization failed', error);
-      } finally {
-        // Always start autosave after initialization attempt.
-        // AutosaveController.start() is idempotent, so this is safe.
-        // We start autosave even if restore failed to enable future saves.
-        autosave.start();
-        recordTelemetryEvent('PersistenceUIAutosaveStarted', {
-          slotId,
-          afterSuccessfulRestore: restoreSucceeded,
-        });
+
+        // Do not start autosave if adapter failed to initialize.
+        // This prevents continuous failed save attempts.
+        if (!adapterInitialized) {
+          recordTelemetryEvent('PersistenceUIAutosaveSkipped', {
+            slotId,
+            reason: 'adapter_initialization_failed',
+          });
+        }
       }
     })();
 

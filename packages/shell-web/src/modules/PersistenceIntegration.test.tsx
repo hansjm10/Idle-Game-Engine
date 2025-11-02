@@ -159,7 +159,7 @@ describe('PersistenceIntegration', () => {
       });
       expect(telemetryEvents).toContainEqual({
         event: 'PersistenceUIAutosaveStarted',
-        data: { slotId: 'test-slot', afterSuccessfulRestore: true },
+        data: { slotId: 'test-slot', afterSuccessfulRestore: true, adapterInitialized: true },
       });
     });
   });
@@ -198,12 +198,12 @@ describe('PersistenceIntegration', () => {
       });
       expect(telemetryEvents).toContainEqual({
         event: 'PersistenceUIAutosaveStarted',
-        data: { slotId: 'test-slot', afterSuccessfulRestore: false },
+        data: { slotId: 'test-slot', afterSuccessfulRestore: false, adapterInitialized: true },
       });
     });
   });
 
-  it('starts autosave even when initialization fails', async () => {
+  it('does NOT start autosave when adapter initialization fails', async () => {
     const initError = new Error('Adapter open failed');
     vi.mocked(mockAdapter.open).mockRejectedValue(initError);
 
@@ -219,20 +219,24 @@ describe('PersistenceIntegration', () => {
       expect(mockAdapter.open).toHaveBeenCalled();
     });
 
-    await waitFor(() => {
-      expect(mockAutosave.start).toHaveBeenCalled();
-    });
+    // Wait to ensure autosave.start() is NOT called
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(mockAutosave.start).not.toHaveBeenCalled();
 
     await waitFor(() => {
       expect(telemetryEvents).toContainEqual({
         event: 'PersistenceUIInitializationFailed',
-        data: { slotId: 'test-slot', error: 'Adapter open failed' },
+        data: { slotId: 'test-slot', error: 'Adapter open failed', adapterInitialized: false },
       });
       expect(telemetryEvents).toContainEqual({
-        event: 'PersistenceUIAutosaveStarted',
-        data: expect.objectContaining({ slotId: 'test-slot' }),
+        event: 'PersistenceUIAutosaveSkipped',
+        data: { slotId: 'test-slot', reason: 'adapter_initialization_failed' },
       });
     });
+
+    // Verify autosave was never started
+    expect(mockAutosave.start).not.toHaveBeenCalled();
   });
 
   it('calls autosave.start() only once despite multiple code paths', async () => {
