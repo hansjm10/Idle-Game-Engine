@@ -27,6 +27,7 @@ import {
   createShellStateReducer,
   DEFAULT_MAX_EVENT_HISTORY,
   DEFAULT_MAX_ERROR_HISTORY,
+  WORKER_PROGRESSION_SCHEMA_VERSION,
 } from './shell-state-store.js';
 import {
   type RuntimeStateSnapshot,
@@ -296,7 +297,7 @@ export function ShellStateProvider({
         const details = error.details as Record<string, unknown> | undefined;
         dispatch({
           type: 'progression-schema-mismatch',
-          expectedVersion: (details?.expected as number) ?? 1,
+          expectedVersion: (details?.expected as number) ?? WORKER_PROGRESSION_SCHEMA_VERSION,
           actualVersion: (details?.received as number) ?? 0,
           timestamp: Date.now(),
         });
@@ -435,16 +436,18 @@ export function ShellStateProvider({
         deltaMap.set(delta.resourceId, current + delta.delta);
       });
 
-      return snapshot.resources.map((resource) => {
-        const delta = deltaMap.get(resource.id);
-        if (delta === undefined) {
-          return resource;
-        }
-        return {
-          ...resource,
-          amount: resource.amount + delta,
-        };
-      });
+      return Object.freeze(
+        snapshot.resources.map((resource) => {
+          const delta = deltaMap.get(resource.id);
+          if (delta === undefined) {
+            return resource;
+          }
+          return Object.freeze({
+            ...resource,
+            amount: resource.amount + delta,
+          });
+        }),
+      );
     };
   }, [
     state.runtime.progression.snapshot,

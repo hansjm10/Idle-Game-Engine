@@ -15,6 +15,11 @@ const mockBridge = {
   isReady: vi.fn(() => true),
   awaitReady: vi.fn(async () => {}),
   sendCommand: vi.fn(),
+  restoreSession: vi.fn(async () => {}),
+  requestSessionSnapshot: vi.fn(async () => ({})),
+  sendSocialCommand: vi.fn(async () => ({})),
+  enableDiagnostics: vi.fn(),
+  disableDiagnostics: vi.fn(),
   onStateUpdate: vi.fn(() => {}),
   offStateUpdate: vi.fn(() => {}),
   onEvent: vi.fn(() => {}),
@@ -22,6 +27,7 @@ const mockBridge = {
   offError: vi.fn(() => {}),
   onDiagnosticsUpdate: vi.fn(() => {}),
   offDiagnosticsUpdate: vi.fn(() => {}),
+  isSocialFeatureEnabled: vi.fn(() => false),
   terminate: vi.fn(),
 };
 
