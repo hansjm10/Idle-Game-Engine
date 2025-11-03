@@ -20,6 +20,9 @@ import type {
 /**
  * Pending progression state changes awaiting authoritative worker snapshot.
  * Used for optimistic UI staging before confirmation from the runtime.
+ *
+ * Infrastructure for optimistic updates during generator/upgrade purchases.
+ * Will be populated when purchase commands are dispatched in #299.
  */
 export interface ShellProgressionPendingDelta {
   readonly resourceId: string;
@@ -31,6 +34,9 @@ export interface ShellProgressionPendingDelta {
  * Progression-related runtime state.
  * Includes the latest progression snapshot from the worker and
  * optimistic staging for pending purchase deltas.
+ *
+ * The pendingDeltas array supports optimistic UI updates and will be
+ * populated by generator/upgrade purchase flows implemented in #299.
  */
 export interface ShellProgressionState {
   readonly snapshot: ProgressionSnapshot | null;
@@ -63,6 +69,9 @@ export type ProgressionUpgradesSelector = () => readonly UpgradeView[] | null;
 /**
  * Memoized selector for optimistically updated resources.
  * Applies pending deltas to current snapshot resources.
+ *
+ * Enables optimistic UI updates during generator/upgrade purchases.
+ * Will be fully utilized when purchase commands are wired in #299.
  */
 export type ProgressionOptimisticResourcesSelector = () => readonly ResourceView[] | null;
 

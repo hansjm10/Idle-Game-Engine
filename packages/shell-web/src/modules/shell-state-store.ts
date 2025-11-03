@@ -76,6 +76,10 @@ export type ShellStateAction =
       readonly count: number;
       readonly timestamp: number;
     }
+  // Optimistic update actions for progression state.
+  // These actions stage resource deltas before authoritative worker snapshots arrive,
+  // enabling optimistic UI updates during generator/upgrade purchases.
+  // Wiring for these actions will be implemented in #299 (generator and upgrade interactions).
   | {
       readonly type: 'progression-stage-delta';
       readonly resourceId: string;
@@ -286,6 +290,8 @@ export function createShellStateReducer(
           },
         };
       }
+      // Optimistic update handlers for progression state.
+      // Will be dispatched from generator/upgrade purchase commands in #299.
       case 'progression-stage-delta': {
         const delta: ShellProgressionPendingDelta = {
           resourceId: action.resourceId,
