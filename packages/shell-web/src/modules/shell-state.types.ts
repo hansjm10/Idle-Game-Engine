@@ -1,6 +1,10 @@
 import type {
   BackPressureSnapshot,
   DiagnosticTimelineResult,
+  ProgressionSnapshot,
+  ResourceView,
+  GeneratorView,
+  UpgradeView,
 } from '@idle-engine/core';
 
 import type {
@@ -13,11 +17,57 @@ import type {
   WorkerRestoreSessionPayload,
 } from './worker-bridge.js';
 
+/**
+ * Pending progression state changes awaiting authoritative worker snapshot.
+ * Used for optimistic UI staging before confirmation from the runtime.
+ */
+export interface ShellProgressionPendingDelta {
+  readonly resourceId: string;
+  readonly delta: number;
+  readonly stagedAt: number;
+}
+
+/**
+ * Progression-related runtime state.
+ * Includes the latest progression snapshot from the worker and
+ * optimistic staging for pending purchase deltas.
+ */
+export interface ShellProgressionState {
+  readonly snapshot: ProgressionSnapshot | null;
+  readonly pendingDeltas: readonly ShellProgressionPendingDelta[];
+  readonly schemaVersion: number;
+}
+
+/**
+ * Memoized selector for resources from progression state.
+ * Returns null if progression is not available.
+ */
+export type ProgressionResourcesSelector = () => readonly ResourceView[] | null;
+
+/**
+ * Memoized selector for generators from progression state.
+ * Returns null if progression is not available.
+ */
+export type ProgressionGeneratorsSelector = () => readonly GeneratorView[] | null;
+
+/**
+ * Memoized selector for upgrades from progression state.
+ * Returns null if progression is not available.
+ */
+export type ProgressionUpgradesSelector = () => readonly UpgradeView[] | null;
+
+/**
+ * Memoized selector for optimistically updated resources.
+ * Applies pending deltas to current snapshot resources.
+ */
+export type ProgressionOptimisticResourcesSelector = () => readonly ResourceView[] | null;
+
 export interface ShellRuntimeState {
   readonly currentStep: number;
   readonly events: readonly RuntimeEventSnapshot[];
   readonly backPressure: BackPressureSnapshot | null;
   readonly lastSnapshot?: RuntimeStateSnapshot;
+  readonly progression: ShellProgressionState;
 }
 
 export interface ShellBridgeErrorEntry {
@@ -65,6 +115,24 @@ export interface ShellState {
 export interface ShellStateProviderConfig {
   readonly maxEventHistory?: number;
   readonly maxErrorHistory?: number;
+}
+
+/**
+ * Progression state API for consuming progression data and selectors.
+ */
+export interface ShellProgressionApi {
+  /** Check if progression UI is enabled via feature flag. */
+  readonly isEnabled: boolean;
+  /** Get the current progression schema version (negative indicates mismatch). */
+  readonly schemaVersion: number;
+  /** Get memoized selector for resources. */
+  readonly selectResources: ProgressionResourcesSelector;
+  /** Get memoized selector for generators. */
+  readonly selectGenerators: ProgressionGeneratorsSelector;
+  /** Get memoized selector for upgrades. */
+  readonly selectUpgrades: ProgressionUpgradesSelector;
+  /** Get memoized selector for optimistically updated resources with pending deltas applied. */
+  readonly selectOptimisticResources: ProgressionOptimisticResourcesSelector;
 }
 
 export interface ShellBridgeApi {
