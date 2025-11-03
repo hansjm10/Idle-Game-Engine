@@ -40,6 +40,11 @@ export function formatPerTickRate(perTick: number): string {
     ? perTick.toFixed(0)
     : perTick.toFixed(2);
 
+  // Normalize -0.00 to ±0
+  if (formatted === '-0' || formatted === '-0.00') {
+    return '±0/tick';
+  }
+
   return `${sign}${formatted}/tick`;
 }
 
@@ -162,8 +167,8 @@ export function ResourceDashboard(): JSX.Element | null {
     return null;
   }
 
-  // Get resources from memoized selector
-  const resources = progression.selectResources();
+  // Get resources from memoized selector (with optimistic updates)
+  const resources = progression.selectOptimisticResources();
 
   // Handle no progression data available
   if (!resources) {

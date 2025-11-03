@@ -76,6 +76,13 @@ describe('ResourceDashboard view-model utilities', () => {
       expect(formatPerTickRate(99.99)).toBe('+99.99/tick');
       expect(formatPerTickRate(100.01)).toBe('+100/tick');
     });
+
+    it('handles negative zero and very small values that round to zero', () => {
+      expect(formatPerTickRate(-0)).toBe('±0/tick');
+      expect(formatPerTickRate(-0.001)).toBe('±0/tick');
+      expect(formatPerTickRate(0.001)).toBe('+0.00/tick');
+      expect(formatPerTickRate(-0.004)).toBe('±0/tick');
+    });
   });
 
   describe('formatCapacity', () => {
@@ -126,7 +133,7 @@ describe('ResourceDashboard component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockProgressionApi.isEnabled = true;
-    mockProgressionApi.selectResources = vi.fn(() => null);
+    mockProgressionApi.selectOptimisticResources = vi.fn(() => null);
   });
 
   describe('feature flag', () => {
@@ -145,7 +152,7 @@ describe('ResourceDashboard component', () => {
 
   describe('locked state', () => {
     it('renders locked state when no resources available', () => {
-      mockProgressionApi.selectResources = vi.fn(() => null);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => null);
       render(<ResourceDashboard />);
 
       expect(screen.getByText('Resources')).toBeInTheDocument();
@@ -156,7 +163,7 @@ describe('ResourceDashboard component', () => {
 
   describe('empty state', () => {
     it('renders empty state when resources array is empty', () => {
-      mockProgressionApi.selectResources = vi.fn(() => []);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => []);
       render(<ResourceDashboard />);
 
       expect(screen.getByText('Resources')).toBeInTheDocument();
@@ -175,7 +182,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByText(/No resources available yet/i)).toBeInTheDocument();
@@ -192,7 +199,7 @@ describe('ResourceDashboard component', () => {
           perTick: 1,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByText(/No resources available yet/i)).toBeInTheDocument();
@@ -220,7 +227,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.025,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByText('Energy')).toBeInTheDocument();
@@ -250,7 +257,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByText('Energy')).toBeInTheDocument();
@@ -276,7 +283,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.5,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByText('Energy')).toBeInTheDocument();
@@ -297,7 +304,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       // Capacity bar should be present with fill
@@ -316,7 +323,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.1,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       // No capacity bar should be rendered
@@ -334,7 +341,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.1,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       const { container } = render(<ResourceDashboard />);
 
       // Find the resource row
@@ -370,7 +377,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.1,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       const { container } = render(<ResourceDashboard />);
 
       const rows = container.querySelectorAll('[role="row"]');
@@ -397,7 +404,7 @@ describe('ResourceDashboard component', () => {
           perTick: 5.5,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       const rateElement = screen.getByText('+5.50/tick');
@@ -416,7 +423,7 @@ describe('ResourceDashboard component', () => {
           perTick: -2.5,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       const rateElement = screen.getByText('-2.50/tick');
@@ -435,7 +442,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       const rateElement = screen.getByText('±0/tick');
@@ -456,7 +463,7 @@ describe('ResourceDashboard component', () => {
           perTick: 1,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByRole('region')).toBeInTheDocument();
@@ -478,7 +485,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.55,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       expect(screen.getByLabelText(/Energy: 126 \/ 250/)).toBeInTheDocument();
@@ -495,7 +502,7 @@ describe('ResourceDashboard component', () => {
           perTick: 1,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       const heading = screen.getByRole('heading', { level: 2 });
@@ -532,17 +539,17 @@ describe('ResourceDashboard component', () => {
         },
       ];
 
-      const selectResourcesMock = vi.fn(() => resources);
-      mockProgressionApi.selectResources = selectResourcesMock;
+      const selectOptimisticResourcesMock = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = selectOptimisticResourcesMock;
 
       const { rerender } = render(<ResourceDashboard />);
 
       // Initial render should call selector once
-      expect(selectResourcesMock).toHaveBeenCalledTimes(1);
+      expect(selectOptimisticResourcesMock).toHaveBeenCalledTimes(1);
 
       // Re-render should call selector again (each render)
       rerender(<ResourceDashboard />);
-      expect(selectResourcesMock).toHaveBeenCalledTimes(2);
+      expect(selectOptimisticResourcesMock).toHaveBeenCalledTimes(2);
 
       // Verify only unlocked resources are shown
       expect(screen.getByText('Energy')).toBeInTheDocument();
@@ -571,7 +578,7 @@ describe('ResourceDashboard component', () => {
           perTick: 0.025,
         },
       ];
-      mockProgressionApi.selectResources = vi.fn(() => resources);
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
 
       render(<ResourceDashboard />);
 
