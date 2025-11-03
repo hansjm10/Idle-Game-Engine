@@ -28,7 +28,7 @@ export interface PersistenceIntegrationProps {
  * - Provide manual save/load handlers to PersistencePanel
  * - Clean up resources on unmount
  *
- * See docs/runtime-react-worker-bridge-design.md §14.1 and issue #272.
+ * See docs/runtime-react-worker-bridge-design.md §14.1 and issue #155.
  */
 export function PersistenceIntegration({
   bridge,

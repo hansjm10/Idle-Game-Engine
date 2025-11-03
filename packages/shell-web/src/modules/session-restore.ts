@@ -17,7 +17,6 @@ import { recordTelemetryError, recordTelemetryEvent } from './telemetry-utils.js
 import {
   findMigrationPath,
   applyMigrations,
-  type MigrationDescriptor,
 } from './migration-registry.js';
 
 /**
@@ -191,15 +190,15 @@ export async function restoreSession(
     }
 
     // Validation succeeded (no exception), check reconciliation results
-    // Only require migration if resources were removed OR pendingMigration flag is set
+    // Note: reconcileSaveAgainstDefinitions throws when removedIds are present,
+    // so in this success path, removedIds is guaranteed to be empty.
+    // Only require migration if pendingMigration flag is explicitly set.
     //
-    // Note: Digest mismatches are acceptable when caused by additions only (no removals).
+    // Digest mismatches are acceptable when caused by additions only (no removals).
     // When new resources are added to definitions but none are removed, reconciliation
     // gracefully initializes the new resources to defaults without requiring migration.
     // This additions-only case is treated as valid restore, not incompatibility.
-    const needsMigration =
-      reconciliation.removedIds.length > 0 ||
-      snapshot.flags?.pendingMigration === true;
+    const needsMigration = snapshot.flags?.pendingMigration === true;
 
     if (needsMigration) {
       // eslint-disable-next-line no-console
