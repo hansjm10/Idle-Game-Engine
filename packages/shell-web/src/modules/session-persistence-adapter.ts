@@ -2,13 +2,11 @@ import type {
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
+import { PERSISTENCE_SCHEMA_VERSION } from '@idle-engine/core';
 import { recordTelemetryError } from './telemetry-utils.js';
 
-/**
- * Persistence schema version for stored session snapshots.
- * Increment when the payload structure changes in backwards-incompatible ways.
- */
-export const PERSISTENCE_SCHEMA_VERSION = 1;
+// Re-export for backwards compatibility with existing imports
+export { PERSISTENCE_SCHEMA_VERSION };
 
 /**
  * Default offline progression cap: 24 hours in milliseconds.
