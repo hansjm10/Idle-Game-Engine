@@ -134,6 +134,28 @@ export async function restoreSession(
             elapsedMs,
           });
 
+          // Persist migrated state immediately to avoid repeat migrations
+          // if app closes before next autosave
+          try {
+            const currentDigest = createDefinitionDigest(definitions.map((d) => d.id));
+            const migratedSnapshot: StoredSessionSnapshot = {
+              ...snapshot,
+              state: migrationResult.migratedState,
+              contentDigest: currentDigest,
+              capturedAt: new Date().toISOString(),
+            };
+            await adapter.save(migratedSnapshot);
+            recordTelemetryEvent('PersistenceMigratedStateSaved', { slotId });
+          } catch (saveError) {
+            // Log but don't fail restore - autosave will retry
+            // eslint-disable-next-line no-console
+            console.warn('[SessionRestore] Failed to persist migrated state', { slotId, saveError });
+            recordTelemetryError('PersistenceMigratedStateSaveFailed', {
+              slotId,
+              error: saveError instanceof Error ? saveError.message : String(saveError),
+            });
+          }
+
           return {
             success: true,
             snapshot,
@@ -224,6 +246,28 @@ export async function restoreSession(
             workerStep: snapshot.workerStep,
             elapsedMs,
           });
+
+          // Persist migrated state immediately to avoid repeat migrations
+          // if app closes before next autosave
+          try {
+            const currentDigest = createDefinitionDigest(definitions.map((d) => d.id));
+            const migratedSnapshot: StoredSessionSnapshot = {
+              ...snapshot,
+              state: migrationResult.migratedState,
+              contentDigest: currentDigest,
+              capturedAt: new Date().toISOString(),
+            };
+            await adapter.save(migratedSnapshot);
+            recordTelemetryEvent('PersistenceMigratedStateSaved', { slotId });
+          } catch (saveError) {
+            // Log but don't fail restore - autosave will retry
+            // eslint-disable-next-line no-console
+            console.warn('[SessionRestore] Failed to persist migrated state', { slotId, saveError });
+            recordTelemetryError('PersistenceMigratedStateSaveFailed', {
+              slotId,
+              error: saveError instanceof Error ? saveError.message : String(saveError),
+            });
+          }
 
           return {
             success: true,
@@ -519,10 +563,14 @@ async function attemptMigration(
 
     // Strip the old definitionDigest so reconcileSaveAgainstDefinitions can reconstruct it
     // from the new IDs. This ensures the digest matches the migrated state.
+    // Type cast is safe here because:
+    // 1. revalidateMigratedState immediately rebuilds the digest via reconcileSaveAgainstDefinitions
+    // 2. Any missing/invalid fields will be caught by the validation below
+    // 3. The cast allows the validation function to work with the standard interface
     const { definitionDigest: _oldDigest, ...stateWithoutDigest } = migratedState;
     migratedState = stateWithoutDigest as SerializedResourceState;
 
-    // Re-validate after migration
+    // Re-validate after migration - this will catch any shape issues from bad migrations
     const revalidationResult = revalidateMigratedState(
       migratedState,
       definitions,

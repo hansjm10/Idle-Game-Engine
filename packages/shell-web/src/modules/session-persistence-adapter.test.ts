@@ -192,12 +192,12 @@ describe('SessionPersistenceAdapter', () => {
         transaction.oncomplete = resolve;
       });
 
-      // Load should throw checksum validation error
+      // Load should throw snapshot validation error
       await expect(adapter.load(slotId)).rejects.toThrow(
         SessionPersistenceError,
       );
       await expect(adapter.load(slotId)).rejects.toMatchObject({
-        code: 'CHECKSUM_VALIDATION_FAILED',
+        code: 'SNAPSHOT_VALIDATION_FAILED',
       });
     });
 

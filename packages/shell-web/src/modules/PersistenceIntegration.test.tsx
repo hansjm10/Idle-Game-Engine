@@ -57,6 +57,8 @@ describe('PersistenceIntegration', () => {
     mockAutosave = {
       start: vi.fn(),
       stop: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
       isRunning: vi.fn().mockReturnValue(false),
     } as unknown as AutosaveController;
 

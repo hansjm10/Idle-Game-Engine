@@ -365,21 +365,34 @@ export class SessionPersistenceAdapter {
     // Try snapshots from newest to oldest until we find a valid one
     for (const snapshot of snapshots) {
       const isValid = await verifyChecksum(snapshot);
-      if (isValid) {
-        return snapshot;
+      if (!isValid) {
+        // eslint-disable-next-line no-console
+        console.warn('[SessionPersistence] Checksum validation failed, trying older snapshot', {
+          slotId: snapshot.slotId,
+          capturedAt: snapshot.capturedAt,
+        });
+        continue;
       }
 
-      // eslint-disable-next-line no-console
-      console.warn('[SessionPersistence] Checksum validation failed, trying older snapshot', {
-        slotId: snapshot.slotId,
-        capturedAt: snapshot.capturedAt,
-      });
+      // Validate schema version
+      if (snapshot.schemaVersion !== PERSISTENCE_SCHEMA_VERSION) {
+        // eslint-disable-next-line no-console
+        console.warn('[SessionPersistence] Schema version mismatch, trying older snapshot', {
+          slotId: snapshot.slotId,
+          capturedAt: snapshot.capturedAt,
+          snapshotVersion: snapshot.schemaVersion,
+          expectedVersion: PERSISTENCE_SCHEMA_VERSION,
+        });
+        continue;
+      }
+
+      return snapshot;
     }
 
-    // All snapshots failed checksum validation
+    // All snapshots failed validation (checksum or schema version)
     throw new SessionPersistenceError(
-      'All snapshots failed checksum validation',
-      'CHECKSUM_VALIDATION_FAILED',
+      'All snapshots failed validation',
+      'SNAPSHOT_VALIDATION_FAILED',
       { slotId, snapshotCount: snapshots.length },
     );
   }
