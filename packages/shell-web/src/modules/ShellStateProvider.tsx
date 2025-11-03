@@ -295,17 +295,23 @@ export function ShellStateProvider({
       // Track progression schema mismatches separately for bridge logging
       if (error.code === 'SCHEMA_VERSION_MISMATCH') {
         const details = error.details as Record<string, unknown> | undefined;
+        const expectedVersion = typeof details?.expected === 'number'
+          ? details.expected
+          : WORKER_PROGRESSION_SCHEMA_VERSION;
+        const actualVersion = typeof details?.received === 'number'
+          ? details.received
+          : 0;
         dispatch({
           type: 'progression-schema-mismatch',
-          expectedVersion: (details?.expected as number) ?? WORKER_PROGRESSION_SCHEMA_VERSION,
-          actualVersion: (details?.received as number) ?? 0,
+          expectedVersion,
+          actualVersion,
           timestamp: Date.now(),
         });
         recordTelemetryError('ProgressionUiSchemaMismatch', {
           code: error.code,
           message: error.message,
-          expectedVersion: details?.expected ?? null,
-          actualVersion: details?.received ?? null,
+          expectedVersion,
+          actualVersion,
         });
       } else {
         recordTelemetryError('ShellStateProviderWorkerError', {

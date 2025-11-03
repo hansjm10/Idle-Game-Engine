@@ -283,4 +283,50 @@ describe('shell-state-store', () => {
 
     expect(state.runtime.progression.schemaVersion).toBe(-1);
   });
+
+  it('clears progression state on schema mismatch to prevent stale optimistic updates', () => {
+    const reducer = createShellStateReducer();
+    let state = createInitialShellState();
+
+    // Set up a state with snapshot and pending deltas
+    const snapshot: RuntimeStateSnapshot = {
+      currentStep: 1,
+      events: [],
+      backPressure: backPressureStub,
+      progression: progressionSnapshotStub,
+    };
+
+    state = reducer(state, {
+      type: 'state-update',
+      snapshot,
+      timestamp: 100,
+    });
+
+    // Stage some optimistic deltas
+    state = reducer(state, {
+      type: 'progression-stage-delta',
+      resourceId: 'gold',
+      delta: -100,
+      timestamp: 150,
+    });
+
+    // Verify we have snapshot and deltas
+    expect(state.runtime.progression.snapshot).toBe(progressionSnapshotStub);
+    expect(state.runtime.progression.pendingDeltas).toHaveLength(1);
+
+    // Now trigger schema mismatch
+    state = reducer(state, {
+      type: 'progression-schema-mismatch',
+      expectedVersion: 2,
+      actualVersion: 1,
+      timestamp: 200,
+    });
+
+    // Verify state is cleared to prevent stale optimistic updates
+    expect(state.runtime.progression.snapshot).toBeNull();
+    expect(state.runtime.progression.pendingDeltas).toHaveLength(0);
+    expect(state.runtime.progression.schemaVersion).toBe(-1);
+    expect(state.runtime.progression.expectedSchemaVersion).toBe(2);
+    expect(state.runtime.progression.receivedSchemaVersion).toBe(1);
+  });
 });

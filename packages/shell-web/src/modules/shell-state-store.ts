@@ -329,12 +329,14 @@ export function createShellStateReducer(
         // Log schema mismatch but don't fail; allow UI to handle gracefully
         // Set schemaVersion to mismatch indicator for consumer awareness
         // Store both versions for actionable error messaging
+        // Clear pending deltas and null snapshot to prevent stale optimistic updates
         return {
           ...state,
           runtime: {
             ...state.runtime,
             progression: {
-              ...state.runtime.progression,
+              snapshot: null,
+              pendingDeltas: [],
               schemaVersion: -1, // Negative indicates mismatch
               expectedSchemaVersion: action.expectedVersion,
               receivedSchemaVersion: action.actualVersion,

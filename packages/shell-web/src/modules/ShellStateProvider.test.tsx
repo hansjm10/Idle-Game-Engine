@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { ShellStateProvider, useShellProgression } from './ShellStateProvider.js';
@@ -113,6 +113,58 @@ describe('ShellStateProvider', () => {
       expect(selector1).toBe(selector2);
       expect(typeof selector1).toBe('function');
     });
+
+    it('returns snapshot resources when available', () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result, rerender } = renderHook(() => useShellProgression(), { wrapper });
+
+      // Initially null
+      expect(result.current.selectOptimisticResources()).toBeNull();
+
+      // Simulate state update with progression snapshot
+      const stateUpdateHandler = mockBridge.onStateUpdate.mock.calls[0]?.[0];
+      expect(stateUpdateHandler).toBeDefined();
+
+      const mockSnapshot = {
+        currentStep: 1,
+        events: [],
+        progression: {
+          step: 1,
+          publishedAt: 1000,
+          resources: [
+            { id: 'gold', amount: 100, rate: 10 },
+            { id: 'wood', amount: 50, rate: 5 },
+          ],
+          generators: [],
+          upgrades: [],
+        },
+      };
+
+      act(() => {
+        stateUpdateHandler(mockSnapshot);
+      });
+      rerender();
+
+      // Should now return the resources
+      const resources = result.current.selectOptimisticResources();
+      expect(resources).not.toBeNull();
+      expect(resources).toHaveLength(2);
+      expect(resources?.[0].id).toBe('gold');
+      expect(resources?.[0].amount).toBe(100);
+      expect(resources?.[1].id).toBe('wood');
+      expect(resources?.[1].amount).toBe(50);
+    });
+
+    // Note: Full testing of delta application logic (applying pending deltas
+    // to resource amounts) will be possible once the purchase command API
+    // is implemented in #299. The delta application logic in the selector
+    // (lines 439-454 of ShellStateProvider.tsx) creates a deltaMap from
+    // pendingDeltas and applies them to resource amounts. This logic is
+    // exercised by the reducer tests in shell-state-store.test.ts which
+    // verify deltas are staged and cleared correctly.
   });
 
   describe('feature flag integration', () => {
