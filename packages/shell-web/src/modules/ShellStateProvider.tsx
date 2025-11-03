@@ -15,12 +15,19 @@ import type {
   ShellDiagnosticsApi,
   ShellState,
   ShellStateProviderConfig,
+  ShellProgressionApi,
+  ProgressionResourcesSelector,
+  ProgressionGeneratorsSelector,
+  ProgressionUpgradesSelector,
+  ProgressionOptimisticResourcesSelector,
 } from './shell-state.types.js';
+import { isProgressionUIEnabled } from './progression-config.js';
 import {
   createInitialShellState,
   createShellStateReducer,
   DEFAULT_MAX_EVENT_HISTORY,
   DEFAULT_MAX_ERROR_HISTORY,
+  WORKER_PROGRESSION_SCHEMA_VERSION,
 } from './shell-state-store.js';
 import {
   type RuntimeStateSnapshot,
@@ -52,6 +59,7 @@ const ShellStateContext = createContext<ShellState | null>(null);
 const ShellBridgeContext = createContext<ShellBridgeApi | null>(null);
 const ShellDiagnosticsContext =
   createContext<ShellDiagnosticsApi | null>(null);
+const ShellProgressionContext = createContext<ShellProgressionApi | null>(null);
 
 export function ShellStateProvider({
   children,
@@ -283,11 +291,35 @@ export function ShellStateProvider({
         error,
         timestamp: Date.now(),
       });
-      recordTelemetryError('ShellStateProviderWorkerError', {
-        code: error.code,
-        message: error.message,
-        requestId: error.requestId ?? null,
-      });
+
+      // Track progression schema mismatches separately for bridge logging
+      if (error.code === 'SCHEMA_VERSION_MISMATCH') {
+        const details = error.details as Record<string, unknown> | undefined;
+        const expectedVersion = typeof details?.expected === 'number'
+          ? details.expected
+          : WORKER_PROGRESSION_SCHEMA_VERSION;
+        const actualVersion = typeof details?.received === 'number'
+          ? details.received
+          : 0;
+        dispatch({
+          type: 'progression-schema-mismatch',
+          expectedVersion,
+          actualVersion,
+          timestamp: Date.now(),
+        });
+        recordTelemetryError('ProgressionUiSchemaMismatch', {
+          code: error.code,
+          message: error.message,
+          expectedVersion,
+          actualVersion,
+        });
+      } else {
+        recordTelemetryError('ShellStateProviderWorkerError', {
+          code: error.code,
+          message: error.message,
+          requestId: error.requestId ?? null,
+        });
+      }
     };
     bridge.onError(handleError);
     return () => {
@@ -370,11 +402,93 @@ export function ShellStateProvider({
     ],
   );
 
+  // Create memoized progression selectors
+  const selectResources = useMemo<ProgressionResourcesSelector>(() => {
+    return () => {
+      const snapshot = state.runtime.progression.snapshot;
+      return snapshot?.resources ?? null;
+    };
+  }, [state.runtime.progression.snapshot]);
+
+  const selectGenerators = useMemo<ProgressionGeneratorsSelector>(() => {
+    return () => {
+      const snapshot = state.runtime.progression.snapshot;
+      return snapshot?.generators ?? null;
+    };
+  }, [state.runtime.progression.snapshot]);
+
+  const selectUpgrades = useMemo<ProgressionUpgradesSelector>(() => {
+    return () => {
+      const snapshot = state.runtime.progression.snapshot;
+      return snapshot?.upgrades ?? null;
+    };
+  }, [state.runtime.progression.snapshot]);
+
+  const selectOptimisticResources = useMemo<ProgressionOptimisticResourcesSelector>(() => {
+    return () => {
+      const snapshot = state.runtime.progression.snapshot;
+      if (!snapshot?.resources) {
+        return null;
+      }
+
+      // Apply pending deltas to create optimistic view
+      if (state.runtime.progression.pendingDeltas.length === 0) {
+        return snapshot.resources;
+      }
+
+      const deltaMap = new Map<string, number>();
+      state.runtime.progression.pendingDeltas.forEach((delta) => {
+        const current = deltaMap.get(delta.resourceId) ?? 0;
+        deltaMap.set(delta.resourceId, current + delta.delta);
+      });
+
+      return Object.freeze(
+        snapshot.resources.map((resource) => {
+          const delta = deltaMap.get(resource.id);
+          if (delta === undefined) {
+            return resource;
+          }
+          return Object.freeze({
+            ...resource,
+            amount: resource.amount + delta,
+          });
+        }),
+      );
+    };
+  }, [
+    state.runtime.progression.snapshot,
+    state.runtime.progression.pendingDeltas,
+  ]);
+
+  const progressionValue = useMemo<ShellProgressionApi>(
+    () => ({
+      isEnabled: isProgressionUIEnabled(),
+      schemaVersion: state.runtime.progression.schemaVersion,
+      expectedSchemaVersion: state.runtime.progression.expectedSchemaVersion,
+      receivedSchemaVersion: state.runtime.progression.receivedSchemaVersion,
+      selectResources,
+      selectGenerators,
+      selectUpgrades,
+      selectOptimisticResources,
+    }),
+    [
+      state.runtime.progression.schemaVersion,
+      state.runtime.progression.expectedSchemaVersion,
+      state.runtime.progression.receivedSchemaVersion,
+      selectResources,
+      selectGenerators,
+      selectUpgrades,
+      selectOptimisticResources,
+    ],
+  );
+
   return (
     <ShellStateContext.Provider value={state}>
       <ShellBridgeContext.Provider value={bridgeValue}>
         <ShellDiagnosticsContext.Provider value={diagnosticsValue}>
-          {children}
+          <ShellProgressionContext.Provider value={progressionValue}>
+            {children}
+          </ShellProgressionContext.Provider>
         </ShellDiagnosticsContext.Provider>
       </ShellBridgeContext.Provider>
     </ShellStateContext.Provider>
@@ -406,6 +520,16 @@ export function useShellDiagnostics(): ShellDiagnosticsApi {
   if (!context) {
     throw new Error(
       'useShellDiagnostics must be used within a ShellStateProvider',
+    );
+  }
+  return context;
+}
+
+export function useShellProgression(): ShellProgressionApi {
+  const context = useContext(ShellProgressionContext);
+  if (!context) {
+    throw new Error(
+      'useShellProgression must be used within a ShellStateProvider',
     );
   }
   return context;

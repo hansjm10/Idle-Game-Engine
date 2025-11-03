@@ -3,18 +3,24 @@ export {
   useShellBridge,
   useShellDiagnostics,
   useShellState,
+  useShellProgression,
 } from './ShellStateProvider.js';
 
 export type {
   DiagnosticsSubscriber,
   ShellBridgeApi,
   ShellDiagnosticsApi,
+  ShellProgressionApi,
   ShellRuntimeState,
   ShellBridgeState,
   ShellSocialState,
   ShellDiagnosticsState,
   ShellState,
   ShellStateProviderConfig,
+  ProgressionResourcesSelector,
+  ProgressionGeneratorsSelector,
+  ProgressionUpgradesSelector,
+  ProgressionOptimisticResourcesSelector,
 } from './shell-state.types.js';
 
 export {

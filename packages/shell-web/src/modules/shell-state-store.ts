@@ -7,6 +7,8 @@ import type {
   ShellBridgeErrorEntry,
   ShellStateProviderConfig,
   ShellSocialFailure,
+  ShellProgressionState,
+  ShellProgressionPendingDelta,
 } from './shell-state.types.js';
 import type {
   SocialCommandType,
@@ -16,6 +18,7 @@ import type {
 
 export const DEFAULT_MAX_EVENT_HISTORY = 200;
 export const DEFAULT_MAX_ERROR_HISTORY = 10;
+export const WORKER_PROGRESSION_SCHEMA_VERSION = 1;
 
 export interface ShellStateReducerConfig
   extends Required<Pick<ShellStateProviderConfig, 'maxEventHistory'>> {
@@ -72,6 +75,26 @@ export type ShellStateAction =
       readonly type: 'diagnostics-subscribers';
       readonly count: number;
       readonly timestamp: number;
+    }
+  // Optimistic update actions for progression state.
+  // These actions stage resource deltas before authoritative worker snapshots arrive,
+  // enabling optimistic UI updates during generator/upgrade purchases.
+  // Wiring for these actions will be implemented in #299 (generator and upgrade interactions).
+  | {
+      readonly type: 'progression-stage-delta';
+      readonly resourceId: string;
+      readonly delta: number;
+      readonly timestamp: number;
+    }
+  | {
+      readonly type: 'progression-clear-deltas';
+      readonly timestamp: number;
+    }
+  | {
+      readonly type: 'progression-schema-mismatch';
+      readonly expectedVersion: number;
+      readonly actualVersion: number;
+      readonly timestamp: number;
     };
 
 export function createInitialShellState(): ShellState {
@@ -81,6 +104,11 @@ export function createInitialShellState(): ShellState {
       events: [],
       backPressure: null,
       lastSnapshot: undefined,
+      progression: {
+        snapshot: null,
+        pendingDeltas: [],
+        schemaVersion: WORKER_PROGRESSION_SCHEMA_VERSION,
+      },
     },
     bridge: {
       isReady: false,
@@ -140,6 +168,13 @@ export function createShellStateReducer(
               )
             : state.runtime.events;
 
+        // Update progression snapshot and clear pending deltas upon authoritative update
+        const nextProgression: ShellProgressionState = {
+          snapshot: snapshot.progression ?? null,
+          pendingDeltas: [], // Clear pending deltas once authoritative snapshot arrives
+          schemaVersion: WORKER_PROGRESSION_SCHEMA_VERSION,
+        };
+
         return {
           ...state,
           runtime: {
@@ -147,6 +182,7 @@ export function createShellStateReducer(
             backPressure: snapshot.backPressure ?? null,
             events: nextEvents,
             lastSnapshot: snapshot,
+            progression: nextProgression,
           },
           bridge: {
             ...state.bridge,
@@ -251,6 +287,60 @@ export function createShellStateReducer(
             ...state.diagnostics,
             subscriberCount: action.count,
             lastUpdateAt: action.timestamp,
+          },
+        };
+      }
+      // Optimistic update handlers for progression state.
+      // Will be dispatched from generator/upgrade purchase commands in #299.
+      case 'progression-stage-delta': {
+        const delta: ShellProgressionPendingDelta = {
+          resourceId: action.resourceId,
+          delta: action.delta,
+          stagedAt: action.timestamp,
+        };
+        const nextDeltas = [
+          ...state.runtime.progression.pendingDeltas,
+          delta,
+        ];
+        return {
+          ...state,
+          runtime: {
+            ...state.runtime,
+            progression: {
+              ...state.runtime.progression,
+              pendingDeltas: nextDeltas,
+            },
+          },
+        };
+      }
+      case 'progression-clear-deltas': {
+        return {
+          ...state,
+          runtime: {
+            ...state.runtime,
+            progression: {
+              ...state.runtime.progression,
+              pendingDeltas: [],
+            },
+          },
+        };
+      }
+      case 'progression-schema-mismatch': {
+        // Log schema mismatch but don't fail; allow UI to handle gracefully
+        // Set schemaVersion to mismatch indicator for consumer awareness
+        // Store both versions for actionable error messaging
+        // Clear pending deltas and null snapshot to prevent stale optimistic updates
+        return {
+          ...state,
+          runtime: {
+            ...state.runtime,
+            progression: {
+              snapshot: null,
+              pendingDeltas: [],
+              schemaVersion: -1, // Negative indicates mismatch
+              expectedSchemaVersion: action.expectedVersion,
+              receivedSchemaVersion: action.actualVersion,
+            },
           },
         };
       }
