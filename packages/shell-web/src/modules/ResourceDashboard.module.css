@@ -1,0 +1,164 @@
+/**
+ * ResourceDashboard Component Styles
+ *
+ * CSS Module for the resource dashboard displaying resource amounts,
+ * capacities, and per-tick rates.
+ *
+ * Uses CSS variables from variables.css for consistent theming.
+ */
+
+/* Main dashboard container */
+.dashboard {
+  margin: var(--spacing-lg) 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-white);
+}
+
+/* Dashboard heading */
+.heading {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/* Resource grid (table-like layout) */
+.resourceGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+/* Resource header row */
+.resourceHeader {
+  display: grid;
+  grid-template-columns: 2fr 2fr 3fr 1.5fr;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Header cell */
+.headerCell {
+  /* Inherit grid layout */
+}
+
+/* Resource row */
+.resourceRow {
+  display: grid;
+  grid-template-columns: 2fr 2fr 3fr 1.5fr;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s ease;
+}
+
+.resourceRow:hover {
+  background-color: var(--color-info-bg);
+}
+
+.resourceRow:focus-within {
+  outline: 2px solid var(--color-info-border);
+  outline-offset: 2px;
+}
+
+/* Resource name cell */
+.resourceName {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+}
+
+/* Resource amount cell */
+.resourceAmount {
+  font-family: 'Courier New', monospace;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+}
+
+/* Capacity bar container */
+.capacityBar {
+  display: flex;
+  align-items: center;
+  height: 1rem;
+  background-color: var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* Capacity bar fill */
+.capacityBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-success-border), var(--color-info-border));
+  transition: width 0.3s ease;
+  min-width: 2px; /* Ensure visibility even at low percentages */
+}
+
+/* Resource rate cell */
+.resourceRate {
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+/* Rate color variants */
+.ratePositive {
+  color: var(--color-success-text);
+}
+
+.rateNegative {
+  color: var(--color-error-text);
+}
+
+.rateNeutral {
+  color: var(--color-text-muted);
+}
+
+/* Empty state */
+.emptyState {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.emptyStateText {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* Locked state */
+.lockedState {
+  padding: var(--spacing-lg);
+  text-align: center;
+  background-color: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  color: var(--color-info-text);
+}
+
+.lockedStateText {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+  .resourceHeader,
+  .resourceRow {
+    grid-template-columns: 1fr 1fr 2fr 1fr;
+    font-size: 0.813rem;
+  }
+
+  .heading {
+    font-size: 1.125rem;
+  }
+}

@@ -5,10 +5,12 @@ import { EventInspector } from './EventInspector.js';
 import { SocialDevPanel } from './SocialDevPanel.js';
 import { PersistenceIntegration } from './PersistenceIntegration.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
+import { ResourceDashboard } from './ResourceDashboard.js';
 import {
   ShellStateProvider,
   useShellBridge,
   useShellState,
+  useShellProgression,
 } from './ShellStateProvider.js';
 import errorStyles from './ErrorBoundary.module.css';
 import appStyles from './App.module.css';
@@ -26,6 +28,7 @@ export function App() {
 function ShellAppSurface(): JSX.Element {
   const { runtime } = useShellState();
   const bridge = useShellBridge();
+  const progression = useShellProgression();
   const socialEnabled = bridge.isSocialFeatureEnabled();
 
   const handleSendCommand = useCallback(async () => {
@@ -43,6 +46,8 @@ function ShellAppSurface(): JSX.Element {
       <button onClick={handleSendCommand} type="button">
         Send Test Command
       </button>
+
+      {progression.isEnabled && <ResourceDashboard />}
 
       <EventInspector />
 
