@@ -296,15 +296,15 @@ export function ShellStateProvider({
         const details = error.details as Record<string, unknown> | undefined;
         dispatch({
           type: 'progression-schema-mismatch',
-          expectedVersion: (details?.expectedVersion as number) ?? 1,
-          actualVersion: (details?.actualVersion as number) ?? 0,
+          expectedVersion: (details?.expected as number) ?? 1,
+          actualVersion: (details?.received as number) ?? 0,
           timestamp: Date.now(),
         });
         recordTelemetryError('ProgressionUiSchemaMismatch', {
           code: error.code,
           message: error.message,
-          expectedVersion: details?.expectedVersion ?? null,
-          actualVersion: details?.actualVersion ?? null,
+          expectedVersion: details?.expected ?? null,
+          actualVersion: details?.received ?? null,
         });
       } else {
         recordTelemetryError('ShellStateProviderWorkerError', {
@@ -455,6 +455,8 @@ export function ShellStateProvider({
     () => ({
       isEnabled: isProgressionUIEnabled(),
       schemaVersion: state.runtime.progression.schemaVersion,
+      expectedSchemaVersion: state.runtime.progression.expectedSchemaVersion,
+      receivedSchemaVersion: state.runtime.progression.receivedSchemaVersion,
       selectResources,
       selectGenerators,
       selectUpgrades,
@@ -462,6 +464,8 @@ export function ShellStateProvider({
     }),
     [
       state.runtime.progression.schemaVersion,
+      state.runtime.progression.expectedSchemaVersion,
+      state.runtime.progression.receivedSchemaVersion,
       selectResources,
       selectGenerators,
       selectUpgrades,

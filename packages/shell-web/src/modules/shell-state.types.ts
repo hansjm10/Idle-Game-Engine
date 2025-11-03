@@ -36,6 +36,10 @@ export interface ShellProgressionState {
   readonly snapshot: ProgressionSnapshot | null;
   readonly pendingDeltas: readonly ShellProgressionPendingDelta[];
   readonly schemaVersion: number;
+  /** Expected schema version when mismatch occurs (for better error messaging). */
+  readonly expectedSchemaVersion?: number;
+  /** Received schema version when mismatch occurs (for better error messaging). */
+  readonly receivedSchemaVersion?: number;
 }
 
 /**
@@ -125,6 +129,10 @@ export interface ShellProgressionApi {
   readonly isEnabled: boolean;
   /** Get the current progression schema version (negative indicates mismatch). */
   readonly schemaVersion: number;
+  /** Expected schema version when mismatch occurs (for displaying actionable error messages). */
+  readonly expectedSchemaVersion?: number;
+  /** Received schema version when mismatch occurs (for displaying actionable error messages). */
+  readonly receivedSchemaVersion?: number;
   /** Get memoized selector for resources. */
   readonly selectResources: ProgressionResourcesSelector;
   /** Get memoized selector for generators. */

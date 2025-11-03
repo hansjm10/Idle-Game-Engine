@@ -322,6 +322,7 @@ export function createShellStateReducer(
       case 'progression-schema-mismatch': {
         // Log schema mismatch but don't fail; allow UI to handle gracefully
         // Set schemaVersion to mismatch indicator for consumer awareness
+        // Store both versions for actionable error messaging
         return {
           ...state,
           runtime: {
@@ -329,6 +330,8 @@ export function createShellStateReducer(
             progression: {
               ...state.runtime.progression,
               schemaVersion: -1, // Negative indicates mismatch
+              expectedSchemaVersion: action.expectedVersion,
+              receivedSchemaVersion: action.actualVersion,
             },
           },
         };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ProgressionSnapshot } from '@idle-engine/core';
 
 import {
   createInitialShellState,
@@ -17,13 +18,48 @@ const backPressureStub = {
   },
 } satisfies RuntimeStateSnapshot['backPressure'];
 
-const progressionSnapshotStub = {
+const progressionSnapshotStub: ProgressionSnapshot = {
+  step: 1,
+  publishedAt: 1000,
   resources: [
-    { id: 'gold', quantity: 100, maximized: false },
-    { id: 'wood', quantity: 50, maximized: false },
+    {
+      id: 'gold',
+      displayName: 'Gold',
+      amount: 100,
+      isUnlocked: true,
+      isVisible: true,
+      perTick: 0,
+    },
+    {
+      id: 'wood',
+      displayName: 'Wood',
+      amount: 50,
+      isUnlocked: true,
+      isVisible: true,
+      perTick: 0,
+    },
   ],
-  generators: [{ id: 'mine', rate: 5, active: true }],
-  upgrades: [{ id: 'mining-speed', purchased: false }],
+  generators: [
+    {
+      id: 'mine',
+      displayName: 'Mine',
+      owned: 5,
+      isUnlocked: true,
+      isVisible: true,
+      costs: [],
+      produces: [{ resourceId: 'gold', rate: 1 }],
+      consumes: [],
+      nextPurchaseReadyAtStep: 0,
+    },
+  ],
+  upgrades: [
+    {
+      id: 'mining-speed',
+      displayName: 'Mining Speed',
+      status: 'available',
+      isVisible: true,
+    },
+  ],
 };
 
 describe('shell-state-store', () => {
@@ -167,7 +203,7 @@ describe('shell-state-store', () => {
       currentStep: 1,
       events: [],
       backPressure: backPressureStub,
-      progression: progressionSnapshotStub as any,
+      progression: progressionSnapshotStub,
     };
 
     state = reducer(state, {

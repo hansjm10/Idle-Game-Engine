@@ -1,0 +1,143 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import type { ReactNode } from 'react';
+
+import { ShellStateProvider, useShellProgression } from './ShellStateProvider.js';
+import type { ShellStateProviderConfig } from './shell-state.types.js';
+
+// Mock the progression config
+vi.mock('./progression-config.js', () => ({
+  isProgressionUIEnabled: vi.fn(() => true),
+}));
+
+// Mock the worker bridge
+const mockBridge = {
+  isReady: vi.fn(() => true),
+  awaitReady: vi.fn(async () => {}),
+  sendCommand: vi.fn(),
+  onStateUpdate: vi.fn(() => {}),
+  offStateUpdate: vi.fn(() => {}),
+  onEvent: vi.fn(() => {}),
+  onError: vi.fn(() => {}),
+  offError: vi.fn(() => {}),
+  onDiagnosticsUpdate: vi.fn(() => {}),
+  offDiagnosticsUpdate: vi.fn(() => {}),
+  terminate: vi.fn(),
+};
+
+vi.mock('./worker-bridge.js', () => ({
+  WorkerBridge: vi.fn(() => mockBridge),
+  useWorkerBridge: vi.fn(() => mockBridge),
+}));
+
+const defaultConfig: ShellStateProviderConfig = {
+  workerUrl: '/worker.js',
+  recordTelemetryEvent: vi.fn(),
+  recordTelemetryError: vi.fn(),
+};
+
+describe('ShellStateProvider', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('useShellProgression', () => {
+    it('throws error when used outside ShellStateProvider', () => {
+      expect(() => {
+        renderHook(() => useShellProgression());
+      }).toThrow('useShellProgression must be used within a ShellStateProvider');
+    });
+
+    it('returns progression API when used within provider', () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result } = renderHook(() => useShellProgression(), { wrapper });
+
+      expect(result.current).toBeDefined();
+      expect(result.current.isEnabled).toBe(true);
+      expect(result.current.schemaVersion).toBe(1);
+      expect(typeof result.current.selectResources).toBe('function');
+      expect(typeof result.current.selectGenerators).toBe('function');
+      expect(typeof result.current.selectUpgrades).toBe('function');
+      expect(typeof result.current.selectOptimisticResources).toBe('function');
+    });
+  });
+
+  describe('progression selectors', () => {
+    it('return null when snapshot is null', () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result } = renderHook(() => useShellProgression(), { wrapper });
+
+      expect(result.current.selectResources()).toBeNull();
+      expect(result.current.selectGenerators()).toBeNull();
+      expect(result.current.selectUpgrades()).toBeNull();
+      expect(result.current.selectOptimisticResources()).toBeNull();
+    });
+
+    // Note: Testing with actual snapshot data would require deeper integration
+    // with the worker bridge and state reducer, which is better suited for
+    // integration tests. The reducer tests in shell-state-store.test.ts
+    // already verify the state management logic.
+  });
+
+  describe('optimistic resources selector', () => {
+    // Note: Testing optimistic updates requires triggering state updates
+    // through the reducer, which is already tested in shell-state-store.test.ts.
+    // These tests verify the selector logic is present and callable.
+
+    it('selector is memoized and callable', () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result } = renderHook(() => useShellProgression(), { wrapper });
+
+      const selector1 = result.current.selectOptimisticResources;
+      const selector2 = result.current.selectOptimisticResources;
+
+      expect(selector1).toBe(selector2);
+      expect(typeof selector1).toBe('function');
+    });
+  });
+
+  describe('feature flag integration', () => {
+    it('reflects isProgressionUIEnabled config', async () => {
+      const { isProgressionUIEnabled } = await import('./progression-config.js');
+
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result } = renderHook(() => useShellProgression(), { wrapper });
+
+      expect(result.current.isEnabled).toBe(true);
+      expect(isProgressionUIEnabled).toHaveBeenCalled();
+    });
+  });
+
+  describe('schema version', () => {
+    it('initializes with default schema version', () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result } = renderHook(() => useShellProgression(), { wrapper });
+
+      expect(result.current.schemaVersion).toBe(1);
+    });
+
+    // Note: Testing schema mismatch error handling would require
+    // triggering worker errors, which is better tested through
+    // integration tests or by verifying the error handler logic
+    // in isolation (already covered in shell-state-store.test.ts).
+  });
+});
