@@ -1,7 +1,7 @@
 import { useId, useMemo } from 'react';
 import type { ResourceView } from '@idle-engine/core';
 
-import { useShellProgression } from './ShellStateProvider.js';
+import { useShellProgression, useShellState } from './ShellStateProvider.js';
 import styles from './ResourceDashboard.module.css';
 
 /**
@@ -114,7 +114,7 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
           />
         </div>
       ) : (
-        <div role="cell" aria-hidden="true" />
+        <div role="cell" aria-label="No capacity limit" />
       )}
       <div className={`${styles.resourceRate} ${rateClassName}`} role="cell">
         {formatPerTickRate(resource.perTick)}
@@ -128,6 +128,16 @@ function EmptyState(): JSX.Element {
     <div className={styles.emptyState} role="status">
       <p className={styles.emptyStateText}>
         No resources available yet. Resources will appear here as you unlock them.
+      </p>
+    </div>
+  );
+}
+
+function LoadingState(): JSX.Element {
+  return (
+    <div className={styles.loadingState} role="status">
+      <p className={styles.loadingStateText}>
+        Loading resource data...
       </p>
     </div>
   );
@@ -160,6 +170,7 @@ function LockedState(): JSX.Element {
  */
 export function ResourceDashboard(): JSX.Element | null {
   const progression = useShellProgression();
+  const { bridge } = useShellState();
   const headingId = useId();
 
   // Feature flag check
@@ -169,6 +180,9 @@ export function ResourceDashboard(): JSX.Element | null {
 
   // Get resources from memoized selector (with optimistic updates)
   const resources = progression.selectOptimisticResources();
+
+  // Distinguish between loading and truly locked states
+  const isLoading = !bridge.isReady || bridge.lastUpdateAt === null;
 
   // Handle no progression data available
   if (!resources) {
@@ -180,7 +194,7 @@ export function ResourceDashboard(): JSX.Element | null {
         <h2 id={headingId} className={styles.heading}>
           Resources
         </h2>
-        <LockedState />
+        {isLoading ? <LoadingState /> : <LockedState />}
       </section>
     );
   }

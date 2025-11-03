@@ -134,6 +134,18 @@
   font-size: 0.875rem;
 }
 
+/* Loading state */
+.loadingState {
+  padding: var(--spacing-lg);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.loadingStateText {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
 /* Locked state */
 .lockedState {
   padding: var(--spacing-lg);

@@ -11,6 +11,7 @@ import {
 } from './ResourceDashboard.js';
 import type {
   ShellProgressionApi,
+  ShellState,
 } from './shell-state.types.js';
 
 // Mock the ShellStateProvider hooks
@@ -23,8 +24,18 @@ const mockProgressionApi: ShellProgressionApi = {
   selectOptimisticResources: vi.fn(() => null),
 };
 
+const mockShellState: Pick<ShellState, 'bridge'> = {
+  bridge: {
+    isReady: true,
+    isRestoring: false,
+    lastUpdateAt: Date.now(),
+    errors: [],
+  },
+};
+
 vi.mock('./ShellStateProvider.js', () => ({
   useShellProgression: vi.fn(() => mockProgressionApi),
+  useShellState: vi.fn(() => mockShellState),
 }));
 
 describe('ResourceDashboard view-model utilities', () => {
@@ -134,6 +145,8 @@ describe('ResourceDashboard component', () => {
     vi.clearAllMocks();
     mockProgressionApi.isEnabled = true;
     mockProgressionApi.selectOptimisticResources = vi.fn(() => null);
+    mockShellState.bridge.isReady = true;
+    mockShellState.bridge.lastUpdateAt = Date.now();
   });
 
   describe('feature flag', () => {
@@ -150,9 +163,34 @@ describe('ResourceDashboard component', () => {
     });
   });
 
-  describe('locked state', () => {
-    it('renders locked state when no resources available', () => {
+  describe('loading state', () => {
+    it('renders loading state when bridge is not ready', () => {
       mockProgressionApi.selectOptimisticResources = vi.fn(() => null);
+      mockShellState.bridge.isReady = false;
+      render(<ResourceDashboard />);
+
+      expect(screen.getByText('Resources')).toBeInTheDocument();
+      expect(screen.getByText(/Loading resource data/i)).toBeInTheDocument();
+      expect(screen.getByRole('status')).toBeInTheDocument();
+    });
+
+    it('renders loading state when no lastUpdateAt', () => {
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => null);
+      mockShellState.bridge.isReady = true;
+      mockShellState.bridge.lastUpdateAt = null;
+      render(<ResourceDashboard />);
+
+      expect(screen.getByText('Resources')).toBeInTheDocument();
+      expect(screen.getByText(/Loading resource data/i)).toBeInTheDocument();
+      expect(screen.getByRole('status')).toBeInTheDocument();
+    });
+  });
+
+  describe('locked state', () => {
+    it('renders locked state when bridge is ready but no resources available', () => {
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => null);
+      mockShellState.bridge.isReady = true;
+      mockShellState.bridge.lastUpdateAt = Date.now();
       render(<ResourceDashboard />);
 
       expect(screen.getByText('Resources')).toBeInTheDocument();
@@ -328,6 +366,24 @@ describe('ResourceDashboard component', () => {
 
       // No capacity bar should be rendered
       expect(screen.queryByLabelText('Capacity indicator')).not.toBeInTheDocument();
+    });
+
+    it('renders accessible placeholder cell for resources without capacity', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Crystal',
+          amount: 10,
+          isUnlocked: true,
+          isVisible: true,
+          perTick: 0.1,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      // Placeholder cell should have accessible label
+      expect(screen.getByLabelText('No capacity limit')).toBeInTheDocument();
     });
 
     it('maintains 4-column structure for resources without capacity', () => {
