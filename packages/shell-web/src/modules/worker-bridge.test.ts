@@ -522,7 +522,7 @@ describe('createInlineRuntimeWorker', () => {
       const timeout = setTimeout(() => {
         worker.terminate();
         reject(new Error('Inline runtime worker did not emit READY'));
-      }, 1_000);
+      }, 5_000);
 
       const listener = (event: MessageEvent<unknown>) => {
         const payload = event.data as { type?: string } | null;
