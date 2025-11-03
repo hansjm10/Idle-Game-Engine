@@ -42,7 +42,7 @@ describe('PersistenceIntegration', () => {
     } as unknown as WorkerBridge;
 
     mockDefinitions = [
-      { id: 'gold', name: 'Gold', initial: 0 },
+      { id: 'gold', startAmount: 0 },
     ] as ResourceDefinition[];
 
     // Mock adapter
@@ -57,6 +57,8 @@ describe('PersistenceIntegration', () => {
     mockAutosave = {
       start: vi.fn(),
       stop: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
       isRunning: vi.fn().mockReturnValue(false),
     } as unknown as AutosaveController;
 
@@ -101,7 +103,7 @@ describe('PersistenceIntegration', () => {
     expect(AutosaveController).toHaveBeenCalledWith(
       mockBridge,
       mockAdapter,
-      { slotId: 'test-slot', intervalMs: 30000 },
+      expect.objectContaining({ slotId: 'test-slot', intervalMs: 30000 }),
     );
   });
 

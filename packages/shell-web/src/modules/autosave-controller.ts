@@ -63,6 +63,7 @@ export class AutosaveController {
   private lastSaveTimestamp: number | null = null;
   private saveInProgress = false;
   private isActive = false;
+  private isPaused = false;
 
   constructor(
     bridge: WorkerBridge,
@@ -128,6 +129,23 @@ export class AutosaveController {
   }
 
   /**
+   * Pauses autosaves temporarily without stopping the timer.
+   * Used during restore operations to prevent race conditions.
+   */
+  pause(): void {
+    this.isPaused = true;
+    this.notifyStatusChange();
+  }
+
+  /**
+   * Resumes autosaves after being paused.
+   */
+  resume(): void {
+    this.isPaused = false;
+    this.notifyStatusChange();
+  }
+
+  /**
    * Manually triggers a save with an optional reason.
    * Respects throttling and back-pressure constraints.
    */
@@ -136,7 +154,7 @@ export class AutosaveController {
   }
 
   /**
-   * Saves a snapshot if conditions are met (not in progress, throttle elapsed).
+   * Saves a snapshot if conditions are met (not in progress, not paused, throttle elapsed).
    */
   private async saveIfReady(
     reason: string,
@@ -144,6 +162,11 @@ export class AutosaveController {
   ): Promise<void> {
     // Skip if save already in progress
     if (this.saveInProgress) {
+      return;
+    }
+
+    // Skip if paused (e.g., during restore operations)
+    if (this.isPaused) {
       return;
     }
 
@@ -205,21 +228,22 @@ export class AutosaveController {
       state: snapshot.state,
       runtimeVersion: snapshot.runtimeVersion,
       contentDigest: snapshot.contentDigest,
+      // TODO: Populate contentPacks field when worker supplies content pack metadata
+      // This will enable multi-pack migration tracking (planned for future runtime enhancement)
       flags: snapshot.flags,
     };
   }
 
   /**
    * Handles beforeunload event for clean shutdown saves.
-   * Uses synchronous approach to ensure save completes before unload.
+   * Note: This is best-effort; async operations may not complete before unload.
    */
-  private readonly handleBeforeUnload = (event: BeforeUnloadEvent): void => {
-    // Modern browsers ignore custom messages, but we can still trigger save
-    // Note: This is best-effort; async operations may not complete before unload
+  private readonly handleBeforeUnload = (_event: BeforeUnloadEvent): void => {
+    // Trigger save attempt (async, may not complete before unload)
     void this.saveIfReady('beforeunload', true);
 
-    // Don't show confirmation dialog (just save silently)
-    event.preventDefault();
+    // Note: We intentionally do NOT call preventDefault() or set returnValue,
+    // as we want silent saves without blocking/prompting the user
   };
 
   /**

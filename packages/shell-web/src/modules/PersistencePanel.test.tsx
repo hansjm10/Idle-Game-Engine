@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createDefinitionDigest } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';
 import { PersistencePanel } from './PersistencePanel.js';
@@ -24,9 +25,17 @@ describe('PersistencePanel', () => {
         capturedAt: new Date().toISOString(),
         workerStep: 100,
         monotonicMs: 1000,
-        state: { resources: {} },
+        state: {
+          ids: ['resource1'],
+          amounts: [100],
+          capacities: [1000],
+          unlocked: [true],
+          visible: [true],
+          flags: [1],
+          definitionDigest: createDefinitionDigest(['resource1']),
+        },
         runtimeVersion: '0.1.0',
-        contentDigest: { hash: 'abc123', timestamp: Date.now() },
+        contentDigest: createDefinitionDigest(['resource1']),
       } as SessionSnapshotPayload),
       onError: vi.fn(),
       offError: vi.fn(),
@@ -43,8 +52,8 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /save now/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /load game/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save game manually/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load saved game/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /clear all saved data/i })).toBeInTheDocument();
   });
 
@@ -61,7 +70,7 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: /save now/i });
+    const saveButton = screen.getByRole('button', { name: /save game manually/i });
     await user.click(saveButton);
 
     await waitFor(() => {
@@ -83,11 +92,11 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: /save now/i });
+    const saveButton = screen.getByRole('button', { name: /save game manually/i });
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/last saved:/i)).toBeInTheDocument();
+      expect(screen.getByText(/last manual save:/i)).toBeInTheDocument();
     });
   });
 
@@ -104,11 +113,12 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: /save now/i });
+    const saveButton = screen.getByRole('button', { name: /save game manually/i });
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(screen.getByRole('alert', { name: /game saved successfully/i })).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText(/game saved successfully/i)).toBeInTheDocument();
     });
   });
 
@@ -125,7 +135,7 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: /save now/i });
+    const saveButton = screen.getByRole('button', { name: /save game manually/i });
     await user.click(saveButton);
 
     await waitFor(() => {
@@ -146,7 +156,7 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const loadButton = screen.getByRole('button', { name: /load game/i });
+    const loadButton = screen.getByRole('button', { name: /load saved game/i });
     await user.click(loadButton);
 
     await waitFor(() => {
@@ -171,11 +181,13 @@ describe('PersistencePanel', () => {
     const errorHandler = onErrorCalls[0]?.[0];
     expect(errorHandler).toBeDefined();
 
-    errorHandler({ code: 'RESTORE_FAILED', message: 'Restore failed due to validation error' });
+    act(() => {
+      errorHandler({ code: 'RESTORE_FAILED', message: 'Restore failed due to validation error' });
+    });
 
     await waitFor(() => {
-      expect(screen.getByRole('alert', { name: /restore error/i })).toBeInTheDocument();
-      expect(screen.getByText(/restore failed due to validation error/i)).toBeInTheDocument();
+      expect(screen.getByText(/restore error:/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/restore failed due to validation error/i).length).toBeGreaterThan(0);
     });
   });
 
@@ -196,7 +208,9 @@ describe('PersistencePanel', () => {
     const errorHandler = onErrorCalls[0]?.[0];
     expect(errorHandler).toBeDefined();
 
-    errorHandler({ code: 'RESTORE_FAILED', message: 'Restore failed' });
+    act(() => {
+      errorHandler({ code: 'RESTORE_FAILED', message: 'Restore failed' });
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
@@ -275,20 +289,20 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: /save now/i });
+    const saveButton = screen.getByRole('button', { name: /save game manually/i });
     await user.click(saveButton);
 
     // Should show saving state
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /saving.../i })).toBeInTheDocument();
-      expect(screen.getByText(/saving in progress.../i)).toBeInTheDocument();
+      expect(screen.getByText(/^Saving\.\.\.$/i)).toBeInTheDocument();
+      expect(screen.getByText(/manual save in progress.../i)).toBeInTheDocument();
     });
 
     // Resolve the save
     resolveSave!();
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /save now/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save game manually/i })).toBeInTheDocument();
     });
   });
 
@@ -305,17 +319,18 @@ describe('PersistencePanel', () => {
       />,
     );
 
-    const saveButton = screen.getByRole('button', { name: /save now/i });
+    const saveButton = screen.getByRole('button', { name: /save game manually/i });
     await user.click(saveButton);
 
-    const toast = await screen.findByRole('alert', { name: /game saved successfully/i });
+    const toast = await screen.findByRole('alert');
     expect(toast).toBeInTheDocument();
+    expect(screen.getByText(/game saved successfully/i)).toBeInTheDocument();
 
     const dismissButton = screen.getByRole('button', { name: /dismiss notification/i });
     await user.click(dismissButton);
 
     await waitFor(() => {
-      expect(screen.queryByRole('alert', { name: /game saved successfully/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
   });
 

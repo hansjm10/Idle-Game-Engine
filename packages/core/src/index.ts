@@ -477,6 +477,8 @@ export {
 export {
   createResourceState,
   reconcileSaveAgainstDefinitions,
+  createDefinitionDigest,
+  computeStableDigest,
   type ResourceDefinition,
   type ResourceDefinitionDigest,
   type ResourceDefinitionReconciliation,

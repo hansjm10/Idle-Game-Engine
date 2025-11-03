@@ -25,7 +25,13 @@ export function isPersistenceUIEnabled(): boolean {
     return value === 'true' || value === '1';
   }
 
-  // Default: enabled in dev/test, disabled in production
+  // Default: prefer NODE_ENV when available (test harness controls this),
+  // otherwise fall back to Vite's import.meta.env.
+  const nodeEnv = typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
+  if (typeof nodeEnv === 'string') {
+    return nodeEnv.toLowerCase() !== 'production';
+  }
+
   if (typeof import.meta !== 'undefined') {
     if (import.meta.env?.DEV) {
       return true;
@@ -36,11 +42,6 @@ export function isPersistenceUIEnabled(): boolean {
     if (mode === 'development' || mode === 'test') {
       return true;
     }
-  }
-
-  const nodeEnv = typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
-  if (typeof nodeEnv === 'string') {
-    return nodeEnv.toLowerCase() !== 'production';
   }
 
   return false;

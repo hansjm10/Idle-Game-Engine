@@ -2,12 +2,11 @@ import type {
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
+import { PERSISTENCE_SCHEMA_VERSION } from '@idle-engine/core';
+import { recordTelemetryError } from './telemetry-utils.js';
 
-/**
- * Persistence schema version for stored session snapshots.
- * Increment when the payload structure changes in backwards-incompatible ways.
- */
-export const PERSISTENCE_SCHEMA_VERSION = 1;
+// Re-export for backwards compatibility with existing imports
+export { PERSISTENCE_SCHEMA_VERSION };
 
 /**
  * Default offline progression cap: 24 hours in milliseconds.
@@ -36,8 +35,31 @@ const STORE_NAME = 'sessions';
 const MAX_SNAPSHOTS_PER_SLOT = 5;
 
 /**
+ * Content pack manifest embedded in save files for migration tracking.
+ * Captures pack identity, version, and content digest at save time.
+ */
+export interface ContentPackManifest {
+  /**
+   * Content pack identifier (slug).
+   */
+  readonly id: string;
+
+  /**
+   * Semantic version of the content pack.
+   */
+  readonly version: string;
+
+  /**
+   * Content digest capturing resource definitions at save time.
+   */
+  readonly digest: ResourceDefinitionDigest;
+}
+
+/**
  * Stored session snapshot payload matching the schema from
  * docs/runtime-react-worker-bridge-design.md §14.1.
+ *
+ * Extended to include content pack manifests for migration support (Issue #155).
  */
 export interface StoredSessionSnapshot {
   readonly schemaVersion: number;
@@ -48,6 +70,19 @@ export interface StoredSessionSnapshot {
   readonly state: SerializedResourceState;
   readonly runtimeVersion: string;
   readonly contentDigest: ResourceDefinitionDigest;
+  /**
+   * Content pack manifests for migration tracking.
+   * Each entry captures the pack's identity, version, and digest at save time.
+   * Used to detect content changes and trigger migrations on load.
+   *
+   * @remarks
+   * Reserved for future use. The worker does not yet supply content pack metadata,
+   * so this field will be undefined in current snapshots. Planned for implementation
+   * when multi-pack support is added to the runtime.
+   *
+   * @since schemaVersion 1 (Issue #155)
+   */
+  readonly contentPacks?: readonly ContentPackManifest[];
   readonly flags?: {
     readonly pendingMigration?: boolean;
     readonly abortedRestore?: boolean;
@@ -69,15 +104,18 @@ function encodeKey(slotId: string, timestamp: number): string {
 }
 
 function decodeKey(key: string): SessionKey | null {
-  const parts = key.split(':');
-  if (parts.length !== 2) {
+  // Split on last colon to handle slotIds that contain colons
+  const lastColonIndex = key.lastIndexOf(':');
+  if (lastColonIndex === -1) {
     return null;
   }
-  const timestamp = Number.parseInt(parts[1], 10);
+  const slotId = key.slice(0, lastColonIndex);
+  const timestampStr = key.slice(lastColonIndex + 1);
+  const timestamp = Number.parseInt(timestampStr, 10);
   if (!Number.isFinite(timestamp)) {
     return null;
   }
-  return { slotId: parts[0], timestamp };
+  return { slotId, timestamp };
 }
 
 /**
@@ -135,6 +173,7 @@ export class SessionPersistenceError extends Error {
 export class SessionPersistenceAdapter {
   private db: IDBDatabase | null = null;
   private readonly offlineCapMs: number;
+  private closed = false;
 
   constructor(options: { offlineCapMs?: number } = {}) {
     this.offlineCapMs = options.offlineCapMs ?? DEFAULT_OFFLINE_CAP_MS;
@@ -145,6 +184,13 @@ export class SessionPersistenceAdapter {
    * Handles schema migrations via the onupgradeneeded event.
    */
   async open(): Promise<void> {
+    if (this.closed) {
+      throw new SessionPersistenceError(
+        'Adapter has been closed and cannot be reopened',
+        'DB_CLOSED',
+      );
+    }
+
     if (this.db) {
       return;
     }
@@ -162,8 +208,28 @@ export class SessionPersistenceAdapter {
         );
       };
 
+      request.onblocked = () => {
+        // onblocked fires when database upgrade is blocked by open connections
+        // from other tabs/windows. Reject with specific error for diagnostics.
+        reject(
+          new SessionPersistenceError(
+            'IndexedDB upgrade blocked by another connection. Close other tabs and retry.',
+            'DB_UPGRADE_BLOCKED',
+          ),
+        );
+      };
+
       request.onsuccess = () => {
         this.db = request.result;
+
+        // Handle unexpected close/abort events on the database connection
+        this.db.onabort = () => {
+          recordTelemetryError('SessionPersistenceError', {
+            code: 'DB_CONNECTION_ABORTED',
+            message: 'IndexedDB connection aborted unexpectedly',
+          });
+        };
+
         resolve();
       };
 
@@ -186,12 +252,18 @@ export class SessionPersistenceAdapter {
 
   /**
    * Closes the database connection.
+   *
+   * @remarks
+   * This is a one-shot operation. Once closed, the adapter cannot be reopened.
+   * Subsequent calls to `open()` will throw a `DB_CLOSED` error.
+   * Create a new adapter instance if you need to reconnect to the database.
    */
   close(): void {
     if (this.db) {
       this.db.close();
       this.db = null;
     }
+    this.closed = true;
   }
 
   /**
@@ -247,6 +319,10 @@ export class SessionPersistenceAdapter {
           await this.trimOldSnapshots(snapshot.slotId);
         } catch (error) {
           // Log but don't fail the save operation
+          recordTelemetryError('PersistenceTrimSnapshotsFailed', {
+            slotId: snapshot.slotId,
+            error: error instanceof Error ? error.message : String(error),
+          });
           // eslint-disable-next-line no-console
           console.warn('[SessionPersistence] Failed to trim old snapshots', error);
         }
@@ -287,21 +363,34 @@ export class SessionPersistenceAdapter {
     // Try snapshots from newest to oldest until we find a valid one
     for (const snapshot of snapshots) {
       const isValid = await verifyChecksum(snapshot);
-      if (isValid) {
-        return snapshot;
+      if (!isValid) {
+        // eslint-disable-next-line no-console
+        console.warn('[SessionPersistence] Checksum validation failed, trying older snapshot', {
+          slotId: snapshot.slotId,
+          capturedAt: snapshot.capturedAt,
+        });
+        continue;
       }
 
-      // eslint-disable-next-line no-console
-      console.warn('[SessionPersistence] Checksum validation failed, trying older snapshot', {
-        slotId: snapshot.slotId,
-        capturedAt: snapshot.capturedAt,
-      });
+      // Validate schema version
+      if (snapshot.schemaVersion !== PERSISTENCE_SCHEMA_VERSION) {
+        // eslint-disable-next-line no-console
+        console.warn('[SessionPersistence] Schema version mismatch, trying older snapshot', {
+          slotId: snapshot.slotId,
+          capturedAt: snapshot.capturedAt,
+          snapshotVersion: snapshot.schemaVersion,
+          expectedVersion: PERSISTENCE_SCHEMA_VERSION,
+        });
+        continue;
+      }
+
+      return snapshot;
     }
 
-    // All snapshots failed checksum validation
+    // All snapshots failed validation (checksum or schema version)
     throw new SessionPersistenceError(
-      'All snapshots failed checksum validation',
-      'CHECKSUM_VALIDATION_FAILED',
+      'All snapshots failed validation',
+      'SNAPSHOT_VALIDATION_FAILED',
       { slotId, snapshotCount: snapshots.length },
     );
   }

@@ -28,7 +28,7 @@ export interface PersistenceIntegrationProps {
  * - Provide manual save/load handlers to PersistencePanel
  * - Clean up resources on unmount
  *
- * See docs/runtime-react-worker-bridge-design.md §14.1 and issue #272.
+ * See docs/runtime-react-worker-bridge-design.md §14.1 and issue #155.
  */
 export function PersistenceIntegration({
   bridge,
@@ -81,22 +81,31 @@ export function PersistenceIntegration({
 
         recordTelemetryEvent('PersistenceUIRestoreAttempted', { slotId });
 
-        const result = await performRestore(bridge, adapter, {
-          slotId,
-          definitions,
-        });
+        // Pause autosave during restore to prevent race conditions
+        // (autosave hasn't started yet, but this ensures consistency with manual restore)
+        autosave.pause();
 
-        if (result.success) {
-          restoreSucceeded = true;
-          recordTelemetryEvent('PersistenceUIRestoreSucceeded', { slotId });
-        } else if (result.error) {
-          recordTelemetryEvent('PersistenceUIRestoreFailed', {
+        try {
+          const result = await performRestore(bridge, adapter, {
             slotId,
-            error: result.error.message,
-            errorCode: result.error instanceof Error ? result.error.name : 'Unknown',
+            definitions,
           });
-          // eslint-disable-next-line no-console
-          console.error('[PersistenceIntegration] Restore failed on mount', result.error);
+
+          if (result.success) {
+            restoreSucceeded = true;
+            recordTelemetryEvent('PersistenceUIRestoreSucceeded', { slotId });
+          } else if (result.error) {
+            recordTelemetryEvent('PersistenceUIRestoreFailed', {
+              slotId,
+              error: result.error.message,
+              errorCode: result.error instanceof Error ? result.error.name : 'Unknown',
+            });
+            // eslint-disable-next-line no-console
+            console.error('[PersistenceIntegration] Restore failed on mount', result.error);
+          }
+        } finally {
+          // Resume autosave after restore completes (success or failure)
+          autosave.resume();
         }
 
         // Start autosave only after successful adapter initialization.
@@ -164,19 +173,28 @@ export function PersistenceIntegration({
 
   const handleLoad = useCallback(async () => {
     const adapter = adapterRef.current;
+    const autosave = autosaveRef.current;
     if (!adapter) {
       throw new Error('Persistence adapter not initialized');
     }
 
     recordTelemetryEvent('PersistenceUIManualLoadInitiated', { slotId });
 
-    const result = await performRestore(bridge, adapter, {
-      slotId,
-      definitions,
-    });
+    // Pause autosave during manual restore to prevent race conditions
+    autosave?.pause();
 
-    if (!result.success) {
-      throw result.error ?? new Error('Restore failed for unknown reason');
+    try {
+      const result = await performRestore(bridge, adapter, {
+        slotId,
+        definitions,
+      });
+
+      if (!result.success) {
+        throw result.error ?? new Error('Restore failed for unknown reason');
+      }
+    } finally {
+      // Resume autosave after restore completes
+      autosave?.resume();
     }
   }, [bridge, definitions, slotId]);
 

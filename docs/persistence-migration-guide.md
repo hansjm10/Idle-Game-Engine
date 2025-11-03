@@ -1,7 +1,7 @@
 # Persistence Migration Guide
 
 **Last Updated:** 2025-11-02
-**Status:** Migration execution not yet implemented (see Issue #155)
+**Status:** ✅ Migration execution fully implemented (Issue #155)
 
 This guide explains how to author migrations for persisted game state in the Idle Game Engine. It covers the migration system architecture, authoring workflow, testing practices, and current implementation status.
 
@@ -77,7 +77,7 @@ interface StoredSessionSnapshot {
    ↓
 4. Check if migration required (digest mismatch, removed resources)
    ↓
-5. Apply content pack migrations (if registered) ⚠️ NOT YET IMPLEMENTED
+5. Apply content pack migrations (if registered)
    ↓
 6. bridge.restoreSession({ state, elapsedMs, resourceDeltas })
 ```
@@ -96,7 +96,7 @@ interface ResourceDefinitionDigest {
 }
 ```
 
-The digest is computed using **FNV-1a hash** for determinism across environments (see `packages/core/src/resource-state.ts:1818-1826`).
+The digest is computed using **FNV-1a hash** for determinism across environments (see `createDefinitionDigest()` in `packages/core/src/resource-state.ts`).
 
 ### Validation Rules
 
@@ -109,14 +109,23 @@ When loading a save, the engine compares the saved digest against the current co
 | **Resources reordered** | Hash mismatch, same IDs | Warning logged, gracefully handled via remapping | No |
 | **Resources renamed** | Old ID removed, new ID added | **FAILS** validation | Yes (migration must transform state) |
 
-Validation logic is implemented in `reconcileSaveAgainstDefinitions()` at `packages/core/src/resource-state.ts:1194-1300`.
+Validation logic is implemented in `reconcileSaveAgainstDefinitions()` in `packages/core/src/resource-state.ts`.
 
 ### How Digest Changes Trigger Migrations
 
-When `reconcileSaveAgainstDefinitions()` detects incompatibility (removed resources), it sets `snapshot.flags.pendingMigration = true`. Future migration execution will:
+When `reconcileSaveAgainstDefinitions()` detects incompatibility, it returns reconciliation results containing:
+- `addedIds`: Resources in current definitions but not in save
+- `removedIds`: Resources in save but not in current definitions (triggers migration requirement)
+- `digestsMatch`: Whether the saved and current digests match
+
+The restore logic in `session-restore.ts` uses these results to determine if migration is needed:
+- Migration is required when `removedIds.length > 0` (resources were removed/renamed)
+- Migration can also be triggered by a pre-set `snapshot.flags.pendingMigration` flag
+
+When migration is triggered:
 
 1. Compare `snapshot.contentDigest` against known content pack versions
-2. Find applicable migration transforms
+2. Find applicable migration transforms using the migration registry
 3. Apply transforms to `snapshot.state` (amounts, capacities, flags arrays, etc.)
 4. Re-validate after transformation
 
@@ -124,9 +133,9 @@ When `reconcileSaveAgainstDefinitions()` detects incompatibility (removed resour
 
 ### Where to Place Migrations
 
-**Current Status:** ⚠️ Migration execution infrastructure not yet implemented. This section describes the intended design.
+**Current Status:** ✅ Migration registration API is implemented and available.
 
-**Note:** The `registerMigration()` and `applyMigration()` APIs shown below are **placeholder examples** for the future migration system. These functions do not currently exist in `@idle-engine/shell-web`.
+**Note:** The `registerMigration()` and `findMigrationPath()` APIs are now available in `@idle-engine/shell-web`. Content packs can register migrations at initialization time.
 
 Content pack migrations should be registered at pack initialization:
 
@@ -140,20 +149,25 @@ registerMigration({
 
   // Source content digest (before migration)
   fromDigest: {
-    hash: 'abc123...',
-    version: 42,
+    hash: 'fnv1a-abc123',
+    version: 2,
+    ids: ['old-resource-id', 'other-resource'],
   },
 
   // Target content digest (after migration)
   toDigest: {
-    hash: 'def456...',
-    version: 43,
+    hash: 'fnv1a-def456',
+    version: 2,
+    ids: ['new-resource-id', 'other-resource'],
   },
 
   // Transform function
   transform: (state: SerializedResourceState): SerializedResourceState => {
-    // Migration logic here
-    return transformedState;
+    // Rename old-resource-id to new-resource-id in the state
+    return {
+      ...state,
+      ids: state.ids.map(id => id === 'old-resource-id' ? 'new-resource-id' : id),
+    };
   },
 });
 ```
@@ -177,19 +191,43 @@ Test migrations using the existing test infrastructure in `packages/shell-web/sr
 ```typescript
 // Example: In your content pack's test suite
 import { describe, it, expect } from 'vitest';
-import { applyMigration } from '@idle-engine/shell-web'; // Placeholder API
+import { registerMigration, findMigrationPath, applyMigrations } from '@idle-engine/shell-web';
+import type { ResourceDefinitionDigest, SerializedResourceState } from '@idle-engine/core';
 
 describe('resource rename migration', () => {
   it('should transform old resource ID to new ID', () => {
+    const oldDigest: ResourceDefinitionDigest = {
+      hash: 'abc123...',
+      version: 2,
+      ids: ['old-resource-id', 'other-resource'],
+    };
+    const newDigest: ResourceDefinitionDigest = {
+      hash: 'def456...',
+      version: 2,
+      ids: ['new-resource-id', 'other-resource'],
+    };
+
+    registerMigration({
+      id: 'my-pack-v2-resource-rename',
+      fromDigest: oldDigest,
+      toDigest: newDigest,
+      transform: (state) => ({
+        ...state,
+        ids: state.ids.map((id) => (id === 'old-resource-id' ? 'new-resource-id' : id)),
+      }),
+    });
+
     const oldState: SerializedResourceState = {
       ids: ['old-resource-id', 'other-resource'],
       amounts: [100, 200],
       capacities: [1000, 2000],
       flags: [0, 0],
-      definitionDigest: { hash: 'abc123...', version: 2, ids: ['old-resource-id', 'other-resource'] },
     };
 
-    const newState = applyMigration('my-pack-v2-resource-rename', oldState);
+    const path = findMigrationPath(oldDigest, newDigest);
+    expect(path.found).toBe(true);
+
+    const newState = applyMigrations(oldState, path.migrations);
 
     expect(newState.ids).toContain('new-resource-id');
     expect(newState.ids).not.toContain('old-resource-id');
@@ -230,12 +268,11 @@ function migrateResourceRename(state: SerializedResourceState): SerializedResour
   return {
     ...state,
     ids: newIds,
-    // definitionDigest will be recomputed automatically by the engine
   };
 }
 ```
 
-**Note:** The `definitionDigest` is automatically recomputed by the engine during validation, so migrations don't need to manually set it.
+**IMPORTANT:** Do NOT manually set the `definitionDigest` field in migration transforms. The digest is automatically stripped and recomputed by the engine during validation to ensure it matches the migrated IDs. If you include a stale digest, re-validation will fail.
 
 ### Pattern: Resource Merge
 
@@ -364,11 +401,14 @@ Ensure migrations are deterministic by running them multiple times and verifying
 it('should produce identical results on repeated application', () => {
   const originalState = createTestState();
 
-  const result1 = applyMigration('my-migration', originalState);
-  const result2 = applyMigration('my-migration', originalState);
+  // Get the registered migration
+  const path = findMigrationPath(oldDigest, newDigest);
+  expect(path.found).toBe(true);
+
+  const result1 = applyMigrations(originalState, path.migrations);
+  const result2 = applyMigrations(originalState, path.migrations);
 
   expect(result1).toEqual(result2);
-  expect(result1.definitionDigest.hash).toBe(result2.definitionDigest.hash);
 });
 ```
 
@@ -526,9 +566,16 @@ Test against fixtures:
 
 ```typescript
 import fixtureV1 from './fixtures/saves/v1-to-v2-migration.json';
+import { findMigrationPath, applyMigrations } from '@idle-engine/shell-web';
 
 it('should migrate v1 fixture to v2', () => {
-  const migrated = applyMigration('v1-to-v2', fixtureV1.state); // Placeholder API
+  const oldDigest = fixtureV1.contentDigest;
+  const newDigest = { hash: 'new-hash', version: 1, ids: ['new-resource-id'] };
+
+  const path = findMigrationPath(oldDigest, newDigest);
+  expect(path.found).toBe(true);
+
+  const migrated = applyMigrations(fixtureV1.state, path.migrations);
 
   expect(migrated.ids).toEqual(['new-resource-id']);
   expect(migrated.amounts).toEqual([999]); // Value preserved
@@ -543,16 +590,16 @@ Run migration tests using Vitest:
 
 ```bash
 # Run all migration tests
-npm test -- migration
+pnpm test migration
 
 # Run tests in watch mode during development
-npm test -- --watch migration
+pnpm test --watch migration
 
 # Run specific test file
-npm test -- packages/shell-web/src/migrations/my-pack-migrations.test.ts
+pnpm --filter @idle-engine/shell-web test my-pack-migrations
 
 # Generate coverage report
-npm test -- --coverage migration
+pnpm test --coverage migration
 ```
 
 ### Example Test Cases
@@ -626,32 +673,29 @@ The `runtimeVersion` is **automatically set** from `@idle-engine/core`'s `packag
 ✅ **Content digest computation and validation** - Detects when definitions change
 ✅ **Graceful handling of added resources** - New resources initialize to defaults
 ✅ **Checksum validation** - Detects corrupted snapshots using SHA-256
-✅ **Telemetry for migration events** - `PersistenceMigrationRequired` emitted when needed
+✅ **Telemetry for migration events** - `PersistenceMigrationRequired`, `PersistenceMigrationApplied`, `PersistenceMigrationFailed` emitted
 ✅ **Comprehensive test infrastructure** - Unit, integration, and fixture tests
+✅ **Migration registry** - `packages/shell-web/src/modules/migration-registry.ts` with BFS pathfinding
+✅ **Migration execution** - `session-restore.ts:attemptMigration()` applies transforms and re-validates
+✅ **Public API** - `registerMigration()`, `findMigrationPath()`, `applyMigrations()` exported
+✅ **Content pack manifests** - `StoredSessionSnapshot.contentPacks` field for tracking pack versions
 
-### Critical Gaps ⚠️
+### Known Limitations
 
-❌ **No migration execution** - `session-restore.ts:101-113` contains only a stub that throws "migration not yet implemented"
-❌ **No migration registry** - No API to register or discover content pack migrations
-❌ **No CLI tooling** - No commands to generate migration scaffolds or validate determinism
-❌ **No migration templates** - No example migrations to use as reference
-❌ **No resourceDeltas support** - `RESTORE_SESSION` message accepts deltas but they're never populated
-
-### Partially Implemented
-
-⚠️ **Migration flag detection** - System correctly identifies when migration is needed, but can't execute it
-⚠️ **Validation infrastructure** - `reconcileSaveAgainstDefinitions()` works for simple cases but can't apply transforms
-⚠️ **Telemetry events** - `PersistenceMigrationApplied` defined but never emitted
+⚠️ **No CLI tooling** - No commands to generate migration scaffolds or validate determinism
+⚠️ **No migration templates** - No example migrations in real content packs yet (coming soon)
+⚠️ **No resourceDeltas support** - `RESTORE_SESSION` message accepts deltas but they're never populated
+⚠️ **Content pack manifest population** - `StoredSessionSnapshot.contentPacks` field is defined but worker does not yet supply content pack metadata. Reserved for future multi-pack support in runtime.
 
 ### Follow-Up Tooling (Future Work)
 
-Track these in issues:
+Track these in future issues:
 
-- **Migration registry** (Issue #155) - API for registering and chaining migrations
 - **CLI scaffold generator** - `npx idle-engine generate migration` command
 - **Checksum helpers** - Utilities for computing and verifying migration determinism
-- **Migration path solver** - Automatically compute shortest migration chain
 - **Diagnostic tools** - CLI to inspect save files and test migrations offline
+- **Content pack manifest population** - Auto-populate `contentPacks` during save operations
+- **Example migrations** - Add real migration examples to sample content pack
 
 ## References
 
@@ -663,8 +707,9 @@ Track these in issues:
 ### Implementation Files
 
 - `packages/shell-web/src/modules/session-persistence-adapter.ts` - IndexedDB adapter API
-- `packages/shell-web/src/modules/session-restore.ts` - Validation and migration flow (stub at line 108)
-- `packages/core/src/resource-state.ts` - Digest computation (line 1818) and reconciliation (line 1194)
+- `packages/shell-web/src/modules/session-restore.ts` - Validation and migration flow
+- `packages/shell-web/src/modules/migration-registry.ts` - Migration registration and pathfinding
+- `packages/core/src/resource-state.ts` - Digest computation (`createDefinitionDigest`) and reconciliation (`reconcileSaveAgainstDefinitions`)
 
 ### Test Files
 
@@ -681,4 +726,4 @@ Track these in issues:
 
 ---
 
-**Note:** This guide documents the intended migration system design. Several critical components are not yet implemented (see [Current Implementation Status](#current-implementation-status--tooling-gaps)). Content pack authors should be aware that migration execution is planned but not available until Issue #155 is resolved.
+**Note:** The migration system is fully implemented as of Issue #155. The core registry, pathfinding, and execution logic are complete and tested. Content pack authors can register migrations using the `registerMigration()` API. Remember that migration transforms should NOT manually set the `definitionDigest` field - it is automatically stripped and recomputed during validation to ensure correctness.

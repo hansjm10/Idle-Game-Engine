@@ -1362,6 +1362,20 @@ function validateDefinitionDigest(
     });
     throw new Error('Serialized resource digest ids diverge from the saved ids.');
   }
+
+  // Verify digest hash consistency to detect spoofed or corrupted digests
+  const expectedHash = computeStableDigest(ids);
+  if (digest.hash !== expectedHash) {
+    telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+      reason: 'digest-hash-mismatch',
+      digestHash: digest.hash,
+      expectedHash,
+    });
+    throw new Error(
+      `Serialized resource digest hash mismatch: expected "${expectedHash}" but got "${digest.hash}". ` +
+      'This may indicate a corrupted or tampered save file.',
+    );
+  }
 }
 
 function validateSerializedValues(
@@ -1815,7 +1829,14 @@ function epsilonEquals(
   return difference <= effectiveTolerance;
 }
 
-function createDefinitionDigest(
+/**
+ * Creates a resource definition digest from an ordered list of resource IDs.
+ * The digest includes the IDs, version (count), and FNV-1a hash.
+ *
+ * @param ids - Ordered resource IDs
+ * @returns Resource definition digest
+ */
+export function createDefinitionDigest(
   ids: readonly string[],
 ): ResourceDefinitionDigest {
   return {
@@ -1825,7 +1846,14 @@ function createDefinitionDigest(
   };
 }
 
-function computeStableDigest(ids: readonly string[]): string {
+/**
+ * Computes FNV-1a hash of resource IDs for content digest.
+ * Hash includes ID separators (0xff) to distinguish ['ab'] from ['a', 'b'].
+ *
+ * @param ids - Ordered resource IDs
+ * @returns Hash string in format "fnv1a-{hex}"
+ */
+export function computeStableDigest(ids: readonly string[]): string {
   let hash = 0x811c9dc5;
   for (const id of ids) {
     for (let i = 0; i < id.length; i += 1) {

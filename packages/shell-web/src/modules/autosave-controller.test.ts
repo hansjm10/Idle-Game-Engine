@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createDefinitionDigest } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';
 import type {
@@ -25,18 +26,10 @@ describe('AutosaveController', () => {
       unlocked: [true],
       visible: [true],
       flags: [1],
-      definitionDigest: {
-        version: 1,
-        contentHash: 'test-hash',
-        definitionCount: 1,
-      },
+      definitionDigest: createDefinitionDigest(['resource1']),
     },
     runtimeVersion: '0.1.0',
-    contentDigest: {
-      version: 1,
-      contentHash: 'test-hash',
-      definitionCount: 1,
-    },
+    contentDigest: createDefinitionDigest(['resource1']),
   });
 
   beforeEach(() => {
@@ -221,9 +214,9 @@ describe('AutosaveController', () => {
       // Should still be only 1 request
       expect(mockBridge.requestSessionSnapshot).toHaveBeenCalledTimes(1);
 
-      // Complete the first save
+      // Complete the first save and flush pending microtasks
       resolveSnapshot!(createMockSnapshot());
-      await vi.runAllTimersAsync();
+      await Promise.resolve();
 
       // Next interval should succeed
       await vi.advanceTimersByTimeAsync(60000);
