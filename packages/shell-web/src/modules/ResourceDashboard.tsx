@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import type { ResourceView } from '@idle-engine/core';
 
 import { useShellProgression } from './ShellStateProvider.js';
@@ -100,7 +100,7 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
       <div className={styles.resourceAmount} role="cell">
         {formatCapacity(resource.amount, resource.capacity)}
       </div>
-      {resource.capacity !== undefined && (
+      {resource.capacity !== undefined ? (
         <div className={styles.capacityBar} role="cell" aria-label="Capacity indicator">
           <div
             className={styles.capacityBarFill}
@@ -108,6 +108,8 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
             aria-hidden="true"
           />
         </div>
+      ) : (
+        <div role="cell" aria-hidden="true" />
       )}
       <div className={`${styles.resourceRate} ${rateClassName}`} role="cell">
         {formatPerTickRate(resource.perTick)}
@@ -153,6 +155,7 @@ function LockedState(): JSX.Element {
  */
 export function ResourceDashboard(): JSX.Element | null {
   const progression = useShellProgression();
+  const headingId = useId();
 
   // Feature flag check
   if (!progression.isEnabled) {
@@ -167,9 +170,9 @@ export function ResourceDashboard(): JSX.Element | null {
     return (
       <section
         className={styles.dashboard}
-        aria-labelledby="resource-dashboard-heading"
+        aria-labelledby={headingId}
       >
-        <h2 id="resource-dashboard-heading" className={styles.heading}>
+        <h2 id={headingId} className={styles.heading}>
           Resources
         </h2>
         <LockedState />
@@ -186,9 +189,9 @@ export function ResourceDashboard(): JSX.Element | null {
   return (
     <section
       className={styles.dashboard}
-      aria-labelledby="resource-dashboard-heading"
+      aria-labelledby={headingId}
     >
-      <h2 id="resource-dashboard-heading" className={styles.heading}>
+      <h2 id={headingId} className={styles.heading}>
         Resources
       </h2>
 
