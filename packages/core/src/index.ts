@@ -573,3 +573,9 @@ export {
   type PrometheusTelemetryFacade,
 } from './telemetry-prometheus.js';
 export { createReadOnlyProxy } from './read-only-proxy.js';
+export {
+  createAutomationSystem,
+  getAutomationState,
+  type AutomationSystemOptions,
+  type AutomationState,
+} from './automation-system.js';
