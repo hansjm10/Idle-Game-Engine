@@ -61,6 +61,12 @@ export interface AutomationSystemOptions {
  * subscribes to relevant events during setup(), and evaluates triggers
  * during each tick() call to enqueue commands at AUTOMATION priority.
  *
+ * Unlock state is persistent: once an automation is unlocked (either via
+ * initialState or unlock condition evaluation), it remains unlocked. The
+ * system only evaluates unlock conditions for automations that are not yet
+ * unlocked. Currently, only 'always' unlock conditions are evaluated; full
+ * condition evaluation requires integration with progression systems.
+ *
  * @param options - Configuration options including automations, step duration,
  *                  command queue, resource state, and optional initial state.
  * @returns A System object with an additional getState() method for state extraction.
@@ -90,7 +96,7 @@ export function createAutomationSystem(
       enabled: automation.enabledByDefault,
       lastFiredStep: -Infinity,
       cooldownExpiresStep: 0,
-      unlocked: false, // Will be evaluated on first tick
+      unlocked: false, // Evaluated on first tick for 'always' condition; persists once unlocked
     });
   }
 
