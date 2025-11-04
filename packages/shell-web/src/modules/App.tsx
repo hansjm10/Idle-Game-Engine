@@ -5,6 +5,7 @@ import { EventInspector } from './EventInspector.js';
 import { SocialDevPanel } from './SocialDevPanel.js';
 import { PersistenceIntegration } from './PersistenceIntegration.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
+import { ResourceDashboard } from './ResourceDashboard.js';
 import {
   ShellStateProvider,
   useShellBridge,
@@ -34,7 +35,7 @@ function ShellAppSurface(): JSX.Element {
   }, [bridge]);
 
   return (
-    <main style={{ fontFamily: 'system-ui', padding: 24 }}>
+    <main className={appStyles.main}>
       <h1>Idle Engine Shell</h1>
       <p>
         Placeholder web shell wired to the Worker runtime tick loop. Runtime step:{' '}
@@ -43,6 +44,8 @@ function ShellAppSurface(): JSX.Element {
       <button onClick={handleSendCommand} type="button">
         Send Test Command
       </button>
+
+      <ResourceDashboard />
 
       <EventInspector />
 
