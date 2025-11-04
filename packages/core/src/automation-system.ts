@@ -386,8 +386,8 @@ export interface ResourceStateReader {
  * using one of four comparison operators: gte (>=), gt (>), lte (<=), or lt (<).
  * The threshold value is evaluated from a numeric formula.
  *
- * Note: Currently uses index 0 for resource lookup. Full resource ID to index
- * resolution will be implemented during integration with shell-web.
+ * Resource IDs are resolved to indices via ResourceStateReader.getResourceIndex.
+ * If getResourceIndex is not provided, falls back to index 0 for legacy compatibility.
  *
  * @param automation - The automation definition with a resourceThreshold trigger.
  * @param resourceState - The resource state reader for accessing resource amounts.
@@ -399,7 +399,10 @@ export interface ResourceStateReader {
  * const automation = { ..., trigger: { kind: 'resourceThreshold',
  *                      resourceId: 'res:gold', comparator: 'gte',
  *                      threshold: { kind: 'constant', value: 100 } } };
- * const resourceState = { getAmount: (idx) => 150 };
+ * const resourceState = {
+ *   getAmount: (idx) => 150,
+ *   getResourceIndex: (id) => id === 'res:gold' ? 0 : -1
+ * };
  * const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState); // true
  * ```
  */
