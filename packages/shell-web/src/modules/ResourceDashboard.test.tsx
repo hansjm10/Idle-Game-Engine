@@ -534,7 +534,7 @@ describe('ResourceDashboard component', () => {
 
       // Check both data rows have same structure
       for (let i = 1; i < rows.length; i++) {
-        const cells = rows[i].querySelectorAll('[role="cell"], [role="rowheader"], [role="progressbar"]');
+        const cells = rows[i].querySelectorAll('[role="cell"], [role="rowheader"]');
         expect(cells).toHaveLength(4);
       }
     });
