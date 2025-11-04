@@ -7,10 +7,12 @@ import {
   evaluateCommandQueueEmptyTrigger,
   evaluateEventTrigger,
   evaluateResourceThresholdTrigger,
+  enqueueAutomationCommand,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
 import { CommandQueue } from './command-queue.js';
+import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 
 describe('AutomationSystem', () => {
   const stepDurationMs = 100;
@@ -374,6 +376,85 @@ describe('AutomationSystem', () => {
 
       const isActive = isCooldownActive(state, 15);
       expect(isActive).toBe(false);
+    });
+  });
+
+  describe('command enqueueing', () => {
+    it('should enqueue TOGGLE_GENERATOR command for generator target', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:clicks' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      enqueueAutomationCommand(automation, commandQueue, 10, 1000);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+      expect(command?.payload).toEqual({ generatorId: 'gen:clicks' });
+    });
+
+    it('should enqueue PURCHASE_UPGRADE command for upgrade target', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'upgrade',
+        targetId: 'upg:doubler' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      enqueueAutomationCommand(automation, commandQueue, 10, 1000);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE);
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+      expect(command?.payload).toEqual({ upgradeId: 'upg:doubler', quantity: 1 });
+    });
+
+    it('should enqueue system command for system target', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'system',
+        systemTargetId: 'offline-catchup' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      enqueueAutomationCommand(automation, commandQueue, 10, 1000);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe('offline-catchup');
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
     });
   });
 });

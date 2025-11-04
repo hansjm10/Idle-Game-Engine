@@ -9,6 +9,7 @@ import type { AutomationDefinition } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 import type { CommandQueue } from './command-queue.js';
+import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 
 /**
  * Internal state for a single automation.
@@ -200,4 +201,40 @@ export function evaluateResourceThresholdTrigger(
     case 'lt':
       return amount < thresholdValue;
   }
+}
+
+/**
+ * Enqueues a command for an automation trigger.
+ */
+export function enqueueAutomationCommand(
+  automation: AutomationDefinition,
+  commandQueue: CommandQueue,
+  currentStep: number,
+  timestamp: number,
+): void {
+  const { targetType, targetId, systemTargetId } = automation;
+
+  let commandType: string;
+  let payload: unknown;
+
+  if (targetType === 'generator') {
+    commandType = RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR;
+    payload = { generatorId: targetId };
+  } else if (targetType === 'upgrade') {
+    commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
+    payload = { upgradeId: targetId, quantity: 1 };
+  } else if (targetType === 'system') {
+    commandType = systemTargetId ?? 'system:unknown';
+    payload = {};
+  } else {
+    throw new Error(`Unknown target type: ${targetType}`);
+  }
+
+  commandQueue.enqueue({
+    type: commandType,
+    payload,
+    priority: CommandPriority.AUTOMATION,
+    timestamp,
+    step: currentStep + 1, // Execute on next step
+  });
 }

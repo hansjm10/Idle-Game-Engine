@@ -581,6 +581,7 @@ export {
   evaluateCommandQueueEmptyTrigger,
   evaluateEventTrigger,
   evaluateResourceThresholdTrigger,
+  enqueueAutomationCommand,
   type AutomationSystemOptions,
   type AutomationState,
   type ResourceStateReader,
