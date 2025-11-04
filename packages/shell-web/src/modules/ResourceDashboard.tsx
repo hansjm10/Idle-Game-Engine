@@ -5,8 +5,25 @@ import { useShellProgression, useShellState } from './ShellStateProvider.js';
 import styles from './ResourceDashboard.module.css';
 
 /**
+ * Memoized number formatters for consistent, performant number formatting.
+ * Created once at module load time and reused across all component instances.
+ * useGrouping: false ensures no thousand separators (e.g., "1234" not "1,234").
+ */
+const mediumNumberFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+  useGrouping: false,
+});
+
+const smallNumberFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
+
+/**
  * View-model utility: format a resource amount for display.
- * Handles large numbers with appropriate precision.
+ * Handles large numbers with appropriate precision using Intl.NumberFormat.
  *
  * Precision rules (intentional for readability):
  * - >= 1,000,000: Exponential notation (e.g., "1.23e+6")
@@ -22,22 +39,24 @@ export function formatResourceAmount(amount: number): string {
   }
 
   // For very large numbers, use exponential notation
+  // (Intl.NumberFormat scientific notation produces different format, so keep toExponential)
   if (Math.abs(amount) >= 1e6) {
     return amount.toExponential(2);
   }
 
-  // For medium numbers, use fixed precision
+  // For medium numbers, use no decimal places
   if (Math.abs(amount) >= 100) {
-    return amount.toFixed(0);
+    return mediumNumberFormatter.format(amount);
   }
 
-  // For small numbers, show more precision
-  return amount.toFixed(2);
+  // For small numbers, show two decimal places
+  return smallNumberFormatter.format(amount);
 }
 
 /**
  * View-model utility: format per-tick rate with sign indicator.
  * Uses ±0 for values very close to zero (|x| < 0.005) to maintain consistency.
+ * Uses Intl.NumberFormat for consistent, performant number formatting.
  */
 export function formatPerTickRate(perTick: number): string {
   // Treat values very close to zero as neutral
@@ -48,8 +67,8 @@ export function formatPerTickRate(perTick: number): string {
   const sign = perTick > 0 ? '+' : '-';
   const absValue = Math.abs(perTick);
   const formatted = absValue >= 100
-    ? absValue.toFixed(0)
-    : absValue.toFixed(2);
+    ? mediumNumberFormatter.format(absValue)
+    : smallNumberFormatter.format(absValue);
 
   return `${sign}${formatted}/tick`;
 }
