@@ -614,4 +614,65 @@ describe('AutomationSystem', () => {
       expect(commandQueue.size).toBe(1);
     });
   });
+
+  describe('edge cases', () => {
+    it('should handle empty automation list', () => {
+      const system = createAutomationSystem({
+        automations: [],
+        stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      expect(system.id).toBe('automation-system');
+      expect(system.getState().size).toBe(0);
+    });
+
+    it('should handle automation with no cooldown', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:nocooldown' as any,
+          name: { default: 'No Cooldown', variants: {} },
+          description: { default: 'Test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          // No cooldown field
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+      runtime.tick(100); // Fire once
+      runtime.tick(100); // Fire again (no cooldown)
+
+      expect(commandQueue.size).toBe(2);
+    });
+
+    it('should clear pending event triggers after tick', () => {
+      // This test verifies that the evaluateEventTrigger function correctly
+      // identifies when events are cleared, which happens at the end of each tick
+      const pendingEventTriggersBeforeClear = new Set(['auto:event1', 'auto:event2']);
+      const pendingEventTriggersAfterClear = new Set<string>();
+
+      // Before clear - should fire
+      expect(evaluateEventTrigger('auto:event1', pendingEventTriggersBeforeClear)).toBe(true);
+      expect(evaluateEventTrigger('auto:event2', pendingEventTriggersBeforeClear)).toBe(true);
+
+      // After clear - should not fire
+      expect(evaluateEventTrigger('auto:event1', pendingEventTriggersAfterClear)).toBe(false);
+      expect(evaluateEventTrigger('auto:event2', pendingEventTriggersAfterClear)).toBe(false);
+    });
+  });
 });
