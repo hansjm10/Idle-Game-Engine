@@ -11,6 +11,9 @@
  * The system manages automation state (enabled/disabled, cooldowns, last-fired)
  * and integrates with the IdleEngineRuntime tick loop.
  *
+ * Resource thresholds resolve resource IDs to indices via ResourceStateReader.
+ * Cooldown timing follows exact step-based calculation without off-by-one errors.
+ *
  * @example
  * ```typescript
  * const system = createAutomationSystem({
