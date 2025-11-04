@@ -13,7 +13,7 @@
 /* Main app container */
 .main {
   font-family: system-ui;
-  padding: 24px;
+  padding: var(--spacing-lg);
 }
 
 /* Additional warning text for persistence errors (lighter brown tone) */

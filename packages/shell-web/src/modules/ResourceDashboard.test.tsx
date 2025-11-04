@@ -99,6 +99,13 @@ describe('ResourceDashboard view-model utilities', () => {
       expect(formatPerTickRate(100.01)).toBe('+100/tick');
     });
 
+    it('formats very large per-tick rates without decimals', () => {
+      expect(formatPerTickRate(150)).toBe('+150/tick');
+      expect(formatPerTickRate(1000)).toBe('+1000/tick');
+      expect(formatPerTickRate(5000.75)).toBe('+5001/tick');
+      expect(formatPerTickRate(-2500.25)).toBe('-2500/tick');
+    });
+
     it('handles negative zero and very small values that round to zero', () => {
       expect(formatPerTickRate(-0)).toBe('±0/tick');
       expect(formatPerTickRate(-0.001)).toBe('±0/tick');
@@ -394,7 +401,7 @@ describe('ResourceDashboard component', () => {
       expect(fillElement.style.width).toBe('50%');
     });
 
-    it('renders capacity bar with 0% fill when capacity is exactly zero', () => {
+    it('renders placeholder when capacity is exactly zero', () => {
       const resources: ResourceView[] = [
         {
           id: 'res-1',
@@ -409,16 +416,30 @@ describe('ResourceDashboard component', () => {
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
-      // Should render progressbar (not "No capacity limit" placeholder)
-      const progressbar = screen.getByRole('progressbar');
-      expect(progressbar).toBeInTheDocument();
+      // Should render "No capacity limit" placeholder (not progressbar)
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('No capacity limit')).toBeInTheDocument();
+    });
 
-      // Get the fill element (first child with aria-hidden)
-      const fillElement = progressbar.querySelector('[aria-hidden="true"]') as HTMLElement;
-      expect(fillElement).toBeTruthy();
+    it('renders placeholder for resources with negative capacity', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 50,
+          isUnlocked: true,
+          isVisible: true,
+          capacity: -100,
+          perTick: 1,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
 
-      // Assert the fill width is 0% (capacity is zero)
-      expect(fillElement.style.width).toBe('0%');
+      // Should render "No capacity limit" placeholder (not progressbar)
+      // Negative capacity is treated as invalid/no capacity
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('No capacity limit')).toBeInTheDocument();
     });
 
     it('does not render capacity bar for resources without capacity', () => {
