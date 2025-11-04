@@ -713,8 +713,7 @@ describe('AutomationSystem', () => {
       runtime.tick(100);
       expect(commandQueue.size).toBe(0);
 
-      // Tick 4 more times (total 5 more ticks)
-      runtime.tick(100);
+      // Tick 3 more times (total 4 more ticks, to step 5)
       runtime.tick(100);
       runtime.tick(100);
       runtime.tick(100);
@@ -722,9 +721,61 @@ describe('AutomationSystem', () => {
       // Should still be in cooldown
       expect(commandQueue.size).toBe(0);
 
-      // One more tick - cooldown expired
+      // One more tick (step 6) - cooldown expired
       runtime.tick(100);
       expect(commandQueue.size).toBe(1);
+    });
+
+    it('should enforce exact cooldown duration in milliseconds', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:timed' as any,
+          name: { default: 'Timed Auto', variants: {} },
+          description: { default: 'Cooldown test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          cooldown: 500, // 500ms cooldown with 100ms steps = 5 steps
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      const context = {
+        step: 0,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+        } as any,
+      };
+
+      // First tick (step 0): fires immediately, command enqueued for step 1
+      system.tick(context);
+      expect(commandQueue.size).toBe(1);
+      commandQueue.dequeueUpToStep(1);
+
+      // Cooldown should expire after exactly 5 steps (500ms)
+      // Steps 1-4: still in cooldown
+      for (let step = 1; step <= 4; step++) {
+        context.step = step;
+        system.tick(context);
+        expect(commandQueue.size).toBe(0); // Still in cooldown
+      }
+
+      // Step 5: cooldown expired, should fire
+      context.step = 5;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Fired!
     });
   });
 
