@@ -1,8 +1,27 @@
 /**
- * Automation System
+ * @fileoverview Automation System
  *
- * Evaluates automation triggers and enqueues commands when triggers fire.
- * Supports 4 trigger types: interval, resourceThreshold, commandQueueEmpty, event.
+ * The AutomationSystem evaluates automation triggers and enqueues commands
+ * when triggers fire. It supports 4 trigger types:
+ * - interval: Fires periodically based on elapsed time
+ * - resourceThreshold: Fires when resource amount crosses threshold
+ * - commandQueueEmpty: Fires when command queue is empty
+ * - event: Fires when a specific event is published
+ *
+ * The system manages automation state (enabled/disabled, cooldowns, last-fired)
+ * and integrates with the IdleEngineRuntime tick loop.
+ *
+ * @example
+ * ```typescript
+ * const system = createAutomationSystem({
+ *   automations: contentPack.automations,
+ *   stepDurationMs: 100,
+ *   commandQueue: runtime.getCommandQueue(),
+ *   resourceState: progressionCoordinator.resourceState,
+ * });
+ *
+ * runtime.addSystem(system);
+ * ```
  */
 
 import type { AutomationDefinition } from '@idle-engine/content-schema';
@@ -37,6 +56,24 @@ export interface AutomationSystemOptions {
 
 /**
  * Creates an AutomationSystem that evaluates triggers and enqueues commands.
+ *
+ * The system initializes automation states from the provided definitions,
+ * subscribes to relevant events during setup(), and evaluates triggers
+ * during each tick() call to enqueue commands at AUTOMATION priority.
+ *
+ * @param options - Configuration options including automations, step duration,
+ *                  command queue, resource state, and optional initial state.
+ * @returns A System object with an additional getState() method for state extraction.
+ *
+ * @example
+ * ```typescript
+ * const system = createAutomationSystem({
+ *   automations: contentPack.automations,
+ *   stepDurationMs: 100,
+ *   commandQueue: runtime.getCommandQueue(),
+ *   resourceState: progressionCoordinator.resourceState,
+ * });
+ * ```
  */
 export function createAutomationSystem(
   options: AutomationSystemOptions,
@@ -144,7 +181,20 @@ export function createAutomationSystem(
 
 /**
  * Gets the current state of all automations.
- * Used for serialization to save files.
+ *
+ * This function extracts the internal state from an AutomationSystem,
+ * which is useful for serialization to save files. The returned map
+ * contains automation IDs as keys and their current state as values.
+ *
+ * @param system - The AutomationSystem instance from which to extract state.
+ * @returns A readonly map of automation IDs to their current state.
+ *
+ * @example
+ * ```typescript
+ * const state = getAutomationState(system);
+ * const autoState = state.get('auto:collector');
+ * console.log(`Enabled: ${autoState?.enabled}`);
+ * ```
  */
 export function getAutomationState(
   system: ReturnType<typeof createAutomationSystem>,
@@ -154,6 +204,21 @@ export function getAutomationState(
 
 /**
  * Checks if an automation is currently in cooldown.
+ *
+ * An automation is considered in cooldown if the current step is less than
+ * the cooldownExpiresStep value in the automation's state.
+ *
+ * @param state - The automation state to check.
+ * @param currentStep - The current step number in the runtime.
+ * @returns True if the automation is in cooldown, false otherwise.
+ *
+ * @example
+ * ```typescript
+ * const state = { id: 'auto:test', enabled: true, lastFiredStep: 10,
+ *                 cooldownExpiresStep: 20, unlocked: true };
+ * const isActive = isCooldownActive(state, 15); // true
+ * const isExpired = isCooldownActive(state, 20); // false
+ * ```
  */
 export function isCooldownActive(
   state: AutomationState,
@@ -164,6 +229,23 @@ export function isCooldownActive(
 
 /**
  * Updates the cooldown expiration step after an automation fires.
+ *
+ * Converts the cooldown duration (in milliseconds) from the automation
+ * definition into steps and sets the cooldownExpiresStep in the state.
+ * If no cooldown is defined, sets cooldownExpiresStep to 0 (no cooldown).
+ *
+ * @param automation - The automation definition containing the cooldown duration.
+ * @param state - The automation state to update.
+ * @param currentStep - The current step when the automation fired.
+ * @param stepDurationMs - The duration of each step in milliseconds.
+ *
+ * @example
+ * ```typescript
+ * const automation = { ..., cooldown: 500 }; // 500ms cooldown
+ * const state = { ..., cooldownExpiresStep: 0 };
+ * updateCooldown(automation, state, 10, 100); // stepDurationMs = 100ms
+ * // state.cooldownExpiresStep will be 16 (10 + ceil(500/100) + 1)
+ * ```
  */
 export function updateCooldown(
   automation: AutomationDefinition,
@@ -182,6 +264,27 @@ export function updateCooldown(
 
 /**
  * Evaluates whether an interval trigger should fire.
+ *
+ * Interval triggers fire periodically based on elapsed time. The trigger
+ * fires immediately on the first tick (when lastFiredStep is -Infinity),
+ * and subsequently when the number of elapsed steps since the last fire
+ * meets or exceeds the interval duration.
+ *
+ * @param automation - The automation definition with an interval trigger.
+ * @param state - The automation state containing lastFiredStep information.
+ * @param currentStep - The current step number in the runtime.
+ * @param stepDurationMs - The duration of each step in milliseconds.
+ * @returns True if the trigger should fire, false otherwise.
+ * @throws {Error} If the automation trigger is not of kind 'interval'.
+ *
+ * @example
+ * ```typescript
+ * const automation = { ..., trigger: { kind: 'interval',
+ *                      interval: { kind: 'constant', value: 1000 } } };
+ * const state = { ..., lastFiredStep: 0 };
+ * // With stepDurationMs=100, interval is 10 steps (1000ms / 100ms)
+ * const shouldFire = evaluateIntervalTrigger(automation, state, 10, 100); // true
+ * ```
  */
 export function evaluateIntervalTrigger(
   automation: AutomationDefinition,
@@ -211,6 +314,22 @@ export function evaluateIntervalTrigger(
 
 /**
  * Evaluates whether a commandQueueEmpty trigger should fire.
+ *
+ * This trigger fires when the command queue is empty (size is 0),
+ * allowing automations to be triggered when no other commands are
+ * pending execution.
+ *
+ * @param commandQueue - The command queue to check.
+ * @returns True if the command queue is empty, false otherwise.
+ *
+ * @example
+ * ```typescript
+ * const commandQueue = new CommandQueue();
+ * const shouldFire = evaluateCommandQueueEmptyTrigger(commandQueue); // true
+ *
+ * commandQueue.enqueue({ ... });
+ * const shouldNotFire = evaluateCommandQueueEmptyTrigger(commandQueue); // false
+ * ```
  */
 export function evaluateCommandQueueEmptyTrigger(
   commandQueue: CommandQueue,
@@ -223,6 +342,17 @@ export function evaluateCommandQueueEmptyTrigger(
  *
  * Event triggers fire when the automation ID is in the pendingEventTriggers set.
  * The set is populated by event handlers during setup() and cleared after each tick.
+ *
+ * @param automationId - The ID of the automation to check.
+ * @param pendingEventTriggers - A set containing automation IDs that have pending event triggers.
+ * @returns True if the automation ID is in the pending triggers set, false otherwise.
+ *
+ * @example
+ * ```typescript
+ * const pendingEventTriggers = new Set(['auto:collector', 'auto:upgrader']);
+ * const shouldFire = evaluateEventTrigger('auto:collector', pendingEventTriggers); // true
+ * const shouldNotFire = evaluateEventTrigger('auto:other', pendingEventTriggers); // false
+ * ```
  */
 export function evaluateEventTrigger(
   automationId: string,
@@ -241,6 +371,27 @@ export interface ResourceStateReader {
 
 /**
  * Evaluates whether a resourceThreshold trigger should fire.
+ *
+ * This trigger fires when a resource amount crosses a defined threshold
+ * using one of four comparison operators: gte (>=), gt (>), lte (<=), or lt (<).
+ * The threshold value is evaluated from a numeric formula.
+ *
+ * Note: Currently uses index 0 for resource lookup. Full resource ID to index
+ * resolution will be implemented during integration with shell-web.
+ *
+ * @param automation - The automation definition with a resourceThreshold trigger.
+ * @param resourceState - The resource state reader for accessing resource amounts.
+ * @returns True if the resource amount meets the threshold condition, false otherwise.
+ * @throws {Error} If the automation trigger is not of kind 'resourceThreshold'.
+ *
+ * @example
+ * ```typescript
+ * const automation = { ..., trigger: { kind: 'resourceThreshold',
+ *                      resourceId: 'res:gold', comparator: 'gte',
+ *                      threshold: { kind: 'constant', value: 100 } } };
+ * const resourceState = { getAmount: (idx) => 150 };
+ * const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState); // true
+ * ```
  */
 export function evaluateResourceThresholdTrigger(
   automation: AutomationDefinition,
@@ -278,6 +429,29 @@ export function evaluateResourceThresholdTrigger(
 
 /**
  * Enqueues a command for an automation trigger.
+ *
+ * Converts an automation's target into the appropriate command type and
+ * enqueues it to the command queue at AUTOMATION priority. Supports three
+ * target types:
+ * - generator: Enqueues TOGGLE_GENERATOR command
+ * - upgrade: Enqueues PURCHASE_UPGRADE command (quantity 1)
+ * - system: Enqueues system command with the systemTargetId
+ *
+ * The command is scheduled to execute on the next step (currentStep + 1).
+ *
+ * @param automation - The automation definition containing the target information.
+ * @param commandQueue - The command queue to enqueue the command to.
+ * @param currentStep - The current step number in the runtime.
+ * @param timestamp - The timestamp when the automation fired.
+ * @throws {Error} If the target type is unknown.
+ *
+ * @example
+ * ```typescript
+ * const automation = { ..., targetType: 'generator', targetId: 'gen:clicks' };
+ * const commandQueue = new CommandQueue();
+ * enqueueAutomationCommand(automation, commandQueue, 10, Date.now());
+ * // Command is enqueued to execute at step 11 with AUTOMATION priority
+ * ```
  */
 export function enqueueAutomationCommand(
   automation: AutomationDefinition,
