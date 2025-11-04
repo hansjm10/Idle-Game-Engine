@@ -1,5 +1,6 @@
 import type { GeneratorPurchaseEvaluator, UpgradePurchaseEvaluator, UpgradeResourceCost, UpgradeStatus } from './resource-command-handlers.js';
 import type { ResourceState, SerializedResourceState } from './resource-state.js';
+import type { ProgressionAutomationState } from './automation-system.js';
 export type GeneratorRateView = Readonly<{
     resourceId: string;
     rate: number;
@@ -80,6 +81,7 @@ export interface ProgressionAuthoritativeState {
     readonly generators?: readonly ProgressionGeneratorState[];
     readonly upgradePurchases?: UpgradePurchaseEvaluator;
     readonly upgrades?: readonly ProgressionUpgradeState[];
+    readonly automationState?: ProgressionAutomationState;
 }
 export declare function buildProgressionSnapshot(step: number, publishedAt: number, state?: ProgressionAuthoritativeState): ProgressionSnapshot;
 //# sourceMappingURL=progression.d.ts.map

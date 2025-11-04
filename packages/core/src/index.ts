@@ -514,6 +514,13 @@ export {
   type UpgradeView,
 } from './progression.js';
 export {
+  createAutomationSystem,
+  type AutomationState,
+  type AutomationSystemOptions,
+  type ProgressionAutomationState,
+  type ConditionContext,
+} from './automation-system.js';
+export {
   TransportBufferPool,
   type LeaseReleaseContext,
   type TransportBufferLease,

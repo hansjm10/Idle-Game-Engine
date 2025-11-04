@@ -11,6 +11,7 @@ import type {
   ResourceState,
   SerializedResourceState,
 } from './resource-state.js';
+import type { ProgressionAutomationState } from './automation-system.js';
 
 const EMPTY_ARRAY: readonly never[] = Object.freeze([]);
 const FLAG_VISIBLE = 1 << 0;
@@ -107,6 +108,7 @@ export interface ProgressionAuthoritativeState {
   readonly generators?: readonly ProgressionGeneratorState[];
   readonly upgradePurchases?: UpgradePurchaseEvaluator;
   readonly upgrades?: readonly ProgressionUpgradeState[];
+  readonly automationState?: ProgressionAutomationState;
 }
 
 export function buildProgressionSnapshot(
