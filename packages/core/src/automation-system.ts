@@ -75,3 +75,31 @@ export function getAutomationState(
 ): ReadonlyMap<string, AutomationState> {
   return system.getState();
 }
+
+/**
+ * Checks if an automation is currently in cooldown.
+ */
+export function isCooldownActive(
+  state: AutomationState,
+  currentStep: number,
+): boolean {
+  return currentStep < state.cooldownExpiresStep;
+}
+
+/**
+ * Updates the cooldown expiration step after an automation fires.
+ */
+export function updateCooldown(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  currentStep: number,
+  stepDurationMs: number,
+): void {
+  if (!automation.cooldown) {
+    state.cooldownExpiresStep = 0;
+    return;
+  }
+
+  const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
+  state.cooldownExpiresStep = currentStep + cooldownSteps;
+}

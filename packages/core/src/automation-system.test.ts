@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createAutomationSystem, getAutomationState } from './automation-system.js';
+import {
+  createAutomationSystem,
+  getAutomationState,
+  isCooldownActive,
+} from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
+import type { AutomationState } from './automation-system.js';
 
 describe('AutomationSystem', () => {
   const stepDurationMs = 100;
@@ -18,11 +23,11 @@ describe('AutomationSystem', () => {
     it('should initialize automation states with default values', () => {
       const automations: AutomationDefinition[] = [
         {
-          id: 'auto:collector',
-          name: { en: 'Auto Collector' },
-          description: { en: 'Collects automatically' },
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
           targetType: 'generator',
-          targetId: 'gen:clicks',
+          targetId: 'gen:clicks' as any,
           trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
@@ -50,11 +55,11 @@ describe('AutomationSystem', () => {
     it('should restore state from initialState', () => {
       const automations: AutomationDefinition[] = [
         {
-          id: 'auto:collector',
-          name: { en: 'Auto Collector' },
-          description: { en: 'Collects automatically' },
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
           targetType: 'generator',
-          targetId: 'gen:clicks',
+          targetId: 'gen:clicks' as any,
           trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
@@ -102,5 +107,46 @@ describe('AutomationSystem', () => {
 
   describe('event triggers', () => {
     // Tests to be added
+  });
+
+  describe('cooldown management', () => {
+    it('should return true when cooldown is active', () => {
+      const state: AutomationState = {
+        id: 'auto:test',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 20,
+        unlocked: true,
+      };
+
+      const isActive = isCooldownActive(state, 15);
+      expect(isActive).toBe(true);
+    });
+
+    it('should return false when cooldown has expired', () => {
+      const state: AutomationState = {
+        id: 'auto:test',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 20,
+        unlocked: true,
+      };
+
+      const isActive = isCooldownActive(state, 20);
+      expect(isActive).toBe(false);
+    });
+
+    it('should return false when no cooldown is set', () => {
+      const state: AutomationState = {
+        id: 'auto:test',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      };
+
+      const isActive = isCooldownActive(state, 15);
+      expect(isActive).toBe(false);
+    });
   });
 });
