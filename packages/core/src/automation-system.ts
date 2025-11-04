@@ -143,3 +143,16 @@ export function evaluateCommandQueueEmptyTrigger(
 ): boolean {
   return commandQueue.size === 0;
 }
+
+/**
+ * Evaluates whether an event trigger should fire.
+ *
+ * Event triggers fire when the automation ID is in the pendingEventTriggers set.
+ * The set is populated by event handlers during setup() and cleared after each tick.
+ */
+export function evaluateEventTrigger(
+  automationId: string,
+  pendingEventTriggers: ReadonlySet<string>,
+): boolean {
+  return pendingEventTriggers.has(automationId);
+}

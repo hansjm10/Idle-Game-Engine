@@ -5,6 +5,7 @@ import {
   isCooldownActive,
   evaluateIntervalTrigger,
   evaluateCommandQueueEmptyTrigger,
+  evaluateEventTrigger,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
@@ -202,7 +203,19 @@ describe('AutomationSystem', () => {
   });
 
   describe('event triggers', () => {
-    // Tests to be added
+    it('should fire when event is pending', () => {
+      const pendingEventTriggers = new Set(['auto:test']);
+
+      const shouldFire = evaluateEventTrigger('auto:test', pendingEventTriggers);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should not fire when event is not pending', () => {
+      const pendingEventTriggers = new Set<string>();
+
+      const shouldFire = evaluateEventTrigger('auto:test', pendingEventTriggers);
+      expect(shouldFire).toBe(false);
+    });
   });
 
   describe('cooldown management', () => {

@@ -579,6 +579,7 @@ export {
   isCooldownActive,
   evaluateIntervalTrigger,
   evaluateCommandQueueEmptyTrigger,
+  evaluateEventTrigger,
   type AutomationSystemOptions,
   type AutomationState,
 } from './automation-system.js';
