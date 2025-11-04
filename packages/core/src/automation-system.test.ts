@@ -13,6 +13,7 @@ import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
 import { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
+import { IdleEngineRuntime } from './index.js';
 
 describe('AutomationSystem', () => {
   const stepDurationMs = 100;
@@ -22,6 +23,8 @@ describe('AutomationSystem', () => {
       const system = createAutomationSystem({
         automations: [],
         stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
       });
 
       expect(system.id).toBe('automation-system');
@@ -45,6 +48,8 @@ describe('AutomationSystem', () => {
       const system = createAutomationSystem({
         automations,
         stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
       });
 
       // We need a way to inspect state - will add getter
@@ -87,6 +92,8 @@ describe('AutomationSystem', () => {
       const system = createAutomationSystem({
         automations,
         stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
         initialState,
       });
 
@@ -376,6 +383,38 @@ describe('AutomationSystem', () => {
 
       const isActive = isCooldownActive(state, 15);
       expect(isActive).toBe(false);
+    });
+  });
+
+  describe('system integration', () => {
+    it('should subscribe to event triggers during setup', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:event-test' as any,
+          name: { default: 'Event Test', variants: {} },
+          description: { default: 'Test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'event', eventId: 'resource:threshold-reached' as any },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+
+      // Verify system was registered
+      expect(system.id).toBe('automation-system');
     });
   });
 

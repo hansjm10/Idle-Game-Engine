@@ -10,6 +10,8 @@ import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 import type { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
+import type { RuntimeEventType } from './events/runtime-event.js';
+import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
 
 /**
  * Internal state for a single automation.
@@ -28,6 +30,8 @@ export interface AutomationState {
 export interface AutomationSystemOptions {
   readonly automations: readonly AutomationDefinition[];
   readonly stepDurationMs: number;
+  readonly commandQueue: CommandQueue;
+  readonly resourceState: ResourceStateReader;
   readonly initialState?: Map<string, AutomationState>;
 }
 
@@ -37,11 +41,12 @@ export interface AutomationSystemOptions {
 export function createAutomationSystem(
   options: AutomationSystemOptions,
 ): System & { getState: () => ReadonlyMap<string, AutomationState> } {
-  // Internal state
+  const { automations, stepDurationMs: _stepDurationMs, commandQueue: _commandQueue, resourceState: _resourceState } = options;
   const automationStates = new Map<string, AutomationState>();
+  const pendingEventTriggers = new Set<string>();
 
   // Initialize automation states
-  for (const automation of options.automations) {
+  for (const automation of automations) {
     const existingState = options.initialState?.get(automation.id);
     automationStates.set(automation.id, existingState ?? {
       id: automation.id,
@@ -59,8 +64,24 @@ export function createAutomationSystem(
       return new Map(automationStates);
     },
 
-    setup(_context) {
-      // TODO: Subscribe to events
+    setup({ events }) {
+      // Subscribe to event triggers
+      for (const automation of automations) {
+        if (automation.trigger.kind === 'event') {
+          events.on(automation.trigger.eventId as RuntimeEventType, () => {
+            pendingEventTriggers.add(automation.id);
+          });
+        }
+      }
+
+      // Subscribe to automation toggle events
+      events.on('automation:toggled', (event) => {
+        const { automationId, enabled } = event.payload as AutomationToggledEventPayload;
+        const state = automationStates.get(automationId);
+        if (state) {
+          state.enabled = enabled;
+        }
+      });
     },
 
     tick(_context) {
