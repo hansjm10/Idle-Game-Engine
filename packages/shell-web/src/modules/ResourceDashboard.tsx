@@ -91,7 +91,7 @@ export function computeCapacityFillPercentage(
   amount: number,
   capacity?: number,
 ): number {
-  if (capacity === undefined || capacity === 0) {
+  if (capacity === undefined || capacity <= 0) {
     return 0;
   }
 

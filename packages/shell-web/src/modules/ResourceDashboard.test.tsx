@@ -61,6 +61,16 @@ describe('ResourceDashboard view-model utilities', () => {
       expect(formatResourceAmount(1234567890)).toBe('1.23e+9');
     });
 
+    it('formats boundary value at exponential threshold', () => {
+      // Test the boundary at 1e6 threshold
+      // Values below 1e6 use integer formatting (even if they round to 1e6)
+      expect(formatResourceAmount(999999)).toBe('999999');
+      expect(formatResourceAmount(999999.9)).toBe('1000000'); // Rounded by mediumNumberFormatter
+      // Values at or above 1e6 use exponential notation
+      expect(formatResourceAmount(1000000)).toBe('1.00e+6');
+      expect(formatResourceAmount(1000001)).toBe('1.00e+6');
+    });
+
     it('handles negative numbers', () => {
       expect(formatResourceAmount(-5.67)).toBe('-5.67');
       expect(formatResourceAmount(-1000000)).toBe('-1.00e+6');
@@ -137,6 +147,12 @@ describe('ResourceDashboard view-model utilities', () => {
 
     it('clamps to 0% minimum', () => {
       expect(computeCapacityFillPercentage(-10, 100)).toBe(0);
+    });
+
+    it('returns 0 for negative capacity', () => {
+      expect(computeCapacityFillPercentage(50, -100)).toBe(0);
+      expect(computeCapacityFillPercentage(100, -50)).toBe(0);
+      expect(computeCapacityFillPercentage(-10, -100)).toBe(0);
     });
   });
 });
@@ -349,6 +365,32 @@ describe('ResourceDashboard component', () => {
       // Capacity bar should be present with fill
       const capacityBars = screen.getAllByLabelText('Capacity indicator');
       expect(capacityBars).toHaveLength(1);
+    });
+
+    it('renders capacity bar with correct fill width', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 50,
+          isUnlocked: true,
+          isVisible: true,
+          capacity: 100,
+          perTick: 0,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      // Get the capacity bar container
+      const capacityBar = screen.getByLabelText('Capacity indicator');
+
+      // Get the fill element (first child with aria-hidden)
+      const fillElement = capacityBar.querySelector('[aria-hidden="true"]') as HTMLElement;
+      expect(fillElement).toBeTruthy();
+
+      // Assert the fill width is 50% (amount=50, capacity=100)
+      expect(fillElement.style.width).toBe('50%');
     });
 
     it('does not render capacity bar for resources without capacity', () => {
