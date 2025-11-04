@@ -164,6 +164,60 @@ describe('AutomationSystem', () => {
       const autoState = state.get('auto:advanced');
       expect(autoState?.unlocked).toBe(true);
     });
+
+    it('should unlock automations with always unlock condition on first tick', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:basic' as any,
+          name: { default: 'Basic Auto', variants: {} },
+          description: { default: 'Always available', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Initial state should have unlocked=false
+      const initialState = getAutomationState(system);
+      expect(initialState.get('auto:basic')?.unlocked).toBe(false);
+
+      // After setup and first tick, should be unlocked
+      system.setup?.({
+        events: {
+          on: () => {},
+          off: () => {},
+          emit: () => {},
+        } as any,
+      });
+      system.tick({
+        step: 0,
+        deltaMs: 100,
+        events: {} as any,
+      });
+
+      const stateAfterTick = getAutomationState(system);
+      expect(stateAfterTick.get('auto:basic')?.unlocked).toBe(true);
+
+      // Should remain unlocked on subsequent ticks
+      system.tick({
+        step: 1,
+        deltaMs: 100,
+        events: {} as any,
+      });
+      const stateAfterSecondTick = getAutomationState(system);
+      expect(stateAfterSecondTick.get('auto:basic')?.unlocked).toBe(true);
+    });
   });
 
   describe('interval triggers', () => {
