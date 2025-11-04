@@ -662,7 +662,7 @@ describe('ResourceDashboard component', () => {
       expect(screen.getAllByRole('columnheader')).toHaveLength(4);
     });
 
-    it('includes row labels for screen readers', () => {
+    it('uses proper table semantics without aria-label on rows', () => {
       const resources: ResourceView[] = [
         {
           id: 'res-1',
@@ -677,7 +677,14 @@ describe('ResourceDashboard component', () => {
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
-      expect(screen.getByLabelText(/Energy: 126 \/ 250/)).toBeInTheDocument();
+      // Check that row structure uses proper table semantics
+      // Screen readers derive names from rowheader + cells naturally
+      const row = screen.getAllByRole('row')[1]; // First data row (skip header)
+      expect(row.querySelector('[role="rowheader"]')).toHaveTextContent('Energy');
+      expect(row.querySelector('[role="rowheader"]')).toBeInTheDocument();
+
+      // Verify row does not have aria-label (lets screen readers compute from cells)
+      expect(row).not.toHaveAttribute('aria-label');
     });
 
     it('has proper heading structure', () => {

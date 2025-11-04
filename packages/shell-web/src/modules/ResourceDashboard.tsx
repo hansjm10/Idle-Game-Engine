@@ -140,7 +140,6 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
     <div
       className={styles.resourceRow}
       role="row"
-      aria-label={`${resource.displayName}: ${formatCapacity(resource.amount, resource.capacity)}`}
     >
       <div className={styles.resourceName} role="rowheader">
         {resource.displayName}
@@ -278,8 +277,8 @@ export function ResourceDashboard(): JSX.Element | null {
             <div className={styles.headerCell} role="columnheader">
               Amount
             </div>
-            <div className={styles.headerCell} role="columnheader" aria-label="Capacity bar">
-              {/* Spacer for capacity bar column */}
+            <div className={styles.headerCell} role="columnheader">
+              <span className={styles.visuallyHidden}>Capacity bar</span>
             </div>
             <div className={styles.headerCell} role="columnheader">
               Rate
