@@ -33,7 +33,7 @@ export interface AutomationSystemOptions {
  */
 export function createAutomationSystem(
   options: AutomationSystemOptions,
-): System {
+): System & { getState: () => ReadonlyMap<string, AutomationState> } {
   // Internal state
   const automationStates = new Map<string, AutomationState>();
 
@@ -52,6 +52,10 @@ export function createAutomationSystem(
   return {
     id: 'automation-system',
 
+    getState() {
+      return new Map(automationStates);
+    },
+
     setup(_context) {
       // TODO: Subscribe to events
     },
@@ -67,8 +71,7 @@ export function createAutomationSystem(
  * Used for serialization to save files.
  */
 export function getAutomationState(
-  _system: ReturnType<typeof createAutomationSystem>,
+  system: ReturnType<typeof createAutomationSystem>,
 ): ReadonlyMap<string, AutomationState> {
-  // TODO: Implement state extraction
-  return new Map();
+  return system.getState();
 }
