@@ -22,10 +22,17 @@ const smallNumberFormatter = new Intl.NumberFormat('en-US', {
 });
 
 /**
+ * Threshold for treating per-tick rates as neutral (±0).
+ * Values with absolute value less than this are displayed as "±0/tick".
+ */
+const RATE_NEUTRAL_THRESHOLD = 0.005;
+
+/**
  * View-model utility: format a resource amount for display.
  * Handles large numbers with appropriate precision using Intl.NumberFormat.
  *
  * Precision rules (intentional for readability):
+ * - Non-finite (NaN/Infinity): Returns "0"
  * - >= 1,000,000: Exponential notation (e.g., "1.23e+6")
  * - >= 100: No decimal places (e.g., "125" not "125.50")
  * - < 100: Two decimal places (e.g., "42.75")
@@ -34,6 +41,11 @@ const smallNumberFormatter = new Intl.NumberFormat('en-US', {
  * 125.5 → "126") to balance precision with readability at different scales.
  */
 export function formatResourceAmount(amount: number): string {
+  // Guard against non-finite values (NaN, Infinity, -Infinity)
+  if (!Number.isFinite(amount)) {
+    return '0';
+  }
+
   if (amount === 0) {
     return '0';
   }
@@ -55,12 +67,17 @@ export function formatResourceAmount(amount: number): string {
 
 /**
  * View-model utility: format per-tick rate with sign indicator.
- * Uses ±0 for values very close to zero (|x| < 0.005) to maintain consistency.
+ * Uses ±0 for values very close to zero (|x| < RATE_NEUTRAL_THRESHOLD) to maintain consistency.
  * Uses Intl.NumberFormat for consistent, performant number formatting.
  */
 export function formatPerTickRate(perTick: number): string {
+  // Guard against non-finite values (NaN, Infinity, -Infinity)
+  if (!Number.isFinite(perTick)) {
+    return '±0/tick';
+  }
+
   // Treat values very close to zero as neutral
-  if (Math.abs(perTick) < 0.005) {
+  if (Math.abs(perTick) < RATE_NEUTRAL_THRESHOLD) {
     return '±0/tick';
   }
 
@@ -136,7 +153,7 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={resource.capacity}
-          aria-valuenow={resource.amount}
+          aria-valuenow={Math.max(0, Math.min(resource.amount, resource.capacity))}
           aria-valuetext={`${Math.round(fillPercentage)}% full`}
           aria-label={`Capacity: ${formatCapacity(resource.amount, resource.capacity)}`}
         >

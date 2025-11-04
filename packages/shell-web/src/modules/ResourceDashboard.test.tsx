@@ -687,6 +687,54 @@ describe('ResourceDashboard component', () => {
       expect(progressbar).toHaveAttribute('aria-valuenow', '75');
       expect(progressbar).toHaveAttribute('aria-label', 'Capacity: 75.00 / 150');
     });
+
+    it('clamps aria-valuenow when amount exceeds capacity', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 150,
+          isUnlocked: true,
+          isVisible: true,
+          capacity: 100,
+          perTick: 1,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      const progressbar = screen.getByRole('progressbar');
+
+      // aria-valuenow should be clamped to capacity (max value)
+      expect(progressbar).toHaveAttribute('aria-valuemin', '0');
+      expect(progressbar).toHaveAttribute('aria-valuemax', '100');
+      expect(progressbar).toHaveAttribute('aria-valuenow', '100');
+      expect(progressbar).toHaveAttribute('aria-valuetext', '100% full');
+    });
+
+    it('clamps aria-valuenow when amount is negative', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: -10,
+          isUnlocked: true,
+          isVisible: true,
+          capacity: 100,
+          perTick: -1,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      const progressbar = screen.getByRole('progressbar');
+
+      // aria-valuenow should be clamped to 0 (min value)
+      expect(progressbar).toHaveAttribute('aria-valuemin', '0');
+      expect(progressbar).toHaveAttribute('aria-valuemax', '100');
+      expect(progressbar).toHaveAttribute('aria-valuenow', '0');
+      expect(progressbar).toHaveAttribute('aria-valuetext', '0% full');
+    });
   });
 
   describe('memoization', () => {
