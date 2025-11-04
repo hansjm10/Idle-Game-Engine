@@ -105,6 +105,61 @@ describe('AutomationSystem', () => {
       expect(autoState?.cooldownExpiresStep).toBe(110);
       expect(autoState?.unlocked).toBe(true);
     });
+
+    it('should preserve unlocked state across ticks for non-always unlock conditions', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:advanced' as any,
+          name: { default: 'Advanced Auto', variants: {} },
+          description: { default: 'Unlocked by resource threshold', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            amount: { kind: 'constant', value: 100 },
+          },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const initialState = new Map([
+        ['auto:advanced', {
+          id: 'auto:advanced',
+          enabled: true,
+          lastFiredStep: 0,
+          cooldownExpiresStep: 0,
+          unlocked: true, // Player has already unlocked this
+        }],
+      ]);
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 50 }, // Below threshold
+        initialState,
+      });
+
+      // Simulate runtime setup and first tick
+      system.setup({
+        events: {
+          on: () => {},
+          off: () => {},
+          emit: () => {},
+        } as any,
+      });
+      system.tick({ step: 0 });
+
+      // Check that unlocked state is preserved despite resource being below threshold
+      const state = getAutomationState(system);
+      const autoState = state.get('auto:advanced');
+      expect(autoState?.unlocked).toBe(true);
+    });
   });
 
   describe('interval triggers', () => {
