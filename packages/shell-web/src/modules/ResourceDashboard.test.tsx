@@ -76,6 +76,13 @@ describe('ResourceDashboard view-model utilities', () => {
       expect(formatResourceAmount(-5.67)).toBe('-5.67');
       expect(formatResourceAmount(-1000000)).toBe('-1.00e+6');
     });
+
+    it('handles non-finite values', () => {
+      // NaN, Infinity, and -Infinity should be formatted as "0" for safety
+      expect(formatResourceAmount(NaN)).toBe('0');
+      expect(formatResourceAmount(Infinity)).toBe('0');
+      expect(formatResourceAmount(-Infinity)).toBe('0');
+    });
   });
 
   describe('formatPerTickRate', () => {
@@ -112,6 +119,27 @@ describe('ResourceDashboard view-model utilities', () => {
       expect(formatPerTickRate(0.001)).toBe('±0/tick');
       expect(formatPerTickRate(-0.004)).toBe('±0/tick');
       expect(formatPerTickRate(0.004)).toBe('±0/tick');
+    });
+
+    it('handles boundary at RATE_NEUTRAL_THRESHOLD (0.005)', () => {
+      // Values with abs < 0.005 are neutral
+      expect(formatPerTickRate(0.004)).toBe('±0/tick');
+      expect(formatPerTickRate(-0.004)).toBe('±0/tick');
+
+      // Values with abs >= 0.005 are signed (0.005 rounds to ±0.01)
+      expect(formatPerTickRate(0.005)).toBe('+0.01/tick');
+      expect(formatPerTickRate(-0.005)).toBe('-0.01/tick');
+
+      // Just above threshold
+      expect(formatPerTickRate(0.006)).toBe('+0.01/tick');
+      expect(formatPerTickRate(-0.006)).toBe('-0.01/tick');
+    });
+
+    it('handles non-finite values', () => {
+      // NaN, Infinity, and -Infinity should all be formatted as "±0/tick" for safety
+      expect(formatPerTickRate(NaN)).toBe('±0/tick');
+      expect(formatPerTickRate(Infinity)).toBe('±0/tick');
+      expect(formatPerTickRate(-Infinity)).toBe('±0/tick');
     });
   });
 
