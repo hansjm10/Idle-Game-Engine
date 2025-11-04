@@ -146,14 +146,18 @@ describe('AutomationSystem', () => {
       });
 
       // Simulate runtime setup and first tick
-      system.setup({
+      system.setup?.({
         events: {
           on: () => {},
           off: () => {},
           emit: () => {},
         } as any,
       });
-      system.tick({ step: 0 });
+      system.tick({
+        step: 0,
+        deltaMs: 100,
+        events: {} as any,
+      });
 
       // Check that unlocked state is preserved despite resource being below threshold
       const state = getAutomationState(system);

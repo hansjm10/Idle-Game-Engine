@@ -127,10 +127,13 @@ export function createAutomationSystem(
         const state = automationStates.get(automation.id);
         if (!state) continue;
 
-        // Update unlock status
-        // For MVP, we'll assume all automations with 'always' condition are unlocked
-        // Full unlock evaluation requires condition context (deferred to integration)
-        state.unlocked = automation.unlockCondition.kind === 'always';
+        // Update unlock status (only if not already unlocked)
+        // Once unlocked, automations stay unlocked (unlock state is persistent)
+        // For MVP, only 'always' condition is evaluated; full unlock evaluation
+        // requires condition context (deferred to integration)
+        if (!state.unlocked && automation.unlockCondition.kind === 'always') {
+          state.unlocked = true;
+        }
 
         // Skip if not unlocked or not enabled
         if (!state.unlocked || !state.enabled) {
