@@ -577,6 +577,7 @@ export {
   createAutomationSystem,
   getAutomationState,
   isCooldownActive,
+  evaluateIntervalTrigger,
   type AutomationSystemOptions,
   type AutomationState,
 } from './automation-system.js';

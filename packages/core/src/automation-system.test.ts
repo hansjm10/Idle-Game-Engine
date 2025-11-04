@@ -3,6 +3,7 @@ import {
   createAutomationSystem,
   getAutomationState,
   isCooldownActive,
+  evaluateIntervalTrigger,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
@@ -94,7 +95,81 @@ describe('AutomationSystem', () => {
   });
 
   describe('interval triggers', () => {
-    // Tests to be added
+    it('should fire on first tick when lastFiredStep is -Infinity', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:test',
+        enabled: true,
+        lastFiredStep: -Infinity,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      };
+
+      const shouldFire = evaluateIntervalTrigger(automation, state, 0, 100);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should fire when enough steps have elapsed', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:test',
+        enabled: true,
+        lastFiredStep: 0,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      };
+
+      // 1000ms interval / 100ms per step = 10 steps
+      const shouldFire = evaluateIntervalTrigger(automation, state, 10, 100);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should not fire when interval has not elapsed', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:test',
+        enabled: true,
+        lastFiredStep: 0,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      };
+
+      const shouldFire = evaluateIntervalTrigger(automation, state, 5, 100);
+      expect(shouldFire).toBe(false);
+    });
   });
 
   describe('resourceThreshold triggers', () => {

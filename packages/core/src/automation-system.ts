@@ -6,6 +6,7 @@
  */
 
 import type { AutomationDefinition } from '@idle-engine/content-schema';
+import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 
 /**
@@ -102,4 +103,33 @@ export function updateCooldown(
 
   const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
   state.cooldownExpiresStep = currentStep + cooldownSteps;
+}
+
+/**
+ * Evaluates whether an interval trigger should fire.
+ */
+export function evaluateIntervalTrigger(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  currentStep: number,
+  stepDurationMs: number,
+): boolean {
+  if (automation.trigger.kind !== 'interval') {
+    throw new Error('Expected interval trigger');
+  }
+
+  // Fire immediately on first tick
+  if (state.lastFiredStep === -Infinity) {
+    return true;
+  }
+
+  // Calculate interval in steps
+  const intervalMs = evaluateNumericFormula(automation.trigger.interval, {
+    variables: { level: 0 }, // Static evaluation
+  });
+  const intervalSteps = Math.ceil(intervalMs / stepDurationMs);
+
+  // Check if enough steps have elapsed
+  const stepsSinceLastFired = currentStep - state.lastFiredStep;
+  return stepsSinceLastFired >= intervalSteps;
 }
