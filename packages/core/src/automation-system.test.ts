@@ -810,6 +810,7 @@ describe('AutomationSystem', () => {
 
       const context = {
         step: 0,
+        deltaMs: 100,
         events: {
           on: (() => {}) as any,
           off: () => {},
@@ -958,6 +959,7 @@ describe('AutomationSystem', () => {
 
       const context = {
         step: 0,
+        deltaMs: 100,
         events: {
           on: (() => {}) as any,
           off: () => {},
