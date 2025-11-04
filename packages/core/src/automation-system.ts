@@ -376,6 +376,7 @@ export function evaluateEventTrigger(
  */
 export interface ResourceStateReader {
   getAmount(resourceIndex: number): number;
+  getResourceIndex?(resourceId: string): number;
 }
 
 /**
@@ -410,13 +411,23 @@ export function evaluateResourceThresholdTrigger(
     throw new Error('Expected resourceThreshold trigger');
   }
 
-  const { comparator, threshold } = automation.trigger;
+  const { resourceId, comparator, threshold } = automation.trigger;
+
+  // Resolve resource ID to index
+  let resourceIndex = 0;
+  if (resourceState.getResourceIndex) {
+    const resolvedIndex = resourceState.getResourceIndex(resourceId);
+    if (resolvedIndex === -1) {
+      // Resource doesn't exist - treat as 0 amount
+      // This handles cases where automation references unavailable resource
+      return false;
+    }
+    resourceIndex = resolvedIndex;
+  }
+  // If getResourceIndex not provided, fall back to index 0 (for legacy tests)
 
   // Get resource amount
-  // Note: resourceId is a ContentId (string), but ResourceState uses indices
-  // In the real implementation, we'll need to resolve the ID to an index
-  // For now, we'll accept a ResourceStateReader that handles this
-  const amount = resourceState.getAmount(0); // Index will be resolved in integration
+  const amount = resourceState.getAmount(resourceIndex);
 
   // Evaluate threshold formula
   const thresholdValue = evaluateNumericFormula(threshold, {

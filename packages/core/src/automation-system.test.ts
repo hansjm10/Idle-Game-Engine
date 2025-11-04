@@ -417,6 +417,64 @@ describe('AutomationSystem', () => {
       const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState);
       expect(shouldFire).toBe(true);
     });
+
+    it('should read correct resource when multiple resources exist', () => {
+      // Mock resource state with multiple resources
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index === 0) return 50; // res:gold
+          if (index === 1) return 200; // res:gems
+          return 0;
+        },
+        getResourceIndex: (resourceId: string) => {
+          if (resourceId === 'res:gold') return 0;
+          if (resourceId === 'res:gems') return 1;
+          return -1;
+        },
+      };
+
+      const goldAutomation: AutomationDefinition = {
+        id: 'auto:gold-spender' as any,
+        name: { default: 'Gold Spender', variants: {} },
+        description: { default: 'Triggers on gold', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const gemsAutomation: AutomationDefinition = {
+        id: 'auto:gem-spender' as any,
+        name: { default: 'Gem Spender', variants: {} },
+        description: { default: 'Triggers on gems', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gems' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      // Gold is 50 (below 100 threshold) - should NOT fire
+      const goldShouldFire = evaluateResourceThresholdTrigger(goldAutomation, resourceState);
+      expect(goldShouldFire).toBe(false);
+
+      // Gems is 200 (above 100 threshold) - SHOULD fire
+      const gemsShouldFire = evaluateResourceThresholdTrigger(gemsAutomation, resourceState);
+      expect(gemsShouldFire).toBe(true);
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
