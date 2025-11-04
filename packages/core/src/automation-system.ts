@@ -41,7 +41,7 @@ export interface AutomationSystemOptions {
 export function createAutomationSystem(
   options: AutomationSystemOptions,
 ): System & { getState: () => ReadonlyMap<string, AutomationState> } {
-  const { automations, stepDurationMs: _stepDurationMs, commandQueue: _commandQueue, resourceState: _resourceState } = options;
+  const { automations, stepDurationMs, commandQueue, resourceState } = options;
   const automationStates = new Map<string, AutomationState>();
   const pendingEventTriggers = new Set<string>();
 
@@ -84,8 +84,60 @@ export function createAutomationSystem(
       });
     },
 
-    tick(_context) {
-      // TODO: Evaluate triggers and enqueue commands
+    tick({ step }) {
+      // Evaluate each automation
+      for (const automation of automations) {
+        const state = automationStates.get(automation.id);
+        if (!state) continue;
+
+        // Update unlock status
+        // For MVP, we'll assume all automations with 'always' condition are unlocked
+        // Full unlock evaluation requires condition context (deferred to integration)
+        state.unlocked = automation.unlockCondition.kind === 'always';
+
+        // Skip if not unlocked or not enabled
+        if (!state.unlocked || !state.enabled) {
+          continue;
+        }
+
+        // Skip if cooldown is active
+        if (isCooldownActive(state, step)) {
+          continue;
+        }
+
+        // Evaluate trigger
+        let triggered = false;
+        switch (automation.trigger.kind) {
+          case 'interval':
+            triggered = evaluateIntervalTrigger(automation, state, step, stepDurationMs);
+            break;
+          case 'resourceThreshold':
+            triggered = evaluateResourceThresholdTrigger(automation, resourceState);
+            break;
+          case 'commandQueueEmpty':
+            triggered = evaluateCommandQueueEmptyTrigger(commandQueue);
+            break;
+          case 'event':
+            triggered = evaluateEventTrigger(automation.id, pendingEventTriggers);
+            break;
+        }
+
+        if (!triggered) {
+          continue;
+        }
+
+        // TODO: Check resource cost (deferred - requires resource deduction API)
+
+        // Enqueue command
+        enqueueAutomationCommand(automation, commandQueue, step, Date.now());
+
+        // Update state
+        state.lastFiredStep = step;
+        updateCooldown(automation, state, step, stepDurationMs);
+      }
+
+      // Clear pending event triggers
+      pendingEventTriggers.clear();
     },
   };
 }
@@ -125,7 +177,7 @@ export function updateCooldown(
   }
 
   const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
-  state.cooldownExpiresStep = currentStep + cooldownSteps;
+  state.cooldownExpiresStep = currentStep + cooldownSteps + 1;
 }
 
 /**

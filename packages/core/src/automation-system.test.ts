@@ -496,4 +496,122 @@ describe('AutomationSystem', () => {
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
     });
   });
+
+  describe('end-to-end automation', () => {
+    it('should fire interval automation and enqueue command', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+
+      // Tick once - should fire immediately
+      runtime.tick(100);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+    });
+
+    it('should respect enabled flag', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: false, // Disabled
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+      runtime.tick(100);
+
+      expect(commandQueue.size).toBe(0);
+    });
+
+    it('should respect cooldown', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          cooldown: 500, // 5 steps
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+
+      // First tick - should fire
+      runtime.tick(100);
+      expect(commandQueue.size).toBe(1);
+      commandQueue.dequeueUpToStep(1);
+
+      // Tick again - should be in cooldown
+      runtime.tick(100);
+      expect(commandQueue.size).toBe(0);
+
+      // Tick 4 more times (total 5 more ticks)
+      runtime.tick(100);
+      runtime.tick(100);
+      runtime.tick(100);
+      runtime.tick(100);
+
+      // Should still be in cooldown
+      expect(commandQueue.size).toBe(0);
+
+      // One more tick - cooldown expired
+      runtime.tick(100);
+      expect(commandQueue.size).toBe(1);
+    });
+  });
 });
