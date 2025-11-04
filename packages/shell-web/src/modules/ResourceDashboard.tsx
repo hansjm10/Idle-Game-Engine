@@ -126,13 +126,14 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
   );
 
   const rateClassName = useMemo(() => {
+    // Align class logic with display threshold to maintain visual consistency
+    if (Math.abs(resource.perTick) < RATE_NEUTRAL_THRESHOLD) {
+      return styles.rateNeutral;
+    }
     if (resource.perTick > 0) {
       return styles.ratePositive;
     }
-    if (resource.perTick < 0) {
-      return styles.rateNegative;
-    }
-    return styles.rateNeutral;
+    return styles.rateNegative;
   }, [resource.perTick]);
 
   return (

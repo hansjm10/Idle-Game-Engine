@@ -597,6 +597,48 @@ describe('ResourceDashboard component', () => {
       expect(rateElement).toBeInTheDocument();
       expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
     });
+
+    it('applies neutral styling for near-zero positive rates', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 100,
+          isUnlocked: true,
+          isVisible: true,
+          perTick: 0.004, // Below RATE_NEUTRAL_THRESHOLD (0.005)
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      // Should display as neutral and have neutral styling
+      const rateElement = screen.getByText('±0/tick');
+      expect(rateElement).toBeInTheDocument();
+      expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
+      expect(rateElement.classList.contains(styles.ratePositive)).toBe(false);
+    });
+
+    it('applies neutral styling for near-zero negative rates', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 100,
+          isUnlocked: true,
+          isVisible: true,
+          perTick: -0.004, // Below RATE_NEUTRAL_THRESHOLD (0.005)
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      // Should display as neutral and have neutral styling
+      const rateElement = screen.getByText('±0/tick');
+      expect(rateElement).toBeInTheDocument();
+      expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
+      expect(rateElement.classList.contains(styles.rateNegative)).toBe(false);
+    });
   });
 
   describe('accessibility', () => {
