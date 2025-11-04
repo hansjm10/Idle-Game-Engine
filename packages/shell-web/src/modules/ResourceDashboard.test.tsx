@@ -91,8 +91,9 @@ describe('ResourceDashboard view-model utilities', () => {
     it('handles negative zero and very small values that round to zero', () => {
       expect(formatPerTickRate(-0)).toBe('±0/tick');
       expect(formatPerTickRate(-0.001)).toBe('±0/tick');
-      expect(formatPerTickRate(0.001)).toBe('+0.00/tick');
+      expect(formatPerTickRate(0.001)).toBe('±0/tick');
       expect(formatPerTickRate(-0.004)).toBe('±0/tick');
+      expect(formatPerTickRate(0.004)).toBe('±0/tick');
     });
   });
 

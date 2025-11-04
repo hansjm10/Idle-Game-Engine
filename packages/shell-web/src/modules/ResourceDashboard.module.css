@@ -77,7 +77,7 @@
 
 /* Resource amount cell */
 .resourceAmount {
-  font-family: 'Courier New', monospace;
+  font-family: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
   color: var(--color-text-primary);
   display: flex;
   align-items: center;
@@ -100,9 +100,21 @@
   transition: width 0.3s ease;
 }
 
+/* High contrast mode support for capacity bars */
+@media (forced-colors: active) {
+  .capacityBarFill {
+    border: 1px solid CanvasText;
+    background: CanvasText;
+  }
+
+  .capacityBar {
+    border: 1px solid CanvasText;
+  }
+}
+
 /* Resource rate cell */
 .resourceRate {
-  font-family: 'Courier New', monospace;
+  font-family: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
   font-size: 0.875rem;
   font-weight: 600;
   display: flex;

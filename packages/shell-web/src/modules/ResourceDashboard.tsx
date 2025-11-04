@@ -7,6 +7,14 @@ import styles from './ResourceDashboard.module.css';
 /**
  * View-model utility: format a resource amount for display.
  * Handles large numbers with appropriate precision.
+ *
+ * Precision rules (intentional for readability):
+ * - >= 1,000,000: Exponential notation (e.g., "1.23e+6")
+ * - >= 100: No decimal places (e.g., "125" not "125.50")
+ * - < 100: Two decimal places (e.g., "42.75")
+ *
+ * This creates intentional rounding differences (e.g., 99.999 → "100.00" → "100",
+ * 125.5 → "126") to balance precision with readability at different scales.
  */
 export function formatResourceAmount(amount: number): string {
   if (amount === 0) {
@@ -29,21 +37,19 @@ export function formatResourceAmount(amount: number): string {
 
 /**
  * View-model utility: format per-tick rate with sign indicator.
+ * Uses ±0 for values very close to zero (|x| < 0.005) to maintain consistency.
  */
 export function formatPerTickRate(perTick: number): string {
-  if (perTick === 0) {
+  // Treat values very close to zero as neutral
+  if (Math.abs(perTick) < 0.005) {
     return '±0/tick';
   }
 
-  const sign = perTick > 0 ? '+' : '';
-  const formatted = Math.abs(perTick) >= 100
-    ? perTick.toFixed(0)
-    : perTick.toFixed(2);
-
-  // Normalize -0.00 to ±0
-  if (formatted === '-0' || formatted === '-0.00') {
-    return '±0/tick';
-  }
+  const sign = perTick > 0 ? '+' : '-';
+  const absValue = Math.abs(perTick);
+  const formatted = absValue >= 100
+    ? absValue.toFixed(0)
+    : absValue.toFixed(2);
 
   return `${sign}${formatted}/tick`;
 }
