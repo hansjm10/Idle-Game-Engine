@@ -156,3 +156,48 @@ export function evaluateEventTrigger(
 ): boolean {
   return pendingEventTriggers.has(automationId);
 }
+
+/**
+ * Minimal ResourceState interface for automation evaluation.
+ * The full ResourceState is defined in shell-web package.
+ */
+export interface ResourceStateReader {
+  getAmount(resourceIndex: number): number;
+}
+
+/**
+ * Evaluates whether a resourceThreshold trigger should fire.
+ */
+export function evaluateResourceThresholdTrigger(
+  automation: AutomationDefinition,
+  resourceState: ResourceStateReader,
+): boolean {
+  if (automation.trigger.kind !== 'resourceThreshold') {
+    throw new Error('Expected resourceThreshold trigger');
+  }
+
+  const { comparator, threshold } = automation.trigger;
+
+  // Get resource amount
+  // Note: resourceId is a ContentId (string), but ResourceState uses indices
+  // In the real implementation, we'll need to resolve the ID to an index
+  // For now, we'll accept a ResourceStateReader that handles this
+  const amount = resourceState.getAmount(0); // Index will be resolved in integration
+
+  // Evaluate threshold formula
+  const thresholdValue = evaluateNumericFormula(threshold, {
+    variables: { level: 0 }, // Static evaluation
+  });
+
+  // Compare resource amount to threshold
+  switch (comparator) {
+    case 'gte':
+      return amount >= thresholdValue;
+    case 'gt':
+      return amount > thresholdValue;
+    case 'lte':
+      return amount <= thresholdValue;
+    case 'lt':
+      return amount < thresholdValue;
+  }
+}

@@ -580,6 +580,8 @@ export {
   evaluateIntervalTrigger,
   evaluateCommandQueueEmptyTrigger,
   evaluateEventTrigger,
+  evaluateResourceThresholdTrigger,
   type AutomationSystemOptions,
   type AutomationState,
+  type ResourceStateReader,
 } from './automation-system.js';

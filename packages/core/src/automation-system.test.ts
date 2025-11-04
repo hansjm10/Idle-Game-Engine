@@ -6,6 +6,7 @@ import {
   evaluateIntervalTrigger,
   evaluateCommandQueueEmptyTrigger,
   evaluateEventTrigger,
+  evaluateResourceThresholdTrigger,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
@@ -176,7 +177,124 @@ describe('AutomationSystem', () => {
   });
 
   describe('resourceThreshold triggers', () => {
-    // Tests to be added
+    const createMockResourceState = (amount: number) => ({
+      getAmount: () => amount,
+    });
+
+    it('should fire when resource meets gte threshold', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const resourceState = createMockResourceState(100);
+      const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should not fire when resource below gte threshold', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const resourceState = createMockResourceState(99);
+      const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState);
+      expect(shouldFire).toBe(false);
+    });
+
+    it('should fire when resource meets gt threshold', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gt',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const resourceState = createMockResourceState(101);
+      const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should fire when resource meets lte threshold', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'lte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const resourceState = createMockResourceState(100);
+      const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should fire when resource meets lt threshold', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'lt',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const resourceState = createMockResourceState(99);
+      const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState);
+      expect(shouldFire).toBe(true);
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
