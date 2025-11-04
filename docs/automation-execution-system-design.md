@@ -45,7 +45,7 @@ Without automation execution, the engine fails to deliver on the core promise of
 4. **Wasted infrastructure**: Events (`automation:toggled`), priority tiers (`CommandPriority.AUTOMATION`), and trigger schemas exist but remain unused
 
 ### Forces
-- **Performance budget**: Automation evaluation must complete within per-tick budget (<2ms for trigger checks)
+- **Performance budget**: Automation evaluation must complete within per-tick budget (&lt;2ms for trigger checks)
 - **Determinism**: Trigger evaluation must be reproducible across replays and platforms
 - **Content flexibility**: Content authors should define automation logic without code changes
 - **State persistence**: Automation state (enabled, cooldown, last-fired) must survive saves/loads
@@ -628,7 +628,7 @@ Agents must load before execution:
 - Export all new types from `packages/core/src/index.ts`
 
 **Performance Requirements**:
-- Automation evaluation must complete in <2ms per tick for 100 automations
+- Automation evaluation must complete in &lt;2ms per tick for 100 automations
 - Use memoization for expensive formula evaluations
 - Avoid O(n²) loops; prefer Map lookups over array scans
 
@@ -715,8 +715,8 @@ Agents must run before marking tasks complete:
 - **Save/Load Cycle**: Automation state persists and restores correctly
 
 ### Performance Tests
-- **Benchmark**: 100 automations evaluated in <2ms per tick (target: <1ms)
-- **Memory**: Automation state memory usage <1KB per automation
+- **Benchmark**: 100 automations evaluated in &lt;2ms per tick (target: &lt;1ms)
+- **Memory**: Automation state memory usage &lt;1KB per automation
 - **Stress Test**: 1000 automations do not degrade tick performance below 60 FPS
 
 ### Property-Based Tests
