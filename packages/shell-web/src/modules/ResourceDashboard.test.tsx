@@ -13,6 +13,7 @@ import type {
   ShellProgressionApi,
   ShellState,
 } from './shell-state.types.js';
+import styles from './ResourceDashboard.module.css';
 
 // Mock the ShellStateProvider hooks
 const mockProgressionApi: ShellProgressionApi = {
@@ -363,7 +364,7 @@ describe('ResourceDashboard component', () => {
       render(<ResourceDashboard />);
 
       // Capacity bar should be present with fill
-      const capacityBars = screen.getAllByLabelText('Capacity indicator');
+      const capacityBars = screen.getAllByRole('progressbar');
       expect(capacityBars).toHaveLength(1);
     });
 
@@ -383,7 +384,7 @@ describe('ResourceDashboard component', () => {
       render(<ResourceDashboard />);
 
       // Get the capacity bar container
-      const capacityBar = screen.getByLabelText('Capacity indicator');
+      const capacityBar = screen.getByRole('progressbar');
 
       // Get the fill element (first child with aria-hidden)
       const fillElement = capacityBar.querySelector('[aria-hidden="true"]') as HTMLElement;
@@ -391,6 +392,33 @@ describe('ResourceDashboard component', () => {
 
       // Assert the fill width is 50% (amount=50, capacity=100)
       expect(fillElement.style.width).toBe('50%');
+    });
+
+    it('renders capacity bar with 0% fill when capacity is exactly zero', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 0,
+          isUnlocked: true,
+          isVisible: true,
+          capacity: 0,
+          perTick: 0,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      // Should render progressbar (not "No capacity limit" placeholder)
+      const progressbar = screen.getByRole('progressbar');
+      expect(progressbar).toBeInTheDocument();
+
+      // Get the fill element (first child with aria-hidden)
+      const fillElement = progressbar.querySelector('[aria-hidden="true"]') as HTMLElement;
+      expect(fillElement).toBeTruthy();
+
+      // Assert the fill width is 0% (capacity is zero)
+      expect(fillElement.style.width).toBe('0%');
     });
 
     it('does not render capacity bar for resources without capacity', () => {
@@ -408,7 +436,7 @@ describe('ResourceDashboard component', () => {
       render(<ResourceDashboard />);
 
       // No capacity bar should be rendered
-      expect(screen.queryByLabelText('Capacity indicator')).not.toBeInTheDocument();
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });
 
     it('renders accessible placeholder cell for resources without capacity', () => {
@@ -485,7 +513,7 @@ describe('ResourceDashboard component', () => {
 
       // Check both data rows have same structure
       for (let i = 1; i < rows.length; i++) {
-        const cells = rows[i].querySelectorAll('[role="cell"], [role="rowheader"]');
+        const cells = rows[i].querySelectorAll('[role="cell"], [role="rowheader"], [role="progressbar"]');
         expect(cells).toHaveLength(4);
       }
     });
@@ -508,7 +536,7 @@ describe('ResourceDashboard component', () => {
 
       const rateElement = screen.getByText('+5.50/tick');
       expect(rateElement).toBeInTheDocument();
-      expect(rateElement.className).toContain('ratePositive');
+      expect(rateElement.classList.contains(styles.ratePositive)).toBe(true);
     });
 
     it('applies correct styling for negative rates', () => {
@@ -527,7 +555,7 @@ describe('ResourceDashboard component', () => {
 
       const rateElement = screen.getByText('-2.50/tick');
       expect(rateElement).toBeInTheDocument();
-      expect(rateElement.className).toContain('rateNegative');
+      expect(rateElement.classList.contains(styles.rateNegative)).toBe(true);
     });
 
     it('applies correct styling for zero rates', () => {
@@ -546,7 +574,7 @@ describe('ResourceDashboard component', () => {
 
       const rateElement = screen.getByText('±0/tick');
       expect(rateElement).toBeInTheDocument();
-      expect(rateElement.className).toContain('rateNeutral');
+      expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
     });
   });
 
@@ -565,8 +593,7 @@ describe('ResourceDashboard component', () => {
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
-      expect(screen.getByRole('region')).toBeInTheDocument();
-      expect(screen.getByLabelText('Resources')).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: /Resources/ })).toBeInTheDocument();
       expect(screen.getByRole('table')).toBeInTheDocument();
       expect(screen.getAllByRole('row')).toHaveLength(2); // header + 1 resource
       expect(screen.getAllByRole('columnheader')).toHaveLength(4);
@@ -614,6 +641,30 @@ describe('ResourceDashboard component', () => {
       // Verify section references the heading via aria-labelledby
       const section = screen.getByRole('region');
       expect(section).toHaveAttribute('aria-labelledby', headingId);
+    });
+
+    it('has proper progressbar ARIA attributes for capacity indicators', () => {
+      const resources: ResourceView[] = [
+        {
+          id: 'res-1',
+          displayName: 'Energy',
+          amount: 75,
+          isUnlocked: true,
+          isVisible: true,
+          capacity: 150,
+          perTick: 1,
+        },
+      ];
+      mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
+      render(<ResourceDashboard />);
+
+      const progressbar = screen.getByRole('progressbar');
+
+      // Verify progressbar ARIA attributes
+      expect(progressbar).toHaveAttribute('aria-valuemin', '0');
+      expect(progressbar).toHaveAttribute('aria-valuemax', '150');
+      expect(progressbar).toHaveAttribute('aria-valuenow', '75');
+      expect(progressbar).toHaveAttribute('aria-label', 'Capacity: 75.00 / 150');
     });
   });
 

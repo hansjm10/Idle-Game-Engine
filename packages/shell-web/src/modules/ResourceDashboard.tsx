@@ -131,7 +131,14 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
         {formatCapacity(resource.amount, resource.capacity)}
       </div>
       {resource.capacity !== undefined ? (
-        <div className={styles.capacityBar} role="cell" aria-label="Capacity indicator">
+        <div
+          className={styles.capacityBar}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={resource.capacity}
+          aria-valuenow={resource.amount}
+          aria-label={`Capacity: ${formatCapacity(resource.amount, resource.capacity)}`}
+        >
           <div
             className={styles.capacityBarFill}
             style={{ width: `${fillPercentage}%` }}

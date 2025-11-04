@@ -10,7 +10,6 @@ import {
   ShellStateProvider,
   useShellBridge,
   useShellState,
-  useShellProgression,
 } from './ShellStateProvider.js';
 import errorStyles from './ErrorBoundary.module.css';
 import appStyles from './App.module.css';
@@ -28,7 +27,6 @@ export function App() {
 function ShellAppSurface(): JSX.Element {
   const { runtime } = useShellState();
   const bridge = useShellBridge();
-  const progression = useShellProgression();
   const socialEnabled = bridge.isSocialFeatureEnabled();
 
   const handleSendCommand = useCallback(async () => {
@@ -37,7 +35,7 @@ function ShellAppSurface(): JSX.Element {
   }, [bridge]);
 
   return (
-    <main style={{ fontFamily: 'system-ui', padding: 24 }}>
+    <main className={appStyles.main}>
       <h1>Idle Engine Shell</h1>
       <p>
         Placeholder web shell wired to the Worker runtime tick loop. Runtime step:{' '}
@@ -47,7 +45,7 @@ function ShellAppSurface(): JSX.Element {
         Send Test Command
       </button>
 
-      {progression.isEnabled && <ResourceDashboard />}
+      <ResourceDashboard />
 
       <EventInspector />
 

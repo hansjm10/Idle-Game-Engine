@@ -112,6 +112,13 @@
   }
 }
 
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .capacityBarFill {
+    transition: none;
+  }
+}
+
 /* Resource rate cell */
 .resourceRate {
   font-family: ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Courier New', monospace;

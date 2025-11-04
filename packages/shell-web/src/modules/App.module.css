@@ -2,12 +2,19 @@
  * App Component Styles
  *
  * CSS Module for the main App component including:
+ * - Main layout container
  * - Persistence error boundary custom fallback
  *
  * Note: This component reuses most error styles from ErrorBoundary.module.css
  * and only defines additional specific styles needed for the custom fallback.
  * Uses CSS variables from variables.css for consistent theming.
  */
+
+/* Main app container */
+.main {
+  font-family: system-ui;
+  padding: 24px;
+}
 
 /* Additional warning text for persistence errors (lighter brown tone) */
 .persistenceWarning {
