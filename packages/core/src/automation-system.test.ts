@@ -4,9 +4,11 @@ import {
   getAutomationState,
   isCooldownActive,
   evaluateIntervalTrigger,
+  evaluateCommandQueueEmptyTrigger,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
+import { CommandQueue } from './command-queue.js';
 
 describe('AutomationSystem', () => {
   const stepDurationMs = 100;
@@ -177,7 +179,26 @@ describe('AutomationSystem', () => {
   });
 
   describe('commandQueueEmpty triggers', () => {
-    // Tests to be added
+    it('should fire when command queue is empty', () => {
+      const commandQueue = new CommandQueue();
+
+      const shouldFire = evaluateCommandQueueEmptyTrigger(commandQueue);
+      expect(shouldFire).toBe(true);
+    });
+
+    it('should not fire when command queue has commands', () => {
+      const commandQueue = new CommandQueue();
+      commandQueue.enqueue({
+        type: 'TEST_COMMAND',
+        priority: 1,
+        payload: {},
+        timestamp: 0,
+        step: 0,
+      });
+
+      const shouldFire = evaluateCommandQueueEmptyTrigger(commandQueue);
+      expect(shouldFire).toBe(false);
+    });
   });
 
   describe('event triggers', () => {

@@ -8,6 +8,7 @@
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
+import type { CommandQueue } from './command-queue.js';
 
 /**
  * Internal state for a single automation.
@@ -132,4 +133,13 @@ export function evaluateIntervalTrigger(
   // Check if enough steps have elapsed
   const stepsSinceLastFired = currentStep - state.lastFiredStep;
   return stepsSinceLastFired >= intervalSteps;
+}
+
+/**
+ * Evaluates whether a commandQueueEmpty trigger should fire.
+ */
+export function evaluateCommandQueueEmptyTrigger(
+  commandQueue: CommandQueue,
+): boolean {
+  return commandQueue.size === 0;
 }
