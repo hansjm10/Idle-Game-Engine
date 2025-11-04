@@ -897,4 +897,82 @@ describe('AutomationSystem', () => {
       expect(evaluateEventTrigger('auto:event2', pendingEventTriggersAfterClear)).toBe(false);
     });
   });
+
+  describe('integration with multiple resources', () => {
+    it('should correctly evaluate multiple resource-threshold automations', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:gold' as any,
+          name: { default: 'Gold Auto', variants: {} },
+          description: { default: 'Fires on gold', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:gold-gen' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+        {
+          id: 'auto:gems' as any,
+          name: { default: 'Gems Auto', variants: {} },
+          description: { default: 'Fires on gems', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:gem-gen' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gems' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 50 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 1,
+        },
+      ];
+
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index === 0) return 150; // res:gold - above threshold (100)
+          if (index === 1) return 30; // res:gems - below threshold (50)
+          return 0;
+        },
+        getResourceIndex: (resourceId: string) => {
+          if (resourceId === 'res:gold') return 0;
+          if (resourceId === 'res:gems') return 1;
+          return -1;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+        } as any,
+      };
+
+      system.tick(context);
+
+      // Only gold automation should fire (gold=150>=100, gems=30<50)
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+      // Could also verify targetId if command includes it
+    });
+  });
 });
