@@ -158,6 +158,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@idle-engine/content-schema':
+        specifier: workspace:*
+        version: link:../content-schema
       prom-client:
         specifier: ^15.1.1
         version: 15.1.3

@@ -424,6 +424,10 @@ export function evaluateResourceThresholdTrigger(
       return amount <= thresholdValue;
     case 'lt':
       return amount < thresholdValue;
+    default: {
+      const exhaustiveCheck: never = comparator;
+      throw new Error(`Unknown comparator: ${exhaustiveCheck}`);
+    }
   }
 }
 
