@@ -980,21 +980,37 @@ describe('AutomationSystem', () => {
       system.tick(context);
       expect(commandQueue.size).toBe(0); // Cooldown blocks firing
 
-      // Steps 4-5: Cooldown expires at step 5 (1 + 3 + 1)
+      // Step 4: Still in cooldown
       context.step = 4;
       system.tick(context);
+      expect(commandQueue.size).toBe(0);
+
+      // Step 5: Cooldown expired - should fire due to crossing that occurred at step 3
+      // Even though resource has been above threshold since step 3, the threshold state
+      // was updated to false at step 2 (during cooldown), so the crossing from false
+      // (step 2) to true (step 3+) is detected when cooldown expires.
       context.step = 5;
       system.tick(context);
-      expect(commandQueue.size).toBe(0); // Still above threshold, no crossing
+      expect(commandQueue.size).toBe(1); // Fires on crossing detected after cooldown
+      commandQueue.dequeueUpToStep(6);
 
-      // Step 6: Drop below
+      // Step 6: Drop below (cooldown still active)
       context.step = 6;
       amount = 50;
       system.tick(context);
       expect(commandQueue.size).toBe(0);
 
-      // Step 7: Cross upward again - cooldown expired, should fire
+      // Steps 7-8: Cooldown still active (expires at step 9: 5 + 3 + 1)
       context.step = 7;
+      amount = 50;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0);
+      context.step = 8;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0);
+
+      // Step 9: Cross upward - cooldown expired, should fire on new crossing
+      context.step = 9;
       amount = 200;
       system.tick(context);
       expect(commandQueue.size).toBe(1);
@@ -1068,20 +1084,21 @@ describe('AutomationSystem', () => {
         expect(commandQueue.size).toBe(0); // Cooldown prevents firing
       }
 
-      // Ticks 4-6: Resource rises to 150 (above threshold), cooldown still active
+      // Ticks 4-5: Resource rises to 150 (above threshold), cooldown still active
       // BUG: If state isn't updated during cooldown, lastThresholdSatisfied stays true
       // and the false->true transition is missed
-      for (let i = 4; i <= 6; i++) {
+      for (let i = 4; i <= 5; i++) {
         currentStep = i;
         context.step = currentStep;
         system.tick(context);
         expect(commandQueue.size).toBe(0); // Cooldown prevents firing
       }
 
-      // Tick 7: Cooldown expired (5 steps + 1), resource still at 150
-      // EXPECTED: Should fire because we saw false->true transition during cooldown
-      // ACTUAL BUG: Won't fire because lastThresholdSatisfied was stuck at true
-      currentStep = 7;
+      // Tick 6: Cooldown expired (fires at step 0, cooldown lasts 5 steps: 1-5), resource still at 150
+      // EXPECTED: Should fire because we saw false->true transition during cooldown (step 3->4)
+      // With fix: lastThresholdSatisfied was set to false during cooldown, so crossing is detected
+      // Without fix: lastThresholdSatisfied stayed true, so no crossing detected
+      currentStep = 6;
       context.step = currentStep;
       system.tick(context);
       expect(commandQueue.size).toBe(1); // Should fire on new crossing
