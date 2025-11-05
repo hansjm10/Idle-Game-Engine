@@ -725,6 +725,199 @@ describe('AutomationSystem', () => {
     expect(commandQueue.size).toBe(1);
   });
 
+  describe('resourceThreshold crossing detection', () => {
+    it('should detect gte crossing (below -> above)', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:gte' as any,
+          name: { default: 'GTE Crosser', variants: {} },
+          description: { default: 'Test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let amount = 50;
+      const resourceState = {
+        getAmount: () => amount,
+        getResourceIndex: (_id: string) => 0,
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        deltaMs: 100,
+        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+      };
+
+      system.setup?.(context);
+
+      // Below threshold
+      system.tick(context);
+      expect(commandQueue.size).toBe(0);
+
+      // Cross upward (50 -> 100)
+      context.step = 1;
+      amount = 100;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Should fire
+      commandQueue.dequeueUpToStep(2);
+
+      // Stay above
+      context.step = 2;
+      amount = 150;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0); // Should NOT fire
+
+      // Drop below
+      context.step = 3;
+      amount = 50;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0); // Should NOT fire (wrong direction)
+
+      // Cross upward again
+      context.step = 4;
+      amount = 200;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Should fire again
+    });
+
+    it('should detect lt crossing (above -> below)', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:lt' as any,
+          name: { default: 'LT Crosser', variants: {} },
+          description: { default: 'Test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'lt',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let amount = 150;
+      const resourceState = {
+        getAmount: () => amount,
+        getResourceIndex: (_id: string) => 0,
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        deltaMs: 100,
+        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+      };
+
+      system.setup?.(context);
+
+      // Above threshold
+      system.tick(context);
+      expect(commandQueue.size).toBe(0);
+
+      // Cross downward (150 -> 50)
+      context.step = 1;
+      amount = 50;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Should fire
+      commandQueue.dequeueUpToStep(2);
+
+      // Stay below
+      context.step = 2;
+      amount = 20;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0); // Should NOT fire
+
+      // Go above
+      context.step = 3;
+      amount = 150;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0); // Should NOT fire (wrong direction)
+
+      // Cross downward again
+      context.step = 4;
+      amount = 10;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Should fire again
+    });
+
+    it('should fire on first tick if threshold already crossed at startup', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:startup' as any,
+          name: { default: 'Startup Fire', variants: {} },
+          description: { default: 'Test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const resourceState = {
+        getAmount: () => 200, // Already above threshold at startup
+        getResourceIndex: (_id: string) => 0,
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        deltaMs: 100,
+        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+      };
+
+      system.setup?.(context);
+
+      // First tick: lastThresholdSatisfied is undefined, current is true
+      // undefined -> true is a crossing, should fire
+      system.tick(context);
+      expect(commandQueue.size).toBe(1);
+    });
+  });
+
   describe('commandQueueEmpty triggers', () => {
     it('should fire when command queue is empty', () => {
       const commandQueue = new CommandQueue();
