@@ -7,8 +7,28 @@
  * (e.g., 'OFFLINE_CATCHUP') from RUNTIME_COMMAND_TYPES.
  *
  * This mapping bridges the two naming conventions.
+ *
+ * ## Usage
+ *
+ * ```typescript
+ * import { mapSystemTargetToCommandType } from '@idle-engine/core';
+ *
+ * const commandType = mapSystemTargetToCommandType('offline-catchup');
+ * // Returns: 'OFFLINE_CATCHUP'
+ * ```
+ *
+ * ## Synchronization
+ *
+ * When adding a new system target:
+ * 1. Add to SYSTEM_AUTOMATION_TARGET_IDS in content-schema/src/base/ids.ts
+ * 2. Add to RUNTIME_COMMAND_TYPES in core/src/command.ts (if needed)
+ * 3. Add mapping entry to SYSTEM_AUTOMATION_TARGET_MAPPING
+ * 4. Run tests to verify synchronization
+ *
+ * @packageDocumentation
  */
 
+import type { RuntimeCommandType } from './command.js';
 import { RUNTIME_COMMAND_TYPES } from './command.js';
 
 /**
@@ -20,10 +40,11 @@ import { RUNTIME_COMMAND_TYPES } from './command.js';
  * - packages/core/src/command.ts:RUNTIME_COMMAND_TYPES
  */
 export const SYSTEM_AUTOMATION_TARGET_MAPPING: Readonly<
-  Record<string, string>
+  Record<string, RuntimeCommandType>
 > = Object.freeze({
   'offline-catchup': RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
-  'research-daemon': 'RESEARCH_DAEMON', // Placeholder: update when command exists
+  // TODO: Add RESEARCH_DAEMON to RUNTIME_COMMAND_TYPES when research system is implemented
+  'research-daemon': 'RESEARCH_DAEMON' as RuntimeCommandType,
 });
 
 /**
@@ -35,7 +56,7 @@ export const SYSTEM_AUTOMATION_TARGET_MAPPING: Readonly<
  */
 export function mapSystemTargetToCommandType(
   systemTargetId: string,
-): string {
+): RuntimeCommandType {
   const commandType = SYSTEM_AUTOMATION_TARGET_MAPPING[systemTargetId];
   if (!commandType) {
     throw new Error(

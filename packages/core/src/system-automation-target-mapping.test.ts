@@ -4,6 +4,7 @@ import {
   mapSystemTargetToCommandType,
 } from './system-automation-target-mapping.js';
 import { RUNTIME_COMMAND_TYPES } from './command.js';
+import { SYSTEM_AUTOMATION_TARGET_IDS } from '@idle-engine/content-schema';
 
 describe('system-automation-target-mapping', () => {
   describe('SYSTEM_AUTOMATION_TARGET_MAPPING', () => {
@@ -50,6 +51,30 @@ describe('system-automation-target-mapping', () => {
       expect(() =>
         mapSystemTargetToCommandType('invalid-id' as any),
       ).toThrow('invalid-id');
+    });
+  });
+
+  describe('mapping synchronization', () => {
+    it('should have mapping for every content schema system target', () => {
+      // This test ensures the mapping stays in sync with the content schema.
+      // If this fails, update SYSTEM_AUTOMATION_TARGET_MAPPING.
+      const schemaTargets = Array.from(SYSTEM_AUTOMATION_TARGET_IDS);
+      const mappedTargets = Object.keys(SYSTEM_AUTOMATION_TARGET_MAPPING);
+
+      for (const target of schemaTargets) {
+        expect(
+          SYSTEM_AUTOMATION_TARGET_MAPPING[target],
+          `Missing mapping for schema target: ${target}`,
+        ).toBeDefined();
+      }
+
+      // Verify no extra mappings (helps catch typos)
+      for (const target of mappedTargets) {
+        expect(
+          schemaTargets.includes(target),
+          `Mapping contains unknown target: ${target}`,
+        ).toBe(true);
+      }
     });
   });
 });
