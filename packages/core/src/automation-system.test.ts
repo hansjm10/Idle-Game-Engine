@@ -613,7 +613,10 @@ describe('AutomationSystem', () => {
       const command = commands[0];
       expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
-      expect(command?.payload).toEqual({ generatorId: 'gen:clicks' });
+      expect(command?.payload).toEqual({
+        generatorId: 'gen:clicks',
+        enabled: true,
+      });
     });
 
     it('should enqueue PURCHASE_UPGRADE command for upgrade target', () => {
