@@ -44,6 +44,7 @@ export interface AutomationState {
   lastFiredStep: number;
   cooldownExpiresStep: number;
   unlocked: boolean;
+  lastThresholdSatisfied?: boolean; // NEW: tracks previous tick's threshold state
 }
 
 /**
@@ -100,6 +101,7 @@ export function createAutomationSystem(
       lastFiredStep: -Infinity,
       cooldownExpiresStep: 0,
       unlocked: false, // Evaluated on first tick for 'always' condition; persists once unlocked
+      lastThresholdSatisfied: undefined, // NEW: undefined = never evaluated
     });
   }
 
