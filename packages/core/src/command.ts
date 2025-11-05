@@ -256,9 +256,12 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
   },
   OFFLINE_CATCHUP: {
     type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
-    allowedPriorities: Object.freeze([CommandPriority.SYSTEM]),
+    allowedPriorities: Object.freeze([
+      CommandPriority.SYSTEM,
+      CommandPriority.AUTOMATION,
+    ]),
     rationale:
-      'Offline reconciliation is engine-driven and restricted to system authority.',
+      'Offline reconciliation is engine-driven; automations may also trigger catchup logic.',
     unauthorizedEvent: 'UnauthorizedSystemCommand',
   },
   APPLY_MIGRATION: {

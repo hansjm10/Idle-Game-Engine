@@ -4,7 +4,8 @@ import { z } from 'zod';
 const CONTENT_ID_PATTERN = /^[A-Za-z0-9][-./:\w]{0,63}$/;
 const PACK_SLUG_PATTERN = /^(?:@[a-z0-9][a-z0-9\-._]*\/)?[a-z0-9][a-z0-9\-._]*$/;
 const PACK_SLUG_SEPARATOR_PATTERN = /\/{2,}/g;
-// TODO: keep this list in sync with runtime system automation targets.
+// IMPORTANT: Keep this list in sync with packages/core/src/system-automation-target-mapping.ts
+// Synchronization is validated by system-automation-target-mapping.test.ts
 const SYSTEM_AUTOMATION_TARGET_IDS = new Set<string>([
   'offline-catchup',
   'research-daemon',
@@ -146,3 +147,5 @@ export const semverRangeSchema = z
   .min(1, { message: 'Semantic version ranges must not be empty.' })
   .transform((value, ctx) => validateSemverRange(value, ctx))
   .pipe(z.string().brand<'SemanticVersionRange'>());
+
+export { SYSTEM_AUTOMATION_TARGET_IDS };

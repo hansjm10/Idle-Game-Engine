@@ -573,3 +573,20 @@ export {
   type PrometheusTelemetryFacade,
 } from './telemetry-prometheus.js';
 export { createReadOnlyProxy } from './read-only-proxy.js';
+export {
+  createAutomationSystem,
+  getAutomationState,
+  isCooldownActive,
+  evaluateIntervalTrigger,
+  evaluateCommandQueueEmptyTrigger,
+  evaluateEventTrigger,
+  evaluateResourceThresholdTrigger,
+  enqueueAutomationCommand,
+  type AutomationSystemOptions,
+  type AutomationState,
+  type ResourceStateReader,
+} from './automation-system.js';
+export {
+  SYSTEM_AUTOMATION_TARGET_MAPPING,
+  mapSystemTargetToCommandType,
+} from './system-automation-target-mapping.js';
