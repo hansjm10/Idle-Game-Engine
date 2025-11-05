@@ -421,19 +421,22 @@ export function evaluateResourceThresholdTrigger(
 
   // Resolve resource ID to index
   let resourceIndex = 0;
+  let amount = 0;
+
   if (resourceState.getResourceIndex) {
     const resolvedIndex = resourceState.getResourceIndex(resourceId);
     if (resolvedIndex === -1) {
       // Resource doesn't exist - treat as 0 amount
-      // This handles cases where automation references unavailable resource
-      return false;
+      // Continue with amount = 0 instead of returning false
+      amount = 0;
+    } else {
+      resourceIndex = resolvedIndex;
+      amount = resourceState.getAmount(resourceIndex);
     }
-    resourceIndex = resolvedIndex;
+  } else {
+    // If getResourceIndex not provided, fall back to index 0 (for legacy tests)
+    amount = resourceState.getAmount(0);
   }
-  // If getResourceIndex not provided, fall back to index 0 (for legacy tests)
-
-  // Get resource amount
-  const amount = resourceState.getAmount(resourceIndex);
 
   // Evaluate threshold formula
   const thresholdValue = evaluateNumericFormula(threshold, {
