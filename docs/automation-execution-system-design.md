@@ -380,7 +380,9 @@ function updateCooldown(
   }
 
   const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
-  state.cooldownExpiresStep = currentStep + cooldownSteps;
+  // +1 accounts for command execution delay: commands enqueued at currentStep
+  // execute at currentStep + 1, so cooldown must be measured from that step.
+  state.cooldownExpiresStep = currentStep + cooldownSteps + 1;
 }
 
 function isCooldownActive(
