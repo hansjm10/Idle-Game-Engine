@@ -243,6 +243,13 @@ function evaluateIntervalTrigger(
 
 **Resource Threshold Trigger**:
 ```typescript
+/**
+ * Evaluates whether a resourceThreshold condition is currently satisfied.
+ *
+ * NOTE: This returns the current state. To detect crossings, the caller must
+ * track the previous state (AutomationState.lastThresholdSatisfied) and
+ * fire only on transitions: currentlySatisfied && !previouslySatisfied.
+ */
 function evaluateResourceThresholdTrigger(
   automation: AutomationDefinition,
   resourceState: ResourceState,
@@ -259,6 +266,12 @@ function evaluateResourceThresholdTrigger(
     case 'lt': return resource.amount < thresholdValue;
   }
 }
+
+// In tick() loop:
+const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState, context);
+const previouslySatisfied = state.lastThresholdSatisfied ?? false;
+triggered = currentlySatisfied && !previouslySatisfied;
+state.lastThresholdSatisfied = currentlySatisfied; // Track for next tick
 ```
 
 **Command Queue Empty Trigger**:
@@ -797,7 +810,7 @@ Agents must run before marking tasks complete:
    **A**: Deferred to automation UI design (#320+). For MVP, state exists but no dashboard.
 
 3. **Q**: Should resource threshold triggers fire every tick while threshold is met?
-   **A**: Requires decision. **Recommendation**: Fire once per threshold crossing (track `lastThresholdMet` state).
+   **A**: ✅ **DECIDED**: Fire once per threshold crossing (track `lastThresholdSatisfied` state). Implemented in `AutomationState.lastThresholdSatisfied` field. Triggers fire only on transitions from not-met to met (false → true).
 
 4. **Q**: What happens if automation target (generator/upgrade) is locked?
    **A**: Command is enqueued but authorization fails. **Recommendation**: Check unlock status before enqueueing.
