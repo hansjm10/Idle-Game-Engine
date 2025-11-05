@@ -119,9 +119,9 @@ Fires when a resource amount crosses a threshold (transition from below to above
 **Comparators:**
 
 - `gte`: Greater than or equal to (≥)
-- `gt`: Greater than (>)
+- `gt`: Greater than (\>)
 - `lte`: Less than or equal to (≤)
-- `lt`: Less than (<)
+- `lt`: Less than (\<)
 
 **Crossing Detection:**
 

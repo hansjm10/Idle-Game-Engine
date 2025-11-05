@@ -27,7 +27,7 @@ function createAutomationSystem(
 - `options.stepDurationMs` (number): Duration of each runtime step in milliseconds (default: 100)
 - `options.commandQueue` (CommandQueue): The runtime's command queue instance
 - `options.resourceState` (ResourceStateReader): Resource state for threshold evaluation
-- `options.initialState` (Map<string, AutomationState>, optional): Restored automation state from save file
+- `options.initialState` (Map\<string, AutomationState\>, optional): Restored automation state from save file
 
 **Returns:** System object with additional `getState()` method for state extraction
 
@@ -444,13 +444,13 @@ const saveData = {
 
 **Tick Budget:**
 
-- Automation evaluation must complete within per-tick budget (<2ms for 100 automations)
+- Automation evaluation must complete within per-tick budget (\<2ms for 100 automations)
 - Use lazy evaluation: skip locked/disabled automations early
 - Prefer Map lookups over array scans for O(1) performance
 
 **Memory:**
 
-- Automation state memory usage <1KB per automation
+- Automation state memory usage \<1KB per automation
 - State is compact: booleans, numbers, no deep nesting
 
 **Determinism:**
