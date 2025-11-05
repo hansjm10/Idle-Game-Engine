@@ -26,6 +26,22 @@ Content packs extend the runtime event catalogue through offline manifests that 
 }
 ```
 
+## Critical: Do not delete event-types.json
+
+**Warning:** If your content pack defines runtime events in `pack.json`, you **must** maintain a corresponding `content/event-types.json` manifest. Without this file:
+
+1. The generator skips your package when building `CONTENT_EVENT_DEFINITIONS`
+2. `CONTENT_EVENT_CHANNELS` will not include your event types
+3. Event-triggered automations will crash with "Unknown runtime event type"
+4. The error only manifests at runtime when automations try to register listeners
+
+**Validation:** After running `pnpm generate`, verify that:
+- `CONTENT_EVENT_DEFINITIONS` includes your events
+- `CONTENT_EVENT_CHANNELS` includes channel configurations for your events
+- Tests in `packages/core/src/events/__tests__/content-event-channels.test.ts` pass
+
+If `event-types.json` is accidentally deleted, restore it and re-run `pnpm generate`.
+
 ## Generation workflow
 
 1. Update the manifest and referenced schema files inside the content package.
