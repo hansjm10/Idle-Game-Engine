@@ -463,13 +463,16 @@ export function evaluateResourceThresholdTrigger(
  * Converts an automation's target into the appropriate command type and
  * enqueues it to the command queue at AUTOMATION priority. Supports three
  * target types:
- * - generator: Enqueues TOGGLE_GENERATOR command
+ * - generator: Enqueues TOGGLE_GENERATOR command with enabled: true
  * - upgrade: Enqueues PURCHASE_UPGRADE command (quantity 1)
  * - system: Enqueues system command with the systemTargetId
  *
  * The command is scheduled to execute on the next step (currentStep + 1).
  * Timestamps are derived from the simulation clock (step * stepDurationMs)
  * to ensure deterministic replay behavior.
+ *
+ * Generator automations always enable generators (enabled: true). Disabling
+ * generators requires manual player commands or system-initiated toggles.
  *
  * @param automation - The automation definition containing the target information.
  * @param commandQueue - The command queue to enqueue the command to.
