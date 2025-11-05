@@ -1103,6 +1103,85 @@ describe('AutomationSystem', () => {
       system.tick(context);
       expect(commandQueue.size).toBe(1); // Should fire on new crossing
     });
+
+    it('handles multiple threshold crossings during single cooldown period', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:multi-crossing' as any,
+        name: { default: 'Multi Crossing Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        targetType: 'generator',
+        targetId: 'gen:collector' as any,
+        cooldown: 800, // 8 steps @ 100ms/step
+        enabledByDefault: true,
+        unlockCondition: { kind: 'always' },
+        order: 0,
+      };
+
+      let currentStep = 0;
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index !== 0) return 0;
+          const step = currentStep;
+          // Pattern: 150 -> 50 -> 150 -> 50 -> 150 (oscillates during cooldown)
+          if (step === 0) return 150; // Above (fire)
+          if (step === 1) return 50;  // Below (cooldown)
+          if (step === 2) return 150; // Above (cooldown)
+          if (step === 3) return 50;  // Below (cooldown)
+          if (step === 4) return 150; // Above (cooldown)
+          if (step === 5) return 50;  // Below (cooldown)
+          if (step === 6) return 150; // Above (cooldown)
+          if (step === 7) return 50;  // Below (cooldown)
+          if (step === 8) return 150; // Above (cooldown)
+          if (step === 9) return 150; // Above (cooldown expired - should fire)
+          return 0;
+        },
+        getResourceIndex: (id: string) => (id === 'res:gold' ? 0 : -1),
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations: [automation],
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        deltaMs: 100,
+        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+      };
+
+      system.setup?.(context);
+
+      // Tick 0: Fire initial trigger
+      currentStep = 0;
+      context.step = currentStep;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1);
+      commandQueue.dequeueUpToStep(1);
+
+      // Ticks 1-8: Cooldown active, resource oscillates
+      for (let i = 1; i <= 8; i++) {
+        currentStep = i;
+        context.step = currentStep;
+        system.tick(context);
+        expect(commandQueue.size).toBe(0); // Cooldown prevents all fires
+      }
+
+      // Tick 9: Cooldown expired, resource above threshold
+      // Should fire because last crossing was from below (step 8: 50) to above (step 9: 150)
+      currentStep = 9;
+      context.step = currentStep;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Should fire on latest crossing
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
