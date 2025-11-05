@@ -1013,6 +1013,74 @@ describe('AutomationSystem', () => {
       expect(commandQueue.size).toBe(1); // Fired!
     });
 
+    it('should enforce cooldown from command execution step, not trigger step', () => {
+      // This test verifies the documented behavior from updateCooldown JSDoc:
+      // "If automation fires at step 10 with 500ms cooldown and 100ms steps,
+      //  command executes at step 11 and cooldown expires at step 16 (11 + 5)"
+
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:cooldown-fix-test' as any,
+          name: { default: 'Cooldown Fix Test', variants: {} },
+          description: { default: 'Verifies cooldown accounts for command execution delay', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          cooldown: 500, // 500ms cooldown with 100ms steps = 5 steps AFTER command execution
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      const context = {
+        step: 10,
+        deltaMs: 100,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+        } as any,
+      };
+
+      // Tick at step 10: trigger fires, command enqueued for step 11
+      system.tick(context);
+      expect(commandQueue.size).toBe(1);
+
+      // Command executes at step 11 (when dequeued)
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.step).toBe(11); // Command executes at step 11
+
+      // Cooldown should last 500ms (5 steps) AFTER command execution at step 11
+      // So cooldown expires at step 16 (11 + 5), and automation is eligible at step 16
+
+      // Steps 11-15: still in cooldown (automation should NOT fire)
+      for (let step = 11; step <= 15; step++) {
+        context.step = step;
+        system.tick(context);
+        expect(commandQueue.size).toBe(0); // Still in cooldown
+      }
+
+      // Step 16: cooldown expired, automation should fire
+      context.step = 16;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Fired!
+
+      // Verify the command is scheduled for step 17
+      const secondCommands = commandQueue.dequeueUpToStep(17);
+      expect(secondCommands.length).toBe(1);
+      expect(secondCommands[0]?.step).toBe(17);
+    });
+
     it('should enqueue complete TOGGLE_GENERATOR payload with enabled flag', () => {
       const automations: AutomationDefinition[] = [
         {
