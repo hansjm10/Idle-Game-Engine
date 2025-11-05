@@ -498,7 +498,7 @@ export function enqueueAutomationCommand(
 
   if (targetType === 'generator') {
     commandType = RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR;
-    payload = { generatorId: targetId };
+    payload = { generatorId: targetId, enabled: true };
   } else if (targetType === 'upgrade') {
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
     payload = { upgradeId: targetId, quantity: 1 };
