@@ -1055,6 +1055,63 @@ describe('AutomationSystem', () => {
       });
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
     });
+
+    it('should fire automation with lt comparator when resource is missing', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:bootstrap' as any,
+          name: { default: 'Bootstrap Collector', variants: {} },
+          description: { default: 'Activates when gems are scarce', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:gem-generator' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gems' as any,
+            comparator: 'lt',
+            threshold: { kind: 'constant', value: 10 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      // Resource state where gems resource doesn't exist yet
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index === 0) return 50; // res:gold exists
+          return 0;
+        },
+        getResourceIndex: (resourceId: string) => {
+          if (resourceId === 'res:gold') return 0;
+          return -1; // res:gems doesn't exist
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      runtime.addSystem(system);
+
+      // Tick once - automation should fire because 0 < 10
+      runtime.tick(100);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+      expect(command?.payload).toEqual({
+        generatorId: 'gen:gem-generator',
+        enabled: true,
+      });
+    });
   });
 
   describe('edge cases', () => {
