@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "cd69a98cc5d701be5ec38c99c8c967b99199455bec004a9a67bda7a9aef45f7b",
+  "artifactHash": "c586c8046278551ed240ae8d0fe0b7dd92f84f22c066ddc3e36a91d1888a34a3",
   "digest": {
-    "hash": "fnv1a-155e14d0",
+    "hash": "fnv1a-3cbce096",
     "version": 1
   },
   "formatVersion": 1,
@@ -356,24 +356,21 @@ const serialized = {
         "visible": true
       }
     ],
-    "runtimeEvents": [
-      {
-        "emits": [],
-        "id": "sample:reactor-primed",
-        "name": "reactor-primed",
-        "namespace": "sample",
-        "payload": {
-          "kind": "json-schema",
-          "schemaPath": "schemas/events/reactor-primed.schema.json"
-        },
-        "tags": [],
-        "version": 1
-      }
-    ],
+    "runtimeEvents": [],
     "transforms": [],
     "upgrades": []
   },
-  "warnings": []
+  "warnings": [
+    {
+      "code": "runtime.featureGate",
+      "message": "Module \"automations\" requires runtime version 0.2.0 or later (docs/idle-engine-design.md (§9, §18)). Provide ContentSchemaOptions.runtimeVersion to enforce compatibility.",
+      "path": [
+        "metadata",
+        "version"
+      ],
+      "severity": "warning"
+    }
+  ]
 } as unknown as SerializedNormalizedContentPack;
 
 const runtimeEnv = (globalThis as typeof globalThis & {

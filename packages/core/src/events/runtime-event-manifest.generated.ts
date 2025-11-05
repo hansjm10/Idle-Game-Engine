@@ -19,9 +19,35 @@ export interface GeneratedRuntimeEventDefinition {
   readonly schema?: string;
 }
 
-export const CONTENT_EVENT_DEFINITIONS = [] as const satisfies readonly ContentEventDefinition[];
+export const CONTENT_EVENT_DEFINITIONS = [
+  {
+    packSlug: '@idle-engine/sample-pack',
+    type: 'sample:harvester-deployed' as RuntimeEventType,
+    version: 1,
+    schema: 'packages/content-sample/content/schemas/events/harvester-deployed.schema.json',
+  },
+  {
+    packSlug: '@idle-engine/sample-pack',
+    type: 'sample:reactor-primed' as RuntimeEventType,
+    version: 1,
+    schema: 'packages/content-sample/content/schemas/events/reactor-primed.schema.json',
+  },
+] as const satisfies readonly ContentEventDefinition[];
 
-export const CONTENT_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [];
+export const CONTENT_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
+  {
+    definition: {
+      type: 'sample:harvester-deployed' as RuntimeEventType,
+      version: 1,
+    },
+  },
+  {
+    definition: {
+      type: 'sample:reactor-primed' as RuntimeEventType,
+      version: 1,
+    },
+  },
+];
 
 export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
   {
@@ -35,6 +61,20 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
     type: 'automation:toggled' as RuntimeEventType,
     version: 1,
     packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 2,
+    type: 'sample:harvester-deployed' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/sample-pack',
+    schema: 'packages/content-sample/content/schemas/events/harvester-deployed.schema.json',
+  },
+  {
+    channel: 3,
+    type: 'sample:reactor-primed' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/sample-pack',
+    schema: 'packages/content-sample/content/schemas/events/reactor-primed.schema.json',
   },
 ] as const satisfies readonly GeneratedRuntimeEventDefinition[];
 
@@ -50,9 +90,26 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
       type: 'automation:toggled' as RuntimeEventType,
       version: 1,
     },
+    {
+      channel: 2,
+      type: 'sample:harvester-deployed' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 3,
+      type: 'sample:reactor-primed' as RuntimeEventType,
+      version: 1,
+    },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: '8d241b13' as RuntimeEventManifestHash,
+  hash: 'b8688937' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =
-  never;
+  'sample:harvester-deployed' | 'sample:reactor-primed';
+
+declare module './runtime-event.js' {
+  interface RuntimeEventPayloadMap {
+    'sample:harvester-deployed': unknown;
+    'sample:reactor-primed': unknown;
+  }
+}

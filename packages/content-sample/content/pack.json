@@ -271,16 +271,5 @@
   ],
   "transforms": [],
   "prestigeLayers": [],
-  "guildPerks": [],
-  "runtimeEvents": [
-    {
-      "namespace": "sample",
-      "name": "reactor-primed",
-      "version": 1,
-      "payload": {
-        "kind": "json-schema",
-        "schemaPath": "schemas/events/reactor-primed.schema.json"
-      }
-    }
-  ]
+  "guildPerks": []
 }
