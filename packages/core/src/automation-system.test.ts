@@ -974,7 +974,11 @@ describe('AutomationSystem', () => {
       const commands = commandQueue.dequeueUpToStep(1);
       expect(commands.length).toBe(1);
       expect(commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
-      // Could also verify targetId if command includes it
+
+      // Verify deterministic timestamp
+      const stepDurationMs = 100;
+      expect(commands[0]?.timestamp).toBe(context.step * stepDurationMs);
+      expect(commands[0]?.timestamp % stepDurationMs).toBe(0);
     });
   });
 
