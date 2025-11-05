@@ -126,7 +126,8 @@ describe('runtime.worker integration', () => {
       },
     });
 
-    expect(enqueueSpy).toHaveBeenCalledTimes(2);
+    // 2 player commands + 1 automation command (AutomationSystem fires on first tick)
+    expect(enqueueSpy).toHaveBeenCalledTimes(3);
     const secondQueued = enqueueSpy.mock.calls[1]![0] as {
       priority: core.CommandPriority;
       step: number;
