@@ -839,6 +839,49 @@ describe('AutomationSystem', () => {
       system.tick(context);
       expect(commandQueue.size).toBe(1); // Fired!
     });
+
+    it('should enqueue complete TOGGLE_GENERATOR payload with enabled flag', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:generator-toggle' as any,
+          name: { default: 'Generator Toggle', variants: {} },
+          description: { default: 'Toggles generator on', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicker' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+
+      // Tick once - should fire immediately
+      runtime.tick(100);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+
+      // Verify complete payload structure
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+      expect(command?.payload).toMatchObject({
+        generatorId: 'gen:clicker',
+        enabled: true,
+      });
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+    });
   });
 
   describe('edge cases', () => {
