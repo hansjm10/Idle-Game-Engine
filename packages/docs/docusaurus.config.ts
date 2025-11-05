@@ -15,10 +15,10 @@ const config: Config = {
   },
 
   // Set the production url of your site here
-  url: 'https://idle-engine.dev',
+  url: 'https://hansjm10.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/',
+  baseUrl: '/Idle-Game-Engine/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
