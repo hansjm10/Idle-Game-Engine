@@ -45,7 +45,17 @@ export interface AutomationState {
   lastFiredStep: number;
   cooldownExpiresStep: number;
   unlocked: boolean;
-  lastThresholdSatisfied?: boolean; // NEW: tracks previous tick's threshold state
+  /**
+   * Tracks the threshold state from the previous tick for crossing detection.
+   * Updated every tick (even during cooldown) to ensure accurate crossing
+   * detection when cooldown expires. Without continuous updates, threshold
+   * crossings that occur during cooldown would be missed.
+   *
+   * - undefined: Never evaluated yet
+   * - true: Threshold was satisfied on last tick
+   * - false: Threshold was not satisfied on last tick
+   */
+  lastThresholdSatisfied?: boolean;
 }
 
 /**
@@ -420,6 +430,11 @@ export interface ResourceStateReader {
  * IMPORTANT: This function returns the CURRENT state of the condition.
  * To detect threshold crossings (transitions), the caller must track the
  * previous state and compare. See AutomationState.lastThresholdSatisfied.
+ *
+ * COOLDOWN INTERACTION: This function is called during cooldown checks to
+ * update AutomationState.lastThresholdSatisfied. This ensures crossing
+ * detection remains accurate when the cooldown expires, even if the resource
+ * crossed the threshold multiple times during the cooldown period.
  *
  * Resource IDs are resolved to indices via ResourceStateReader.getResourceIndex.
  * If the resource doesn't exist (getResourceIndex returns -1), the amount is
