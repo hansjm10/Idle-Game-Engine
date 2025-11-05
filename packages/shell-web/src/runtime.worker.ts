@@ -166,6 +166,16 @@ export function initializeRuntimeWorker(
   }
   registerResourceCommandHandlers(commandHandlerOptions);
 
+  // Create and register AutomationSystem
+  const automationSystem = createAutomationSystem({
+    automations: sampleContent.automations,
+    commandQueue: runtime.getCommandQueue(),
+    resourceState: progressionCoordinator.resourceState,
+    stepDurationMs,
+  });
+
+  runtime.addSystem(automationSystem);
+
   let diagnosticsEnabled = false;
   let diagnosticsHead: number | undefined;
   let diagnosticsConfiguration:
