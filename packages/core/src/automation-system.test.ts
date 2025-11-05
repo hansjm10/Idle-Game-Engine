@@ -947,7 +947,8 @@ describe('AutomationSystem', () => {
       runtime.tick(100);
       expect(commandQueue.size).toBe(0);
 
-      // Tick 3 more times (total 4 more ticks, to step 5)
+      // Tick 4 more times (total 5 more ticks, to step 6)
+      runtime.tick(100);
       runtime.tick(100);
       runtime.tick(100);
       runtime.tick(100);
@@ -955,7 +956,7 @@ describe('AutomationSystem', () => {
       // Should still be in cooldown
       expect(commandQueue.size).toBe(0);
 
-      // One more tick (step 6) - cooldown expired
+      // One more tick (step 7) - cooldown expired
       runtime.tick(100);
       expect(commandQueue.size).toBe(1);
     });
@@ -999,16 +1000,16 @@ describe('AutomationSystem', () => {
       expect(commandQueue.size).toBe(1);
       commandQueue.dequeueUpToStep(1);
 
-      // Cooldown should expire after exactly 5 steps (500ms)
-      // Steps 1-4: still in cooldown
-      for (let step = 1; step <= 4; step++) {
+      // Cooldown should expire after exactly 5 steps from command execution (step 1)
+      // Steps 1-5: still in cooldown
+      for (let step = 1; step <= 5; step++) {
         context.step = step;
         system.tick(context);
         expect(commandQueue.size).toBe(0); // Still in cooldown
       }
 
-      // Step 5: cooldown expired, should fire
-      context.step = 5;
+      // Step 6: cooldown expired, should fire
+      context.step = 6;
       system.tick(context);
       expect(commandQueue.size).toBe(1); // Fired!
     });
