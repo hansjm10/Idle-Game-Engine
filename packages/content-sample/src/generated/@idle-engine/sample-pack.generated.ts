@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "2da1fd87197e04331700933cb8f423c34473b8c1eb8ce9dc95c93b0c867388a8",
+  "artifactHash": "cd69a98cc5d701be5ec38c99c8c967b99199455bec004a9a67bda7a9aef45f7b",
   "digest": {
-    "hash": "fnv1a-ee949ca5",
+    "hash": "fnv1a-155e14d0",
     "version": 1
   },
   "formatVersion": 1,
@@ -18,7 +18,7 @@ const serialized = {
       "Idle Engine Team"
     ],
     "defaultLocale": "en-US",
-    "engine": ">=0.4.0 <0.6.0",
+    "engine": ">=0.3.0 <1.0.0",
     "id": "@idle-engine/sample-pack",
     "links": [
       {
@@ -86,7 +86,121 @@ const serialized = {
         }
       }
     ],
-    "automations": [],
+    "automations": [
+      {
+        "cooldown": 5000,
+        "description": {
+          "default": "Enables crystal harvester when you reach 50 energy",
+          "variants": {
+            "en-US": "Enables crystal harvester when you reach 50 energy"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.auto-harvester-on-energy",
+        "name": {
+          "default": "Smart Harvester Enabler",
+          "variants": {
+            "en-US": "Smart Harvester Enabler"
+          }
+        },
+        "order": 2,
+        "targetId": "sample-pack.harvester",
+        "targetType": "generator",
+        "trigger": {
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.energy",
+          "threshold": {
+            "kind": "constant",
+            "value": 50
+          }
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "description": {
+          "default": "Enables crystal harvester when reactor is primed",
+          "variants": {
+            "en-US": "Enables crystal harvester when reactor is primed"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.auto-harvester-on-primed",
+        "name": {
+          "default": "Auto-Harvest on Reactor Prime",
+          "variants": {
+            "en-US": "Auto-Harvest on Reactor Prime"
+          }
+        },
+        "order": 4,
+        "targetId": "sample-pack.harvester",
+        "targetType": "generator",
+        "trigger": {
+          "eventId": "sample:reactor-primed",
+          "kind": "event"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "description": {
+          "default": "Automatically enables the reactor every 5 seconds",
+          "variants": {
+            "en-US": "Automatically enables the reactor every 5 seconds"
+          }
+        },
+        "enabledByDefault": true,
+        "id": "sample-pack.auto-reactor",
+        "name": {
+          "default": "Reactor Auto-Clicker",
+          "variants": {
+            "en-US": "Reactor Auto-Clicker"
+          }
+        },
+        "order": 1,
+        "targetId": "sample-pack.reactor",
+        "targetType": "generator",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 5000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": 10000,
+        "description": {
+          "default": "Collects resources when no other actions are pending",
+          "variants": {
+            "en-US": "Collects resources when no other actions are pending"
+          }
+        },
+        "enabledByDefault": true,
+        "id": "sample-pack.idle-collector",
+        "name": {
+          "default": "Idle Resource Collector",
+          "variants": {
+            "en-US": "Idle Resource Collector"
+          }
+        },
+        "order": 3,
+        "targetId": "sample-pack.reactor",
+        "targetType": "generator",
+        "trigger": {
+          "kind": "commandQueueEmpty"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      }
+    ],
     "generators": [
       {
         "baseUnlock": {
@@ -242,7 +356,20 @@ const serialized = {
         "visible": true
       }
     ],
-    "runtimeEvents": [],
+    "runtimeEvents": [
+      {
+        "emits": [],
+        "id": "sample:reactor-primed",
+        "name": "reactor-primed",
+        "namespace": "sample",
+        "payload": {
+          "kind": "json-schema",
+          "schemaPath": "schemas/events/reactor-primed.schema.json"
+        },
+        "tags": [],
+        "version": 1
+      }
+    ],
     "transforms": [],
     "upgrades": []
   },

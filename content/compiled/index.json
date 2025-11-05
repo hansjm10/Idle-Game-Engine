@@ -6,9 +6,9 @@
       "version": "0.2.0",
       "digest": {
         "version": 1,
-        "hash": "fnv1a-ee949ca5"
+        "hash": "fnv1a-155e14d0"
       },
-      "artifactHash": "2da1fd87197e04331700933cb8f423c34473b8c1eb8ce9dc95c93b0c867388a8",
+      "artifactHash": "cd69a98cc5d701be5ec38c99c8c967b99199455bec004a9a67bda7a9aef45f7b",
       "warnings": [],
       "dependencies": {
         "requires": [],

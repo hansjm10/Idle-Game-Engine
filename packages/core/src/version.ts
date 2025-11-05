@@ -23,7 +23,7 @@
  * AUTO-GENERATED: This value is synchronized with packages/core/package.json.
  * Do not edit manually - run `pnpm generate:version` to regenerate.
  */
-export const RUNTIME_VERSION = '0.1.0';
+export const RUNTIME_VERSION = '0.3.0';
 
 /**
  * Persistence schema version for session snapshots.

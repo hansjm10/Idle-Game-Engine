@@ -12,6 +12,7 @@
   "dependencies": {
     "@idle-engine/content-compiler": "workspace:*",
     "@idle-engine/content-schema": "workspace:*",
+    "@idle-engine/core": "workspace:*",
     "chokidar": "^3.6.0",
     "json5": "^2.2.3"
   },
