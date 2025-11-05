@@ -575,6 +575,79 @@ describe('AutomationSystem', () => {
       const gtShouldFire = evaluateResourceThresholdTrigger(gtAutomation, resourceState);
       expect(gtShouldFire).toBe(false);
     });
+
+    it('should correctly evaluate missing resource with threshold of 0', () => {
+      const resourceState = {
+        getAmount: () => 100,
+        getResourceIndex: (resourceId: string) => {
+          if (resourceId === 'res:locked') return -1;
+          return 0;
+        },
+      };
+
+      // Missing resource (0) >= 0 should be true
+      const gteZeroAutomation: AutomationDefinition = {
+        id: 'auto:gte-zero' as any,
+        name: { default: 'GTE Zero', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:locked' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 0 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const gteShouldFire = evaluateResourceThresholdTrigger(gteZeroAutomation, resourceState);
+      expect(gteShouldFire).toBe(true); // 0 >= 0 = true
+
+      // Missing resource (0) > 0 should be false
+      const gtZeroAutomation: AutomationDefinition = {
+        ...gteZeroAutomation,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:locked' as any,
+          comparator: 'gt',
+          threshold: { kind: 'constant', value: 0 },
+        },
+      };
+
+      const gtShouldFire = evaluateResourceThresholdTrigger(gtZeroAutomation, resourceState);
+      expect(gtShouldFire).toBe(false); // 0 > 0 = false
+
+      // Missing resource (0) <= 0 should be true
+      const lteZeroAutomation: AutomationDefinition = {
+        ...gteZeroAutomation,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:locked' as any,
+          comparator: 'lte',
+          threshold: { kind: 'constant', value: 0 },
+        },
+      };
+
+      const lteShouldFire = evaluateResourceThresholdTrigger(lteZeroAutomation, resourceState);
+      expect(lteShouldFire).toBe(true); // 0 <= 0 = true
+
+      // Missing resource (0) < 0 should be false
+      const ltZeroAutomation: AutomationDefinition = {
+        ...gteZeroAutomation,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:locked' as any,
+          comparator: 'lt',
+          threshold: { kind: 'constant', value: 0 },
+        },
+      };
+
+      const ltShouldFire = evaluateResourceThresholdTrigger(ltZeroAutomation, resourceState);
+      expect(ltShouldFire).toBe(false); // 0 < 0 = false
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
