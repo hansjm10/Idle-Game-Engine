@@ -475,6 +475,56 @@ describe('AutomationSystem', () => {
       const gemsShouldFire = evaluateResourceThresholdTrigger(gemsAutomation, resourceState);
       expect(gemsShouldFire).toBe(true);
     });
+
+    it('should fire lt/lte threshold when resource does not exist (missing resource treated as 0)', () => {
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index === 0) return 100; // res:gold exists
+          return 0; // Fallback (should never be called for missing resources)
+        },
+        getResourceIndex: (resourceId: string) => {
+          if (resourceId === 'res:gold') return 0;
+          return -1; // res:gems does not exist
+        },
+      };
+
+      // Automation that fires when gems < 50
+      // Since gems doesn't exist (treated as 0), 0 < 50 should be true
+      const ltAutomation: AutomationDefinition = {
+        id: 'auto:bootstrap' as any,
+        name: { default: 'Bootstrap Auto', variants: {} },
+        description: { default: 'Triggers on missing resource', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gems' as any,
+          comparator: 'lt',
+          threshold: { kind: 'constant', value: 50 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      // 0 < 50 = true
+      const ltShouldFire = evaluateResourceThresholdTrigger(ltAutomation, resourceState);
+      expect(ltShouldFire).toBe(true);
+
+      // Test lte as well: 0 <= 50 = true
+      const lteAutomation: AutomationDefinition = {
+        ...ltAutomation,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gems' as any,
+          comparator: 'lte',
+          threshold: { kind: 'constant', value: 50 },
+        },
+      };
+
+      const lteShouldFire = evaluateResourceThresholdTrigger(lteAutomation, resourceState);
+      expect(lteShouldFire).toBe(true);
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
