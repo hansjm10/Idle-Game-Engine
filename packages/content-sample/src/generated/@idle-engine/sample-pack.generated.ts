@@ -7,7 +7,7 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "c586c8046278551ed240ae8d0fe0b7dd92f84f22c066ddc3e36a91d1888a34a3",
+  "artifactHash": "819f72bf2daa5a2f2efc54633b54986731107ff27afe9661f4b6490833936797",
   "digest": {
     "hash": "fnv1a-3cbce096",
     "version": 1
@@ -360,17 +360,7 @@ const serialized = {
     "transforms": [],
     "upgrades": []
   },
-  "warnings": [
-    {
-      "code": "runtime.featureGate",
-      "message": "Module \"automations\" requires runtime version 0.2.0 or later (docs/idle-engine-design.md (§9, §18)). Provide ContentSchemaOptions.runtimeVersion to enforce compatibility.",
-      "path": [
-        "metadata",
-        "version"
-      ],
-      "severity": "warning"
-    }
-  ]
+  "warnings": []
 } as unknown as SerializedNormalizedContentPack;
 
 const runtimeEnv = (globalThis as typeof globalThis & {
