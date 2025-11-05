@@ -999,6 +999,93 @@ describe('AutomationSystem', () => {
       system.tick(context);
       expect(commandQueue.size).toBe(1);
     });
+
+    it('updates threshold state during cooldown to detect crossings after cooldown expires', () => {
+      // SETUP: Automation with threshold trigger and cooldown
+      const automation: AutomationDefinition = {
+        id: 'auto:cooldown-threshold-test' as any,
+        name: { default: 'Cooldown Threshold Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        targetType: 'generator',
+        targetId: 'gen:collector' as any,
+        cooldown: 500, // 5 steps @ 100ms/step
+        enabledByDefault: true,
+        unlockCondition: { kind: 'always' },
+        order: 0,
+      };
+
+      let currentStep = 0;
+
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index !== 0) return 0;
+          // Return amounts based on step count
+          const step = currentStep;
+          if (step === 0) return 150; // Initial: above threshold (fires)
+          if (step >= 1 && step <= 3) return 50; // During cooldown: drops below threshold
+          if (step >= 4 && step <= 6) return 150; // Still in cooldown: rises above threshold again
+          if (step >= 7) return 150; // After cooldown: still above threshold
+          return 0;
+        },
+        getResourceIndex: (id: string) => (id === 'res:gold' ? 0 : -1),
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations: [automation],
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        deltaMs: 100,
+        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+      };
+
+      system.setup?.(context);
+
+      // Tick 0: Resource at 150 (above threshold), should fire
+      currentStep = 0;
+      context.step = currentStep;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // First fire
+      commandQueue.dequeueUpToStep(1); // Clear queue
+
+      // Ticks 1-3: Resource drops to 50 (below threshold), cooldown active
+      // State should update to false even during cooldown
+      for (let i = 1; i <= 3; i++) {
+        currentStep = i;
+        context.step = currentStep;
+        system.tick(context);
+        expect(commandQueue.size).toBe(0); // Cooldown prevents firing
+      }
+
+      // Ticks 4-6: Resource rises to 150 (above threshold), cooldown still active
+      // BUG: If state isn't updated during cooldown, lastThresholdSatisfied stays true
+      // and the false->true transition is missed
+      for (let i = 4; i <= 6; i++) {
+        currentStep = i;
+        context.step = currentStep;
+        system.tick(context);
+        expect(commandQueue.size).toBe(0); // Cooldown prevents firing
+      }
+
+      // Tick 7: Cooldown expired (5 steps + 1), resource still at 150
+      // EXPECTED: Should fire because we saw false->true transition during cooldown
+      // ACTUAL BUG: Won't fire because lastThresholdSatisfied was stuck at true
+      currentStep = 7;
+      context.step = currentStep;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1); // Should fire on new crossing
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
