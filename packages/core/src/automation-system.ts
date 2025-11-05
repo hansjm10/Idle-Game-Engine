@@ -390,6 +390,10 @@ export interface ResourceStateReader {
  * The threshold value is evaluated from a numeric formula.
  *
  * Resource IDs are resolved to indices via ResourceStateReader.getResourceIndex.
+ * If the resource doesn't exist (getResourceIndex returns -1), the amount is
+ * treated as 0 and the comparator is evaluated normally. This allows automations
+ * to fire based on missing resources (e.g., "gems < 50" fires when gems is locked).
+ *
  * If getResourceIndex is not provided, falls back to index 0 for legacy compatibility.
  *
  * @param automation - The automation definition with a resourceThreshold trigger.
@@ -399,6 +403,7 @@ export interface ResourceStateReader {
  *
  * @example
  * ```typescript
+ * // Example 1: Existing resource
  * const automation = { ..., trigger: { kind: 'resourceThreshold',
  *                      resourceId: 'res:gold', comparator: 'gte',
  *                      threshold: { kind: 'constant', value: 100 } } };
@@ -407,6 +412,12 @@ export interface ResourceStateReader {
  *   getResourceIndex: (id) => id === 'res:gold' ? 0 : -1
  * };
  * const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState); // true
+ *
+ * // Example 2: Missing resource (treated as 0)
+ * const bootstrapAutomation = { ..., trigger: { kind: 'resourceThreshold',
+ *                               resourceId: 'res:gems', comparator: 'lt',
+ *                               threshold: { kind: 'constant', value: 50 } } };
+ * const shouldBootstrap = evaluateResourceThresholdTrigger(bootstrapAutomation, resourceState); // true (0 < 50)
  * ```
  */
 export function evaluateResourceThresholdTrigger(
