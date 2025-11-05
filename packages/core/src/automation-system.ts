@@ -162,9 +162,18 @@ export function createAutomationSystem(
           case 'interval':
             triggered = evaluateIntervalTrigger(automation, state, step, stepDurationMs);
             break;
-          case 'resourceThreshold':
-            triggered = evaluateResourceThresholdTrigger(automation, resourceState);
+          case 'resourceThreshold': {
+            // NEW: Detect threshold crossings instead of continuous firing
+            const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+            const previouslySatisfied = state.lastThresholdSatisfied ?? false;
+
+            // Fire only on transition from false -> true (crossing event)
+            triggered = currentlySatisfied && !previouslySatisfied;
+
+            // Update state for next tick
+            state.lastThresholdSatisfied = currentlySatisfied;
             break;
+          }
           case 'commandQueueEmpty':
             triggered = evaluateCommandQueueEmptyTrigger(commandQueue);
             break;
@@ -385,11 +394,15 @@ export interface ResourceStateReader {
 }
 
 /**
- * Evaluates whether a resourceThreshold trigger should fire.
+ * Evaluates whether a resourceThreshold condition is currently satisfied.
  *
- * This trigger fires when a resource amount crosses a defined threshold
+ * This function checks if a resource amount meets a defined threshold
  * using one of four comparison operators: gte (>=), gt (>), lte (<=), or lt (<).
  * The threshold value is evaluated from a numeric formula.
+ *
+ * IMPORTANT: This function returns the CURRENT state of the condition.
+ * To detect threshold crossings (transitions), the caller must track the
+ * previous state and compare. See AutomationState.lastThresholdSatisfied.
  *
  * Resource IDs are resolved to indices via ResourceStateReader.getResourceIndex.
  * If the resource doesn't exist (getResourceIndex returns -1), the amount is
@@ -400,26 +413,17 @@ export interface ResourceStateReader {
  *
  * @param automation - The automation definition with a resourceThreshold trigger.
  * @param resourceState - The resource state reader for accessing resource amounts.
- * @returns True if the resource amount meets the threshold condition, false otherwise.
+ * @returns True if the resource amount currently meets the threshold condition, false otherwise.
  * @throws {Error} If the automation trigger is not of kind 'resourceThreshold'.
  *
  * @example
  * ```typescript
- * // Example 1: Existing resource
- * const automation = { ..., trigger: { kind: 'resourceThreshold',
- *                      resourceId: 'res:gold', comparator: 'gte',
- *                      threshold: { kind: 'constant', value: 100 } } };
- * const resourceState = {
- *   getAmount: (idx) => 150,
- *   getResourceIndex: (id) => id === 'res:gold' ? 0 : -1
- * };
- * const shouldFire = evaluateResourceThresholdTrigger(automation, resourceState); // true
+ * // Check if condition is currently met
+ * const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+ * const previouslySatisfied = state.lastThresholdSatisfied ?? false;
  *
- * // Example 2: Missing resource (treated as 0)
- * const bootstrapAutomation = { ..., trigger: { kind: 'resourceThreshold',
- *                               resourceId: 'res:gems', comparator: 'lt',
- *                               threshold: { kind: 'constant', value: 50 } } };
- * const shouldBootstrap = evaluateResourceThresholdTrigger(bootstrapAutomation, resourceState); // true (0 < 50)
+ * // Detect crossing (transition from false to true)
+ * const crossed = currentlySatisfied && !previouslySatisfied;
  * ```
  */
 export function evaluateResourceThresholdTrigger(
