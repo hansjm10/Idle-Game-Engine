@@ -12,6 +12,7 @@ import {
   getGameState,
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
+  createAutomationSystem,
   telemetry,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
