@@ -154,6 +154,22 @@ export function createAutomationSystem(
 
         // Skip if cooldown is active
         if (isCooldownActive(state, step)) {
+          // SPECIAL CASE: Update threshold state even during cooldown
+          // This prevents missed crossing detection when cooldown expires.
+          // Without this, if a resource crosses below and back above threshold
+          // during cooldown, the automation won't fire when cooldown expires
+          // because lastThresholdSatisfied remains true (no crossing detected).
+          //
+          // We only update the state when the threshold is NOT satisfied.
+          // This way, if the resource drops below during cooldown and then rises
+          // back above, the "false" state is preserved, allowing the crossing
+          // to be detected when cooldown expires.
+          if (automation.trigger.kind === 'resourceThreshold') {
+            const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+            if (!currentlySatisfied) {
+              state.lastThresholdSatisfied = currentlySatisfied;
+            }
+          }
           continue;
         }
 
