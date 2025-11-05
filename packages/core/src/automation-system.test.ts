@@ -525,6 +525,56 @@ describe('AutomationSystem', () => {
       const lteShouldFire = evaluateResourceThresholdTrigger(lteAutomation, resourceState);
       expect(lteShouldFire).toBe(true);
     });
+
+    it('should not fire gte/gt threshold when resource does not exist (missing resource treated as 0)', () => {
+      const resourceState = {
+        getAmount: (index: number) => {
+          if (index === 0) return 100; // res:gold exists
+          return 0;
+        },
+        getResourceIndex: (resourceId: string) => {
+          if (resourceId === 'res:gold') return 0;
+          return -1; // res:gems does not exist
+        },
+      };
+
+      // Automation that fires when gems >= 50
+      // Since gems doesn't exist (treated as 0), 0 >= 50 should be false
+      const gteAutomation: AutomationDefinition = {
+        id: 'auto:spender' as any,
+        name: { default: 'Gem Spender', variants: {} },
+        description: { default: 'Triggers when gems available', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gems' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 50 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      // 0 >= 50 = false
+      const gteShouldFire = evaluateResourceThresholdTrigger(gteAutomation, resourceState);
+      expect(gteShouldFire).toBe(false);
+
+      // Test gt as well: 0 > 50 = false
+      const gtAutomation: AutomationDefinition = {
+        ...gteAutomation,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gems' as any,
+          comparator: 'gt',
+          threshold: { kind: 'constant', value: 50 },
+        },
+      };
+
+      const gtShouldFire = evaluateResourceThresholdTrigger(gtAutomation, resourceState);
+      expect(gtShouldFire).toBe(false);
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
