@@ -650,6 +650,81 @@ describe('AutomationSystem', () => {
     });
   });
 
+  it('should fire resourceThreshold only when threshold is crossed, not continuously', () => {
+    const automations: AutomationDefinition[] = [
+      {
+        id: 'auto:threshold-crosser' as any,
+        name: { default: 'Threshold Crosser', variants: {} },
+        description: { default: 'Fires when gold crosses 100', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: {
+          kind: 'resourceThreshold',
+          resourceId: 'res:gold' as any,
+          comparator: 'gte',
+          threshold: { kind: 'constant', value: 100 },
+        },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      },
+    ];
+
+    let currentAmount = 50; // Start below threshold
+    const resourceState = {
+      getAmount: () => currentAmount,
+      getResourceIndex: (id: string) => (id === 'res:gold' ? 0 : -1),
+    };
+
+    const commandQueue = new CommandQueue();
+    const system = createAutomationSystem({
+      automations,
+      stepDurationMs: 100,
+      commandQueue,
+      resourceState,
+    });
+
+    const context = {
+      step: 0,
+      deltaMs: 100,
+      events: {
+        on: (() => {}) as any,
+        off: () => {},
+        emit: () => {},
+      } as any,
+    };
+
+    system.setup?.(context);
+
+    // Tick 1: Below threshold (50 < 100) - should NOT fire
+    system.tick(context);
+    expect(commandQueue.size).toBe(0);
+
+    // Tick 2: Cross threshold (50 -> 150) - SHOULD fire (crossing event)
+    context.step = 1;
+    currentAmount = 150;
+    system.tick(context);
+    expect(commandQueue.size).toBe(1);
+    commandQueue.dequeueUpToStep(2); // Clear queue
+
+    // Tick 3: Still above threshold (150 >= 100) - should NOT fire (already crossed)
+    context.step = 2;
+    system.tick(context);
+    expect(commandQueue.size).toBe(0); // BUG: Currently fires again here
+
+    // Tick 4: Drop below threshold (150 -> 50) - should NOT fire (crossing in wrong direction)
+    context.step = 3;
+    currentAmount = 50;
+    system.tick(context);
+    expect(commandQueue.size).toBe(0);
+
+    // Tick 5: Cross threshold again (50 -> 200) - SHOULD fire (new crossing event)
+    context.step = 4;
+    currentAmount = 200;
+    system.tick(context);
+    expect(commandQueue.size).toBe(1);
+  });
+
   describe('commandQueueEmpty triggers', () => {
     it('should fire when command queue is empty', () => {
       const commandQueue = new CommandQueue();
