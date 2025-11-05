@@ -34,6 +34,7 @@ import type { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
+import { mapSystemTargetToCommandType } from './system-automation-target-mapping.js';
 
 /**
  * Internal state for a single automation.
@@ -526,7 +527,9 @@ export function enqueueAutomationCommand(
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
     payload = { upgradeId: targetId, quantity: 1 };
   } else if (targetType === 'system') {
-    commandType = systemTargetId ?? 'system:unknown';
+    commandType = mapSystemTargetToCommandType(
+      systemTargetId ?? 'system:unknown',
+    );
     payload = {};
   } else {
     throw new Error(`Unknown target type: ${targetType}`);

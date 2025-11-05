@@ -1169,7 +1169,7 @@ describe('AutomationSystem', () => {
       expect(command?.payload).toEqual({ upgradeId: 'upg:doubler', quantity: 1 });
     });
 
-    it('should enqueue system command for system target', () => {
+    it('should enqueue system command with mapped command type', () => {
       const automation: AutomationDefinition = {
         id: 'auto:test' as any,
         name: { default: 'Test', variants: {} },
@@ -1190,8 +1190,10 @@ describe('AutomationSystem', () => {
       const commands = commandQueue.dequeueUpToStep(11);
       expect(commands.length).toBe(1);
       const command = commands[0];
-      expect(command?.type).toBe('offline-catchup');
+      // Updated expectation: should be OFFLINE_CATCHUP not offline-catchup
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+      expect(command?.payload).toEqual({});
     });
   });
 
