@@ -586,3 +586,7 @@ export {
   type AutomationState,
   type ResourceStateReader,
 } from './automation-system.js';
+export {
+  SYSTEM_AUTOMATION_TARGET_MAPPING,
+  mapSystemTargetToCommandType,
+} from './system-automation-target-mapping.js';
