@@ -41,6 +41,26 @@ and UI sources stamp commands consistently.
 Together these pieces keep live execution, system automation, and UI command
 entry synchronized with the fixed-step lifecycle detailed in the design doc.
 
+## Automation System Timestamps
+
+The automation system enqueues commands using deterministic timestamps derived
+from `step * stepDurationMs` rather than wall-clock time (`Date.now()` or
+`performance.now()`). This ensures that replaying the same simulation state
+produces identical command queue ordering, which is critical for:
+
+- **Reproducibility**: Offline progression and catch-up simulations produce
+  consistent results across different execution environments.
+- **Debugging**: Command recorder logs can be reliably replayed to reproduce
+  issues without timing-dependent variations.
+- **Testing**: Integration tests verify deterministic behavior by comparing
+  command timestamps across multiple runs.
+
+The `enqueueAutomationCommand` function in
+`packages/core/src/automation-system.ts` accepts `stepDurationMs` as a parameter
+and calculates `timestamp = currentStep * stepDurationMs` before enqueueing. This
+aligns with the runtime's fixed-step tick lifecycle and ensures all automation
+commands use simulation time rather than real-world time.
+
 ## Diagnostics Timeline
 
 - Enable diagnostics by providing `diagnostics: { timeline: { enabled: true } }` when constructing `IdleEngineRuntime` or calling `runtime.enableDiagnostics({ enabled: true })` mid-session. The controller resolves budgets from the runtime configuration so thresholds stay consistent across hosts.
