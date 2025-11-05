@@ -1,0 +1,469 @@
+---
+title: AutomationSystem API Reference
+description: Complete API documentation for the Idle Engine automation system
+sidebar_position: 13
+---
+
+# AutomationSystem API Reference
+
+The `AutomationSystem` evaluates automation triggers and enqueues commands when triggers fire. It supports 4 trigger types: interval, resourceThreshold, commandQueueEmpty, and event.
+
+## Core API
+
+### createAutomationSystem(options)
+
+Creates an AutomationSystem that evaluates triggers and enqueues commands.
+
+**Type Signature:**
+```typescript
+function createAutomationSystem(
+  options: AutomationSystemOptions
+): System & { getState: () => ReadonlyMap<string, AutomationState> }
+```
+
+**Parameters:**
+
+- `options.automations` (readonly AutomationDefinition[]): Array of automation definitions from content pack
+- `options.stepDurationMs` (number): Duration of each runtime step in milliseconds (default: 100)
+- `options.commandQueue` (CommandQueue): The runtime's command queue instance
+- `options.resourceState` (ResourceStateReader): Resource state for threshold evaluation
+- `options.initialState` (Map<string, AutomationState>, optional): Restored automation state from save file
+
+**Returns:** System object with additional `getState()` method for state extraction
+
+**Example:**
+```typescript
+import { createAutomationSystem } from '@idle-engine/core';
+
+const system = createAutomationSystem({
+  automations: contentPack.automations,
+  stepDurationMs: 100,
+  commandQueue: runtime.getCommandQueue(),
+  resourceState: progressionCoordinator.resourceState,
+  initialState: savedState?.automationState,
+});
+
+runtime.addSystem(system);
+```
+
+**Lifecycle:**
+
+1. **Initialization**: Creates state for each automation (enabled/disabled, cooldowns, last-fired)
+2. **Setup**: Subscribes to event triggers and automation toggle commands
+3. **Tick**: Evaluates triggers each tick, enqueues commands when triggered
+
+**State Persistence:**
+
+Unlock state is persistent—once an automation is unlocked, it remains unlocked. The system only evaluates unlock conditions for automations that are not yet unlocked. Currently, only 'always' unlock conditions are evaluated; full condition evaluation requires integration with progression systems.
+
+---
+
+### getAutomationState(system)
+
+Extracts the internal state from an AutomationSystem for serialization to save files.
+
+**Type Signature:**
+```typescript
+function getAutomationState(
+  system: ReturnType<typeof createAutomationSystem>
+): ReadonlyMap<string, AutomationState>
+```
+
+**Parameters:**
+
+- `system`: The AutomationSystem instance from which to extract state
+
+**Returns:** ReadonlyMap of automation IDs to their current state
+
+**Example:**
+```typescript
+const state = getAutomationState(automationSystem);
+const autoState = state.get('auto:collector');
+console.log(`Enabled: ${autoState?.enabled}, Last fired: ${autoState?.lastFiredStep}`);
+```
+
+---
+
+## State Types
+
+### AutomationState
+
+Internal state for a single automation.
+
+**Type Definition:**
+```typescript
+interface AutomationState {
+  readonly id: string;
+  enabled: boolean;
+  lastFiredStep: number;
+  cooldownExpiresStep: number;
+  unlocked: boolean;
+  lastThresholdSatisfied?: boolean;
+}
+```
+
+**Fields:**
+
+- `id`: Automation identifier matching the content definition
+- `enabled`: Whether the automation is currently enabled
+- `lastFiredStep`: Step number when automation last fired (-Infinity if never)
+- `cooldownExpiresStep`: Step number when cooldown expires (0 if no cooldown)
+- `unlocked`: Whether the automation is currently unlocked
+- `lastThresholdSatisfied`: Previous threshold state for crossing detection (undefined = never evaluated)
+
+---
+
+### AutomationSystemOptions
+
+Configuration options for creating an AutomationSystem.
+
+**Type Definition:**
+```typescript
+interface AutomationSystemOptions {
+  readonly automations: readonly AutomationDefinition[];
+  readonly stepDurationMs: number;
+  readonly commandQueue: CommandQueue;
+  readonly resourceState: ResourceStateReader;
+  readonly initialState?: Map<string, AutomationState>;
+}
+```
+
+---
+
+### ResourceStateReader
+
+Minimal interface for resource state access during automation evaluation.
+
+**Type Definition:**
+```typescript
+interface ResourceStateReader {
+  getAmount(resourceIndex: number): number;
+  getResourceIndex?(resourceId: string): number;
+}
+```
+
+**Methods:**
+
+- `getAmount(resourceIndex)`: Returns the current amount of the resource at the given index
+- `getResourceIndex(resourceId)`: Resolves a resource ID to its internal index (-1 if not found)
+
+---
+
+## Trigger Evaluators
+
+### evaluateIntervalTrigger(automation, state, currentStep, stepDurationMs)
+
+Evaluates whether an interval trigger should fire.
+
+**Type Signature:**
+```typescript
+function evaluateIntervalTrigger(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  currentStep: number,
+  stepDurationMs: number
+): boolean
+```
+
+**Behavior:**
+
+- Fires immediately on first tick (when `lastFiredStep === -Infinity`)
+- Fires when elapsed steps since last fire ≥ interval duration in steps
+- Interval is calculated as `Math.ceil(intervalMs / stepDurationMs)`
+
+**Example:**
+```typescript
+// Automation with 1000ms interval, 100ms step duration
+// Interval = 10 steps (1000ms / 100ms)
+const shouldFire = evaluateIntervalTrigger(automation, state, 10, 100);
+// Returns true if currentStep - lastFiredStep >= 10
+```
+
+**Throws:** Error if automation trigger is not of kind 'interval'
+
+---
+
+### evaluateResourceThresholdTrigger(automation, resourceState)
+
+Evaluates whether a resourceThreshold condition is currently satisfied.
+
+**Type Signature:**
+```typescript
+function evaluateResourceThresholdTrigger(
+  automation: AutomationDefinition,
+  resourceState: ResourceStateReader
+): boolean
+```
+
+**Behavior:**
+
+- Returns current state of the condition (not crossing detection)
+- Caller must track previous state to detect crossings
+- Resource IDs resolved to indices via `resourceState.getResourceIndex()`
+- Missing resources (index -1) treated as amount 0
+- Supports four comparators: `gte`, `gt`, `lte`, `lt`
+
+**Crossing Detection Pattern:**
+```typescript
+const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+const previouslySatisfied = state.lastThresholdSatisfied ?? false;
+
+// Fire only on transition from false -> true (crossing event)
+const triggered = currentlySatisfied && !previouslySatisfied;
+
+// Update state for next tick
+state.lastThresholdSatisfied = currentlySatisfied;
+```
+
+**Cooldown Interaction:**
+
+This function is called during cooldown checks to update `AutomationState.lastThresholdSatisfied`. This ensures crossing detection remains accurate when the cooldown expires, even if the resource crossed the threshold multiple times during the cooldown period.
+
+**Throws:** Error if automation trigger is not of kind 'resourceThreshold'
+
+---
+
+### evaluateCommandQueueEmptyTrigger(commandQueue)
+
+Evaluates whether a commandQueueEmpty trigger should fire.
+
+**Type Signature:**
+```typescript
+function evaluateCommandQueueEmptyTrigger(
+  commandQueue: CommandQueue
+): boolean
+```
+
+**Behavior:**
+
+- Returns true if command queue size is 0
+- Allows automations to fire when no other commands are pending
+
+**Example:**
+```typescript
+const commandQueue = new CommandQueue();
+const shouldFire = evaluateCommandQueueEmptyTrigger(commandQueue); // true
+
+commandQueue.enqueue({ type: 'PURCHASE_UPGRADE', ... });
+const shouldNotFire = evaluateCommandQueueEmptyTrigger(commandQueue); // false
+```
+
+---
+
+### evaluateEventTrigger(automationId, pendingEventTriggers)
+
+Evaluates whether an event trigger should fire.
+
+**Type Signature:**
+```typescript
+function evaluateEventTrigger(
+  automationId: string,
+  pendingEventTriggers: ReadonlySet<string>
+): boolean
+```
+
+**Behavior:**
+
+- Returns true if automation ID is in the pending triggers set
+- Set is populated by event handlers during `setup()`
+- Set is cleared after each tick
+
+**Example:**
+```typescript
+const pendingEventTriggers = new Set(['auto:collector', 'auto:upgrader']);
+const shouldFire = evaluateEventTrigger('auto:collector', pendingEventTriggers); // true
+const shouldNotFire = evaluateEventTrigger('auto:other', pendingEventTriggers); // false
+```
+
+---
+
+## Cooldown Management
+
+### isCooldownActive(state, currentStep)
+
+Checks if an automation is currently in cooldown.
+
+**Type Signature:**
+```typescript
+function isCooldownActive(
+  state: AutomationState,
+  currentStep: number
+): boolean
+```
+
+**Behavior:**
+
+- Returns true if `currentStep < state.cooldownExpiresStep`
+- Returns false if cooldown has expired or no cooldown is active
+
+**Example:**
+```typescript
+const state = {
+  id: 'auto:test',
+  enabled: true,
+  lastFiredStep: 10,
+  cooldownExpiresStep: 20,
+  unlocked: true
+};
+const isActive = isCooldownActive(state, 15); // true
+const isExpired = isCooldownActive(state, 20); // false
+```
+
+---
+
+### updateCooldown(automation, state, currentStep, stepDurationMs)
+
+Updates the cooldown expiration step after an automation fires.
+
+**Type Signature:**
+```typescript
+function updateCooldown(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  currentStep: number,
+  stepDurationMs: number
+): void
+```
+
+**Behavior:**
+
+- Converts cooldown duration (ms) to steps: `Math.ceil(cooldown / stepDurationMs)`
+- Sets `cooldownExpiresStep = currentStep + cooldownSteps + 1`
+- The +1 accounts for command execution delay (commands execute at currentStep + 1)
+- If no cooldown defined, sets `cooldownExpiresStep = 0`
+
+**Example:**
+```typescript
+const automation = { cooldown: 500, ... }; // 500ms cooldown
+const state = { cooldownExpiresStep: 0, ... };
+updateCooldown(automation, state, 10, 100); // stepDurationMs = 100ms
+// state.cooldownExpiresStep will be 16 (10 + ceil(500/100) + 1)
+```
+
+---
+
+## Command Enqueueing
+
+### enqueueAutomationCommand(automation, commandQueue, currentStep, stepDurationMs)
+
+Enqueues a command for an automation trigger.
+
+**Type Signature:**
+```typescript
+function enqueueAutomationCommand(
+  automation: AutomationDefinition,
+  commandQueue: CommandQueue,
+  currentStep: number,
+  stepDurationMs: number
+): void
+```
+
+**Behavior:**
+
+- Converts automation target into appropriate command type
+- Enqueues command at `CommandPriority.AUTOMATION`
+- Commands scheduled to execute on next step (`currentStep + 1`)
+- Timestamps derived from simulation clock (`step * stepDurationMs`)
+
+**Target Type Mapping:**
+
+| Target Type | Command Type | Payload |
+|-------------|--------------|---------|
+| `generator` | `TOGGLE_GENERATOR` | `{ generatorId: targetId, enabled: true }` |
+| `upgrade` | `PURCHASE_UPGRADE` | `{ upgradeId: targetId, quantity: 1 }` |
+| `system` | System-specific | Mapped via `mapSystemTargetToCommandType()` |
+
+**Generator Behavior:**
+
+Generator automations always enable generators (`enabled: true`). Disabling generators requires manual player commands or system-initiated toggles.
+
+**Example:**
+```typescript
+const automation = {
+  targetType: 'generator',
+  targetId: 'gen:clicks',
+  ...
+};
+enqueueAutomationCommand(automation, commandQueue, 10, 100);
+// Command enqueued to execute at step 11 with timestamp 1000ms
+```
+
+**Throws:** Error if target type is unknown
+
+---
+
+## Integration Example
+
+Complete integration with IdleEngineRuntime:
+
+```typescript
+import {
+  createAutomationSystem,
+  getAutomationState,
+  IdleEngineRuntime,
+} from '@idle-engine/core';
+
+// Load content pack
+const contentPack = await import('@idle-engine/sample-pack');
+
+// Create runtime
+const runtime = new IdleEngineRuntime({
+  stepDurationMs: 100,
+  contentPack,
+});
+
+// Create automation system
+const automationSystem = createAutomationSystem({
+  automations: contentPack.automations,
+  stepDurationMs: 100,
+  commandQueue: runtime.getCommandQueue(),
+  resourceState: progressionCoordinator.resourceState,
+  initialState: loadedState?.automationState,
+});
+
+// Register system
+runtime.addSystem(automationSystem);
+
+// Start runtime
+runtime.start();
+
+// Later: Extract state for save file
+const automationState = getAutomationState(automationSystem);
+const saveData = {
+  progression: progressionCoordinator.getState(),
+  automationState: Array.from(automationState.entries()).reduce(
+    (acc, [id, state]) => ({ ...acc, [id]: state }),
+    {}
+  ),
+};
+```
+
+---
+
+## Performance Considerations
+
+**Tick Budget:**
+
+- Automation evaluation must complete within per-tick budget (<2ms for 100 automations)
+- Use lazy evaluation: skip locked/disabled automations early
+- Prefer Map lookups over array scans for O(1) performance
+
+**Memory:**
+
+- Automation state memory usage <1KB per automation
+- State is compact: booleans, numbers, no deep nesting
+
+**Determinism:**
+
+- Trigger evaluation must be pure (same inputs → same outputs)
+- No `Date.now()` or `Math.random()` in trigger logic
+- Use `context.step` and `context.timestamp` for timing
+
+---
+
+## References
+
+- Design Document: `docs/automation-execution-system-design.md`
+- Content Schema: `packages/content-schema/src/modules/automations.ts`
+- Implementation: `packages/core/src/automation-system.ts`
+- Tests: `packages/core/src/automation-system.test.ts`
