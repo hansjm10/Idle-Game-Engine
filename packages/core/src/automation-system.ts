@@ -178,7 +178,7 @@ export function createAutomationSystem(
         // TODO: Check resource cost (deferred - requires resource deduction API)
 
         // Enqueue command
-        enqueueAutomationCommand(automation, commandQueue, step, Date.now());
+        enqueueAutomationCommand(automation, commandQueue, step, stepDurationMs);
 
         // Update state
         state.lastFiredStep = step;
@@ -468,26 +468,28 @@ export function evaluateResourceThresholdTrigger(
  * - system: Enqueues system command with the systemTargetId
  *
  * The command is scheduled to execute on the next step (currentStep + 1).
+ * Timestamps are derived from the simulation clock (step * stepDurationMs)
+ * to ensure deterministic replay behavior.
  *
  * @param automation - The automation definition containing the target information.
  * @param commandQueue - The command queue to enqueue the command to.
  * @param currentStep - The current step number in the runtime.
- * @param timestamp - The timestamp when the automation fired.
+ * @param stepDurationMs - The duration of each step in milliseconds.
  * @throws {Error} If the target type is unknown.
  *
  * @example
  * ```typescript
  * const automation = { ..., targetType: 'generator', targetId: 'gen:clicks' };
  * const commandQueue = new CommandQueue();
- * enqueueAutomationCommand(automation, commandQueue, 10, Date.now());
- * // Command is enqueued to execute at step 11 with AUTOMATION priority
+ * enqueueAutomationCommand(automation, commandQueue, 10, 100);
+ * // Command is enqueued to execute at step 11 with timestamp 1000ms
  * ```
  */
 export function enqueueAutomationCommand(
   automation: AutomationDefinition,
   commandQueue: CommandQueue,
   currentStep: number,
-  timestamp: number,
+  stepDurationMs: number,
 ): void {
   const { targetType, targetId, systemTargetId } = automation;
 
@@ -506,6 +508,8 @@ export function enqueueAutomationCommand(
   } else {
     throw new Error(`Unknown target type: ${targetType}`);
   }
+
+  const timestamp = currentStep * stepDurationMs;
 
   commandQueue.enqueue({
     type: commandType,

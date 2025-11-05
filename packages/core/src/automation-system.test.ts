@@ -977,4 +977,82 @@ describe('AutomationSystem', () => {
       // Could also verify targetId if command includes it
     });
   });
+
+  describe('deterministic timestamps', () => {
+    it('should use simulation time for command timestamps', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:test' as any,
+          name: { default: 'Test Auto', variants: {} },
+          description: { default: 'Test automation', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Setup system (unlocks 'always' automations)
+      system.setup?.({ events: { on: () => ({ unsubscribe: () => {} }) } });
+
+      // Tick at step 10 (should be 1000ms simulation time)
+      system.tick({ step: 10, deltaMs: 100, events: {} as any });
+
+      // Dequeue the command and check timestamp
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.timestamp).toBe(1000); // step 10 * 100ms
+    });
+
+    it('should produce identical timestamps across multiple runs', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:repeatable' as any,
+          name: { default: 'Repeatable Auto', variants: {} },
+          description: { default: 'Test repeatability', variants: {} },
+          targetType: 'upgrade',
+          targetId: 'upg:test' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 200 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const timestamps: number[] = [];
+
+      // Run the same simulation twice
+      for (let run = 0; run < 2; run++) {
+        const commandQueue = new CommandQueue();
+        const system = createAutomationSystem({
+          automations,
+          stepDurationMs: 100,
+          commandQueue,
+          resourceState: { getAmount: () => 0 },
+        });
+
+        system.setup?.({ events: { on: () => ({ unsubscribe: () => {} }) } });
+
+        // Tick at step 5
+        system.tick({ step: 5, deltaMs: 100, events: {} as any });
+
+        const commands = commandQueue.dequeueUpToStep(6);
+        timestamps.push(commands[0]?.timestamp ?? -1);
+      }
+
+      // Both runs should produce the same timestamp
+      expect(timestamps[0]).toBe(timestamps[1]);
+      expect(timestamps[0]).toBe(500); // step 5 * 100ms
+    });
+  });
 });
