@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-content-schema-rollout-decisions" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">Content Schema Rollout: Decision Log | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content Schema Rollout: Decision Log | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue #11)"><meta data-rh="true" property="og:description" content="Issue #11)"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content Schema Rollout: Decision Log","item":"https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.e6e7f8f9.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.4e8adfb7.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_li4T" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_wqtB themedComponent--light_vaEm"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_wqtB themedComponent--dark_axH8"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_cYRj"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle__Exw colorModeToggle_Lslw"><button class="clean-btn toggleButton_AMBK toggleButtonDisabled_p4Bd" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_uZx1 lightToggleIcon_p2sk"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_uZx1 darkToggleIcon_B2qX"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_uZx1 systemToggleIcon_PWgn"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_RKai"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_nqaE"><div class="docsWrapper_CSLE"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sOWX" type="button"></button><div class="docRoot_qxtV"><aside class="theme-doc-sidebar-container docSidebarContainer_Xlvo"><div class="sidebarViewport_tjEA"><div class="sidebar_ubOv"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_CfkH"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_ziOL menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="true" href="/Idle-Game-Engine/"><span title="Getting Started" class="categoryLinkLabel_ebxo">Getting Started</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/"><span title="Overview" class="linkLabel_KsAJ">Overview</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/contributor-handbook"><span title="Contributor Handbook" class="linkLabel_KsAJ">Contributor Handbook</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/role-index"><span title="Role Index" class="linkLabel_KsAJ">Role Index</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/design-document-template"><span title="Design Document Template" class="linkLabel_KsAJ">Design Document Template</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ziOL menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/idle-engine-design"><span title="Core Runtime" class="categoryLinkLabel_ebxo">Core Runtime</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_ziOL menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role="button" aria-expanded="true" href="/Idle-Game-Engine/content-dsl-schema-design"><span title="Content Pipeline" class="categoryLinkLabel_ebxo">Content Pipeline</span></a></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/content-dsl-schema-design"><span title="Content DSL Schema Design" class="linkLabel_KsAJ">Content DSL Schema Design</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/content-dsl-usage-guidelines"><span title="Content DSL Usage Guidelines" class="linkLabel_KsAJ">Content DSL Usage Guidelines</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/content-compiler-design"><span title="Content Compiler Design Document" class="linkLabel_KsAJ">Content Compiler Design Document</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/Idle-Game-Engine/content-schema-rollout-decisions"><span title="Content Schema Rollout: Decision Log" class="linkLabel_KsAJ">Content Schema Rollout: Decision Log</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/Idle-Game-Engine/content-validation-cli-design"><span title="Content Validation CLI Design Document" class="linkLabel_KsAJ">Content Validation CLI Design Document</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ziOL menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/accessibility-smoke-tests-design"><span title="Shell Integration" class="categoryLinkLabel_ebxo">Shell Integration</span></a></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ziOL menu__link menu__link--sublist menu__link--sublist-caret" role="button" aria-expanded="false" href="/Idle-Game-Engine/implementation-plan"><span title="Operations &amp; Process" class="categoryLinkLabel_ebxo">Operations &amp; Process</span></a></div></li></ul></nav></div></div></aside><main class="docMainContainer_tfRv"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_hyci"><div class="docItemContainer_tcAC"><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_bxbs" aria-label="Breadcrumbs"><ul class="breadcrumbs"><li class="breadcrumbs__item"><a aria-label="Home page" class="breadcrumbs__link" href="/Idle-Game-Engine/"><svg viewBox="0 0 24 24" class="breadcrumbHomeIcon_p1A9"><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill="currentColor"></path></svg></a></li><li class="breadcrumbs__item"><span class="breadcrumbs__link">Content Pipeline</span></li><li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link">Content Schema Rollout: Decision Log</span></li></ul></nav><div class="tocCollapsible_WMbj theme-doc-toc-mobile tocMobile_wI3e"><button type="button" class="clean-btn tocCollapsibleButton_rjEa">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Content Schema Rollout: Decision Log</h1></header>
+<p><strong>Issue:</strong> #137 (Parent: #11)
+<strong>Related Design:</strong> docs/content-dsl-schema-design.md
+<strong>Date:</strong> 2025-10-21
+<strong>Status:</strong> Research Complete</p>
+<p>This document addresses the open questions from §10 and risk mitigations from §7 of the content schema design document.</p>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="1-icon-path-default-generation">1. Icon Path Default Generation<a href="#1-icon-path-default-generation" class="hash-link" aria-label="Direct link to 1. Icon Path Default Generation" title="Direct link to 1. Icon Path Default Generation" translate="no">​</a></h2>
+<p><strong>Question:</strong> Should the schema expose calculated presentation defaults (e.g., auto-generated icon paths) or leave that to the compiler?</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="current-state">Current State<a href="#current-state" class="hash-link" aria-label="Direct link to Current State" title="Direct link to Current State" translate="no">​</a></h3>
+<ul>
+<li class="">Icon fields are optional strings in all modules (resources, generators, upgrades, achievements, prestige layers, guild perks)</li>
+<li class="">Schema: <code>icon: z.string().trim().min(1).max(256).optional()</code></li>
+<li class="">No automatic path generation or validation exists</li>
+<li class="">No convention for icon asset organization documented</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="analysis">Analysis<a href="#analysis" class="hash-link" aria-label="Direct link to Analysis" title="Direct link to Analysis" translate="no">​</a></h3>
+<p>Icon path generation involves several concerns:</p>
+<ol>
+<li class=""><strong>Asset resolution:</strong> Paths must be resolvable at runtime (relative vs absolute, asset bundling)</li>
+<li class=""><strong>Convention vs configuration:</strong> Auto-generation assumes naming conventions</li>
+<li class=""><strong>Build-time vs runtime:</strong> Path resolution may depend on bundler configuration</li>
+<li class=""><strong>Presentation layer coupling:</strong> Icon display is a UI concern, not a schema concern</li>
+</ol>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="decision">Decision<a href="#decision" class="hash-link" aria-label="Direct link to Decision" title="Direct link to Decision" translate="no">​</a></h3>
+<p><strong>Leave icon path defaults to the compiler/presentation layer.</strong></p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li class="">Schema should remain presentation-agnostic per design principle §3 (Non-Goals)</li>
+<li class="">Asset bundling and path resolution vary by deployment (Vite, Webpack, CDN)</li>
+<li class="">Compiler can implement convention-based defaults when transforming packs</li>
+<li class="">Allows flexibility for different presentation layers (web, mobile, terminal UI)</li>
+</ul>
+<p><strong>Action Items:</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Document icon asset conventions in compiler specification (follow-up issue)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add optional <code>iconPath</code> validation to check extension types (.svg, .png, .webp)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Consider adding <code>iconPathSchema</code> with URL validation when compiler spec lands</li>
+</ul>
+<p><strong>Follow-up:</strong> Create issue for DSL compiler icon resolution strategy (blocked on compiler design)</p>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="2-guild-perk-persistence-integration">2. Guild Perk Persistence Integration<a href="#2-guild-perk-persistence-integration" class="hash-link" aria-label="Direct link to 2. Guild Perk Persistence Integration" title="Direct link to 2. Guild Perk Persistence Integration" translate="no">​</a></h2>
+<p><strong>Question:</strong> How will guild perk costs interface with social-service data when live persistence lands?</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="current-state-1">Current State<a href="#current-state-1" class="hash-link" aria-label="Direct link to Current State" title="Direct link to Current State" translate="no">​</a></h3>
+<ul>
+<li class="">Guild perk schema complete in <code>packages/content-schema/src/modules/guild-perks.ts</code></li>
+<li class="">Social service has stub guild routes (<code>services/social/src/routes/guild.ts</code>)</li>
+<li class="">Persistence is in-memory only (Phase 5 work per implementation plan)</li>
+<li class="">No database schema exists for guild perks or guild state</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="analysis-1">Analysis<a href="#analysis-1" class="hash-link" aria-label="Direct link to Analysis" title="Direct link to Analysis" translate="no">​</a></h3>
+<p>Guild perk costs reference several potential currency types:</p>
+<ol>
+<li class=""><strong>Guild-scoped resources:</strong> Contribution points, guild XP, treasury funds</li>
+<li class=""><strong>Player-scoped contributions:</strong> Individual resource donations</li>
+<li class=""><strong>Time-gated unlocks:</strong> Milestone-based availability</li>
+<li class=""><strong>Social metrics:</strong> Member count, activity thresholds</li>
+</ol>
+<p>Current cost schema uses generic <code>ContentId</code> references, which works for player resources but doesn&#x27;t model guild-specific currencies.</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="decision-1">Decision<a href="#decision-1" class="hash-link" aria-label="Direct link to Decision" title="Direct link to Decision" translate="no">​</a></h3>
+<p><strong>Defer guild-specific cost modeling to Phase 5 persistence implementation.</strong></p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li class="">Current <code>cost</code> schema is flexible enough for prototype phase (Issue #11, Phase 0-4)</li>
+<li class="">Guild persistence design is not yet finalized (Phase 5: Weeks 5-7)</li>
+<li class="">Schema can be extended with <code>GuildCostSchema</code> when social service adds persistence</li>
+<li class="">FEATURE_GATES already restrict guild perks to runtime &gt;=0.5.0</li>
+</ul>
+<p><strong>Immediate Actions:</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled="" checked=""> <!-- -->Verify guild perk <code>cost</code> schema supports <code>resourceId</code> references</li>
+<li class="task-list-item"><input type="checkbox" disabled="" checked=""> <!-- -->Document that guild currencies must be defined as pack resources with <code>category: &#x27;currency&#x27;</code></li>
+</ul>
+<p><strong>Phase 5 Follow-up (Issue #138 recommended):</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Design guild persistence schema (Postgres tables: guilds, guild_perks, member_contributions)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add <code>GuildResourceDefinition</code> with ownership semantics (guild-scoped vs player-scoped)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Extend cost schema with <code>scope: &#x27;player&#x27; | &#x27;guild&#x27;</code> discriminator if needed</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add validation ensuring guild perk costs only reference guild-category resources</li>
+</ul>
+<p><strong>Acceptance Criteria for Phase 5:</strong></p>
+<ul>
+<li class="">Social service persists guild perk unlock state</li>
+<li class="">Content packs can define guild-scoped currency resources</li>
+<li class="">Validation ensures guild perk costs reference valid guild currencies</li>
+<li class="">Documentation examples show guild contribution tracking</li>
+</ul>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="3-scripted-modifiers--effect-types">3. Scripted Modifiers &amp; Effect Types<a href="#3-scripted-modifiers--effect-types" class="hash-link" aria-label="Direct link to 3. Scripted Modifiers &amp; Effect Types" title="Direct link to 3. Scripted Modifiers &amp; Effect Types" translate="no">​</a></h2>
+<p><strong>Question:</strong> Do we need additional effect types (e.g., scripted modifiers) before schema v1.0, or can they wait for the scripting design doc?</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="current-state-2">Current State<a href="#current-state-2" class="hash-link" aria-label="Direct link to Current State" title="Direct link to Current State" translate="no">​</a></h3>
+<p>Upgrade effects are discriminated unions with these variants (upgrades.ts:79-124):</p>
+<ul>
+<li class=""><code>modifyResourceRate</code>: Formula-based resource adjustments</li>
+<li class=""><code>modifyGeneratorRate</code>: Formula-based generator production</li>
+<li class=""><code>modifyGeneratorCost</code>: Formula-based cost scaling</li>
+<li class=""><code>grantAutomation</code>: Enable automation toggles</li>
+<li class=""><code>grantFlag</code>: Set boolean flags</li>
+<li class=""><code>unlockResource</code> / <code>unlockGenerator</code>: Entity unlocking</li>
+<li class=""><code>alterDirtyTolerance</code>: Precision threshold adjustments</li>
+<li class=""><code>emitEvent</code>: Trigger runtime events</li>
+</ul>
+<p>All modification effects use <code>NumericFormula</code> (formulas.ts), which supports:</p>
+<ul>
+<li class="">Structured expressions with typed references</li>
+<li class="">Common curves (linear, exponential, polynomial, piecewise)</li>
+<li class="">Safe math operations (add, sub, mul, div, pow, min, max)</li>
+<li class="">Function calls against allowlist (clamp, lerp, etc.)</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="analysis-2">Analysis<a href="#analysis-2" class="hash-link" aria-label="Direct link to Analysis" title="Direct link to Analysis" translate="no">​</a></h3>
+<p><strong>Scripting Layer Status (idle-engine-design.md §9.4):</strong></p>
+<ul>
+<li class="">&quot;Script layer exposes deterministic APIs (no direct async)&quot;</li>
+<li class="">&quot;Script host provides whitelisted math/util modules and deterministic random via seeded RNG&quot;</li>
+<li class="">No scripting design document exists yet</li>
+<li class="">Sandbox requirements not yet specified</li>
+</ul>
+<p><strong>Current Formula Coverage:</strong></p>
+<ul>
+<li class="">Declarative formulas cover common idle game progressions (exponential scaling, piecewise curves)</li>
+<li class="">Expression AST allows complex calculations without scripting</li>
+<li class=""><code>script</code> and <code>flag</code> conditions already exist for hook points</li>
+</ul>
+<p><strong>Gaps Requiring Scripting:</strong></p>
+<ol>
+<li class="">Conditional logic beyond formula evaluation (complex branching)</li>
+<li class="">State queries across multiple entities (aggregate calculations)</li>
+<li class="">Custom effect application (e.g., randomized bonuses, combinatorial effects)</li>
+<li class="">Event-driven behaviors (trigger chains, cascading effects)</li>
+</ol>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="decision-2">Decision<a href="#decision-2" class="hash-link" aria-label="Direct link to Decision" title="Direct link to Decision" translate="no">​</a></h3>
+<p><strong>Defer scripted modifiers until scripting design document and runtime sandbox land.</strong></p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li class="">Current formula system covers prototype phase needs (Phase 0-6 in implementation-plan.md)</li>
+<li class="">Scripting requires security sandbox design (idle-engine-design.md §13: &quot;Sandbox third-party scripts&quot;)</li>
+<li class="">Feature gate model supports incremental rollout (runtime-compat.ts FEATURE_GATES)</li>
+<li class="">No content pack has requested scripted modifiers yet</li>
+</ul>
+<p><strong>Schema v1.0 Requirements (Satisfied):</strong></p>
+<ul>
+<li class="">✅ Formula-based modifiers for common progressions</li>
+<li class="">✅ Flag/script condition hooks for extensibility</li>
+<li class="">✅ Event emission for trigger chains</li>
+<li class="">✅ Effect composition via upgrade stacking</li>
+</ul>
+<p><strong>Phase 7+ Follow-up (Issue #139 recommended):</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Author scripting design document (sandbox model, API surface, determinism guarantees)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Implement script runtime with deterministic execution</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add <code>scriptedEffect</code> upgrade effect type:<!-- -->
+<div class="language-typescript codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-typescript codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  kind</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&#x27;scriptedEffect&#x27;</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  scriptId</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> ScriptId</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  payload</span><span class="token operator" style="color:#393A34">?</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> Record</span><span class="token operator" style="color:#393A34">&lt;</span><span class="token builtin">string</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token builtin">unknown</span><span class="token operator" style="color:#393A34">&gt;</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></span></code></pre></div></div>
+</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Update FEATURE_GATES with <code>scriptedEffects</code> introduced in appropriate version</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add content-schema validation ensuring scriptId references allowlisted scripts</li>
+</ul>
+<p><strong>Acceptance Criteria for Scripted Modifiers:</strong></p>
+<ul>
+<li class="">Scripting design doc approved and sandbox implemented</li>
+<li class="">Script execution is deterministic (seeded RNG, no async)</li>
+<li class="">Scripts cannot access DOM or host environment</li>
+<li class="">Validation enforces script allowlists per ContentSchemaOptions</li>
+</ul>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-compiler-adoption--troubleshooting">5. Compiler Adoption &amp; Troubleshooting<a href="#5-compiler-adoption--troubleshooting" class="hash-link" aria-label="Direct link to 5. Compiler Adoption &amp; Troubleshooting" title="Direct link to 5. Compiler Adoption &amp; Troubleshooting" translate="no">​</a></h2>
+<p><strong>Status:</strong> The content compiler now emits deterministic artifacts during <code>pnpm generate</code>, and <code>@idle-engine/content-sample</code> imports the generated module instead of reparsing <code>content/pack.json</code>.</p>
+<ul>
+<li class=""><strong>Required workflow:</strong> <code>pnpm generate</code> validates every discovered pack before the compiler writes artifacts. After editing any pack JSON, schema file, or runtime event manifest, run <code>pnpm generate</code> (or <code>pnpm generate --check</code> for CI/Lefthook) and commit the resulting updates under <code>content/compiled/</code>, <code>src/generated/</code>, and the workspace summary (<code>content/compiled/index.json</code>).</li>
+<li class=""><strong>Structured logging:</strong> The CLI emits JSON events (<code>content_pack.validated</code>, <code>content_pack.validation_failed</code>, <code>content_pack.compiled</code>, <code>content_pack.pruned</code>, <code>watch.run</code>, etc.) that automation should parse instead of scraping console text. Watch mode keeps the process alive across failures while still surfacing non-zero exit codes on termination.</li>
+<li class=""><strong>Summary contract:</strong> Treat <code>content/compiled/index.json</code> (or the path supplied via <code>--summary</code>) as the canonical record of validation and compilation outcomes. If validation fails or <code>pnpm generate --check</code> indicates drift, the summary is stale—rerun the command before using compiled artifacts downstream.</li>
+<li class=""><strong>Runtime guarantees:</strong> The generated module rehydrates a frozen <code>NormalizedContentPack</code>, exposes digest, artifact hash, module indices, and summary metadata, and fails fast if the compiler captured warnings. Downstream code should consume the exported summary (<code>sampleContentSummary</code>) instead of inferring metadata at runtime.</li>
+<li class=""><strong>Digest verification:</strong> <code>rehydrateNormalizedPack</code> recomputes the digest whenever <code>NODE_ENV !== &#x27;production&#x27;</code>. To diagnose mismatches, rerun <code>pnpm generate --clean</code> and compare the hash reported in the thrown error with <code>content/compiled/sample-pack.normalized.json</code>. Production builds may opt out of digest verification by keeping <code>NODE_ENV=production</code>, preserving the previous behaviour.</li>
+<li class=""><strong>Common failures:</strong>
+<ul>
+<li class=""><em>Import-time warning error</em>: fix schema warnings surfaced in the compiler log or add contextual suppressions before retrying.</li>
+<li class=""><em>Digest mismatch</em>: ensure artifacts were regenerated (use <code>pnpm generate --clean</code>), verify custom post-processing didn’t mutate the generated module, and re-run tests.</li>
+<li class=""><em>Stale summary</em>: if <code>content/compiled/index.json</code> (or a custom summary path) reports outdated versions or warning counts, rerun <code>pnpm generate</code> so validation and compilation refresh the summary before committing artifacts.</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="4-schema-digest-migration-strategy">4. Schema Digest Migration Strategy<a href="#4-schema-digest-migration-strategy" class="hash-link" aria-label="Direct link to 4. Schema Digest Migration Strategy" title="Direct link to 4. Schema Digest Migration Strategy" translate="no">​</a></h2>
+<p><strong>Question:</strong> What is the migration strategy when schema digests change (e.g., do we embed the digest into save files similar to event manifests)?</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="current-state-3">Current State<a href="#current-state-3" class="hash-link" aria-label="Direct link to Current State" title="Direct link to Current State" translate="no">​</a></h3>
+<p><strong>Digest Implementation (pack.ts:381-404):</strong></p>
+<ul>
+<li class="">FNV-1a hash of pack metadata + module id lists</li>
+<li class="">Format: <code>{ version: number; hash: string }</code> (e.g., <code>fnv1a-a3c2f1b8</code>)</li>
+<li class="">Digest version: <code>CONTENT_PACK_DIGEST_VERSION = 1</code></li>
+<li class="">Computed during <code>normalizeContentPack</code>, included in <code>NormalizedContentPack.digest</code></li>
+</ul>
+<p><strong>Runtime Event Manifest Approach (runtime-event-manifest-authoring.md:38-43):</strong></p>
+<ul>
+<li class="">Manifest hash embedded in event frames for replay validation</li>
+<li class="">Hash checked during recording and playback</li>
+<li class="">Failures trigger &quot;rerun pnpm generate&quot; guidance</li>
+<li class="">Deterministic hash ensures replay integrity</li>
+</ul>
+<p><strong>Save System Status (implementation-plan.md Phase 4):</strong></p>
+<ul>
+<li class="">Phase 4: &quot;Implement save slot manager (IndexedDB/localStorage) with migration hooks&quot;</li>
+<li class="">Versioned schemas mentioned in design (idle-engine-design.md:35,137)</li>
+<li class="">No save format specification exists yet</li>
+<li class="">Migration pipeline not yet designed</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="analysis-3">Analysis<a href="#analysis-3" class="hash-link" aria-label="Direct link to Analysis" title="Direct link to Analysis" translate="no">​</a></h3>
+<p><strong>Digest Use Cases:</strong></p>
+<ol>
+<li class=""><strong>Content pack versioning:</strong> Track which pack version produced the save</li>
+<li class=""><strong>Compatibility checking:</strong> Detect when content has changed</li>
+<li class=""><strong>Migration triggering:</strong> Know when save data needs transformation</li>
+<li class=""><strong>Replay validation:</strong> Ensure deterministic behavior (like event manifest)</li>
+</ol>
+<p><strong>Embedding Trade-offs:</strong></p>
+<table><thead><tr><th>Approach</th><th>Pros</th><th>Cons</th></tr></thead><tbody><tr><td>Embed digest in saves</td><td>Fast compatibility checks; no external lookups; supports offline validation</td><td>Save size increase; digest changes break compatibility even for safe content updates</td></tr><tr><td>Store pack version only</td><td>Smaller saves; semantic versioning for compatibility</td><td>Requires pack registry lookup; version bumps may be infrequent</td></tr><tr><td>Hybrid (version + digest)</td><td>Best of both; version for coarse checks, digest for exact match</td><td>Larger saves; more complex validation logic</td></tr><tr><td>No embedding</td><td>Smallest saves; validation on load</td><td>Cannot detect incompatibility before hydration; may corrupt state</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="decision-3">Decision<a href="#decision-3" class="hash-link" aria-label="Direct link to Decision" title="Direct link to Decision" translate="no">​</a></h3>
+<p><strong>Embed both pack version AND digest in save files (hybrid approach).</strong></p>
+<p><strong>Rationale:</strong></p>
+<ul>
+<li class="">Pack version (semver) enables human-readable compatibility decisions</li>
+<li class="">Digest provides cryptographic-strength change detection like event manifests</li>
+<li class="">Supports offline validation (no registry lookup needed)</li>
+<li class="">Enables granular migration decisions (version -&gt; which migration steps, digest -&gt; exact content state)</li>
+<li class="">Aligns with runtime event manifest pattern (proven approach)</li>
+</ul>
+<p><strong>Proposed Save Format Extension:</strong></p>
+<div class="language-typescript codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-typescript codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token keyword" style="color:#00009f">interface</span><span class="token plain"> </span><span class="token class-name">SaveFileMetadata</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  version</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">number</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// Save format version</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  createdAt</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">string</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// ISO-8601 timestamp</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  runtimeVersion</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">string</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// Engine version (semver)</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  contentPacks</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">Array</span><span class="token operator" style="color:#393A34">&lt;</span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">    id</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">string</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// Pack slug</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">    version</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">string</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// Pack version (semver)</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">    digest</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      version</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">number</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// Digest format version</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      hash</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token builtin">string</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token comment" style="color:#999988;font-style:italic">// FNV-1a hash</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">}</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">}</span><span class="token operator" style="color:#393A34">&gt;</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token comment" style="color:#999988;font-style:italic">// ... other metadata</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></span></code></pre></div></div>
+<p><strong>Migration Decision Tree:</strong></p>
+<div class="language-text codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-text codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">Load save:</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  1. Check runtimeVersion compatibility (semver range check)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  2. For each contentPacks entry:</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">     a. Lookup installed pack by id</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">     b. Compare version (semver):</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">        - Exact match -&gt; check digest</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">        - Compatible minor/patch -&gt; check for migrations</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">        - Incompatible major -&gt; error or force migration</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">     c. Compare digest:</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">        - Match -&gt; no migration needed</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">        - Mismatch -&gt; run pack-specific migrations</span><br></span></code></pre></div></div>
+<p><strong>Implementation Actions (Issue #140 recommended - Phase 4):</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Design save file format with content pack manifests</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Implement save metadata serialization including digests</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add migration registry (packId + version range -&gt; migration functions)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Create <code>validateSaveCompatibility(save, installedPacks)</code> utility</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Document migration authoring guide for content pack maintainers</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add tests for cross-version save loading</li>
+</ul>
+<p><strong>Edge Cases to Handle:</strong></p>
+<ul>
+<li class=""><strong>Pack removed:</strong> User uninstalls pack but has save referencing it (warning + option to continue with missing content)</li>
+<li class=""><strong>Digest mismatch, same version:</strong> Content changed without version bump (warn but allow, or force version bump in CI)</li>
+<li class=""><strong>Multiple packs, cascading dependencies:</strong> Validate dependency graph before migration (see dependencies.ts)</li>
+<li class=""><strong>Partial migration failure:</strong> Rollback or fallback strategy (atomic migration transactions)</li>
+</ul>
+<p><strong>Acceptance Criteria:</strong></p>
+<ul>
+<li class="">Save files include content pack manifests with versions and digests</li>
+<li class="">Loading a save checks compatibility before hydration</li>
+<li class="">Incompatible saves trigger migration flow with user consent</li>
+<li class="">Migrations can be tested independently via fixtures</li>
+<li class="">Documentation includes migration authoring examples</li>
+</ul>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-risk-mitigation-tracking">5. Risk Mitigation Tracking<a href="#5-risk-mitigation-tracking" class="hash-link" aria-label="Direct link to 5. Risk Mitigation Tracking" title="Direct link to 5. Risk Mitigation Tracking" translate="no">​</a></h2>
+<p>Review of risks from §7 and their current mitigation status:</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="51-formula-explosion">5.1 Formula Explosion<a href="#51-formula-explosion" class="hash-link" aria-label="Direct link to 5.1 Formula Explosion" title="Direct link to 5.1 Formula Explosion" translate="no">​</a></h3>
+<p><strong>Risk:</strong> Recursive expression parsing may allow deeply nested structures, risking performance issues.</p>
+<p><strong>Mitigation Status:</strong> ✅ <strong>IMPLEMENTED</strong></p>
+<ul>
+<li class="">Recursion limits in <code>expressionNodeSchema</code> (formulas.ts)</li>
+<li class="">AST node count caps enforced during validation</li>
+<li class="">Property-based tests for formula sanitization (formulas.test.ts)</li>
+</ul>
+<p><strong>Tracking:</strong> No additional action needed; covered by existing tests.</p>
+<hr>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="52-schema-drift-vs-runtime">5.2 Schema Drift vs Runtime<a href="#52-schema-drift-vs-runtime" class="hash-link" aria-label="Direct link to 5.2 Schema Drift vs Runtime" title="Direct link to 5.2 Schema Drift vs Runtime" translate="no">​</a></h3>
+<p><strong>Risk:</strong> Runtime may evolve faster than schema updates.</p>
+<p><strong>Mitigation Status:</strong> ⚠️ <strong>PARTIALLY IMPLEMENTED</strong></p>
+<ul>
+<li class="">FEATURE_GATES map runtime versions to schema modules (runtime-compat.ts:3-29)</li>
+<li class="">Validation checks <code>ContentSchemaOptions.runtimeVersion</code> compatibility</li>
+<li class="">CI validates core against schema digest (per acceptance criteria §9)</li>
+</ul>
+<p><strong>Gaps:</strong></p>
+<ul>
+<li class="">No CI check enforcing that <code>@idle-engine/core</code> validates against schema before publish</li>
+<li class="">Runtime version must be manually kept in sync with FEATURE_GATES</li>
+</ul>
+<p><strong>Action Items (Issue #141 recommended):</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add CI step: <code>pnpm --filter @idle-engine/core test:schema-compat</code></li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Create test ensuring core package.json version satisfies all feature gate ranges</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add pre-publish hook blocking core releases if schema validation fails</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Document schema evolution policy (when to bump FEATURE_GATES, how to coordinate with runtime releases)</li>
+</ul>
+<hr>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="53-author-friction">5.3 Author Friction<a href="#53-author-friction" class="hash-link" aria-label="Direct link to 5.3 Author Friction" title="Direct link to 5.3 Author Friction" translate="no">​</a></h3>
+<p><strong>Risk:</strong> Strict schemas may frustrate early adopters.</p>
+<p><strong>Mitigation Status:</strong> ✅ <strong>IMPLEMENTED</strong></p>
+<ul>
+<li class="">Descriptive error messages with structured <code>SchemaWarning</code> (errors.ts)</li>
+<li class="">Non-fatal warnings for soft constraints (missing translations, steep curves)</li>
+<li class="">Severity levels (<code>error</code>, <code>warning</code>, <code>info</code>) allow progressive strictness</li>
+<li class=""><code>safeParse</code> returns warnings alongside successful parses</li>
+</ul>
+<p><strong>Tracking:</strong> Monitor GitHub issues for author feedback; adjust warning thresholds if patterns emerge.</p>
+<hr>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="54-compatibility-versioning">5.4 Compatibility Versioning<a href="#54-compatibility-versioning" class="hash-link" aria-label="Direct link to 5.4 Compatibility Versioning" title="Direct link to 5.4 Compatibility Versioning" translate="no">​</a></h3>
+<p><strong>Risk:</strong> Packs targeting older runtime versions must continue to parse.</p>
+<p><strong>Mitigation Status:</strong> ✅ <strong>IMPLEMENTED</strong></p>
+<ul>
+<li class="">FEATURE_GATES enable feature-based versioning (runtime-compat.ts)</li>
+<li class="">Metadata.engine field specifies runtime version range (metadata.ts)</li>
+<li class="">Validation allows older packs with subset of features</li>
+<li class="">Schema transforms can downgrade gracefully (design §7)</li>
+</ul>
+<p><strong>Tracking:</strong> Add integration tests for cross-version pack loading once save migration lands (Phase 4).</p>
+<hr>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="55-transform-loops">5.5 Transform Loops<a href="#55-transform-loops" class="hash-link" aria-label="Direct link to 5.5 Transform Loops" title="Direct link to 5.5 Transform Loops" translate="no">​</a></h3>
+<p><strong>Risk:</strong> Misconfigured transforms may create runaway production chains.</p>
+<p><strong>Mitigation Status:</strong> ✅ <strong>IMPLEMENTED</strong></p>
+<ul>
+<li class="">Safety guards in transform schema (transforms.ts):<!-- -->
+<ul>
+<li class=""><code>maxRunsPerTick</code> caps executions per simulation step</li>
+<li class=""><code>maxOutstandingBatches</code> limits queued batch transforms</li>
+</ul>
+</li>
+<li class="">Validation ensures transform I/O references exist (validateCrossReferences)</li>
+<li class="">Cycle detection for unlock conditions (integration tests pending per integration.test.ts:155)</li>
+</ul>
+<p><strong>Tracking:</strong> Complete cycle detection implementation (currently TODO comment in integration.test.ts).</p>
+<p><strong>Action Item (Issue #142 recommended):</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Implement full cycle detection for transform chains (extend existing unlock cycle detector)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add integration tests for circular transform references</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Document safe transform patterns in authoring guide</li>
+</ul>
+<hr>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="56-performance">5.6 Performance<a href="#56-performance" class="hash-link" aria-label="Direct link to 5.6 Performance" title="Direct link to 5.6 Performance" translate="no">​</a></h3>
+<p><strong>Risk:</strong> Running complex validation on large content packs could be slow.</p>
+<p><strong>Mitigation Status:</strong> ⚠️ <strong>DESIGN ONLY</strong></p>
+<ul>
+<li class="">Design recommends caching normalized results (§7)</li>
+<li class="">Lookup maps included in NormalizedContentPack (pack.ts:142-173)</li>
+</ul>
+<p><strong>Current Performance:</strong></p>
+<ul>
+<li class="">No caching implemented yet</li>
+<li class="">No performance benchmarks exist</li>
+<li class="">No large content packs to test against</li>
+</ul>
+<p><strong>Action Items (Issue #143 recommended - Phase 6):</strong></p>
+<ul class="contains-task-list containsTaskList_InQk">
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Implement validation result caching (memoize by pack id + version + digest)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Add performance benchmarks for validation (target: under 100ms for packs with 100+ entities)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Create large test pack (500+ resources, 200+ generators) for performance testing</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Profile validation bottlenecks (cross-reference checks, formula walking, cycle detection)</li>
+<li class="task-list-item"><input type="checkbox" disabled=""> <!-- -->Consider worker-based validation for large packs if main-thread blocking observed</li>
+</ul>
+<hr>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="6-property-based-formula-sanitization-guidance">6. Property-Based Formula Sanitization Guidance<a href="#6-property-based-formula-sanitization-guidance" class="hash-link" aria-label="Direct link to 6. Property-Based Formula Sanitization Guidance" title="Direct link to 6. Property-Based Formula Sanitization Guidance" translate="no">​</a></h2>
+<ul>
+<li class="">Property-based suites now gate formula authoring across schema and CLI surfaces; use the workflow below before submitting new packs or modifiers.</li>
+<li class="">Guidance complements <code>docs/property-based-formula-sanitization-design.md</code> and the CLI runbook in <code>docs/content-validation-cli-design.md</code>.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="sanitization-invariants-enforced">Sanitization Invariants Enforced<a href="#sanitization-invariants-enforced" class="hash-link" aria-label="Direct link to Sanitization Invariants Enforced" title="Direct link to Sanitization Invariants Enforced" translate="no">​</a></h3>
+<ul>
+<li class="">Formulas generated by <code>createFormulaArbitrary</code> must parse successfully and evaluate to finite, non-negative numbers across deterministic evaluation contexts.</li>
+<li class="">Linear and exponential formulas are asserted to be monotonic in the <code>level</code> variable, with growth rates clamped to positive ranges even when callers provide invalid bounds.</li>
+<li class="">Piecewise formulas require ordered <code>untilLevel</code> thresholds and terminate with a catch-all segment so sanitizers never fall off the range of defined pieces.</li>
+<li class="">Expression arbitraries guard depth, root degree, and composed function usage so sanitizers keep results within <code>MAX_FORMULA_DEPTH</code> and preserve non-negative outputs via <code>max(0, …)</code> guards.</li>
+<li class="">Entity references are validated against sanitized pools; the CLI suite rejects packs that point to undefined resources and emits actionable <code>content_pack.validation_failed</code> payloads.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="running-the-property-suites-locally">Running the Property Suites Locally<a href="#running-the-property-suites-locally" class="hash-link" aria-label="Direct link to Running the Property Suites Locally" title="Direct link to Running the Property Suites Locally" translate="no">​</a></h3>
+<ul>
+<li class="">Schema coverage:\<!-- -->
+<div class="language-bash codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-bash codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">pnpm --filter @idle-engine/content-schema test -- --run createFormulaArbitrary</span><br></span></code></pre></div></div>
+</li>
+<li class="">CLI coverage:\<!-- -->
+<div class="language-bash codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-bash codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">pnpm --filter @idle-engine/content-validation-cli test -- --run &quot;validateContentPacks property&quot;</span><br></span></code></pre></div></div>
+</li>
+<li class="">Append <code>--watch</code> while iterating, and keep reporters quiet so the <code>vitest-llm-reporter</code> JSON summary remains the final console line for downstream agents.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="troubleshooting--replay-tips">Troubleshooting &amp; Replay Tips<a href="#troubleshooting--replay-tips" class="hash-link" aria-label="Direct link to Troubleshooting &amp; Replay Tips" title="Direct link to Troubleshooting &amp; Replay Tips" translate="no">​</a></h3>
+<ul>
+<li class="">Both suites share <code>DEFAULT_FORMULA_PROPERTY_SEED = 177013</code> (see <code>packages/content-schema/src/base/formulas.arbitraries.ts</code>); fast-check prints the failing seed and path whenever a counterexample is found.</li>
+<li class="">Copy the printed <code>seed</code> and <code>path</code> back into the local <code>propertyConfig</code> helper (or temporarily override the exported constant) to replay the failing run with <code>vitest</code>.</li>
+<li class="">Inspect CLI failures via the captured <code>content_pack.validation_failed</code> event—it contains the pack slug, manifest path, and schema issues array surfaced by <code>ContentPackValidationError</code>.</li>
+<li class="">Schema-side failures surface the counterexample formula in the stack trace; evaluate it with <code>evaluateNumericFormula</code> in a REPL to confirm which invariant was violated.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="open-questions--owners">Open Questions &amp; Owners<a href="#open-questions--owners" class="hash-link" aria-label="Direct link to Open Questions &amp; Owners" title="Direct link to Open Questions &amp; Owners" translate="no">​</a></h3>
+<table><thead><tr><th>Topic</th><th>Owner</th><th>Target Review</th><th>Tracking</th></tr></thead><tbody><tr><td>Long-term maintenance of shared formula arbitraries</td><td>Content Pipeline Maintainers</td><td>Implementation Plan Phase 2 exit (2025-11-15)</td><td><code>docs/property-based-formula-sanitization-design.md#13-open-questions</code></td></tr><tr><td>Prestige-layer monotonicity requirements</td><td>Game Design Lead</td><td>Align with Prestige roadmap checkpoint (2025-12-01)</td><td><code>docs/property-based-formula-sanitization-design.md#13-open-questions</code></td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="references-for-downstream-agents">References for Downstream Agents<a href="#references-for-downstream-agents" class="hash-link" aria-label="Direct link to References for Downstream Agents" title="Direct link to References for Downstream Agents" translate="no">​</a></h3>
+<ul>
+<li class="">Schema suite: <code>packages/content-schema/src/base/formulas.property.test.ts</code></li>
+<li class="">Arbitrary definitions: <code>packages/content-schema/src/base/formulas.arbitraries.ts</code></li>
+<li class="">CLI suite: <code>tools/content-schema-cli/src/__tests__/validation.property.test.ts</code></li>
+<li class="">Design rationale: <code>docs/property-based-formula-sanitization-design.md</code></li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_EdDC" id="7-summary--recommendations">7. Summary &amp; Recommendations<a href="#7-summary--recommendations" class="hash-link" aria-label="Direct link to 7. Summary &amp; Recommendations" title="Direct link to 7. Summary &amp; Recommendations" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="decisions-made">Decisions Made<a href="#decisions-made" class="hash-link" aria-label="Direct link to Decisions Made" title="Direct link to Decisions Made" translate="no">​</a></h3>
+<ol>
+<li class="">✅ <strong>Icon defaults:</strong> Leave to compiler/presentation layer</li>
+<li class="">✅ <strong>Guild persistence:</strong> Defer to Phase 5, extend schema then</li>
+<li class="">✅ <strong>Scripted modifiers:</strong> Defer until scripting design + sandbox land</li>
+<li class="">✅ <strong>Digest migration:</strong> Embed version + digest in save files (hybrid approach)</li>
+<li class="">✅ <strong>Risk tracking:</strong> Most mitigations implemented; gaps documented below</li>
+</ol>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="new-issues-to-create">New Issues to Create<a href="#new-issues-to-create" class="hash-link" aria-label="Direct link to New Issues to Create" title="Direct link to New Issues to Create" translate="no">​</a></h3>
+<table><thead><tr><th>Issue</th><th>Title</th><th>Priority</th><th>Blocking</th></tr></thead><tbody><tr><td>#138</td><td>Design guild persistence schema and extend cost model</td><td>P2</td><td>Phase 5</td></tr><tr><td>#139</td><td>Scripting design document and scripted effect support</td><td>P3</td><td>Post-prototype</td></tr><tr><td>#140</td><td>Save file format with content pack manifests and migrations</td><td>P1</td><td>Phase 4</td></tr><tr><td>#141</td><td>CI schema compatibility checks for runtime releases</td><td>P1</td><td>Pre-v1.0</td></tr><tr><td>#142</td><td>Complete cycle detection for transform chains</td><td>P2</td><td>Phase 3</td></tr><tr><td>#143</td><td>Validation performance benchmarks and caching</td><td>P2</td><td>Phase 6</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="phase-2-unblocked">Phase 2 Unblocked<a href="#phase-2-unblocked" class="hash-link" aria-label="Direct link to Phase 2 Unblocked" title="Direct link to Phase 2 Unblocked" translate="no">​</a></h3>
+<p>Content schema is ready for production use in Phase 2 (Content DSL &amp; Sample Pack, Weeks 2-4). Remaining work items are follow-ups for later phases or post-prototype features.</p>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="traceability-to-issue-11">Traceability to Issue #11<a href="#traceability-to-issue-11" class="hash-link" aria-label="Direct link to Traceability to Issue #11" title="Direct link to Traceability to Issue #11" translate="no">​</a></h3>
+<p>This decision log addresses:</p>
+<ul>
+<li class="">✅ Section 10 open questions (all 4 questions + migration clarification)</li>
+<li class="">✅ Section 7 risk mitigations (tracking status for all 6 risks)</li>
+<li class="">✅ Acceptance criteria: Decision log exists with recommendations</li>
+<li class="">✅ Findings linked back to parent issue #11 via references and new issue tracking</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_EdDC" id="next-actions">Next Actions<a href="#next-actions" class="hash-link" aria-label="Direct link to Next Actions" title="Direct link to Next Actions" translate="no">​</a></h3>
+<ol>
+<li class="">Create tracking issues (#138-143) with details from this document</li>
+<li class="">Link new issues to #11 as dependencies</li>
+<li class="">Update implementation-plan.md Phase 5+ backlog with new tasks</li>
+<li class="">Close issue #137 referencing this decision log</li>
+</ol></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_QKxP"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/content-schema-rollout-decisions.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_wOWh" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_Basj"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/Idle-Game-Engine/content-compiler-design"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Content Compiler Design Document</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/Idle-Game-Engine/content-validation-cli-design"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Content Validation CLI Design Document</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_AUZ0 thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#1-icon-path-default-generation" class="table-of-contents__link toc-highlight">1. Icon Path Default Generation</a><ul><li><a href="#current-state" class="table-of-contents__link toc-highlight">Current State</a></li><li><a href="#analysis" class="table-of-contents__link toc-highlight">Analysis</a></li><li><a href="#decision" class="table-of-contents__link toc-highlight">Decision</a></li></ul></li><li><a href="#2-guild-perk-persistence-integration" class="table-of-contents__link toc-highlight">2. Guild Perk Persistence Integration</a><ul><li><a href="#current-state-1" class="table-of-contents__link toc-highlight">Current State</a></li><li><a href="#analysis-1" class="table-of-contents__link toc-highlight">Analysis</a></li><li><a href="#decision-1" class="table-of-contents__link toc-highlight">Decision</a></li></ul></li><li><a href="#3-scripted-modifiers--effect-types" class="table-of-contents__link toc-highlight">3. Scripted Modifiers &amp; Effect Types</a><ul><li><a href="#current-state-2" class="table-of-contents__link toc-highlight">Current State</a></li><li><a href="#analysis-2" class="table-of-contents__link toc-highlight">Analysis</a></li><li><a href="#decision-2" class="table-of-contents__link toc-highlight">Decision</a></li></ul></li><li><a href="#5-compiler-adoption--troubleshooting" class="table-of-contents__link toc-highlight">5. Compiler Adoption &amp; Troubleshooting</a></li><li><a href="#4-schema-digest-migration-strategy" class="table-of-contents__link toc-highlight">4. Schema Digest Migration Strategy</a><ul><li><a href="#current-state-3" class="table-of-contents__link toc-highlight">Current State</a></li><li><a href="#analysis-3" class="table-of-contents__link toc-highlight">Analysis</a></li><li><a href="#decision-3" class="table-of-contents__link toc-highlight">Decision</a></li></ul></li><li><a href="#5-risk-mitigation-tracking" class="table-of-contents__link toc-highlight">5. Risk Mitigation Tracking</a><ul><li><a href="#51-formula-explosion" class="table-of-contents__link toc-highlight">5.1 Formula Explosion</a></li><li><a href="#52-schema-drift-vs-runtime" class="table-of-contents__link toc-highlight">5.2 Schema Drift vs Runtime</a></li><li><a href="#53-author-friction" class="table-of-contents__link toc-highlight">5.3 Author Friction</a></li><li><a href="#54-compatibility-versioning" class="table-of-contents__link toc-highlight">5.4 Compatibility Versioning</a></li><li><a href="#55-transform-loops" class="table-of-contents__link toc-highlight">5.5 Transform Loops</a></li><li><a href="#56-performance" class="table-of-contents__link toc-highlight">5.6 Performance</a></li></ul></li><li><a href="#6-property-based-formula-sanitization-guidance" class="table-of-contents__link toc-highlight">6. Property-Based Formula Sanitization Guidance</a><ul><li><a href="#sanitization-invariants-enforced" class="table-of-contents__link toc-highlight">Sanitization Invariants Enforced</a></li><li><a href="#running-the-property-suites-locally" class="table-of-contents__link toc-highlight">Running the Property Suites Locally</a></li><li><a href="#troubleshooting--replay-tips" class="table-of-contents__link toc-highlight">Troubleshooting &amp; Replay Tips</a></li><li><a href="#open-questions--owners" class="table-of-contents__link toc-highlight">Open Questions &amp; Owners</a></li><li><a href="#references-for-downstream-agents" class="table-of-contents__link toc-highlight">References for Downstream Agents</a></li></ul></li><li><a href="#7-summary--recommendations" class="table-of-contents__link toc-highlight">7. Summary &amp; Recommendations</a><ul><li><a href="#decisions-made" class="table-of-contents__link toc-highlight">Decisions Made</a></li><li><a href="#new-issues-to-create" class="table-of-contents__link toc-highlight">New Issues to Create</a></li><li><a href="#phase-2-unblocked" class="table-of-contents__link toc-highlight">Phase 2 Unblocked</a></li><li><a href="#traceability-to-issue-11" class="table-of-contents__link toc-highlight">Traceability to Issue #11</a></li><li><a href="#next-actions" class="table-of-contents__link toc-highlight">Next Actions</a></li></ul></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_cYRj"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_cYRj"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2025 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
