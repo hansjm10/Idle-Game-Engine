@@ -1195,6 +1195,29 @@ describe('AutomationSystem', () => {
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
       expect(command?.payload).toEqual({});
     });
+
+    it('should throw when system target is not in mapping', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:bad' as any,
+        name: { default: 'Bad', variants: {} },
+        description: { default: 'Bad', variants: {} },
+        targetType: 'system',
+        systemTargetId: 'nonexistent-target' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      expect(() =>
+        enqueueAutomationCommand(automation, commandQueue, 10, 1000),
+      ).toThrow(/unknown system automation target/i);
+      expect(() =>
+        enqueueAutomationCommand(automation, commandQueue, 10, 1000),
+      ).toThrow('nonexistent-target');
+    });
   });
 
   describe('end-to-end automation', () => {
