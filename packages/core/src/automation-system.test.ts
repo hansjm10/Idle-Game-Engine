@@ -916,6 +916,89 @@ describe('AutomationSystem', () => {
       system.tick(context);
       expect(commandQueue.size).toBe(1);
     });
+
+    it('should respect cooldown after crossing fires, then fire on next crossing', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:cooldown-crosser' as any,
+          name: { default: 'Cooldown Crosser', variants: {} },
+          description: { default: 'Test', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          cooldown: 300, // 3 steps
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let amount = 50;
+      const resourceState = {
+        getAmount: () => amount,
+        getResourceIndex: (_id: string) => 0,
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState,
+      });
+
+      const context = {
+        step: 0,
+        deltaMs: 100,
+        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+      };
+
+      system.setup?.(context);
+
+      // Step 0: Below threshold
+      system.tick(context);
+      expect(commandQueue.size).toBe(0);
+
+      // Step 1: Cross upward - should fire
+      context.step = 1;
+      amount = 150;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1);
+      commandQueue.dequeueUpToStep(2);
+
+      // Step 2: Drop below and cross upward again - cooldown still active, should NOT fire
+      context.step = 2;
+      amount = 50;
+      system.tick(context);
+      context.step = 3;
+      amount = 150;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0); // Cooldown blocks firing
+
+      // Steps 4-5: Cooldown expires at step 5 (1 + 3 + 1)
+      context.step = 4;
+      system.tick(context);
+      context.step = 5;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0); // Still above threshold, no crossing
+
+      // Step 6: Drop below
+      context.step = 6;
+      amount = 50;
+      system.tick(context);
+      expect(commandQueue.size).toBe(0);
+
+      // Step 7: Cross upward again - cooldown expired, should fire
+      context.step = 7;
+      amount = 200;
+      system.tick(context);
+      expect(commandQueue.size).toBe(1);
+    });
   });
 
   describe('commandQueueEmpty triggers', () => {
