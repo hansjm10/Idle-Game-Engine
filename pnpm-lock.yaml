@@ -381,6 +381,9 @@ importers:
       '@idle-engine/content-schema':
         specifier: workspace:*
         version: link:../../packages/content-schema
+      '@idle-engine/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0

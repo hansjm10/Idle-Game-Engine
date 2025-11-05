@@ -10,7 +10,7 @@
       "variants": {}
     },
     "version": "0.2.0",
-    "engine": ">=0.4.0 <0.6.0",
+    "engine": ">=0.3.0 <1.0.0",
     "authors": ["Idle Engine Team"],
     "defaultLocale": "en-US",
     "supportedLocales": ["en-US"],
@@ -184,9 +184,92 @@
       }
     }
   ],
-  "automations": [],
+  "automations": [
+    {
+      "id": "sample-pack.auto-reactor",
+      "name": {
+        "default": "Reactor Auto-Clicker",
+        "variants": {}
+      },
+      "description": {
+        "default": "Automatically enables the reactor every 5 seconds",
+        "variants": {}
+      },
+      "targetType": "generator",
+      "targetId": "sample-pack.reactor",
+      "trigger": {
+        "kind": "interval",
+        "interval": { "kind": "constant", "value": 5000 }
+      },
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": true,
+      "order": 1
+    },
+    {
+      "id": "sample-pack.auto-harvester-on-energy",
+      "name": {
+        "default": "Smart Harvester Enabler",
+        "variants": {}
+      },
+      "description": {
+        "default": "Enables crystal harvester when you reach 50 energy",
+        "variants": {}
+      },
+      "targetType": "generator",
+      "targetId": "sample-pack.harvester",
+      "trigger": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.energy",
+        "comparator": "gte",
+        "threshold": { "kind": "constant", "value": 50 }
+      },
+      "cooldown": 5000,
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 2
+    },
+    {
+      "id": "sample-pack.idle-collector",
+      "name": {
+        "default": "Idle Resource Collector",
+        "variants": {}
+      },
+      "description": {
+        "default": "Collects resources when no other actions are pending",
+        "variants": {}
+      },
+      "targetType": "generator",
+      "targetId": "sample-pack.reactor",
+      "trigger": {
+        "kind": "commandQueueEmpty"
+      },
+      "cooldown": 10000,
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": true,
+      "order": 3
+    },
+    {
+      "id": "sample-pack.auto-harvester-on-primed",
+      "name": {
+        "default": "Auto-Harvest on Reactor Prime",
+        "variants": {}
+      },
+      "description": {
+        "default": "Enables crystal harvester when reactor is primed",
+        "variants": {}
+      },
+      "targetType": "generator",
+      "targetId": "sample-pack.harvester",
+      "trigger": {
+        "kind": "event",
+        "eventId": "sample:reactor-primed"
+      },
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 4
+    }
+  ],
   "transforms": [],
   "prestigeLayers": [],
-  "guildPerks": [],
-  "runtimeEvents": []
+  "guildPerks": []
 }

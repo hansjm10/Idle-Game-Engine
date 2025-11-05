@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createContentPackValidator } from '@idle-engine/content-schema';
+import { RUNTIME_VERSION } from '@idle-engine/core';
 import JSON5 from 'json5';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -675,6 +676,7 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
     knownPacks,
     activePackIds,
     runtimeEventCatalogue,
+    runtimeVersion: RUNTIME_VERSION,
   };
 
   if (validDocuments.length === 0 && documents.length === 0) {

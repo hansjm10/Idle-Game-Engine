@@ -1570,7 +1570,7 @@ describe('session snapshot protocol', () => {
     expect(snapshotEnvelope.snapshot.persistenceSchemaVersion).toBe(1);
     expect(snapshotEnvelope.snapshot.slotId).toBe('default');
     expect(snapshotEnvelope.snapshot.workerStep).toBe(1);
-    expect(snapshotEnvelope.snapshot.runtimeVersion).toBe('0.1.0');
+    expect(snapshotEnvelope.snapshot.runtimeVersion).toBe('0.3.0');
     expect(typeof snapshotEnvelope.snapshot.capturedAt).toBe('string');
     expect(typeof snapshotEnvelope.snapshot.monotonicMs).toBe('number');
     expect(snapshotEnvelope.snapshot.contentDigest).toBeDefined();

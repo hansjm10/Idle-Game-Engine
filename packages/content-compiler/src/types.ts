@@ -38,6 +38,7 @@ export interface SchemaContextInput {
     }[];
   }[];
   readonly activePackIds?: readonly string[] | ReadonlySet<string>;
+  readonly runtimeVersion?: string;
 }
 
 interface PackResultBase {
