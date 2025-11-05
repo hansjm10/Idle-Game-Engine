@@ -86,6 +86,10 @@ console output around that summary to keep downstream tooling happy.
 - Propose substantial architecture changes through the RFC process described in
   `docs/implementation-plan.md`.
 
+## Documentation Infrastructure
+
+- [Documentation Hosting Recommendation](docs-hosting-recommendation.md) - Evaluation and recommendation for hosting the public documentation site
+
 ## Pull request expectations
 
 - Follow Conventional Commit prefixes (`feat:`, `fix:`, `chore:`…)
