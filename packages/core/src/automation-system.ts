@@ -271,7 +271,7 @@ export function updateCooldown(
   }
 
   const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
-  state.cooldownExpiresStep = currentStep + cooldownSteps;
+  state.cooldownExpiresStep = currentStep + cooldownSteps + 1;
 }
 
 /**
