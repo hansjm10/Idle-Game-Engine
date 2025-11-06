@@ -12,6 +12,7 @@ import {
   getGameState,
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
+  registerAutomationCommandHandlers,
   createAutomationSystem,
   createResourceStateAdapter,
   telemetry,
@@ -177,6 +178,12 @@ export function initializeRuntimeWorker(
   });
 
   runtime.addSystem(automationSystem);
+
+  // Register automation command handlers
+  registerAutomationCommandHandlers({
+    dispatcher: runtime.getCommandDispatcher(),
+    automationSystem,
+  });
 
   let diagnosticsEnabled = false;
   let diagnosticsHead: number | undefined;
