@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { initializeRuntimeWorker, type RuntimeWorkerHarness } from '../runtime.worker.js';
-import type { RuntimeWorkerStateUpdate } from '../modules/runtime-worker-protocol.js';
+import {
+  type RuntimeWorkerStateUpdate,
+  type RuntimeWorkerCommand,
+  CommandSource,
+  WORKER_MESSAGE_SCHEMA_VERSION,
+} from '../modules/runtime-worker-protocol.js';
+import { getAutomationState } from '@idle-engine/core';
 
 describe('AutomationSystem Integration', () => {
   let harness: RuntimeWorkerHarness;
@@ -94,5 +100,98 @@ describe('AutomationSystem Integration', () => {
     expect(reactorGenerator).toBeDefined();
     // Verify the automation actually toggled the generator's state
     expect(reactorGenerator?.enabled).toBe(true);
+  });
+
+  it('should toggle automation via TOGGLE_AUTOMATION command', () => {
+    let currentTime = 0;
+    harness = initializeRuntimeWorker({
+      context: mockContext,
+      now: () => currentTime,
+      scheduleTick: (_callback) => {
+        return () => {};
+      },
+      stepSizeMs: 100,
+    });
+
+    // Clear initial messages
+    messages.length = 0;
+
+    // Get automation system to verify state
+    const automationSystem = harness.getAutomationSystem();
+
+    // Verify initial state - sample-pack.auto-reactor should be enabled by default
+    const initialState = getAutomationState(automationSystem);
+    const initialAutomation = initialState.get('sample-pack.auto-reactor');
+    expect(initialAutomation).toBeDefined();
+    expect(initialAutomation?.enabled).toBe(true);
+
+    // Disable automation
+    const disableMessage: RuntimeWorkerCommand = {
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      command: {
+        type: 'TOGGLE_AUTOMATION',
+        payload: {
+          automationId: 'sample-pack.auto-reactor',
+          enabled: false,
+        },
+        issuedAt: currentTime,
+      },
+    };
+
+    // Command should be processed without throwing
+    expect(() => {
+      harness.handleMessage(disableMessage);
+    }).not.toThrow();
+
+    // Tick to process the command
+    currentTime += 100;
+    harness.tick();
+
+    // Verify automation was disabled
+    const disabledState = getAutomationState(automationSystem);
+    const disabledAutomation = disabledState.get('sample-pack.auto-reactor');
+    expect(disabledAutomation).toBeDefined();
+    expect(disabledAutomation?.enabled).toBe(false);
+
+    // Verify that STATE_UPDATE messages were sent (confirming runtime is processing)
+    const stateUpdatesAfterDisable = messages.filter((msg: any) => msg.type === 'STATE_UPDATE');
+    expect(stateUpdatesAfterDisable.length).toBeGreaterThan(0);
+
+    // Clear messages for enable test
+    messages.length = 0;
+
+    // Re-enable the automation
+    const enableMessage: RuntimeWorkerCommand = {
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      command: {
+        type: 'TOGGLE_AUTOMATION',
+        payload: {
+          automationId: 'sample-pack.auto-reactor',
+          enabled: true,
+        },
+        issuedAt: currentTime,
+      },
+    };
+
+    expect(() => {
+      harness.handleMessage(enableMessage);
+    }).not.toThrow();
+
+    currentTime += 100;
+    harness.tick();
+
+    // Verify automation was re-enabled
+    const enabledState = getAutomationState(automationSystem);
+    const enabledAutomation = enabledState.get('sample-pack.auto-reactor');
+    expect(enabledAutomation).toBeDefined();
+    expect(enabledAutomation?.enabled).toBe(true);
+
+    // Verify that STATE_UPDATE messages were sent
+    const stateUpdatesAfterEnable = messages.filter((msg: any) => msg.type === 'STATE_UPDATE');
+    expect(stateUpdatesAfterEnable.length).toBeGreaterThan(0);
   });
 });

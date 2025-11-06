@@ -12,6 +12,7 @@ import {
   getGameState,
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
+  registerAutomationCommandHandlers,
   createAutomationSystem,
   createResourceStateAdapter,
   telemetry,
@@ -83,6 +84,7 @@ export interface RuntimeWorkerHarness {
   readonly handleMessage: (message: unknown) => void;
   readonly tick: () => void;
   readonly dispose: () => void;
+  readonly getAutomationSystem: () => ReturnType<typeof createAutomationSystem>;
 }
 
 export function isDedicatedWorkerScope(
@@ -177,6 +179,12 @@ export function initializeRuntimeWorker(
   });
 
   runtime.addSystem(automationSystem);
+
+  // Register automation command handlers
+  registerAutomationCommandHandlers({
+    dispatcher: runtime.getCommandDispatcher(),
+    automationSystem,
+  });
 
   let diagnosticsEnabled = false;
   let diagnosticsHead: number | undefined;
@@ -1130,6 +1138,7 @@ export function initializeRuntimeWorker(
     handleMessage,
     tick,
     dispose,
+    getAutomationSystem: () => automationSystem,
   };
 }
 
