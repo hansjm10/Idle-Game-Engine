@@ -377,6 +377,7 @@ export {
   type PurchaseGeneratorPayload,
   type PurchaseUpgradePayload,
   type ToggleGeneratorPayload,
+  type ToggleAutomationPayload,
   type CollectResourcePayload,
   type PrestigeResetPayload,
   type OfflineCatchupPayload,
@@ -594,3 +595,7 @@ export {
   SYSTEM_AUTOMATION_TARGET_MAPPING,
   mapSystemTargetToCommandType,
 } from './system-automation-target-mapping.js';
+export {
+  registerAutomationCommandHandlers,
+  type AutomationCommandHandlerOptions,
+} from './automation-command-handlers.js';
