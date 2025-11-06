@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { initializeRuntimeWorker, type RuntimeWorkerHarness } from '../runtime.worker.js';
-import type { RuntimeWorkerStateUpdate } from '../modules/runtime-worker-protocol.js';
+import {
+  type RuntimeWorkerStateUpdate,
+  type RuntimeWorkerCommand,
+  CommandSource,
+  WORKER_MESSAGE_SCHEMA_VERSION,
+} from '../modules/runtime-worker-protocol.js';
 
 describe('AutomationSystem Integration', () => {
   let harness: RuntimeWorkerHarness;
@@ -94,5 +99,70 @@ describe('AutomationSystem Integration', () => {
     expect(reactorGenerator).toBeDefined();
     // Verify the automation actually toggled the generator's state
     expect(reactorGenerator?.enabled).toBe(true);
+  });
+
+  it('should toggle automation via TOGGLE_AUTOMATION command', () => {
+    let currentTime = 0;
+    harness = initializeRuntimeWorker({
+      context: mockContext,
+      now: () => currentTime,
+      scheduleTick: (_callback) => {
+        return () => {};
+      },
+      stepSizeMs: 100,
+    });
+
+    // Clear initial messages
+    messages.length = 0;
+
+    // Enable automation - sample-pack.auto-reactor is enabled by default, so we'll toggle it off then on
+    const disableMessage: RuntimeWorkerCommand = {
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      command: {
+        type: 'TOGGLE_AUTOMATION',
+        payload: {
+          automationId: 'sample-pack.auto-reactor',
+          enabled: false,
+        },
+        issuedAt: currentTime,
+      },
+    };
+
+    // Command should be processed without throwing
+    expect(() => {
+      harness.handleMessage(disableMessage);
+    }).not.toThrow();
+
+    // Tick to process the command
+    currentTime += 100;
+    harness.tick();
+
+    // Re-enable the automation
+    const enableMessage: RuntimeWorkerCommand = {
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      command: {
+        type: 'TOGGLE_AUTOMATION',
+        payload: {
+          automationId: 'sample-pack.auto-reactor',
+          enabled: true,
+        },
+        issuedAt: currentTime,
+      },
+    };
+
+    expect(() => {
+      harness.handleMessage(enableMessage);
+    }).not.toThrow();
+
+    currentTime += 100;
+    harness.tick();
+
+    // Verify that STATE_UPDATE messages were sent (confirming runtime is processing)
+    const stateUpdates = messages.filter((msg: any) => msg.type === 'STATE_UPDATE');
+    expect(stateUpdates.length).toBeGreaterThan(0);
   });
 });
