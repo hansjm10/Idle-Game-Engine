@@ -13,6 +13,7 @@ import {
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
   createAutomationSystem,
+  createResourceStateAdapter,
   telemetry,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
@@ -167,10 +168,11 @@ export function initializeRuntimeWorker(
   registerResourceCommandHandlers(commandHandlerOptions);
 
   // Create and register AutomationSystem
+  // Wrap resourceState with adapter to map getIndex -> getResourceIndex
   const automationSystem = createAutomationSystem({
     automations: sampleContent.automations,
     commandQueue: runtime.getCommandQueue(),
-    resourceState: progressionCoordinator.resourceState,
+    resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
     stepDurationMs,
   });
 
