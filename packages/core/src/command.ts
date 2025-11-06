@@ -107,6 +107,7 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   PURCHASE_GENERATOR: 'PURCHASE_GENERATOR',
   PURCHASE_UPGRADE: 'PURCHASE_UPGRADE',
   TOGGLE_GENERATOR: 'TOGGLE_GENERATOR',
+  TOGGLE_AUTOMATION: 'TOGGLE_AUTOMATION',
   COLLECT_RESOURCE: 'COLLECT_RESOURCE',
   PRESTIGE_RESET: 'PRESTIGE_RESET',
   OFFLINE_CATCHUP: 'OFFLINE_CATCHUP',
@@ -137,6 +138,14 @@ export interface PurchaseUpgradePayload {
  */
 export interface ToggleGeneratorPayload {
   readonly generatorId: string;
+  readonly enabled: boolean;
+}
+
+/**
+ * Toggle automation enabled/disabled state (docs/automation-execution-system-design.md §6.2.7).
+ */
+export interface ToggleAutomationPayload {
+  readonly automationId: string;
   readonly enabled: boolean;
 }
 
@@ -186,6 +195,7 @@ export interface RuntimeCommandPayloads {
   readonly PURCHASE_GENERATOR: PurchaseGeneratorPayload;
   readonly PURCHASE_UPGRADE: PurchaseUpgradePayload;
   readonly TOGGLE_GENERATOR: ToggleGeneratorPayload;
+  readonly TOGGLE_AUTOMATION: ToggleAutomationPayload;
   readonly COLLECT_RESOURCE: CollectResourcePayload;
   readonly PRESTIGE_RESET: PrestigeResetPayload;
   readonly OFFLINE_CATCHUP: OfflineCatchupPayload;
@@ -237,6 +247,12 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     allowedPriorities: COMMAND_PRIORITY_ORDER,
     rationale:
       'Generator toggles can originate from automation, player, or system flows.',
+  },
+  TOGGLE_AUTOMATION: {
+    type: RUNTIME_COMMAND_TYPES.TOGGLE_AUTOMATION,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Automation toggles can originate from any priority tier for manual or programmatic control.',
   },
   COLLECT_RESOURCE: {
     type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
