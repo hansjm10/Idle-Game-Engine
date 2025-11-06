@@ -149,6 +149,34 @@ interface ResourceStateReader {
 
 ---
 
+### ResourceState Adapter
+
+When integrating `AutomationSystem` with `ProgressionCoordinator`, use `createResourceStateAdapter` to bridge the interface gap:
+
+```typescript
+import { createResourceStateAdapter } from '@idle-engine/core';
+
+const automationSystem = createAutomationSystem({
+  automations: sampleContent.automations,
+  commandQueue: runtime.getCommandQueue(),
+  resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
+  stepDurationMs,
+});
+```
+
+**Why the adapter is needed:**
+
+- `ResourceState.getIndex(id)` returns `number | undefined`
+- `ResourceStateReader.getResourceIndex(id)` expects `number` (with -1 for "not found")
+- The adapter converts `undefined → -1` for proper automation evaluation
+
+**Without the adapter:**
+- `resourceState` would lack `getResourceIndex` entirely
+- Automations would fall back to reading index 0 for all resources
+- Resource-threshold automations for non-first resources would be inert
+
+---
+
 ## Trigger Evaluators
 
 ### evaluateIntervalTrigger(automation, state, currentStep, stepDurationMs)
