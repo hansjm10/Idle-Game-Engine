@@ -6,6 +6,7 @@ import {
   CommandSource,
   WORKER_MESSAGE_SCHEMA_VERSION,
 } from '../modules/runtime-worker-protocol.js';
+import { getAutomationState } from '@idle-engine/core';
 
 describe('AutomationSystem Integration', () => {
   let harness: RuntimeWorkerHarness;
@@ -115,7 +116,16 @@ describe('AutomationSystem Integration', () => {
     // Clear initial messages
     messages.length = 0;
 
-    // Enable automation - sample-pack.auto-reactor is enabled by default, so we'll toggle it off then on
+    // Get automation system to verify state
+    const automationSystem = harness.getAutomationSystem();
+
+    // Verify initial state - sample-pack.auto-reactor should be enabled by default
+    const initialState = getAutomationState(automationSystem);
+    const initialAutomation = initialState.get('sample-pack.auto-reactor');
+    expect(initialAutomation).toBeDefined();
+    expect(initialAutomation?.enabled).toBe(true);
+
+    // Disable automation
     const disableMessage: RuntimeWorkerCommand = {
       type: 'COMMAND',
       schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
@@ -139,6 +149,19 @@ describe('AutomationSystem Integration', () => {
     currentTime += 100;
     harness.tick();
 
+    // Verify automation was disabled
+    const disabledState = getAutomationState(automationSystem);
+    const disabledAutomation = disabledState.get('sample-pack.auto-reactor');
+    expect(disabledAutomation).toBeDefined();
+    expect(disabledAutomation?.enabled).toBe(false);
+
+    // Verify that STATE_UPDATE messages were sent (confirming runtime is processing)
+    const stateUpdatesAfterDisable = messages.filter((msg: any) => msg.type === 'STATE_UPDATE');
+    expect(stateUpdatesAfterDisable.length).toBeGreaterThan(0);
+
+    // Clear messages for enable test
+    messages.length = 0;
+
     // Re-enable the automation
     const enableMessage: RuntimeWorkerCommand = {
       type: 'COMMAND',
@@ -161,8 +184,14 @@ describe('AutomationSystem Integration', () => {
     currentTime += 100;
     harness.tick();
 
-    // Verify that STATE_UPDATE messages were sent (confirming runtime is processing)
-    const stateUpdates = messages.filter((msg: any) => msg.type === 'STATE_UPDATE');
-    expect(stateUpdates.length).toBeGreaterThan(0);
+    // Verify automation was re-enabled
+    const enabledState = getAutomationState(automationSystem);
+    const enabledAutomation = enabledState.get('sample-pack.auto-reactor');
+    expect(enabledAutomation).toBeDefined();
+    expect(enabledAutomation?.enabled).toBe(true);
+
+    // Verify that STATE_UPDATE messages were sent
+    const stateUpdatesAfterEnable = messages.filter((msg: any) => msg.type === 'STATE_UPDATE');
+    expect(stateUpdatesAfterEnable.length).toBeGreaterThan(0);
   });
 });

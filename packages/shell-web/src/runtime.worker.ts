@@ -84,6 +84,7 @@ export interface RuntimeWorkerHarness {
   readonly handleMessage: (message: unknown) => void;
   readonly tick: () => void;
   readonly dispose: () => void;
+  readonly getAutomationSystem: () => ReturnType<typeof createAutomationSystem>;
 }
 
 export function isDedicatedWorkerScope(
@@ -1137,6 +1138,7 @@ export function initializeRuntimeWorker(
     handleMessage,
     tick,
     dispose,
+    getAutomationSystem: () => automationSystem,
   };
 }
 
