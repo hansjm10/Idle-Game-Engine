@@ -1100,6 +1100,14 @@ describe('runtime.worker integration', () => {
   });
 
   it('should evaluate resource-threshold automations for non-first resources', () => {
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // The sample content has automation "sample-pack.auto-harvester-on-energy"
+    // that triggers when "sample-pack.energy" >= 50.
+    // This test verifies the adapter correctly wraps the resource state with
+    // getResourceIndex() so automations can resolve resource IDs beyond index 0.
+
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
       now: timeController.now,
@@ -1108,25 +1116,31 @@ describe('runtime.worker integration', () => {
     });
 
     try {
-      // Assume sample content has a resource-threshold automation
-      // that targets a resource OTHER than index 0
-      // This test verifies the adapter correctly resolves resource IDs
+      // Run several ticks to allow automation system to evaluate
+      // If the adapter is working, resource-threshold automations can resolve
+      // "sample-pack.energy" without crashing or defaulting to index 0
+      for (let i = 0; i < 3; i++) {
+        timeController.advanceTime(110);
+        timeController.runTick();
+      }
 
-      // Trigger multiple ticks to allow automation to evaluate
-      timeController.advanceTime(110);
-      timeController.runTick();
-      timeController.advanceTime(110);
-      timeController.runTick();
-      timeController.advanceTime(110);
-      timeController.runTick();
+      // Verify that AUTOMATION priority commands were enqueued successfully
+      // This proves the automation system received a properly adapted resource state
+      const automationCommands = enqueueSpy.mock.calls.filter(
+        (call) => call[0]!.priority === core.CommandPriority.AUTOMATION,
+      );
 
-      // Verify automation system can access resources beyond index 0
-      const eventBus = harness.runtime.getEventBus();
-      const manifest = eventBus.getManifest();
+      // The automation system should have successfully evaluated and enqueued commands
+      // If the adapter was missing, resource-threshold triggers would fail silently
+      // or crash when trying to resolve resource IDs
+      expect(automationCommands.length).toBeGreaterThan(0);
 
-      // If automation fired, it successfully resolved resource index
-      // This is a smoke test - detailed behavior tested in automation-system.test.ts
-      expect(manifest).toBeDefined();
+      // Verify all automation commands have valid TOGGLE_GENERATOR structure
+      for (const call of automationCommands) {
+        expect(call[0]!.type).toBe('TOGGLE_GENERATOR');
+        expect(call[0]!.payload).toHaveProperty('generatorId');
+        expect(call[0]!.payload).toHaveProperty('enabled');
+      }
     } finally {
       harness.dispose();
       harness = null;
