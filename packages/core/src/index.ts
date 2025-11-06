@@ -503,6 +503,8 @@ export {
   buildProgressionSnapshot,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
+  type ProgressionAutomationState,
+  type SerializedAutomationState,
   type ResourceProgressionMetadata,
   type ProgressionGeneratorState,
   type ProgressionUpgradeState,

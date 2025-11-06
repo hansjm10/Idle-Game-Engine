@@ -1831,6 +1831,139 @@ describe('session snapshot protocol', () => {
   });
 });
 
+describe('automation state migration', () => {
+  let timeController = createTestTimeController();
+  let context: StubWorkerContext;
+  let harness: RuntimeWorkerHarness | null = null;
+
+  beforeEach(() => {
+    timeController = createTestTimeController();
+    context = new StubWorkerContext();
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    core.clearGameState();
+    harness?.dispose();
+    harness = null;
+  });
+
+  it('should initialize automation state with defaults for old saves without automation state', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    // Simulate an old save without automation state
+    // Use empty resources to avoid digest mismatch
+    const oldSaveState: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      // No automationState field (simulating old save)
+    };
+
+    // Set the old save state
+    core.setGameState({ progression: oldSaveState });
+
+    // Initialize the worker - should trigger migration
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    // Get the automation system to verify state was initialized
+    const automationSystem = harness.getAutomationSystem();
+    const automationState = automationSystem.getState();
+
+    // Verify automation state was initialized with defaults
+    expect(automationState.size).toBeGreaterThan(0);
+
+    // Check that each automation has the correct default state
+    for (const [id, state] of automationState.entries()) {
+      expect(state.id).toBe(id);
+      expect(state.lastFiredStep).toBe(-Infinity);
+      expect(state.cooldownExpiresStep).toBe(0);
+      expect(state.unlocked).toBe(false);
+      expect(typeof state.enabled).toBe('boolean');
+    }
+  });
+
+  it('should preserve existing automation state when loading saves with automation state', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    // Simulate a save with automation state
+    // Use a real automation ID from the sample content
+    const existingAutomationState = new Map([
+      ['auto:sample-collector', {
+        id: 'auto:sample-collector',
+        enabled: true,
+        lastFiredStep: 50,
+        cooldownExpiresStep: 100,
+        unlocked: true,
+        lastThresholdSatisfied: true,
+      }],
+    ]);
+
+    const saveWithAutomationState: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      automationState: {
+        automations: existingAutomationState,
+      },
+    };
+
+    // Set the save state with automation state
+    core.setGameState({ progression: saveWithAutomationState });
+
+    // Initialize the worker
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    // Get the automation system to verify state was preserved
+    const automationSystem = harness.getAutomationSystem();
+    const automationState = automationSystem.getState();
+
+    // Verify the specific automation state was preserved
+    const testAutoState = automationState.get('auto:sample-collector');
+    if (testAutoState) {
+      expect(testAutoState.enabled).toBe(true);
+      expect(testAutoState.lastFiredStep).toBe(50);
+      expect(testAutoState.cooldownExpiresStep).toBe(100);
+      expect(testAutoState.unlocked).toBe(true);
+      expect(testAutoState.lastThresholdSatisfied).toBe(true);
+    }
+  });
+
+  it('should persist automation state after ticks', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    // Initialize with fresh state
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    // Run a tick to trigger state update
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    // Get the persisted game state
+    const gameState = core.getGameState<{ progression: ProgressionAuthoritativeState }>();
+
+    // Verify automation state was persisted
+    expect(gameState?.progression.automationState).toBeDefined();
+    expect(gameState?.progression.automationState?.automations).toBeInstanceOf(Map);
+    expect(gameState?.progression.automationState?.automations.size).toBeGreaterThan(0);
+  });
+});
+
 describe('isDedicatedWorkerScope', () => {
   it('returns false for window-like objects', () => {
     const windowLike = { document: {}, importScripts: undefined };

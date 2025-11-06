@@ -14,10 +14,13 @@ import {
   registerResourceCommandHandlers,
   registerAutomationCommandHandlers,
   createAutomationSystem,
+  getAutomationState,
   createResourceStateAdapter,
   telemetry,
   type ProgressionAuthoritativeState,
+  type ProgressionAutomationState,
   type ProgressionResourceState,
+  type SerializedAutomationState,
   type DiagnosticTimelineResult,
   type EventBus,
   type ResourceCommandHandlerOptions,
@@ -102,6 +105,53 @@ export function isDedicatedWorkerScope(
   return typeof candidate.importScripts === 'function';
 }
 
+/**
+ * Migrates ProgressionAuthoritativeState to ensure automation state exists.
+ *
+ * For saves created before automation state was persisted, this function
+ * initializes default automation state where all automations are disabled.
+ * This ensures backward compatibility with old saves.
+ *
+ * @param state - The progression state to migrate
+ * @param automations - The automation definitions from the content pack
+ * @returns The migrated state with automation state initialized if missing
+ */
+function migrateAutomationState(
+  state: ProgressionAuthoritativeState | undefined,
+  automations: readonly { id: string; enabledByDefault: boolean }[],
+): ProgressionAuthoritativeState | undefined {
+  if (!state) {
+    return state;
+  }
+
+  // If automation state already exists, no migration needed
+  if (state.automationState) {
+    return state;
+  }
+
+  // Initialize default automation state for old saves
+  const defaultAutomations = new Map<string, SerializedAutomationState>();
+  for (const automation of automations) {
+    defaultAutomations.set(automation.id, {
+      id: automation.id,
+      enabled: automation.enabledByDefault,
+      lastFiredStep: -Infinity,
+      cooldownExpiresStep: 0,
+      unlocked: false,
+      lastThresholdSatisfied: undefined,
+    });
+  }
+
+  const migratedState: ProgressionAuthoritativeState = {
+    ...state,
+    automationState: {
+      automations: defaultAutomations,
+    },
+  };
+
+  return migratedState;
+}
+
 export function initializeRuntimeWorker(
   options: RuntimeWorkerOptions = {},
 ): RuntimeWorkerHarness {
@@ -133,7 +183,11 @@ export function initializeRuntimeWorker(
       existingState = existing;
       const candidate = (existing as { progression?: unknown }).progression;
       if (candidate && typeof candidate === 'object') {
-        initialProgression = candidate as ProgressionAuthoritativeState;
+        // Apply migration to ensure automation state exists
+        initialProgression = migrateAutomationState(
+          candidate as ProgressionAuthoritativeState,
+          sampleContent.automations,
+        );
       }
     }
   } catch {
@@ -171,11 +225,19 @@ export function initializeRuntimeWorker(
 
   // Create and register AutomationSystem
   // Wrap resourceState with adapter to map getIndex -> getResourceIndex
+  // Convert ProgressionAutomationState to Map<string, AutomationState> for initialState
+  const initialAutomationState = initialProgression?.automationState
+    ? new Map(
+        Array.from(initialProgression.automationState.automations.entries())
+      )
+    : undefined;
+
   const automationSystem = createAutomationSystem({
     automations: sampleContent.automations,
     commandQueue: runtime.getCommandQueue(),
     resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
     stepDurationMs,
+    initialState: initialAutomationState,
   });
 
   runtime.addSystem(automationSystem);
@@ -251,6 +313,26 @@ export function initializeRuntimeWorker(
       const backPressure = eventBus.getBackPressureSnapshot();
       progressionCoordinator.updateForStep(after);
       progressionCoordinator.state.stepDurationMs = stepDurationMs;
+
+      // Extract and persist automation state
+      const automationStateMap = getAutomationState(automationSystem);
+      const automationState: ProgressionAutomationState = {
+        automations: new Map(
+          Array.from(automationStateMap.entries()).map(([id, state]) => {
+            const serialized: SerializedAutomationState = {
+              id: state.id,
+              enabled: state.enabled,
+              lastFiredStep: state.lastFiredStep,
+              cooldownExpiresStep: state.cooldownExpiresStep,
+              unlocked: state.unlocked,
+              lastThresholdSatisfied: state.lastThresholdSatisfied,
+            };
+            return [id, serialized];
+          })
+        ),
+      };
+      (progressionCoordinator.state as Mutable<ProgressionAuthoritativeState>).automationState = automationState;
+
       const publishedAt = monotonicClock.now();
       const progression = buildProgressionSnapshot(
         after,

@@ -100,6 +100,28 @@ export interface ProgressionUpgradeState {
   readonly costs?: readonly UpgradeResourceCost[];
 }
 
+/**
+ * Serialized state for a single automation.
+ * Compatible with AutomationState from automation-system.ts but uses
+ * a plain object structure suitable for JSON serialization.
+ */
+export interface SerializedAutomationState {
+  readonly id: string;
+  readonly enabled: boolean;
+  readonly lastFiredStep: number;
+  readonly cooldownExpiresStep: number;
+  readonly unlocked: boolean;
+  readonly lastThresholdSatisfied?: boolean;
+}
+
+/**
+ * Collection of automation states keyed by automation ID.
+ * Stores the runtime state of all automations for persistence.
+ */
+export interface ProgressionAutomationState {
+  readonly automations: ReadonlyMap<string, SerializedAutomationState>;
+}
+
 export interface ProgressionAuthoritativeState {
   readonly stepDurationMs: number;
   readonly resources?: ProgressionResourceState;
@@ -107,6 +129,7 @@ export interface ProgressionAuthoritativeState {
   readonly generators?: readonly ProgressionGeneratorState[];
   readonly upgradePurchases?: UpgradePurchaseEvaluator;
   readonly upgrades?: readonly ProgressionUpgradeState[];
+  readonly automationState?: ProgressionAutomationState;
 }
 
 export function buildProgressionSnapshot(
