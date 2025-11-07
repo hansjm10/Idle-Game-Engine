@@ -39,6 +39,12 @@ export interface WorkerRestoreSessionPayload {
   readonly state?: SerializedResourceState;
   readonly elapsedMs?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
+  /**
+   * Optional: worker step recorded in the save snapshot. If provided, the
+   * worker rebases absolute step fields (like automation cooldowns) to the
+   * new timeline to avoid long post-restore cooldowns.
+   */
+  readonly savedWorkerStep?: number;
 }
 
 interface WorkerBridgeRestoreError extends Error {
@@ -508,6 +514,9 @@ export class WorkerBridgeImpl<TState = unknown>
       }),
       ...(payload.resourceDeltas !== undefined && {
         resourceDeltas: payload.resourceDeltas,
+      }),
+      ...(payload.savedWorkerStep !== undefined && {
+        savedWorkerStep: payload.savedWorkerStep,
       }),
     };
 

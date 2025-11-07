@@ -10,7 +10,7 @@ import {
   enqueueAutomationCommand,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
-import type { AutomationState } from './automation-system.js';
+import type { AutomationState, SerializedAutomationState } from './automation-system.js';
 import { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import { IdleEngineRuntime } from './index.js';
@@ -217,6 +217,195 @@ describe('AutomationSystem', () => {
       });
       const stateAfterSecondTick = getAutomationState(system);
       expect(stateAfterSecondTick.get('auto:basic')?.unlocked).toBe(true);
+    });
+  });
+
+  describe('restoreState behavior', () => {
+    it('merges provided entries and preserves defaults for others', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:a' as any,
+          name: { default: 'A', variants: {} },
+          description: { default: 'A desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:a' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+        {
+          id: 'auto:b' as any,
+          name: { default: 'B', variants: {} },
+          description: { default: 'B desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:b' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 1,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Merge a partial restore for only auto:a
+      system.restoreState([{
+        id: 'auto:a',
+        enabled: false,
+        lastFiredStep: 5,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      }]);
+
+      const state = getAutomationState(system);
+      const a = state.get('auto:a');
+      const b = state.get('auto:b');
+
+      expect(a).toBeDefined();
+      expect(a?.enabled).toBe(false);
+      expect(a?.lastFiredStep).toBe(5);
+      expect(a?.unlocked).toBe(true);
+
+      // auto:b should still exist with default values (not cleared)
+      expect(b).toBeDefined();
+      expect(b?.enabled).toBe(true);
+      expect(b?.lastFiredStep).toBe(-Infinity);
+      expect(b?.unlocked).toBe(false);
+    });
+
+    it('skips restoration when provided array is empty', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:only' as any,
+          name: { default: 'Only', variants: {} },
+          description: { default: 'Only desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:only' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      const before = getAutomationState(system).get('auto:only');
+      expect(before).toBeDefined();
+
+      system.restoreState([]);
+
+      const after = getAutomationState(system).get('auto:only');
+      expect(after).toBeDefined();
+      // Ensure nothing toggled off due to empty restore
+      expect(after?.enabled).toBe(before?.enabled);
+      expect(after?.lastFiredStep).toBe(before?.lastFiredStep);
+      expect(after?.unlocked).toBe(before?.unlocked);
+    });
+
+    it('normalizes non-finite lastFiredStep to -Infinity on restore', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:only' as any,
+          name: { default: 'Only', variants: {} },
+          description: { default: 'Only desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:only' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Simulate a JSON round-trip where -Infinity becomes null
+      system.restoreState([
+        {
+          id: 'auto:only',
+          enabled: true,
+          lastFiredStep: null,
+          cooldownExpiresStep: 0,
+          unlocked: false,
+        } satisfies SerializedAutomationState,
+      ]);
+
+      const after = getAutomationState(system).get('auto:only');
+      expect(after?.lastFiredStep).toBe(-Infinity);
+    });
+
+    it('rebases step fields when savedWorkerStep is provided', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:interval' as any,
+          name: { default: 'Interval', variants: {} },
+          description: { default: 'Interval desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:x' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Simulate a snapshot captured at workerStep=100
+      system.restoreState([
+        {
+          id: 'auto:interval',
+          enabled: true,
+          lastFiredStep: 100,
+          cooldownExpiresStep: 115,
+          unlocked: true,
+        },
+      ], { savedWorkerStep: 100, currentStep: 0 });
+
+      const rebased = getAutomationState(system).get('auto:interval');
+      expect(rebased).toBeDefined();
+      // lastFiredStep rebased to 0, cooldownExpiresStep rebased to 15
+      expect(rebased?.lastFiredStep).toBe(0);
+      expect(rebased?.cooldownExpiresStep).toBe(15);
+
+      // Ensure -Infinity remains -Infinity when rebased
+      // Use null to represent -Infinity in serialized format
+      system.restoreState([
+        {
+          id: 'auto:interval',
+          enabled: true,
+          lastFiredStep: null,
+          cooldownExpiresStep: 50,
+          unlocked: true,
+        } satisfies SerializedAutomationState,
+      ], { savedWorkerStep: 25, currentStep: 0 });
+
+      const rebased2 = getAutomationState(system).get('auto:interval');
+      expect(rebased2?.lastFiredStep).toBe(-Infinity);
+      // 50 - 25 => 25
+      expect(rebased2?.cooldownExpiresStep).toBe(25);
     });
   });
 

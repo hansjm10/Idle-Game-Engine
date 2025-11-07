@@ -87,10 +87,11 @@ describe('session-restore', () => {
       expect(result.validationStatus).toBe('valid');
       expect(result.snapshot).toBeDefined();
       expect(result.elapsedMs).toBe(10000);
-      expect(mockBridge.restoreSession).toHaveBeenCalledWith({
+      expect(mockBridge.restoreSession).toHaveBeenCalledWith(expect.objectContaining({
         state: expect.any(Object),
         elapsedMs: 10000,
-      });
+        savedWorkerStep: 1000,
+      }));
     });
 
     it('should return success with no snapshot for fresh start', async () => {
@@ -371,6 +372,55 @@ describe('session-restore', () => {
 
       // Should be incompatible because definition count doesn't match
       expect(result.compatible).toBe(false);
+    });
+  });
+
+  describe('automation state migration', () => {
+    it('should apply automation state migration to old saves', async () => {
+      const oldSnapshot: StoredSessionSnapshot = {
+        schemaVersion: 1,
+        slotId: 'default',
+        capturedAt: new Date().toISOString(),
+        workerStep: 100,
+        monotonicMs: 10000,
+        state: {
+          ids: ['resource1'],
+          amounts: [100],
+          capacities: [1000],
+          flags: [0],
+          // No automationState field - simulating old save
+        },
+        runtimeVersion: '0.1.0',
+        contentDigest: createDefinitionDigest(['resource1']),
+      };
+
+      mockAdapter.load = vi.fn().mockResolvedValue(oldSnapshot);
+
+      const definitions: ResourceDefinition[] = [
+        {
+          id: 'resource1',
+          startAmount: 0,
+          capacity: 1000,
+          unlocked: true,
+          visible: true,
+        },
+      ];
+
+      const result = await restoreSession(mockBridge, mockAdapter, {
+        slotId: 'default',
+        definitions,
+      });
+
+      expect(result.success).toBe(true);
+
+      // Verify that the state passed to restoreSession has automationState
+      expect(mockBridge.restoreSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: expect.objectContaining({
+            automationState: [],
+          }),
+        })
+      );
     });
   });
 });

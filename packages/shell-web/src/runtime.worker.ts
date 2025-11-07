@@ -775,6 +775,15 @@ export function initializeRuntimeWorker(
         resources.serialized = message.state;
         resources.state = progressionCoordinator.resourceState;
         progressionCoordinator.hydrateResources(message.state);
+
+        // Restore automation state if present in the snapshot
+        if (message.state.automationState) {
+          automationSystem.restoreState(message.state.automationState, {
+            savedWorkerStep: message.savedWorkerStep,
+            currentStep: runtime.getCurrentStep(),
+          });
+        }
+
         setGameState(gameState);
       }
 
@@ -857,7 +866,8 @@ export function initializeRuntimeWorker(
     }
 
     try {
-      const state = progressionCoordinator.resourceState.exportForSave();
+      const automationStateMap = automationSystem.getState();
+      const state = progressionCoordinator.resourceState.exportForSave(automationStateMap);
       const currentStep = runtime.getCurrentStep();
       const monotonicMs = monotonicClock.now();
       const capturedAt = new Date().toISOString();
@@ -890,7 +900,7 @@ export function initializeRuntimeWorker(
         workerStep: currentStep,
         reason: message.reason ?? 'unspecified',
         requestId: requestId ?? 'none',
-        resourceCount: state.resources?.length ?? 0,
+        resourceCount: state.ids.length,
       });
 
       // Record snapshot size metrics for aggregation and alerting

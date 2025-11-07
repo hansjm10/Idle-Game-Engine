@@ -59,6 +59,26 @@ export interface AutomationState {
 }
 
 /**
+ * Serialized representation of automation state for save files and persistence.
+ *
+ * This type differs from AutomationState in that lastFiredStep is `number | null`
+ * instead of `number`. During serialization, `-Infinity` values are converted to
+ * `null` for JSON compatibility. During restoration, `null` values are converted
+ * back to `-Infinity`.
+ *
+ * @see AutomationState - Runtime automation state type
+ * @see restoreState - Method that accepts this type for state restoration
+ */
+export interface SerializedAutomationState {
+  readonly id: string;
+  readonly enabled: boolean;
+  readonly lastFiredStep: number | null; // null = never fired (-Infinity)
+  readonly cooldownExpiresStep: number;
+  readonly unlocked: boolean;
+  readonly lastThresholdSatisfied?: boolean;
+}
+
+/**
  * Options for creating an AutomationSystem.
  */
 export interface AutomationSystemOptions {
@@ -98,7 +118,13 @@ export interface AutomationSystemOptions {
  */
 export function createAutomationSystem(
   options: AutomationSystemOptions,
-): System & { getState: () => ReadonlyMap<string, AutomationState> } {
+): System & {
+  getState: () => ReadonlyMap<string, AutomationState>;
+  restoreState: (
+    state: readonly SerializedAutomationState[],
+    options?: { savedWorkerStep?: number; currentStep?: number },
+  ) => void;
+} {
   const { automations, stepDurationMs, commandQueue, resourceState } = options;
   const automationStates = new Map<string, AutomationState>();
   const pendingEventTriggers = new Set<string>();
@@ -121,6 +147,66 @@ export function createAutomationSystem(
 
     getState() {
       return new Map(automationStates);
+    },
+
+    restoreState(
+      stateArray: readonly SerializedAutomationState[],
+      restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
+    ) {
+      // If no state provided (e.g., legacy save migrated to []), retain defaults
+      if (!stateArray || stateArray.length === 0) {
+        return;
+      }
+
+      // Merge provided entries into existing definitions without clearing
+      for (const restored of stateArray) {
+        const existing = automationStates.get(restored.id);
+        if (!existing) {
+          // Ignore unknown automations not present in current definitions
+          continue;
+        }
+        // Normalize fields that may not round-trip through JSON (e.g. -Infinity -> null)
+        // SerializedAutomationState.lastFiredStep is number | null, convert null to -Infinity
+        const normalizedLastFired =
+          restored.lastFiredStep !== null &&
+          typeof restored.lastFiredStep === 'number' &&
+          Number.isFinite(restored.lastFiredStep)
+            ? restored.lastFiredStep
+            : -Infinity;
+
+        // Compute optional step rebase if provided by caller.
+        // When restoring from a snapshot captured at a non-zero worker step,
+        // lastFiredStep and cooldownExpiresStep are absolute to that timeline.
+        // Rebase them into the caller's current timeline so cooldown math
+        // remains consistent.
+        const savedWorkerStep = restoreOptions?.savedWorkerStep;
+        const targetCurrentStep = restoreOptions?.currentStep ?? 0;
+        const hasValidSavedStep =
+          typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
+
+        const rebaseDelta = hasValidSavedStep
+          ? targetCurrentStep - (savedWorkerStep as number)
+          : 0;
+
+        const rebasedLastFired =
+          normalizedLastFired === -Infinity
+            ? -Infinity
+            : normalizedLastFired + rebaseDelta;
+
+        const originalCooldownExpires = restored.cooldownExpiresStep;
+        const rebasedCooldownExpires = hasValidSavedStep
+          ? originalCooldownExpires + rebaseDelta
+          : originalCooldownExpires;
+
+        // Shallow-merge to preserve any fields not present in older saves,
+        // and override with normalized/rebased values where needed.
+        automationStates.set(restored.id, {
+          ...existing,
+          ...restored,
+          lastFiredStep: rebasedLastFired,
+          cooldownExpiresStep: rebasedCooldownExpires,
+        });
+      }
     },
 
     setup({ events }) {

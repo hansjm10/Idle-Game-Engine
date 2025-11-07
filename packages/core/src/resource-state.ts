@@ -3,6 +3,7 @@ import {
   type ImmutableMapSnapshot,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
+import type { AutomationState, SerializedAutomationState } from './automation-system.js';
 
 const DIRTY_EPSILON_ABSOLUTE = 1e-9;
 const DIRTY_EPSILON_RELATIVE = 1e-9;
@@ -124,6 +125,7 @@ export interface SerializedResourceState {
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
   readonly definitionDigest?: ResourceDefinitionDigest;
+  readonly automationState?: readonly SerializedAutomationState[];
 }
 
 export interface ResourceSpendAttemptContext {
@@ -155,7 +157,7 @@ export interface ResourceState {
   forceClearDirtyState(): void;
   clearDirtyScratch(): void;
   snapshot(options?: { mode?: 'publish' | 'recorder' }): ResourceStateSnapshot;
-  exportForSave(): SerializedResourceState;
+  exportForSave(automationState?: ReadonlyMap<string, AutomationState>): SerializedResourceState;
   getDefinitionDigest(): ResourceDefinitionDigest;
 }
 
@@ -531,7 +533,8 @@ function createResourceStateFacade(
     clearDirtyScratch: () => clearDirtyScratch(internal),
     snapshot: (options?: PublishSnapshotOptions) =>
       snapshot(internal, options ?? {}),
-    exportForSave: () => exportForSave(internal),
+    exportForSave: (automationState?: ReadonlyMap<string, AutomationState>) =>
+      exportForSave(internal, automationState),
     getDefinitionDigest: () => internal.definitionDigest,
   };
 }
@@ -1159,6 +1162,7 @@ function clearDirtyBits(flags: Uint8Array, indices: readonly number[]): void {
 
 function exportForSave(
   internal: ResourceStateInternal,
+  automationState?: ReadonlyMap<string, AutomationState>,
 ): SerializedResourceState {
   const { buffers } = internal;
   const resourceCount = buffers.ids.length;
@@ -1180,7 +1184,7 @@ function exportForSave(
     visible[index] = (buffers.flags[index] & FLAG_VISIBLE) !== 0;
   }
 
-  return {
+  const baseState: SerializedResourceState = {
     ids: buffers.ids,
     amounts,
     capacities,
@@ -1189,6 +1193,25 @@ function exportForSave(
     flags,
     definitionDigest: internal.definitionDigest,
   };
+
+  if (automationState && automationState.size > 0) {
+    // Explicitly encode sentinel values for JSON compatibility.
+    // - lastFiredStep: -Infinity => null (never fired)
+    const automationArray = Array.from(automationState.values()).map((s) => ({
+      id: s.id,
+      enabled: s.enabled,
+      lastFiredStep: Number.isFinite(s.lastFiredStep) ? s.lastFiredStep : null,
+      cooldownExpiresStep: s.cooldownExpiresStep,
+      unlocked: s.unlocked,
+      lastThresholdSatisfied: s.lastThresholdSatisfied,
+    }));
+    return {
+      ...baseState,
+      automationState: automationArray,
+    };
+  }
+
+  return baseState;
 }
 
 export function reconcileSaveAgainstDefinitions(

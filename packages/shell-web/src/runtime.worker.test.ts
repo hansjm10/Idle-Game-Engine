@@ -1829,6 +1829,229 @@ describe('session snapshot protocol', () => {
     expect(snapshot1.snapshot.workerStep).toBe(1);
     expect(snapshot2.snapshot.workerStep).toBe(1);
   });
+
+  it('includes automation state in session snapshots', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    // Enable an automation to change its state
+    context.dispatch({
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      requestId: 'toggle-auto-1',
+      command: {
+        type: 'TOGGLE_AUTOMATION',
+        payload: { automationId: 'sample-pack.auto-reactor', enabled: false },
+        issuedAt: 1,
+      },
+    });
+
+    // Advance runtime to process command
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    context.postMessage.mockClear();
+
+    // Request snapshot
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-automation-1',
+      reason: 'manual-save',
+    });
+
+    // Verify SESSION_SNAPSHOT message was emitted
+    const snapshotCall = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'SESSION_SNAPSHOT',
+    );
+    expect(snapshotCall).toBeDefined();
+
+    const snapshotEnvelope = snapshotCall![0] as {
+      type: string;
+      schemaVersion: number;
+      requestId: string;
+      snapshot: {
+        persistenceSchemaVersion: number;
+        slotId: string;
+        capturedAt: string;
+        workerStep: number;
+        monotonicMs: number;
+        state: {
+          automationState?: readonly {
+            readonly id: string;
+            readonly enabled: boolean;
+            readonly lastFiredStep: number;
+            readonly cooldownExpiresStep: number;
+            readonly unlocked: boolean;
+            readonly lastThresholdSatisfied: boolean;
+          }[];
+        };
+        runtimeVersion: string;
+        contentDigest: { ids: readonly string[]; version: number; hash: string };
+      };
+    };
+
+    // Verify automation state is included
+    expect(snapshotEnvelope.snapshot.state.automationState).toBeDefined();
+    expect(snapshotEnvelope.snapshot.state.automationState).toContainEqual(
+      expect.objectContaining({
+        id: 'sample-pack.auto-reactor',
+        enabled: false,
+      }),
+    );
+  });
+
+  it('restores automation state from snapshot', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    // Create a snapshot with automation state
+    const automationState = [{
+      id: 'sample-pack.auto-reactor',
+      enabled: true,
+      lastFiredStep: 100,
+      cooldownExpiresStep: 110,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    }];
+
+    const state: core.SerializedResourceState = {
+      ids: ['sample-pack.energy'],
+      amounts: [500],
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+      automationState,
+    };
+
+    // Send restore message
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      state,
+    });
+
+    await flushAsync();
+
+    // Verify session was restored
+    const sessionRestored = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SESSION_RESTORED');
+    expect(sessionRestored).toBeDefined();
+
+    // Request snapshot to verify state
+    const requestId = 'verify-123';
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId,
+    });
+
+    await flushAsync();
+
+    const snapshotEnvelope = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string; requestId?: string })
+      .find(
+        (payload) =>
+          payload?.type === 'SESSION_SNAPSHOT' && payload?.requestId === requestId
+      ) as {
+      type: 'SESSION_SNAPSHOT';
+      requestId: string;
+      snapshot: {
+        schemaVersion: number;
+        slotId: string;
+        capturedAt: string;
+        workerStep: number;
+        monotonicMs: number;
+        state: core.SerializedResourceState;
+        runtimeVersion: string;
+        contentDigest?: { hash: string; version: number; ids: string[] };
+      };
+    };
+
+    expect(snapshotEnvelope?.snapshot.state.automationState).toContainEqual(
+      expect.objectContaining({
+        id: 'sample-pack.auto-reactor',
+        enabled: true,
+        lastFiredStep: 100,
+        cooldownExpiresStep: 110,
+        unlocked: true,
+      })
+    );
+  });
+
+  it('rebases automation step fields on restore when savedWorkerStep is provided', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      stepSizeMs: 100,
+    });
+
+    context.postMessage.mockClear();
+
+    const automationState = [{
+      id: 'sample-pack.auto-reactor',
+      enabled: true,
+      lastFiredStep: 50,
+      cooldownExpiresStep: 65,
+      unlocked: true,
+    }];
+
+    const state: core.SerializedResourceState = {
+      ids: ['sample-pack.energy'],
+      amounts: [500],
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+      automationState,
+    };
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      state,
+      savedWorkerStep: 50,
+    });
+
+    await flushAsync();
+
+    const sessionRestored = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SESSION_RESTORED');
+    expect(sessionRestored).toBeDefined();
+
+    const automationSystem = harness.getAutomationSystem();
+    const liveAutomationState = core.getAutomationState(automationSystem);
+    const reactor = liveAutomationState.get('sample-pack.auto-reactor');
+    expect(reactor).toBeDefined();
+    expect(reactor?.lastFiredStep).toBe(0);
+    expect(reactor?.cooldownExpiresStep).toBe(15);
+  });
 });
 
 describe('isDedicatedWorkerScope', () => {

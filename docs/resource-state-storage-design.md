@@ -553,6 +553,8 @@ interface SerializedResourceState {
   readonly unlocked?: readonly boolean[];
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
+  readonly definitionDigest?: ResourceDefinitionDigest;
+  readonly automationState?: readonly SerializedAutomationState[];
 }
 
 interface ResourceSpendAttemptContext {
@@ -576,6 +578,12 @@ regenerates fresh rates during the next tick.
   captures the offending metadata. During rehydration the module trusts `flags`
   as the single source of truth, rebuilding the convenience arrays from the mask
   so the emitted snapshot always reflects the authoritative bits.
+
+**Automation State Serialization:**
+
+The `automationState` field contains serialized automation state entries. Each entry uses `SerializedAutomationState` format where `lastFiredStep` is `number | null` (null represents `-Infinity` for JSON compatibility). During `exportForSave()`, the runtime converts `AutomationState.lastFiredStep` values of `-Infinity` to `null`. During restoration via `restoreState()`, `null` values are converted back to `-Infinity`.
+
+See `docs/automation-system-api.md` for details on `SerializedAutomationState` and `restoreState()`.
 
 #### Dual-Mode Progression Snapshot Support (Existing Implementation)
 

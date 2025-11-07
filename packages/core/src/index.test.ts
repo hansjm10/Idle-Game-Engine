@@ -6,6 +6,7 @@ import { CommandQueue } from './command-queue.js';
 import {
   IdleEngineRuntime,
   type IdleEngineRuntimeOptions,
+  type AutomationState,
 } from './index.js';
 import {
   DEFAULT_EVENT_BUS_OPTIONS,
@@ -1124,6 +1125,20 @@ describe('IdleEngineRuntime', () => {
     const second = runDeterministicSimulation();
 
     expect(second).toEqual(first);
+  });
+
+  it('exports AutomationState type', () => {
+    // This is a compile-time test
+    const testState: AutomationState = {
+      id: 'test',
+      enabled: true,
+      lastFiredStep: 0,
+      cooldownExpiresStep: 0,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    };
+
+    expect(testState.id).toBe('test');
   });
 });
 

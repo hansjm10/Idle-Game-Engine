@@ -54,3 +54,6 @@ export {
   applyMigrations,
   migrationRegistry,
 } from './migration-registry.js';
+
+// Automation state migration
+export { migrateAutomationState } from '../migrations/automation-state-migration.js';

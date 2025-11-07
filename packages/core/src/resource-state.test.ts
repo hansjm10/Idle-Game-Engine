@@ -889,4 +889,87 @@ describe('ResourceState', () => {
       }),
     );
   });
+
+  it('exportForSave includes automationState when provided', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+    const automationState = new Map([
+      ['auto:collector', {
+        id: 'auto:collector',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 15,
+        unlocked: true,
+        lastThresholdSatisfied: false,
+      }]
+    ]);
+
+    const exported = state.exportForSave(automationState);
+
+    expect(exported.automationState).toEqual([{
+      id: 'auto:collector',
+      enabled: true,
+      lastFiredStep: 10,
+      cooldownExpiresStep: 15,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    }]);
+  });
+
+  it('exportForSave encodes -Infinity lastFiredStep as null', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+    const automationState = new Map([
+      ['auto:never-fired', {
+        id: 'auto:never-fired',
+        enabled: true,
+        lastFiredStep: -Infinity,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+        lastThresholdSatisfied: undefined,
+      }]
+    ]);
+
+    const exported = state.exportForSave(automationState);
+
+    expect(exported.automationState).toEqual([{
+      id: 'auto:never-fired',
+      enabled: true,
+      lastFiredStep: null,
+      cooldownExpiresStep: 0,
+      unlocked: true,
+      lastThresholdSatisfied: undefined,
+    }]);
+  });
+
+  it('exportForSave excludes automationState when map is empty', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+    const emptyAutomationState = new Map();
+
+    const exported = state.exportForSave(emptyAutomationState);
+
+    expect(exported.automationState).toBeUndefined();
+  });
+
+  it('exportForSave excludes automationState when not provided', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+
+    const exported = state.exportForSave();
+
+    expect(exported.automationState).toBeUndefined();
+  });
 });
