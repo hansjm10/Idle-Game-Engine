@@ -775,6 +775,12 @@ export function initializeRuntimeWorker(
         resources.serialized = message.state;
         resources.state = progressionCoordinator.resourceState;
         progressionCoordinator.hydrateResources(message.state);
+
+        // Restore automation state if present
+        if (message.state.automationState) {
+          automationSystem.restoreState(message.state.automationState);
+        }
+
         setGameState(gameState);
       }
 
@@ -857,7 +863,15 @@ export function initializeRuntimeWorker(
     }
 
     try {
-      const state = progressionCoordinator.resourceState.exportForSave();
+      const resourceState = progressionCoordinator.resourceState.exportForSave();
+
+      // Create state object with automation state included
+      const automationStates = automationSystem.getState();
+      const state = {
+        ...resourceState,
+        automationState: automationStates.size > 0 ? Array.from(automationStates.values()) : undefined,
+      };
+
       const currentStep = runtime.getCurrentStep();
       const monotonicMs = monotonicClock.now();
       const capturedAt = new Date().toISOString();

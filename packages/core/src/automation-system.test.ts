@@ -220,6 +220,237 @@ describe('AutomationSystem', () => {
     });
   });
 
+  describe('restoreState', () => {
+    it('should restore saved automation states', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+        {
+          id: 'auto:farmer' as any,
+          name: { default: 'Auto Farmer', variants: {} },
+          description: { default: 'Farms automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:farms' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 2000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: false,
+          order: 1,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Verify initial state
+      const initialState = getAutomationState(system);
+      expect(initialState.get('auto:collector')?.enabled).toBe(true);
+      expect(initialState.get('auto:farmer')?.enabled).toBe(false);
+
+      // Prepare saved states with different values
+      const savedStates: AutomationState[] = [
+        {
+          id: 'auto:collector',
+          enabled: false,
+          lastFiredStep: 50,
+          cooldownExpiresStep: 60,
+          unlocked: true,
+          lastThresholdSatisfied: true,
+        },
+        {
+          id: 'auto:farmer',
+          enabled: true,
+          lastFiredStep: 75,
+          cooldownExpiresStep: 85,
+          unlocked: true,
+          lastThresholdSatisfied: false,
+        },
+      ];
+
+      // Restore the saved states
+      system.restoreState(savedStates);
+
+      // Verify states were restored
+      const restoredState = getAutomationState(system);
+      const collectorState = restoredState.get('auto:collector');
+      const farmerState = restoredState.get('auto:farmer');
+
+      expect(collectorState?.enabled).toBe(false);
+      expect(collectorState?.lastFiredStep).toBe(50);
+      expect(collectorState?.cooldownExpiresStep).toBe(60);
+      expect(collectorState?.unlocked).toBe(true);
+      expect(collectorState?.lastThresholdSatisfied).toBe(true);
+
+      expect(farmerState?.enabled).toBe(true);
+      expect(farmerState?.lastFiredStep).toBe(75);
+      expect(farmerState?.cooldownExpiresStep).toBe(85);
+      expect(farmerState?.unlocked).toBe(true);
+      expect(farmerState?.lastThresholdSatisfied).toBe(false);
+    });
+
+    it('should ignore empty arrays from legacy save migration', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Get initial state
+      const initialState = getAutomationState(system);
+      const initialCollectorState = { ...initialState.get('auto:collector') };
+
+      // Restore with empty array (legacy migration case)
+      system.restoreState([]);
+
+      // State should remain unchanged
+      const afterRestoreState = getAutomationState(system);
+      const collectorState = afterRestoreState.get('auto:collector');
+
+      expect(collectorState?.enabled).toBe(initialCollectorState.enabled);
+      expect(collectorState?.lastFiredStep).toBe(initialCollectorState.lastFiredStep);
+      expect(collectorState?.cooldownExpiresStep).toBe(initialCollectorState.cooldownExpiresStep);
+      expect(collectorState?.unlocked).toBe(initialCollectorState.unlocked);
+    });
+
+    it('should ignore automations in saved state but not in content pack', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Saved state includes an automation that no longer exists
+      const savedStates: AutomationState[] = [
+        {
+          id: 'auto:collector',
+          enabled: false,
+          lastFiredStep: 50,
+          cooldownExpiresStep: 60,
+          unlocked: true,
+        },
+        {
+          id: 'auto:removed',  // This automation doesn't exist in content pack
+          enabled: true,
+          lastFiredStep: 100,
+          cooldownExpiresStep: 110,
+          unlocked: true,
+        },
+      ];
+
+      // Restore should not throw error
+      expect(() => system.restoreState(savedStates)).not.toThrow();
+
+      // Only collector should be in state
+      const restoredState = getAutomationState(system);
+      expect(restoredState.size).toBe(1);
+      expect(restoredState.get('auto:collector')?.enabled).toBe(false);
+      expect(restoredState.get('auto:removed')).toBeUndefined();
+    });
+
+    it('should preserve default states for automations not in saved state', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+        {
+          id: 'auto:farmer' as any,
+          name: { default: 'Auto Farmer', variants: {} },
+          description: { default: 'Farms automatically', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:farms' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 2000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: false,
+          order: 1,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Saved state only includes collector
+      const savedStates: AutomationState[] = [
+        {
+          id: 'auto:collector',
+          enabled: false,
+          lastFiredStep: 50,
+          cooldownExpiresStep: 60,
+          unlocked: true,
+        },
+      ];
+
+      system.restoreState(savedStates);
+
+      const restoredState = getAutomationState(system);
+
+      // Collector should have restored state
+      const collectorState = restoredState.get('auto:collector');
+      expect(collectorState?.enabled).toBe(false);
+      expect(collectorState?.lastFiredStep).toBe(50);
+
+      // Farmer should have default state (not in saved state)
+      const farmerState = restoredState.get('auto:farmer');
+      expect(farmerState?.enabled).toBe(false); // enabledByDefault: false
+      expect(farmerState?.lastFiredStep).toBe(-Infinity);
+      expect(farmerState?.cooldownExpiresStep).toBe(0);
+      expect(farmerState?.unlocked).toBe(false);
+    });
+  });
+
   describe('interval triggers', () => {
     it('should fire on first tick when lastFiredStep is -Infinity', () => {
       const automation: AutomationDefinition = {

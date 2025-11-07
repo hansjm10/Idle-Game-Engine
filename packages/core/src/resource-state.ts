@@ -124,6 +124,7 @@ export interface SerializedResourceState {
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
   readonly definitionDigest?: ResourceDefinitionDigest;
+  readonly automationState?: readonly import('./automation-system.js').AutomationState[];
 }
 
 export interface ResourceSpendAttemptContext {

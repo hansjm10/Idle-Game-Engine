@@ -98,7 +98,10 @@ export interface AutomationSystemOptions {
  */
 export function createAutomationSystem(
   options: AutomationSystemOptions,
-): System & { getState: () => ReadonlyMap<string, AutomationState> } {
+): System & {
+  getState: () => ReadonlyMap<string, AutomationState>;
+  restoreState: (savedStates: readonly AutomationState[]) => void;
+} {
   const { automations, stepDurationMs, commandQueue, resourceState } = options;
   const automationStates = new Map<string, AutomationState>();
   const pendingEventTriggers = new Set<string>();
@@ -121,6 +124,47 @@ export function createAutomationSystem(
 
     getState() {
       return new Map(automationStates);
+    },
+
+    /**
+     * Restores automation state from saved data.
+     *
+     * This method merges saved state with existing default automations rather than
+     * replacing the entire map. This ensures that:
+     * - Saved automation states are properly restored
+     * - New automations not in the save get their default states
+     * - Empty arrays from migrated legacy saves don't clear the automation map
+     * - Automations removed from content pack are ignored
+     *
+     * @param savedStates - Array of saved automation states (can be empty for legacy saves)
+     */
+    restoreState(savedStates: readonly AutomationState[]): void {
+      // Skip restoration if array is empty (legacy migration case)
+      if (savedStates.length === 0) {
+        return;
+      }
+
+      // Create a map of saved states for efficient lookup
+      const savedStateMap = new Map(savedStates.map(state => [state.id, state]));
+
+      // Merge saved state with existing defaults
+      for (const automation of automations) {
+        const savedState = savedStateMap.get(automation.id);
+        if (savedState) {
+          // Preserve the existing automation but update runtime state fields
+          const currentState = automationStates.get(automation.id);
+          if (currentState) {
+            // Only restore runtime state fields, not definition fields
+            currentState.enabled = savedState.enabled;
+            currentState.lastFiredStep = savedState.lastFiredStep;
+            currentState.cooldownExpiresStep = savedState.cooldownExpiresStep;
+            currentState.unlocked = savedState.unlocked;
+            currentState.lastThresholdSatisfied = savedState.lastThresholdSatisfied;
+          }
+        }
+        // Automations not in the saved state keep their defaults (already set during initialization)
+      }
+      // Automations in saved state but not in content pack are ignored
     },
 
     setup({ events }) {
