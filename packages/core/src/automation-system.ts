@@ -127,9 +127,20 @@ export function createAutomationSystem(
     },
 
     restoreState(stateArray: readonly AutomationState[]) {
-      automationStates.clear();
-      for (const state of stateArray) {
-        automationStates.set(state.id, { ...state });
+      // If no state provided (e.g., legacy save migrated to []), retain defaults
+      if (!stateArray || stateArray.length === 0) {
+        return;
+      }
+
+      // Merge provided entries into existing definitions without clearing
+      for (const restored of stateArray) {
+        const existing = automationStates.get(restored.id);
+        if (!existing) {
+          // Ignore unknown automations not present in current definitions
+          continue;
+        }
+        // Shallow-merge to preserve any fields not present in older saves
+        automationStates.set(restored.id, { ...existing, ...restored });
       }
     },
 

@@ -220,6 +220,101 @@ describe('AutomationSystem', () => {
     });
   });
 
+  describe('restoreState behavior', () => {
+    it('merges provided entries and preserves defaults for others', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:a' as any,
+          name: { default: 'A', variants: {} },
+          description: { default: 'A desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:a' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+        {
+          id: 'auto:b' as any,
+          name: { default: 'B', variants: {} },
+          description: { default: 'B desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:b' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 1,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Merge a partial restore for only auto:a
+      system.restoreState([{
+        id: 'auto:a',
+        enabled: false,
+        lastFiredStep: 5,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      }]);
+
+      const state = getAutomationState(system);
+      const a = state.get('auto:a');
+      const b = state.get('auto:b');
+
+      expect(a).toBeDefined();
+      expect(a?.enabled).toBe(false);
+      expect(a?.lastFiredStep).toBe(5);
+      expect(a?.unlocked).toBe(true);
+
+      // auto:b should still exist with default values (not cleared)
+      expect(b).toBeDefined();
+      expect(b?.enabled).toBe(true);
+      expect(b?.lastFiredStep).toBe(-Infinity);
+      expect(b?.unlocked).toBe(false);
+    });
+
+    it('skips restoration when provided array is empty', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:only' as any,
+          name: { default: 'Only', variants: {} },
+          description: { default: 'Only desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:only' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      const before = getAutomationState(system).get('auto:only');
+      expect(before).toBeDefined();
+
+      system.restoreState([]);
+
+      const after = getAutomationState(system).get('auto:only');
+      expect(after).toBeDefined();
+      // Ensure nothing toggled off due to empty restore
+      expect(after?.enabled).toBe(before?.enabled);
+      expect(after?.lastFiredStep).toBe(before?.lastFiredStep);
+      expect(after?.unlocked).toBe(before?.unlocked);
+    });
+  });
+
   describe('interval triggers', () => {
     it('should fire on first tick when lastFiredStep is -Infinity', () => {
       const automation: AutomationDefinition = {
