@@ -1125,6 +1125,20 @@ describe('IdleEngineRuntime', () => {
 
     expect(second).toEqual(first);
   });
+
+  it('exports AutomationState type', () => {
+    // This is a compile-time test
+    const testState: import('./automation-system.js').AutomationState = {
+      id: 'test',
+      enabled: true,
+      lastFiredStep: 0,
+      cooldownExpiresStep: 0,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    };
+
+    expect(testState.id).toBe('test');
+  });
 });
 
 type FrameEventSnapshot = {
