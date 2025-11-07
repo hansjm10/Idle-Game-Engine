@@ -918,4 +918,29 @@ describe('ResourceState', () => {
       lastThresholdSatisfied: false,
     }]);
   });
+
+  it('exportForSave excludes automationState when map is empty', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+    const emptyAutomationState = new Map();
+
+    const exported = state.exportForSave(emptyAutomationState);
+
+    expect(exported.automationState).toBeUndefined();
+  });
+
+  it('exportForSave excludes automationState when not provided', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+
+    const exported = state.exportForSave();
+
+    expect(exported.automationState).toBeUndefined();
+  });
 });
