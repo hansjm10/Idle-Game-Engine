@@ -6,7 +6,6 @@ async function main(): Promise<void> {
   const packages = await collectPackageSummaries();
   const totals = aggregateTotals(packages);
   const markdown = renderMarkdown({
-    generatedAt: new Date(),
     packages,
     totals
   });

@@ -20,7 +20,6 @@ test('aggregateTotals sums package metrics', async () => {
 test('renderMarkdown produces deterministic tables', async () => {
   const packages = await loadFixture();
   const markdown = renderMarkdown({
-    generatedAt: new Date('2025-11-07T00:00:00Z'),
     packages,
     totals: aggregateTotals(packages)
   });
@@ -30,7 +29,6 @@ test('renderMarkdown produces deterministic tables', async () => {
   assert.match(markdown, /\| Statements \| 130 \| 170 \| 76\.47% \|/);
   assert.match(markdown, /\| @idle-engine\/core \| 80 \/ 100 \(80\.00%\)/);
   assert.match(markdown, /\| @idle-engine\/shell-web \| 50 \/ 70 \(71\.43%\)/);
-  assert.ok(markdown.includes('_Last updated: 2025-11-07T00:00:00.000Z_'));
 });
 
 async function loadFixture(): Promise<PackageSummary[]> {

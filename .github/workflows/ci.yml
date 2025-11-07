@@ -68,3 +68,11 @@ jobs:
         env:
           NODE_OPTIONS: '--dns-result-order=ipv4first'
         run: pnpm test:ci
+
+      - name: Generate Coverage Report
+        env:
+          NODE_OPTIONS: '--dns-result-order=ipv4first'
+        run: pnpm coverage:md
+
+      - name: Ensure coverage docs are current
+        run: git diff --exit-code docs/coverage/index.md

@@ -81,13 +81,11 @@ export function aggregateTotals(packages: PackageSummary[]): CoverageTotals {
 }
 
 type RenderMarkdownParams = {
-  generatedAt: Date;
   packages: PackageSummary[];
   totals: CoverageTotals;
 };
 
-export function renderMarkdown({generatedAt, packages, totals}: RenderMarkdownParams): string {
-  const formattedDate = generatedAt.toISOString();
+export function renderMarkdown({packages, totals}: RenderMarkdownParams): string {
   const overallRows = METRICS.map((metric) => formatOverallRow(metric, totals[metric]));
   const packageRows = packages.map((pkg) => formatPackageRow(pkg));
 
@@ -98,8 +96,6 @@ export function renderMarkdown({generatedAt, packages, totals}: RenderMarkdownPa
     '---',
     '',
     '# Coverage Report',
-    '',
-    `_Last updated: ${formattedDate}_`,
     '',
     'Run `pnpm coverage:md` from the repository root to regenerate this page after modifying tests.',
     '',
