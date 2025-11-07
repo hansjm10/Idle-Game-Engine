@@ -87,10 +87,11 @@ describe('session-restore', () => {
       expect(result.validationStatus).toBe('valid');
       expect(result.snapshot).toBeDefined();
       expect(result.elapsedMs).toBe(10000);
-      expect(mockBridge.restoreSession).toHaveBeenCalledWith({
+      expect(mockBridge.restoreSession).toHaveBeenCalledWith(expect.objectContaining({
         state: expect.any(Object),
         elapsedMs: 10000,
-      });
+        savedWorkerStep: 1000,
+      }));
     });
 
     it('should return success with no snapshot for fresh start', async () => {
