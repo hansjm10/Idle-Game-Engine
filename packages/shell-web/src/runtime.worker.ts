@@ -778,7 +778,10 @@ export function initializeRuntimeWorker(
 
         // Restore automation state if present in the snapshot
         if (message.state.automationState) {
-          automationSystem.restoreState(message.state.automationState);
+          automationSystem.restoreState(message.state.automationState, {
+            savedWorkerStep: message.savedWorkerStep,
+            currentStep: runtime.getCurrentStep(),
+          });
         }
 
         setGameState(gameState);

@@ -185,6 +185,13 @@ export interface RuntimeWorkerRestoreSession {
   readonly state?: SerializedResourceState;
   readonly elapsedMs?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
+  /**
+   * Optional: worker step when the snapshot was captured.
+   * When provided, the worker rebases any absolute step fields (e.g., automation
+   * cooldowns) into the new timeline to avoid artificially long cooldowns after
+   * restore.
+   */
+  readonly savedWorkerStep?: number;
 }
 
 export interface RuntimeWorkerRequestSessionSnapshot {

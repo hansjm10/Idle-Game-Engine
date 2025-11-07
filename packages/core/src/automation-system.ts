@@ -100,7 +100,10 @@ export function createAutomationSystem(
   options: AutomationSystemOptions,
 ): System & {
   getState: () => ReadonlyMap<string, AutomationState>;
-  restoreState: (state: readonly AutomationState[]) => void;
+  restoreState: (
+    state: readonly AutomationState[],
+    options?: { savedWorkerStep?: number; currentStep?: number },
+  ) => void;
 } {
   const { automations, stepDurationMs, commandQueue, resourceState } = options;
   const automationStates = new Map<string, AutomationState>();
@@ -126,7 +129,10 @@ export function createAutomationSystem(
       return new Map(automationStates);
     },
 
-    restoreState(stateArray: readonly AutomationState[]) {
+    restoreState(
+      stateArray: readonly AutomationState[],
+      restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
+    ) {
       // If no state provided (e.g., legacy save migrated to []), retain defaults
       if (!stateArray || stateArray.length === 0) {
         return;
@@ -147,12 +153,37 @@ export function createAutomationSystem(
             ? restoredLastFired
             : -Infinity;
 
+        // Compute optional step rebase if provided by caller.
+        // When restoring from a snapshot captured at a non-zero worker step,
+        // lastFiredStep and cooldownExpiresStep are absolute to that timeline.
+        // Rebase them into the caller's current timeline so cooldown math
+        // remains consistent.
+        const savedWorkerStep = restoreOptions?.savedWorkerStep;
+        const targetCurrentStep = restoreOptions?.currentStep ?? 0;
+        const hasValidSavedStep =
+          typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
+
+        const rebaseDelta = hasValidSavedStep
+          ? targetCurrentStep - (savedWorkerStep as number)
+          : 0;
+
+        const rebasedLastFired =
+          normalizedLastFired === -Infinity
+            ? -Infinity
+            : normalizedLastFired + rebaseDelta;
+
+        const originalCooldownExpires = restored.cooldownExpiresStep;
+        const rebasedCooldownExpires = hasValidSavedStep
+          ? originalCooldownExpires + rebaseDelta
+          : originalCooldownExpires;
+
         // Shallow-merge to preserve any fields not present in older saves,
-        // and override with normalized values where needed.
+        // and override with normalized/rebased values where needed.
         automationStates.set(restored.id, {
           ...existing,
           ...restored,
-          lastFiredStep: normalizedLastFired,
+          lastFiredStep: rebasedLastFired,
+          cooldownExpiresStep: rebasedCooldownExpires,
         });
       }
     },

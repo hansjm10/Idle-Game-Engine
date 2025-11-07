@@ -1998,6 +1998,60 @@ describe('session snapshot protocol', () => {
       })
     );
   });
+
+  it('rebases automation step fields on restore when savedWorkerStep is provided', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      stepSizeMs: 100,
+    });
+
+    context.postMessage.mockClear();
+
+    const automationState = [{
+      id: 'sample-pack.auto-reactor',
+      enabled: true,
+      lastFiredStep: 50,
+      cooldownExpiresStep: 65,
+      unlocked: true,
+    }];
+
+    const state: core.SerializedResourceState = {
+      ids: ['sample-pack.energy'],
+      amounts: [500],
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+      automationState,
+    };
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      state,
+      savedWorkerStep: 50,
+    });
+
+    await flushAsync();
+
+    const sessionRestored = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SESSION_RESTORED');
+    expect(sessionRestored).toBeDefined();
+
+    const automationSystem = harness.getAutomationSystem();
+    const liveAutomationState = core.getAutomationState(automationSystem);
+    const reactor = liveAutomationState.get('sample-pack.auto-reactor');
+    expect(reactor).toBeDefined();
+    expect(reactor?.lastFiredStep).toBe(0);
+    expect(reactor?.cooldownExpiresStep).toBe(15);
+  });
 });
 
 describe('isDedicatedWorkerScope', () => {

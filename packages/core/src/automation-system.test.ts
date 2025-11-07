@@ -350,6 +350,62 @@ describe('AutomationSystem', () => {
       const after = getAutomationState(system).get('auto:only');
       expect(after?.lastFiredStep).toBe(-Infinity);
     });
+
+    it('rebases step fields when savedWorkerStep is provided', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:interval' as any,
+          name: { default: 'Interval', variants: {} },
+          description: { default: 'Interval desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:x' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Simulate a snapshot captured at workerStep=100
+      system.restoreState([
+        {
+          id: 'auto:interval',
+          enabled: true,
+          lastFiredStep: 100,
+          cooldownExpiresStep: 115,
+          unlocked: true,
+        },
+      ], { savedWorkerStep: 100, currentStep: 0 });
+
+      const rebased = getAutomationState(system).get('auto:interval');
+      expect(rebased).toBeDefined();
+      // lastFiredStep rebased to 0, cooldownExpiresStep rebased to 15
+      expect(rebased?.lastFiredStep).toBe(0);
+      expect(rebased?.cooldownExpiresStep).toBe(15);
+
+      // Ensure -Infinity remains -Infinity when rebased
+      system.restoreState([
+        {
+          id: 'auto:interval',
+          enabled: true,
+          lastFiredStep: -Infinity as any,
+          cooldownExpiresStep: 50,
+          unlocked: true,
+        } as unknown as AutomationState,
+      ], { savedWorkerStep: 25, currentStep: 0 });
+
+      const rebased2 = getAutomationState(system).get('auto:interval');
+      expect(rebased2?.lastFiredStep).toBe(-Infinity);
+      // 50 - 25 => 25
+      expect(rebased2?.cooldownExpiresStep).toBe(25);
+    });
   });
 
   describe('interval triggers', () => {

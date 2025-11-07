@@ -131,6 +131,7 @@ export async function restoreSession(
           await bridge.restoreSession({
             state: migrationResult.migratedState,
             elapsedMs,
+            savedWorkerStep: snapshot.workerStep,
           });
 
           recordTelemetryEvent('PersistenceRestoreSucceeded', {
@@ -244,6 +245,7 @@ export async function restoreSession(
           await bridge.restoreSession({
             state: migrationResult.migratedState,
             elapsedMs,
+            savedWorkerStep: snapshot.workerStep,
           });
 
           recordTelemetryEvent('PersistenceRestoreSucceeded', {
@@ -322,6 +324,7 @@ export async function restoreSession(
     await bridge.restoreSession({
       state: snapshot.state,
       elapsedMs,
+      savedWorkerStep: snapshot.workerStep,
       // resourceDeltas would come from migration transforms
     });
 
