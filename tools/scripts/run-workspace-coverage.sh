@@ -2,7 +2,7 @@
 set -euo pipefail
 
 pnpm_args=(-r --filter "./packages/*")
-test_args=(--coverage --runInBand --reporter=json)
+test_args=()
 forward_to_test=false
 
 for arg in "$@"; do
@@ -19,7 +19,7 @@ for arg in "$@"; do
   pnpm_args+=("$arg")
 done
 
-cmd=(pnpm "${pnpm_args[@]}" run --if-present test:ci)
+cmd=(pnpm "${pnpm_args[@]}" run --if-present coverage)
 if [[ ${#test_args[@]} -gt 0 ]]; then
   cmd+=(-- "${test_args[@]}")
 fi

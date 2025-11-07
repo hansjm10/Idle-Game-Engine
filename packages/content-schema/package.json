@@ -21,6 +21,7 @@
     "lint": "eslint --max-warnings=0 'src/**/*.ts'",
     "test": "vitest",
     "test:ci": "vitest run --passWithNoTests",
+    "coverage": "vitest run --coverage --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {

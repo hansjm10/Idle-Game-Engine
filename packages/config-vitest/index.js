@@ -17,7 +17,9 @@ const BASE_CONFIG = defineConfig({
     ],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'lcov'],
+      reporter: ['text', 'lcov', 'json-summary'],
+      reportsDirectory: 'coverage',
+      include: ['src/**/*.{ts,tsx}'],
       exclude: ['**/dist/**', '**/node_modules/**', '**/*.d.ts']
     }
   }

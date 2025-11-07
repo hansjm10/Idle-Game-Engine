@@ -17,7 +17,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint --max-warnings=0 'src/**/*.ts'",
     "test": "vitest",
-    "test:ci": "vitest run --passWithNoTests"
+    "test:ci": "vitest run --passWithNoTests",
+    "coverage": "vitest run --coverage --passWithNoTests"
   },
   "dependencies": {
     "@idle-engine/content-compiler": "workspace:*",
