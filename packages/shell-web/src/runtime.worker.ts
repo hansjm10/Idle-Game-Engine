@@ -900,7 +900,7 @@ export function initializeRuntimeWorker(
         workerStep: currentStep,
         reason: message.reason ?? 'unspecified',
         requestId: requestId ?? 'none',
-        resourceCount: state.resources?.length ?? 0,
+        resourceCount: state.ids.length,
       });
 
       // Record snapshot size metrics for aggregation and alerting
