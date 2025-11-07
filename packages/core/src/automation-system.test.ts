@@ -313,6 +313,43 @@ describe('AutomationSystem', () => {
       expect(after?.lastFiredStep).toBe(before?.lastFiredStep);
       expect(after?.unlocked).toBe(before?.unlocked);
     });
+
+    it('normalizes non-finite lastFiredStep to -Infinity on restore', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:only' as any,
+          name: { default: 'Only', variants: {} },
+          description: { default: 'Only desc', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:only' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+      });
+
+      // Simulate a JSON round-trip where -Infinity becomes null
+      system.restoreState([
+        {
+          id: 'auto:only',
+          enabled: true,
+          lastFiredStep: null as any,
+          cooldownExpiresStep: 0,
+          unlocked: false,
+        } as unknown as AutomationState,
+      ]);
+
+      const after = getAutomationState(system).get('auto:only');
+      expect(after?.lastFiredStep).toBe(-Infinity);
+    });
   });
 
   describe('interval triggers', () => {

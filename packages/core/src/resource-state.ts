@@ -128,7 +128,7 @@ export interface SerializedResourceState {
   readonly automationState?: readonly {
     readonly id: string;
     readonly enabled: boolean;
-    readonly lastFiredStep: number;
+    readonly lastFiredStep: number | null;
     readonly cooldownExpiresStep: number;
     readonly unlocked: boolean;
     readonly lastThresholdSatisfied?: boolean;
@@ -1202,7 +1202,16 @@ function exportForSave(
   };
 
   if (automationState && automationState.size > 0) {
-    const automationArray = Array.from(automationState.values());
+    // Explicitly encode sentinel values for JSON compatibility.
+    // - lastFiredStep: -Infinity => null (never fired)
+    const automationArray = Array.from(automationState.values()).map((s) => ({
+      id: s.id,
+      enabled: s.enabled,
+      lastFiredStep: Number.isFinite(s.lastFiredStep) ? s.lastFiredStep : null,
+      cooldownExpiresStep: s.cooldownExpiresStep,
+      unlocked: s.unlocked,
+      lastThresholdSatisfied: s.lastThresholdSatisfied,
+    }));
     return {
       ...baseState,
       automationState: automationArray,

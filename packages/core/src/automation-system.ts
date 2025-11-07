@@ -139,8 +139,21 @@ export function createAutomationSystem(
           // Ignore unknown automations not present in current definitions
           continue;
         }
-        // Shallow-merge to preserve any fields not present in older saves
-        automationStates.set(restored.id, { ...existing, ...restored });
+        // Normalize fields that may not round-trip through JSON (e.g. -Infinity -> null)
+        const restoredLastFired = (restored as unknown as { lastFiredStep?: unknown })
+          .lastFiredStep;
+        const normalizedLastFired =
+          typeof restoredLastFired === 'number' && Number.isFinite(restoredLastFired)
+            ? restoredLastFired
+            : -Infinity;
+
+        // Shallow-merge to preserve any fields not present in older saves,
+        // and override with normalized values where needed.
+        automationStates.set(restored.id, {
+          ...existing,
+          ...restored,
+          lastFiredStep: normalizedLastFired,
+        });
       }
     },
 

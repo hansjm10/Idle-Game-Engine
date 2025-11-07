@@ -919,6 +919,35 @@ describe('ResourceState', () => {
     }]);
   });
 
+  it('exportForSave encodes -Infinity lastFiredStep as null', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+    const automationState = new Map([
+      ['auto:never-fired', {
+        id: 'auto:never-fired',
+        enabled: true,
+        lastFiredStep: -Infinity,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+        lastThresholdSatisfied: undefined,
+      }]
+    ]);
+
+    const exported = state.exportForSave(automationState);
+
+    expect(exported.automationState).toEqual([{
+      id: 'auto:never-fired',
+      enabled: true,
+      lastFiredStep: null,
+      cooldownExpiresStep: 0,
+      unlocked: true,
+      lastThresholdSatisfied: undefined,
+    }]);
+  });
+
   it('exportForSave excludes automationState when map is empty', () => {
     const definitions: ResourceDefinition[] = [
       { id: 'gold', startAmount: 100, capacity: 1000 },
