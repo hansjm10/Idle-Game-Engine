@@ -59,6 +59,26 @@ export interface AutomationState {
 }
 
 /**
+ * Serialized representation of automation state for save files and persistence.
+ *
+ * This type differs from AutomationState in that lastFiredStep is `number | null`
+ * instead of `number`. During serialization, `-Infinity` values are converted to
+ * `null` for JSON compatibility. During restoration, `null` values are converted
+ * back to `-Infinity`.
+ *
+ * @see AutomationState - Runtime automation state type
+ * @see restoreState - Method that accepts this type for state restoration
+ */
+export interface SerializedAutomationState {
+  readonly id: string;
+  readonly enabled: boolean;
+  readonly lastFiredStep: number | null; // null = never fired (-Infinity)
+  readonly cooldownExpiresStep: number;
+  readonly unlocked: boolean;
+  readonly lastThresholdSatisfied?: boolean;
+}
+
+/**
  * Options for creating an AutomationSystem.
  */
 export interface AutomationSystemOptions {
@@ -101,7 +121,7 @@ export function createAutomationSystem(
 ): System & {
   getState: () => ReadonlyMap<string, AutomationState>;
   restoreState: (
-    state: readonly AutomationState[],
+    state: readonly SerializedAutomationState[],
     options?: { savedWorkerStep?: number; currentStep?: number },
   ) => void;
 } {
@@ -130,7 +150,7 @@ export function createAutomationSystem(
     },
 
     restoreState(
-      stateArray: readonly AutomationState[],
+      stateArray: readonly SerializedAutomationState[],
       restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
     ) {
       // If no state provided (e.g., legacy save migrated to []), retain defaults
@@ -146,11 +166,12 @@ export function createAutomationSystem(
           continue;
         }
         // Normalize fields that may not round-trip through JSON (e.g. -Infinity -> null)
-        const restoredLastFired = (restored as unknown as { lastFiredStep?: unknown })
-          .lastFiredStep;
+        // SerializedAutomationState.lastFiredStep is number | null, convert null to -Infinity
         const normalizedLastFired =
-          typeof restoredLastFired === 'number' && Number.isFinite(restoredLastFired)
-            ? restoredLastFired
+          restored.lastFiredStep !== null &&
+          typeof restored.lastFiredStep === 'number' &&
+          Number.isFinite(restored.lastFiredStep)
+            ? restored.lastFiredStep
             : -Infinity;
 
         // Compute optional step rebase if provided by caller.

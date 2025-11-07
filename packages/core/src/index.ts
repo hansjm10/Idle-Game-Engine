@@ -585,6 +585,7 @@ export {
   enqueueAutomationCommand,
   type AutomationSystemOptions,
   type AutomationState,
+  type SerializedAutomationState,
   type ResourceStateReader,
 } from './automation-system.js';
 export {

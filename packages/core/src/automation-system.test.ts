@@ -10,7 +10,7 @@ import {
   enqueueAutomationCommand,
 } from './automation-system.js';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
-import type { AutomationState } from './automation-system.js';
+import type { AutomationState, SerializedAutomationState } from './automation-system.js';
 import { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import { IdleEngineRuntime } from './index.js';
@@ -341,10 +341,10 @@ describe('AutomationSystem', () => {
         {
           id: 'auto:only',
           enabled: true,
-          lastFiredStep: null as any,
+          lastFiredStep: null,
           cooldownExpiresStep: 0,
           unlocked: false,
-        } as unknown as AutomationState,
+        } satisfies SerializedAutomationState,
       ]);
 
       const after = getAutomationState(system).get('auto:only');
@@ -391,14 +391,15 @@ describe('AutomationSystem', () => {
       expect(rebased?.cooldownExpiresStep).toBe(15);
 
       // Ensure -Infinity remains -Infinity when rebased
+      // Use null to represent -Infinity in serialized format
       system.restoreState([
         {
           id: 'auto:interval',
           enabled: true,
-          lastFiredStep: -Infinity as any,
+          lastFiredStep: null,
           cooldownExpiresStep: 50,
           unlocked: true,
-        } as unknown as AutomationState,
+        } satisfies SerializedAutomationState,
       ], { savedWorkerStep: 25, currentStep: 0 });
 
       const rebased2 = getAutomationState(system).get('auto:interval');

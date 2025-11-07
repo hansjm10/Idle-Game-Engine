@@ -84,6 +84,74 @@ console.log(`Enabled: ${autoState?.enabled}, Last fired: ${autoState?.lastFiredS
 
 ---
 
+### restoreState(state, options)
+
+Restores automation state from serialized save data.
+
+**Type Signature:**
+```typescript
+restoreState(
+  state: readonly SerializedAutomationState[],
+  options?: { savedWorkerStep?: number; currentStep?: number }
+): void
+```
+
+**Parameters:**
+- `state`: Array of serialized automation state entries
+- `options.savedWorkerStep` (optional): Step number when snapshot was captured (for rebasing)
+- `options.currentStep` (optional): Current runtime step (default: 0)
+
+**Behavior:**
+- Merges provided entries into existing automation definitions
+- Normalizes `lastFiredStep: null` → `-Infinity` (never fired)
+- Rebases step fields when `savedWorkerStep` is provided
+- Ignores unknown automation IDs not in current definitions
+- Preserves defaults for automations not in restore array
+
+**Step Rebasing:**
+
+When restoring from a snapshot captured at a non-zero worker step, `lastFiredStep` and `cooldownExpiresStep` are absolute to that timeline. The rebase adjusts them to the caller's current timeline so cooldown math remains consistent:
+
+```typescript
+rebaseDelta = currentStep - savedWorkerStep
+rebasedLastFired = normalizedLastFired + rebaseDelta
+rebasedCooldownExpires = cooldownExpiresStep + rebaseDelta
+```
+
+If `savedWorkerStep` is not provided or invalid, no rebasing occurs.
+
+**Example:**
+```typescript
+// Restore automation state from save file
+automationSystem.restoreState([
+  {
+    id: 'auto:collector',
+    enabled: true,
+    lastFiredStep: 100,
+    cooldownExpiresStep: 110,
+    unlocked: true,
+  }
+], { savedWorkerStep: 100, currentStep: 0 });
+
+// After restore, lastFiredStep is rebased to 0, cooldownExpiresStep to 10
+```
+
+**Example with null (never fired):**
+```typescript
+// Restore automation that has never fired
+automationSystem.restoreState([
+  {
+    id: 'auto:new',
+    enabled: false,
+    lastFiredStep: null, // null represents -Infinity (never fired)
+    cooldownExpiresStep: 0,
+    unlocked: false,
+  }
+]);
+```
+
+---
+
 ## State Types
 
 ### AutomationState
@@ -110,6 +178,42 @@ interface AutomationState {
 - `cooldownExpiresStep`: Step number when cooldown expires (0 if no cooldown)
 - `unlocked`: Whether the automation is currently unlocked
 - `lastThresholdSatisfied`: Previous threshold state for crossing detection (undefined = never evaluated)
+
+---
+
+### SerializedAutomationState
+
+Serialized representation of automation state for save files and persistence.
+
+**Type Definition:**
+```typescript
+interface SerializedAutomationState {
+  readonly id: string;
+  readonly enabled: boolean;
+  readonly lastFiredStep: number | null;  // null = never fired (-Infinity)
+  readonly cooldownExpiresStep: number;
+  readonly unlocked: boolean;
+  readonly lastThresholdSatisfied?: boolean;
+}
+```
+
+**Fields:**
+- `id`: Automation identifier matching the content definition
+- `enabled`: Whether the automation is currently enabled
+- `lastFiredStep`: Step number when automation last fired (`null` if never fired)
+- `cooldownExpiresStep`: Step number when cooldown expires (0 if no cooldown)
+- `unlocked`: Whether the automation is currently unlocked
+- `lastThresholdSatisfied`: Previous threshold state for crossing detection
+
+**Differences from `AutomationState`:**
+- `lastFiredStep` is `number | null` instead of `number` (for JSON compatibility)
+- All fields are `readonly` (serialized data is immutable)
+- Used in `SerializedResourceState.automationState` and `restoreState()`
+
+**Serialization Notes:**
+- `-Infinity` values are converted to `null` during serialization (`exportForSave`)
+- `null` values are converted back to `-Infinity` during restoration (`restoreState`)
+- This ensures JSON compatibility while preserving semantic meaning
 
 ---
 
