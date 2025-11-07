@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pnpm_args=(-r --filter "./packages/*")
+pnpm_args=(-r)
 test_args=()
 forward_to_test=false
 
