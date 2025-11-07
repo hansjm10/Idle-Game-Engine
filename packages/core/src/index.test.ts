@@ -6,6 +6,7 @@ import { CommandQueue } from './command-queue.js';
 import {
   IdleEngineRuntime,
   type IdleEngineRuntimeOptions,
+  type AutomationState,
 } from './index.js';
 import {
   DEFAULT_EVENT_BUS_OPTIONS,
@@ -1128,7 +1129,7 @@ describe('IdleEngineRuntime', () => {
 
   it('exports AutomationState type', () => {
     // This is a compile-time test
-    const testState: import('./automation-system.js').AutomationState = {
+    const testState: AutomationState = {
       id: 'test',
       enabled: true,
       lastFiredStep: 0,
