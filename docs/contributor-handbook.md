@@ -70,6 +70,12 @@ pnpm test:a11y
 We use `vitest-llm-reporter`, so test runs print a final JSON object. Avoid extra
 console output around that summary to keep downstream tooling happy.
 
+### Regenerate coverage report
+
+- Run `pnpm coverage:md` from the repository root after changing tests. The command executes coverage-enabled Vitest suites for every package and rewrites `docs/coverage/index.md`.
+- Commit the updated `docs/coverage/index.md` file alongside your code so CI stays in sync with the documentation site.
+- The generated page surfaces under **Diagnostics & Quality → Coverage Report** in the Docusaurus sidebar.
+
 ## Documentation contributions
 
 - Add or update design docs alongside code changes.

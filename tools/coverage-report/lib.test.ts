@@ -25,6 +25,7 @@ test('renderMarkdown produces deterministic tables', async () => {
     totals: aggregateTotals(packages)
   });
 
+  assert.match(markdown, /---\ntitle: Coverage Report\nsidebar_label: Coverage Report\n---/);
   assert.match(markdown, /\| Metric \| Covered \| Total \| % \|/);
   assert.match(markdown, /\| Statements \| 130 \| 170 \| 76\.47% \|/);
   assert.match(markdown, /\| @idle-engine\/core \| 80 \/ 100 \(80\.00%\)/);

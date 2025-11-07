@@ -57,6 +57,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Diagnostics & Quality',
+      items: ['coverage/index'],
+    },
+    {
+      type: 'category',
       label: 'Operations & Process',
       items: ['implementation-plan', 'project-board-workflow'],
     },

@@ -15,6 +15,7 @@ Refer to the design document for roadmap and subsystem detail.
 - `pnpm test --filter shell-web` scopes Vitest to the web shell worker bridge and presentation infrastructure; run this after touching diagnostics or bridge logic so the issue #255 coverage stays green.
 - On fresh Linux environments you might need to install Playwright system dependencies once via `pnpm exec playwright install-deps`.
 - Vitest suites inherit the shared `@idle-engine/config-vitest` defaults, which now include `vitest-llm-reporter` with streaming disabled. Each run prints a JSON summary block at the end of the output so AI agents and CI jobs can parse results without scraping console text.
+- `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and regenerates `docs/coverage/index.md`. Commit the updated markdown when test changes impact coverage so docs stay accurate.
 
 ## Content Validation & Generation
 - `pnpm generate` now runs content validation before the compiler writes artifacts. Schema failures stop the pipeline immediately, so fix validation errors before retrying or the downstream artifacts will remain stale.

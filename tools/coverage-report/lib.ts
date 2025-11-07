@@ -80,20 +80,23 @@ export function aggregateTotals(packages: PackageSummary[]): CoverageTotals {
   return totals;
 }
 
-export function renderMarkdown({
-  generatedAt,
-  packages,
-  totals
-}: {
+type RenderMarkdownParams = {
   generatedAt: Date;
   packages: PackageSummary[];
   totals: CoverageTotals;
-}): string {
+};
+
+export function renderMarkdown({generatedAt, packages, totals}: RenderMarkdownParams): string {
   const formattedDate = generatedAt.toISOString();
   const overallRows = METRICS.map((metric) => formatOverallRow(metric, totals[metric]));
   const packageRows = packages.map((pkg) => formatPackageRow(pkg));
 
   return [
+    '---',
+    'title: Coverage Report',
+    'sidebar_label: Coverage Report',
+    '---',
+    '',
     '# Coverage Report',
     '',
     `_Last updated: ${formattedDate}_`,
