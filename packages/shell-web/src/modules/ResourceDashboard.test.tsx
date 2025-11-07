@@ -15,8 +15,12 @@ import type {
 } from './shell-state.types.js';
 import styles from './ResourceDashboard.module.css';
 
+type Mutable<T> = {
+  -readonly [K in keyof T]: T[K];
+};
+
 // Mock the ShellStateProvider hooks
-const mockProgressionApi: ShellProgressionApi = {
+const mockProgressionApi: Mutable<ShellProgressionApi> = {
   isEnabled: true,
   schemaVersion: 1,
   selectResources: vi.fn(() => null),
@@ -25,7 +29,7 @@ const mockProgressionApi: ShellProgressionApi = {
   selectOptimisticResources: vi.fn(() => null),
 };
 
-const mockShellState: Pick<ShellState, 'bridge'> = {
+const mockShellState: { bridge: Mutable<ShellState['bridge']> } = {
   bridge: {
     isReady: true,
     isRestoring: false,

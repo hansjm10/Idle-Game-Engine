@@ -4,6 +4,18 @@ import type { ReactNode } from 'react';
 
 import { ShellStateProvider, useShellProgression } from './ShellStateProvider.js';
 import type { ShellStateProviderConfig } from './shell-state.types.js';
+import type { RuntimeStateSnapshot } from './worker-bridge.js';
+
+const backPressureStub: RuntimeStateSnapshot['backPressure'] = {
+  tick: 0,
+  channels: [],
+  counters: {
+    published: 0,
+    softLimited: 0,
+    overflowed: 0,
+    subscribers: 0,
+  },
+};
 
 // Mock the progression config
 vi.mock('./progression-config.js', () => ({
@@ -20,13 +32,12 @@ const mockBridge = {
   sendSocialCommand: vi.fn(async () => ({})),
   enableDiagnostics: vi.fn(),
   disableDiagnostics: vi.fn(),
-  onStateUpdate: vi.fn(() => {}),
-  offStateUpdate: vi.fn(() => {}),
-  onEvent: vi.fn(() => {}),
-  onError: vi.fn(() => {}),
-  offError: vi.fn(() => {}),
-  onDiagnosticsUpdate: vi.fn(() => {}),
-  offDiagnosticsUpdate: vi.fn(() => {}),
+  onStateUpdate: vi.fn<(listener: (snapshot: RuntimeStateSnapshot) => void) => void>(),
+  offStateUpdate: vi.fn<(listener: (snapshot: RuntimeStateSnapshot) => void) => void>(),
+  onError: vi.fn<(listener: (error: unknown) => void) => void>(),
+  offError: vi.fn<(listener: (error: unknown) => void) => void>(),
+  onDiagnosticsUpdate: vi.fn<(listener: (timeline: unknown) => void) => void>(),
+  offDiagnosticsUpdate: vi.fn<(listener: (timeline: unknown) => void) => void>(),
   isSocialFeatureEnabled: vi.fn(() => false),
   terminate: vi.fn(),
 };
@@ -36,11 +47,7 @@ vi.mock('./worker-bridge.js', () => ({
   useWorkerBridge: vi.fn(() => mockBridge),
 }));
 
-const defaultConfig: ShellStateProviderConfig = {
-  workerUrl: '/worker.js',
-  recordTelemetryEvent: vi.fn(),
-  recordTelemetryError: vi.fn(),
-};
+const defaultConfig: ShellStateProviderConfig = {};
 
 describe('ShellStateProvider', () => {
   beforeEach(() => {
@@ -125,23 +132,44 @@ describe('ShellStateProvider', () => {
       expect(result.current.selectOptimisticResources()).toBeNull();
 
       // Simulate state update with progression snapshot
-      const stateUpdateHandler = mockBridge.onStateUpdate.mock.calls[0]?.[0];
+      const stateUpdateCall =
+        vi.mocked(mockBridge.onStateUpdate).mock.calls[0];
+      expect(stateUpdateCall).toBeDefined();
+      if (!stateUpdateCall) {
+        throw new Error('stateUpdateHandler was not registered');
+      }
+      const [stateUpdateHandler] = stateUpdateCall;
       expect(stateUpdateHandler).toBeDefined();
 
       const mockSnapshot = {
         currentStep: 1,
         events: [],
+        backPressure: backPressureStub,
         progression: {
           step: 1,
           publishedAt: 1000,
           resources: [
-            { id: 'gold', amount: 100, rate: 10 },
-            { id: 'wood', amount: 50, rate: 5 },
+            {
+              id: 'gold',
+              displayName: 'Gold',
+              amount: 100,
+              isUnlocked: true,
+              isVisible: true,
+              perTick: 10,
+            },
+            {
+              id: 'wood',
+              displayName: 'Wood',
+              amount: 50,
+              isUnlocked: true,
+              isVisible: true,
+              perTick: 5,
+            },
           ],
           generators: [],
           upgrades: [],
         },
-      };
+      } satisfies RuntimeStateSnapshot;
 
       act(() => {
         stateUpdateHandler(mockSnapshot);

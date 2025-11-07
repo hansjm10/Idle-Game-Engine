@@ -11,6 +11,19 @@ import {
   formatNumber,
 } from './condition-evaluator.js';
 
+type ConditionContentId =
+  & Extract<Condition, { resourceId: unknown }>['resourceId']
+  & Extract<Condition, { generatorId: unknown }>['generatorId']
+  & Extract<Condition, { upgradeId: unknown }>['upgradeId']
+  & Extract<Condition, { prestigeLayerId: unknown }>['prestigeLayerId'];
+
+type ConditionFlagId = Extract<Condition, { flagId: unknown }>['flagId'];
+type ConditionScriptId = Extract<Condition, { scriptId: unknown }>['scriptId'];
+
+const cid = (value: string) => value as ConditionContentId;
+const flag = (value: string) => value as ConditionFlagId;
+const script = (value: string) => value as ConditionScriptId;
+
 describe('evaluateCondition', () => {
   const createContext = (overrides?: Partial<ConditionContext>): ConditionContext => ({
     getResourceAmount: () => 0,
@@ -43,7 +56,7 @@ describe('evaluateCondition', () => {
 
     const conditionMet: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gte',
       amount: { kind: 'constant', value: 50 },
     };
@@ -51,7 +64,7 @@ describe('evaluateCondition', () => {
 
     const conditionNotMet: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gte',
       amount: { kind: 'constant', value: 150 },
     };
@@ -65,7 +78,7 @@ describe('evaluateCondition', () => {
 
     const conditionMet: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gt',
       amount: { kind: 'constant', value: 99 },
     };
@@ -73,7 +86,7 @@ describe('evaluateCondition', () => {
 
     const conditionEqual: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gt',
       amount: { kind: 'constant', value: 100 },
     };
@@ -87,7 +100,7 @@ describe('evaluateCondition', () => {
 
     const conditionMet: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'lte',
       amount: { kind: 'constant', value: 150 },
     };
@@ -95,7 +108,7 @@ describe('evaluateCondition', () => {
 
     const conditionNotMet: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'lte',
       amount: { kind: 'constant', value: 50 },
     };
@@ -109,7 +122,7 @@ describe('evaluateCondition', () => {
 
     const conditionMet: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'lt',
       amount: { kind: 'constant', value: 101 },
     };
@@ -117,7 +130,7 @@ describe('evaluateCondition', () => {
 
     const conditionEqual: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'lt',
       amount: { kind: 'constant', value: 100 },
     };
@@ -131,7 +144,7 @@ describe('evaluateCondition', () => {
 
     const conditionMet: Condition = {
       kind: 'generatorLevel',
-      generatorId: 'generator.test',
+      generatorId: cid('generator.test'),
       comparator: 'gte',
       level: { kind: 'constant', value: 3 },
     };
@@ -139,7 +152,7 @@ describe('evaluateCondition', () => {
 
     const conditionNotMet: Condition = {
       kind: 'generatorLevel',
-      generatorId: 'generator.test',
+      generatorId: cid('generator.test'),
       comparator: 'gte',
       level: { kind: 'constant', value: 10 },
     };
@@ -153,17 +166,103 @@ describe('evaluateCondition', () => {
 
     const conditionMet: Condition = {
       kind: 'upgradeOwned',
-      upgradeId: 'upgrade.test',
+      upgradeId: cid('upgrade.test'),
       requiredPurchases: 2,
     };
     expect(evaluateCondition(conditionMet, context)).toBe(true);
 
     const conditionNotMet: Condition = {
       kind: 'upgradeOwned',
-      upgradeId: 'upgrade.test',
+      upgradeId: cid('upgrade.test'),
       requiredPurchases: 5,
     };
     expect(evaluateCondition(conditionNotMet, context)).toBe(false);
+  });
+
+  it('evaluates prestigeUnlocked condition via context hook', () => {
+    const context = createContext({
+      hasPrestigeLayerUnlocked: (id) => id === 'prestige.alpha',
+    });
+
+    expect(
+      evaluateCondition(
+        {
+          kind: 'prestigeUnlocked',
+          prestigeLayerId: cid('prestige.alpha'),
+        },
+        context,
+      ),
+    ).toBe(true);
+
+    expect(
+      evaluateCondition(
+        {
+          kind: 'prestigeUnlocked',
+          prestigeLayerId: cid('prestige.beta'),
+        },
+        context,
+      ),
+    ).toBe(false);
+  });
+
+  it('evaluates flag condition via context hook', () => {
+    const context = createContext({
+      isFlagSet: (id) => id === 'flag.completed',
+    });
+
+    expect(
+      evaluateCondition(
+        {
+          kind: 'flag',
+          flagId: flag('flag.completed'),
+        },
+        context,
+      ),
+    ).toBe(true);
+
+    expect(
+      evaluateCondition(
+        {
+          kind: 'flag',
+          flagId: flag('flag.missing'),
+        },
+        context,
+      ),
+    ).toBe(false);
+  });
+
+  it('evaluates script condition via context hook and reports missing hook', () => {
+    const errors: Error[] = [];
+    const context = createContext({
+      evaluateScriptCondition: (id) => id === 'script.success',
+      onError: (error) => errors.push(error),
+    });
+
+    expect(
+      evaluateCondition(
+        {
+          kind: 'script',
+          scriptId: script('script.success'),
+        },
+        context,
+      ),
+    ).toBe(true);
+    expect(errors).toHaveLength(0);
+
+    expect(
+      evaluateCondition(
+        {
+          kind: 'script',
+          scriptId: script('script.failure'),
+        },
+        createContext({
+          onError: (error) => errors.push(error),
+        }),
+      ),
+    ).toBe(false);
+    expect(errors[0]?.message).toContain(
+      'Condition "script" targeting "script.failure" requires',
+    );
   });
 
   it('evaluates allOf condition requiring all nested conditions', () => {
@@ -177,13 +276,13 @@ describe('evaluateCondition', () => {
       conditions: [
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 50 },
         },
         {
           kind: 'generatorLevel',
-          generatorId: 'generator.test',
+          generatorId: cid('generator.test'),
           comparator: 'gte',
           level: { kind: 'constant', value: 3 },
         },
@@ -196,13 +295,13 @@ describe('evaluateCondition', () => {
       conditions: [
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 50 },
         },
         {
           kind: 'generatorLevel',
-          generatorId: 'generator.test',
+          generatorId: cid('generator.test'),
           comparator: 'gte',
           level: { kind: 'constant', value: 10 },
         },
@@ -222,13 +321,13 @@ describe('evaluateCondition', () => {
       conditions: [
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 50 },
         },
         {
           kind: 'generatorLevel',
-          generatorId: 'generator.test',
+          generatorId: cid('generator.test'),
           comparator: 'gte',
           level: { kind: 'constant', value: 10 },
         },
@@ -241,13 +340,13 @@ describe('evaluateCondition', () => {
       conditions: [
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 200 },
         },
         {
           kind: 'generatorLevel',
-          generatorId: 'generator.test',
+          generatorId: cid('generator.test'),
           comparator: 'gte',
           level: { kind: 'constant', value: 10 },
         },
@@ -265,7 +364,7 @@ describe('evaluateCondition', () => {
       kind: 'not',
       condition: {
         kind: 'resourceThreshold',
-        resourceId: 'energy',
+        resourceId: cid('energy'),
         comparator: 'gte',
         amount: { kind: 'constant', value: 200 },
       },
@@ -276,7 +375,7 @@ describe('evaluateCondition', () => {
       kind: 'not',
       condition: {
         kind: 'resourceThreshold',
-        resourceId: 'energy',
+        resourceId: cid('energy'),
         comparator: 'gte',
         amount: { kind: 'constant', value: 50 },
       },
@@ -374,7 +473,7 @@ describe('evaluateCondition', () => {
     // Create a condition nested 50 levels deep (within MAX_CONDITION_DEPTH of 100)
     let condition: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gte',
       amount: { kind: 'constant', value: 50 },
     };
@@ -398,7 +497,7 @@ describe('evaluateCondition', () => {
     // Create a condition with mixed nesting (allOf, anyOf, not) at 99 depth
     let condition: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gte',
       amount: { kind: 'constant', value: 50 },
     };
@@ -501,7 +600,7 @@ describe('describeCondition', () => {
   it('describes resourceThreshold condition', () => {
     const condition: Condition = {
       kind: 'resourceThreshold',
-      resourceId: 'energy',
+      resourceId: cid('energy'),
       comparator: 'gte',
       amount: { kind: 'constant', value: 100 },
     };
@@ -511,7 +610,7 @@ describe('describeCondition', () => {
   it('describes generatorLevel condition', () => {
     const condition: Condition = {
       kind: 'generatorLevel',
-      generatorId: 'generator.test',
+      generatorId: cid('generator.test'),
       comparator: 'gt',
       level: { kind: 'constant', value: 5 },
     };
@@ -521,7 +620,7 @@ describe('describeCondition', () => {
   it('describes upgradeOwned condition', () => {
     const condition: Condition = {
       kind: 'upgradeOwned',
-      upgradeId: 'upgrade.test',
+      upgradeId: cid('upgrade.test'),
       requiredPurchases: 3,
     };
     expect(describeCondition(condition)).toBe(
@@ -535,13 +634,13 @@ describe('describeCondition', () => {
       conditions: [
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 100 },
         },
         {
           kind: 'generatorLevel',
-          generatorId: 'generator.test',
+          generatorId: cid('generator.test'),
           comparator: 'gte',
           level: { kind: 'constant', value: 5 },
         },
@@ -559,7 +658,7 @@ describe('describeCondition', () => {
         { kind: 'always' },
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 100 },
         },
@@ -574,13 +673,13 @@ describe('describeCondition', () => {
       conditions: [
         {
           kind: 'resourceThreshold',
-          resourceId: 'energy',
+          resourceId: cid('energy'),
           comparator: 'gte',
           amount: { kind: 'constant', value: 100 },
         },
         {
           kind: 'generatorLevel',
-          generatorId: 'generator.test',
+          generatorId: cid('generator.test'),
           comparator: 'gte',
           level: { kind: 'constant', value: 5 },
         },
@@ -596,7 +695,7 @@ describe('describeCondition', () => {
       kind: 'not',
       condition: {
         kind: 'resourceThreshold',
-        resourceId: 'energy',
+        resourceId: cid('energy'),
         comparator: 'gte',
         amount: { kind: 'constant', value: 100 },
       },

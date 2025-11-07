@@ -39,11 +39,42 @@ export type ConditionContext = {
   readonly getGeneratorLevel: (generatorId: string) => number;
   readonly getUpgradePurchases: (upgradeId: string) => number;
   /**
+   * Optional hook indicating whether a prestige layer is unlocked.
+   */
+  readonly hasPrestigeLayerUnlocked?: (prestigeLayerId: string) => boolean;
+  /**
+   * Optional hook for feature flag checks.
+   */
+  readonly isFlagSet?: (flagId: string) => boolean;
+  /**
+   * Optional hook for evaluating script-driven conditions.
+   */
+  readonly evaluateScriptCondition?: (scriptId: string) => boolean;
+  /**
    * Optional callback for reporting errors encountered during evaluation.
    * Called when unknown condition kinds or comparators are encountered.
    */
   readonly onError?: (error: Error) => void;
 };
+
+function reportMissingContextHook(
+  context: ConditionContext,
+  hook: keyof ConditionContext,
+  conditionKind: Condition['kind'],
+  targetId: string,
+): void {
+  const error = new Error(
+    `Condition "${conditionKind}" targeting "${targetId}" requires ConditionContext.${String(
+      hook,
+    )}()`,
+  );
+  if (process.env.NODE_ENV !== 'production') {
+    context.onError?.(error);
+  } else {
+    // eslint-disable-next-line no-console -- log degradation path in production builds
+    console.warn(error.message);
+  }
+}
 
 /**
  * Evaluates a condition against the current game state
@@ -117,6 +148,42 @@ export function evaluateCondition(
     case 'upgradeOwned': {
       const purchases = context.getUpgradePurchases(condition.upgradeId);
       return purchases >= condition.requiredPurchases;
+    }
+    case 'prestigeUnlocked': {
+      if (!context.hasPrestigeLayerUnlocked) {
+        reportMissingContextHook(
+          context,
+          'hasPrestigeLayerUnlocked',
+          condition.kind,
+          condition.prestigeLayerId,
+        );
+        return false;
+      }
+      return context.hasPrestigeLayerUnlocked(condition.prestigeLayerId);
+    }
+    case 'flag': {
+      if (!context.isFlagSet) {
+        reportMissingContextHook(
+          context,
+          'isFlagSet',
+          condition.kind,
+          condition.flagId,
+        );
+        return false;
+      }
+      return context.isFlagSet(condition.flagId);
+    }
+    case 'script': {
+      if (!context.evaluateScriptCondition) {
+        reportMissingContextHook(
+          context,
+          'evaluateScriptCondition',
+          condition.kind,
+          condition.scriptId,
+        );
+        return false;
+      }
+      return context.evaluateScriptCondition(condition.scriptId);
     }
     case 'allOf':
       return condition.conditions.every((nested) =>

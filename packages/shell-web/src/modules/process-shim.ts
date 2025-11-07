@@ -2,10 +2,6 @@ import processPolyfill from 'process';
 
 type ProcessShim = typeof processPolyfill;
 
-declare global {
-  var process: ProcessShim | undefined;
-}
-
 const globalTarget = globalThis as typeof globalThis & {
   process?: ProcessShim;
 };
@@ -28,7 +24,10 @@ if (typeof globalTarget.process.uptime !== 'function') {
 // Use the version from the process polyfill package, with a fallback
 // because Vite transforms it to an empty string in browser builds
 if (!globalTarget.process.version) {
-  globalTarget.process.version = processPolyfill.version || 'v18.0.0';
+  Object.defineProperty(globalTarget.process, 'version', {
+    value: processPolyfill.version || 'v18.0.0',
+    configurable: true,
+  });
 }
 
 export {};

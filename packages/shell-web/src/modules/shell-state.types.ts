@@ -10,6 +10,7 @@ import type {
 import type {
   RuntimeEventSnapshot,
   RuntimeStateSnapshot,
+  SessionSnapshotPayload,
   SocialCommandPayloads,
   SocialCommandResults,
   SocialCommandType,
@@ -162,6 +163,19 @@ export interface ShellBridgeApi {
   restoreSession(
     payload?: WorkerRestoreSessionPayload,
   ): Promise<void>;
+  requestSessionSnapshot(reason?: string): Promise<SessionSnapshotPayload>;
+  onStateUpdate(callback: (state: RuntimeStateSnapshot) => void): void;
+  offStateUpdate(callback: (state: RuntimeStateSnapshot) => void): void;
+  enableDiagnostics(): void;
+  disableDiagnostics(): void;
+  onDiagnosticsUpdate(
+    callback: (timeline: DiagnosticTimelineResult) => void,
+  ): void;
+  offDiagnosticsUpdate(
+    callback: (timeline: DiagnosticTimelineResult) => void,
+  ): void;
+  onError(callback: (error: WorkerBridgeErrorDetails) => void): void;
+  offError(callback: (error: WorkerBridgeErrorDetails) => void): void;
   isSocialFeatureEnabled(): boolean;
 }
 

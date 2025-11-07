@@ -5,7 +5,6 @@ import {
   beforeEach,
   afterEach,
   vi,
-  type Mock,
 } from 'vitest';
 import type { DiagnosticTimelineResult } from '@idle-engine/core';
 import type {
@@ -13,9 +12,6 @@ import type {
   WorkerBridge,
   WorkerBridgeErrorDetails,
   WorkerRestoreSessionPayload,
-  SocialCommandPayloads,
-  SocialCommandResults,
-  SocialCommandType,
 } from './worker-bridge.js';
 import type * as WorkerBridgeModule from './worker-bridge.js';
 import type { ShellBridgeApi, ShellDiagnosticsApi } from './shell-state.types.js';
@@ -28,33 +24,11 @@ type IdleTelemetryGlobal = typeof globalThis & {
   __IDLE_ENGINE_TELEMETRY__?: TelemetryFacade;
 };
 
-type AwaitReadyMock = Mock<Promise<void>, []>;
-type RestoreSessionMock = Mock<
-  Promise<void>,
-  [WorkerRestoreSessionPayload | undefined]
+type SessionSnapshot = Awaited<
+  ReturnType<WorkerBridge<RuntimeStateSnapshot>['requestSessionSnapshot']>
 >;
-type CommandMock = Mock<void, [string, unknown]>;
-type SocialCommandMock = Mock<
-  Promise<SocialCommandResults[SocialCommandType]>,
-  [SocialCommandType, SocialCommandPayloads[SocialCommandType]]
->;
-type NoArgsVoidMock = Mock<void, []>;
 
-type BridgeStub = WorkerBridge<RuntimeStateSnapshot> & {
-  emitDiagnostics(timeline: DiagnosticTimelineResult): void;
-  emitError(error: WorkerBridgeErrorDetails): void;
-};
-
-type BridgeMock = BridgeStub & {
-  awaitReady: AwaitReadyMock;
-  restoreSession: RestoreSessionMock;
-  sendCommand: CommandMock;
-  sendSocialCommand: SocialCommandMock;
-  enableDiagnostics: NoArgsVoidMock;
-  disableDiagnostics: NoArgsVoidMock;
-};
-
-function createBridgeMock(): BridgeMock {
+function createBridgeMock() {
   const diagnosticsListeners = new Set<
     (timeline: DiagnosticTimelineResult) => void
   >();
@@ -63,32 +37,21 @@ function createBridgeMock(): BridgeMock {
     (snapshot: RuntimeStateSnapshot) => void
   >();
 
-  const awaitReady: AwaitReadyMock = vi.fn(async () => {});
-  const restoreSession: RestoreSessionMock = vi.fn(async () => {});
-  const sendCommand: CommandMock = vi.fn();
-  const sendSocialCommand: SocialCommandMock = vi.fn(
-    (
-      _kind: SocialCommandType,
-      _payload: SocialCommandPayloads[SocialCommandType],
-    ) =>
-      Promise.resolve(
-        undefined as unknown as SocialCommandResults[SocialCommandType],
-      ),
+  const awaitReady = vi.fn(async () => {});
+  const restoreSession = vi.fn(async () => {});
+  const sendCommand = vi.fn();
+  const sendSocialCommand = vi.fn(
+    async () =>
+      ({} as Awaited<ReturnType<ShellBridgeApi['sendSocialCommand']>>),
   );
-  const onStateUpdate: Mock<
-    void,
-    [(snapshot: RuntimeStateSnapshot) => void]
-  > = vi.fn((listener: (snapshot: RuntimeStateSnapshot) => void) => {
+  const onStateUpdate = vi.fn((listener: (snapshot: RuntimeStateSnapshot) => void) => {
     stateListeners.add(listener);
   });
-  const offStateUpdate: Mock<
-    void,
-    [(snapshot: RuntimeStateSnapshot) => void]
-  > = vi.fn((listener: (snapshot: RuntimeStateSnapshot) => void) => {
+  const offStateUpdate = vi.fn((listener: (snapshot: RuntimeStateSnapshot) => void) => {
     stateListeners.delete(listener);
   });
-  const enableDiagnostics: NoArgsVoidMock = vi.fn();
-  const disableDiagnostics: NoArgsVoidMock = vi.fn();
+  const enableDiagnostics = vi.fn();
+  const disableDiagnostics = vi.fn();
   const onDiagnosticsUpdate = vi.fn(
     (listener: (timeline: DiagnosticTimelineResult) => void) => {
       diagnosticsListeners.add(listener);
@@ -109,6 +72,9 @@ function createBridgeMock(): BridgeMock {
       errorListeners.delete(listener);
     },
   );
+  const requestSessionSnapshot = vi.fn(
+    async () => ({} as SessionSnapshot),
+  );
   const isSocialFeatureEnabled = vi.fn(() => true);
 
   return {
@@ -116,6 +82,7 @@ function createBridgeMock(): BridgeMock {
     restoreSession,
     sendCommand,
     sendSocialCommand,
+    requestSessionSnapshot,
     onStateUpdate,
     offStateUpdate,
     enableDiagnostics,
@@ -125,14 +92,16 @@ function createBridgeMock(): BridgeMock {
     onError,
     offError,
     isSocialFeatureEnabled,
-    emitDiagnostics(timeline) {
+    emitDiagnostics(timeline: DiagnosticTimelineResult) {
       diagnosticsListeners.forEach((listener) => listener(timeline));
     },
-    emitError(error) {
+    emitError(error: WorkerBridgeErrorDetails) {
       errorListeners.forEach((listener) => listener(error));
     },
-  } as BridgeMock;
+  };
 }
+
+type BridgeMock = ReturnType<typeof createBridgeMock>;
 
 let currentBridgeMock: BridgeMock = createBridgeMock();
 
@@ -194,7 +163,7 @@ describe('ShellStateProvider telemetry integration', () => {
     }
 
     const error = new Error('restore failed');
-    bridgeMock.restoreSession.mockRejectedValueOnce(error);
+    vi.mocked(bridgeMock.restoreSession).mockRejectedValueOnce(error);
 
     let thrown: unknown;
     await act(async () => {
@@ -216,7 +185,7 @@ describe('ShellStateProvider telemetry integration', () => {
 
   it('reports telemetry when the restore effect fails on mount', async () => {
     const error = new Error('effect restore failed');
-    bridgeMock.restoreSession.mockRejectedValueOnce(error);
+    vi.mocked(bridgeMock.restoreSession).mockRejectedValueOnce(error);
 
     const { unmount } = await setupProvider();
 
@@ -232,7 +201,7 @@ describe('ShellStateProvider telemetry integration', () => {
 
   it('reports telemetry when awaiting readiness fails', async () => {
     const error = new Error('ready timeout');
-    bridgeMock.awaitReady.mockRejectedValueOnce(error);
+    vi.mocked(bridgeMock.awaitReady).mockRejectedValueOnce(error);
 
     const { unmount } = await setupProvider();
 
@@ -261,7 +230,7 @@ describe('ShellStateProvider telemetry integration', () => {
       details: { status: 500 },
     });
 
-    bridgeMock.sendSocialCommand.mockRejectedValueOnce(
+    vi.mocked(bridgeMock.sendSocialCommand).mockRejectedValueOnce(
       workerError,
     );
 
@@ -331,7 +300,7 @@ describe('ShellStateProvider telemetry integration', () => {
     }
 
     const error = new Error('enable failed');
-    bridgeMock.enableDiagnostics.mockImplementationOnce(() => {
+    vi.mocked(bridgeMock.enableDiagnostics).mockImplementationOnce(() => {
       throw error;
     });
 
@@ -371,7 +340,7 @@ describe('ShellStateProvider telemetry integration', () => {
     });
 
     telemetrySpy.mockClear();
-    bridgeMock.disableDiagnostics.mockImplementationOnce(() => {
+    vi.mocked(bridgeMock.disableDiagnostics).mockImplementationOnce(() => {
       throw new Error('disable failed');
     });
 
@@ -508,7 +477,7 @@ describe('ShellStateProvider diagnostics subscriptions', () => {
 interface ProviderSetupOptions {
   readonly includeBridge?: boolean;
   readonly includeDiagnostics?: boolean;
-  readonly restorePayload?: unknown;
+  readonly restorePayload?: WorkerRestoreSessionPayload;
 }
 
 interface ProviderSetupResult {

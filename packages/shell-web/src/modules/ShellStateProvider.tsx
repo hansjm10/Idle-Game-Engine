@@ -384,6 +384,28 @@ export function ShellStateProvider({
       },
       sendSocialCommand: sendSocialCommand,
       restoreSession,
+      requestSessionSnapshot: (reason) =>
+        bridge.requestSessionSnapshot(reason),
+      onStateUpdate(callback) {
+        bridge.onStateUpdate(callback);
+      },
+      offStateUpdate(callback) {
+        bridge.offStateUpdate(callback);
+      },
+      enableDiagnostics: () => bridge.enableDiagnostics(),
+      disableDiagnostics: () => bridge.disableDiagnostics(),
+      onDiagnosticsUpdate(callback) {
+        bridge.onDiagnosticsUpdate(callback);
+      },
+      offDiagnosticsUpdate(callback) {
+        bridge.offDiagnosticsUpdate(callback);
+      },
+      onError(callback) {
+        bridge.onError(callback);
+      },
+      offError(callback) {
+        bridge.offError(callback);
+      },
       isSocialFeatureEnabled: () => bridge.isSocialFeatureEnabled(),
     }),
     [bridge, restoreSession, sendSocialCommand],

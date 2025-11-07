@@ -35,7 +35,9 @@ describe('shell analytics telemetry facade', () => {
   });
 
   it('wraps an existing facade so both are invoked', () => {
-    const upstreamSpy = vi.fn<void, [string, TelemetryEventData | undefined]>();
+    const upstreamSpy = vi.fn<
+      (event: string, data?: TelemetryEventData) => void
+    >();
     const originalFacade: ShellAnalyticsFacade = {
       recordError: upstreamSpy,
     };
@@ -60,10 +62,10 @@ describe('shell analytics telemetry facade', () => {
   });
 
   it('uses sendBeacon when an endpoint and transport are configured', () => {
-    const sendBeacon = vi.fn<true, [string, unknown]>(() => true);
+    const sendBeacon = vi.fn<Navigator['sendBeacon']>().mockReturnValue(true);
     (globalThis as { navigator?: Navigator }).navigator = {
       sendBeacon,
-    } as Navigator;
+    } as unknown as Navigator;
     setShellAnalyticsConfigOverrideForTesting({
       endpoint: 'https://example.com/telemetry',
     });
@@ -77,7 +79,7 @@ describe('shell analytics telemetry facade', () => {
     facade?.recordError('WorkerBridgeError', { code: 'RESTORE_FAILED' });
 
     expect(sendBeacon).toHaveBeenCalledTimes(1);
-    const [endpoint, payload] = sendBeacon.mock.calls[0]!;
+    const [endpoint, payload] = sendBeacon.mock.calls[0] ?? [];
     expect(endpoint).toBe('https://example.com/telemetry');
     expect(typeof payload).toBe('string');
     expect(payload).toContain('"event":"WorkerBridgeError"');
@@ -85,11 +87,10 @@ describe('shell analytics telemetry facade', () => {
   });
 
   it('falls back to fetch when sendBeacon is unavailable', async () => {
-    const fetchMock = vi.fn<
-      Promise<Response>,
-      Parameters<typeof fetch>
-    >(() => Promise.resolve(new Response(null, { status: 204 })));
-    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as typeof fetch;
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+    (globalThis as { fetch?: typeof fetch }).fetch = fetchMock;
     setShellAnalyticsConfigOverrideForTesting({
       endpoint: 'https://example.com/telemetry',
     });
@@ -103,10 +104,14 @@ describe('shell analytics telemetry facade', () => {
     await facade?.recordError('WorkerBridgeError', { code: 'RESTORE_FAILED' });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [request, options] = fetchMock.mock.calls[0]!;
-    expect(request).toBe('https://example.com/telemetry');
-    expect(options?.method).toBe('POST');
-    expect(options?.body).toContain('"event":"WorkerBridgeError"');
+    const fetchCall = fetchMock.mock.calls[0];
+    expect(fetchCall).toBeDefined();
+    if (fetchCall) {
+      const [request, options] = fetchCall;
+      expect(request).toBe('https://example.com/telemetry');
+      expect(options?.method).toBe('POST');
+      expect(options?.body).toContain('"event":"WorkerBridgeError"');
+    }
   });
 
   it('logs to the console when no endpoint is provided', () => {

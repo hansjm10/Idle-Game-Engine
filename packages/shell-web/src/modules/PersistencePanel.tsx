@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { SessionSnapshotPayload } from './worker-bridge.js';
 import type { WorkerBridge } from './worker-bridge.js';
 import { SessionPersistenceError } from './session-persistence-adapter.js';

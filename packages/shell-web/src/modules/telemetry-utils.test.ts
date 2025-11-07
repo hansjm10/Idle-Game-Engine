@@ -17,11 +17,17 @@ describe('telemetry-utils', () => {
     telemetryErrors = [];
 
     const facade: ShellTelemetryFacade = {
-      recordEvent: (event: string, data: Record<string, unknown>) => {
-        telemetryEvents.push({ event, data });
+      recordEvent: (
+        event: string,
+        data?: Record<string, unknown>,
+      ) => {
+        telemetryEvents.push({ event, data: data ?? {} });
       },
-      recordError: (event: string, data: Record<string, unknown>) => {
-        telemetryErrors.push({ event, data });
+      recordError: (
+        event: string,
+        data?: Record<string, unknown>,
+      ) => {
+        telemetryErrors.push({ event, data: data ?? {} });
       },
     };
 
@@ -88,7 +94,7 @@ describe('telemetry-utils', () => {
       (globalThis as { __IDLE_ENGINE_TELEMETRY__?: ShellTelemetryFacade }).__IDLE_ENGINE_TELEMETRY__ =
         {
           recordError: (event, data) => {
-            telemetryErrors.push({ event, data });
+            telemetryErrors.push({ event, data: data ?? {} });
           },
         };
 
@@ -162,7 +168,7 @@ describe('telemetry-utils', () => {
       (globalThis as { __IDLE_ENGINE_TELEMETRY__?: ShellTelemetryFacade }).__IDLE_ENGINE_TELEMETRY__ =
         {
           recordEvent: (event, data) => {
-            telemetryEvents.push({ event, data });
+            telemetryEvents.push({ event, data: data ?? {} });
           },
         };
 

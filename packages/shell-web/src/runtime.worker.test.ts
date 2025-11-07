@@ -870,13 +870,11 @@ describe('runtime.worker integration', () => {
       baseUrl: 'https://social.test',
     });
 
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({ leaderboardId: 'daily', entries: [] }),
-    }));
-
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ leaderboardId: 'daily', entries: [] }), {
+        status: 200,
+      }),
+    );
 
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
@@ -934,13 +932,11 @@ describe('runtime.worker integration', () => {
       baseUrl: 'https://social.test/api/v1',
     });
 
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({ leaderboardId: 'daily', entries: [] }),
-    }));
-
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ leaderboardId: 'daily', entries: [] }), {
+        status: 200,
+      }),
+    );
 
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
@@ -981,12 +977,11 @@ describe('runtime.worker integration', () => {
       baseUrl: 'https://social.test/api?tenant=alpha&token=secret',
     });
 
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () =>
-        JSON.stringify({ leaderboardId: 'daily', entries: [] }),
-    }));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ leaderboardId: 'daily', entries: [] }), {
+        status: 200,
+      }),
+    );
 
 
     harness = initializeRuntimeWorker({
@@ -1028,11 +1023,11 @@ describe('runtime.worker integration', () => {
       baseUrl: 'https://social.test',
     });
 
-    const fetchMock = vi.fn(async () => ({
-      ok: false,
-      status: 401,
-      text: async () => 'Unauthorized',
-    }));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response('Unauthorized', {
+        status: 401,
+      }),
+    );
 
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 

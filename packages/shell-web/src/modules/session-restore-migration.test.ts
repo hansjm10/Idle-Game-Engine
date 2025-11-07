@@ -649,8 +649,18 @@ describe('Session Restore with Migration', () => {
       );
 
       // Verify final hash matches expected v3 digest
-      const restoredCall = vi.mocked(mockBridge.restoreSession).mock.calls[0][0];
-      const finalHash = computeDigest(restoredCall.state.ids);
+      const restoredInvocation =
+        vi.mocked(mockBridge.restoreSession).mock.calls[0];
+      expect(restoredInvocation).toBeDefined();
+      const [restoredPayload] = restoredInvocation!;
+      expect(restoredPayload).toBeDefined();
+      if (!restoredPayload) {
+        throw new Error('restoreSession was not invoked with payload');
+      }
+      if (!restoredPayload.state) {
+        throw new Error('restoreSession payload missing state');
+      }
+      const finalHash = computeDigest([...restoredPayload.state.ids]);
       expect(finalHash).toBe(v3.hash);
     });
 

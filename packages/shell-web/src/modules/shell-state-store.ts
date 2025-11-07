@@ -352,10 +352,10 @@ export function createShellStateReducer(
 }
 
 function mergeEvents(
-  existing: readonly RuntimeStateSnapshot['events'],
-  incoming: readonly RuntimeStateSnapshot['events'],
+  existing: RuntimeStateSnapshot['events'],
+  incoming: RuntimeStateSnapshot['events'],
   limit: number,
-): readonly RuntimeStateSnapshot['events'] {
+): RuntimeStateSnapshot['events'] {
   const combined = [...incoming, ...existing];
 
   combined.sort((left, right) => {

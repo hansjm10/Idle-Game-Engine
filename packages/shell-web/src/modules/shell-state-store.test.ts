@@ -98,6 +98,7 @@ describe('shell-state-store', () => {
         },
       ],
       backPressure: backPressureStub,
+      progression: progressionSnapshotStub,
     };
 
     state = reducer(state, {
@@ -136,6 +137,7 @@ describe('shell-state-store', () => {
           ...backPressureStub,
           tick,
         },
+        progression: progressionSnapshotStub,
       };
 
       state = reducer(state, {
