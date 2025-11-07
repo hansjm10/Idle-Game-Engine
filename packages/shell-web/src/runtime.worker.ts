@@ -857,7 +857,8 @@ export function initializeRuntimeWorker(
     }
 
     try {
-      const state = progressionCoordinator.resourceState.exportForSave();
+      const automationStateMap = automationSystem.getState();
+      const state = progressionCoordinator.resourceState.exportForSave(automationStateMap);
       const currentStep = runtime.getCurrentStep();
       const monotonicMs = monotonicClock.now();
       const capturedAt = new Date().toISOString();

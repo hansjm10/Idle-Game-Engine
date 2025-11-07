@@ -1829,6 +1829,86 @@ describe('session snapshot protocol', () => {
     expect(snapshot1.snapshot.workerStep).toBe(1);
     expect(snapshot2.snapshot.workerStep).toBe(1);
   });
+
+  it('includes automation state in session snapshots', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    // Enable an automation to change its state
+    context.dispatch({
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      requestId: 'toggle-auto-1',
+      command: {
+        type: 'TOGGLE_AUTOMATION',
+        payload: { automationId: 'sample-pack.auto-reactor', enabled: false },
+        issuedAt: 1,
+      },
+    });
+
+    // Advance runtime to process command
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    context.postMessage.mockClear();
+
+    // Request snapshot
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-automation-1',
+      reason: 'manual-save',
+    });
+
+    // Verify SESSION_SNAPSHOT message was emitted
+    const snapshotCall = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'SESSION_SNAPSHOT',
+    );
+    expect(snapshotCall).toBeDefined();
+
+    const snapshotEnvelope = snapshotCall![0] as {
+      type: string;
+      schemaVersion: number;
+      requestId: string;
+      snapshot: {
+        persistenceSchemaVersion: number;
+        slotId: string;
+        capturedAt: string;
+        workerStep: number;
+        monotonicMs: number;
+        state: {
+          automationState?: readonly {
+            readonly id: string;
+            readonly enabled: boolean;
+            readonly lastFiredStep: number;
+            readonly cooldownExpiresStep: number;
+            readonly unlocked: boolean;
+            readonly lastThresholdSatisfied: boolean;
+          }[];
+        };
+        runtimeVersion: string;
+        contentDigest: { ids: readonly string[]; version: number; hash: string };
+      };
+    };
+
+    // Verify automation state is included
+    expect(snapshotEnvelope.snapshot.state.automationState).toBeDefined();
+    expect(snapshotEnvelope.snapshot.state.automationState).toContainEqual(
+      expect.objectContaining({
+        id: 'sample-pack.auto-reactor',
+        enabled: false,
+      }),
+    );
+  });
 });
 
 describe('isDedicatedWorkerScope', () => {
