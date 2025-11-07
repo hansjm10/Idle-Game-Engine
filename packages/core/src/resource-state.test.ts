@@ -889,4 +889,33 @@ describe('ResourceState', () => {
       }),
     );
   });
+
+  it('exportForSave includes automationState when provided', () => {
+    const definitions: ResourceDefinition[] = [
+      { id: 'gold', startAmount: 100, capacity: 1000 },
+    ];
+
+    const state = createResourceState(definitions);
+    const automationState = new Map([
+      ['auto:collector', {
+        id: 'auto:collector',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 15,
+        unlocked: true,
+        lastThresholdSatisfied: false,
+      }]
+    ]);
+
+    const exported = state.exportForSave(automationState);
+
+    expect(exported.automationState).toEqual([{
+      id: 'auto:collector',
+      enabled: true,
+      lastFiredStep: 10,
+      cooldownExpiresStep: 15,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    }]);
+  });
 });
