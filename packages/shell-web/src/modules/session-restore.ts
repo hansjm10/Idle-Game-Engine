@@ -18,6 +18,7 @@ import {
   findMigrationPath,
   applyMigrations,
 } from './migration-registry.js';
+import { migrateAutomationState } from '../migrations/automation-state-migration.js';
 
 /**
  * Result of a session restore attempt.
@@ -64,7 +65,7 @@ export async function restoreSession(
 
   try {
     // Load latest snapshot from persistence
-    const snapshot = await adapter.load(slotId);
+    let snapshot = await adapter.load(slotId);
 
     if (!snapshot) {
       // No snapshot found - this is a fresh start, not an error
@@ -77,6 +78,12 @@ export async function restoreSession(
         success: true,
       };
     }
+
+    // Apply automation state migration for old saves
+    snapshot = {
+      ...snapshot,
+      state: migrateAutomationState(snapshot.state),
+    };
 
     // Validate snapshot against current resource definitions
     let reconciliation: ResourceDefinitionReconciliation | undefined;
