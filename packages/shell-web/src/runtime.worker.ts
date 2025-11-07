@@ -775,6 +775,12 @@ export function initializeRuntimeWorker(
         resources.serialized = message.state;
         resources.state = progressionCoordinator.resourceState;
         progressionCoordinator.hydrateResources(message.state);
+
+        // Restore automation state if present in the snapshot
+        if (message.state.automationState) {
+          automationSystem.restoreState(message.state.automationState);
+        }
+
         setGameState(gameState);
       }
 

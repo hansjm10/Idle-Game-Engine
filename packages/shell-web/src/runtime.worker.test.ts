@@ -1909,6 +1909,95 @@ describe('session snapshot protocol', () => {
       }),
     );
   });
+
+  it('restores automation state from snapshot', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    // Create a snapshot with automation state
+    const automationState = [{
+      id: 'sample-pack.auto-reactor',
+      enabled: true,
+      lastFiredStep: 100,
+      cooldownExpiresStep: 110,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    }];
+
+    const state: core.SerializedResourceState = {
+      ids: ['sample-pack.energy'],
+      amounts: [500],
+      capacities: [1000],
+      flags: [0],
+      unlocked: [true],
+      visible: [true],
+      automationState,
+    };
+
+    // Send restore message
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      state,
+    });
+
+    await flushAsync();
+
+    // Verify session was restored
+    const sessionRestored = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string })
+      .find((payload) => payload?.type === 'SESSION_RESTORED');
+    expect(sessionRestored).toBeDefined();
+
+    // Request snapshot to verify state
+    const requestId = 'verify-123';
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId,
+    });
+
+    await flushAsync();
+
+    const snapshotEnvelope = context.postMessage.mock.calls
+      .map(([payload]) => payload as { type?: string; requestId?: string })
+      .find(
+        (payload) =>
+          payload?.type === 'SESSION_SNAPSHOT' && payload?.requestId === requestId
+      ) as {
+      type: 'SESSION_SNAPSHOT';
+      requestId: string;
+      snapshot: {
+        schemaVersion: number;
+        slotId: string;
+        capturedAt: string;
+        workerStep: number;
+        monotonicMs: number;
+        state: core.SerializedResourceState;
+        runtimeVersion: string;
+        contentDigest?: { hash: string; version: number; ids: string[] };
+      };
+    };
+
+    expect(snapshotEnvelope?.snapshot.state.automationState).toContainEqual(
+      expect.objectContaining({
+        id: 'sample-pack.auto-reactor',
+        enabled: true,
+        lastFiredStep: 100,
+        cooldownExpiresStep: 110,
+        unlocked: true,
+      })
+    );
+  });
 });
 
 describe('isDedicatedWorkerScope', () => {

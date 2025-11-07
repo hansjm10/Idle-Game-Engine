@@ -98,7 +98,10 @@ export interface AutomationSystemOptions {
  */
 export function createAutomationSystem(
   options: AutomationSystemOptions,
-): System & { getState: () => ReadonlyMap<string, AutomationState> } {
+): System & {
+  getState: () => ReadonlyMap<string, AutomationState>;
+  restoreState: (state: readonly AutomationState[]) => void;
+} {
   const { automations, stepDurationMs, commandQueue, resourceState } = options;
   const automationStates = new Map<string, AutomationState>();
   const pendingEventTriggers = new Set<string>();
@@ -121,6 +124,13 @@ export function createAutomationSystem(
 
     getState() {
       return new Map(automationStates);
+    },
+
+    restoreState(stateArray: readonly AutomationState[]) {
+      automationStates.clear();
+      for (const state of stateArray) {
+        automationStates.set(state.id, { ...state });
+      }
     },
 
     setup({ events }) {
