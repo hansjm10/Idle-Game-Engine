@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import type { DiagnosticTimelineResult } from '@idle-engine/core';
 
@@ -19,30 +19,39 @@ import {
 } from './runtime-worker-protocol.js';
 import { setSocialConfigOverrideForTesting } from './social-config.js';
 
-type MessageListener<TData = unknown> = (event: { data: TData }) => void;
+const progressionSnapshot: RuntimeStateSnapshot['progression'] = {
+  step: 0,
+  publishedAt: 0,
+  resources: [],
+  generators: [],
+  upgrades: [],
+};
 
 class MockWorker implements WorkerBridgeWorker {
   public readonly postMessage = vi.fn<(data: unknown) => void>();
-  public readonly terminate = vi.fn<void, []>();
+  public readonly terminate = vi.fn();
 
-  private readonly listeners = new Map<string, Set<MessageListener>>();
+  private readonly listeners = new Map<
+    string,
+    Set<(event: MessageEvent<unknown>) => void>
+  >();
 
-  addEventListener<TData>(
+  addEventListener(
     type: string,
-    listener: MessageListener<TData>,
+    listener: (event: MessageEvent<unknown>) => void,
   ): void {
     if (!this.listeners.has(type)) {
       this.listeners.set(type, new Set());
     }
-    this.listeners.get(type)!.add(listener as MessageListener);
+    this.listeners.get(type)!.add(listener);
   }
 
-  removeEventListener<TData>(
+  removeEventListener(
     type: string,
-    listener: MessageListener<TData>,
+    listener: (event: MessageEvent<unknown>) => void,
   ): void {
     const registry = this.listeners.get(type);
-    registry?.delete(listener as MessageListener);
+    registry?.delete(listener);
   }
 
   emitMessage<TData>(type: string, data: TData): void {
@@ -50,8 +59,9 @@ class MockWorker implements WorkerBridgeWorker {
     if (!registry) {
       return;
     }
+    const event = { data } as MessageEvent<TData>;
     for (const listener of registry) {
-      listener({ data });
+      listener(event);
     }
   }
 
@@ -118,7 +128,7 @@ describe('WorkerBridgeImpl', () => {
     const worker = new MockWorker();
     const bridge =
       new WorkerBridgeImpl<RuntimeStateSnapshot>(worker as WorkerBridgeWorker);
-    const handler = vi.fn<void, [RuntimeStateSnapshot]>();
+    const handler = vi.fn<(snapshot: RuntimeStateSnapshot) => void>();
     bridge.onStateUpdate(handler);
 
     worker.emitMessage('message', {
@@ -139,6 +149,7 @@ describe('WorkerBridgeImpl', () => {
         },
         channels: [],
       },
+      progression: progressionSnapshot,
     };
 
     worker.emitMessage('message', {
@@ -194,7 +205,7 @@ describe('WorkerBridgeImpl', () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
 
-    const handler = vi.fn<void, [DiagnosticTimelineResult]>();
+    const handler = vi.fn<(timeline: DiagnosticTimelineResult) => void>();
     const readyPromise = bridge.awaitReady();
     bridge.onDiagnosticsUpdate(handler);
     bridge.enableDiagnostics();
@@ -300,7 +311,9 @@ describe('WorkerBridgeImpl', () => {
 
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
-    const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
+    const errorHandler = vi.fn<
+      (error: WorkerBridgeErrorDetails) => void
+    >();
     bridge.onError(errorHandler);
 
     const restorePromise = bridge.restoreSession();
@@ -354,7 +367,9 @@ describe('WorkerBridgeImpl', () => {
   it('emits error events when the worker reports failures', () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
-    const errorHandler = vi.fn<void, [WorkerBridgeErrorDetails]>();
+    const errorHandler = vi.fn<
+      (error: WorkerBridgeErrorDetails) => void
+    >();
     const errorLogSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     bridge.onError(errorHandler);

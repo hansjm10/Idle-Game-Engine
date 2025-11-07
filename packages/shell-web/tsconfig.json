@@ -3,7 +3,40 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "baseUrl": "./src",
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@idle-engine/core": ["../../core/src/index.ts"],
+      "@idle-engine/core/*": ["../../core/src/*"],
+      "@idle-engine/content-schema": [
+        "../../content-schema/src/index.ts"
+      ],
+      "@idle-engine/content-schema/*": [
+        "../../content-schema/src/*"
+      ],
+      "@idle-engine/content-schema/runtime-helpers": [
+        "../../content-schema/src/runtime-helpers.ts"
+      ],
+      "@idle-engine/content-sample": [
+        "../../content-sample/src/index.ts"
+      ],
+      "@idle-engine/content-sample/*": [
+        "../../content-sample/src/*"
+      ],
+      "@idle-engine/content-compiler": [
+        "../../content-compiler/src/index.ts"
+      ],
+      "@idle-engine/content-compiler/*": [
+        "../../content-compiler/src/*"
+      ]
+    },
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": [
+      "vite/client",
+      "vitest",
+      "@testing-library/jest-dom",
+      "react",
+      "react-dom"
+    ]
   },
-  "include": ["src"]
+  "include": ["src", "src/vite-env.d.ts"]
 }

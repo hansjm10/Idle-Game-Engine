@@ -17,6 +17,7 @@ import { recordTelemetryError, recordTelemetryEvent } from './telemetry-utils.js
 import {
   findMigrationPath,
   applyMigrations,
+  type MigrationDescriptor,
 } from './migration-registry.js';
 import { migrateAutomationState } from '../migrations/automation-state-migration.js';
 

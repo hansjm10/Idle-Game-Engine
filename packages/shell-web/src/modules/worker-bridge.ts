@@ -96,6 +96,15 @@ const SUPPORTED_SOCIAL_COMMAND_KINDS = new Set<SocialCommandType>([
   SOCIAL_COMMAND_TYPES.CREATE_GUILD,
 ]);
 
+const SOCIAL_ERROR_CODES = new Set<
+  WorkerBridgeSocialCommandError['code']
+>([
+  'SOCIAL_COMMANDS_DISABLED',
+  'INVALID_SOCIAL_COMMAND_PAYLOAD',
+  'SOCIAL_COMMAND_UNSUPPORTED',
+  'SOCIAL_COMMAND_FAILED',
+]);
+
 function isSupportedSocialCommandKind(
   value: unknown,
 ): value is SocialCommandType {
@@ -247,9 +256,7 @@ export class WorkerBridgeImpl<TState = unknown>
       }
     | null = null;
 
-  private readonly handleMessage = (
-    event: MessageEvent<RuntimeWorkerOutboundMessage<TState>>,
-  ) => {
+  private readonly handleMessage = (event: MessageEvent<unknown>) => {
     const envelope = event.data as RuntimeWorkerOutboundMessage<TState> | null;
     if (!envelope || typeof envelope !== 'object') {
       return;
@@ -298,12 +305,17 @@ export class WorkerBridgeImpl<TState = unknown>
         this.flushPendingMessages();
       }
       this.emitError(envelope.error);
-      if (envelope.error.requestId) {
+      if (
+        envelope.error.requestId &&
+        SOCIAL_ERROR_CODES.has(
+          envelope.error.code as WorkerBridgeSocialCommandError['code'],
+        )
+      ) {
         const bridgeError: WorkerBridgeSocialCommandError = Object.assign(
           new Error(envelope.error.message),
           {
             name: 'WorkerBridgeSocialCommandError',
-            code: envelope.error.code,
+            code: envelope.error.code as WorkerBridgeSocialCommandError['code'],
             details: envelope.error.details,
             requestId: envelope.error.requestId,
           },
@@ -794,7 +806,7 @@ export {
 };
 
 export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeImpl<TState> {
-  const bridgeRef = useRef<WorkerBridgeImpl<TState>>();
+  const bridgeRef = useRef<WorkerBridgeImpl<TState> | null>(null);
 
   if (!bridgeRef.current) {
     // Feature flag keeps the worker bridge opt-in during rollout (docs/runtime-react-worker-bridge-design.md §12).
@@ -817,9 +829,12 @@ export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeIm
   useEffect(() => {
     return () => {
       bridge?.dispose();
-      bridgeRef.current = undefined;
+      bridgeRef.current = null;
     };
   }, [bridge]);
 
-  return bridge!;
+  if (!bridge) {
+    throw new Error('Worker bridge failed to initialize');
+  }
+  return bridge;
 }

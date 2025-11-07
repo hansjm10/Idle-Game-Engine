@@ -24,6 +24,14 @@ import {
 } from '@idle-engine/core';
 import { sampleContent } from '@idle-engine/content-sample';
 
+declare global {
+  interface ImportMeta {
+    readonly vitest?: {
+      worker?: Worker;
+    };
+  }
+}
+
 export type {
   RuntimeEventSnapshot,
   RuntimeStatePayload,
@@ -162,11 +170,12 @@ export function initializeRuntimeWorker(
     dispatcher: runtime.getCommandDispatcher(),
     resources: progressionCoordinator.resourceState,
     generatorPurchases: progressionCoordinator.generatorEvaluator,
+    ...(progressionCoordinator.upgradeEvaluator
+      ? {
+          upgradePurchases: progressionCoordinator.upgradeEvaluator,
+        }
+      : {}),
   };
-  if (progressionCoordinator.upgradeEvaluator) {
-    commandHandlerOptions.upgradePurchases =
-      progressionCoordinator.upgradeEvaluator;
-  }
   registerResourceCommandHandlers(commandHandlerOptions);
 
   // Create and register AutomationSystem
@@ -194,7 +203,7 @@ export function initializeRuntimeWorker(
   let restoreInProgress = false;
   let sessionRestored = false;
   const queuedCommandsDuringRestore: Array<{
-    readonly message: Record<string, unknown>;
+    readonly message: RuntimeWorkerCommand<unknown>;
     readonly requestId?: string;
   }> = [];
 
@@ -250,7 +259,6 @@ export function initializeRuntimeWorker(
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
       progressionCoordinator.updateForStep(after);
-      progressionCoordinator.state.stepDurationMs = stepDurationMs;
       const publishedAt = monotonicClock.now();
       const progression = buildProgressionSnapshot(
         after,
@@ -942,7 +950,7 @@ export function initializeRuntimeWorker(
   };
 
   const handleCommandMessage = (
-    raw: Record<string, unknown>,
+    raw: RuntimeWorkerCommand<unknown>,
     requestId?: string,
   ) => {
     if (restoreInProgress) {
@@ -1064,13 +1072,16 @@ export function initializeRuntimeWorker(
     }
 
     if (type === 'COMMAND') {
-      handleCommandMessage(message, requestId);
+      handleCommandMessage(
+        message as unknown as RuntimeWorkerCommand<unknown>,
+        requestId,
+      );
       return;
     }
 
     if (type === 'SOCIAL_COMMAND') {
       void handleSocialCommandMessage(
-        message as RuntimeWorkerSocialCommand,
+        message as unknown as RuntimeWorkerSocialCommand,
       );
       return;
     }
@@ -1094,14 +1105,14 @@ export function initializeRuntimeWorker(
 
     if (type === 'RESTORE_SESSION') {
       handleRestoreSessionMessage(
-        message as RuntimeWorkerRestoreSession,
+        message as unknown as RuntimeWorkerRestoreSession,
       );
       return;
     }
 
     if (type === 'REQUEST_SESSION_SNAPSHOT') {
       handleSessionSnapshotRequest(
-        message as RuntimeWorkerRequestSessionSnapshot,
+        message as unknown as RuntimeWorkerRequestSessionSnapshot,
       );
       return;
     }

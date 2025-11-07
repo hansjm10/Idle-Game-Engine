@@ -1,4 +1,5 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
+import type { SerializedResourceState } from '@idle-engine/core';
 import { describe, expect, it } from 'vitest';
 
 import { createProgressionCoordinator } from './progression-coordinator.js';
@@ -426,8 +427,8 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const generatorRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
       (g) => g.id === generator.id,
     );
 
@@ -524,8 +525,8 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const generatorRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
       (g) => g.id === advancedGenerator.id,
     );
     const upgradeRecord = coordinator.state.upgrades?.find(
@@ -541,13 +542,12 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
     // Step 1: Purchase upgrade
     const upgradeQuote = coordinator.upgradeEvaluator?.getPurchaseQuote(
       upgrade.id,
-      1,
     );
     expect(upgradeQuote?.status).toBe('available');
     expect(upgradeQuote?.costs).toEqual([{ resourceId: energy.id, amount: 20 }]);
 
     coordinator.resourceState.spendAmount(energyIndex, 20);
-    coordinator.incrementUpgradePurchases(upgrade.id, 1);
+    coordinator.incrementUpgradePurchases(upgrade.id);
     coordinator.updateForStep(1);
 
     // Step 2: Generator unlocks after upgrade purchase
@@ -603,8 +603,8 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const generatorRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
       (g) => g.id === generator.id,
     );
 
@@ -763,9 +763,9 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const crystalIndex = coordinator.resourceState.getIndex(crystal.id);
-    const advancedRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const crystalIndex = coordinator.resourceState.requireIndex(crystal.id);
+    const advancedRecord = coordinator.state.generators?.find(
       (g) => g.id === advancedGenerator.id,
     );
 
@@ -781,7 +781,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
 
     // Step 2: Purchase basic upgrade - all conditions met
     coordinator.resourceState.spendAmount(energyIndex, 10);
-    coordinator.incrementUpgradePurchases(basicUpgrade.id, 1);
+    coordinator.incrementUpgradePurchases(basicUpgrade.id);
     coordinator.updateForStep(2);
     expect(advancedRecord?.isUnlocked).toBe(true);
     expect(advancedRecord?.isVisible).toBe(true);
@@ -827,8 +827,8 @@ describe('Integration: bulk purchase edge cases', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const generatorRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
       (g) => g.id === generator.id,
     );
 
@@ -949,8 +949,8 @@ describe('Integration: bulk purchase edge cases', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const generatorRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
       (g) => g.id === generator.id,
     );
 
@@ -1033,8 +1033,8 @@ describe('Integration: bulk purchase edge cases', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
-    const generatorRecord = coordinator.state.generators.find(
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
       (g) => g.id === generator.id,
     );
 
@@ -1106,7 +1106,7 @@ describe('Integration: bulk purchase edge cases', () => {
     });
 
     coordinator.resourceState.addAmount(
-      coordinator.resourceState.getIndex(energy.id),
+      coordinator.resourceState.requireIndex(energy.id),
       1e9,
     );
     coordinator.updateForStep(0);
@@ -1169,8 +1169,8 @@ describe('Integration: hydration error scenarios', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex = coordinator1.resourceState.getIndex(energy.id);
-    const crystalIndex = coordinator1.resourceState.getIndex(crystal.id);
+    const energyIndex = coordinator1.resourceState.requireIndex(energy.id);
+    const crystalIndex = coordinator1.resourceState.requireIndex(crystal.id);
 
     coordinator1.resourceState.addAmount(energyIndex, 100);
     coordinator1.resourceState.addAmount(crystalIndex, 50);
@@ -1228,7 +1228,7 @@ describe('Integration: hydration error scenarios', () => {
     }).not.toThrow();
 
     // Amount should be clamped to valid range
-    const energyIndex = coordinator.resourceState.getIndex(energy.id);
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
     const amount = coordinator.resourceState.getAmount(energyIndex);
     expect(amount).toBeGreaterThanOrEqual(0);
   });
@@ -1319,7 +1319,9 @@ describe('Integration: hydration error scenarios', () => {
 
     // Should detect and reject invalid unlocked values
     expect(() => {
-      coordinator.hydrateResources(corruptedSave);
+      coordinator.hydrateResources(
+        corruptedSave as unknown as SerializedResourceState,
+      );
     }).toThrow('boolean');
   });
 
@@ -1361,14 +1363,14 @@ describe('Integration: hydration error scenarios', () => {
       stepDurationMs: 100,
     });
 
-    const energyIndex1 = coordinator1.resourceState.getIndex(energy.id);
+    const energyIndex1 = coordinator1.resourceState.requireIndex(energy.id);
     coordinator1.resourceState.addAmount(energyIndex1, 1000);
     coordinator1.incrementGeneratorOwned(generator.id, 25);
     coordinator1.updateForStep(0);
 
     // Export save
     const save = coordinator1.resourceState.exportForSave();
-    const generatorState = coordinator1.state.generators.find(
+    const generatorState = coordinator1.state.generators?.find(
       (g) => g.id === generator.id,
     );
     expect(generatorState?.owned).toBe(25);
@@ -1384,10 +1386,10 @@ describe('Integration: hydration error scenarios', () => {
     coordinator2.updateForStep(0);
 
     // Verify restored state
-    const energyIndex2 = coordinator2.resourceState.getIndex(energy.id);
+    const energyIndex2 = coordinator2.resourceState.requireIndex(energy.id);
     expect(coordinator2.resourceState.getAmount(energyIndex2)).toBe(1000);
 
-    const generatorState2 = coordinator2.state.generators.find(
+    const generatorState2 = coordinator2.state.generators?.find(
       (g) => g.id === generator.id,
     );
     expect(generatorState2?.owned).toBe(25);

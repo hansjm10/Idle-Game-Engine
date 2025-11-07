@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, type JSX } from 'react';
 import type { ResourceDefinition } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';

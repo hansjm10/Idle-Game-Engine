@@ -6,6 +6,35 @@ import type {
   NumericFormula,
 } from '@idle-engine/content-schema';
 
+type LocalizedNameShape = NormalizedResource['name'];
+type ResourceOverrides = Record<string, unknown> & {
+  readonly name?: string | NormalizedResource['name'];
+};
+type GeneratorOverrides = Record<string, unknown> & {
+  readonly name?: string | NormalizedGenerator['name'];
+};
+type UpgradeOverrides = Record<string, unknown> & {
+  readonly name?: string | NormalizedUpgrade['name'];
+};
+
+function ensureLocalizedName<T extends LocalizedNameShape>(
+  value: string | T | undefined,
+  fallback: string,
+): T {
+  if (typeof value === 'string') {
+    return {
+      default: value,
+      variants: {},
+    } as T;
+  }
+  if (value) {
+    return value;
+  }
+  return {
+    default: fallback,
+    variants: {},
+  } as T;
+}
 /**
  * Common numeric formula for test cases representing a constant value of 1
  */
@@ -47,8 +76,8 @@ export function createContentPack(config: {
   resources?: NormalizedResource[];
   generators?: NormalizedGenerator[];
   upgrades?: NormalizedUpgrade[];
-  metadata?: Partial<NormalizedContentPack['metadata']>;
-  digest?: Partial<NormalizedContentPack['digest']>;
+  metadata?: Record<string, unknown>;
+  digest?: Record<string, unknown>;
 }): NormalizedContentPack {
   const {
     resources = [],
@@ -69,7 +98,9 @@ export function createContentPack(config: {
   const upgradeById = Object.fromEntries(upgrades.map((u) => [u.id, u]));
 
   return {
-    metadata: createTestMetadata(metadata),
+    metadata: createTestMetadata(
+      metadata as Partial<NormalizedContentPack['metadata']>,
+    ),
     resources,
     generators,
     upgrades,
@@ -104,7 +135,9 @@ export function createContentPack(config: {
       guildPerkById: {},
       runtimeEventById: {},
     },
-    digest: createTestDigest(digest),
+    digest: createTestDigest(
+      digest as Partial<NormalizedContentPack['digest']>,
+    ),
   } as unknown as NormalizedContentPack;
 }
 
@@ -113,11 +146,20 @@ export function createContentPack(config: {
  */
 export function createResourceDefinition(
   id: string,
-  overrides?: Partial<NormalizedResource>,
+  overrides?: ResourceOverrides,
 ): NormalizedResource {
+  const defaultName = id.split('.').pop() || id;
+  const rawName = overrides?.name as
+    | string
+    | NormalizedResource['name']
+    | undefined;
+  const normalizedName = ensureLocalizedName<NormalizedResource['name']>(
+    rawName,
+    defaultName,
+  );
+
   return {
     id,
-    name: id.split('.').pop() || id,
     category: 'currency' as const,
     tier: 1,
     startAmount: 0,
@@ -126,6 +168,7 @@ export function createResourceDefinition(
     unlocked: true,
     tags: [],
     ...overrides,
+    name: normalizedName,
   } as unknown as NormalizedResource;
 }
 
@@ -134,11 +177,20 @@ export function createResourceDefinition(
  */
 export function createGeneratorDefinition(
   id: string,
-  overrides?: Partial<NormalizedGenerator>,
+  overrides?: GeneratorOverrides,
 ): NormalizedGenerator {
+  const defaultName = id.split('.').pop() || id;
+  const rawName = overrides?.name as
+    | string
+    | NormalizedGenerator['name']
+    | undefined;
+  const normalizedName = ensureLocalizedName<NormalizedGenerator['name']>(
+    rawName,
+    defaultName,
+  );
+
   return {
     id,
-    name: id.split('.').pop() || id,
     category: 'production' as const,
     tags: [],
     purchase: {
@@ -152,6 +204,7 @@ export function createGeneratorDefinition(
     order: 1,
     effects: [],
     ...overrides,
+    name: normalizedName,
   } as unknown as NormalizedGenerator;
 }
 
@@ -160,11 +213,20 @@ export function createGeneratorDefinition(
  */
 export function createUpgradeDefinition(
   id: string,
-  overrides?: Partial<NormalizedUpgrade>,
+  overrides?: UpgradeOverrides,
 ): NormalizedUpgrade {
+  const defaultName = id.split('.').pop() || id;
+  const rawName = overrides?.name as
+    | string
+    | NormalizedUpgrade['name']
+    | undefined;
+  const normalizedName = ensureLocalizedName<NormalizedUpgrade['name']>(
+    rawName,
+    defaultName,
+  );
+
   return {
     id,
-    name: id.split('.').pop() || id,
     category: 'global' as const,
     tags: [],
     targets: [{ kind: 'global' }],
@@ -177,5 +239,6 @@ export function createUpgradeDefinition(
     prerequisites: [],
     effects: [],
     ...overrides,
+    name: normalizedName,
   } as unknown as NormalizedUpgrade;
 }

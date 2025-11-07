@@ -117,6 +117,21 @@ export interface ProgressionCoordinator {
    * @param step - The current game step number
    */
   updateForStep(step: number): void;
+
+  /**
+   * Increments the owned count for a generator, respecting max level constraints.
+   *
+   * @param generatorId - Generator identifier
+   * @param count - Number of purchases to apply
+   */
+  incrementGeneratorOwned(generatorId: string, count: number): void;
+
+  /**
+   * Increments the purchase count for an upgrade, respecting max purchase limits.
+   *
+   * @param upgradeId - Upgrade identifier
+   */
+  incrementUpgradePurchases(upgradeId: string): void;
 }
 
 /**
@@ -183,7 +198,6 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   public readonly generatorEvaluator: GeneratorPurchaseEvaluator;
   public readonly upgradeEvaluator?: UpgradePurchaseEvaluator;
 
-  private readonly content: NormalizedContentPack;
   private readonly resourceDefinitions: readonly ResourceDefinition[];
   private readonly generators: Map<string, GeneratorRecord>;
   private readonly generatorList: GeneratorRecord[];
@@ -193,7 +207,6 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly onError?: (error: Error) => void;
 
   constructor(options: ProgressionCoordinatorOptions) {
-    this.content = options.content;
     this.onError = options.onError;
 
     const initialState = options.initialState
@@ -308,7 +321,8 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   }
 
   public updateForStep(step: number): void {
-    this.state.stepDurationMs = Math.max(0, this.state.stepDurationMs);
+    const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
+    mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
 
     for (const record of this.generatorList) {
       const baseUnlock = evaluateCondition(
@@ -670,7 +684,6 @@ function createGeneratorRecord(
         owned: 0,
         isUnlocked: false,
         isVisible: true,
-        costs: [],
         produces,
         consumes,
         nextPurchaseReadyAtStep: 1,
@@ -681,7 +694,6 @@ function createGeneratorRecord(
   state.owned = Number.isFinite(state.owned) ? state.owned : 0;
   state.isUnlocked = Boolean(state.isUnlocked);
   state.isVisible = state.isVisible ?? true;
-  state.costs = Array.isArray(state.costs) ? state.costs : [];
   state.produces = produces;
   state.consumes = consumes;
   state.nextPurchaseReadyAtStep = Number.isFinite(

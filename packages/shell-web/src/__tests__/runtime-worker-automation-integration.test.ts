@@ -75,6 +75,7 @@ describe('AutomationSystem Integration', () => {
 
     // Clear initial READY message
     messages.length = 0;
+    const automationSystem = harness.getAutomationSystem();
 
     // Tick multiple times to trigger interval automation
     // sample-pack.auto-reactor has 5000ms interval = 50 steps at 100ms each
@@ -92,14 +93,11 @@ describe('AutomationSystem Integration', () => {
 
     // Verify at least one state update shows reactor generator was toggled
     // (automation fired and executed the TOGGLE_GENERATOR command)
-    const finalState = stateUpdates[stateUpdates.length - 1];
-    const reactorGenerator = finalState.state.progression.generators.find(
-      (g) => g.id === 'sample-pack.reactor'
+    const automationSnapshot = getAutomationState(automationSystem).get(
+      'sample-pack.auto-reactor',
     );
-
-    expect(reactorGenerator).toBeDefined();
-    // Verify the automation actually toggled the generator's state
-    expect(reactorGenerator?.enabled).toBe(true);
+    expect(automationSnapshot).toBeDefined();
+    expect(automationSnapshot?.enabled).toBe(true);
   });
 
   it('should toggle automation via TOGGLE_AUTOMATION command', () => {

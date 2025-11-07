@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react';
+import { useId, useMemo, type JSX } from 'react';
 import type { ResourceView } from '@idle-engine/core';
 
 import { useShellProgression, useShellState } from './ShellStateProvider.js';

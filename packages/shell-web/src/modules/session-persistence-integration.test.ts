@@ -249,8 +249,7 @@ describe('Session Persistence Integration', () => {
       const mismatchedDefinitions: ResourceDefinition[] = [
         {
           id: 'different-resource',
-          name: 'Different',
-          initialAmount: 0,
+          startAmount: 0,
           capacity: 1000,
           unlocked: true,
           visible: true,
