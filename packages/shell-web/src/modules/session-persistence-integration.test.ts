@@ -198,10 +198,13 @@ describe('Session Persistence Integration', () => {
       expect(result.validationStatus).toBe('valid');
       expect(result.snapshot).toBeDefined();
       expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
-      expect(mockBridge.restoreSession).toHaveBeenCalledWith({
-        state: expect.any(Object),
-        elapsedMs: expect.any(Number),
-      });
+      expect(mockBridge.restoreSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: expect.any(Object),
+          elapsedMs: expect.any(Number),
+          savedWorkerStep: expect.any(Number),
+        }),
+      );
     });
 
     it('should fail to restore snapshot with mismatched definitions', async () => {
