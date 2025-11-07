@@ -3,6 +3,7 @@ import {
   type ImmutableMapSnapshot,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
+import type { AutomationState } from './automation-system.js';
 
 const DIRTY_EPSILON_ABSOLUTE = 1e-9;
 const DIRTY_EPSILON_RELATIVE = 1e-9;
@@ -124,7 +125,7 @@ export interface SerializedResourceState {
   readonly visible?: readonly boolean[];
   readonly flags: readonly number[];
   readonly definitionDigest?: ResourceDefinitionDigest;
-  readonly automationState?: readonly import('./automation-system.js').AutomationState[];
+  readonly automationState?: readonly AutomationState[];
 }
 
 export interface ResourceSpendAttemptContext {
