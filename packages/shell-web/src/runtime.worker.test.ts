@@ -220,7 +220,9 @@ describe('runtime.worker integration', () => {
         }),
       ]),
     );
-    expect(progression.upgrades).toHaveLength(0);
+    // The sample content pack now includes canonical upgrades for progression UI
+    // coverage. Assert we have at least the baseline entries instead of assuming none.
+    expect(progression.upgrades.length).toBeGreaterThanOrEqual(3);
 
     const runtimeState = core.getGameState<{
       progression: ProgressionAuthoritativeState;
