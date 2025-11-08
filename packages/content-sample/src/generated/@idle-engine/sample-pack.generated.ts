@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "b919219ab05f0e88fecc178d60b21e3e7b7dc1b95e88da718d907a784e9a5782",
+  "artifactHash": "9806ab2ae2e1a045b2a3af7f2638beeef69c696049cd3c9370dfb628d9d90fdd",
   "digest": {
-    "hash": "fnv1a-a97fd5ca",
+    "hash": "fnv1a-8a057cff",
     "version": 1
   },
   "formatVersion": 1,
@@ -211,6 +211,43 @@ const serialized = {
         }
       },
       {
+        "cooldown": 0,
+        "description": {
+          "default": "Attempts to buy Reactor Insulation every 8s if you can afford 5 energy",
+          "variants": {
+            "en-US": "Attempts to buy Reactor Insulation every 8s if you can afford 5 energy"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.autobuy-reactor-insulation",
+        "name": {
+          "default": "Auto-Buy Reactor Insulation",
+          "variants": {
+            "en-US": "Auto-Buy Reactor Insulation"
+          }
+        },
+        "order": 8,
+        "resourceCost": {
+          "rate": {
+            "kind": "constant",
+            "value": 5
+          },
+          "resourceId": "sample-pack.energy"
+        },
+        "targetId": "sample-pack.reactor-insulation",
+        "targetType": "upgrade",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 8000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
         "cooldown": 10000,
         "description": {
           "default": "Collects resources when no other actions are pending",
@@ -257,6 +294,33 @@ const serialized = {
         "targetType": "system",
         "trigger": {
           "kind": "commandQueueEmpty"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": 45000,
+        "description": {
+          "default": "Kicks the research daemon when reactor primes",
+          "variants": {
+            "en-US": "Kicks the research daemon when reactor primes"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.research-daemon-on-primed",
+        "name": {
+          "default": "Research Daemon on Prime",
+          "variants": {
+            "en-US": "Research Daemon on Prime"
+          }
+        },
+        "order": 7,
+        "systemTargetId": "research-daemon",
+        "targetType": "system",
+        "trigger": {
+          "eventId": "sample:reactor-primed",
+          "kind": "event"
         },
         "unlockCondition": {
           "kind": "always"

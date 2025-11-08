@@ -397,6 +397,46 @@
       "unlockCondition": { "kind": "always" },
       "enabledByDefault": false,
       "order": 6
+    },
+    {
+      "id": "sample-pack.research-daemon-on-primed",
+      "name": { "default": "Research Daemon on Prime", "variants": {} },
+      "description": {
+        "default": "Kicks the research daemon when reactor primes",
+        "variants": {}
+      },
+      "targetType": "system",
+      "systemTargetId": "research-daemon",
+      "trigger": {
+        "kind": "event",
+        "eventId": "sample:reactor-primed"
+      },
+      "cooldown": 45000,
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 7
+    },
+    {
+      "id": "sample-pack.autobuy-reactor-insulation",
+      "name": { "default": "Auto-Buy Reactor Insulation", "variants": {} },
+      "description": {
+        "default": "Attempts to buy Reactor Insulation every 8s if you can afford 5 energy",
+        "variants": {}
+      },
+      "targetType": "upgrade",
+      "targetId": "sample-pack.reactor-insulation",
+      "trigger": {
+        "kind": "interval",
+        "interval": { "kind": "constant", "value": 8000 }
+      },
+      "resourceCost": {
+        "resourceId": "sample-pack.energy",
+        "rate": { "kind": "constant", "value": 5 }
+      },
+      "cooldown": 0,
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 8
     }
   ],
   "transforms": [],
