@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { GENERATED_RUNTIME_EVENT_DEFINITIONS } from '@idle-engine/core';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Deterministic canonicalization and hashing to watch schema changes.
 function sortKeysDeep(value: unknown): unknown {
@@ -43,6 +44,7 @@ const EXPECTED: Record<string, Record<number, string>> = Object.freeze({
 
 describe('runtime event schema/version guard', () => {
   it('schema changes require a version bump (sample:reactor-primed)', () => {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const def = GENERATED_RUNTIME_EVENT_DEFINITIONS.find(
       (d) => d.type === 'sample:reactor-primed' && d.packSlug === '@idle-engine/sample-pack',
     );
@@ -69,4 +71,3 @@ describe('runtime event schema/version guard', () => {
     ].join('\n')).toBe(expectedForVersion);
   });
 });
-
