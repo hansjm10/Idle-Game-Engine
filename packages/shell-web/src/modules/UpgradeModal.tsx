@@ -91,13 +91,15 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
   useEffect(() => {
     if (!open) return;
     const onError = (error: unknown) => {
+      // Clear any optimistic pending deltas when a command fails
+      progression.clearPendingDeltas();
       setErrorMessage(
         error instanceof Error ? error.message : 'An error occurred while processing your request.',
       );
     };
     bridge.onError(onError);
     return () => bridge.offError(onError);
-  }, [open, bridge]);
+  }, [open, bridge, progression]);
 
   if (!open) return null;
 

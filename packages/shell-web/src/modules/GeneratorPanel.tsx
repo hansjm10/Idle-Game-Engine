@@ -152,6 +152,8 @@ export function GeneratorPanel(): JSX.Element | null {
       return;
     }
     const onError = (error: unknown) => {
+      // Clear any optimistic pending deltas when a command fails
+      progression.clearPendingDeltas();
       // Show a brief, accessible toast for any command error
       setErrorMessage(
         error instanceof Error ? error.message : 'An error occurred while processing your request.',
