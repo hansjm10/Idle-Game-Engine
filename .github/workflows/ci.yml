@@ -49,13 +49,8 @@ jobs:
       - name: Validate Generated Version File
         run: node tools/scripts/generate-version.mjs --check
 
-      - name: Generate Coverage Report
-        env:
-          NODE_OPTIONS: '--dns-result-order=ipv4first'
-        run: pnpm coverage:md
-
-      - name: Build
-        run: pnpm build
+      - name: Build (except docs)
+        run: pnpm -r --filter "!@idle-engine/docs" run build
 
       - name: Validate Content
         run: |
@@ -68,6 +63,14 @@ jobs:
             exit "${GENERATE_EXIT}"
           fi
           exit "${ASSERT_EXIT}"
+
+      - name: Generate Coverage Report
+        env:
+          NODE_OPTIONS: '--dns-result-order=ipv4first'
+        run: pnpm coverage:md
+
+      - name: Build documentation
+        run: pnpm docs:build
 
       - name: Test
         env:
