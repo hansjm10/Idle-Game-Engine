@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "9806ab2ae2e1a045b2a3af7f2638beeef69c696049cd3c9370dfb628d9d90fdd",
+  "artifactHash": "3f66637f92d84e8dbb4cd10cefa6345800e883c698397d19811db3b24f6a14c6",
   "digest": {
-    "hash": "fnv1a-8a057cff",
+    "hash": "fnv1a-063d058d",
     "version": 1
   },
   "formatVersion": 1,
@@ -294,33 +294,6 @@ const serialized = {
         "targetType": "system",
         "trigger": {
           "kind": "commandQueueEmpty"
-        },
-        "unlockCondition": {
-          "kind": "always"
-        }
-      },
-      {
-        "cooldown": 45000,
-        "description": {
-          "default": "Kicks the research daemon when reactor primes",
-          "variants": {
-            "en-US": "Kicks the research daemon when reactor primes"
-          }
-        },
-        "enabledByDefault": false,
-        "id": "sample-pack.research-daemon-on-primed",
-        "name": {
-          "default": "Research Daemon on Prime",
-          "variants": {
-            "en-US": "Research Daemon on Prime"
-          }
-        },
-        "order": 7,
-        "systemTargetId": "research-daemon",
-        "targetType": "system",
-        "trigger": {
-          "eventId": "sample:reactor-primed",
-          "kind": "event"
         },
         "unlockCondition": {
           "kind": "always"

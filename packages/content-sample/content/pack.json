@@ -399,24 +399,6 @@
       "order": 6
     },
     {
-      "id": "sample-pack.research-daemon-on-primed",
-      "name": { "default": "Research Daemon on Prime", "variants": {} },
-      "description": {
-        "default": "Kicks the research daemon when reactor primes",
-        "variants": {}
-      },
-      "targetType": "system",
-      "systemTargetId": "research-daemon",
-      "trigger": {
-        "kind": "event",
-        "eventId": "sample:reactor-primed"
-      },
-      "cooldown": 45000,
-      "unlockCondition": { "kind": "always" },
-      "enabledByDefault": false,
-      "order": 7
-    },
-    {
       "id": "sample-pack.autobuy-reactor-insulation",
       "name": { "default": "Auto-Buy Reactor Insulation", "variants": {} },
       "description": {
