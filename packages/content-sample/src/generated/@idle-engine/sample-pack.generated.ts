@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "819f72bf2daa5a2f2efc54633b54986731107ff27afe9661f4b6490833936797",
+  "artifactHash": "bf071d4466954018a5ed7d4ea9056d10987c1192e5908cde586126b519a32062",
   "digest": {
-    "hash": "fnv1a-3cbce096",
+    "hash": "fnv1a-a00fd988",
     "version": 1
   },
   "formatVersion": 1,
@@ -358,7 +358,170 @@ const serialized = {
     ],
     "runtimeEvents": [],
     "transforms": [],
-    "upgrades": []
+    "upgrades": [
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 75,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.energy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.reactor",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.25
+            }
+          }
+        ],
+        "id": "sample-pack.reactor-insulation",
+        "name": {
+          "default": "Reactor Insulation",
+          "variants": {
+            "en-US": "Reactor Insulation"
+          }
+        },
+        "order": 1,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.reactor",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 50
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.energy"
+        },
+        "visibilityCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 150,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.energy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.reactor",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.5
+            }
+          }
+        ],
+        "id": "sample-pack.reactor-overclock",
+        "name": {
+          "default": "Reactor Overclock",
+          "variants": {
+            "en-US": "Reactor Overclock"
+          }
+        },
+        "order": 2,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "sample-pack.reactor-insulation"
+          }
+        ],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.reactor",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.energy"
+        },
+        "visibilityCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 125,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.energy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.harvester",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.5
+            }
+          }
+        ],
+        "id": "sample-pack.harvester-efficiency",
+        "name": {
+          "default": "Harvester Efficiency",
+          "variants": {
+            "en-US": "Harvester Efficiency"
+          }
+        },
+        "order": 3,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.harvester",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "comparator": "gte",
+          "generatorId": "sample-pack.harvester",
+          "kind": "generatorLevel",
+          "level": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "visibilityCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 20
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.crystal"
+        }
+      }
+    ]
   },
   "warnings": []
 } as unknown as SerializedNormalizedContentPack;
