@@ -73,7 +73,7 @@ describe('ShellStateProvider', () => {
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
-      const { result, rerender } = renderHook(() => useShellProgression(), {
+      const { result } = renderHook(() => useShellProgression(), {
         wrapper,
       });
 
@@ -93,7 +93,7 @@ describe('ShellStateProvider', () => {
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
-      const { result, rerender } = renderHook(
+      const { result } = renderHook(
         () => useShellProgression(),
         { wrapper },
       );
@@ -120,7 +120,7 @@ describe('ShellStateProvider', () => {
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
-      const { result, rerender } = renderHook(
+      const { result } = renderHook(
         () => useShellProgression(),
         { wrapper },
       );
