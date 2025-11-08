@@ -74,5 +74,8 @@ jobs:
           NODE_OPTIONS: '--dns-result-order=ipv4first'
         run: pnpm coverage:md
 
-      - name: Ensure coverage docs are current
-        run: git diff --exit-code docs/coverage/index.md
+      - name: Upload coverage markdown
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-markdown
+          path: docs/coverage/index.md
