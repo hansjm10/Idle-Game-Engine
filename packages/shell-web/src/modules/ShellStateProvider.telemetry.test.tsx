@@ -290,6 +290,48 @@ describe('ShellStateProvider telemetry integration', () => {
     await unmount();
   });
 
+  it('only records command telemetry for command scoped requestIds', async () => {
+    const { unmount } = await setupProvider();
+
+    telemetrySpy.mockClear();
+
+    await act(async () => {
+      bridgeMock.emitError({
+        code: 'SNAPSHOT_FAILED',
+        message: 'snapshot failed',
+        requestId: 'snapshot:9',
+      });
+    });
+
+    const hasCommandTelemetryAfterSnapshot = telemetrySpy.mock.calls.some(
+      ([event]) => event === 'ProgressionUiCommandError',
+    );
+    expect(hasCommandTelemetryAfterSnapshot).toBe(false);
+
+    telemetrySpy.mockClear();
+
+    await act(async () => {
+      bridgeMock.emitError({
+        code: 'INVALID_COMMAND_PAYLOAD',
+        message: 'invalid command',
+        requestId: 'command:4',
+      });
+    });
+
+    const commandTelemetryEvents = telemetrySpy.mock.calls.filter(
+      ([event]) => event === 'ProgressionUiCommandError',
+    );
+    expect(commandTelemetryEvents).toHaveLength(1);
+    expect(commandTelemetryEvents[0]?.[1]).toEqual(
+      expect.objectContaining({
+        code: 'INVALID_COMMAND_PAYLOAD',
+        requestId: 'command:4',
+      }),
+    );
+
+    await unmount();
+  });
+
   it('reports telemetry when enabling diagnostics fails', async () => {
     const { diagnosticsRef, unmount } = await setupProvider({
       includeDiagnostics: true,

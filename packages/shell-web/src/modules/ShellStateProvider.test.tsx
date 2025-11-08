@@ -4,7 +4,10 @@ import type { ReactNode } from 'react';
 
 import { ShellStateProvider, useShellProgression } from './ShellStateProvider.js';
 import type { ShellStateProviderConfig } from './shell-state.types.js';
-import type { RuntimeStateSnapshot } from './worker-bridge.js';
+import type {
+  RuntimeStateSnapshot,
+  WorkerBridgeErrorDetails,
+} from './worker-bridge.js';
 
 const backPressureStub: RuntimeStateSnapshot['backPressure'] = {
   tick: 0,
@@ -70,7 +73,9 @@ describe('ShellStateProvider', () => {
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
-      const { result } = renderHook(() => useShellProgression(), { wrapper });
+      const { result, rerender } = renderHook(() => useShellProgression(), {
+        wrapper,
+      });
 
       expect(result.current).toBeDefined();
       expect(result.current.isEnabled).toBe(true);
@@ -88,7 +93,10 @@ describe('ShellStateProvider', () => {
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
-      const { result } = renderHook(() => useShellProgression(), { wrapper });
+      const { result, rerender } = renderHook(
+        () => useShellProgression(),
+        { wrapper },
+      );
 
       expect(result.current.selectResources()).toBeNull();
       expect(result.current.selectGenerators()).toBeNull();
@@ -112,7 +120,10 @@ describe('ShellStateProvider', () => {
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
-      const { result } = renderHook(() => useShellProgression(), { wrapper });
+      const { result, rerender } = renderHook(
+        () => useShellProgression(),
+        { wrapper },
+      );
 
       const selector1 = result.current.selectOptimisticResources;
       const selector2 = result.current.selectOptimisticResources;
@@ -193,6 +204,90 @@ describe('ShellStateProvider', () => {
     // pendingDeltas and applies them to resource amounts. This logic is
     // exercised by the reducer tests in shell-state-store.test.ts which
     // verify deltas are staged and cleared correctly.
+  });
+
+  describe('worker command error handling', () => {
+    it('only clears staged deltas for command errors', () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result, rerender } = renderHook(
+        () => useShellProgression(),
+        { wrapper },
+      );
+
+      const stateUpdateCalls = vi.mocked(mockBridge.onStateUpdate).mock.calls;
+      const stateUpdateHandler =
+        stateUpdateCalls[stateUpdateCalls.length - 1]?.[0];
+      expect(stateUpdateHandler).toBeDefined();
+
+      const snapshot: RuntimeStateSnapshot = {
+        currentStep: 1,
+        events: [],
+        backPressure: backPressureStub,
+        progression: {
+          publishedAt: 100,
+          resources: [
+            {
+              id: 'gold',
+              displayName: 'Gold',
+              amount: 100,
+              isUnlocked: true,
+              isVisible: true,
+              perTick: 0,
+            },
+          ],
+          generators: [],
+          upgrades: [],
+        },
+      };
+
+      act(() => {
+        stateUpdateHandler!(snapshot);
+      });
+      rerender();
+
+      act(() => {
+        result.current.stageResourceDelta('gold', -30);
+      });
+      rerender();
+
+      const readGoldAmount = () =>
+        result.current
+          .selectOptimisticResources()
+          ?.find((resource) => resource.id === 'gold')?.amount;
+
+      expect(readGoldAmount()).toBe(70);
+
+      const errorCalls = vi.mocked(mockBridge.onError).mock.calls;
+      const errorHandler = errorCalls[errorCalls.length - 1]?.[0] as
+          | ((error: WorkerBridgeErrorDetails) => void)
+          | undefined;
+      expect(errorHandler).toBeDefined();
+
+      act(() => {
+        errorHandler!({
+          code: 'SNAPSHOT_FAILED',
+          message: 'snapshot failure',
+          requestId: 'snapshot:1',
+        });
+      });
+      rerender();
+
+      expect(readGoldAmount()).toBe(70);
+
+      act(() => {
+        errorHandler!({
+          code: 'INVALID_COMMAND_PAYLOAD',
+          message: 'invalid command',
+          requestId: 'command:2',
+        });
+      });
+      rerender();
+
+      expect(readGoldAmount()).toBe(100);
+    });
   });
 
   describe('feature flag integration', () => {

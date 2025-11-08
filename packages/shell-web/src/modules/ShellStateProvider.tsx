@@ -61,6 +61,10 @@ const ShellDiagnosticsContext =
   createContext<ShellDiagnosticsApi | null>(null);
 const ShellProgressionContext = createContext<ShellProgressionApi | null>(null);
 
+const COMMAND_REQUEST_ID_PREFIX = 'command:';
+const COMMAND_ERROR_CODES: ReadonlySet<WorkerBridgeErrorDetails['code']> =
+  new Set(['INVALID_COMMAND_PAYLOAD', 'STALE_COMMAND']);
+
 export function ShellStateProvider({
   children,
   maxEventHistory = DEFAULT_MAX_EVENT_HISTORY,
@@ -315,7 +319,7 @@ export function ShellStateProvider({
         });
       } else {
         // For command-related errors, proactively clear optimistic deltas to rollback UI.
-        if (error.requestId) {
+        if (isCommandBridgeError(error)) {
           dispatch({
             type: 'progression-clear-deltas',
             timestamp: Date.now(),
@@ -324,7 +328,7 @@ export function ShellStateProvider({
           recordTelemetryError('ProgressionUiCommandError', {
             code: error.code,
             message: error.message,
-            requestId: error.requestId,
+            requestId: error.requestId ?? null,
           });
         }
         recordTelemetryError('ShellStateProviderWorkerError', {
@@ -594,6 +598,22 @@ function recordTelemetryError(
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isCommandBridgeError(
+  error: WorkerBridgeErrorDetails,
+): boolean {
+  return (
+    isCommandRequestId(error.requestId) ||
+    COMMAND_ERROR_CODES.has(error.code)
+  );
+}
+
+function isCommandRequestId(requestId?: string): boolean {
+  return (
+    typeof requestId === 'string' &&
+    requestId.startsWith(COMMAND_REQUEST_ID_PREFIX)
+  );
 }
 
 function isWorkerSocialCommandError(
