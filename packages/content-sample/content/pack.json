@@ -138,7 +138,101 @@
       "order": 2
     }
   ],
-  "upgrades": [],
+  "upgrades": [
+    {
+      "id": "sample-pack.reactor-insulation",
+      "name": { "default": "Reactor Insulation", "variants": {} },
+      "category": "generator",
+      "targets": [
+        { "kind": "generator", "id": "sample-pack.reactor" }
+      ],
+      "cost": {
+        "currencyId": "sample-pack.energy",
+        "baseCost": 75,
+        "costCurve": { "kind": "constant", "value": 1 }
+      },
+      "order": 1,
+      "effects": [
+        {
+          "kind": "modifyGeneratorRate",
+          "generatorId": "sample-pack.reactor",
+          "operation": "multiply",
+          "value": { "kind": "constant", "value": 1.25 }
+        }
+      ],
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.energy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 50 }
+      },
+      "visibilityCondition": { "kind": "always" }
+    },
+    {
+      "id": "sample-pack.reactor-overclock",
+      "name": { "default": "Reactor Overclock", "variants": {} },
+      "category": "generator",
+      "targets": [
+        { "kind": "generator", "id": "sample-pack.reactor" }
+      ],
+      "cost": {
+        "currencyId": "sample-pack.energy",
+        "baseCost": 150,
+        "costCurve": { "kind": "constant", "value": 1 }
+      },
+      "order": 2,
+      "prerequisites": ["sample-pack.reactor-insulation"],
+      "effects": [
+        {
+          "kind": "modifyGeneratorRate",
+          "generatorId": "sample-pack.reactor",
+          "operation": "multiply",
+          "value": { "kind": "constant", "value": 1.5 }
+        }
+      ],
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.energy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 100 }
+      },
+      "visibilityCondition": { "kind": "always" }
+    },
+    {
+      "id": "sample-pack.harvester-efficiency",
+      "name": { "default": "Harvester Efficiency", "variants": {} },
+      "category": "generator",
+      "targets": [
+        { "kind": "generator", "id": "sample-pack.harvester" }
+      ],
+      "cost": {
+        "currencyId": "sample-pack.energy",
+        "baseCost": 125,
+        "costCurve": { "kind": "constant", "value": 1 }
+      },
+      "order": 3,
+      "effects": [
+        {
+          "kind": "modifyGeneratorRate",
+          "generatorId": "sample-pack.harvester",
+          "operation": "multiply",
+          "value": { "kind": "constant", "value": 1.5 }
+        }
+      ],
+      "unlockCondition": {
+        "kind": "generatorLevel",
+        "generatorId": "sample-pack.harvester",
+        "comparator": "gte",
+        "level": { "kind": "constant", "value": 1 }
+      },
+      "visibilityCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.crystal",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 20 }
+      }
+    }
+  ],
   "metrics": [
     {
       "id": "sample-pack.energy-produced",

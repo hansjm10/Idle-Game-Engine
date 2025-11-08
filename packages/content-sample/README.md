@@ -27,3 +27,15 @@ Custom runtime events for the sample pack live in `content/event-types.json`. Af
 - the `ContentRuntimeEventType` union exported by `@idle-engine/core`
 
 `sampleEventDefinitions` and `sampleEventTypes` in `src/index.ts` mirror the generated output to keep tests and examples in sync with the manifest. If you add new event schemas, regenerate the manifest and commit the updated compiler artifacts alongside the changes.
+
+## Progression sample data
+
+The pack includes minimal but representative generators and upgrades to support the progression UI examples described in docs (see `docs/build-resource-generator-upgrade-ui-components-design.md`). Key entries and IDs:
+
+- Generators: `sample-pack.reactor`, `sample-pack.harvester`
+- Upgrades:
+  - `sample-pack.reactor-insulation` (generator: reactor) — multiplies reactor output, unlocks at ≥50 Energy
+  - `sample-pack.reactor-overclock` (generator: reactor) — multiplies reactor output, requires `reactor-insulation`, unlocks at ≥100 Energy
+  - `sample-pack.harvester-efficiency` (generator: harvester) — multiplies harvester output, visible at ≥20 Crystal and unlocks at Harvester level ≥1
+
+After editing content under `content/`, run `pnpm generate` to refresh `content/compiled/` and `src/generated/` artifacts and commit the changes. Keep IDs stable and names localized via the `name` field (default locale `en-US`).
