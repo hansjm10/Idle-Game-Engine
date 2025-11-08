@@ -49,6 +49,11 @@ jobs:
       - name: Validate Generated Version File
         run: node tools/scripts/generate-version.mjs --check
 
+      - name: Generate Coverage Report
+        env:
+          NODE_OPTIONS: '--dns-result-order=ipv4first'
+        run: pnpm coverage:md
+
       - name: Build
         run: pnpm build
 
@@ -68,11 +73,6 @@ jobs:
         env:
           NODE_OPTIONS: '--dns-result-order=ipv4first'
         run: pnpm test:ci
-
-      - name: Generate Coverage Report
-        env:
-          NODE_OPTIONS: '--dns-result-order=ipv4first'
-        run: pnpm coverage:md
 
       - name: Upload coverage markdown
         uses: actions/upload-artifact@v4
