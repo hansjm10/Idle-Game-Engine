@@ -27,6 +27,8 @@ const mockProgressionApi: Mutable<ShellProgressionApi> = {
   selectGenerators: vi.fn(() => null),
   selectUpgrades: vi.fn(() => null),
   selectOptimisticResources: vi.fn(() => null),
+  stageResourceDelta: vi.fn(),
+  clearPendingDeltas: vi.fn(),
 };
 
 const mockShellState: { bridge: Mutable<ShellState['bridge']> } = {

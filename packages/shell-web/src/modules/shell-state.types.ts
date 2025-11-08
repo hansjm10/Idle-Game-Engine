@@ -151,6 +151,10 @@ export interface ShellProgressionApi {
   readonly selectUpgrades: ProgressionUpgradesSelector;
   /** Get memoized selector for optimistically updated resources with pending deltas applied. */
   readonly selectOptimisticResources: ProgressionOptimisticResourcesSelector;
+  /** Stage a pending resource delta for optimistic UI (e.g., temporary cost deduction). */
+  stageResourceDelta(resourceId: string, delta: number): void;
+  /** Clear all pending optimistic deltas (e.g., on worker error or rollback). */
+  clearPendingDeltas(): void;
 }
 
 export interface ShellBridgeApi {

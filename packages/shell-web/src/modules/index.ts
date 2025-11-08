@@ -5,6 +5,9 @@ export {
   useShellState,
   useShellProgression,
 } from './ShellStateProvider.js';
+export { ResourceDashboard } from './ResourceDashboard.js';
+export { GeneratorPanel } from './GeneratorPanel.js';
+export { UpgradeModal } from './UpgradeModal.js';
 
 export type {
   DiagnosticsSubscriber,
