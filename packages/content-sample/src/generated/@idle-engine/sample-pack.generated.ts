@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "bf071d4466954018a5ed7d4ea9056d10987c1192e5908cde586126b519a32062",
+  "artifactHash": "b919219ab05f0e88fecc178d60b21e3e7b7dc1b95e88da718d907a784e9a5782",
   "digest": {
-    "hash": "fnv1a-a00fd988",
+    "hash": "fnv1a-a97fd5ca",
     "version": 1
   },
   "formatVersion": 1,
@@ -175,6 +175,42 @@ const serialized = {
         }
       },
       {
+        "description": {
+          "default": "Enables the reactor periodically if you can afford 1 energy",
+          "variants": {
+            "en-US": "Enables the reactor periodically if you can afford 1 energy"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.auto-reactor-burst",
+        "name": {
+          "default": "Reactor Burst (Costed)",
+          "variants": {
+            "en-US": "Reactor Burst (Costed)"
+          }
+        },
+        "order": 6,
+        "resourceCost": {
+          "rate": {
+            "kind": "constant",
+            "value": 1
+          },
+          "resourceId": "sample-pack.energy"
+        },
+        "targetId": "sample-pack.reactor",
+        "targetType": "generator",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 2000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
         "cooldown": 10000,
         "description": {
           "default": "Collects resources when no other actions are pending",
@@ -193,6 +229,32 @@ const serialized = {
         "order": 3,
         "targetId": "sample-pack.reactor",
         "targetType": "generator",
+        "trigger": {
+          "kind": "commandQueueEmpty"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": 60000,
+        "description": {
+          "default": "Triggers offline catchup when the queue is empty",
+          "variants": {
+            "en-US": "Triggers offline catchup when the queue is empty"
+          }
+        },
+        "enabledByDefault": true,
+        "id": "sample-pack.offline-catchup-on-idle",
+        "name": {
+          "default": "Offline Catchup on Idle",
+          "variants": {
+            "en-US": "Offline Catchup on Idle"
+          }
+        },
+        "order": 5,
+        "systemTargetId": "offline-catchup",
+        "targetType": "system",
         "trigger": {
           "kind": "commandQueueEmpty"
         },

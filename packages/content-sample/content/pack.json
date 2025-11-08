@@ -361,6 +361,42 @@
       "unlockCondition": { "kind": "always" },
       "enabledByDefault": false,
       "order": 4
+    },
+    {
+      "id": "sample-pack.offline-catchup-on-idle",
+      "name": { "default": "Offline Catchup on Idle", "variants": {} },
+      "description": {
+        "default": "Triggers offline catchup when the queue is empty",
+        "variants": {}
+      },
+      "targetType": "system",
+      "systemTargetId": "offline-catchup",
+      "trigger": { "kind": "commandQueueEmpty" },
+      "cooldown": 60000,
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": true,
+      "order": 5
+    },
+    {
+      "id": "sample-pack.auto-reactor-burst",
+      "name": { "default": "Reactor Burst (Costed)", "variants": {} },
+      "description": {
+        "default": "Enables the reactor periodically if you can afford 1 energy",
+        "variants": {}
+      },
+      "targetType": "generator",
+      "targetId": "sample-pack.reactor",
+      "trigger": {
+        "kind": "interval",
+        "interval": { "kind": "constant", "value": 2000 }
+      },
+      "resourceCost": {
+        "resourceId": "sample-pack.energy",
+        "rate": { "kind": "constant", "value": 1 }
+      },
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 6
     }
   ],
   "transforms": [],

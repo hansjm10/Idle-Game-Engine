@@ -5,13 +5,8 @@
       "namespace": "sample",
       "name": "reactor-primed",
       "version": 1,
-      "schema": "./schemas/events/reactor-primed.schema.json"
-    },
-    {
-      "namespace": "sample",
-      "name": "harvester-deployed",
-      "version": 1,
-      "schema": "./schemas/events/harvester-deployed.schema.json"
+      "schema": "./events/sample-reactor-primed.schema.json"
     }
   ]
 }
+
