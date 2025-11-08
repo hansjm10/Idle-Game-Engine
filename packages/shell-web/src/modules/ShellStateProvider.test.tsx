@@ -227,6 +227,7 @@ describe('ShellStateProvider', () => {
         events: [],
         backPressure: backPressureStub,
         progression: {
+          step: 1,
           publishedAt: 100,
           resources: [
             {
