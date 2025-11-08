@@ -4,9 +4,8 @@
     {
       "namespace": "sample",
       "name": "reactor-primed",
-      "version": 1,
+      "version": 2,
       "schema": "./events/sample-reactor-primed.schema.json"
     }
   ]
 }
-

@@ -23,7 +23,7 @@ export const CONTENT_EVENT_DEFINITIONS = [
   {
     packSlug: '@idle-engine/sample-pack',
     type: 'sample:reactor-primed' as RuntimeEventType,
-    version: 1,
+    version: 2,
     schema: 'packages/content-sample/content/events/sample-reactor-primed.schema.json',
   },
 ] as const satisfies readonly ContentEventDefinition[];
@@ -32,7 +32,7 @@ export const CONTENT_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = 
   {
     definition: {
       type: 'sample:reactor-primed' as RuntimeEventType,
-      version: 1,
+      version: 2,
     },
   },
 ];
@@ -53,7 +53,7 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
   {
     channel: 2,
     type: 'sample:reactor-primed' as RuntimeEventType,
-    version: 1,
+    version: 2,
     packSlug: '@idle-engine/sample-pack',
     schema: 'packages/content-sample/content/events/sample-reactor-primed.schema.json',
   },
@@ -74,10 +74,10 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
     {
       channel: 2,
       type: 'sample:reactor-primed' as RuntimeEventType,
-      version: 1,
+      version: 2,
     },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: 'f0f81b16' as RuntimeEventManifestHash,
+  hash: 'eff81983' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =
