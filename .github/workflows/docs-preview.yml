@@ -31,12 +31,20 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.20.0
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build workspace (except docs)
+        run: pnpm -r --filter "!@idle-engine/docs" run build
+
+      - name: Generate Coverage Report
+        env:
+          NODE_OPTIONS: '--dns-result-order=ipv4first'
+        run: pnpm coverage:md
 
       - name: Build documentation
         run: pnpm docs:build

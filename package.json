@@ -7,6 +7,7 @@
     "lint": "./tools/scripts/run-workspace-lint.sh",
     "test": "./tools/scripts/run-workspace-test.sh",
     "test:ci": "pnpm -r run test:ci",
+    "coverage:md": "./tools/scripts/run-workspace-coverage.sh && pnpm tsx tools/coverage-report/index.ts",
     "test:a11y": "pnpm --filter @idle-engine/a11y-smoke-tests run test",
     "typecheck": "pnpm -r run typecheck",
     "dev": "pnpm --filter shell-web run dev",
@@ -19,9 +20,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
+    "@vitest/coverage-v8": "^3.2.4",
     "lefthook": "^1.10.10",
     "markdown-link-check": "^3.14.1",
     "markdownlint-cli": "^0.45.0",
+    "tsx": "^4.20.6",
     "typescript-eslint": "^8.46.0"
   },
   "engines": {
