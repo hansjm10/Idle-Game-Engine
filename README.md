@@ -2,6 +2,10 @@
 
 This repository hosts the idle-game engine, reference content packs, presentation shells, and supporting services described in `docs/idle-engine-design.md`.
 
+## Environment
+- Node: 22.20.0 (pinned for deterministic coverage). Run `nvm use` from the repo root to adopt the version from `.nvmrc`.
+- pnpm: 10.18.1 or newer (see `packageManager` field). Install via `corepack enable` or your package manager.
+
 ## Structure
 - `packages/` – core runtime and client-facing packages.
 - `services/` – backend services (leaderboards, guilds, auth integrations).
@@ -15,7 +19,7 @@ Refer to the design document for roadmap and subsystem detail.
 - `pnpm test --filter shell-web` scopes Vitest to the web shell worker bridge and presentation infrastructure; run this after touching diagnostics or bridge logic so the issue #255 coverage stays green.
 - On fresh Linux environments you might need to install Playwright system dependencies once via `pnpm exec playwright install-deps`.
 - Vitest suites inherit the shared `@idle-engine/config-vitest` defaults, which now include `vitest-llm-reporter` with streaming disabled. Each run prints a JSON summary block at the end of the output so AI agents and CI jobs can parse results without scraping console text.
-- `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and regenerates `docs/coverage/index.md`. Commit the updated markdown when test changes impact coverage so docs stay accurate.
+- `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and regenerates `docs/coverage/index.md`. Commit the updated markdown when test changes impact coverage so docs stay accurate. For consistent results with CI, run `nvm use` before generating coverage.
 
 ## Content Validation & Generation
 - `pnpm generate` now runs content validation before the compiler writes artifacts. Schema failures stop the pipeline immediately, so fix validation errors before retrying or the downstream artifacts will remain stale.
