@@ -110,30 +110,18 @@ export function GeneratorPanel(): JSX.Element | null {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const errorTimeoutRef = useRef<number | null>(null);
 
-  // Feature flag gating
-  if (!progression.isEnabled) {
-    return null;
-  }
-
+  // Read data from progression (may be null on initial load)
   const generators = progression.selectGenerators();
   const resourcesOptimistic = progression.selectOptimisticResources();
 
-  const isLoading = !bridge.isReady || bridge.lastUpdateAt === null;
-  if (!generators) {
-    return (
-      <section className={styles.panel} aria-labelledby={headingId}>
-        <h2 id={headingId} className={styles.heading}>Generators</h2>
-        {isLoading ? <LoadingState /> : <LockedState />}
-      </section>
-    );
-  }
-
+  // Derive view data unconditionally to preserve hook order
   const visibleGenerators = useMemo(
-    () => generators.filter((g) => g.isVisible),
+    () => (generators ?? []).filter((g) => g.isVisible),
     [generators],
   );
-
   const resources = useMemo(() => resourcesOptimistic ?? [], [resourcesOptimistic]);
+
+  const isLoading = !bridge.isReady || bridge.lastUpdateAt === null;
 
   const handlePurchase = (generatorId: string, costs: GeneratorView['costs']) => {
     if (!resourcesOptimistic) {
@@ -159,6 +147,10 @@ export function GeneratorPanel(): JSX.Element | null {
 
   // Subscribe to bridge errors to surface command errors as toasts
   useEffect(() => {
+    // If the feature is disabled, don't subscribe
+    if (!progression.isEnabled) {
+      return;
+    }
     const onError = (error: unknown) => {
       // Show a brief, accessible toast for any command error
       setErrorMessage(
@@ -178,12 +170,19 @@ export function GeneratorPanel(): JSX.Element | null {
         errorTimeoutRef.current = null;
       }
     };
-  }, [shellBridge]);
+  }, [shellBridge, progression.isEnabled]);
+
+  // After hooks are declared, respect feature flag gating
+  if (!progression.isEnabled) {
+    return null;
+  }
 
   return (
     <section className={styles.panel} aria-labelledby={headingId}>
       <h2 id={headingId} className={styles.heading}>Generators</h2>
-      {visibleGenerators.length === 0 ? (
+      {!generators ? (
+        isLoading ? <LoadingState /> : <LockedState />
+      ) : visibleGenerators.length === 0 ? (
         <EmptyState />
       ) : (
         <div className={styles.list}>

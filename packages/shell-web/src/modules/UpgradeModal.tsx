@@ -33,6 +33,12 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
   const upgrades = progression.selectUpgrades();
   const resources = progression.selectOptimisticResources() ?? [];
 
+  // Derive visible list unconditionally so Hooks order remains stable
+  const visibleUpgrades = useMemo(
+    () => (upgrades ?? []).filter((u) => u.isVisible),
+    [upgrades],
+  );
+
   // Manage focus trap and restore on close
   useEffect(() => {
     if (!open) {
@@ -94,11 +100,6 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
   }, [open, bridge]);
 
   if (!open) return null;
-
-  const visibleUpgrades = useMemo(
-    () => (upgrades ?? []).filter((u) => u.isVisible),
-    [upgrades],
-  );
 
   const handlePurchase = (upgrade: UpgradeView) => {
     // Stage negative deltas for optimistic feedback
@@ -185,4 +186,3 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
     </div>
   );
 }
-

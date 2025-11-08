@@ -39,8 +39,8 @@ const mockShellState: { bridge: Mutable<ShellState['bridge']>; runtime: Mutable<
 };
 
 const mockBridge = {
-  onError: vi.fn<[(err: unknown) => void], void>(() => undefined),
-  offError: vi.fn<[(err: unknown) => void], void>(() => undefined),
+  onError: vi.fn<(err: unknown) => void>(() => undefined),
+  offError: vi.fn<(err: unknown) => void>(() => undefined),
   sendCommand: vi.fn(),
 };
 
