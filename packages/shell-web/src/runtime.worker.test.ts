@@ -1132,9 +1132,17 @@ describe('runtime.worker integration', () => {
       // or crash when trying to resolve resource IDs
       expect(automationCommands.length).toBeGreaterThan(0);
 
-      // Verify all automation commands have valid TOGGLE_GENERATOR structure
-      for (const call of automationCommands) {
-        expect(call[0]!.type).toBe('TOGGLE_GENERATOR');
+      // Sample content also includes system-target automations (e.g. OFFLINE_CATCHUP)
+      // that may enqueue non-generator commands at AUTOMATION priority. Focus this
+      // assertion on generator-target automations to validate resource-threshold logic.
+      const toggleGeneratorCommands = automationCommands.filter(
+        (call) => call[0]!.type === core.RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR || call[0]!.type === 'TOGGLE_GENERATOR',
+      );
+
+      expect(toggleGeneratorCommands.length).toBeGreaterThan(0);
+
+      // Verify TOGGLE_GENERATOR command payload structure
+      for (const call of toggleGeneratorCommands) {
         expect(call[0]!.payload).toHaveProperty('generatorId');
         expect(call[0]!.payload).toHaveProperty('enabled');
       }
