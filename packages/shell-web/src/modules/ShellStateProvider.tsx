@@ -314,6 +314,19 @@ export function ShellStateProvider({
           actualVersion,
         });
       } else {
+        // For command-related errors, proactively clear optimistic deltas to rollback UI.
+        if (error.requestId) {
+          dispatch({
+            type: 'progression-clear-deltas',
+            timestamp: Date.now(),
+          });
+          // Emit command error telemetry for shell observability.
+          recordTelemetryError('ProgressionUiCommandError', {
+            code: error.code,
+            message: error.message,
+            requestId: error.requestId,
+          });
+        }
         recordTelemetryError('ShellStateProviderWorkerError', {
           code: error.code,
           message: error.message,
@@ -492,6 +505,20 @@ export function ShellStateProvider({
       selectGenerators,
       selectUpgrades,
       selectOptimisticResources,
+      stageResourceDelta(resourceId: string, delta: number) {
+        dispatch({
+          type: 'progression-stage-delta',
+          resourceId,
+          delta,
+          timestamp: Date.now(),
+        });
+      },
+      clearPendingDeltas() {
+        dispatch({
+          type: 'progression-clear-deltas',
+          timestamp: Date.now(),
+        });
+      },
     }),
     [
       state.runtime.progression.schemaVersion,

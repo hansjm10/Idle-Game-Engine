@@ -1,4 +1,4 @@
-import { useCallback, type JSX } from 'react';
+import { useCallback, useState, type JSX } from 'react';
 import { sampleContent } from '@idle-engine/content-sample';
 
 import { EventInspector } from './EventInspector.js';
@@ -6,10 +6,13 @@ import { SocialDevPanel } from './SocialDevPanel.js';
 import { PersistenceIntegration } from './PersistenceIntegration.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { ResourceDashboard } from './ResourceDashboard.js';
+import { GeneratorPanel } from './GeneratorPanel.js';
+import { UpgradeModal } from './UpgradeModal.js';
 import {
   ShellStateProvider,
   useShellBridge,
   useShellState,
+  useShellProgression,
 } from './ShellStateProvider.js';
 import errorStyles from './ErrorBoundary.module.css';
 import appStyles from './App.module.css';
@@ -28,6 +31,8 @@ function ShellAppSurface(): JSX.Element {
   const { runtime } = useShellState();
   const bridge = useShellBridge();
   const socialEnabled = bridge.isSocialFeatureEnabled();
+  const progression = useShellProgression();
+  const [isUpgradeOpen, setUpgradeOpen] = useState(false);
 
   const handleSendCommand = useCallback(async () => {
     await bridge.awaitReady();
@@ -46,6 +51,17 @@ function ShellAppSurface(): JSX.Element {
       </button>
 
       <ResourceDashboard />
+      {progression.isEnabled ? (
+        <>
+          <GeneratorPanel />
+          <div style={{ marginTop: '0.5rem' }}>
+            <button type="button" onClick={() => setUpgradeOpen(true)}>
+              Open Upgrades
+            </button>
+          </div>
+          <UpgradeModal open={isUpgradeOpen} onClose={() => setUpgradeOpen(false)} />
+        </>
+      ) : null}
 
       <EventInspector />
 
