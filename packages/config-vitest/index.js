@@ -20,7 +20,14 @@ const BASE_CONFIG = defineConfig({
       reporter: ['text', 'lcov', 'json-summary'],
       reportsDirectory: 'coverage',
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['**/dist/**', '**/node_modules/**', '**/*.d.ts']
+      exclude: [
+        '**/dist/**',
+        '**/node_modules/**',
+        '**/*.d.ts',
+        // Exclude generated artifacts and data blobs from coverage totals
+        '**/src/generated/**',
+        '**/*.generated.*'
+      ]
     }
   }
 });
