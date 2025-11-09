@@ -22,9 +22,9 @@ describe('sample content pack automations', () => {
     expect(result.success).toBe(true);
   });
 
-  it('includes a resourceCost example', () => {
+  it('does not include resourceCost until engine support lands', () => {
     const automations = sampleContent.modules.automations;
     const hasResourceCost = automations.some((a) => a.resourceCost !== undefined);
-    expect(hasResourceCost).toBe(true);
+    expect(hasResourceCost).toBe(false);
   });
 });

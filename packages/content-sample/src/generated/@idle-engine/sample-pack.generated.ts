@@ -7,7 +7,7 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "61f4ea6763c2cfd67023b8fe79ad4f27b7011caef69f29cfb76933831bf37262",
+  "artifactHash": "832a4578391e98ce1d9b56f984004a1c13bbb224c5a5ea56c630be83bc3240fe",
   "digest": {
     "hash": "fnv1a-30aeb60a",
     "version": 1
@@ -176,9 +176,9 @@ const serialized = {
       },
       {
         "description": {
-          "default": "Enables the reactor periodically if you can afford 1 energy",
+          "default": "Enables the reactor periodically",
           "variants": {
-            "en-US": "Enables the reactor periodically if you can afford 1 energy"
+            "en-US": "Enables the reactor periodically"
           }
         },
         "enabledByDefault": false,
@@ -190,13 +190,6 @@ const serialized = {
           }
         },
         "order": 6,
-        "resourceCost": {
-          "rate": {
-            "kind": "constant",
-            "value": 1
-          },
-          "resourceId": "sample-pack.energy"
-        },
         "targetId": "sample-pack.reactor",
         "targetType": "generator",
         "trigger": {
@@ -213,9 +206,9 @@ const serialized = {
       {
         "cooldown": 0,
         "description": {
-          "default": "Attempts to buy Reactor Insulation every 8s if you can afford 5 energy",
+          "default": "Attempts to buy Reactor Insulation every 8 seconds",
           "variants": {
-            "en-US": "Attempts to buy Reactor Insulation every 8s if you can afford 5 energy"
+            "en-US": "Attempts to buy Reactor Insulation every 8 seconds"
           }
         },
         "enabledByDefault": false,
@@ -227,13 +220,6 @@ const serialized = {
           }
         },
         "order": 8,
-        "resourceCost": {
-          "rate": {
-            "kind": "constant",
-            "value": 5
-          },
-          "resourceId": "sample-pack.energy"
-        },
         "targetId": "sample-pack.reactor-insulation",
         "targetType": "upgrade",
         "trigger": {

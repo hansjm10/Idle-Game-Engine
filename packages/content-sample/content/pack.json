@@ -366,7 +366,7 @@
       "id": "sample-pack.auto-reactor-burst",
       "name": { "default": "Reactor Burst (Costed)", "variants": {} },
       "description": {
-        "default": "Enables the reactor periodically if you can afford 1 energy",
+        "default": "Enables the reactor periodically",
         "variants": {}
       },
       "targetType": "generator",
@@ -374,10 +374,6 @@
       "trigger": {
         "kind": "interval",
         "interval": { "kind": "constant", "value": 2000 }
-      },
-      "resourceCost": {
-        "resourceId": "sample-pack.energy",
-        "rate": { "kind": "constant", "value": 1 }
       },
       "unlockCondition": { "kind": "always" },
       "enabledByDefault": false,
@@ -387,7 +383,7 @@
       "id": "sample-pack.autobuy-reactor-insulation",
       "name": { "default": "Auto-Buy Reactor Insulation", "variants": {} },
       "description": {
-        "default": "Attempts to buy Reactor Insulation every 8s if you can afford 5 energy",
+        "default": "Attempts to buy Reactor Insulation every 8 seconds",
         "variants": {}
       },
       "targetType": "upgrade",
@@ -395,10 +391,6 @@
       "trigger": {
         "kind": "interval",
         "interval": { "kind": "constant", "value": 8000 }
-      },
-      "resourceCost": {
-        "resourceId": "sample-pack.energy",
-        "rate": { "kind": "constant", "value": 5 }
       },
       "cooldown": 0,
       "unlockCondition": { "kind": "always" },
