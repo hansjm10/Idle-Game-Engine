@@ -235,6 +235,10 @@ Fires when a specific runtime event is published.
 - Listens for events published to the runtime event bus
 - Fires once per event occurrence
 - Event must be defined in `eventDefinitions` or base runtime events
+- When `resourceCost` is present: if the spend fails due to insufficient
+  resources, the pending event is retained and retried on subsequent ticks;
+  on successful spend, the event is consumed and cooldown/last-fired are
+  updated.
 
 **Example: Auto-purchase upgrade when milestone reached**
 
