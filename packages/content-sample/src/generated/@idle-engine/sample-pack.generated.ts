@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "bf071d4466954018a5ed7d4ea9056d10987c1192e5908cde586126b519a32062",
+  "artifactHash": "832a4578391e98ce1d9b56f984004a1c13bbb224c5a5ea56c630be83bc3240fe",
   "digest": {
-    "hash": "fnv1a-a00fd988",
+    "hash": "fnv1a-30aeb60a",
     "version": 1
   },
   "formatVersion": 1,
@@ -167,6 +167,65 @@ const serialized = {
           "interval": {
             "kind": "constant",
             "value": 5000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "description": {
+          "default": "Enables the reactor periodically",
+          "variants": {
+            "en-US": "Enables the reactor periodically"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.auto-reactor-burst",
+        "name": {
+          "default": "Reactor Burst (Costed)",
+          "variants": {
+            "en-US": "Reactor Burst (Costed)"
+          }
+        },
+        "order": 6,
+        "targetId": "sample-pack.reactor",
+        "targetType": "generator",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 2000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": 0,
+        "description": {
+          "default": "Attempts to buy Reactor Insulation every 8 seconds",
+          "variants": {
+            "en-US": "Attempts to buy Reactor Insulation every 8 seconds"
+          }
+        },
+        "enabledByDefault": false,
+        "id": "sample-pack.autobuy-reactor-insulation",
+        "name": {
+          "default": "Auto-Buy Reactor Insulation",
+          "variants": {
+            "en-US": "Auto-Buy Reactor Insulation"
+          }
+        },
+        "order": 8,
+        "targetId": "sample-pack.reactor-insulation",
+        "targetType": "upgrade",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 8000
           },
           "kind": "interval"
         },

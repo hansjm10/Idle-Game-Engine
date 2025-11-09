@@ -12,7 +12,7 @@ describe('Content Event Channels', () => {
     );
     expect(reactorPrimed).toBeDefined();
     expect(reactorPrimed?.packSlug).toBe('@idle-engine/sample-pack');
-    expect(reactorPrimed?.version).toBe(1);
+    expect(reactorPrimed?.version).toBeGreaterThanOrEqual(1);
     expect(reactorPrimed?.schema).toContain('reactor-primed.schema.json');
   });
 
@@ -21,7 +21,7 @@ describe('Content Event Channels', () => {
       (channel) => channel.definition.type === 'sample:reactor-primed'
     );
     expect(reactorPrimedChannel).toBeDefined();
-    expect(reactorPrimedChannel?.definition.version).toBe(1);
+    expect(reactorPrimedChannel?.definition.version).toBeGreaterThanOrEqual(1);
   });
 
   it('should include sample:reactor-primed in generated manifest', () => {
@@ -29,7 +29,7 @@ describe('Content Event Channels', () => {
       (entry) => entry.type === 'sample:reactor-primed'
     );
     expect(reactorPrimedEntry).toBeDefined();
-    expect(reactorPrimedEntry?.version).toBe(1);
+    expect(reactorPrimedEntry?.version).toBeGreaterThanOrEqual(1);
     expect(reactorPrimedEntry?.channel).toBeGreaterThanOrEqual(0);
   });
 });

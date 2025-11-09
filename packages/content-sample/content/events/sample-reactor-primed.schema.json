@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://idle-engine.dev/schemas/sample/reactor-primed.json",
+  "title": "sample:reactor-primed",
+  "type": "object",
+  "properties": {
+    "reactorId": { "type": "string" }
+  },
+  "required": [],
+  "additionalProperties": false
+}
+

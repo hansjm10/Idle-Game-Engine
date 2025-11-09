@@ -361,6 +361,41 @@
       "unlockCondition": { "kind": "always" },
       "enabledByDefault": false,
       "order": 4
+    },
+    {
+      "id": "sample-pack.auto-reactor-burst",
+      "name": { "default": "Reactor Burst (Costed)", "variants": {} },
+      "description": {
+        "default": "Enables the reactor periodically",
+        "variants": {}
+      },
+      "targetType": "generator",
+      "targetId": "sample-pack.reactor",
+      "trigger": {
+        "kind": "interval",
+        "interval": { "kind": "constant", "value": 2000 }
+      },
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 6
+    },
+    {
+      "id": "sample-pack.autobuy-reactor-insulation",
+      "name": { "default": "Auto-Buy Reactor Insulation", "variants": {} },
+      "description": {
+        "default": "Attempts to buy Reactor Insulation every 8 seconds",
+        "variants": {}
+      },
+      "targetType": "upgrade",
+      "targetId": "sample-pack.reactor-insulation",
+      "trigger": {
+        "kind": "interval",
+        "interval": { "kind": "constant", "value": 8000 }
+      },
+      "cooldown": 0,
+      "unlockCondition": { "kind": "always" },
+      "enabledByDefault": false,
+      "order": 8
     }
   ],
   "transforms": [],

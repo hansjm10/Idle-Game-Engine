@@ -18,5 +18,10 @@ Vitest drives unit tests with shared config in `@idle-engine/config-vitest`; add
 
 Always leave the JSON intact and avoid console noise that could corrupt the payload. Run `pnpm test:a11y` after modifying shell UI flows or ARIA attributes, and note any remaining coverage gaps in the PR description.
 
+### Coverage report page (docs)
+- After changing tests or code that affects coverage, run `pnpm coverage:md` from the repository root to regenerate `docs/coverage/index.md`.
+- Commit the updated `docs/coverage/index.md` file. The folder `docs/coverage/` is ignored by default, but `index.md` is allow‑listed in `.gitignore` and must be tracked so the Docusaurus build succeeds.
+- Do not edit `docs/coverage/index.md` manually—always regenerate via the command above.
+
 ## Commit & Pull Request Guidelines
 History favours Conventional Commits such as `chore: add vitest llm reporter` and `feat: define runtime command payloads`, occasionally supplemented by merge commits like `Integrate runtime command queue... (#52)`. Aim for `type(scope?): concise summary`, link issues or PR numbers in parentheses, and keep imperative voice. PRs should outline the problem, the solution, and test commands executed; include screenshots or recordings for `shell-web` changes and note any follow-up work. Ensure Lefthook is installed (`pnpm prepare`) so pre-commit lint, test, and build checks run before pushing.
