@@ -14,6 +14,14 @@ import type { AutomationState, SerializedAutomationState } from './automation-sy
 import { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import { IdleEngineRuntime } from './index.js';
+import { CommandDispatcher } from './command-dispatcher.js';
+import {
+  registerResourceCommandHandlers,
+  type UpgradePurchaseEvaluator,
+  type UpgradePurchaseQuote,
+} from './resource-command-handlers.js';
+import { createResourceState } from './resource-state.js';
+import { createResourceStateAdapter } from './automation-resource-state-adapter.js';
 
 describe('AutomationSystem', () => {
   const stepDurationMs = 100;
@@ -2213,6 +2221,249 @@ describe('AutomationSystem', () => {
       coins = 20;
       system.tick({ step: 2, deltaMs: 100, events: {} as any });
       expect(commandQueue.size).toBe(1);
+    });
+
+    it('event trigger: no cooldown/lastFired on failed spend; updates on success', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:event-cost-cd' as any,
+          name: { default: 'Event Cost + Cooldown', variants: {} },
+          description: { default: 'Event with cost and cooldown', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'event', eventId: 'evt:test' as any },
+          resourceCost: {
+            resourceId: 'res:coins' as any,
+            rate: { kind: 'constant', value: 5 },
+          },
+          cooldown: 300, // 3 steps at 100ms step size, +1 step boundary
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let coins = 0;
+      let eventHandler: (() => void) | undefined;
+      const events = {
+        on: (id: string, cb: () => void) => {
+          if (id === 'evt:test') eventHandler = cb;
+        },
+        off: () => {},
+        emit: () => {},
+      } as any;
+
+      const resourceState = {
+        getAmount: (index: number) => (index === 0 ? coins : 0),
+        getResourceIndex: (id: string) => (id === 'res:coins' ? 0 : -1),
+        spendAmount: (index: number, amount: number) => {
+          if (index !== 0) return false;
+          if (coins >= amount) {
+            coins -= amount;
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState,
+      });
+
+      system.setup?.({ events });
+
+      // Emit event (pending)
+      eventHandler?.();
+
+      // Step 0: insufficient funds → no enqueue, no cooldown/lastFired
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(0);
+      const s0 = getAutomationState(system).get('auto:event-cost-cd');
+      expect(s0?.lastFiredStep).toBe(-Infinity);
+      expect(s0?.cooldownExpiresStep).toBe(0);
+
+      // Step 1: add funds and process without re-emitting event → should fire
+      coins = 10;
+      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(1);
+      const s1 = getAutomationState(system).get('auto:event-cost-cd');
+      expect(s1?.lastFiredStep).toBe(1);
+      // cooldownSteps = ceil(300/100) = 3, +1 boundary → 1 + 3 + 1 = 5
+      expect(s1?.cooldownExpiresStep).toBe(5);
+    });
+
+    it('threshold trigger: no cooldown on failed spend; lastFired/cooldown set on success', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:threshold-cost-cd' as any,
+          name: { default: 'Threshold Cost + Cooldown', variants: {} },
+          description: { default: 'Threshold with cost and cooldown', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          resourceCost: {
+            resourceId: 'res:coins' as any,
+            rate: { kind: 'constant', value: 10 },
+          },
+          cooldown: 200,
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let gold = 50;
+      let coins = 0;
+      const resourceState = {
+        getAmount: (index: number) => (index === 0 ? gold : coins),
+        getResourceIndex: (id: string) => (id === 'res:gold' ? 0 : id === 'res:coins' ? 1 : -1),
+        spendAmount: (index: number, amount: number) => {
+          if (index !== 1) return false;
+          if (coins >= amount) {
+            coins -= amount;
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState,
+      });
+
+      system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
+
+      // Step 0: below threshold
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      let s = getAutomationState(system).get('auto:threshold-cost-cd');
+      expect(s?.cooldownExpiresStep).toBe(0);
+      expect(s?.lastFiredStep).toBe(-Infinity);
+
+      // Step 1: cross threshold, but cost fails → no cooldown, crossing not consumed
+      gold = 150;
+      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      s = getAutomationState(system).get('auto:threshold-cost-cd');
+      expect(commandQueue.size).toBe(0);
+      expect(s?.cooldownExpiresStep).toBe(0);
+      expect(s?.lastFiredStep).toBe(-Infinity);
+      // lastThresholdSatisfied must remain false so it can retrigger
+      expect(s?.lastThresholdSatisfied).toBe(false);
+
+      // Step 2: still above threshold; now funds available → should fire and set cooldown
+      coins = 20;
+      system.tick({ step: 2, deltaMs: 100, events: {} as any });
+      s = getAutomationState(system).get('auto:threshold-cost-cd');
+      expect(commandQueue.size).toBe(1);
+      expect(s?.lastFiredStep).toBe(2);
+      // cooldownSteps = ceil(200/100)=2; expires at 2 + 2 + 1 = 5
+      expect(s?.cooldownExpiresStep).toBe(5);
+      expect(s?.lastThresholdSatisfied).toBe(true);
+    });
+
+    it('upgrade target: resourceCost is additional fee; upgrade cost validated separately', () => {
+      // Prepare shared resource state with two resources: coins (automation fee) and energy (upgrade cost)
+      const resources = createResourceState([
+        { id: 'coins', startAmount: 50 },
+        { id: 'energy', startAmount: 30 },
+      ]);
+
+      // Adapter so AutomationSystem can resolve indices and spend via the same state
+      const resourceAccessor = createResourceStateAdapter(resources);
+
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:upgrade-fee' as any,
+          name: { default: 'Upgrade with Fee', variants: {} },
+          description: { default: 'Upgrade target charges automation fee', variants: {} },
+          targetType: 'upgrade',
+          targetId: 'upg:alpha' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          resourceCost: {
+            resourceId: 'coins' as any,
+            rate: { kind: 'constant', value: 10 },
+          },
+          cooldown: 100,
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: resourceAccessor,
+      });
+
+      system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+
+      // One command enqueued: PURCHASE_UPGRADE
+      expect(commandQueue.size).toBe(1);
+
+      // Automation fee should be deducted immediately at fire-time
+      const coinsIndex = resources.requireIndex('coins');
+      expect(resources.getAmount(coinsIndex)).toBe(40);
+
+      // Execute the command to validate upgrade cost handling
+      const dispatcher = new CommandDispatcher();
+
+      class StubUpgrades implements UpgradePurchaseEvaluator {
+        public applied: Array<{ upgradeId: string }> = [];
+        getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined {
+          if (upgradeId !== 'upg:alpha') return undefined;
+          return {
+            upgradeId,
+            status: 'available',
+            costs: [{ resourceId: 'energy', amount: 15 }],
+          };
+        }
+        applyPurchase(upgradeId: string): void {
+          this.applied.push({ upgradeId });
+        }
+      }
+
+      const upgrades = new StubUpgrades();
+      registerResourceCommandHandlers({
+        dispatcher,
+        resources,
+        generatorPurchases: {
+          getPurchaseQuote: () => undefined,
+          applyPurchase: () => undefined,
+        },
+        upgradePurchases: upgrades,
+      });
+
+      const [snapshot] = commandQueue.dequeueUpToStep(1);
+      expect(snapshot?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE);
+      dispatcher.execute({
+        type: snapshot!.type,
+        payload: snapshot!.payload as any,
+        priority: snapshot!.priority,
+        timestamp: snapshot!.timestamp,
+        step: snapshot!.step,
+      } as any);
+
+      // Upgrade cost should be deducted separately from energy
+      const energyIndex = resources.requireIndex('energy');
+      expect(resources.getAmount(energyIndex)).toBe(15);
+      // Purchase applied
+      expect(upgrades.applied).toEqual([{ upgradeId: 'upg:alpha' }]);
     });
   });
 
