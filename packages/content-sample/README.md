@@ -39,3 +39,16 @@ The pack includes minimal but representative generators and upgrades to support 
   - `sample-pack.harvester-efficiency` (generator: harvester) — multiplies harvester output, visible at ≥20 Crystal and unlocks at Harvester level ≥1
 
 After editing content under `content/`, run `pnpm generate` to refresh `content/compiled/` and `src/generated/` artifacts and commit the changes. Keep IDs stable and names localized via the `name` field (default locale `en-US`).
+
+## Automations
+
+The sample pack includes a small set of automations to demonstrate triggers, cooldowns, and resource costs:
+
+- `sample-pack.auto-reactor` — Interval trigger enabling the reactor every 5s (no cost).
+- `sample-pack.auto-harvester-on-energy` — Resource-threshold trigger at ≥50 Energy (no cost) with a 5s cooldown.
+- `sample-pack.idle-collector` — Fires when the command queue is empty, with a 10s cooldown.
+- `sample-pack.auto-harvester-on-primed` — Event-driven enable when the reactor is primed.
+- `sample-pack.auto-reactor-burst` — Interval trigger every 2s with `resourceCost` of 2 Energy per fire.
+- `sample-pack.autobuy-reactor-insulation` — Interval trigger every 8s with `resourceCost` of 1 Energy per attempt; targets the `reactor-insulation` upgrade.
+
+These costed examples align with the automation resourceCost design and serve as references for content authors. See `content/pack.json` for definitions and run `pnpm generate` to validate/compile the pack.
