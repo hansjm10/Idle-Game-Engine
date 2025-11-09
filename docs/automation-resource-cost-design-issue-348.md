@@ -80,9 +80,9 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 ## 6. Proposed Solution
 ### 6.1 Architecture Overview
 - Narrative:
-  - Extend automation’s tick path to evaluate automation.resourceCost.rate when a trigger fires. Resolve resourceId → index, check affordability, attempt an atomic spend via ResourceState. If spend succeeds, enqueue the target command and advance cooldown/lastFired. If spend fails, do not enqueue and do not start cooldown.
+  - Extend automation’s tick path to evaluate automation.resourceCost.rate when a trigger fires. Resolve resourceId → index; if the index is unknown (-1), bail out and treat as unaffordable without attempting to spend. Otherwise, check affordability and attempt an atomic spend via ResourceState. If spend succeeds, enqueue the target command and advance cooldown/lastFired. If spend fails, do not enqueue and do not start cooldown.
 - Diagram:
-  - Trigger true → Evaluate cost → trySpend (atomic) → [success] enqueue + set lastFired + cooldown | [fail] skip without cooldown.
+  - Trigger true → Resolve index → [unknown] skip (no cooldown) | [known] Evaluate cost → trySpend (atomic) → [success] enqueue + set lastFired + cooldown | [fail] skip without cooldown.
 
 ### 6.2 Detailed Design
 - Runtime Changes:
@@ -95,12 +95,30 @@ issue-348 addresses a gap in the automation system: automations that declare a r
   - Tick path modifications in createAutomationSystem():
     - After trigger evaluation and before enqueue (packages/core/src/automation-system.ts:298–309), implement:
       - If automation.resourceCost defined:
-        - Resolve index via getResourceIndex(resourceId) or fail-safe (-1 → amount=0 → spend fails).
-        - Evaluate amount = evaluateNumericFormula(resourceCost.rate, { variables: { level: 0 } }).
+        - Resolve `index = getResourceIndex(resourceId)`.
+        - If `index === -1` (unknown resource ID or not yet unlocked/initialized): treat as unaffordable and bail out before any spend attempt. Do not call `spendAmount` with an invalid index.
+        - Evaluate `amount = evaluateNumericFormula(resourceCost.rate, { variables: { level: 0 } })`.
         - Clamp negatives to 0 (safety) and reject NaN/Infinity.
-        - Attempt spendAmount(index, amount, { systemId: 'automation', commandId: automation.id }).
-        - On false: continue without enqueue and without updating cooldown/lastFired.
+        - Attempt `spendAmount(index, amount, { systemId: 'automation', commandId: automation.id })`.
+        - On `false`: continue without enqueue and without updating cooldown/lastFired.
       - Else: proceed as today.
+    - Rationale:
+      - `ResourceState.spendAmount` asserts a valid index and will throw on invalid input (see packages/core/src/resource-state.ts:666–706). The guard ensures invalid content cannot crash automation processing and fulfills the “fail-safe” intent by skipping gracefully.
+    - Reference pseudocode:
+      ```ts
+      if (automation.resourceCost) {
+        const idx = resourceState.getResourceIndex?.(automation.resourceCost.resourceId) ?? -1;
+        if (idx === -1) {
+          // Unknown resource → unaffordable; skip without cooldown
+          return;
+        }
+        const amount = evaluateNumericFormula(automation.resourceCost.rate, ctx);
+        if (!Number.isFinite(amount)) return; // reject NaN/Infinity
+        const spendOk = resourceState.spendAmount?.(idx, Math.max(0, amount), { systemId: 'automation', commandId: automation.id });
+        if (!spendOk) return; // unaffordable → skip
+        // success → enqueue + update cooldown/lastFired
+      }
+      ```
   - Determinism:
     - Use currentStep-derived timestamp (unchanged) and ensure spend + enqueue run within the same tick. No additional randomness or wall-clock interactions.
 - Data & Schemas:
@@ -228,7 +246,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 - ResourceStateReader interface: packages/core/src/automation-system.ts:504
 - Threshold evaluation: packages/core/src/automation-system.ts:547
 - Enqueue path: packages/core/src/automation-system.ts:620
-- ResourceState API (spendAmount): packages/core/src/resource-state.ts:136
+- ResourceState API (spendAmount): packages/core/src/resource-state.ts:148 (interface); implementation with index assertion: 666–716
 - Adapter: packages/core/src/automation-resource-state-adapter.ts:1
 - Sample content automations (cost removed): packages/content-sample/content/pack.json:366
 - Authoring guide (resourceCost examples): docs/automation-authoring-guide.md:41
@@ -243,4 +261,3 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-11-09 | Design-Authoring Agent (AI) | Initial draft aligning to issue-348 and repo state |
-
