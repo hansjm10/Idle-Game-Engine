@@ -13,7 +13,7 @@ sidebar_position: 4
 - Execution Mode: AI-led
 
 ## 1. Summary
-issue-348 addresses a gap in the automation system: automations that declare a resourceCost currently fire regardless of player resources and never deduct the cost. This design introduces deterministic, atomic cost validation and deduction at automation fire-time. When a trigger evaluates true, the runtime will compute the cost (supporting constant numeric formulas initially), check affordability, and either spend and schedule the command (success) or skip without cooldown (insufficient funds). For event-triggered automations specifically, a failed spend preserves the pending event (it is not cleared), so the automation can retry automatically on the next tick once resources exist. The change restores content-author intent, prevents misleading UX, and enables sample content to reintroduce automation costs.
+issue-348 addresses a gap in the automation system: automations that declare a resourceCost currently fire regardless of player resources and never deduct the cost. This design introduces deterministic, atomic cost validation and deduction at automation fire-time. When a trigger evaluates true, the runtime will compute the cost (supporting constant numeric formulas initially), check affordability, and either spend and schedule the command (success) or skip without cooldown (insufficient funds). For event-triggered automations, a failed spend preserves the pending event (it is not cleared), so the automation can retry automatically on the next tick once resources exist. For resource-threshold automations, a failed spend must not consume the false→true crossing; the runtime defers or reverts the `lastThresholdSatisfied` update on failure so these automations retrigger automatically while the threshold remains satisfied. The change restores content-author intent, prevents misleading UX, and enables sample content to reintroduce automation costs.
 
 ## 2. Context & Problem Statement
 - Background:
@@ -67,7 +67,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 ## 5. Current State
 - Automation evaluation:
   - Triggers and enqueue path implemented with deterministic steps and cooldowns. See packages/core/src/automation-system.ts:250–315 and 620–920.
-  - Event trigger plumbing and threshold-crossing logic are implemented; threshold state updates occur during cooldown to avoid missed crossings.
+  - Event trigger plumbing and threshold-crossing logic are implemented; threshold state updates occur during cooldown to avoid missed crossings. Today, threshold state is also updated immediately on detection of a crossing, before any cost deduction.
 - Missing cost enforcement:
   - Explicit TODO: packages/core/src/automation-system.ts:302.
   - ResourceStateReader is read-only: packages/core/src/automation-system.ts:504–507.
@@ -102,7 +102,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
         - Clamp negatives to 0 (safety) and reject NaN/Infinity.
         - Attempt `spendAmount(index, amount, { systemId: 'automation', commandId: automation.id })`.
         - On `false`: continue without enqueue and without updating cooldown/lastFired.
-    - Event-trigger retention semantics (single-shot trigger fix):
+    - Retry semantics for event and resource-threshold triggers:
       - Today, `pendingEventTriggers.clear()` at end of tick (packages/core/src/automation-system.ts:313) makes event triggers single-shot even if an automation skips due to unaffordable cost. To align with “skip without cooldown (retry when resources exist)”, preserve events that failed to spend.
       - Implementation approach:
         - Introduce a local `nextPendingEventTriggers = new Set<string>()` at the start of `tick`.
@@ -112,12 +112,16 @@ issue-348 addresses a gap in the automation system: automations that declare a r
           - If it does not trigger → do nothing.
         - Replace the end-of-tick clear with a swap: `pendingEventTriggers.clear(); for (const id of nextPendingEventTriggers) pendingEventTriggers.add(id);`
       - Determinism: The set replacement is deterministic. Because IDs are unique, duplicates are not a concern.
-      - Scope: This behavior only changes `event` triggers; interval/threshold/queue-empty triggers already naturally retrip on subsequent ticks.
+      - Resource-threshold crossing semantics on cost failure:
+        - Current engine behavior (`packages/core/src/automation-system.ts:275–288`) updates `state.lastThresholdSatisfied = currentlySatisfied` before any spend. If spend then fails, the crossing has been consumed and the automation will not fire again until the resource drops below and crosses back above the threshold.
+        - Required change: when a crossing is detected (false→true), attempt the cost spend first and only set `state.lastThresholdSatisfied = true` if the spend succeeds. If the spend fails (or the resource index is unknown), keep `state.lastThresholdSatisfied = false` so the crossing remains pending and the automation retriggers automatically on subsequent ticks while the threshold remains satisfied. Do not start cooldown on failure.
+      - Scope: Interval and queue-empty triggers already naturally retrip; they require no special state handling beyond “skip without cooldown” on cost failure.
       - Else: proceed as today.
     - Rationale:
       - `ResourceState.spendAmount` asserts a valid index and will throw on invalid input (see packages/core/src/resource-state.ts:666–706). The guard ensures invalid content cannot crash automation processing and fulfills the “fail-safe” intent by skipping gracefully.
-    - Reference pseudocode:
+    - Reference pseudocode (cost + retries):
       ```ts
+      // Apply to all triggers with a resourceCost
       if (automation.resourceCost) {
         const idx = resourceState.getResourceIndex?.(automation.resourceCost.resourceId) ?? -1;
         if (idx === -1) {
@@ -141,6 +145,41 @@ issue-348 addresses a gap in the automation system: automations that declare a r
         // success → enqueue + update cooldown/lastFired
       }
       ```
+      - Resource-threshold state handling (two-phase update around cost):
+      ```ts
+      // Before: engine updates lastThresholdSatisfied immediately (consumes crossing)
+      // After: defer update until after spend
+      if (automation.trigger.kind === 'resourceThreshold') {
+        const currently = evaluateResourceThresholdTrigger(automation, resourceState);
+        const previously = state.lastThresholdSatisfied ?? false;
+        const crossing = currently && !previously; // false → true
+
+        if (!crossing) {
+          // Not a crossing → track current truth value for future crossings
+          state.lastThresholdSatisfied = currently;
+          return; // no fire
+        }
+
+        // Crossing detected → attempt cost first
+        const idx = resourceState.getResourceIndex?.(automation.resourceCost?.resourceId ?? '') ?? -1;
+        const amount = automation.resourceCost ? evaluateNumericFormula(automation.resourceCost.rate, ctx) : 0;
+        const ok = automation.resourceCost && idx !== -1 && Number.isFinite(amount)
+          ? resourceState.spendAmount?.(idx, Math.max(0, amount), { systemId: 'automation', commandId: automation.id }) === true
+          : true; // no cost → treat as ok
+
+        if (!ok) {
+          // Cost failure → do not consume the crossing
+          // Keep lastThresholdSatisfied = false so it retriggers next tick while condition holds
+          state.lastThresholdSatisfied = false;
+          // If you also support event retention logic separately, that remains unchanged
+          return;
+        }
+
+        // Spend succeeded → consume the crossing and fire
+        state.lastThresholdSatisfied = true;
+        // enqueue + start cooldown...
+      }
+      ```
   - Determinism:
     - Use currentStep-derived timestamp (unchanged) and ensure spend + enqueue run within the same tick. No additional randomness or wall-clock interactions.
 - Data & Schemas:
@@ -152,7 +191,9 @@ issue-348 addresses a gap in the automation system: automations that declare a r
   - Backward compatibility: if spendAmount is unavailable (legacy wiring), automations with resourceCost act as if spend fails (skip) to avoid mischarging.
 - Tooling & Automation:
   - No CLI changes. Ensure lint and tests updated. Add targeted unit tests in packages/core next to implementation.
-  - Tests must add/verify: event triggers are preserved when spend fails and consumed when spend succeeds.
+  - Tests must add/verify:
+    - Event triggers are preserved when spend fails and consumed when spend succeeds.
+    - Resource-threshold automations: on a false→true crossing with insufficient funds, the crossing is not consumed (retries every tick); once funds are available, the spend succeeds, action enqueues, cooldown starts, and `lastThresholdSatisfied` becomes true.
 
 ### 6.3 Operational Considerations
 - Deployment:
@@ -167,7 +208,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
-| feat(core): automation resourceCost enforcement (issue-348) | Add cost evaluate+spend in tick before enqueue | Runtime Implementation Agent | None | Automations with insufficient funds do not enqueue; cooldown not started; with funds they spend and enqueue; tests pass |
+| feat(core): automation resourceCost enforcement (issue-348) | Add cost evaluate+spend in tick before enqueue | Runtime Implementation Agent | None | Automations with insufficient funds do not enqueue; cooldown not started; with funds they spend and enqueue; resource-threshold crossings are not consumed on cost failure; tests pass |
 | fix(core): retain event triggers on failed spend | Preserve event IDs across ticks when unaffordable | Runtime Implementation Agent | Core feature PR | Event-triggered automations reattempt once resources exist; tests cover retain/consume paths |
 | refactor(core): ResourceState accessor + adapter | Introduce ResourceStateAccessor and update adapter to pass spendAmount | Runtime Implementation Agent | Core feature PR | Accessor wired; legacy read-only paths preserved; types exported; lint passes |
 | test(core): automation cost unit tests | Add tests for success/failure, cooldown interaction, upgrade target fee | QA/Test Agent | Core feature PR | New tests in packages/core pass deterministically; coverage stable |
@@ -224,7 +265,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
   - Automation with resourceCost and 0 balance: no enqueue; no cooldown; state unchanged.
   - With sufficient balance: spend recorded; enqueue scheduled; lastFired and cooldown updated.
   - Upgrade target: resourceCost treated as additional fee; PURCHASE_UPGRADE still validates upgrade cost separately.
-  - resourceThreshold interplay: threshold crossing logic remains correct; no cooldown on failed spend.
+  - resourceThreshold interplay: on cost failure, do not consume the crossing (keep `lastThresholdSatisfied = false`); no cooldown on failed spend; when cost later succeeds while condition still holds, the automation fires and updates `lastThresholdSatisfied = true`.
   - Legacy automations (no resourceCost): behavior unchanged.
 - Performance:
   - Micro-benchmark: negligible overhead for “no resourceCost” path; cost path 1–2 numeric formula evaluations and 1 spendAmount call.
