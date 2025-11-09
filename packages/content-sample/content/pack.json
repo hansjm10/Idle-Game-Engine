@@ -375,6 +375,10 @@
         "kind": "interval",
         "interval": { "kind": "constant", "value": 2000 }
       },
+      "resourceCost": {
+        "resourceId": "sample-pack.energy",
+        "rate": { "kind": "constant", "value": 2 }
+      },
       "unlockCondition": { "kind": "always" },
       "enabledByDefault": false,
       "order": 6
@@ -391,6 +395,10 @@
       "trigger": {
         "kind": "interval",
         "interval": { "kind": "constant", "value": 8000 }
+      },
+      "resourceCost": {
+        "resourceId": "sample-pack.energy",
+        "rate": { "kind": "constant", "value": 1 }
       },
       "cooldown": 0,
       "unlockCondition": { "kind": "always" },

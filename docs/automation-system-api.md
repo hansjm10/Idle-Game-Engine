@@ -6,7 +6,7 @@ sidebar_position: 13
 
 # AutomationSystem API Reference
 
-The `AutomationSystem` evaluates automation triggers and enqueues commands when triggers fire. It supports 4 trigger types: interval, resourceThreshold, commandQueueEmpty, and event.
+The `AutomationSystem` evaluates automation triggers and enqueues commands when triggers fire. It supports 4 trigger types: interval, resourceThreshold, commandQueueEmpty, and event. As of issue #348, automations may declare a `resourceCost` which is validated and deducted atomically at fire time.
 
 ## Core API
 
@@ -26,7 +26,7 @@ function createAutomationSystem(
 - `options.automations` (readonly AutomationDefinition[]): Array of automation definitions from content pack
 - `options.stepDurationMs` (number): Duration of each runtime step in milliseconds (default: 100)
 - `options.commandQueue` (CommandQueue): The runtime's command queue instance
-- `options.resourceState` (ResourceStateReader): Resource state for threshold evaluation
+- `options.resourceState` (ResourceStateAccessor): Resource state accessor used for threshold evaluation and optional spending when `resourceCost` is present
 - `options.initialState` (Map\<string, AutomationState\>, optional): Restored automation state from save file
 
 **Returns:** System object with additional `getState()` method for state extraction
@@ -39,7 +39,8 @@ const system = createAutomationSystem({
   automations: contentPack.automations,
   stepDurationMs: 100,
   commandQueue: runtime.getCommandQueue(),
-  resourceState: progressionCoordinator.resourceState,
+  // Prefer the adapter to normalize indices and expose spend
+  resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
   initialState: savedState?.automationState,
 });
 
@@ -57,6 +58,45 @@ runtime.addSystem(system);
 Unlock state is persistent—once an automation is unlocked, it remains unlocked. The system only evaluates unlock conditions for automations that are not yet unlocked. Currently, only 'always' unlock conditions are evaluated; full condition evaluation requires integration with progression systems.
 
 ---
+
+## Resource State Accessor
+
+### ResourceStateAccessor (runtime input)
+
+Minimal interface used by the automation system to read resource amounts, resolve IDs, and (optionally) spend when an automation declares a `resourceCost`.
+
+```ts
+export interface ResourceStateAccessor {
+  getAmount(resourceIndex: number): number;
+  getResourceIndex?(resourceId: string): number; // returns -1 if not found
+  spendAmount?(
+    resourceIndex: number,
+    amount: number,
+    context?: { systemId?: string; commandId?: string },
+  ): boolean; // returns true on successful spend
+}
+```
+
+- Spending is attempted during `tick()` after a trigger fires but before enqueueing the target command. If the spend fails, the automation does not enqueue or enter cooldown on that tick.
+- For event triggers, failed spends retain the pending event so the automation can retry on a later tick.
+- For resource threshold triggers, failed spends do not consume the false→true crossing so the automation retries while the condition remains satisfied.
+
+Note: `ResourceStateReader` remains as a deprecated alias. Prefer `ResourceStateAccessor`.
+
+### Adapter helper
+
+Use the adapter to bridge from the core `ResourceState` API (which exposes `getIndex`) to the `ResourceStateAccessor` contract expected by the automation system:
+
+```ts
+import { createResourceStateAdapter } from '@idle-engine/core';
+
+const system = createAutomationSystem({
+  automations,
+  commandQueue,
+  stepDurationMs,
+  resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
+});
+```
 
 ### getAutomationState(system)
 

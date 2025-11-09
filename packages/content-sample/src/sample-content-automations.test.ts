@@ -22,9 +22,23 @@ describe('sample content pack automations', () => {
     expect(result.success).toBe(true);
   });
 
-  it('does not include resourceCost until engine support lands', () => {
+  it('includes resourceCost on specific sample automations now that engine support has landed', () => {
     const automations = sampleContent.modules.automations;
-    const hasResourceCost = automations.some((a) => a.resourceCost !== undefined);
-    expect(hasResourceCost).toBe(false);
+    const byId = new Map(automations.map((a) => [a.id, a]));
+
+    const burst = byId.get('sample-pack.auto-reactor-burst');
+    const autobuy = byId.get('sample-pack.autobuy-reactor-insulation');
+
+    expect(burst).toBeDefined();
+    expect(autobuy).toBeDefined();
+
+    // Validate presence and basic shape of resourceCost
+    expect(burst?.resourceCost).toBeDefined();
+    expect(burst?.resourceCost?.resourceId).toBe('sample-pack.energy');
+    expect((burst?.resourceCost as any).rate?.kind).toBe('constant');
+
+    expect(autobuy?.resourceCost).toBeDefined();
+    expect(autobuy?.resourceCost?.resourceId).toBe('sample-pack.energy');
+    expect((autobuy?.resourceCost as any).rate?.kind).toBe('constant');
   });
 });
