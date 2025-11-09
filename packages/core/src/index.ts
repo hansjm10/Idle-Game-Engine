@@ -365,13 +365,13 @@ function toDiagnosticTimelineEventMetrics(
 }
 
 export {
-  Command,
+  type Command,
   CommandPriority,
   COMMAND_PRIORITY_ORDER,
-  CommandQueueEntry,
-  CommandSnapshot,
-  CommandSnapshotPayload,
-  ImmutablePayload,
+  type CommandQueueEntry,
+  type CommandSnapshot,
+  type CommandSnapshotPayload,
+  type ImmutablePayload,
   RUNTIME_COMMAND_TYPES,
   type RuntimeCommandType,
   type PurchaseGeneratorPayload,
