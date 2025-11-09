@@ -363,21 +363,6 @@
       "order": 4
     },
     {
-      "id": "sample-pack.offline-catchup-on-idle",
-      "name": { "default": "Offline Catchup on Idle", "variants": {} },
-      "description": {
-        "default": "Triggers offline catchup when the queue is empty",
-        "variants": {}
-      },
-      "targetType": "system",
-      "systemTargetId": "offline-catchup",
-      "trigger": { "kind": "commandQueueEmpty" },
-      "cooldown": 60000,
-      "unlockCondition": { "kind": "always" },
-      "enabledByDefault": true,
-      "order": 5
-    },
-    {
       "id": "sample-pack.auto-reactor-burst",
       "name": { "default": "Reactor Burst (Costed)", "variants": {} },
       "description": {

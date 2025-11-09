@@ -22,13 +22,9 @@ describe('sample content pack automations', () => {
     expect(result.success).toBe(true);
   });
 
-  it('includes a system-target automation and a resourceCost example', () => {
+  it('includes a resourceCost example', () => {
     const automations = sampleContent.modules.automations;
-    const hasSystemTarget = automations.some(
-      (a) => a.targetType === 'system' && typeof a.systemTargetId === 'string',
-    );
     const hasResourceCost = automations.some((a) => a.resourceCost !== undefined);
-    expect(hasSystemTarget).toBe(true);
     expect(hasResourceCost).toBe(true);
   });
 });

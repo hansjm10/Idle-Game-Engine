@@ -7,9 +7,9 @@ import {
 } from '@idle-engine/content-compiler';
 
 const serialized = {
-  "artifactHash": "3f66637f92d84e8dbb4cd10cefa6345800e883c698397d19811db3b24f6a14c6",
+  "artifactHash": "61f4ea6763c2cfd67023b8fe79ad4f27b7011caef69f29cfb76933831bf37262",
   "digest": {
-    "hash": "fnv1a-063d058d",
+    "hash": "fnv1a-30aeb60a",
     "version": 1
   },
   "formatVersion": 1,
@@ -266,32 +266,6 @@ const serialized = {
         "order": 3,
         "targetId": "sample-pack.reactor",
         "targetType": "generator",
-        "trigger": {
-          "kind": "commandQueueEmpty"
-        },
-        "unlockCondition": {
-          "kind": "always"
-        }
-      },
-      {
-        "cooldown": 60000,
-        "description": {
-          "default": "Triggers offline catchup when the queue is empty",
-          "variants": {
-            "en-US": "Triggers offline catchup when the queue is empty"
-          }
-        },
-        "enabledByDefault": true,
-        "id": "sample-pack.offline-catchup-on-idle",
-        "name": {
-          "default": "Offline Catchup on Idle",
-          "variants": {
-            "en-US": "Offline Catchup on Idle"
-          }
-        },
-        "order": 5,
-        "systemTargetId": "offline-catchup",
-        "targetType": "system",
         "trigger": {
           "kind": "commandQueueEmpty"
         },
