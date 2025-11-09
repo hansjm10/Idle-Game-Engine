@@ -13,7 +13,7 @@ sidebar_position: 4
 - Execution Mode: AI-led
 
 ## 1. Summary
-issue-348 addresses a gap in the automation system: automations that declare a resourceCost currently fire regardless of player resources and never deduct the cost. This design introduces deterministic, atomic cost validation and deduction at automation fire-time. When a trigger evaluates true, the runtime will compute the cost (supporting constant numeric formulas initially), check affordability, and either spend and schedule the command (success) or skip without cooldown (insufficient funds). The change restores content-author intent, prevents misleading UX, and enables sample content to reintroduce automation costs.
+issue-348 addresses a gap in the automation system: automations that declare a resourceCost currently fire regardless of player resources and never deduct the cost. This design introduces deterministic, atomic cost validation and deduction at automation fire-time. When a trigger evaluates true, the runtime will compute the cost (supporting constant numeric formulas initially), check affordability, and either spend and schedule the command (success) or skip without cooldown (insufficient funds). For event-triggered automations specifically, a failed spend preserves the pending event (it is not cleared), so the automation can retry automatically on the next tick once resources exist. The change restores content-author intent, prevents misleading UX, and enables sample content to reintroduce automation costs.
 
 ## 2. Context & Problem Statement
 - Background:
@@ -34,6 +34,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
   - Enforce resourceCost semantics for automations (evaluate, afford check, deduct) per issue-348.
   - Maintain deterministic replays: spend and enqueue occur in the same step and are recorded consistently.
   - Skip cooldown on failed spend; update state only on success.
+  - Event triggers: preserve pending event on failed spend so it can retry.
   - Unit tests covering success, failure, cooldown, and interaction with existing triggers.
   - Reintroduce resourceCost to sample content once support lands and update authoring docs.
 - Non-Goals:
@@ -101,6 +102,17 @@ issue-348 addresses a gap in the automation system: automations that declare a r
         - Clamp negatives to 0 (safety) and reject NaN/Infinity.
         - Attempt `spendAmount(index, amount, { systemId: 'automation', commandId: automation.id })`.
         - On `false`: continue without enqueue and without updating cooldown/lastFired.
+    - Event-trigger retention semantics (single-shot trigger fix):
+      - Today, `pendingEventTriggers.clear()` at end of tick (packages/core/src/automation-system.ts:313) makes event triggers single-shot even if an automation skips due to unaffordable cost. To align with “skip without cooldown (retry when resources exist)”, preserve events that failed to spend.
+      - Implementation approach:
+        - Introduce a local `nextPendingEventTriggers = new Set<string>()` at the start of `tick`.
+        - When evaluating an `event` trigger:
+          - If it triggers and the cost spend succeeds → do not add the ID to `nextPendingEventTriggers` (event consumed).
+          - If it triggers but the cost spend fails (or resource index unknown) → add `automation.id` to `nextPendingEventTriggers` (event retained).
+          - If it does not trigger → do nothing.
+        - Replace the end-of-tick clear with a swap: `pendingEventTriggers.clear(); for (const id of nextPendingEventTriggers) pendingEventTriggers.add(id);`
+      - Determinism: The set replacement is deterministic. Because IDs are unique, duplicates are not a concern.
+      - Scope: This behavior only changes `event` triggers; interval/threshold/queue-empty triggers already naturally retrip on subsequent ticks.
       - Else: proceed as today.
     - Rationale:
       - `ResourceState.spendAmount` asserts a valid index and will throw on invalid input (see packages/core/src/resource-state.ts:666–706). The guard ensures invalid content cannot crash automation processing and fulfills the “fail-safe” intent by skipping gracefully.
@@ -110,12 +122,22 @@ issue-348 addresses a gap in the automation system: automations that declare a r
         const idx = resourceState.getResourceIndex?.(automation.resourceCost.resourceId) ?? -1;
         if (idx === -1) {
           // Unknown resource → unaffordable; skip without cooldown
+          // If this was an event trigger, retain the event for next tick
+          if (automation.trigger.kind === 'event') {
+            nextPendingEventTriggers.add(automation.id);
+          }
           return;
         }
         const amount = evaluateNumericFormula(automation.resourceCost.rate, ctx);
         if (!Number.isFinite(amount)) return; // reject NaN/Infinity
         const spendOk = resourceState.spendAmount?.(idx, Math.max(0, amount), { systemId: 'automation', commandId: automation.id });
-        if (!spendOk) return; // unaffordable → skip
+        if (!spendOk) {
+          // unaffordable → skip; retain event if applicable
+          if (automation.trigger.kind === 'event') {
+            nextPendingEventTriggers.add(automation.id);
+          }
+          return;
+        }
         // success → enqueue + update cooldown/lastFired
       }
       ```
@@ -130,6 +152,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
   - Backward compatibility: if spendAmount is unavailable (legacy wiring), automations with resourceCost act as if spend fails (skip) to avoid mischarging.
 - Tooling & Automation:
   - No CLI changes. Ensure lint and tests updated. Add targeted unit tests in packages/core next to implementation.
+  - Tests must add/verify: event triggers are preserved when spend fails and consumed when spend succeeds.
 
 ### 6.3 Operational Considerations
 - Deployment:
@@ -145,6 +168,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
 | feat(core): automation resourceCost enforcement (issue-348) | Add cost evaluate+spend in tick before enqueue | Runtime Implementation Agent | None | Automations with insufficient funds do not enqueue; cooldown not started; with funds they spend and enqueue; tests pass |
+| fix(core): retain event triggers on failed spend | Preserve event IDs across ticks when unaffordable | Runtime Implementation Agent | Core feature PR | Event-triggered automations reattempt once resources exist; tests cover retain/consume paths |
 | refactor(core): ResourceState accessor + adapter | Introduce ResourceStateAccessor and update adapter to pass spendAmount | Runtime Implementation Agent | Core feature PR | Accessor wired; legacy read-only paths preserved; types exported; lint passes |
 | test(core): automation cost unit tests | Add tests for success/failure, cooldown interaction, upgrade target fee | QA/Test Agent | Core feature PR | New tests in packages/core pass deterministically; coverage stable |
 | docs: update automation authoring guide | Clarify resourceCost semantics and examples | Docs Agent | Core feature PR | docs/automation-authoring-guide.md updated; no broken links; a11y docs not impacted |
