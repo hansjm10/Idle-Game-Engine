@@ -131,6 +131,38 @@ The automation fires only on threshold **crossings** (transitions), not continuo
 - Resource stays at 100+: **Does not fire** (no crossing)
 - Resource goes from 100 → 99 → 105: **Fires** (crossed back above)
 
+**Interaction with resourceCost:**
+
+- When a `resourceCost` is configured, the cost is evaluated and charged at the moment the threshold crossing would fire.
+- If the player cannot afford the cost at that moment, the automation does not enqueue and the crossing is **not consumed**. The automation will re-attempt on subsequent ticks while the threshold condition remains satisfied. Add a `cooldown` if you want to rate‑limit these retries.
+- When the spend succeeds, the crossing is consumed (no immediate refire until the condition later falls below and crosses above again) and the command is enqueued.
+
+**Example: Threshold with resourceCost (constant rate)**
+
+```json
+{
+  "id": "sample-pack.auto-upgrade-threshold-costed",
+  "name": { "default": "Auto Upgrade (Threshold + Cost)" },
+  "description": { "default": "Purchases an upgrade when energy crosses 50, spending 10 tokens if available" },
+  "targetType": "upgrade",
+  "targetId": "sample-pack.upgrade-efficiency",
+  "trigger": {
+    "kind": "resourceThreshold",
+    "resourceId": "sample-pack.energy",
+    "comparator": "gte",
+    "threshold": { "kind": "constant", "value": 50 }
+  },
+  "resourceCost": {
+    "resourceId": "sample-pack.tokens",
+    "rate": { "kind": "constant", "value": 10 }
+  },
+  "cooldown": 2000,
+  "unlockCondition": { "kind": "always" },
+  "enabledByDefault": false,
+  "order": 2
+}
+```
+
 **Example: Auto-purchase upgrade when resources reach 50**
 
 ```json
@@ -235,10 +267,7 @@ Fires when a specific runtime event is published.
 - Listens for events published to the runtime event bus
 - Fires once per event occurrence
 - Event must be defined in `eventDefinitions` or base runtime events
-- When `resourceCost` is present: if the spend fails due to insufficient
-  resources, the pending event is retained and retried on subsequent ticks;
-  on successful spend, the event is consumed and cooldown/last-fired are
-  updated.
+- When `resourceCost` is present: the cost is evaluated and charged at fire‑time. If the spend fails due to insufficient resources, the pending event is retained and retried on subsequent ticks; on successful spend, the event is consumed and cooldown/last‑fired are updated.
 
 **Example: Auto-purchase upgrade when milestone reached**
 
@@ -462,10 +491,11 @@ Resource costs are deducted when an automation fires.
 
 **Behavior:**
 
-- Automation checks if player can afford cost before firing
-- If insufficient resources, automation skips this tick
-- Cost deducted immediately before enqueueing command
-- Cost can be a numeric formula (scales with level, resources, etc.)
+- Evaluation timing: cost `rate` (a NumericFormula) is evaluated at **fire‑time** using current state.
+- Affordability: the engine checks if the player can afford the computed amount.
+- Deduction: on success, the cost is deducted **before** the command is enqueued; on failure, the automation does not enqueue.
+- Cooldown/consumption on failure: failed spends do not update `lastFired` or start cooldown. For event triggers, the pending event is retained; for resource‑threshold triggers, the false→true crossing is not consumed and will retry while the condition holds (use `cooldown` to rate‑limit).
+- Formula support: constant formulas are supported; more advanced/multi‑resource costs are currently out of scope.
 
 **Example: Auto-prestige with resource cost**
 
@@ -495,6 +525,11 @@ Resource costs are deducted when an automation fires.
 - Gated automation (requires resource generation first)
 
 **Note:** The upgrade's own cost is deducted automatically by the `PURCHASE_UPGRADE` command handler. The `resourceCost` field is for an *additional* cost specific to the automation itself.
+
+### Limitations (current iteration)
+
+- `resourceCost` supports a single resource with a `rate` that is typically a constant NumericFormula. Complex formulas and multi‑resource/conditional costs are not yet supported.
+- Non‑finite cost evaluations (e.g., NaN/Infinity) are treated as invalid and the automation does not enqueue.
 
 ---
 
