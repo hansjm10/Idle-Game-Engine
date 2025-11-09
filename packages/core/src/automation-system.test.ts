@@ -1931,6 +1931,244 @@ describe('AutomationSystem', () => {
     });
   });
 
+  describe('resourceCost enforcement', () => {
+    it('skips enqueue and cooldown when funds are insufficient (interval)', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:cost-int' as any,
+          name: { default: 'Cost Interval', variants: {} },
+          description: { default: 'Tests cost on interval', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          resourceCost: {
+            resourceId: 'res:coins' as any,
+            rate: { kind: 'constant', value: 10 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let coins = 5; // insufficient for cost=10
+      const resourceState = {
+        getAmount: (index: number) => (index === 0 ? coins : 0),
+        getResourceIndex: (id: string) => (id === 'res:coins' ? 0 : -1),
+        spendAmount: (index: number, amount: number) => {
+          if (index !== 0) return false;
+          if (coins >= amount) {
+            coins -= amount;
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState,
+      });
+
+      system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+
+      // No command enqueued; no cooldown/lastFired updates
+      expect(commandQueue.size).toBe(0);
+      const state = getAutomationState(system).get('auto:cost-int');
+      expect(state?.lastFiredStep).toBe(-Infinity);
+      expect(state?.cooldownExpiresStep).toBe(0);
+      expect(coins).toBe(5);
+    });
+
+    it('deducts cost and enqueues when funds are sufficient (interval)', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:cost-int2' as any,
+          name: { default: 'Cost Interval 2', variants: {} },
+          description: { default: 'Tests cost on interval', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          resourceCost: {
+            resourceId: 'res:coins' as any,
+            rate: { kind: 'constant', value: 10 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let coins = 25; // enough to pay 10
+      const resourceState = {
+        getAmount: (index: number) => (index === 0 ? coins : 0),
+        getResourceIndex: (id: string) => (id === 'res:coins' ? 0 : -1),
+        spendAmount: (index: number, amount: number) => {
+          if (index !== 0) return false;
+          if (coins >= amount) {
+            coins -= amount;
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState,
+      });
+
+      system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+
+      expect(commandQueue.size).toBe(1);
+      const st = getAutomationState(system).get('auto:cost-int2');
+      expect(st?.lastFiredStep).toBe(0);
+      expect(coins).toBe(15);
+    });
+
+    it('retains pending event when spend fails and consumes it on success', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:event-cost' as any,
+          name: { default: 'Event Cost', variants: {} },
+          description: { default: 'Event trigger with cost', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'event', eventId: 'evt:test' as any },
+          resourceCost: {
+            resourceId: 'res:coins' as any,
+            rate: { kind: 'constant', value: 5 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let coins = 0;
+      let eventHandler: (() => void) | undefined;
+      const events = {
+        on: (id: string, cb: () => void) => {
+          if (id === 'evt:test') eventHandler = cb;
+        },
+        off: () => {},
+        emit: () => {},
+      } as any;
+
+      const resourceState = {
+        getAmount: (index: number) => (index === 0 ? coins : 0),
+        getResourceIndex: (id: string) => (id === 'res:coins' ? 0 : -1),
+        spendAmount: (index: number, amount: number) => {
+          if (index !== 0) return false;
+          if (coins >= amount) {
+            coins -= amount;
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState,
+      });
+
+      system.setup?.({ events });
+
+      // Emit event (pending)
+      eventHandler?.();
+
+      // Step 0: insufficient funds, event should be retained
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(0);
+
+      // Step 1: add funds; event should fire without re-emitting
+      coins = 10;
+      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(1);
+      commandQueue.dequeueUpToStep(2);
+
+      // Step 2: no new event, should not refire
+      system.tick({ step: 2, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(0);
+    });
+
+    it('does not consume threshold crossing when spend fails; consumes on success', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:threshold-cost' as any,
+          name: { default: 'Threshold Cost', variants: {} },
+          description: { default: 'Threshold with cost', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            threshold: { kind: 'constant', value: 100 },
+          },
+          resourceCost: {
+            resourceId: 'res:coins' as any,
+            rate: { kind: 'constant', value: 10 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let gold = 50;
+      let coins = 0;
+      const resourceState = {
+        getAmount: (index: number) => (index === 0 ? gold : coins),
+        getResourceIndex: (id: string) => (id === 'res:gold' ? 0 : id === 'res:coins' ? 1 : -1),
+        spendAmount: (index: number, amount: number) => {
+          if (index !== 1) return false;
+          if (coins >= amount) {
+            coins -= amount;
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState,
+      });
+
+      system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
+
+      // Step 0: below threshold
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(0);
+
+      // Step 1: cross threshold, but cannot pay cost → no enqueue, crossing not consumed
+      gold = 150;
+      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(0);
+
+      // Step 2: still above threshold; now can pay → should fire
+      coins = 20;
+      system.tick({ step: 2, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(1);
+    });
+  });
+
   describe('edge cases', () => {
     it('should handle empty automation list', () => {
       const system = createAutomationSystem({

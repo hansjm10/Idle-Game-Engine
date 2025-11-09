@@ -243,6 +243,11 @@ Minimal interface for resource state access during automation evaluation.
 interface ResourceStateReader {
   getAmount(resourceIndex: number): number;
   getResourceIndex?(resourceId: string): number;
+  spendAmount?(
+    resourceIndex: number,
+    amount: number,
+    context?: { systemId?: string; commandId?: string },
+  ): boolean;
 }
 ```
 
@@ -250,6 +255,7 @@ interface ResourceStateReader {
 
 - `getAmount(resourceIndex)`: Returns the current amount of the resource at the given index
 - `getResourceIndex(resourceId)`: Resolves a resource ID to its internal index (-1 if not found)
+- `spendAmount(index, amount, context?)`: Optionally spend from a resource. If unavailable, automations with `resourceCost` will treat spending as failed (skip enqueue and cooldown).
 
 ---
 
@@ -272,6 +278,7 @@ const automationSystem = createAutomationSystem({
 
 - `ResourceState.getIndex(id)` returns `number | undefined`
 - `ResourceStateReader.getResourceIndex(id)` expects `number` (with -1 for "not found")
+- The adapter forwards `spendAmount` when available so automations can enforce resource costs
 - The adapter converts `undefined → -1` for proper automation evaluation
 
 **Without the adapter:**
