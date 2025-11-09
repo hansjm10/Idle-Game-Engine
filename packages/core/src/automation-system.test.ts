@@ -1410,6 +1410,53 @@ describe('AutomationSystem', () => {
       const shouldFire = evaluateEventTrigger('auto:test', pendingEventTriggers);
       expect(shouldFire).toBe(false);
     });
+
+    it('consumes event without resourceCost (no retention)', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:event-no-cost' as any,
+          name: { default: 'Event No Cost', variants: {} },
+          description: { default: 'Event trigger without cost', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:test' as any,
+          trigger: { kind: 'event', eventId: 'evt:once' as any },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      let handler: (() => void) | undefined;
+      const events = {
+        on: (id: string, cb: () => void) => {
+          if (id === 'evt:once') handler = cb;
+        },
+        off: () => {},
+        emit: () => {},
+      } as any;
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs: 100,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      system.setup?.({ events });
+
+      // Emit event once
+      handler?.();
+
+      // Tick: should enqueue exactly once
+      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(1);
+      commandQueue.dequeueUpToStep(1);
+
+      // Without re-emitting the event, a subsequent tick should NOT fire again
+      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      expect(commandQueue.size).toBe(0);
+    });
   });
 
   describe('cooldown management', () => {
