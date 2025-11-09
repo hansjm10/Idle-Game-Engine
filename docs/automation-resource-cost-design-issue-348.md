@@ -89,9 +89,9 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 - Runtime Changes:
   - Introduce a write-capable accessor for automation:
     - Add an optional method to ResourceStateReader or define a new ResourceStateAccessor with:
-      - getAmount(index: number): number
-      - getResourceIndex?(id: string): number
-      - spendAmount(index: number, amount: number, context?: { systemId?: string; commandId?: string }): boolean
+      - `getAmount(index: number): number`
+      - `getResourceIndex?(id: string): number`
+      - `spendAmount(index: number, amount: number, context?: { systemId?: string; commandId?: string }): boolean`
     - Preferred: define ResourceStateAccessor and update AutomationSystemOptions.resourceState type to it. Adapter updated to forward spendAmount to ResourceState.spendAmount.
   - Tick path modifications in createAutomationSystem():
     - After trigger evaluation and before enqueue (packages/core/src/automation-system.ts:298–309), implement:
