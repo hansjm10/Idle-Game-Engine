@@ -11,7 +11,7 @@
  * The system manages automation state (enabled/disabled, cooldowns, last-fired)
  * and integrates with the IdleEngineRuntime tick loop.
  *
- * Resource thresholds resolve resource IDs to indices via ResourceStateReader.
+ * Resource thresholds resolve resource IDs to indices via ResourceStateAccessor.
  * Cooldown timing follows exact step-based calculation without off-by-one errors.
  *
  * @example
@@ -85,7 +85,7 @@ export interface AutomationSystemOptions {
   readonly automations: readonly AutomationDefinition[];
   readonly stepDurationMs: number;
   readonly commandQueue: CommandQueue;
-  readonly resourceState: ResourceStateReader;
+  readonly resourceState: ResourceStateAccessor;
   readonly initialState?: Map<string, AutomationState>;
 }
 
@@ -547,7 +547,7 @@ export function evaluateEventTrigger(
  * Minimal ResourceState interface for automation evaluation.
  * The full ResourceState is defined in shell-web package.
  */
-export interface ResourceStateReader {
+export interface ResourceStateAccessor {
   getAmount(resourceIndex: number): number;
   getResourceIndex?(resourceId: string): number;
   spendAmount?(
@@ -556,6 +556,9 @@ export interface ResourceStateReader {
     context?: { systemId?: string; commandId?: string },
   ): boolean;
 }
+
+// Backwards-compat alias (deprecated): use ResourceStateAccessor instead.
+export type ResourceStateReader = ResourceStateAccessor;
 
 /**
  * Evaluates whether a resourceThreshold condition is currently satisfied.
@@ -597,7 +600,7 @@ export interface ResourceStateReader {
  */
 export function evaluateResourceThresholdTrigger(
   automation: AutomationDefinition,
-  resourceState: ResourceStateReader,
+  resourceState: ResourceStateAccessor,
 ): boolean {
   if (automation.trigger.kind !== 'resourceThreshold') {
     throw new Error('Expected resourceThreshold trigger');

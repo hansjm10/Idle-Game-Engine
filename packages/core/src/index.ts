@@ -586,6 +586,7 @@ export {
   type AutomationSystemOptions,
   type AutomationState,
   type SerializedAutomationState,
+  type ResourceStateAccessor,
   type ResourceStateReader,
 } from './automation-system.js';
 export {

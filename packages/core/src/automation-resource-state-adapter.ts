@@ -1,4 +1,4 @@
-import type { ResourceStateReader } from './automation-system.js';
+import type { ResourceStateAccessor } from './automation-system.js';
 
 /**
  * Minimal ResourceState interface subset needed for adapter.
@@ -15,7 +15,7 @@ export interface ResourceStateSource {
 }
 
 /**
- * Creates a ResourceStateReader adapter that bridges the gap between
+ * Creates a ResourceStateAccessor adapter that bridges the gap between
  * ResourceState's getIndex(id): number | undefined and
  * AutomationSystem's getResourceIndex(id): number contract.
  *
@@ -23,7 +23,7 @@ export interface ResourceStateSource {
  * which AutomationSystem interprets as "resource not found".
  *
  * @param resourceState - The underlying resource state (typically from ProgressionCoordinator)
- * @returns A ResourceStateReader compatible with AutomationSystem
+ * @returns A ResourceStateAccessor compatible with AutomationSystem
  *
  * @example
  * ```typescript
@@ -37,8 +37,8 @@ export interface ResourceStateSource {
  */
 export function createResourceStateAdapter(
   resourceState: ResourceStateSource,
-): ResourceStateReader {
-  const adapter: ResourceStateReader = {
+): ResourceStateAccessor {
+  const adapter: ResourceStateAccessor = {
     getAmount: (index: number) => resourceState.getAmount(index),
   };
 
