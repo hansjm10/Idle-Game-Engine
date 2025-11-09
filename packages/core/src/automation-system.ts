@@ -230,6 +230,9 @@ export function createAutomationSystem(
     },
 
     tick({ step }) {
+      // Collect event triggers to retain across ticks on failed spend
+      const retainedEventTriggers = new Set<string>();
+
       // Evaluate each automation
       for (const automation of automations) {
         const state = automationStates.get(automation.id);
@@ -271,20 +274,25 @@ export function createAutomationSystem(
 
         // Evaluate trigger
         let triggered = false;
+        let thresholdCrossing = false;
+        let currentThresholdSatisfied = false;
         switch (automation.trigger.kind) {
           case 'interval':
             triggered = evaluateIntervalTrigger(automation, state, step, stepDurationMs);
             break;
           case 'resourceThreshold': {
-            // NEW: Detect threshold crossings instead of continuous firing
-            const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+            // Detect threshold crossings instead of continuous firing
+            currentThresholdSatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
             const previouslySatisfied = state.lastThresholdSatisfied ?? false;
 
             // Fire only on transition from false -> true (crossing event)
-            triggered = currentlySatisfied && !previouslySatisfied;
+            thresholdCrossing = currentThresholdSatisfied && !previouslySatisfied;
+            triggered = thresholdCrossing;
 
-            // Update state for next tick
-            state.lastThresholdSatisfied = currentlySatisfied;
+            // Do not consume the crossing yet; only update state when there is no crossing.
+            if (!thresholdCrossing) {
+              state.lastThresholdSatisfied = currentThresholdSatisfied;
+            }
             break;
           }
           case 'commandQueueEmpty':
@@ -299,7 +307,39 @@ export function createAutomationSystem(
           continue;
         }
 
-        // TODO: Check resource cost (deferred - requires resource deduction API)
+        // Enforce optional resource cost atomically before enqueue
+        if (automation.resourceCost) {
+          const cost = automation.resourceCost;
+          const amountRaw = evaluateNumericFormula(cost.rate, { variables: { level: 0 } });
+          if (!Number.isFinite(amountRaw)) {
+            // Reject NaN/Infinity: treat as failed spend
+            if (automation.trigger.kind === 'event') {
+              retainedEventTriggers.add(automation.id);
+            }
+            if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
+              // Do not consume the crossing on failed spend
+              state.lastThresholdSatisfied = false;
+            }
+            continue;
+          }
+
+          const amount = Math.max(0, amountRaw);
+          const idx = resourceState.getResourceIndex?.(cost.resourceId) ?? -1;
+          const spender = resourceState.spendAmount;
+          const ok = idx !== -1 && typeof spender === 'function'
+            ? !!spender(idx, amount, { systemId: 'automation', commandId: automation.id })
+            : false;
+
+          if (!ok) {
+            if (automation.trigger.kind === 'event') {
+              retainedEventTriggers.add(automation.id);
+            }
+            if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
+              state.lastThresholdSatisfied = false; // retrigger while condition holds
+            }
+            continue; // Skip enqueue and cooldown
+          }
+        }
 
         // Enqueue command
         enqueueAutomationCommand(automation, commandQueue, step, stepDurationMs);
@@ -307,10 +347,16 @@ export function createAutomationSystem(
         // Update state
         state.lastFiredStep = step;
         updateCooldown(automation, state, step, stepDurationMs);
+
+        // After successful fire: consume threshold crossing if applicable
+        if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
+          state.lastThresholdSatisfied = true;
+        }
       }
 
-      // Clear pending event triggers
+      // Clear and repopulate pending event triggers with retained items only
       pendingEventTriggers.clear();
+      for (const id of retainedEventTriggers) pendingEventTriggers.add(id);
     },
   };
 }
@@ -504,6 +550,11 @@ export function evaluateEventTrigger(
 export interface ResourceStateReader {
   getAmount(resourceIndex: number): number;
   getResourceIndex?(resourceId: string): number;
+  spendAmount?(
+    resourceIndex: number,
+    amount: number,
+    context?: { systemId?: string; commandId?: string },
+  ): boolean;
 }
 
 /**

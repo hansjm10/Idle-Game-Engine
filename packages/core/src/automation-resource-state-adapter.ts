@@ -7,6 +7,11 @@ import type { ResourceStateReader } from './automation-system.js';
 export interface ResourceStateSource {
   getAmount(index: number): number;
   getIndex?(id: string): number | undefined;
+  spendAmount?(
+    index: number,
+    amount: number,
+    context?: { systemId?: string; commandId?: string },
+  ): boolean;
 }
 
 /**
@@ -42,6 +47,17 @@ export function createResourceStateAdapter(
     adapter.getResourceIndex = (resourceId: string): number => {
       const index = resourceState.getIndex!(resourceId);
       return index === undefined ? -1 : index;
+    };
+  }
+
+  // Pass through spendAmount if available on the underlying state
+  if (resourceState.spendAmount) {
+    adapter.spendAmount = (
+      index: number,
+      amount: number,
+      context?: { systemId?: string; commandId?: string },
+    ): boolean => {
+      return !!resourceState.spendAmount?.(index, amount, context);
     };
   }
 
