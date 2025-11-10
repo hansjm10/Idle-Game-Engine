@@ -9,7 +9,7 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DEFAULT_HOST = 'localhost';
+const DEFAULT_HOST = '127.0.0.1';
 // Ignore host values that bind to "all interfaces" because browsers cannot connect to them directly.
 const configuredHost = process.env.PLAYWRIGHT_PREVIEW_HOST ?? process.env.HOST;
 const HOST =
