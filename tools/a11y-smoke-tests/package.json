@@ -8,7 +8,7 @@
     "build": "node -e \"console.log('No build step for a11y smoke tests')\"",
     "test": "node ./scripts/run-playwright.cjs",
     "pretest:ci": "node ./scripts/maybe-build-for-preview.cjs",
-    "test:ci": "cross-env CI=1 playwright test --reporter=line",
+    "test:ci": "cross-env CI=1 node ./scripts/run-playwright.cjs",
     "postinstall": "node ./scripts/install-playwright.cjs"
   },
   "devDependencies": {
@@ -16,6 +16,7 @@
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.9.0",
     "cross-env": "^7.0.3",
+    "start-server-and-test": "2.1.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
