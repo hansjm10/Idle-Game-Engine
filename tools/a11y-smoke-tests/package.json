@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest": "pnpm --filter @idle-engine/shell-web run build",
+    "pretest": "pnpm --filter @idle-engine/core run build && pnpm --filter @idle-engine/shell-web run build",
     "build": "node -e \"console.log('No build step for a11y smoke tests')\"",
     "test": "node ./scripts/run-playwright.cjs",
-    "pretest:ci": "pnpm --filter @idle-engine/shell-web run build",
+    "pretest:ci": "pnpm --filter @idle-engine/core run build && pnpm --filter @idle-engine/shell-web run build",
     "test:ci": "cross-env CI=1 playwright test --reporter=line",
     "postinstall": "node ./scripts/install-playwright.cjs"
   },
