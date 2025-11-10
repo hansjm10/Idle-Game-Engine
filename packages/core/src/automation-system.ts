@@ -185,7 +185,7 @@ export function createAutomationSystem(
           typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
 
         const rebaseDelta = hasValidSavedStep
-          ? targetCurrentStep - (savedWorkerStep as number)
+          ? targetCurrentStep - (savedWorkerStep)
           : 0;
 
         const rebasedLastFired =

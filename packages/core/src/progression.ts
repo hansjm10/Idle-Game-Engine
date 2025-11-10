@@ -148,7 +148,7 @@ function createResourceViews(
     const views: ResourceView[] = [];
 
     for (let index = 0; index < snapshot.ids.length; index += 1) {
-      const id = snapshot.ids[index]!;
+      const id = snapshot.ids[index];
       const displayName =
         source.metadata?.get(id)?.displayName ?? id;
       const capacityValue = source.state.getCapacity(index);
@@ -180,7 +180,7 @@ function createResourceViews(
     const views: ResourceView[] = [];
 
     for (let index = 0; index < serialized.ids.length; index += 1) {
-      const id = serialized.ids[index]!;
+      const id = serialized.ids[index];
       const displayName =
         source.metadata?.get(id)?.displayName ?? id;
       const capacityValue = serialized.capacities[index] ?? undefined;

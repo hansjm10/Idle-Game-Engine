@@ -311,7 +311,7 @@ export class CommandRecorder {
       );
     }
     const clone = createRecordedEventFrame(frame);
-    const snapshot = freezeSnapshot(clone) as ImmutablePayload<RecordedRuntimeEventFrame>;
+    const snapshot = freezeSnapshot(clone);
     this.recordedEventFrames.push(clone);
     this.frozenEventFrames.push(snapshot);
   }
@@ -674,8 +674,8 @@ function createRecordedEventFrame(frame: RuntimeEventFrame): RecordedRuntimeEven
     for (let index = 0; index < frame.events.length; index += 1) {
       const event = frame.events[index];
       const payload = freezeSnapshot(
-        cloneStructured(event.payload as RuntimeEventPayload<RuntimeEventType>),
-      ) as ImmutablePayload<RuntimeEventPayload<RuntimeEventType>>;
+        cloneStructured(event.payload),
+      );
 
       events[index] = {
         type: event.type,
@@ -699,8 +699,8 @@ function createRecordedEventFrame(frame: RuntimeEventFrame): RecordedRuntimeEven
     const typeIndex = frame.typeIndices[index];
     const type = frame.stringTable[typeIndex];
     const payload = freezeSnapshot(
-      cloneStructured(frame.payloads[index] as RuntimeEventPayload<RuntimeEventType>),
-    ) as ImmutablePayload<RuntimeEventPayload<RuntimeEventType>>;
+      cloneStructured(frame.payloads[index]),
+    );
 
     events[index] = {
       type: type as RuntimeEventType,
@@ -813,7 +813,7 @@ function freezeSnapshot<T>(value: T): StateSnapshot<T> {
 
 function cloneSnapshotToMutable<T>(
   value: ImmutablePayload<T>,
-  seen: WeakMap<object, unknown> = new WeakMap(),
+  seen = new WeakMap<object, unknown>(),
 ): T {
   return cloneSnapshotInternal(value, seen) as T;
 }
@@ -830,7 +830,7 @@ function cloneSnapshotInternal(
     return value;
   }
 
-  const cached = seen.get(value as object);
+  const cached = seen.get(value);
   if (cached) {
     return cached;
   }
@@ -911,7 +911,7 @@ function cloneSnapshotInternal(
   }
 
   if (isTypedArrayLike(value)) {
-    const typed = value as TypedArray;
+    const typed = value;
     const ctor = typed.constructor as {
       new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
       new(length: number): TypedArray;
@@ -975,7 +975,7 @@ function cloneSnapshotInternal(
   const proto = Object.getPrototypeOf(value);
   const clone =
     proto === null ? Object.create(null) : Object.create(proto);
-  seen.set(value as object, clone);
+  seen.set(value, clone);
 
   const keys: PropertyKey[] = [
     ...Object.getOwnPropertyNames(value),
@@ -1076,13 +1076,13 @@ function isStructuredCloneDataError(error: unknown): boolean {
 
 function containsSymbolProperties(
   value: unknown,
-  seen: WeakSet<object> = new WeakSet(),
+  seen = new WeakSet<object>(),
 ): boolean {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
-  const objectValue = value as object;
+  const objectValue = value;
   if (seen.has(objectValue)) {
     return false;
   }
@@ -1245,7 +1245,7 @@ function getArrayBufferViewBytes(view: ArrayBufferViewSnapshot): Uint8Array {
 function payloadsMatch(
   left: unknown,
   right: unknown,
-  seen: WeakMap<object, unknown> = new WeakMap(),
+  seen = new WeakMap<object, unknown>(),
 ): boolean {
   if (Object.is(left, right)) {
     return true;
@@ -1259,7 +1259,7 @@ function payloadsMatch(
     return left === right;
   }
 
-  const objectLeft = left as object;
+  const objectLeft = left;
   const objectRight = right as object;
   if (seen.has(objectLeft)) {
     return seen.get(objectLeft) === right;
@@ -1354,7 +1354,7 @@ function reconcileValue(
     return next;
   }
 
-  const objectNext = next as object;
+  const objectNext = next;
 
   if (seen.has(objectNext)) {
     return seen.get(objectNext);
@@ -1434,9 +1434,9 @@ function reconcileValue(
     let resolvedView: DataViewSnapshot;
     if (
       isDataViewLike(current) &&
-      canReuseDataView(current as DataViewSnapshot, nextView)
+      canReuseDataView(current, nextView)
     ) {
-      const currentView = current as DataViewSnapshot;
+      const currentView = current;
       copyDataViewContents(currentView, nextView);
       resolvedView = currentView;
     } else if (ArrayBuffer.isView(nextView)) {
@@ -1467,13 +1467,13 @@ function reconcileValue(
   }
 
   if (isTypedArrayLike(next)) {
-    const typed = next as TypedArray;
+    const typed = next;
     let resolvedView: TypedArray;
     if (
       isTypedArrayLike(current) &&
-      canReuseTypedArray(current as TypedArray, typed)
+      canReuseTypedArray(current, typed)
     ) {
-      const currentTyped = current as TypedArray;
+      const currentTyped = current;
       copyTypedArrayContents(currentTyped, typed);
       resolvedView = currentTyped;
     } else {
@@ -1559,7 +1559,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function findMatchingMapEntry(
-  entries: Array<[unknown, unknown]>,
+  entries: [unknown, unknown][],
   candidateKey: unknown,
   matchedIndices: Set<number>,
 ): [unknown, unknown] | undefined {

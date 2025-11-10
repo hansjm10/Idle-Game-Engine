@@ -46,9 +46,9 @@ const RATE_WINDOW_MS = 1000;
 const COOLDOWN_MULTIPLIER = 2;
 
 export class EventDiagnostics {
-  private readonly channels: Array<ChannelState | null>;
+  private readonly channels: (ChannelState | null)[];
 
-  constructor(configs: ReadonlyArray<EventDiagnosticsChannelConfig | null>) {
+  constructor(configs: readonly (EventDiagnosticsChannelConfig | null)[]) {
     this.channels = configs.map((config) => {
       if (!config) {
         return null;

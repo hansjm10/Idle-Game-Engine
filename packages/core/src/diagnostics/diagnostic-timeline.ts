@@ -34,11 +34,11 @@ export interface ErrorLike {
   readonly stack?: string;
 }
 
-type MutableErrorLike = {
+interface MutableErrorLike {
   name?: string;
   message?: string;
   stack?: string;
-};
+}
 
 export interface DiagnosticTimelineEntry {
   readonly tick: number;

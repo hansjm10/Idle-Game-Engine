@@ -11,6 +11,7 @@ const config = tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Base TS rules (no type information required)
   {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
@@ -40,6 +41,24 @@ const config = tseslint.config(
         {
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_'
+        }
+      ]
+    }
+  },
+  // Typed TS rules (applied only to non-test files)
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    ignores: ['**/*.{test,spec}.ts', '**/*.{test,spec}.tsx'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true
+      }
+    },
+    rules: {
+      '@typescript-eslint/consistent-type-exports': [
+        'error',
+        {
+          fixMixedExportsWithInlineTypeSpecifier: true
         }
       ]
     }

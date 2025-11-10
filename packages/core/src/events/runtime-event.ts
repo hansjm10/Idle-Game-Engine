@@ -16,8 +16,8 @@ type Builtin =
 
 export type DeepReadonly<T> = T extends Builtin
   ? T
-  : T extends Array<infer U>
-    ? ReadonlyArray<DeepReadonly<U>>
+  : T extends (infer U)[]
+    ? readonly DeepReadonly<U>[]
     : T extends Map<infer K, infer V>
       ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
       : T extends Set<infer U>

@@ -127,7 +127,7 @@ export interface EventSubscriptionOptions {
 }
 
 export interface EventBusOptions {
-  readonly channels: ReadonlyArray<EventChannelConfiguration>;
+  readonly channels: readonly EventChannelConfiguration[];
   readonly channelConfigs?: EventChannelConfigMap;
   readonly clock?: Clock;
   readonly slowHandlerThresholdMs?: number;
@@ -284,7 +284,7 @@ class EventRegistry {
   private readonly manifestHash: RuntimeEventManifestHash;
 
   constructor(
-    channels: ReadonlyArray<EventChannelConfiguration>,
+    channels: readonly EventChannelConfiguration[],
     overrides: EventChannelConfigMap = {},
   ) {
     this.descriptors = channels.map((channelConfig, index) => {

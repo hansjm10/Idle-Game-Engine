@@ -41,7 +41,7 @@ function validateAutomationToggled(payload: AutomationToggledEventPayload): void
   }
 }
 
-const CORE_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
+const CORE_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [
   {
     definition: {
       type: 'resource:threshold-reached',
@@ -58,7 +58,7 @@ const CORE_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
   } as EventChannelConfiguration,
 ];
 
-export const RUNTIME_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
+export const RUNTIME_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [
   ...CORE_EVENT_CHANNELS,
   ...CONTENT_EVENT_CHANNELS,
 ];
