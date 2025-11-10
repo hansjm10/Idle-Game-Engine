@@ -49,13 +49,23 @@ function createBridgeMock() {
 
 type BridgeMock = ReturnType<typeof createBridgeMock>;
 
-const mockBridge: BridgeMock = createBridgeMock();
-const useWorkerBridgeMock = vi.fn(() => mockBridge);
+const workerBridgeMocks = vi.hoisted(() => {
+  const bridge = createBridgeMock();
+  return {
+    mockBridge: bridge,
+    useWorkerBridgeMock: vi.fn(() => bridge),
+  };
+}) as {
+  mockBridge: BridgeMock;
+  useWorkerBridgeMock: ReturnType<typeof vi.fn>;
+};
 
 vi.mock('./worker-bridge.js', () => ({
-  WorkerBridge: vi.fn(() => mockBridge),
-  useWorkerBridge: useWorkerBridgeMock,
+  WorkerBridge: vi.fn(() => workerBridgeMocks.mockBridge),
+  useWorkerBridge: workerBridgeMocks.useWorkerBridgeMock,
 }));
+
+const { mockBridge, useWorkerBridgeMock } = workerBridgeMocks;
 
 const defaultConfig: ShellStateProviderConfig = {};
 
@@ -125,10 +135,8 @@ describe('ShellStateProvider', () => {
     it('retries restore when the worker bridge instance changes without a payload update', async () => {
       const bridgeA: BridgeMock = createBridgeMock();
       const bridgeB: BridgeMock = createBridgeMock();
-      useWorkerBridgeMock
-        .mockReturnValueOnce(bridgeA)
-        .mockReturnValueOnce(bridgeB)
-        .mockReturnValue(mockBridge);
+      let activeBridge: BridgeMock = bridgeA;
+      useWorkerBridgeMock.mockImplementation(() => activeBridge);
 
       const restorePayload = { savedWorkerStep: 123 };
       const wrapper = ({ children }: { children: ReactNode }) => (
@@ -144,6 +152,7 @@ describe('ShellStateProvider', () => {
         expect(bridgeB.restoreSession).not.toHaveBeenCalled();
       });
 
+      activeBridge = bridgeB;
       rerender();
 
       await waitFor(() => {
