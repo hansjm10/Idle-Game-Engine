@@ -70,6 +70,41 @@ pnpm test:a11y
 We use `vitest-llm-reporter`, so test runs print a final JSON object. Avoid extra
 console output around that summary to keep downstream tooling happy.
 
+## Coding style
+
+### Type-only imports and exports
+
+- Always mark symbols that only exist during type-checking with `import type` / `export type`. The ESLint preset (`@idle-engine/config-eslint`) enforces [issue #366](https://github.com/hansjm10/Idle-Game-Engine/issues/366), so mixing runtime and type-only imports on the same line will fail lint.
+- Keep runtime values in a dedicated `import { ... }` statement and put types in a separate `import type { ... }` statement so bundlers such as Vite/esbuild do not attempt to load phantom exports and break hot reloads.
+- When you create a new `tsconfig`, carry over `verbatimModuleSyntax: true` and `preserveValueImports: true` (see [issue #367](https://github.com/hansjm10/Idle-Game-Engine/issues/367)) so TypeScript preserves the explicit syntax instead of rewriting the statements during emit.
+
+```ts
+// ✅ Do: value imports stay live, types are marked as such.
+import { useEffect } from 'react';
+import type { ResourceDefinition } from '@idle-engine/core';
+
+export type { ResourceDefinition } from '@idle-engine/core';
+
+export function useResource(def: ResourceDefinition) {
+  useEffect(() => {
+    /* ... */
+  }, [def.id]);
+}
+```
+
+```ts
+// 🚫 Don't: bundlers will expect a runtime ResourceDefinition export.
+import { useEffect, ResourceDefinition } from '@idle-engine/core';
+
+export { ResourceDefinition } from '@idle-engine/core';
+```
+
+The deterministic runtime never ships type metadata, so the “don’t” example
+will surface `ResourceDefinition is not exported` errors at runtime even though
+TypeScript accepts the code. Following the explicit type-only pattern keeps Vite
+and esbuild aligned with `tsc`, avoids unused import churn, and documents intent
+for future contributors skimming barrel files.
+
 ### Regenerate coverage report
 
 - Run `pnpm coverage:md` from the repository root after changing tests. The command executes coverage-enabled Vitest suites for every package and rewrites `docs/coverage/index.md`.
