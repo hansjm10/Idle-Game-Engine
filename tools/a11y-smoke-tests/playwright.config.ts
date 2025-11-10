@@ -31,8 +31,8 @@ const MONOREPO_ROOT = resolve(__dirname, '../..');
 
 // In CI, packages are already built by the 'Build' step, so we only need to run the preview server
 // Bind to 127.0.0.1 for consistent localhost access across environments
-const previewServerCommand = `pnpm --filter @idle-engine/shell-web run preview`;
-const devServerCommand = `pnpm --filter @idle-engine/shell-web run dev`;
+const previewServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PREVIEW_PORT} --strictPort`;
+const devServerCommand = `pnpm --filter @idle-engine/shell-web run dev -- --host ${HOST} --port ${DEV_PORT} --strictPort`;
 const reuseExistingServer = !process.env.CI;
 
 const DEFAULT_TRACE_MODE = 'retain-on-failure' as const;
@@ -58,13 +58,9 @@ export default defineConfig({
         reuseExistingServer,
         timeout: 120_000,
         cwd: MONOREPO_ROOT,
-        env: {
-          SHELL_WEB_PREVIEW_HOST: HOST,
-          SHELL_WEB_PREVIEW_PORT: String(PREVIEW_PORT),
-          SHELL_WEB_STRICT_PORT: 'true'
-        },
         stdout: 'pipe',
         stderr: 'pipe'
+
       },
       testIgnore: /shell-state-provider-restore\.spec\.ts/
     },
@@ -81,13 +77,9 @@ export default defineConfig({
         reuseExistingServer,
         timeout: 120_000,
         cwd: MONOREPO_ROOT,
-        env: {
-          SHELL_WEB_DEV_HOST: HOST,
-          SHELL_WEB_DEV_PORT: String(DEV_PORT),
-          SHELL_WEB_STRICT_PORT: 'true'
-        },
         stdout: 'pipe',
         stderr: 'pipe'
+
       },
       testMatch: /shell-state-provider-restore\.spec\.ts/
     }
