@@ -42,11 +42,11 @@ export interface SystemRegistrationContext {
   };
 }
 
-export type System = {
+export interface System {
   readonly id: string;
   readonly tick: (context: TickContext) => void;
   readonly setup?: (context: SystemRegistrationContext) => void;
-};
+}
 
 export interface EngineOptions {
   readonly stepSizeMs?: number;
@@ -69,10 +69,10 @@ export interface IdleEngineRuntimeOptions
 const DEFAULT_STEP_MS = 100;
 const DEFAULT_MAX_STEPS = 50;
 
-type RegisteredSystem = {
+interface RegisteredSystem {
   readonly system: System;
   readonly subscriptions: EventSubscription[];
-};
+}
 
 /**
  * Runtime implementation that integrates the command queue and dispatcher with

@@ -66,10 +66,10 @@ export interface ResourcePublishTransportBuildResult {
   release(options?: ResourcePublishTransportReleaseOptions): void;
 }
 
-type ComponentLease = {
+interface ComponentLease {
   readonly component: TransportComponent;
   readonly lease: TransportBufferLease<Float64Array> | TransportBufferLease<Uint8Array>;
-};
+}
 
 interface ComponentSpec {
   readonly component: TransportComponent;

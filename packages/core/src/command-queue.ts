@@ -31,7 +31,7 @@ export interface CommandQueueOptions {
 }
 
 export class CommandQueue {
-  private readonly lanes: Map<CommandPriority, SnapshotQueueEntry[]> = new Map([
+  private readonly lanes = new Map<CommandPriority, SnapshotQueueEntry[]>([
     [CommandPriority.SYSTEM, []],
     [CommandPriority.PLAYER, []],
     [CommandPriority.AUTOMATION, []],
@@ -88,7 +88,7 @@ export class CommandQueue {
     let high = queue.length;
     while (low < high) {
       const mid = (low + high) >>> 1;
-      const other = queue[mid]!;
+      const other = queue[mid];
       if (
         other.command.timestamp < entry.command.timestamp ||
         (other.command.timestamp === entry.command.timestamp &&
@@ -124,7 +124,7 @@ export class CommandQueue {
 
       let writeIndex = 0;
       for (let readIndex = 0; readIndex < queue.length; readIndex += 1) {
-        const entry = queue[readIndex]!;
+        const entry = queue[readIndex];
         if (entry.command.step <= step) {
           drained.push(entry.command);
           drainedCount += 1;
@@ -165,7 +165,7 @@ export class CommandQueue {
 
   private dropLowestPriorityUpTo(maxPriority: CommandPriority): boolean {
     for (let index = COMMAND_PRIORITY_ORDER.length - 1; index >= 0; index -= 1) {
-      const priority = COMMAND_PRIORITY_ORDER[index]!;
+      const priority = COMMAND_PRIORITY_ORDER[index];
       if (priority < maxPriority) {
         continue;
       }
@@ -193,7 +193,6 @@ export class CommandQueue {
 
 const MAP_MUTATORS = new Set<PropertyKey>(['set', 'delete', 'clear']);
 const SET_MUTATORS = new Set<PropertyKey>(['add', 'delete', 'clear']);
-const DATE_MUTATOR_PREFIX = /^set/;
 const TYPED_ARRAY_MUTATORS = new Set<PropertyKey>([
   'copyWithin',
   'fill',
@@ -248,7 +247,7 @@ function enforceImmutable(node: unknown, seen: WeakMap<object, unknown>): unknow
     return node;
   }
 
-  const cached = seen.get(node as object);
+  const cached = seen.get(node);
   if (cached) {
     return cached;
   }
@@ -281,7 +280,7 @@ function enforceImmutable(node: unknown, seen: WeakMap<object, unknown>): unknow
   }
 
   if (ArrayBuffer.isView(node)) {
-    return makeImmutableView(node as ArrayBufferView, seen);
+    return makeImmutableView(node, seen);
   }
 
   return makeImmutableObject(node as Record<PropertyKey, unknown>, seen);
@@ -339,7 +338,7 @@ function makeImmutableDate(
   const safeDate = new Date(source.getTime());
   const proxy = new Proxy(safeDate, {
     get(target, prop, receiver) {
-      if (typeof prop === 'string' && DATE_MUTATOR_PREFIX.test(prop)) {
+      if (typeof prop === 'string' && prop.startsWith("set")) {
         return () => {
           throw new TypeError('Cannot mutate immutable Date snapshot');
         };
@@ -461,7 +460,7 @@ function createMapMutationGuard<K, V>(): ProxyHandler<Map<K, V>> {
           thisArg?: unknown,
         ) => {
           if (typeof callback !== 'function') {
-            return original.call(target, callback as never, thisArg);
+            return original.call(target, callback, thisArg);
           }
           return original.call(
             target,
@@ -507,7 +506,7 @@ function createSetMutationGuard<V>(): ProxyHandler<Set<V>> {
           thisArg?: unknown,
         ) => {
           if (typeof callback !== 'function') {
-            return original.call(target, callback as never, thisArg);
+            return original.call(target, callback, thisArg);
           }
           return original.call(
             target,
@@ -550,7 +549,7 @@ function makeImmutableObject(
 
   seen.set(source, clone);
 
-  const keys: Array<PropertyKey> = [
+  const keys: PropertyKey[] = [
     ...Object.getOwnPropertyNames(source),
     ...Object.getOwnPropertySymbols(source),
   ];
@@ -640,7 +639,7 @@ function createViewGuard(
               ArrayBuffer.isView(result) &&
               !(result instanceof DataView)
             ) {
-              return makeImmutableView(result as ArrayBufferView, seen);
+              return makeImmutableView(result, seen);
             }
             return result;
           };

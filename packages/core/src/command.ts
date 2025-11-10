@@ -48,9 +48,9 @@ export type ImmutablePayload<T> = T extends ImmutablePrimitive
           ? ImmutableMapSnapshot<ImmutablePayload<K>, ImmutablePayload<V>>
           : T extends Set<infer V>
             ? ImmutableSetSnapshot<ImmutablePayload<V>>
-            : T extends Array<infer U>
+            : T extends (infer U)[]
               ? ImmutableArrayLike<U>
-              : T extends ReadonlyArray<infer U>
+              : T extends readonly (infer U)[]
                 ? ImmutableArrayLike<U>
                 : T extends TypedArray
                   ? ImmutableTypedArraySnapshot<T>

@@ -912,9 +912,7 @@ function createRecorderSnapshot(
   const copy = <TArray extends Float64Array | Uint8Array | Uint32Array>(
     view: TArray,
   ): TArray => {
-    const Ctor = view.constructor as {
-      new(length: number): TArray;
-    };
+    const Ctor = view.constructor as new(length: number) => TArray;
     const clone = new Ctor(view.length);
     (clone as unknown as Float64Array | Uint8Array | Uint32Array).set(view);
     return clone;

@@ -9,6 +9,8 @@ Use `pnpm install` with Node ≥20.10 and pnpm ≥8 to sync dependencies. `pnpm 
 ## Coding Style & Naming Conventions
 TypeScript is the standard language, using ES modules, two-space indentation, and camelCase for symbols with PascalCase for classes. Shared linting rules are defined in `eslint.config.mjs` and the `packages/config-eslint` preset; prefer lint fixes over manual restyling. Keep constants SCREAMING_SNAKE_CASE, favour pure functions for simulation logic, and co-locate command payload types with their handlers in `packages/core`.
 
+- Use `import type { ... }` and `export type { ... }` for type-only symbols. The workspace enforces `@typescript-eslint/consistent-type-imports` and `@typescript-eslint/consistent-type-exports` at error level.
+
 ## Testing Guidelines
 Vitest drives unit tests with shared config in `@idle-engine/config-vitest`; add new cases in `*.test.ts` files next to the implementation. Scope runs with `pnpm test --filter <package>` when iterating locally, and keep simulations deterministic so the `vitest-llm-reporter` summary remains stable. The reporter prints a final JSON object (one line, no trailing text) that downstream agents parse—for example:
 

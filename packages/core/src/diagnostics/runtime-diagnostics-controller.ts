@@ -375,7 +375,7 @@ class RealRuntimeTickDiagnostics implements RuntimeTickDiagnostics {
       return;
     }
     const normalizedOffset = Number.isFinite(offsetMs ?? NaN)
-      ? (offsetMs as number)
+      ? (offsetMs!)
       : undefined;
     const phase: DiagnosticTimelinePhase =
       normalizedOffset === undefined

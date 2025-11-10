@@ -121,7 +121,7 @@ export class TransportBufferPool {
 
     if (length === 0) {
       const ctor = ARRAY_CTORS[kind];
-      const empty = new ctor(0) as TypedArray;
+      const empty = new ctor(0);
       return {
         id: 0,
         kind,
@@ -173,7 +173,7 @@ export class TransportBufferPool {
       length,
       capacity: entry.capacity,
       release: (releaseContext?: LeaseReleaseContext) => {
-        this.release(entry!.id, releaseContext);
+        this.release(entry.id, releaseContext);
       },
     };
   }
@@ -210,12 +210,12 @@ export class TransportBufferPool {
       entry.buffer = replacementBuffer;
       const newCapacity = replacementBuffer.byteLength / bytesPerElement;
       entry.capacity = newCapacity;
-      entry.view = new ctor(replacementBuffer) as TypedArray;
+      entry.view = new ctor(replacementBuffer);
       this.updateHighWaterMark(entry.kind, newCapacity);
     } else if (entry.buffer.byteLength === 0) {
       const restoredBuffer = new ArrayBuffer(entry.capacity * bytesPerElement);
       entry.buffer = restoredBuffer;
-      entry.view = new ctor(restoredBuffer) as TypedArray;
+      entry.view = new ctor(restoredBuffer);
     }
 
     const list = this.available[entry.kind];
@@ -245,7 +245,7 @@ export class TransportBufferPool {
   ): PoolEntry<TypedArray> {
     const ctor = ARRAY_CTORS[kind];
     const buffer = new ArrayBuffer(capacity * ctor.BYTES_PER_ELEMENT);
-    const view = new ctor(buffer) as TypedArray;
+    const view = new ctor(buffer);
     const entry: PoolEntry<TypedArray> = {
       id: this.nextId,
       kind,

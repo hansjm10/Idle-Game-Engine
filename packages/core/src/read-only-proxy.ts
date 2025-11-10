@@ -1,13 +1,13 @@
 const MUTATION_ERROR_PREFIX =
   'Systems must not mutate state directly. Use commandQueue.enqueue() instead.';
 
-type NodeLikeProcess = {
+interface NodeLikeProcess {
   readonly env?: Record<string, string | undefined>;
-};
+}
 
-type NodeLikeGlobal = {
+interface NodeLikeGlobal {
   readonly process?: NodeLikeProcess;
-};
+}
 
 function getNodeEnv(): string | undefined {
   const globalObject = globalThis as NodeLikeGlobal;

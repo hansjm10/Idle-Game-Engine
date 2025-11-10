@@ -165,7 +165,7 @@ function createPurchaseGeneratorHandler(
           : undefined,
     };
 
-    const successfulSpends: Array<{ index: number; amount: number }> = [];
+    const successfulSpends: { index: number; amount: number }[] = [];
 
     for (const cost of quote.costs) {
       if (!isFiniteNonNegative(cost.amount)) {
@@ -297,7 +297,7 @@ function createPurchaseUpgradeHandler(
           : undefined,
     };
 
-    const successfulSpends: Array<{ index: number; amount: number }> = [];
+    const successfulSpends: { index: number; amount: number }[] = [];
 
     for (const cost of quote.costs) {
       if (!isFiniteNonNegative(cost.amount)) {
@@ -372,14 +372,14 @@ function createPurchaseUpgradeHandler(
 function refund(
   resources: ResourceState,
   context: ResourceSpendAttemptContext,
-  spends: Array<{ index: number; amount: number }>,
+  spends: { index: number; amount: number }[],
 ): void {
   if (spends.length === 0) {
     return;
   }
 
   for (let i = spends.length - 1; i >= 0; i -= 1) {
-    const { index, amount } = spends[i]!;
+    const { index, amount } = spends[i];
     const applied = resources.addAmount(index, amount);
     if (applied !== amount) {
       telemetry.recordError('GeneratorPurchaseRefundMismatch', {

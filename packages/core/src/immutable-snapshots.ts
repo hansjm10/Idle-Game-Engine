@@ -402,7 +402,7 @@ export function createImmutableTypedArrayView<
   const sharedBufferSnapshot =
     sharedArrayBufferCtor && buffer instanceof sharedArrayBufferCtor
       ? createImmutableSharedArrayBufferSnapshot(
-          buffer as SharedArrayBuffer,
+          buffer,
         )
       : undefined;
   const arrayBufferSnapshot =
@@ -518,6 +518,6 @@ export function isImmutableTypedArraySnapshot(
   return (
     value !== null &&
     typeof value === 'object' &&
-    immutableTypedArraySnapshots.has(value as object)
+    immutableTypedArraySnapshots.has(value)
   );
 }

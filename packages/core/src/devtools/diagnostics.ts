@@ -39,7 +39,7 @@ export function formatLatestDiagnosticTimelineEntry(
 
   const slowestSystem = systems ? findSlowestSystem(systems) : undefined;
   const slowSystems =
-    systems && systems.some((system) => system.isSlow)
+    systems?.some((system) => system.isSlow)
       ? systems.filter((system) => system.isSlow)
       : undefined;
 
