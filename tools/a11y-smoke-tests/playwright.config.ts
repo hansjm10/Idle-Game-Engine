@@ -21,6 +21,7 @@ const HOST =
     : DEFAULT_HOST;
 
 const PREVIEW_PORT = Number.parseInt(process.env.PLAYWRIGHT_PREVIEW_PORT ?? '4173', 10);
+// PLAYWRIGHT_DEV_PORT lets contributors point the suite at an existing `pnpm dev` server when debugging locally.
 const DEV_PORT = Number.parseInt(process.env.PLAYWRIGHT_DEV_PORT ?? '5173', 10);
 
 const previewBaseUrl = `http://${HOST}:${PREVIEW_PORT}`;
@@ -32,6 +33,7 @@ const MONOREPO_ROOT = resolve(__dirname, '../..');
 // Bind to 127.0.0.1 for consistent localhost access across environments
 const previewServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PREVIEW_PORT} --strictPort`;
 const devServerCommand = `pnpm --filter @idle-engine/shell-web run dev -- --host ${HOST} --port ${DEV_PORT} --strictPort`;
+const reuseExistingServer = !process.env.CI;
 
 const DEFAULT_TRACE_MODE = 'retain-on-failure' as const;
 
@@ -53,7 +55,7 @@ export default defineConfig({
       webServer: {
         command: previewServerCommand,
         url: previewBaseUrl,
-        reuseExistingServer: false,
+        reuseExistingServer,
         timeout: 120_000,
         cwd: MONOREPO_ROOT,
         stdout: 'pipe',
@@ -71,7 +73,7 @@ export default defineConfig({
       webServer: {
         command: devServerCommand,
         url: devBaseUrl,
-        reuseExistingServer: false,
+        reuseExistingServer,
         timeout: 120_000,
         cwd: MONOREPO_ROOT,
         stdout: 'pipe',
