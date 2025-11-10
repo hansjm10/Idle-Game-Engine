@@ -35,6 +35,7 @@ import {
   type SocialCommandResults,
   type SocialCommandType,
   type WorkerBridgeErrorDetails,
+  type WorkerBridge,
   type WorkerRestoreSessionPayload,
   useWorkerBridge,
 } from './worker-bridge.js';
@@ -86,6 +87,7 @@ export function ShellStateProvider({
   const lastRestorePayloadRef = useRef<
     WorkerRestoreSessionPayload | typeof RESTORE_PAYLOAD_NOT_SET | undefined
   >(RESTORE_PAYLOAD_NOT_SET);
+  const lastRestoreBridgeRef = useRef<WorkerBridge | null>(null);
 
   const [state, dispatch] = useReducer(
     reducer,
@@ -384,26 +386,42 @@ export function ShellStateProvider({
   }, [bridge, dispatch]);
 
   useEffect(() => {
-    // Ensure we only kick off restore when the payload reference actually changes.
+    // Ensure we re-run restore when either the payload reference or bridge changes.
     const previousPayload = lastRestorePayloadRef.current;
-    if (previousPayload === restorePayload) {
+    const previousBridge = lastRestoreBridgeRef.current;
+    const payloadChanged = previousPayload !== restorePayload;
+    const bridgeChanged = previousBridge !== bridge;
+
+    if (!payloadChanged && !bridgeChanged) {
       return;
     }
+
     lastRestorePayloadRef.current = restorePayload;
+    lastRestoreBridgeRef.current = bridge;
 
     let cancelled = false;
-    restoreSession(restorePayload).catch((error) => {
-      if (cancelled) {
-        return;
+
+    (async () => {
+      try {
+        await bridge.awaitReady();
+        if (cancelled) {
+          return;
+        }
+        await restoreSession(restorePayload);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        recordTelemetryError('ShellStateProviderRestoreEffectFailed', {
+          message: toErrorMessage(error),
+        });
       }
-      recordTelemetryError('ShellStateProviderRestoreEffectFailed', {
-        message: toErrorMessage(error),
-      });
-    });
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [restoreSession, restorePayload]);
+  }, [bridge, restoreSession, restorePayload]);
 
   const bridgeValue = useMemo<ShellBridgeApi>(
     () => ({
