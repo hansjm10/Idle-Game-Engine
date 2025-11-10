@@ -2,9 +2,6 @@ import {
   createModuleIndices,
   rehydrateNormalizedPack,
 } from '@idle-engine/content-compiler/runtime';
-import {
-  type SerializedNormalizedContentPack,
-} from '@idle-engine/content-compiler';
 
 const serialized = {
   "artifactHash": "088debe78deca5aec94f9664615c4e40f1bdd481ea8a826e045ba1d520208ae2",
@@ -597,7 +594,7 @@ const serialized = {
     ]
   },
   "warnings": []
-} as unknown as SerializedNormalizedContentPack;
+} as unknown as Parameters<typeof rehydrateNormalizedPack>[0];
 
 const runtimeEnv = (globalThis as typeof globalThis & {
   process?: { env?: Record<string, string | undefined> };

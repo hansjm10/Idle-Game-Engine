@@ -9,9 +9,11 @@ import {
   CALL_FUNCTION_NAMES,
   MAX_EXPRESSION_DEPTH,
   MAX_FORMULA_DEPTH,
+  numericFormulaSchema,
+} from './formulas.js';
+import type {
   NumericFormula,
   ExpressionNode,
-  numericFormulaSchema,
   EntityReferenceTarget,
   VariableReferenceTarget,
 } from './formulas.js';
