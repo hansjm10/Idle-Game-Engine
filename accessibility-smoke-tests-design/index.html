@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Automated Accessibility Smoke Tests | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/accessibility-smoke-tests-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Automated Accessibility Smoke Tests | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/accessibility-smoke-tests-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/accessibility-smoke-tests-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/accessibility-smoke-tests-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Automated Accessibility Smoke Tests","item":"https://hansjm10.github.io/Idle-Game-Engine/accessibility-smoke-tests-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.8fe078a3.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.4e87c4dc.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.c241f68f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -80,23 +80,19 @@
 </li>
 <li class=""><strong>Tooling &amp; Automation</strong>:<!-- -->
 <ul>
-<li class="">Create <code>tools/a11y-smoke-tests</code> with dependencies: <code>@playwright/test</code>, <code>@axe-core/playwright</code>, <code>cross-env</code>, <code>typescript</code>, <code>ts-node</code>.</li>
-<li class="">Provide <code>playwright.config.ts</code> that:<!-- -->
-<ul>
-<li class="">Builds <code>@idle-engine/core</code> and <code>@idle-engine/shell-web</code> before starting <code>pnpm --filter @idle-engine/shell-web run preview -- --host 127.0.0.1 --port 4173 --strictPort</code>.</li>
-<li class="">Sets <code>use.baseURL</code> to <code>http://127.0.0.1:4173</code>, <code>timeout</code> ≈ 60s, and <code>reuseExistingServer</code> when <code>CI</code> is unset.</li>
-<li class="">Limits projects to <code>chromium</code> initially.</li>
-</ul>
-</li>
+<li class="">Create <code>tools/a11y-smoke-tests</code> with dependencies: <code>@playwright/test</code>, <code>@axe-core/playwright</code>, <code>cross-env</code>, <code>start-server-and-test</code>, <code>typescript</code>, <code>ts-node</code>.</li>
+<li class="">Provide <code>playwright.config.ts</code> that declares the Chromium preview/dev projects and their base URLs; server lifecycle is handled externally.</li>
+<li class="">Implement <code>scripts/run-playwright.cjs</code> so it sequentially starts the preview server (<code>vite preview</code>) and dev server (<code>vite dev</code>) via <code>start-server-and-test</code>, waits for the requested host/port (defaults to <code>127.0.0.1:4173</code> / <code>127.0.0.1:5173</code>), and invokes the matching Playwright project with the line reporter in CI.</li>
+<li class="">Add <code>playwright.global-setup.ts</code> to ping the configured base URLs up front and fail fast with guidance (<code>pnpm test:a11y</code>) when contributors invoke <code>playwright test</code> without running the harness or manually starting servers (advanced users can override via <code>PLAYWRIGHT_A11Y_SKIP_SERVER_CHECK=1</code>).</li>
 <li class="">Implement <code>tests/landing-page.a11y.spec.ts</code> that waits for the <code>&lt;main&gt;</code> landmark, runs Axe with <code>wcag2a</code> and <code>wcag2aa</code> tags, and asserts zero violations while logging actionable summaries on failure.</li>
-<li class="">Write <code>scripts/install-playwright.cjs</code> and <code>scripts/run-playwright.cjs</code> to manage browser installs and flag validation.</li>
+<li class="">Write <code>scripts/install-playwright.cjs</code> to manage browser installs and keep the harness air-gap friendly.</li>
 <li class="">Update <code>.gitignore</code> to exclude Playwright’s output directories and optional Axe artifacts.</li>
 </ul>
 </li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
 <ul>
-<li class=""><strong>Deployment</strong>: GitHub Actions already runs <code>pnpm test:ci</code>; once the new workspace is in the dependency graph, the a11y suite runs automatically. Consider caching <code>~/.cache/ms-playwright</code> for faster reruns.</li>
+<li class=""><strong>Deployment</strong>: GitHub Actions already runs <code>pnpm test:ci</code>; once the new workspace is in the dependency graph, the a11y suite runs automatically. Consider caching <code>~/.cache/ms-playwright</code> for faster reruns, rely on <code>start-server-and-test</code> logs to debug failed startups, and export <code>PLAYWRIGHT_A11Y_SKIP_BUILD=1</code> locally when reusing an already-running dev/preview server so the <code>pretest</code> hook can skip redundant builds.</li>
 <li class=""><strong>Telemetry &amp; Observability</strong>: Use Playwright reporters for console summaries. Future enhancements may upload Axe JSON artifacts or integrate GitHub annotations.</li>
 <li class=""><strong>Security &amp; Compliance</strong>: No PII or authenticated flows; ensure preview servers bind to <code>127.0.0.1</code> to avoid cross-network exposure. Respect <code>PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1</code> for air-gapped installs.</li>
 </ul>
@@ -135,7 +131,7 @@
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Initial browser download slows installs</strong>: Cache Playwright artifacts and short-circuit the installer when <code>PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1</code> is set.</li>
-<li class=""><strong>Flaky server startup causes false failures</strong>: Use Playwright <code>webServer</code> retries, strict ports, and generous timeouts to absorb cold builds.</li>
+<li class=""><strong>Flaky server startup causes false failures</strong>: Let <code>start-server-and-test</code> own preview/dev boot with strict ports so connection issues surface before Playwright launches.</li>
 <li class=""><strong>Dynamic content triggers false positives</strong>: Wait for UI stabilization (loading indicators resolved) before running Axe; selectively suppress known-safe animations.</li>
 <li class=""><strong>Pre-commit friction</strong>: Monitor Lefthook timings; consider a lighter <code>test:fast</code> hook if contributors report unacceptable delays.</li>
 </ul>
