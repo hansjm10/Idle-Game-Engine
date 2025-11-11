@@ -474,5 +474,93 @@ describe('Session Persistence Integration', () => {
       // Step should have progressed from original
       expect(verifyEnvelope.snapshot.workerStep).toBeGreaterThanOrEqual(originalStep);
     });
+
+    it('restores identical progression snapshot when elapsedMs=0', async () => {
+      // Initialize worker and create snapshot
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+      });
+
+      // Advance one tick to produce initial state
+      timeController.advanceTime(110);
+      timeController.runTick();
+
+      context.dispatch({
+        type: 'REQUEST_SESSION_SNAPSHOT',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        requestId: 'identical-save',
+        reason: 'test',
+      });
+
+      const saveCall = context.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as RuntimeWorkerSessionSnapshot | undefined)?.requestId === 'identical-save',
+      );
+      expect(saveCall).toBeDefined();
+      const saveEnv = saveCall?.[0] as RuntimeWorkerSessionSnapshot;
+
+      // Persist snapshot
+      await adapter.save({
+        schemaVersion: saveEnv.snapshot.persistenceSchemaVersion,
+        slotId: DEFAULT_SLOT_ID,
+        capturedAt: saveEnv.snapshot.capturedAt,
+        workerStep: saveEnv.snapshot.workerStep,
+        monotonicMs: saveEnv.snapshot.monotonicMs,
+        state: saveEnv.snapshot.state,
+        runtimeVersion: saveEnv.snapshot.runtimeVersion,
+        contentDigest: saveEnv.snapshot.contentDigest,
+      });
+
+      const originalState = saveEnv.snapshot.state;
+
+      // Dispose and re-initialize worker
+      harness.dispose();
+      harness = null;
+      core.clearGameState();
+
+      const ctx2 = new StubWorkerContext();
+      const time2 = createTestTimeController();
+      harness = initializeRuntimeWorker({
+        context: ctx2 as unknown as DedicatedWorkerGlobalScope,
+        now: time2.now,
+        scheduleTick: time2.scheduleTick,
+      });
+
+      // Load and restore snapshot with elapsedMs=0
+      const loaded = await adapter.load(DEFAULT_SLOT_ID);
+      expect(loaded).not.toBeNull();
+      ctx2.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        state: loaded!.state,
+        elapsedMs: 0,
+      });
+
+      // Wait for SESSION_RESTORED
+      const restored = ctx2.postMessage.mock.calls.find(
+        ([payload]) => (payload as { type?: string } | undefined)?.type === 'SESSION_RESTORED',
+      );
+      expect(restored).toBeDefined();
+
+      // Immediately request another snapshot (no ticks progressed)
+      ctx2.dispatch({
+        type: 'REQUEST_SESSION_SNAPSHOT',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        requestId: 'identical-verify',
+        reason: 'verify',
+      });
+
+      const verifyCall = ctx2.postMessage.mock.calls.find(
+        ([payload]) =>
+          (payload as RuntimeWorkerSessionSnapshot | undefined)?.requestId === 'identical-verify',
+      );
+      expect(verifyCall).toBeDefined();
+      const verifyEnv = verifyCall?.[0] as RuntimeWorkerSessionSnapshot;
+
+      // Deep-compare exported resource state
+      expect(verifyEnv.snapshot.state).toEqual(originalState);
+    });
   });
 });

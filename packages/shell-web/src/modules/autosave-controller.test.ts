@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { createDefinitionDigest } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';
@@ -87,6 +88,45 @@ describe('AutosaveController', () => {
       controller.stop(); // Should not throw
 
       expect(controller.isRunning()).toBe(false);
+    });
+  });
+
+  describe('telemetry', () => {
+    let events: Array<{ event: string; data: Record<string, unknown> }>;
+    let errors: Array<{ event: string; data: Record<string, unknown> }>;
+
+    beforeEach(() => {
+      events = [];
+      errors = [];
+      (globalThis as any).__IDLE_ENGINE_TELEMETRY__ = {
+        recordEvent: (event: string, data?: Record<string, unknown>) => {
+          events.push({ event, data: data ?? {} });
+        },
+        recordError: (event: string, data?: Record<string, unknown>) => {
+          errors.push({ event, data: data ?? {} });
+        },
+      };
+    });
+
+    afterEach(() => {
+      delete (globalThis as any).__IDLE_ENGINE_TELEMETRY__;
+    });
+
+    it('emits PersistenceSaveSucceeded on successful save', async () => {
+      await controller.save('manual');
+      expect(events.some((e) => e.event === 'PersistenceSaveSucceeded')).toBe(
+        true,
+      );
+    });
+
+    it('emits PersistenceSaveFailed on failure', async () => {
+      (mockAdapter.save as unknown as Mock).mockRejectedValueOnce(
+        new Error('boom'),
+      );
+      await controller.save('manual');
+      expect(
+        errors.some((e) => e.event === 'PersistenceSaveFailed'),
+      ).toBe(true);
     });
   });
 
