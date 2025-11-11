@@ -6,14 +6,15 @@ Issue: #16 (implementation) / #251 (design doc) - Presentation Shell Workstream
 - **Title**: Implement runtime->React Worker bridge
 - **Authors**: Idle Engine Design Authoring Agent (AI)
 - **Reviewers**: TODO (Presentation Shell Lead)
-- **Status**: Draft
-- **Last Updated**: 2025-10-27
+- **Status**: Approved
+- **Last Updated**: 2025-11-11
 - **Related Issues**: [#16](https://github.com/hansjm10/Idle-Game-Engine/issues/16), [#251](https://github.com/hansjm10/Idle-Game-Engine/issues/251)
 - **Operational Runbook**: [Runtime->React Worker Bridge Operational Runbook](runtime-worker-bridge-runbook.md)
 - **Execution Mode**: AI-led
+- **Schema Package**: `@idle-engine/runtime-bridge-contracts`
 
 ## 1. Summary
-Responding to the directive "Create a design document for issue #16, use gh to find more about it," this plan formalises how we deliver a resilient Worker-mediated bridge from the deterministic runtime to the React presentation shell. Issue #16 ("Create Worker bridge for runtime -> React") requires hardened message contracts, lifecycle management, and diagnostics propagation so the shell can safely emit player commands and render authoritative state snapshots without compromising the runtime loop. The proposed architecture refines the existing worker prototype, codifies command and telemetry flows, and sequences AI-led execution to reach production readiness.
+Responding to the directive "Create a design document for issue #16, use gh to find more about it," this plan formalises how we deliver a resilient Worker-mediated bridge from the deterministic runtime to the React presentation shell. Issue #16 ("Create Worker bridge for runtime -> React") requires hardened message contracts, lifecycle management, and diagnostics propagation so the shell can safely emit player commands and render authoritative state snapshots without compromising the runtime loop. The proposed architecture refines the existing worker prototype, codifies command and telemetry flows (READY/ERROR handshake, diagnostics toggles), and documents the session snapshot protocol to reach production readiness.
 
 ## 2. Context & Problem Statement
 - **Background**: The implementation plan highlights the Presentation Shell workstream's dependency on a Worker channel to consume runtime snapshots (`docs/implementation-plan.md:18`). Prototype wiring already instantiates `IdleEngineRuntime` inside a dedicated worker (`packages/shell-web/src/runtime.worker.ts:74`) and exposes a hook-based bridge for React (`packages/shell-web/src/modules/worker-bridge.ts:181`). Architecture notes confirm the importance of keeping command stamping consistent with the fixed-step lifecycle (`docs/runtime-step-lifecycle.md:19`).
@@ -22,10 +23,11 @@ Responding to the directive "Create a design document for issue #16, use gh to f
 
 ## 3. Goals & Non-Goals
 - **Goals**
-  - Publish an authoritative Worker message contract for issue #16 covering command, state, diagnostics, and lifecycle envelopes.
+  - Publish an authoritative Worker message contract for issue #16 covering command, state, diagnostics, session snapshot, and lifecycle envelopes.
+  - Establish a canonical schema package: `@idle-engine/runtime-bridge-contracts` for all worker bridge message types and constants (e.g., `WORKER_MESSAGE_SCHEMA_VERSION`).
   - Ship a reusable React-facing bridge that enforces disposal, subscription control, and monotonic timestamps.
   - Provide diagnostics opt-in wiring so shell agents can enable the runtime timeline without polluting baseline runs.
-  - Document operational runbooks for bundling, error surfacing, and testing under Vite-driven dev/CI workflows.
+  - Document operational runbooks for bundling, error surfacing, snapshot restore, and testing under Vite-driven dev/CI workflows.
 - **Non-Goals**
   - Redesigning the IdleEngineRuntime scheduler or command queue internals (covered elsewhere).
   - Delivering final presentation components beyond the thin shell required to validate the bridge.
@@ -46,7 +48,7 @@ Responding to the directive "Create a design document for issue #16, use gh to f
   - `packages/core/src/index.ts`
   - `packages/shell-web/src/modules/App.tsx`
 - **Compatibility Considerations**
-  - Maintain backward compatibility for command queue priorities and step stamping defined in `IdleEngineRuntime` (`packages/core/src/index.ts:82`).
+  - Maintain backward compatibility for command queue priorities and step stamping defined in `IdleEngineRuntime` (`packages/core/src/index.ts:82`). Honor `WORKER_MESSAGE_SCHEMA_VERSION` negotiation.
   - Ensure Worker bundling remains ES module compliant for Vite and future React upgrades.
   - Guard against API changes that could invalidate diagnostics consumers or content packs waiting on snapshot schemas.
 
@@ -272,7 +274,7 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 - Extend telemetry to record `PersistenceSaveFailed`, `PersistenceRestoreFailed`, and `PersistenceMigrationApplied` events routed through `__IDLE_ENGINE_TELEMETRY__`.
 
 **Follow-Up Tasks**
-1. Extend `runtime-worker-protocol.ts` with `REQUEST_SESSION_SNAPSHOT` / `SESSION_SNAPSHOT` message definitions and update runtime.worker harness.
+1. Extend `@idle-engine/runtime-bridge-contracts` with `REQUEST_SESSION_SNAPSHOT` / `SESSION_SNAPSHOT` message definitions and update runtime.worker harness.
 2. Implement `SessionPersistenceAdapter` and autosave controller inside `packages/shell-web`, including IndexedDB schema management (`sessions` store keyed by slot/profile).
 3. Ship shell UI affordances for manual save/load, error reporting, and migration prompts (flagged behind dev toggle until persistence stabilises).
 4. ~~Document migration authoring guidelines for content pack maintainers alongside updated CLI scaffolding.~~ **Completed**: See [Persistence Migration Guide](./persistence-migration-guide.md) (Issue [#273](https://github.com/hansjm10/Idle-Game-Engine/issues/273)).
@@ -299,6 +301,8 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 - **Diagnostics timeline**: Runtime-produced stream of performance entries sampling slow ticks and system budgets, accessible via the worker bridge.
 
 ## Appendix B - Change Log
+
+- 2025-11-11 (Fixes #379): Promote status to Approved, align spec with live implementation including READY/ERROR handshake and session snapshot protocol, and extract the message schema into `@idle-engine/runtime-bridge-contracts`. Updated Mermaid diagram (`docs/assets/diagrams/runtime-react-worker-bridge.mmd`) and linked consumers to the schema package.
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-10-27 | Idle Engine Design Authoring Agent (AI) | Initial draft for issue #16 bridge design |

@@ -7,6 +7,12 @@
     "paths": {
       "@idle-engine/core": ["../../core/src/index.ts"],
       "@idle-engine/core/*": ["../../core/src/*"],
+      "@idle-engine/runtime-bridge-contracts": [
+        "../../runtime-bridge-contracts/src/index.ts"
+      ],
+      "@idle-engine/runtime-bridge-contracts/*": [
+        "../../runtime-bridge-contracts/src/*"
+      ],
       "@idle-engine/content-schema": [
         "../../content-schema/src/index.ts"
       ],

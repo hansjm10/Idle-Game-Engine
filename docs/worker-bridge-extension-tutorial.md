@@ -93,7 +93,7 @@ Update or create Vitest coverage so the new dispatcher path is enforced (see `pa
 The worker already enqueues any `COMMAND` payloads that pass validation, but you should double-check whether additional safeguards are needed:
 
 - If the command must run with a different priority (e.g., automation/system), set the `source` accordingly when you call `sendCommand`, or adjust the worker enqueue logic near `handleCommandMessage` in `packages/shell-web/src/runtime.worker.ts` to map known command identifiers to alternate `CommandPriority` values.
-- Validate that `WORKER_MESSAGE_SCHEMA_VERSION` remains unchanged. If you add new envelope fields, bump the version and extend the discriminated union in `packages/shell-web/src/modules/runtime-worker-protocol.ts` per [§6.2 Data & Schemas](runtime-react-worker-bridge-design.md#62-detailed-design).
+- Validate that `WORKER_MESSAGE_SCHEMA_VERSION` remains unchanged. If you add new envelope fields, bump the version and extend the discriminated union in `@idle-engine/runtime-bridge-contracts` per [§6.2 Data & Schemas](runtime-react-worker-bridge-design.md#62-detailed-design).
 - Extend the worker Vitest suite (`packages/shell-web/src/runtime.worker.test.ts`) with a case exercising your new command. Follow the replay-protection and schema tests that reference `'PING'` for guidance.
 
 When the worker needs to respond with additional data (for example, command-specific errors), update the `RuntimeWorkerOutboundMessage` union and emit the new envelope from the worker so the bridge can surface it to React.

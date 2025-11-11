@@ -7,8 +7,13 @@ sequenceDiagram
 
   React->>Bridge: instantiate WorkerBridge & awaitReady()
   Bridge->>Worker: create worker(module)
-  Worker-->>Bridge: READY {handshakeId}
-  Bridge-->>React: resolve awaitReady()
+  Worker-->>Bridge: READY {schemaVersion, handshakeId}
+  alt Schema mismatch
+    Worker-->>Bridge: ERROR {code: SCHEMA_VERSION_MISMATCH}
+    Bridge-->>React: fail awaitReady(error)
+  else OK
+    Bridge-->>React: resolve awaitReady()
+  end
 
   React->>Bridge: sendCommand(type, payload)
   Note right of Bridge: Wraps payload with requestId,<br/>source, issuedAt (performance.now())
@@ -24,3 +29,14 @@ sequenceDiagram
   Runtime-->>Worker: diagnostics delta
   Worker-->>Bridge: DIAGNOSTICS_UPDATE {timeline}
   Bridge-->>React: onDiagnosticsUpdate(diagnostics)
+
+  React->>Bridge: requestSessionSnapshot()
+  Bridge->>Worker: REQUEST_SESSION_SNAPSHOT {requestId}
+  Worker-->>Bridge: SESSION_SNAPSHOT {requestId, snapshot}
+  Bridge-->>React: onSessionSnapshot(snapshot)
+
+  React->>Bridge: restoreSession(state, elapsedMs, deltas)
+  Bridge->>Worker: RESTORE_SESSION {state, elapsedMs, deltas, savedWorkerStep}
+  Worker->>Runtime: hydrate state & catch-up
+  Worker-->>Bridge: SESSION_RESTORED
+  Bridge-->>React: onSessionRestored()

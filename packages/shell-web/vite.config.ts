@@ -23,6 +23,10 @@ export default defineConfig({
         projectRoot,
         '../core/src/index.ts',
       ),
+      '@idle-engine/runtime-bridge-contracts': path.resolve(
+        projectRoot,
+        '../runtime-bridge-contracts/src',
+      ),
       '@idle-engine/content-schema/runtime-helpers': path.resolve(
         projectRoot,
         '../content-schema/src/runtime-helpers.ts',

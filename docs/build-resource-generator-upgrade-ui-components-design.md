@@ -14,7 +14,7 @@ The progression UI initiative replaces the placeholder shell with production-rea
 
 ## 2. Context & Problem Statement
 - **Background**: The current shell renders only runtime ticks and diagnostics (`packages/shell-web/src/modules/App.tsx:32`) while core systems already model resources and generator purchases (`packages/core/src/resource-command-handlers.ts:54`) and sample packs describe generators/resources (`packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:90`); existing design guidance mandates default UI kits for resources and upgrades (`docs/idle-engine-design.md:178`).
-- **Problem**: There is no way to visualise or interact with resources, generators, or upgrades in the shell, blocking the progression UI milestone and contradicting Presentation Phase goals (`docs/implementation-plan.md:56`); `ShellRuntimeState` omits resource payloads (`packages/shell-web/src/modules/shell-state.types.ts:16`) and the worker protocol publishes no progression detail (`packages/shell-web/src/modules/runtime-worker-protocol.ts:24`).
+- **Problem**: There is no way to visualise or interact with resources, generators, or upgrades in the shell, blocking the progression UI milestone and contradicting Presentation Phase goals (`docs/implementation-plan.md:56`); `ShellRuntimeState` omits resource payloads (`packages/shell-web/src/modules/shell-state.types.ts:16`) and the worker protocol publishes no progression detail (`@idle-engine/runtime-bridge-contracts`).
 - **Forces**: Progression UI work must preserve deterministic worker messaging (`docs/runtime-command-queue-design.md:1034`), obey worker-bridge safety rails (`docs/runtime-react-worker-bridge-design.md:160`), remain accessible for upcoming smoke tests (`docs/accessibility-smoke-tests-design.md:57`), and align with AI board workflows (`docs/project-board-workflow.md:21`).
 
 ## 3. Goals & Non-Goals
@@ -25,7 +25,7 @@ The progression UI initiative replaces the placeholder shell with production-rea
 - **Primary Stakeholders**: Presentation Shell maintainers; Runtime Core systems leads; Content authoring team enabling the progression UI.
 - **Agent Roles**: Design Authoring Agent (this document) sets guardrails; Runtime Protocol Agent updates worker payloads; Shell UI Implementation Agent builds components; Progression QA & A11y Agent validates progression UI flows.
 - **Affected Packages/Services**: `packages/core`; `packages/shell-web`; `packages/content-sample`; `docs/`.
-- **Compatibility Considerations**: Bump `WORKER_MESSAGE_SCHEMA_VERSION` (`packages/shell-web/src/modules/runtime-worker-protocol.ts:7`) with backward opt-out; rely on the `SCHEMA_VERSION_MISMATCH` guard in `packages/shell-web/src/runtime.worker.ts:818` and the bridge-side filter (`packages/shell-web/src/modules/worker-bridge.ts:223`) to block incompatible envelopes while logging telemetry; surface a fatal notification in the shell and block worker-driven progression UI until the bundles are rebuilt (the inline runtime remains feature-flag gated); maintain command contracts from `docs/runtime-command-queue-design.md:1034`; ensure serialized saves remain forward-compatible.
+- **Compatibility Considerations**: Bump `WORKER_MESSAGE_SCHEMA_VERSION` (`@idle-engine/runtime-bridge-contracts`) with backward opt-out; rely on the `SCHEMA_VERSION_MISMATCH` guard in `packages/shell-web/src/runtime.worker.ts:818` and the bridge-side filter (`packages/shell-web/src/modules/worker-bridge.ts:223`) to block incompatible envelopes while logging telemetry; surface a fatal notification in the shell and block worker-driven progression UI until the bundles are rebuilt (the inline runtime remains feature-flag gated); maintain command contracts from `docs/runtime-command-queue-design.md:1034`; ensure serialized saves remain forward-compatible.
 
 ## 5. Current State
 - Shell shows only tick count and event inspector (`packages/shell-web/src/modules/App.tsx:32`), blocking progression UI usage.
@@ -352,7 +352,7 @@ Tested in `packages/shell-web/src/modules/progression-coordinator.test.ts:203-26
 ## 15. References
 - `packages/shell-web/src/modules/App.tsx:32`
 - `packages/shell-web/src/modules/shell-state.types.ts:16`
-- `packages/shell-web/src/modules/runtime-worker-protocol.ts:24`
+- `@idle-engine/runtime-bridge-contracts`
 - `packages/core/src/resource-command-handlers.ts:54`
 - `packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:90`
 - `docs/idle-engine-design.md:175`
