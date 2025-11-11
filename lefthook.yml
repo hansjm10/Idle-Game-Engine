@@ -90,6 +90,15 @@ pre-commit:
         - "pnpm-workspace.yaml"
         - ".npmrc"
       run: pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci
+    test-runtime-bridge-contracts:
+      glob:
+        - "packages/runtime-bridge-contracts/**"
+        - "packages/config-vitest/**"
+        - "package.json"
+        - "pnpm-lock.yaml"
+        - "pnpm-workspace.yaml"
+        - ".npmrc"
+      run: pnpm --filter @idle-engine/runtime-bridge-contracts run --if-present test:ci
     test-shell-a11y:
       glob:
         - "packages/shell-web/**"
