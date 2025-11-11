@@ -67,6 +67,8 @@ pnpm --filter @idle-engine/shell-web dev
 pnpm test:a11y
 ```
 
+The accessibility workspace shells out to `tools/a11y-smoke-tests/scripts/run-playwright.cjs`, which bootstraps both the Vite preview and dev servers with `start-server-and-test`. Running `pnpm exec playwright test` directly is still supported, but you must start the appropriate servers yourself—otherwise the suite aborts early during the new server readiness check with guidance to use `pnpm test:a11y`. When reusing a locally running `pnpm dev`/`pnpm preview`, point the harness at those ports via `PLAYWRIGHT_DEV_PORT`/`PLAYWRIGHT_PREVIEW_PORT` and export `PLAYWRIGHT_A11Y_SKIP_BUILD=1` after the first build so the `pretest` hook stops rebuilding the world each run.
+
 We use `vitest-llm-reporter`, so test runs print a final JSON object. Avoid extra
 console output around that summary to keep downstream tooling happy.
 

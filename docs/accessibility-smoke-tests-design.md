@@ -57,12 +57,13 @@ Adopt a dedicated workspace under `tools/a11y-smoke-tests` that runs Playwright 
   - Create `tools/a11y-smoke-tests` with dependencies: `@playwright/test`, `@axe-core/playwright`, `cross-env`, `start-server-and-test`, `typescript`, `ts-node`.
   - Provide `playwright.config.ts` that declares the Chromium preview/dev projects and their base URLs; server lifecycle is handled externally.
   - Implement `scripts/run-playwright.cjs` so it sequentially starts the preview server (`vite preview`) and dev server (`vite dev`) via `start-server-and-test`, waits for the requested host/port (defaults to `127.0.0.1:4173` / `127.0.0.1:5173`), and invokes the matching Playwright project with the line reporter in CI.
+  - Add `playwright.global-setup.ts` to ping the configured base URLs up front and fail fast with guidance (`pnpm test:a11y`) when contributors invoke `playwright test` without running the harness or manually starting servers (advanced users can override via `PLAYWRIGHT_A11Y_SKIP_SERVER_CHECK=1`).
   - Implement `tests/landing-page.a11y.spec.ts` that waits for the `<main>` landmark, runs Axe with `wcag2a` and `wcag2aa` tags, and asserts zero violations while logging actionable summaries on failure.
   - Write `scripts/install-playwright.cjs` to manage browser installs and keep the harness air-gap friendly.
   - Update `.gitignore` to exclude Playwright’s output directories and optional Axe artifacts.
 
 ### 6.3 Operational Considerations
-- **Deployment**: GitHub Actions already runs `pnpm test:ci`; once the new workspace is in the dependency graph, the a11y suite runs automatically. Consider caching `~/.cache/ms-playwright` for faster reruns, and rely on `start-server-and-test` logs to debug failed startups.
+- **Deployment**: GitHub Actions already runs `pnpm test:ci`; once the new workspace is in the dependency graph, the a11y suite runs automatically. Consider caching `~/.cache/ms-playwright` for faster reruns, rely on `start-server-and-test` logs to debug failed startups, and export `PLAYWRIGHT_A11Y_SKIP_BUILD=1` locally when reusing an already-running dev/preview server so the `pretest` hook can skip redundant builds.
 - **Telemetry & Observability**: Use Playwright reporters for console summaries. Future enhancements may upload Axe JSON artifacts or integrate GitHub annotations.
 - **Security & Compliance**: No PII or authenticated flows; ensure preview servers bind to `127.0.0.1` to avoid cross-network exposure. Respect `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` for air-gapped installs.
 

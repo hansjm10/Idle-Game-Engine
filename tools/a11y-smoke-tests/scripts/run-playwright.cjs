@@ -99,27 +99,38 @@ const buildPlaywrightCommand = (project) => {
 
 async function runProject(project) {
   const command = buildPlaywrightCommand(project.playwrightName);
-  const portInUse = await isPortReachable(project.host, project.port);
+  const previousExpectedProject = process.env.PLAYWRIGHT_A11Y_EXPECTED_PROJECT;
+  process.env.PLAYWRIGHT_A11Y_EXPECTED_PROJECT = project.playwrightName;
 
-  if (portInUse) {
-    console.log(`[a11y] Reusing existing ${project.label} server at ${project.baseUrl}`);
-    await waitForExistingServer(project.baseUrl);
-    await runPlaywrightCommand(command);
-    return;
-  }
+  try {
+    const portInUse = await isPortReachable(project.host, project.port);
 
-  await startAndTest({
-    services: [
-      {
-        start: project.startCommand,
-        url: `tcp:${project.host}:${project.port}`
-      }
-    ],
-    test: command,
-    namedArguments: {
-      expect: 200
+    if (portInUse) {
+      console.log(`[a11y] Reusing existing ${project.label} server at ${project.baseUrl}`);
+      await waitForExistingServer(project.baseUrl);
+      await runPlaywrightCommand(command);
+      return;
     }
-  });
+
+    await startAndTest({
+      services: [
+        {
+          start: project.startCommand,
+          url: `tcp:${project.host}:${project.port}`
+        }
+      ],
+      test: command,
+      namedArguments: {
+        expect: 200
+      }
+    });
+  } finally {
+    if (previousExpectedProject === undefined) {
+      delete process.env.PLAYWRIGHT_A11Y_EXPECTED_PROJECT;
+    } else {
+      process.env.PLAYWRIGHT_A11Y_EXPECTED_PROJECT = previousExpectedProject;
+    }
+  }
 }
 
 function extractProjectSelections(args) {

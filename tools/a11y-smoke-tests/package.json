@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest": "pnpm --filter @idle-engine/core run build && pnpm --filter @idle-engine/shell-web run build",
+    "pretest": "node ./scripts/maybe-build-for-preview.cjs",
     "build": "node -e \"console.log('No build step for a11y smoke tests')\"",
     "test": "node ./scripts/run-playwright.cjs",
     "pretest:ci": "node ./scripts/maybe-build-for-preview.cjs",

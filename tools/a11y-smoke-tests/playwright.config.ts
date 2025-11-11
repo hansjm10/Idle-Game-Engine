@@ -1,6 +1,7 @@
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
 
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -22,10 +23,11 @@ const previewBaseUrl = `http://${HOST}:${PREVIEW_PORT}`;
 const devBaseUrl = `http://${HOST}:${DEV_PORT}`;
 
 const DEFAULT_TRACE_MODE = 'retain-on-failure' as const;
-
+const globalSetupPath = fileURLToPath(new URL('./playwright.global-setup.ts', import.meta.url));
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: globalSetupPath,
   timeout: 120_000,
   expect: {
     timeout: 10_000

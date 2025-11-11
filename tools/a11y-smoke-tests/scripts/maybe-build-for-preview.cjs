@@ -5,6 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const isCI = process.env.CI === 'true' || process.env.CI === '1';
+const shouldSkipBuild = coerceBoolean(
+  process.env.PLAYWRIGHT_A11Y_SKIP_BUILD ?? process.env.PLAYWRIGHT_SKIP_BUILD
+);
 const MONOREPO_ROOT = path.resolve(__dirname, '../../..');
 const SHELL_WEB_DIST_INDEX = path.join(
   MONOREPO_ROOT,
@@ -15,9 +18,22 @@ const SHELL_WEB_DIST_INDEX = path.join(
 );
 const shellWebBuildExists = fs.existsSync(SHELL_WEB_DIST_INDEX);
 
+if (shouldSkipBuild) {
+  console.log('[a11y-pretest] PLAYWRIGHT_A11Y_SKIP_BUILD set; skipping core/shell builds.');
+  process.exit(0);
+}
+
 if (isCI && shellWebBuildExists) {
   console.log('[a11y-pretest] CI detected; shell-web dist already built. Skipping rebuild.');
   process.exit(0);
+}
+
+function coerceBoolean(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true';
 }
 
 function run(cmd, args, opts = {}) {
