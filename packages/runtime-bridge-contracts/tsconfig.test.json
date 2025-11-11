@@ -10,6 +10,13 @@
       ],
       "@idle-engine/core/*": [
         "packages/core/src/*"
+      ],
+      "@idle-engine/content-schema": [
+        "packages/content-schema/src/index.ts",
+        "packages/content-schema/dist/index.d.ts"
+      ],
+      "@idle-engine/content-schema/*": [
+        "packages/content-schema/src/*"
       ]
     }
   },
@@ -22,4 +29,3 @@
     "node_modules"
   ]
 }
-
