@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { createDefinitionDigest } from '@idle-engine/core';
 
 import type { WorkerBridge, SessionSnapshotPayload } from './worker-bridge.js';
@@ -119,7 +120,7 @@ describe('AutosaveController', () => {
     });
 
     it('emits PersistenceSaveFailed on failure', async () => {
-      (mockAdapter.save as unknown as vi.Mock).mockRejectedValueOnce(
+      (mockAdapter.save as unknown as Mock).mockRejectedValueOnce(
         new Error('boom'),
       );
       await controller.save('manual');
