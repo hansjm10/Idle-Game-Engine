@@ -279,6 +279,30 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 3. Ship shell UI affordances for manual save/load, error reporting, and migration prompts (flagged behind dev toggle until persistence stabilises).
 4. ~~Document migration authoring guidelines for content pack maintainers alongside updated CLI scaffolding.~~ **Completed**: See [Persistence Migration Guide](./persistence-migration-guide.md) (Issue [#273](https://github.com/hansjm10/Idle-Game-Engine/issues/273)).
 
+#### 14.1.1 Troubleshooting & Operations
+
+- Resetting saves (Web):
+  - Open DevTools → Application → IndexedDB.
+  - Expand `idle-engine.sessions` → `sessions` and delete records, or delete the entire database.
+  - The shell UI also exposes “Clear Data” in the Persistence panel which calls `SessionPersistenceAdapter.deleteSlot(...)` for the active slot.
+
+- Inspecting IndexedDB (Web):
+  - Keys are `{slotId}:{timestamp}`. Values include `schemaVersion`, `capturedAt`, `workerStep`, `contentDigest`, and a checksum.
+  - Corrupted snapshots (checksum mismatch) are skipped automatically; the adapter falls back to the next newest snapshot and emits telemetry.
+
+- Common errors and remedies:
+  - `DB_OPEN_FAILED`: IndexedDB unavailable/blocked. Avoid private mode and ensure storage isn’t disabled.
+  - `DB_UPGRADE_BLOCKED`: Another tab holds the DB during upgrade. Close other tabs or refresh.
+  - `SNAPSHOT_FAILED`: Worker export failed; snapshot requests are blocked during restoration. Retry after `SESSION_RESTORED`.
+  - `SNAPSHOT_VALIDATION_FAILED`: All snapshots failed checksum verification. Delete the DB and start fresh.
+  - `RESTORE_FAILED`: Worker rejected restore payload. Check `flags.pendingMigration`, digests, and migration availability.
+
+- CI determinism:
+  - Use `fake-indexeddb` to stub IndexedDB in Vitest. See `packages/shell-web/src/modules/session-persistence-integration.test.ts` for worker ↔ bridge ↔ persistence coverage.
+
+- Extending for native shells:
+  - Swap `SessionPersistenceAdapter` with a platform adapter (filesystem/SQLite/MMKV) that preserves the `StoredSessionSnapshot` contract and checksum semantics, then reuse the same wiring in the shell integration.
+
 **Open Questions**
 - Do we need encryption or obfuscation for competitive modes? (Out of scope for v1, document in security backlog.)
 - Should command replay logs be persisted alongside resource snapshots for richer debugging? (Candidate for follow-up issue once save slots land.)
