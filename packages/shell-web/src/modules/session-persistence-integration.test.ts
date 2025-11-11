@@ -12,7 +12,7 @@ import {
 import {
   WORKER_MESSAGE_SCHEMA_VERSION,
   type RuntimeWorkerSessionSnapshot,
-} from './runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import {
   StubWorkerContext,
   createTestTimeController,

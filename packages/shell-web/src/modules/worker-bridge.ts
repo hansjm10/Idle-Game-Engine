@@ -26,7 +26,7 @@ import {
   type SocialCommandType,
   type RuntimeWorkerSocialCommandFailure,
   SOCIAL_COMMAND_TYPES,
-} from './runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import { isSocialCommandsEnabled } from './social-config.js';
 import { isWorkerBridgeEnabled } from './worker-bridge-config.js';
 import type { WorkerBridgeWorker } from './worker-bridge-worker.js';

@@ -4,7 +4,7 @@ import {
   CommandSource,
   WORKER_MESSAGE_SCHEMA_VERSION,
   type RuntimeWorkerSessionSnapshot,
-} from '../modules/runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import type { SerializedResourceState } from '@idle-engine/core';
 import { clearGameState } from '@idle-engine/core';
 

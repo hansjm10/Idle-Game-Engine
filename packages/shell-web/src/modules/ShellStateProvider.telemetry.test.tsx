@@ -134,7 +134,7 @@ import {
   useShellBridge,
   useShellDiagnostics,
 } from './ShellStateProvider.js';
-import { SOCIAL_COMMAND_TYPES } from './runtime-worker-protocol.js';
+import { SOCIAL_COMMAND_TYPES } from '@idle-engine/runtime-bridge-contracts';
 
 let bridgeMock: BridgeMock;
 let telemetrySpy: ReturnType<typeof vi.fn>;

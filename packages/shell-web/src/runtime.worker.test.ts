@@ -13,7 +13,7 @@ import {
   type RuntimeWorkerError,
   SOCIAL_COMMAND_TYPES,
   type RuntimeWorkerSocialCommandResult,
-} from './modules/runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import { setSocialConfigOverrideForTesting } from './modules/social-config.js';
 import {
   StubWorkerContext,

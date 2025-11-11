@@ -16,7 +16,7 @@ import { createInlineRuntimeWorker } from './inline-runtime-worker.js';
 import {
   WORKER_MESSAGE_SCHEMA_VERSION,
   type RuntimeWorkerReady,
-} from './runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import { setSocialConfigOverrideForTesting } from './social-config.js';
 
 const progressionSnapshot: RuntimeStateSnapshot['progression'] = {

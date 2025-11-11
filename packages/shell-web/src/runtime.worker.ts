@@ -35,7 +35,7 @@ declare global {
 export type {
   RuntimeEventSnapshot,
   RuntimeStatePayload,
-} from './modules/runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 
 import {
   WORKER_MESSAGE_SCHEMA_VERSION,
@@ -59,7 +59,7 @@ import {
   type SocialCommandType,
   type SocialCommandPayloads,
   type SocialCommandResults,
-} from './modules/runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import {
   getSocialServiceBaseUrl,
   isSocialCommandsEnabled,

@@ -46,7 +46,7 @@ The provider formalises derived data such as event history and back-pressure ana
   - `packages/shell-web/src/modules/SocialDevPanel.tsx`
   - `packages/shell-web/src/modules/EventInspector.tsx`
 - **Compatibility Considerations**:
-  - Preserve worker schema version negotiation (`packages/shell-web/src/modules/runtime-worker-protocol.ts:7`).
+  - Preserve worker schema version negotiation (`@idle-engine/runtime-bridge-contracts`).
   - Maintain telemetry facade guarantees for errors emitted during provider init (`packages/shell-web/src/modules/shell-analytics.ts:76`).
   - Avoid breaking tests reliant on `window.__IDLE_WORKER_BRIDGE__` debugging handles (`packages/shell-web/src/modules/worker-bridge.ts:635`).
 
@@ -126,7 +126,7 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 - `packages/shell-web/src/modules/SocialDevPanel.tsx:38`
 - `packages/shell-web/src/modules/worker-bridge.ts:622`
 - `packages/shell-web/src/runtime.worker.ts:153`
-- `packages/shell-web/src/modules/runtime-worker-protocol.ts:24`
+- `@idle-engine/runtime-bridge-contracts`
 - `packages/core/src/events/event-bus.ts:166`
 - `docs/runtime-react-worker-bridge-design.md:1`
 - `docs/implementation-plan.md:105`

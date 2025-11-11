@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { initializeRuntimeWorker, type RuntimeWorkerHarness } from '../runtime.worker.js';
-import type { RuntimeWorkerCommand } from '../modules/runtime-worker-protocol.js';
-import { WORKER_MESSAGE_SCHEMA_VERSION, CommandSource } from '../modules/runtime-worker-protocol.js';
+import type { RuntimeWorkerCommand } from '@idle-engine/runtime-bridge-contracts';
+import { WORKER_MESSAGE_SCHEMA_VERSION, CommandSource } from '@idle-engine/runtime-bridge-contracts';
 import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 
 describe('Runtime Worker - Automation Toggle Integration', () => {

@@ -5,7 +5,7 @@ import {
   type RuntimeWorkerCommand,
   CommandSource,
   WORKER_MESSAGE_SCHEMA_VERSION,
-} from '../modules/runtime-worker-protocol.js';
+} from '@idle-engine/runtime-bridge-contracts';
 import { getAutomationState } from '@idle-engine/core';
 
 describe('AutomationSystem Integration', () => {
