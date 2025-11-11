@@ -1,0 +1,50 @@
+{
+  "generators": [
+    {
+      "id": "sample-pack.reactor",
+      "displayName": "Reactor",
+      "owned": 0,
+      "isUnlocked": true,
+      "isVisible": true,
+      "costs": [{ "resourceId": "sample-pack.energy", "amount": 100 }],
+      "produces": [{ "resourceId": "sample-pack.energy", "rate": 1 }],
+      "consumes": [],
+      "nextPurchaseReadyAtStep": 1
+    },
+    {
+      "id": "sample-pack.harvester",
+      "displayName": "Crystal Harvester",
+      "owned": 0,
+      "isUnlocked": true,
+      "isVisible": true,
+      "costs": [{ "resourceId": "sample-pack.energy", "amount": 625 }],
+      "produces": [{ "resourceId": "sample-pack.crystal", "rate": 0.25 }],
+      "consumes": [{ "resourceId": "sample-pack.energy", "rate": 0.5 }],
+      "nextPurchaseReadyAtStep": 1
+    }
+  ],
+  "upgrades": [
+    {
+      "id": "sample-pack.reactor-insulation",
+      "displayName": "Reactor Insulation",
+      "status": "available",
+      "costs": [{ "resourceId": "sample-pack.energy", "amount": 75 }],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.reactor-overclock",
+      "displayName": "Reactor Overclock",
+      "status": "available",
+      "costs": [{ "resourceId": "sample-pack.energy", "amount": 150 }],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.harvester-efficiency",
+      "displayName": "Harvester Efficiency",
+      "status": "available",
+      "costs": [{ "resourceId": "sample-pack.energy", "amount": 125 }],
+      "isVisible": true
+    }
+  ]
+}
+
