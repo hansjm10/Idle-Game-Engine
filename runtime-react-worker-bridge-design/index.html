@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Implement Runtime-&gt;React Worker Bridge | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Implement Runtime-&gt;React Worker Bridge | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #16 (implementation) / #251 (design doc) - Presentation Shell Workstream"><meta data-rh="true" property="og:description" content="Issue: #16 (implementation) / #251 (design doc) - Presentation Shell Workstream"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.27c9145c.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.b8a8d34a.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.c241f68f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -345,6 +345,46 @@
 <li class="">Ship shell UI affordances for manual save/load, error reporting, and migration prompts (flagged behind dev toggle until persistence stabilises).</li>
 <li class=""><del>Document migration authoring guidelines for content pack maintainers alongside updated CLI scaffolding.</del> <strong>Completed</strong>: See <a class="" href="/Idle-Game-Engine/persistence-migration-guide">Persistence Migration Guide</a> (Issue <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/273" target="_blank" rel="noopener noreferrer" class="">#273</a>).</li>
 </ol>
+<h4 class="anchor anchorTargetStickyNavbar_EdDC" id="1411-troubleshooting--operations">14.1.1 Troubleshooting &amp; Operations<a href="#1411-troubleshooting--operations" class="hash-link" aria-label="Direct link to 14.1.1 Troubleshooting &amp; Operations" title="Direct link to 14.1.1 Troubleshooting &amp; Operations" translate="no">​</a></h4>
+<ul>
+<li class="">
+<p>Resetting saves (Web):</p>
+<ul>
+<li class="">Open DevTools → Application → IndexedDB.</li>
+<li class="">Expand <code>idle-engine.sessions</code> → <code>sessions</code> and delete records, or delete the entire database.</li>
+<li class="">The shell UI also exposes “Clear Data” in the Persistence panel which calls <code>SessionPersistenceAdapter.deleteSlot(...)</code> for the active slot.</li>
+</ul>
+</li>
+<li class="">
+<p>Inspecting IndexedDB (Web):</p>
+<ul>
+<li class="">Keys are <code>{slotId}:{timestamp}</code>. Values include <code>schemaVersion</code>, <code>capturedAt</code>, <code>workerStep</code>, <code>contentDigest</code>, and a checksum.</li>
+<li class="">Corrupted snapshots (checksum mismatch) are skipped automatically; the adapter falls back to the next newest snapshot and emits telemetry.</li>
+</ul>
+</li>
+<li class="">
+<p>Common errors and remedies:</p>
+<ul>
+<li class=""><code>DB_OPEN_FAILED</code>: IndexedDB unavailable/blocked. Avoid private mode and ensure storage isn’t disabled.</li>
+<li class=""><code>DB_UPGRADE_BLOCKED</code>: Another tab holds the DB during upgrade. Close other tabs or refresh.</li>
+<li class=""><code>SNAPSHOT_FAILED</code>: Worker export failed; snapshot requests are blocked during restoration. Retry after <code>SESSION_RESTORED</code>.</li>
+<li class=""><code>SNAPSHOT_VALIDATION_FAILED</code>: All snapshots failed checksum verification. Delete the DB and start fresh.</li>
+<li class=""><code>RESTORE_FAILED</code>: Worker rejected restore payload. Check <code>flags.pendingMigration</code>, digests, and migration availability.</li>
+</ul>
+</li>
+<li class="">
+<p>CI determinism:</p>
+<ul>
+<li class="">Use <code>fake-indexeddb</code> to stub IndexedDB in Vitest. See <code>packages/shell-web/src/modules/session-persistence-integration.test.ts</code> for worker ↔ bridge ↔ persistence coverage.</li>
+</ul>
+</li>
+<li class="">
+<p>Extending for native shells:</p>
+<ul>
+<li class="">Swap <code>SessionPersistenceAdapter</code> with a platform adapter (filesystem/SQLite/MMKV) that preserves the <code>StoredSessionSnapshot</code> contract and checksum semantics, then reuse the same wiring in the shell integration.</li>
+</ul>
+</li>
+</ul>
 <p><strong>Open Questions</strong></p>
 <ul>
 <li class="">Do we need encryption or obfuscation for competitive modes? (Out of scope for v1, document in security backlog.)</li>
