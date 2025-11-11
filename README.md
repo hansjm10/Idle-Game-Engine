@@ -15,7 +15,7 @@ This repository hosts the idle-game engine, reference content packs, presentatio
 Refer to the design document for roadmap and subsystem detail.
 
 ## Testing
-- `pnpm test:a11y` runs the Playwright-based accessibility smoke suite against the web shell. Additional Playwright flags can be forwarded when debugging locally, but the interactive UI mode is disabled.
+- `pnpm test:a11y` runs the Playwright-based accessibility smoke suite against the web shell via `tools/a11y-smoke-tests/scripts/run-playwright.cjs`. The harness starts preview/dev servers sequentially with `start-server-and-test`, so invoking `pnpm exec playwright test` directly now requires you to boot compatible servers first (the suite exits early with guidance if it cannot reach them). Use `PLAYWRIGHT_DEV_PORT`/`PLAYWRIGHT_PREVIEW_PORT` to point at existing `pnpm dev`/`pnpm preview` servers and set `PLAYWRIGHT_A11Y_SKIP_BUILD=1` after the first build to reuse those processes without rerunning the pretest build.
 - `pnpm test --filter shell-web` scopes Vitest to the web shell worker bridge and presentation infrastructure; run this after touching diagnostics or bridge logic so the issue #255 coverage stays green.
 - On fresh Linux environments you might need to install Playwright system dependencies once via `pnpm exec playwright install-deps`.
 - Vitest suites inherit the shared `@idle-engine/config-vitest` defaults, which now include `vitest-llm-reporter` with streaming disabled. Each run prints a JSON summary block at the end of the output so AI agents and CI jobs can parse results without scraping console text.

@@ -35,6 +35,7 @@ import {
   type SocialCommandResults,
   type SocialCommandType,
   type WorkerBridgeErrorDetails,
+  type WorkerBridge,
   type WorkerRestoreSessionPayload,
   useWorkerBridge,
 } from './worker-bridge.js';
@@ -64,6 +65,7 @@ const ShellProgressionContext = createContext<ShellProgressionApi | null>(null);
 const COMMAND_REQUEST_ID_PREFIX = 'command:';
 const COMMAND_ERROR_CODES: ReadonlySet<WorkerBridgeErrorDetails['code']> =
   new Set(['INVALID_COMMAND_PAYLOAD', 'STALE_COMMAND']);
+const RESTORE_PAYLOAD_NOT_SET = Symbol('ShellStateProvider.restorePayload.initial');
 
 export function ShellStateProvider({
   children,
@@ -81,6 +83,11 @@ export function ShellStateProvider({
       }),
     [maxEventHistory, maxErrorHistory],
   );
+
+  const lastRestorePayloadRef = useRef<
+    WorkerRestoreSessionPayload | typeof RESTORE_PAYLOAD_NOT_SET | undefined
+  >(RESTORE_PAYLOAD_NOT_SET);
+  const lastRestoreBridgeRef = useRef<WorkerBridge | null>(null);
 
   const [state, dispatch] = useReducer(
     reducer,
@@ -379,19 +386,42 @@ export function ShellStateProvider({
   }, [bridge, dispatch]);
 
   useEffect(() => {
+    // Ensure we re-run restore when either the payload reference or bridge changes.
+    const previousPayload = lastRestorePayloadRef.current;
+    const previousBridge = lastRestoreBridgeRef.current;
+    const payloadChanged = previousPayload !== restorePayload;
+    const bridgeChanged = previousBridge !== bridge;
+
+    if (!payloadChanged && !bridgeChanged) {
+      return;
+    }
+
+    lastRestorePayloadRef.current = restorePayload;
+    lastRestoreBridgeRef.current = bridge;
+
     let cancelled = false;
-    restoreSession(restorePayload).catch((error) => {
-      if (cancelled) {
-        return;
+
+    (async () => {
+      try {
+        await bridge.awaitReady();
+        if (cancelled) {
+          return;
+        }
+        await restoreSession(restorePayload);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        recordTelemetryError('ShellStateProviderRestoreEffectFailed', {
+          message: toErrorMessage(error),
+        });
       }
-      recordTelemetryError('ShellStateProviderRestoreEffectFailed', {
-        message: toErrorMessage(error),
-      });
-    });
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [restoreSession, restorePayload]);
+  }, [bridge, restoreSession, restorePayload]);
 
   const bridgeValue = useMemo<ShellBridgeApi>(
     () => ({

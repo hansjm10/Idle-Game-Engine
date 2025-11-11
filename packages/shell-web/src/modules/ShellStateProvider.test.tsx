@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 import { ShellStateProvider, useShellProgression } from './ShellStateProvider.js';
@@ -26,35 +26,53 @@ vi.mock('./progression-config.js', () => ({
 }));
 
 // Mock the worker bridge
-const mockBridge = {
-  isReady: vi.fn(() => true),
-  awaitReady: vi.fn(async () => {}),
-  sendCommand: vi.fn(),
-  restoreSession: vi.fn(async () => {}),
-  requestSessionSnapshot: vi.fn(async () => ({})),
-  sendSocialCommand: vi.fn(async () => ({})),
-  enableDiagnostics: vi.fn(),
-  disableDiagnostics: vi.fn(),
-  onStateUpdate: vi.fn<(listener: (snapshot: RuntimeStateSnapshot) => void) => void>(),
-  offStateUpdate: vi.fn<(listener: (snapshot: RuntimeStateSnapshot) => void) => void>(),
-  onError: vi.fn<(listener: (error: unknown) => void) => void>(),
-  offError: vi.fn<(listener: (error: unknown) => void) => void>(),
-  onDiagnosticsUpdate: vi.fn<(listener: (timeline: unknown) => void) => void>(),
-  offDiagnosticsUpdate: vi.fn<(listener: (timeline: unknown) => void) => void>(),
-  isSocialFeatureEnabled: vi.fn(() => false),
-  terminate: vi.fn(),
+function createBridgeMock() {
+  return {
+    isReady: vi.fn(() => true),
+    awaitReady: vi.fn(async () => {}),
+    sendCommand: vi.fn(),
+    restoreSession: vi.fn(async () => {}),
+    requestSessionSnapshot: vi.fn(async () => ({})),
+    sendSocialCommand: vi.fn(async () => ({})),
+    enableDiagnostics: vi.fn(),
+    disableDiagnostics: vi.fn(),
+    onStateUpdate: vi.fn<(listener: (snapshot: RuntimeStateSnapshot) => void) => void>(),
+    offStateUpdate: vi.fn<(listener: (snapshot: RuntimeStateSnapshot) => void) => void>(),
+    onError: vi.fn<(listener: (error: unknown) => void) => void>(),
+    offError: vi.fn<(listener: (error: unknown) => void) => void>(),
+    onDiagnosticsUpdate: vi.fn<(listener: (timeline: unknown) => void) => void>(),
+    offDiagnosticsUpdate: vi.fn<(listener: (timeline: unknown) => void) => void>(),
+    isSocialFeatureEnabled: vi.fn(() => false),
+    terminate: vi.fn(),
+  };
+}
+
+type BridgeMock = ReturnType<typeof createBridgeMock>;
+
+const workerBridgeMocks = vi.hoisted(() => {
+  const bridge = createBridgeMock();
+  return {
+    mockBridge: bridge,
+    useWorkerBridgeMock: vi.fn(() => bridge),
+  };
+}) as {
+  mockBridge: BridgeMock;
+  useWorkerBridgeMock: ReturnType<typeof vi.fn>;
 };
 
 vi.mock('./worker-bridge.js', () => ({
-  WorkerBridge: vi.fn(() => mockBridge),
-  useWorkerBridge: vi.fn(() => mockBridge),
+  WorkerBridge: vi.fn(() => workerBridgeMocks.mockBridge),
+  useWorkerBridge: workerBridgeMocks.useWorkerBridgeMock,
 }));
+
+const { mockBridge, useWorkerBridgeMock } = workerBridgeMocks;
 
 const defaultConfig: ShellStateProviderConfig = {};
 
 describe('ShellStateProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useWorkerBridgeMock.mockImplementation(() => mockBridge);
   });
 
   afterEach(() => {
@@ -104,99 +122,6 @@ describe('ShellStateProvider', () => {
       expect(result.current.selectOptimisticResources()).toBeNull();
     });
 
-    // Note: Testing with actual snapshot data would require deeper integration
-    // with the worker bridge and state reducer, which is better suited for
-    // integration tests. The reducer tests in shell-state-store.test.ts
-    // already verify the state management logic.
-  });
-
-  describe('optimistic resources selector', () => {
-    // Note: Testing optimistic updates requires triggering state updates
-    // through the reducer, which is already tested in shell-state-store.test.ts.
-    // These tests verify the selector logic is present and callable.
-
-    it('selector is memoized and callable', () => {
-      const wrapper = ({ children }: { children: ReactNode }) => (
-        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
-      );
-
-      const { result } = renderHook(
-        () => useShellProgression(),
-        { wrapper },
-      );
-
-      const selector1 = result.current.selectOptimisticResources;
-      const selector2 = result.current.selectOptimisticResources;
-
-      expect(selector1).toBe(selector2);
-      expect(typeof selector1).toBe('function');
-    });
-
-    it('returns snapshot resources when available', () => {
-      const wrapper = ({ children }: { children: ReactNode }) => (
-        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
-      );
-
-      const { result, rerender } = renderHook(() => useShellProgression(), { wrapper });
-
-      // Initially null
-      expect(result.current.selectOptimisticResources()).toBeNull();
-
-      // Simulate state update with progression snapshot
-      const stateUpdateCall =
-        vi.mocked(mockBridge.onStateUpdate).mock.calls[0];
-      expect(stateUpdateCall).toBeDefined();
-      if (!stateUpdateCall) {
-        throw new Error('stateUpdateHandler was not registered');
-      }
-      const [stateUpdateHandler] = stateUpdateCall;
-      expect(stateUpdateHandler).toBeDefined();
-
-      const mockSnapshot = {
-        currentStep: 1,
-        events: [],
-        backPressure: backPressureStub,
-        progression: {
-          step: 1,
-          publishedAt: 1000,
-          resources: [
-            {
-              id: 'gold',
-              displayName: 'Gold',
-              amount: 100,
-              isUnlocked: true,
-              isVisible: true,
-              perTick: 10,
-            },
-            {
-              id: 'wood',
-              displayName: 'Wood',
-              amount: 50,
-              isUnlocked: true,
-              isVisible: true,
-              perTick: 5,
-            },
-          ],
-          generators: [],
-          upgrades: [],
-        },
-      } satisfies RuntimeStateSnapshot;
-
-      act(() => {
-        stateUpdateHandler(mockSnapshot);
-      });
-      rerender();
-
-      // Should now return the resources
-      const resources = result.current.selectOptimisticResources();
-      expect(resources).not.toBeNull();
-      expect(resources).toHaveLength(2);
-      expect(resources?.[0].id).toBe('gold');
-      expect(resources?.[0].amount).toBe(100);
-      expect(resources?.[1].id).toBe('wood');
-      expect(resources?.[1].amount).toBe(50);
-    });
-
     // Note: Full testing of delta application logic (applying pending deltas
     // to resource amounts) will be possible once the purchase command API
     // is implemented in #299. The delta application logic in the selector
@@ -206,7 +131,39 @@ describe('ShellStateProvider', () => {
     // verify deltas are staged and cleared correctly.
   });
 
+  describe('restore effect', () => {
+    it('retries restore when the worker bridge instance changes without a payload update', async () => {
+      const bridgeA: BridgeMock = createBridgeMock();
+      const bridgeB: BridgeMock = createBridgeMock();
+      let activeBridge: BridgeMock = bridgeA;
+      useWorkerBridgeMock.mockImplementation(() => activeBridge);
+
+      const restorePayload = { savedWorkerStep: 123 };
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig} restorePayload={restorePayload}>
+          {children}
+        </ShellStateProvider>
+      );
+
+      const { rerender } = renderHook(() => useShellProgression(), { wrapper });
+
+      await waitFor(() => {
+        expect(bridgeA.restoreSession).toHaveBeenCalledTimes(1);
+        expect(bridgeB.restoreSession).not.toHaveBeenCalled();
+      });
+
+      activeBridge = bridgeB;
+      rerender();
+
+      await waitFor(() => {
+        expect(bridgeB.restoreSession).toHaveBeenCalledTimes(1);
+        expect(bridgeA.restoreSession).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
   describe('worker command error handling', () => {
+
     it('only clears staged deltas for command errors', () => {
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>

@@ -1,15 +1,10 @@
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
 
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
-import { resolve } from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const DEFAULT_PREVIEW_HOST = 'localhost';
+const DEFAULT_HOST = '127.0.0.1';
 // Ignore host values that bind to "all interfaces" because browsers cannot connect to them directly.
 const configuredHost = process.env.PLAYWRIGHT_PREVIEW_HOST ?? process.env.HOST;
 const HOST =
@@ -18,42 +13,44 @@ const HOST =
   configuredHost !== '::' &&
   configuredHost !== '[::]'
     ? configuredHost
-    : DEFAULT_PREVIEW_HOST;
-const PORT = Number.parseInt(process.env.PLAYWRIGHT_PREVIEW_PORT ?? '4173', 10);
-const BASE_URL = `http://${HOST}:${PORT}`;
+    : DEFAULT_HOST;
 
-const MONOREPO_ROOT = resolve(__dirname, '../..');
+const PREVIEW_PORT = Number.parseInt(process.env.PLAYWRIGHT_PREVIEW_PORT ?? '4173', 10);
+// PLAYWRIGHT_DEV_PORT lets contributors point the suite at an existing `pnpm dev` server when debugging locally.
+const DEV_PORT = Number.parseInt(process.env.PLAYWRIGHT_DEV_PORT ?? '5173', 10);
 
-// In CI, packages are already built by the 'Build' step, so we only need to run the preview server
-// Bind to 127.0.0.1 for consistent localhost access across environments
-const webServerCommand = `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PORT} --strictPort`;
+const previewBaseUrl = `http://${HOST}:${PREVIEW_PORT}`;
+const devBaseUrl = `http://${HOST}:${DEV_PORT}`;
+
+const DEFAULT_TRACE_MODE = 'retain-on-failure' as const;
+const globalSetupPath = fileURLToPath(new URL('./playwright.global-setup.ts', import.meta.url));
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: globalSetupPath,
   timeout: 120_000,
   expect: {
     timeout: 10_000
   },
   reporter: process.env.CI ? 'line' : [['html', { open: 'never' }], ['list']],
-  use: {
-    baseURL: BASE_URL,
-    trace: 'retain-on-failure'
-  },
-  webServer: {
-    command: webServerCommand,
-    url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    cwd: MONOREPO_ROOT,
-    stdout: 'pipe',
-    stderr: 'pipe'
-  },
   projects: [
     {
-      name: 'chromium',
+      name: 'chromium-preview',
       use: {
-        browserName: 'chromium'
-      }
+        browserName: 'chromium',
+        baseURL: previewBaseUrl,
+        trace: DEFAULT_TRACE_MODE
+      },
+      testIgnore: /shell-state-provider-restore\.spec\.ts/
+    },
+    {
+      name: 'chromium-dev',
+      use: {
+        browserName: 'chromium',
+        baseURL: devBaseUrl,
+        trace: DEFAULT_TRACE_MODE
+      },
+      testMatch: /shell-state-provider-restore\.spec\.ts/
     }
   ]
 });
