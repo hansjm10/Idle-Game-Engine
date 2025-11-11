@@ -783,6 +783,26 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getCurrentStep()).toBe(0);
   });
 
+  it('does not emit diagnostics entries for zero/negative deltaMs', () => {
+    const { runtime, diagnostics } = createRuntime({
+      diagnostics: {
+        enabled: true,
+        capacity: 8,
+      },
+    });
+
+    // Consume any initial baseline so we only observe post-tick entries
+    diagnostics.readDelta();
+
+    runtime.tick(0);
+    runtime.tick(-5);
+
+    const delta = diagnostics.readDelta();
+    expect(delta.entries).toHaveLength(0);
+    expect(runtime.getCurrentStep()).toBe(0);
+    expect(runtime.getNextExecutableStep()).toBe(0);
+  });
+
   it('executes commands in strict priority order during a single tick', () => {
     const { runtime, queue, dispatcher } = createRuntime();
     const executionOrder: string[] = [];
