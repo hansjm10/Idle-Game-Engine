@@ -116,8 +116,10 @@ export function ShellStateProvider({
   const [diagnosticsEpoch, bumpDiagnosticsEpoch] = useReducer((n: number) => n + 1, 0);
   const lastDiagnosticsCountRef = useRef(0);
 
-  // Ensure we only dispatch bridge-ready once per provider lifetime
-  const hasAwaitedReadyRef = useRef(false);
+  // Track which bridge instance we've awaited to ensure each new
+  // WorkerBridge is awaited and announced, while avoiding duplicate
+  // dispatches for the same instance.
+  const lastAwaitedBridgeRef = useRef<WorkerBridge | null>(null);
 
   const socialRequestCounterRef = useRef(0);
 
@@ -283,10 +285,12 @@ export function ShellStateProvider({
   }, [bridge, dispatch, diagnosticsEpoch]);
 
   useEffect(() => {
-    if (hasAwaitedReadyRef.current) {
+    // Only await readiness once per WorkerBridge instance.
+    if (lastAwaitedBridgeRef.current === bridge) {
       return;
     }
-    hasAwaitedReadyRef.current = true;
+    lastAwaitedBridgeRef.current = bridge;
+
     let active = true;
     bridge
       .awaitReady()
