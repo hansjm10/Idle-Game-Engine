@@ -569,6 +569,13 @@ export type {
   RuntimeDiagnosticsTimelineOptions,
 } from './diagnostics/runtime-diagnostics-controller.js';
 export {
+  summarizeDiagnostics,
+  evaluateDiagnostics,
+  type DiagnosticsSummary,
+  type DiagnosticsThresholds,
+  type DiagnosticsEvaluation,
+} from './diagnostics/format.js';
+export {
   createPrometheusTelemetry,
   type PrometheusTelemetryOptions,
   type PrometheusTelemetryFacade,
