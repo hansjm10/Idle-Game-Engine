@@ -8,6 +8,7 @@ import { ErrorBoundary } from './ErrorBoundary.js';
 import { ResourceDashboard } from './ResourceDashboard.js';
 import { GeneratorPanel } from './GeneratorPanel.js';
 import { UpgradeModal } from './UpgradeModal.js';
+import { DiagnosticsPanel } from './DiagnosticsPanel.js';
 import {
   ShellStateProvider,
   useShellBridge,
@@ -64,6 +65,8 @@ function ShellAppSurface(): JSX.Element {
       ) : null}
 
       <EventInspector />
+
+      <DiagnosticsPanel />
 
       {socialEnabled ? <SocialDevPanel /> : null}
 

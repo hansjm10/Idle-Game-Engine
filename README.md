@@ -27,3 +27,18 @@ Refer to the design document for roadmap and subsystem detail.
 - Run `pnpm generate --check` (used by CI and Lefthook) to detect drift without rewriting artifacts. The command exits with code `1` when `content/compiled/` or manifest outputs would change, or when validation persists failure summaries.
 - `pnpm generate --watch` keeps the validator/compiler pipeline running against content changes. Each iteration emits a `watch.run` summary describing duration, triggers, and outcome while leaving the process alive after failures.
 - `content/compiled/index.json` is the canonical workspace summary. Consumers should always read this file (or override `--summary`) and treat it as stale if you skipped validation or the CLI reported failures—rerun `pnpm generate` to refresh it before consuming compiled artifacts.
+
+## Headless Diagnostics (Tick Simulator)
+
+Run a deterministic simulation of the runtime and emit diagnostics JSON:
+
+```
+pnpm core:tick-sim --ticks 1000 --step-ms 100 --fail-on-slow --queue-backlog-cap 0
+```
+
+Options:
+- `--ticks <n>`: Number of ticks to execute (required)
+- `--step-ms <ms>`: Fixed step duration (default 100)
+- `--max-steps-per-frame <n>`: Clamp steps per frame (default 50)
+- `--fail-on-slow`: Exit non-zero if any tick exceeds the configured budget
+- `--queue-backlog-cap <n>`: Exit non-zero if queue backlog exceeds `n`

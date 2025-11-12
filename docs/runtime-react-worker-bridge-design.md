@@ -331,3 +331,9 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 |------------|--------|----------------|
 | 2025-10-27 | Idle Engine Design Authoring Agent (AI) | Initial draft for issue #16 bridge design |
 | 2025-10-28 | Codex Agent (AI) | Added worker↔shell persistence handoff mini-spec (Fixes #258) |
+## Diagnostics Overlay and Headless Simulation (Issue #383)
+This increment adds a dev-facing diagnostics overlay and a headless runtime simulator that share the same data shapes to keep consumption consistent across surfaces.
+- UI overlay subscribes to diagnostics only when visible and throttles updates for responsiveness. See `packages/shell-web/src/modules/DiagnosticsPanel.tsx`.
+- Shared helpers for summarizing and evaluating diagnostics live in `@idle-engine/core` at `src/diagnostics/format.ts` and are exported via the package index.
+- A headless CLI (`pnpm core:tick-sim`) advances the runtime for N ticks and prints the diagnostics JSON (single-line, no trailing text), with optional failure on configured thresholds.
+These align with the bridge design: opt-in subscriptions, consistent schema (`DiagnosticTimelineResult`), and no baseline overhead when diagnostics are disabled.
