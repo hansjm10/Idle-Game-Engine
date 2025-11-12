@@ -9,21 +9,30 @@ function useThrottledTimeline(latest: DiagnosticTimelineResult | null, throttleM
   const [visible, setVisible] = useState<DiagnosticTimelineResult | null>(null);
   const lastUpdateRef = useRef(0);
   const timerRef = useRef<number | null>(null);
+  // Always keep the most recent payload so the pending flush uses the latest snapshot.
+  const pendingRef = useRef<DiagnosticTimelineResult | null>(null);
 
   useEffect(() => {
     if (!latest) return;
+    // Store the most recent snapshot; do not lose updates during the throttle window.
+    pendingRef.current = latest;
     const now = Date.now();
     const elapsed = now - lastUpdateRef.current;
     if (elapsed >= throttleMs) {
+      // Outside the window: emit immediately with the latest snapshot.
       lastUpdateRef.current = now;
-      setVisible(latest);
+      setVisible(pendingRef.current);
+      pendingRef.current = null;
       return;
     }
+    // Within the window: ensure a trailing flush is scheduled.
     if (timerRef.current !== null) return;
     const remaining = throttleMs - elapsed;
     timerRef.current = window.setTimeout(() => {
       lastUpdateRef.current = Date.now();
-      setVisible(latest);
+      // Flush the newest snapshot observed during the window.
+      if (pendingRef.current) setVisible(pendingRef.current);
+      pendingRef.current = null;
       timerRef.current = null;
     }, Math.max(remaining, 0));
   }, [latest, throttleMs]);
