@@ -102,7 +102,7 @@ export function ShellStateProvider({
     ShellDiagnosticsApi['latest']
   >(null);
   diagnosticsTimelineRef.current = state.diagnostics.timeline;
-  
+
   // Track provider mounted state to avoid scheduling updates after unmount
   const isMountedRef = useRef(true);
   useEffect(() => {
@@ -115,6 +115,9 @@ export function ShellStateProvider({
   // Epoch used to trigger reconciliation of diagnostics subscriber changes
   const [diagnosticsEpoch, bumpDiagnosticsEpoch] = useReducer((n: number) => n + 1, 0);
   const lastDiagnosticsCountRef = useRef(0);
+
+  // Ensure we only dispatch bridge-ready once per provider lifetime
+  const hasAwaitedReadyRef = useRef(false);
 
   const socialRequestCounterRef = useRef(0);
 
@@ -231,13 +234,15 @@ export function ShellStateProvider({
 
         diagnosticsSubscribersRef.current.delete(subscriber);
 
-        // Avoid dispatching or toggling during cleanup; defer reconciliation.
-        queueMicrotask(() => {
+        // Avoid dispatching or toggling during cleanup; defer reconciliation to the next macrotask.
+        // Using setTimeout(0) (vs microtask) ensures StrictMode double-invocation and
+        // passive effect cleanup complete before we schedule any state updates.
+        setTimeout(() => {
           if (!isMountedRef.current) {
             return;
           }
           bumpDiagnosticsEpoch();
-        });
+        }, 0);
       };
     },
     [bridge, dispatch],
@@ -278,6 +283,10 @@ export function ShellStateProvider({
   }, [bridge, dispatch, diagnosticsEpoch]);
 
   useEffect(() => {
+    if (hasAwaitedReadyRef.current) {
+      return;
+    }
+    hasAwaitedReadyRef.current = true;
     let active = true;
     bridge
       .awaitReady()

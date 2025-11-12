@@ -389,6 +389,7 @@ describe('ShellStateProvider telemetry integration', () => {
     await act(async () => {
       unsubscribe?.();
     });
+    await flushMicrotasks();
 
     expect(telemetrySpy).toHaveBeenCalledWith(
       'ShellStateProviderDisableDiagnosticsFailed',
@@ -508,6 +509,7 @@ describe('ShellStateProvider diagnostics subscriptions', () => {
     await act(async () => {
       first?.();
     });
+    await flushMicrotasks();
 
     expect(bridgeMock.disableDiagnostics).toHaveBeenCalledTimes(1);
     expect(diagnosticsRef.current!.isEnabled).toBe(false);
@@ -583,8 +585,11 @@ interface ProviderSetupResult {
 }
 
 async function flushMicrotasks(): Promise<void> {
+  // Allow pending microtasks to flush
   await Promise.resolve();
   await Promise.resolve();
+  // Also allow next macrotask so setTimeout(0) deferrals settle
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function setupProvider(

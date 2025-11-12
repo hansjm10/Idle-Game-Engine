@@ -52,19 +52,25 @@ export function DiagnosticsPanel(): JSX.Element | null {
   const [isOpen, setOpen] = useState(false);
   const [latest, setLatest] = useState<DiagnosticTimelineResult | null>(diagnostics.latest);
   const latestRef = useRef<DiagnosticTimelineResult | null>(diagnostics.latest);
+  const subscribeRef = useRef(diagnostics.subscribe);
 
   // Keep an up-to-date snapshot in a ref without causing resubscriptions.
   useEffect(() => {
     latestRef.current = diagnostics.latest;
   }, [diagnostics.latest]);
 
+  // Keep a stable reference to the subscribe function to avoid re-subscribing
+  // when the diagnostics object identity changes across renders.
+  useEffect(() => {
+    subscribeRef.current = diagnostics.subscribe;
+  }, [diagnostics.subscribe]);
+
   useEffect(() => {
     if (!isOpen) return;
     // Establish baseline from the latest ref, then subscribe once while open.
     setLatest(latestRef.current);
-    return diagnostics.subscribe((timeline) => setLatest(timeline));
-    // Depend only on isOpen and the stable subscribe callback to avoid thrashing
-  }, [isOpen, diagnostics.subscribe]);
+    return subscribeRef.current((timeline) => setLatest(timeline));
+  }, [isOpen]);
 
   const visible = useThrottledTimeline(latest);
   const summary = useMemo(() => (visible ? summarizeDiagnostics(visible) : null), [visible]);
