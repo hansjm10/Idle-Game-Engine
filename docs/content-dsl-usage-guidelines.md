@@ -482,3 +482,29 @@ checklist with the relevant test suites (for example `pnpm test --filter core`).
   summary modules.
 - `packages/content-sample/README.md` — regeneration workflow and runtime
   manifest integration.
+
+## Formula Invariants & Cost Semantics
+
+Content formulas must evaluate to finite, non-negative numbers across deterministic contexts. The schema and CLI suites enforce this via property-based tests (see `packages/content-schema/src/base/formulas.property.test.ts` and `tools/content-schema-cli/src/__tests__/validation.property.test.ts`). Authors should follow these rules when declaring rates and costs:
+
+- Generator rates and consumption values: use `NumericFormula` that remain ≥ 0. Prefer clamping via `max(0, …)` or the `abs`/`sqrt` helpers when composing expressions.
+- Purchase cost calculation: cost = `baseCost × evaluate(costCurve, level)` where `level` is the current purchase index (owned count). For upgrades, if `repeatable.costCurve` is present, multiply that in as well. See `docs/progression-coordinator-design.md` §6.2.7.
+- Avoid NaN/Infinity: inputs are validated (`finiteNumberSchema`), and formulas with impossible evaluations are rejected.
+- Piecewise: ensure strictly increasing `untilLevel` thresholds and a final catch-all segment.
+
+Automation authoring guidance:
+- `resourceCost.rate` represents units per second; keep bounds realistic for your economy to avoid runaway drains.
+- `cooldown` must be finite (milliseconds). Prefer ≥ 0. Extremely small values can lead to noisy behavior during testing.
+- Keep `generate --check` warning-free for shipping packs. The sample pack is treated as the reference baseline.
+
+## Snapshot Determinism (Progression Views)
+
+The progression view (`buildProgressionSnapshot`) must be deterministic so that UI/state diffs remain stable when content changes. Tests in `@idle-engine/content-sample` generate a golden snapshot for the sample pack’s generators and upgrades and compare it during CI.
+
+- Fields covered: generator `costs`, `produces`/`consumes` rates, visibility/unlock flags, and upgrade `status` + `costs`.
+- Authors changing content should expect golden updates when business logic changes intentionally; otherwise treat diffs as regressions.
+
+References:
+- `docs/build-resource-generator-upgrade-ui-components-design.md` (cost examples)
+- `docs/content-dsl-schema-design.md` (schema contracts)
+- `packages/core/src/progression.ts` (snapshot construction)
