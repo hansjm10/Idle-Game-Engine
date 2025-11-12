@@ -111,6 +111,15 @@ async function main(): Promise<void> {
   if (Object.keys(thresholds).length > 0) {
     const evaluation = evaluateDiagnostics(result, thresholds);
     if (!evaluation.ok) {
+      // Surface reasons to stderr so CI/users can understand failures while
+      // keeping stdout clean for JSON consumers.
+      const reasons = evaluation.reasons.join('; ');
+      console.error(`Thresholds breached: ${reasons}`);
+      const s = evaluation.summary;
+      console.error(
+        `Summary — ticks:${s.totalEntries} maxTick:${s.maxTickDurationMs.toFixed(2)}ms ` +
+          `avgTick:${s.avgTickDurationMs.toFixed(2)}ms maxQueueBacklog:${s.maxQueueBacklog}`,
+      );
       // eslint-disable-next-line no-process-exit
       process.exit(1);
     }
@@ -123,4 +132,3 @@ main().catch((error) => {
   // eslint-disable-next-line no-process-exit
   process.exit(1);
 });
-
