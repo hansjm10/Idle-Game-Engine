@@ -46,7 +46,6 @@ export function DiagnosticsPanel(): JSX.Element | null {
   useEffect(() => {
     if (!isOpen) return;
     return diagnostics.subscribe((timeline) => setLatest(timeline));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const visible = useThrottledTimeline(latest);
@@ -144,4 +143,3 @@ function Stat({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
-
