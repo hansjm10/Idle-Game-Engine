@@ -62,6 +62,10 @@ Adopt a dedicated workspace under `tools/a11y-smoke-tests` that runs Playwright 
   - Write `scripts/install-playwright.cjs` to manage browser installs and keep the harness air-gap friendly.
   - Update `.gitignore` to exclude Playwright’s output directories and optional Axe artifacts.
 
+### 6.4 Initial Test Cases
+- Landing page Axe audit: validate the primary shell route has no blocking WCAG A/AA violations.
+- Diagnostics toggle stability: repeatedly click the “Show/Hide Diagnostics” button and assert the console does not contain React depth-limit errors ("Maximum update depth exceeded"). This guards against cleanup-time state updates in diagnostics subscription flows.
+
 ### 6.3 Operational Considerations
 - **Deployment**: GitHub Actions already runs `pnpm test:ci`; once the new workspace is in the dependency graph, the a11y suite runs automatically. Consider caching `~/.cache/ms-playwright` for faster reruns, rely on `start-server-and-test` logs to debug failed startups, and export `PLAYWRIGHT_A11Y_SKIP_BUILD=1` locally when reusing an already-running dev/preview server so the `pretest` hook can skip redundant builds.
 - **Telemetry & Observability**: Use Playwright reporters for console summaries. Future enhancements may upload Axe JSON artifacts or integrate GitHub annotations.
