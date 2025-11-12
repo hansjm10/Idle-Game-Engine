@@ -4,9 +4,13 @@ import path from 'node:path';
 
 import {
   evaluateNumericFormula,
+  createDeterministicFormulaEvaluationContext,
   type NormalizedGenerator,
   type NormalizedUpgrade,
   type NormalizedResource,
+  type NormalizedAutomation,
+  type NormalizedPrestigeLayer,
+  type FormulaEvaluationEntities,
 } from '@idle-engine/content-schema';
 
 // Note: buildProgressionSnapshot is not exported from the core index; import relatively.
@@ -29,9 +33,15 @@ const GOLDEN_PATH = path.join(
 
 const toDisplayName = (name: { readonly default: string }) => name.default;
 
-const evaluateCost = (curve: unknown, level: number, baseCost: number): number => {
+const evaluateCost = (
+  curve: unknown,
+  level: number,
+  baseCost: number,
+  entities: FormulaEvaluationEntities,
+): number => {
   const multiplier = evaluateNumericFormula(curve as any, {
     variables: { level, time: 0, deltaTime: 1 },
+    entities,
   });
   const amount = baseCost * multiplier;
   return Number.isFinite(amount) && amount >= 0 ? amount : 0;
@@ -39,6 +49,7 @@ const evaluateCost = (curve: unknown, level: number, baseCost: number): number =
 
 const createGeneratorEvaluator = (
   generators: readonly NormalizedGenerator[],
+  entities: FormulaEvaluationEntities,
 ): GeneratorPurchaseEvaluator => {
   const byId = new Map(generators.map((g) => [g.id, g] as const));
   return {
@@ -46,7 +57,12 @@ const createGeneratorEvaluator = (
       if (count !== 1) return undefined;
       const gen = byId.get(generatorId);
       if (!gen) return undefined;
-      const amount = evaluateCost(gen.purchase.costCurve, 0, gen.purchase.baseCost);
+      const amount = evaluateCost(
+        gen.purchase.costCurve,
+        0,
+        gen.purchase.baseCost,
+        entities,
+      );
       return {
         generatorId,
         costs: [{ resourceId: gen.purchase.currencyId, amount }],
@@ -60,13 +76,14 @@ const createGeneratorEvaluator = (
 
 const createUpgradeEvaluator = (
   upgrades: readonly NormalizedUpgrade[],
+  entities: FormulaEvaluationEntities,
 ): UpgradePurchaseEvaluator => {
   const byId = new Map(upgrades.map((u) => [u.id, u] as const));
   return {
     getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined {
       const up = byId.get(upgradeId);
       if (!up) return undefined;
-      const amount = evaluateCost(up.cost.costCurve, 0, up.cost.baseCost);
+      const amount = evaluateCost(up.cost.costCurve, 0, up.cost.baseCost, entities);
       return {
         upgradeId,
         status: 'available',
@@ -85,6 +102,18 @@ describe('sample content progression snapshot (golden)', () => {
     const resources = pack.modules.resources as readonly NormalizedResource[];
     const generators = pack.modules.generators as readonly NormalizedGenerator[];
     const upgrades = pack.modules.upgrades as readonly NormalizedUpgrade[];
+    const automations = (pack.modules.automations ?? []) as readonly NormalizedAutomation[];
+    const prestigeLayers = (pack.modules.prestigeLayers ?? []) as readonly NormalizedPrestigeLayer[];
+
+    // Build a deterministic entity lookup so formulas with entity references evaluate safely.
+    const baseContext = createDeterministicFormulaEvaluationContext({
+      resource: resources.map((r) => r.id),
+      generator: generators.map((g) => g.id),
+      upgrade: upgrades.map((u) => u.id),
+      automation: automations.map((a) => a.id),
+      prestigeLayer: prestigeLayers.map((p) => p.id),
+    });
+    const entities = baseContext.entities;
 
     const serialized = {
       ids: resources.map((r) => r.id),
@@ -105,11 +134,17 @@ describe('sample content progression snapshot (golden)', () => {
       isVisible: true,
       produces: g.produces.map((p) => ({
         resourceId: p.resourceId,
-        rate: evaluateNumericFormula(p.rate as any, { variables: { level: 0, time: 0, deltaTime: 1 } }),
+        rate: evaluateNumericFormula(p.rate as any, {
+          variables: { level: 0, time: 0, deltaTime: 1 },
+          entities,
+        }),
       })),
       consumes: g.consumes.map((c) => ({
         resourceId: c.resourceId,
-        rate: evaluateNumericFormula(c.rate as any, { variables: { level: 0, time: 0, deltaTime: 1 } }),
+        rate: evaluateNumericFormula(c.rate as any, {
+          variables: { level: 0, time: 0, deltaTime: 1 },
+          entities,
+        }),
       })),
     }));
 
@@ -124,9 +159,9 @@ describe('sample content progression snapshot (golden)', () => {
       stepDurationMs: 100,
       resources: { serialized, metadata: resourceDisplay },
       generators: generatorStates,
-      generatorPurchases: createGeneratorEvaluator(generators),
+      generatorPurchases: createGeneratorEvaluator(generators, entities),
       upgrades: upgradeStates,
-      upgradePurchases: createUpgradeEvaluator(upgrades),
+      upgradePurchases: createUpgradeEvaluator(upgrades, entities),
     };
 
     const snapshot = buildProgressionSnapshot(0, 0, state);
@@ -139,4 +174,3 @@ describe('sample content progression snapshot (golden)', () => {
     expect(snapshot.upgrades).toEqual(golden.upgrades);
   });
 });
-
