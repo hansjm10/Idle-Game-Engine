@@ -102,6 +102,19 @@ export function ShellStateProvider({
     ShellDiagnosticsApi['latest']
   >(null);
   diagnosticsTimelineRef.current = state.diagnostics.timeline;
+  
+  // Track provider mounted state to avoid scheduling updates after unmount
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Epoch used to trigger reconciliation of diagnostics subscriber changes
+  const [diagnosticsEpoch, bumpDiagnosticsEpoch] = useReducer((n: number) => n + 1, 0);
+  const lastDiagnosticsCountRef = useRef(0);
 
   const socialRequestCounterRef = useRef(0);
 
@@ -193,23 +206,8 @@ export function ShellStateProvider({
   const diagnosticsSubscribe = useCallback(
     (subscriber: DiagnosticsSubscriber) => {
       diagnosticsSubscribersRef.current.add(subscriber);
-      const count = diagnosticsSubscribersRef.current.size;
-      dispatch({
-        type: 'diagnostics-subscribers',
-        count,
-        timestamp: Date.now(),
-      });
-
-      if (count === 1) {
-        try {
-          bridge.enableDiagnostics();
-        } catch (error) {
-          recordTelemetryError(
-            'ShellStateProviderEnableDiagnosticsFailed',
-            { message: toErrorMessage(error) },
-          );
-        }
-      }
+      // Trigger reconciliation after commit (safe during mount/commit)
+      bumpDiagnosticsEpoch();
 
       const latestTimeline = diagnosticsTimelineRef.current;
       if (latestTimeline) {
@@ -232,27 +230,52 @@ export function ShellStateProvider({
         }
 
         diagnosticsSubscribersRef.current.delete(subscriber);
-        const nextCount = diagnosticsSubscribersRef.current.size;
-        dispatch({
-          type: 'diagnostics-subscribers',
-          count: nextCount,
-          timestamp: Date.now(),
-        });
 
-        if (nextCount === 0) {
-          try {
-            bridge.disableDiagnostics();
-          } catch (error) {
-            recordTelemetryError(
-              'ShellStateProviderDisableDiagnosticsFailed',
-              { message: toErrorMessage(error) },
-            );
+        // Avoid dispatching or toggling during cleanup; defer reconciliation.
+        queueMicrotask(() => {
+          if (!isMountedRef.current) {
+            return;
           }
-        }
+          bumpDiagnosticsEpoch();
+        });
       };
     },
     [bridge, dispatch],
   );
+
+  // Reconcile diagnostics subscription changes after commit
+  useEffect(() => {
+    const count = diagnosticsSubscribersRef.current.size;
+    const prev = lastDiagnosticsCountRef.current;
+    if (count !== prev) {
+      lastDiagnosticsCountRef.current = count;
+      dispatch({
+        type: 'diagnostics-subscribers',
+        count,
+        timestamp: Date.now(),
+      });
+
+      if (prev === 0 && count > 0) {
+        try {
+          bridge.enableDiagnostics();
+        } catch (error) {
+          recordTelemetryError(
+            'ShellStateProviderEnableDiagnosticsFailed',
+            { message: toErrorMessage(error) },
+          );
+        }
+      } else if (prev > 0 && count === 0) {
+        try {
+          bridge.disableDiagnostics();
+        } catch (error) {
+          recordTelemetryError(
+            'ShellStateProviderDisableDiagnosticsFailed',
+            { message: toErrorMessage(error) },
+          );
+        }
+      }
+    }
+  }, [bridge, dispatch, diagnosticsEpoch]);
 
   useEffect(() => {
     let active = true;
