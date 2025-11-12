@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   evaluateNumericFormula,
@@ -25,11 +26,8 @@ import type {
 
 import { sampleContent } from '.';
 
-const GOLDEN_PATH = path.join(
-  path.dirname(new URL(import.meta.url).pathname),
-  '__fixtures__',
-  'progression.snapshot.golden.json',
-);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const GOLDEN_PATH = path.join(__dirname, '__fixtures__', 'progression.snapshot.golden.json');
 
 const toDisplayName = (name: { readonly default: string }) => name.default;
 
