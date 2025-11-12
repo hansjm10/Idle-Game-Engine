@@ -42,11 +42,20 @@ export function DiagnosticsPanel(): JSX.Element | null {
   const diagnostics = useShellDiagnostics();
   const [isOpen, setOpen] = useState(false);
   const [latest, setLatest] = useState<DiagnosticTimelineResult | null>(diagnostics.latest);
+  const latestRef = useRef<DiagnosticTimelineResult | null>(diagnostics.latest);
+
+  // Keep an up-to-date snapshot in a ref without causing resubscriptions.
+  useEffect(() => {
+    latestRef.current = diagnostics.latest;
+  }, [diagnostics.latest]);
 
   useEffect(() => {
     if (!isOpen) return;
+    // Establish baseline from the latest ref, then subscribe once while open.
+    setLatest(latestRef.current);
     return diagnostics.subscribe((timeline) => setLatest(timeline));
-  }, [isOpen]);
+    // Depend only on isOpen and the stable subscribe callback to avoid thrashing
+  }, [isOpen, diagnostics.subscribe]);
 
   const visible = useThrottledTimeline(latest);
   const summary = useMemo(() => (visible ? summarizeDiagnostics(visible) : null), [visible]);
