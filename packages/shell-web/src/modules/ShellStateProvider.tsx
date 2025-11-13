@@ -113,7 +113,7 @@ export function ShellStateProvider({
   }, []);
 
   // Epoch used to trigger reconciliation of diagnostics subscriber changes
-  const [diagnosticsEpoch, bumpDiagnosticsEpoch] = useReducer((n: number) => n + 1, 0);
+  const [_diagnosticsEpoch, bumpDiagnosticsEpoch] = useReducer((n: number) => n + 1, 0);
   const lastDiagnosticsCountRef = useRef(0);
 
   // Track which bridge instance we've awaited to ensure each new
@@ -211,21 +211,37 @@ export function ShellStateProvider({
   const diagnosticsSubscribe = useCallback(
     (subscriber: DiagnosticsSubscriber) => {
       diagnosticsSubscribersRef.current.add(subscriber);
-      // Trigger reconciliation after commit (safe during mount/commit)
-      bumpDiagnosticsEpoch();
+
+      // Compute transition and apply enable + state update synchronously (inside act)
+      const prev = lastDiagnosticsCountRef.current;
+      const count = diagnosticsSubscribersRef.current.size;
+      if (count !== prev) {
+        lastDiagnosticsCountRef.current = count;
+        if (prev === 0 && count > 0) {
+          try {
+            bridge.enableDiagnostics();
+          } catch (error) {
+            recordTelemetryError('ShellStateProviderEnableDiagnosticsFailed', {
+              message: toErrorMessage(error),
+            });
+          }
+        }
+        dispatch({
+          type: 'diagnostics-subscribers',
+          count,
+          timestamp: Date.now(),
+        });
+      }
 
       const latestTimeline = diagnosticsTimelineRef.current;
       if (latestTimeline) {
         try {
           subscriber(latestTimeline);
         } catch (error) {
-          recordTelemetryError(
-            'ShellStateProviderDiagnosticsSubscriberError',
-            {
-              phase: 'immediate',
-              message: toErrorMessage(error),
-            },
-          );
+          recordTelemetryError('ShellStateProviderDiagnosticsSubscriberError', {
+            phase: 'immediate',
+            message: toErrorMessage(error),
+          });
         }
       }
 
@@ -236,53 +252,38 @@ export function ShellStateProvider({
 
         diagnosticsSubscribersRef.current.delete(subscriber);
 
-        // Avoid dispatching or toggling during cleanup; defer reconciliation to the next macrotask.
-        // Using setTimeout(0) (vs microtask) ensures StrictMode double-invocation and
-        // passive effect cleanup complete before we schedule any state updates.
+        // Avoid dispatching or toggling during cleanup; defer to next macrotask.
         setTimeout(() => {
           if (!isMountedRef.current) {
             return;
           }
+          const prev = lastDiagnosticsCountRef.current;
+          const count = diagnosticsSubscribersRef.current.size;
+          if (count !== prev) {
+            lastDiagnosticsCountRef.current = count;
+            if (prev > 0 && count === 0) {
+              try {
+                bridge.disableDiagnostics();
+              } catch (error) {
+                recordTelemetryError(
+                  'ShellStateProviderDisableDiagnosticsFailed',
+                  { message: toErrorMessage(error) },
+                );
+              }
+            }
+            dispatch({
+              type: 'diagnostics-subscribers',
+              count,
+              timestamp: Date.now(),
+            });
+          }
+          // Bump epoch for any observers relying on it
           bumpDiagnosticsEpoch();
         }, 0);
       };
     },
     [bridge, dispatch],
   );
-
-  // Reconcile diagnostics subscription changes after commit
-  useEffect(() => {
-    const count = diagnosticsSubscribersRef.current.size;
-    const prev = lastDiagnosticsCountRef.current;
-    if (count !== prev) {
-      lastDiagnosticsCountRef.current = count;
-      dispatch({
-        type: 'diagnostics-subscribers',
-        count,
-        timestamp: Date.now(),
-      });
-
-      if (prev === 0 && count > 0) {
-        try {
-          bridge.enableDiagnostics();
-        } catch (error) {
-          recordTelemetryError(
-            'ShellStateProviderEnableDiagnosticsFailed',
-            { message: toErrorMessage(error) },
-          );
-        }
-      } else if (prev > 0 && count === 0) {
-        try {
-          bridge.disableDiagnostics();
-        } catch (error) {
-          recordTelemetryError(
-            'ShellStateProviderDisableDiagnosticsFailed',
-            { message: toErrorMessage(error) },
-          );
-        }
-      }
-    }
-  }, [bridge, dispatch, diagnosticsEpoch]);
 
   useEffect(() => {
     // Only await readiness once per WorkerBridge instance.
@@ -497,12 +498,13 @@ export function ShellStateProvider({
   const diagnosticsValue = useMemo<ShellDiagnosticsApi>(
     () => ({
       latest: state.diagnostics.timeline,
-      isEnabled: state.diagnostics.subscriberCount > 0,
+      get isEnabled() {
+        return lastDiagnosticsCountRef.current > 0;
+      },
       subscribe: diagnosticsSubscribe,
-    }),
+    }) as ShellDiagnosticsApi,
     [
       state.diagnostics.timeline,
-      state.diagnostics.subscriberCount,
       diagnosticsSubscribe,
     ],
   );
