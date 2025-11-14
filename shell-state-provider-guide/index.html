@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Shell State Provider Integration Guide | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-guide"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Shell State Provider Integration Guide | Idle Engine Docs"><meta data-rh="true" name="description" content="How presentation-shell modules consume ShellStateProvider hooks, diagnostics, and social command flows."><meta data-rh="true" property="og:description" content="How presentation-shell modules consume ShellStateProvider hooks, diagnostics, and social command flows."><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-guide"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-guide" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-guide" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.abc2b574.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.49125b96.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.c241f68f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -66,6 +66,11 @@
 <li class="">Subscribing automatically calls <code>bridge.enableDiagnostics()</code> when the first listener registers and disables diagnostics when the last listener unsubscribes (guarding the risk listed in <a class="" href="/Idle-Game-Engine/shell-state-provider-design#11-risks--mitigations">design §11</a>). Use <code>isEnabled</code> to reflect UI state, not to skip subscription.</li>
 <li class="">Guard subscription callbacks; exceptions are reported as <code>ShellStateProviderDiagnosticsSubscriberError</code> with phase metadata.</li>
 <li class="">Access <code>latest</code> for immediate renders—<code>subscribe</code> emits the current timeline before the worker sends updates.</li>
+</ul>
+<p>Implementation notes</p>
+<ul>
+<li class="">Do not dispatch or call setState from effect cleanup functions. The provider reconciles diagnostics subscriber membership after commit using a deferred effect keyed by an internal epoch, then toggles diagnostics only on 0↔1 transitions. This avoids React’s “Maximum update depth exceeded” loop when panels mount/unmount quickly.</li>
+<li class="">The a11y smoke suite includes a diagnostics toggle test that repeatedly opens/closes the panel and asserts no console errors. Run <code>pnpm test:a11y</code> after changing diagnostics UI or provider internals.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-migration-checklist">5. Migration Checklist<a href="#5-migration-checklist" class="hash-link" aria-label="Direct link to 5. Migration Checklist" title="Direct link to 5. Migration Checklist" translate="no">​</a></h2>
 <p>When upgrading an existing module:</p>

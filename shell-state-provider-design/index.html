@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Implement Shell State Provider Context | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Implement Shell State Provider Context | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #17 — Shell state provider context"><meta data-rh="true" property="og:description" content="Issue: #17 — Shell state provider context"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/shell-state-provider-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.abc2b574.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.49125b96.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.c241f68f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -129,13 +129,14 @@
 <ul>
 <li class=""><strong>Unit / Integration</strong>: Add reducer tests in <code>packages/shell-web/src/modules/__tests__/shell-state-provider.test.ts</code>; component integration test mounting <code>App</code> under the provider verifies event rendering.</li>
 <li class=""><strong>Performance</strong>: Measure provider update latency by logging reducer timing in development; ensure no additional allocations beyond existing <code>MAX_EVENT_HISTORY</code>.</li>
-<li class=""><strong>Tooling / A11y</strong>: Re-run <code>pnpm test:a11y</code> after migration to confirm provider does not disrupt Playwright smoke flows (<code>docs/accessibility-smoke-tests-design.md:4</code>).</li>
+<li class=""><strong>Tooling / A11y</strong>: Re-run <code>pnpm test:a11y</code> after migration to confirm provider does not disrupt Playwright smoke flows (<code>docs/accessibility-smoke-tests-design.md:4</code>). Include a smoke that repeatedly toggles the Diagnostics panel and asserts the console does not contain React depth-limit errors.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Risk</strong>: Provider re-renders too frequently, impacting performance. <strong>Mitigation</strong>: Split state and action contexts; memoise selectors; add React DevTools profiling.</li>
 <li class=""><strong>Risk</strong>: Social commands leak tokens. <strong>Mitigation</strong>: Keep access tokens in local component state; provider only handles request lifecycle metadata.</li>
 <li class=""><strong>Risk</strong>: Diagnostics subscriptions conflict. <strong>Mitigation</strong>: Reference-count diagnostics listeners and fall back to noop when zero subscribers remain.</li>
+<li class=""><strong>Risk</strong>: Cleanup-time updates cause re-entrant render loops (e.g., toggling diagnostics triggers “Maximum update depth exceeded”). <strong>Mitigation</strong>: Never dispatch/setState in effect cleanup. Reconcile diagnostics subscriber membership after commit via a provider effect keyed by an internal epoch, and toggle diagnostics only on 0↔1 transitions.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
 <ul>
