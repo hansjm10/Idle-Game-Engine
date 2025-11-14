@@ -117,6 +117,9 @@ export function ShellStateProvider({
   const lastDiagnosticsCountRef = useRef(0);
   const pendingDiagnosticsReconcileRef = useRef(false);
   const emittedDiagnosticsCountRef = useRef(0);
+  // Tracks whether diagnostics have been toggled on at the bridge level to
+  // avoid duplicate enable/disable calls under StrictMode or rapid resubscribe.
+  const bridgeDiagnosticsEnabledRef = useRef(false);
 
   const scheduleDiagnosticsReconcile = useCallback(() => {
     if (pendingDiagnosticsReconcileRef.current) {
@@ -245,9 +248,10 @@ export function ShellStateProvider({
       const count = diagnosticsSubscribersRef.current.size;
       if (count !== prev) {
         lastDiagnosticsCountRef.current = count;
-        if (prev === 0 && count > 0) {
+        if (prev === 0 && count > 0 && !bridgeDiagnosticsEnabledRef.current) {
           try {
             bridge.enableDiagnostics();
+            bridgeDiagnosticsEnabledRef.current = true;
           } catch (error) {
             recordTelemetryError('ShellStateProviderEnableDiagnosticsFailed', {
               message: toErrorMessage(error),
@@ -280,9 +284,10 @@ export function ShellStateProvider({
         const count = diagnosticsSubscribersRef.current.size;
         if (count !== prev) {
           lastDiagnosticsCountRef.current = count;
-          if (prev > 0 && count === 0) {
+          if (prev > 0 && count === 0 && bridgeDiagnosticsEnabledRef.current) {
             try {
               bridge.disableDiagnostics();
+              bridgeDiagnosticsEnabledRef.current = false;
             } catch (error) {
               recordTelemetryError(
                 'ShellStateProviderDisableDiagnosticsFailed',
