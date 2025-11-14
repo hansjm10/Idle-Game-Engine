@@ -119,6 +119,10 @@ useEffect(() => {
 - Guard subscription callbacks; exceptions are reported as `ShellStateProviderDiagnosticsSubscriberError` with phase metadata.
 - Access `latest` for immediate renders—`subscribe` emits the current timeline before the worker sends updates.
 
+Implementation notes
+- Do not dispatch or call setState from effect cleanup functions. The provider reconciles diagnostics subscriber membership after commit using a deferred effect keyed by an internal epoch, then toggles diagnostics only on 0↔1 transitions. This avoids React’s “Maximum update depth exceeded” loop when panels mount/unmount quickly.
+- The a11y smoke suite includes a diagnostics toggle test that repeatedly opens/closes the panel and asserts no console errors. Run `pnpm test:a11y` after changing diagnostics UI or provider internals.
+
 ## 5. Migration Checklist
 
 When upgrading an existing module:

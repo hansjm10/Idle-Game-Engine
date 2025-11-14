@@ -126,7 +126,7 @@ vi.mock('./worker-bridge.js', async () => {
   };
 });
 
-import { Fragment } from 'react';
+import { Fragment, useEffect } from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import {
@@ -389,6 +389,7 @@ describe('ShellStateProvider telemetry integration', () => {
     await act(async () => {
       unsubscribe?.();
     });
+    await flushMicrotasks();
 
     expect(telemetrySpy).toHaveBeenCalledWith(
       'ShellStateProviderDisableDiagnosticsFailed',
@@ -508,11 +509,66 @@ describe('ShellStateProvider diagnostics subscriptions', () => {
     await act(async () => {
       first?.();
     });
+    await flushMicrotasks();
 
     expect(bridgeMock.disableDiagnostics).toHaveBeenCalledTimes(1);
     expect(diagnosticsRef.current!.isEnabled).toBe(false);
 
     await unmount();
+  });
+
+  it('does not dispatch during diagnostics unsubscribe cleanup', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const errors: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        errors.push(args.map(String).join(' '));
+      });
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {});
+
+    function AutoSubscriber() {
+      const diagnostics = useShellDiagnostics();
+      // Subscribe on mount; cleanup unsubscribes. This used to trigger state updates
+      // during cleanup which leads to React depth-limit errors.
+      // The provider now defers reconciliation post-commit, so this should be clean.
+      useEffect(() => {
+        const unsubscribe = diagnostics.subscribe(() => {});
+        return () => unsubscribe();
+      }, [diagnostics]);
+      return null;
+    }
+
+    await act(async () => {
+      root.render(
+        <ShellStateProvider>
+          <AutoSubscriber />
+        </ShellStateProvider>,
+      );
+    });
+
+    // Unmount the tree to trigger unsubscribe cleanup
+    await act(async () => {
+      root.unmount();
+    });
+
+    // Allow any queued microtasks in the provider to settle
+    await flushMicrotasks();
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+
+    container.remove();
+
+    const hasDepthLimitError = errors.some((e) =>
+      e.includes('Maximum update depth exceeded'),
+    );
+    expect(hasDepthLimitError).toBe(false);
   });
 });
 
@@ -529,8 +585,11 @@ interface ProviderSetupResult {
 }
 
 async function flushMicrotasks(): Promise<void> {
+  // Allow pending microtasks to flush
   await Promise.resolve();
   await Promise.resolve();
+  // Also allow next macrotask so setTimeout(0) deferrals settle
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function setupProvider(

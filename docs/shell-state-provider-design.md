@@ -98,12 +98,13 @@ Introduce a layered architecture in which a `ShellStateStore` encapsulates reduc
 ## 10. Testing & Validation Plan
 - **Unit / Integration**: Add reducer tests in `packages/shell-web/src/modules/__tests__/shell-state-provider.test.ts`; component integration test mounting `App` under the provider verifies event rendering.
 - **Performance**: Measure provider update latency by logging reducer timing in development; ensure no additional allocations beyond existing `MAX_EVENT_HISTORY`.
-- **Tooling / A11y**: Re-run `pnpm test:a11y` after migration to confirm provider does not disrupt Playwright smoke flows (`docs/accessibility-smoke-tests-design.md:4`).
+- **Tooling / A11y**: Re-run `pnpm test:a11y` after migration to confirm provider does not disrupt Playwright smoke flows (`docs/accessibility-smoke-tests-design.md:4`). Include a smoke that repeatedly toggles the Diagnostics panel and asserts the console does not contain React depth-limit errors.
 
 ## 11. Risks & Mitigations
 - **Risk**: Provider re-renders too frequently, impacting performance. **Mitigation**: Split state and action contexts; memoise selectors; add React DevTools profiling.
 - **Risk**: Social commands leak tokens. **Mitigation**: Keep access tokens in local component state; provider only handles request lifecycle metadata.
 - **Risk**: Diagnostics subscriptions conflict. **Mitigation**: Reference-count diagnostics listeners and fall back to noop when zero subscribers remain.
+- **Risk**: Cleanup-time updates cause re-entrant render loops (e.g., toggling diagnostics triggers “Maximum update depth exceeded”). **Mitigation**: Never dispatch/setState in effect cleanup. Reconcile diagnostics subscriber membership after commit via a provider effect keyed by an internal epoch, and toggle diagnostics only on 0↔1 transitions.
 
 ## 12. Rollout Plan
 - **Milestones**: Provider PR merged → consumer migration PR → QA validation.
