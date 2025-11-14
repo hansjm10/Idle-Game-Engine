@@ -216,8 +216,6 @@ function LockedState(): JSX.Element {
  * - Fully accessible with ARIA attributes and keyboard navigation
  * - Uses memoized selectors for deterministic rendering
  *
- * Gated by VITE_ENABLE_PROGRESSION_UI feature flag.
- *
  * @see docs/build-resource-generator-upgrade-ui-components-design.md §6.1-§6.3
  */
 export function ResourceDashboard(): JSX.Element | null {

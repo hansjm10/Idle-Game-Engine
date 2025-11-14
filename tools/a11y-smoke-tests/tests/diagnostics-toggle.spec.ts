@@ -15,6 +15,7 @@ test.describe('Diagnostics toggle stability', () => {
     await page.goto('/');
 
     const toggle = page.getByRole('button', { name: /Show Diagnostics|Hide Diagnostics/i });
+    await toggle.waitFor();
 
     // Toggle open/close a few times to exercise subscribe/unsubscribe cleanup paths
     for (let i = 0; i < 3; i++) {
@@ -33,4 +34,3 @@ test.describe('Diagnostics toggle stability', () => {
     ).toBeNull();
   });
 });
-
