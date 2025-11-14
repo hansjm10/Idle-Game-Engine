@@ -133,6 +133,27 @@ export function ShellStateProvider({
         return;
       }
       const count = diagnosticsSubscribersRef.current.size;
+
+      // Toggle bridge diagnostics based on consolidated subscriber count.
+      try {
+        if (count === 0 && bridgeDiagnosticsEnabledRef.current) {
+          bridge.disableDiagnostics();
+          bridgeDiagnosticsEnabledRef.current = false;
+        } else if (count > 0 && !bridgeDiagnosticsEnabledRef.current) {
+          bridge.enableDiagnostics();
+          bridgeDiagnosticsEnabledRef.current = true;
+        }
+      } catch (error) {
+        recordTelemetryError(
+          count === 0
+            ? 'ShellStateProviderDisableDiagnosticsFailed'
+            : 'ShellStateProviderEnableDiagnosticsFailed',
+          { message: toErrorMessage(error) },
+        );
+      }
+
+      // Update derived counts and notify observers
+      lastDiagnosticsCountRef.current = count;
       if (count !== emittedDiagnosticsCountRef.current) {
         emittedDiagnosticsCountRef.current = count;
         dispatch({
@@ -279,23 +300,6 @@ export function ShellStateProvider({
         diagnosticsSubscribersRef.current.delete(subscriber);
         // Defer reconciliation to avoid updates during cleanup phase
         scheduleDiagnosticsReconcile();
-        // Synchronously update immediate derived status and toggle if transitioning from >0->0
-        const prev = lastDiagnosticsCountRef.current;
-        const count = diagnosticsSubscribersRef.current.size;
-        if (count !== prev) {
-          lastDiagnosticsCountRef.current = count;
-          if (prev > 0 && count === 0 && bridgeDiagnosticsEnabledRef.current) {
-            try {
-              bridge.disableDiagnostics();
-              bridgeDiagnosticsEnabledRef.current = false;
-            } catch (error) {
-              recordTelemetryError(
-                'ShellStateProviderDisableDiagnosticsFailed',
-                { message: toErrorMessage(error) },
-              );
-            }
-          }
-        }
       };
     },
     [scheduleDiagnosticsReconcile, bridge],
