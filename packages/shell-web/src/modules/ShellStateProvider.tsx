@@ -115,6 +115,33 @@ export function ShellStateProvider({
   // Epoch used to trigger reconciliation of diagnostics subscriber changes
   const [_diagnosticsEpoch, bumpDiagnosticsEpoch] = useReducer((n: number) => n + 1, 0);
   const lastDiagnosticsCountRef = useRef(0);
+  const pendingDiagnosticsReconcileRef = useRef(false);
+  const emittedDiagnosticsCountRef = useRef(0);
+
+  const scheduleDiagnosticsReconcile = useCallback(() => {
+    if (pendingDiagnosticsReconcileRef.current) {
+      return;
+    }
+    pendingDiagnosticsReconcileRef.current = true;
+
+    setTimeout(() => {
+      pendingDiagnosticsReconcileRef.current = false;
+      if (!isMountedRef.current) {
+        return;
+      }
+      const count = diagnosticsSubscribersRef.current.size;
+      if (count !== emittedDiagnosticsCountRef.current) {
+        emittedDiagnosticsCountRef.current = count;
+        dispatch({
+          type: 'diagnostics-subscribers',
+          count,
+          timestamp: Date.now(),
+        });
+      }
+      // Bump epoch for any observers relying on it
+      bumpDiagnosticsEpoch();
+    }, 0);
+  }, [dispatch]);
 
   // Track which bridge instance we've awaited to ensure each new
   // WorkerBridge is awaited and announced, while avoiding duplicate
@@ -211,8 +238,9 @@ export function ShellStateProvider({
   const diagnosticsSubscribe = useCallback(
     (subscriber: DiagnosticsSubscriber) => {
       diagnosticsSubscribersRef.current.add(subscriber);
-
-      // Compute transition and apply enable + state update synchronously (inside act)
+      // Defer reconciliation to avoid state updates during effect mount/cleanup
+      scheduleDiagnosticsReconcile();
+      // Synchronously update immediate derived status and toggle if transitioning from 0->1
       const prev = lastDiagnosticsCountRef.current;
       const count = diagnosticsSubscribersRef.current.size;
       if (count !== prev) {
@@ -226,11 +254,6 @@ export function ShellStateProvider({
             });
           }
         }
-        dispatch({
-          type: 'diagnostics-subscribers',
-          count,
-          timestamp: Date.now(),
-        });
       }
 
       const latestTimeline = diagnosticsTimelineRef.current;
@@ -249,40 +272,28 @@ export function ShellStateProvider({
         if (!diagnosticsSubscribersRef.current.has(subscriber)) {
           return;
         }
-
         diagnosticsSubscribersRef.current.delete(subscriber);
-
-        // Avoid dispatching or toggling during cleanup; defer to next macrotask.
-        setTimeout(() => {
-          if (!isMountedRef.current) {
-            return;
-          }
-          const prev = lastDiagnosticsCountRef.current;
-          const count = diagnosticsSubscribersRef.current.size;
-          if (count !== prev) {
-            lastDiagnosticsCountRef.current = count;
-            if (prev > 0 && count === 0) {
-              try {
-                bridge.disableDiagnostics();
-              } catch (error) {
-                recordTelemetryError(
-                  'ShellStateProviderDisableDiagnosticsFailed',
-                  { message: toErrorMessage(error) },
-                );
-              }
+        // Defer reconciliation to avoid updates during cleanup phase
+        scheduleDiagnosticsReconcile();
+        // Synchronously update immediate derived status and toggle if transitioning from >0->0
+        const prev = lastDiagnosticsCountRef.current;
+        const count = diagnosticsSubscribersRef.current.size;
+        if (count !== prev) {
+          lastDiagnosticsCountRef.current = count;
+          if (prev > 0 && count === 0) {
+            try {
+              bridge.disableDiagnostics();
+            } catch (error) {
+              recordTelemetryError(
+                'ShellStateProviderDisableDiagnosticsFailed',
+                { message: toErrorMessage(error) },
+              );
             }
-            dispatch({
-              type: 'diagnostics-subscribers',
-              count,
-              timestamp: Date.now(),
-            });
           }
-          // Bump epoch for any observers relying on it
-          bumpDiagnosticsEpoch();
-        }, 0);
+        }
       };
     },
-    [bridge, dispatch],
+    [scheduleDiagnosticsReconcile, bridge],
   );
 
   useEffect(() => {
@@ -290,7 +301,6 @@ export function ShellStateProvider({
     if (lastAwaitedBridgeRef.current === bridge) {
       return;
     }
-    lastAwaitedBridgeRef.current = bridge;
 
     let active = true;
     bridge
@@ -299,6 +309,10 @@ export function ShellStateProvider({
         if (!active) {
           return;
         }
+        // Mark this bridge as handled only after readiness has resolved.
+        // This avoids React StrictMode double-effect short-circuiting the
+        // second run before readiness can dispatch in development.
+        lastAwaitedBridgeRef.current = bridge;
         dispatch({
           type: 'bridge-ready',
           timestamp: Date.now(),
@@ -433,9 +447,6 @@ export function ShellStateProvider({
       return;
     }
 
-    lastRestorePayloadRef.current = restorePayload;
-    lastRestoreBridgeRef.current = bridge;
-
     let cancelled = false;
 
     (async () => {
@@ -444,6 +455,11 @@ export function ShellStateProvider({
         if (cancelled) {
           return;
         }
+        // Mark this payload/bridge pair as handled only after readiness has resolved
+        // to avoid React StrictMode short-circuiting the second mount before
+        // restore can execute in development.
+        lastRestorePayloadRef.current = restorePayload;
+        lastRestoreBridgeRef.current = bridge;
         await restoreSession(restorePayload);
       } catch (error) {
         if (cancelled) {
