@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { renderHook, act, waitFor, render, screen, fireEvent } from '@testing-library/react';
+import React, { type ReactNode } from 'react';
 
-import { ShellStateProvider, useShellProgression } from './ShellStateProvider.js';
+import { ShellStateProvider, useShellProgression, useShellDiagnostics } from './ShellStateProvider.js';
 import type { ShellStateProviderConfig } from './shell-state.types.js';
 import type {
   RuntimeStateSnapshot,
@@ -278,5 +278,56 @@ describe('ShellStateProvider', () => {
     // triggering worker errors, which is better tested through
     // integration tests or by verifying the error handler logic
     // in isolation (already covered in shell-state-store.test.ts).
+  });
+
+  describe('diagnostics context', () => {
+    function DiagnosticsConsumer() {
+      const diagnostics = useShellDiagnostics();
+      const [open, setOpen] = React.useState(false);
+      React.useEffect(() => {
+        if (!open) return;
+        const unsubscribe = diagnostics.subscribe(() => {});
+        return () => unsubscribe();
+      }, [open, diagnostics]);
+
+      return (
+        <div>
+          <button type="button" onClick={() => setOpen((v: boolean) => !v)}>
+            {open ? 'Close' : 'Open'}
+          </button>
+          <span data-testid="diag-status">{diagnostics.isEnabled ? 'enabled' : 'idle'}</span>
+        </div>
+      );
+    }
+
+    it('updates consumers when subscriber count changes', async () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      render(
+        <DiagnosticsConsumer />, { wrapper },
+      );
+
+      const status = screen.getByTestId('diag-status');
+      expect(status.textContent).toBe('idle');
+
+      // Open to subscribe
+      fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+      // Should enable diagnostics and reflect enabled state
+      await waitFor(() => {
+        expect(mockBridge.enableDiagnostics).toHaveBeenCalledTimes(1);
+        expect(status.textContent).toBe('enabled');
+      });
+
+      // Close to unsubscribe; provider defers disable via setTimeout
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+      await waitFor(() => {
+        expect(mockBridge.disableDiagnostics).toHaveBeenCalledTimes(1);
+        expect(status.textContent).toBe('idle');
+      });
+    });
   });
 });

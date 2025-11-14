@@ -69,8 +69,8 @@ export function DiagnosticsPanel(): JSX.Element | null {
     if (!isOpen) return;
     // Establish baseline from the latest ref, then subscribe once while open.
     setLatest(latestRef.current);
-    return subscribeRef.current((timeline) => setLatest(timeline));
-  }, [isOpen]);
+    return diagnostics.subscribe((timeline) => setLatest(timeline));
+  }, [isOpen, diagnostics.subscribe]);
 
   const visible = useThrottledTimeline(latest);
   const summary = useMemo(() => (visible ? summarizeDiagnostics(visible) : null), [visible]);

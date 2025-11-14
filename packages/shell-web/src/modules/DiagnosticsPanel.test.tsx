@@ -61,5 +61,30 @@ describe('DiagnosticsPanel', () => {
     expect(await screen.findByText('Head')).toBeInTheDocument();
     expect(await screen.findByText('Entries')).toBeInTheDocument();
   });
-});
 
+  it('resubscribes when diagnostics provider changes while open', async () => {
+    // First subscribe impl (provider A)
+    const unsubscribeA = vi.fn();
+    const subscribeA = vi.fn<(cb: Subscriber) => () => void>(() => unsubscribeA);
+    mockDiagnostics.subscribe = subscribeA;
+
+    const { rerender } = render(<DiagnosticsPanel />);
+    const toggle = screen.getByRole('button', { name: /Show Diagnostics/i });
+    fireEvent.click(toggle);
+
+    expect(subscribeA).toHaveBeenCalledTimes(1);
+    expect(unsubscribeA).toHaveBeenCalledTimes(0);
+
+    // Swap to provider B with a new subscribe function while panel remains open
+    const unsubscribeB = vi.fn();
+    const subscribeB = vi.fn<(cb: Subscriber) => () => void>(() => unsubscribeB);
+    mockDiagnostics.subscribe = subscribeB;
+
+    // Re-render to simulate provider change without closing the panel
+    rerender(<DiagnosticsPanel />);
+
+    // Expect cleanup of provider A and subscription to provider B
+    expect(unsubscribeA).toHaveBeenCalledTimes(1);
+    expect(subscribeB).toHaveBeenCalledTimes(1);
+  });
+});

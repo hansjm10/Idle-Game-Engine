@@ -505,6 +505,8 @@ export function ShellStateProvider({
     }) as ShellDiagnosticsApi,
     [
       state.diagnostics.timeline,
+      state.diagnostics.subscriberCount,
+      _diagnosticsEpoch,
       diagnosticsSubscribe,
     ],
   );
