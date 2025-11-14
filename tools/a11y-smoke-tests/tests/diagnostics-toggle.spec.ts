@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
 
+const isPreview = (process.env.PLAYWRIGHT_A11Y_EXPECTED_PROJECT ?? '').includes('preview');
+
 test.describe('Diagnostics toggle stability', () => {
   test('toggling diagnostics does not trigger React depth-limit errors', async ({ page }) => {
+    test.skip(isPreview, 'Toggle interaction is exercised under dev project only');
     let depthError: string | null = null;
 
     const onConsole = (msg: import('@playwright/test').ConsoleMessage) => {
