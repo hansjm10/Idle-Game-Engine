@@ -36,7 +36,7 @@ test.describe('Upgrades modal accessibility', () => {
     // Axe check limited to the dialog region
     const axe = new AxeBuilder({ page });
     if (!isPreview) {
-      axe.include('role=dialog');
+      axe.include('[role="dialog"]');
     }
     const { violations } = await axe.withTags(['wcag2a', 'wcag2aa']).analyze();
 
