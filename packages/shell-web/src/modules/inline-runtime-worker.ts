@@ -1,5 +1,8 @@
 import './process-shim.js';
-import type { RuntimeWorkerHarness } from '../runtime.worker.js';
+import {
+  initializeRuntimeWorker,
+  type RuntimeWorkerHarness,
+} from '../runtime.worker.js';
 import type { WorkerBridgeWorker } from './worker-bridge-worker.js';
 
 type MessageListener = (event: MessageEvent<unknown>) => void;
@@ -18,68 +21,90 @@ interface InlineWorkerContext {
   fetch?: typeof fetch;
 }
 
+const bridgeListeners = new Set<MessageListener>();
+const workerListeners = new Set<MessageListener>();
+const pendingMessages: unknown[] = [];
+let sharedHarness: RuntimeWorkerHarness | null = null;
+
+function postToBridgeListeners(message: unknown): void {
+  queueMicrotask(() => {
+    for (const listener of bridgeListeners) {
+      listener({ data: message } as MessageEvent<unknown>);
+    }
+  });
+}
+
+function postToWorkerListeners(message: unknown): void {
+  queueMicrotask(() => {
+    for (const listener of workerListeners) {
+      listener({ data: message } as MessageEvent<unknown>);
+    }
+  });
+}
+
+function ensureHarness(): void {
+  if (sharedHarness) {
+    return;
+  }
+
+  const context: InlineWorkerContext = {
+    addEventListener: (type, listener) => {
+      if (type !== 'message') {
+        return;
+      }
+      workerListeners.add(listener);
+      if (pendingMessages.length > 0) {
+        const buffered = pendingMessages.splice(
+          0,
+          pendingMessages.length,
+        );
+        for (const message of buffered) {
+          postToWorkerListeners(message);
+        }
+      }
+    },
+    removeEventListener: (type, listener) => {
+      if (type !== 'message') {
+        return;
+      }
+      workerListeners.delete(listener);
+    },
+    postMessage: (message) => {
+      postToBridgeListeners(message);
+    },
+    close: () => {
+      // Inline harness stays alive for the lifetime of the page; no-op.
+    },
+    fetch:
+      typeof fetch === 'function'
+        ? fetch.bind(globalThis)
+        : undefined,
+  };
+
+  try {
+    sharedHarness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      fetch: context.fetch,
+      scheduleTick: (callback) => {
+        // Ensure at least one tick runs immediately in inline mode so the
+        // shell receives an initial progression snapshot even if timers are
+        // throttled in dev tools or test environments.
+        callback();
+        const id = setInterval(callback, 16);
+        return () => clearInterval(id);
+      },
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(
+      '[InlineRuntimeWorker] Failed to initialize runtime worker',
+      error,
+    );
+  }
+}
+
 export class InlineRuntimeWorker implements WorkerBridgeWorker {
-  private readonly bridgeListeners = new Set<MessageListener>();
-  private readonly workerListeners = new Set<MessageListener>();
-  private readonly pendingMessages: unknown[] = [];
-  private harness: RuntimeWorkerHarness | null = null;
-  private disposed = false;
-
   constructor() {
-    const context: InlineWorkerContext = {
-      addEventListener: (type, listener) => {
-        if (type !== 'message') {
-          return;
-        }
-        this.workerListeners.add(listener);
-        if (this.pendingMessages.length > 0) {
-          const buffered = this.pendingMessages.splice(0, this.pendingMessages.length);
-          for (const message of buffered) {
-            this.postToWorkerListeners(message);
-          }
-        }
-      },
-      removeEventListener: (type, listener) => {
-        if (type !== 'message') {
-          return;
-        }
-        this.workerListeners.delete(listener);
-      },
-      postMessage: (message) => {
-        if (this.disposed) {
-          return;
-        }
-        this.postToBridgeListeners(message);
-      },
-      close: () => {
-        this.disposeInternal();
-      },
-      fetch:
-        typeof fetch === 'function'
-          ? fetch.bind(globalThis)
-          : undefined,
-    };
-
-    void import('../runtime.worker.js')
-      .then(({ initializeRuntimeWorker }) => {
-        if (this.disposed) {
-          return;
-        }
-        this.harness = initializeRuntimeWorker({
-          context: context as unknown as DedicatedWorkerGlobalScope,
-          fetch: context.fetch,
-        });
-        if (this.pendingMessages.length > 0) {
-          const buffered = this.pendingMessages.splice(0, this.pendingMessages.length);
-          for (const message of buffered) {
-            this.postToWorkerListeners(message);
-          }
-        }
-      })
-      .catch((error) => {
-        // eslint-disable-next-line no-console
-        console.error('[InlineRuntimeWorker] Failed to initialize runtime worker', error);
-      });
   }
 
   addEventListener(
@@ -89,7 +114,8 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
     if (type !== 'message') {
       return;
     }
-    this.bridgeListeners.add(listener);
+    ensureHarness();
+    bridgeListeners.add(listener);
   }
 
   removeEventListener(
@@ -99,50 +125,20 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
     if (type !== 'message') {
       return;
     }
-    this.bridgeListeners.delete(listener);
+    bridgeListeners.delete(listener);
   }
 
   postMessage(message: unknown): void {
-    if (this.disposed) {
+    ensureHarness();
+    if (!sharedHarness || workerListeners.size === 0) {
+      pendingMessages.push(message);
       return;
     }
-    if (this.workerListeners.size === 0 || this.harness === null) {
-      this.pendingMessages.push(message);
-      return;
-    }
-    this.postToWorkerListeners(message);
+    postToWorkerListeners(message);
   }
 
   terminate(): void {
-    this.disposeInternal();
-  }
-
-  private disposeInternal(): void {
-    if (this.disposed) {
-      return;
-    }
-    this.disposed = true;
-    this.bridgeListeners.clear();
-    this.workerListeners.clear();
-    this.pendingMessages.length = 0;
-    this.harness?.dispose();
-    this.harness = null;
-  }
-
-  private postToBridgeListeners(message: unknown): void {
-    queueMicrotask(() => {
-      for (const listener of this.bridgeListeners) {
-        listener({ data: message } as MessageEvent<unknown>);
-      }
-    });
-  }
-
-  private postToWorkerListeners(message: unknown): void {
-    queueMicrotask(() => {
-      for (const listener of this.workerListeners) {
-        listener({ data: message } as MessageEvent<unknown>);
-      }
-    });
+    // Inline harness remains active for the session; no-op for bridge disposal.
   }
 }
 

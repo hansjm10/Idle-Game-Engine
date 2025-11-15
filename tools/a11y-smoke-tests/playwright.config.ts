@@ -50,7 +50,7 @@ export default defineConfig({
         baseURL: devBaseUrl,
         trace: DEFAULT_TRACE_MODE
       },
-      testMatch: /shell-state-provider-restore\.spec\.ts/
+      testMatch: /shell-state-provider-restore\.spec\.ts|progression-baseline\.spec\.ts/
     }
   ]
 });

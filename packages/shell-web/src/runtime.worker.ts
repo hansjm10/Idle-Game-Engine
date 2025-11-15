@@ -240,7 +240,7 @@ export function initializeRuntimeWorker(
 
   const monotonicClock = createMonotonicClock(now);
 
-  let lastTimestamp = now();
+  let lastTimestamp = now() - stepDurationMs;
   const tick = () => {
     if (restoreInProgress) {
       return;
