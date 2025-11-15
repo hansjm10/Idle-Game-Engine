@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Build Resource/Generator/Upgrade UI Components | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Build Resource/Generator/Upgrade UI Components | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.49125b96.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.4a192afd.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.c241f68f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -139,7 +139,7 @@
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
 <ul>
-<li class=""><strong>Deployment</strong>: Roll out under <code>VITE_ENABLE_PROGRESSION_UI</code> flag defaulting to false until progression UI tests pass in CI, then enable for dev and production sequentially.</li>
+<li class=""><strong>Deployment</strong>: Progression UI is enabled by default. Maintain schema guardrails and ensure the a11y and component test suites pass cleanly in CI.</li>
 <li class=""><strong>Telemetry &amp; Observability</strong>: Emit shell analytics events through existing facade (<code>packages/shell-web/src/modules/shell-analytics.ts:1</code>) for resource purchases and upgrade actions; fire a <code>ProgressionUiSchemaMismatch</code> event when the bridge filters worker envelopes so rollout monitors highlight version skew; gauge adoption via weekly reports.</li>
 <li class=""><strong>Security &amp; Compliance</strong>: Ensure no PII in snapshots; honour command authorization policies during progression UI interactions; maintain worker isolation per security guidelines.</li>
 </ul>
@@ -161,7 +161,7 @@
 <ul>
 <li class=""><strong>Context Packets</strong>: Agents must preload <code>docs/idle-engine-design.md</code>, <code>docs/runtime-command-queue-design.md</code>, and relevant source files before acting on the progression UI.</li>
 <li class=""><strong>Prompting &amp; Constraints</strong>: Use command templates referencing <code>bridge.sendCommand</code> patterns; follow naming conventions and commit style while focusing on the progression UI.</li>
-<li class=""><strong>Safety Rails</strong>: Do not bypass worker bridge isolation (<code>docs/runtime-react-worker-bridge-design.md:160</code>); avoid mutating serialized state; keep feature flag default off until acceptance suite passes.</li>
+<li class=""><strong>Safety Rails</strong>: Do not bypass worker bridge isolation (<code>docs/runtime-react-worker-bridge-design.md:160</code>); avoid mutating serialized state; keep acceptance suites green (no feature flag gating).</li>
 <li class=""><strong>Validation Hooks</strong>: Run <code>pnpm lint</code>, <code>pnpm test --filter shell-web</code>, and <code>pnpm test:a11y</code> after UI modifications; document outputs in issue comments.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
