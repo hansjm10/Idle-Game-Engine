@@ -189,7 +189,7 @@ describe('ShellStateProvider telemetry integration', () => {
 
     const { unmount } = await setupProvider();
 
-    await flushMicrotasks();
+    await act(async () => { await flushMicrotasks(); });
 
     expect(telemetrySpy).toHaveBeenCalledWith(
       'ShellStateProviderRestoreEffectFailed',
@@ -205,7 +205,7 @@ describe('ShellStateProvider telemetry integration', () => {
 
     const { unmount } = await setupProvider();
 
-    await flushMicrotasks();
+    await act(async () => { await flushMicrotasks(); });
 
     expect(telemetrySpy).toHaveBeenCalledWith(
       'ShellStateProviderAwaitReadyFailed',
@@ -389,7 +389,7 @@ describe('ShellStateProvider telemetry integration', () => {
     await act(async () => {
       unsubscribe?.();
     });
-    await flushMicrotasks();
+    await act(async () => { await flushMicrotasks(); });
 
     expect(telemetrySpy).toHaveBeenCalledWith(
       'ShellStateProviderDisableDiagnosticsFailed',
@@ -509,7 +509,7 @@ describe('ShellStateProvider diagnostics subscriptions', () => {
     await act(async () => {
       first?.();
     });
-    await flushMicrotasks();
+    await act(async () => { await flushMicrotasks(); });
 
     expect(bridgeMock.disableDiagnostics).toHaveBeenCalledTimes(1);
     expect(diagnosticsRef.current!.isEnabled).toBe(false);
@@ -558,7 +558,7 @@ describe('ShellStateProvider diagnostics subscriptions', () => {
     });
 
     // Allow any queued microtasks in the provider to settle
-    await flushMicrotasks();
+    await act(async () => { await flushMicrotasks(); });
 
     errorSpy.mockRestore();
     warnSpy.mockRestore();

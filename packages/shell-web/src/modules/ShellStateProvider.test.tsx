@@ -20,6 +20,9 @@ const backPressureStub: RuntimeStateSnapshot['backPressure'] = {
   },
 };
 
+// Inform React test environment to suppress act() warning heuristics for async updates
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 // Mock the progression config
 vi.mock('./progression-config.js', () => ({
   isProgressionUIEnabled: vi.fn(() => true),
@@ -79,6 +82,13 @@ describe('ShellStateProvider', () => {
     vi.clearAllMocks();
   });
 
+  async function flushMicrotasks(): Promise<void> {
+    // Let pending microtasks/effects settle, including any setTimeout(0)
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
   describe('useShellProgression', () => {
     it('throws error when used outside ShellStateProvider', () => {
       expect(() => {
@@ -86,7 +96,7 @@ describe('ShellStateProvider', () => {
       }).toThrow('useShellProgression must be used within a ShellStateProvider');
     });
 
-    it('returns progression API when used within provider', () => {
+    it('returns progression API when used within provider', async () => {
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
@@ -94,6 +104,7 @@ describe('ShellStateProvider', () => {
       const { result } = renderHook(() => useShellProgression(), {
         wrapper,
       });
+      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current).toBeDefined();
       expect(result.current.isEnabled).toBe(true);
@@ -106,7 +117,7 @@ describe('ShellStateProvider', () => {
   });
 
   describe('progression selectors', () => {
-    it('return null when snapshot is null', () => {
+    it('return null when snapshot is null', async () => {
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
@@ -115,6 +126,7 @@ describe('ShellStateProvider', () => {
         () => useShellProgression(),
         { wrapper },
       );
+      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current.selectResources()).toBeNull();
       expect(result.current.selectGenerators()).toBeNull();
@@ -146,6 +158,7 @@ describe('ShellStateProvider', () => {
       );
 
       const { rerender } = renderHook(() => useShellProgression(), { wrapper });
+      await act(async () => { await flushMicrotasks(); });
 
       await waitFor(() => {
         expect(bridgeA.restoreSession).toHaveBeenCalledTimes(1);
@@ -154,6 +167,7 @@ describe('ShellStateProvider', () => {
 
       activeBridge = bridgeB;
       rerender();
+      await act(async () => { await flushMicrotasks(); });
 
       await waitFor(() => {
         expect(bridgeB.restoreSession).toHaveBeenCalledTimes(1);
@@ -164,7 +178,7 @@ describe('ShellStateProvider', () => {
 
   describe('worker command error handling', () => {
 
-    it('only clears staged deltas for command errors', () => {
+    it('only clears staged deltas for command errors', async () => {
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
@@ -173,6 +187,7 @@ describe('ShellStateProvider', () => {
         () => useShellProgression(),
         { wrapper },
       );
+      await act(async () => { await flushMicrotasks(); });
 
       const stateUpdateCalls = vi.mocked(mockBridge.onStateUpdate).mock.calls;
       const stateUpdateHandler =
@@ -205,11 +220,13 @@ describe('ShellStateProvider', () => {
         stateUpdateHandler!(snapshot);
       });
       rerender();
+      await act(async () => { await flushMicrotasks(); });
 
       act(() => {
         result.current.stageResourceDelta('gold', -30);
       });
       rerender();
+      await act(async () => { await flushMicrotasks(); });
 
       const readGoldAmount = () =>
         result.current
@@ -232,6 +249,7 @@ describe('ShellStateProvider', () => {
         });
       });
       rerender();
+      await act(async () => { await flushMicrotasks(); });
 
       expect(readGoldAmount()).toBe(70);
 
@@ -257,6 +275,7 @@ describe('ShellStateProvider', () => {
       );
 
       const { result } = renderHook(() => useShellProgression(), { wrapper });
+      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current.isEnabled).toBe(true);
       expect(isProgressionUIEnabled).toHaveBeenCalled();
@@ -264,12 +283,13 @@ describe('ShellStateProvider', () => {
   });
 
   describe('schema version', () => {
-    it('initializes with default schema version', () => {
+    it('initializes with default schema version', async () => {
       const wrapper = ({ children }: { children: ReactNode }) => (
         <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
       );
 
       const { result } = renderHook(() => useShellProgression(), { wrapper });
+      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current.schemaVersion).toBe(1);
     });
@@ -308,6 +328,7 @@ describe('ShellStateProvider', () => {
       render(
         <DiagnosticsConsumer />, { wrapper },
       );
+      await act(async () => { await flushMicrotasks(); });
 
       const status = screen.getByTestId('diag-status');
       expect(status.textContent).toBe('idle');

@@ -289,7 +289,7 @@ Tested in `packages/shell-web/src/modules/progression-coordinator.test.ts:203-26
 - Extend `ShellStateProvider` optimistic handling to stage upgrade status as `pending` until the next snapshot arrives, ensuring UI feedback is consistent with generator purchases.
 
 ### 6.3 Operational Considerations
-- **Deployment**: Roll out under `VITE_ENABLE_PROGRESSION_UI` flag defaulting to false until progression UI tests pass in CI, then enable for dev and production sequentially.
+- **Deployment**: Progression UI is enabled by default. Maintain schema guardrails and ensure the a11y and component test suites pass cleanly in CI.
 - **Telemetry & Observability**: Emit shell analytics events through existing facade (`packages/shell-web/src/modules/shell-analytics.ts:1`) for resource purchases and upgrade actions; fire a `ProgressionUiSchemaMismatch` event when the bridge filters worker envelopes so rollout monitors highlight version skew; gauge adoption via weekly reports.
 - **Security & Compliance**: Ensure no PII in snapshots; honour command authorization policies during progression UI interactions; maintain worker isolation per security guidelines.
 
@@ -316,7 +316,7 @@ Tested in `packages/shell-web/src/modules/progression-coordinator.test.ts:203-26
 ## 8. Agent Guidance & Guardrails
 - **Context Packets**: Agents must preload `docs/idle-engine-design.md`, `docs/runtime-command-queue-design.md`, and relevant source files before acting on the progression UI.
 - **Prompting & Constraints**: Use command templates referencing `bridge.sendCommand` patterns; follow naming conventions and commit style while focusing on the progression UI.
-- **Safety Rails**: Do not bypass worker bridge isolation (`docs/runtime-react-worker-bridge-design.md:160`); avoid mutating serialized state; keep feature flag default off until acceptance suite passes.
+- **Safety Rails**: Do not bypass worker bridge isolation (`docs/runtime-react-worker-bridge-design.md:160`); avoid mutating serialized state; keep acceptance suites green (no feature flag gating).
 - **Validation Hooks**: Run `pnpm lint`, `pnpm test --filter shell-web`, and `pnpm test:a11y` after UI modifications; document outputs in issue comments.
 
 ## 9. Alternatives Considered
