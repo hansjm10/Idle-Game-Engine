@@ -6,7 +6,7 @@ sidebar_position: 4
 # Stabilise Global Economy with Server-Authoritative Ledger
 
 ## Document Control
-- **Title**: Stabilise Global Economy with Server-Authoritative Ledger (initiative token: ``)
+- **Title**: Stabilise Global Economy with Server-Authoritative Ledger (initiative token: `GEL-001`)
 - **Authors**: Idle Engine design-authoring agent (AI), TODO: Human Owner
 - **Reviewers**: TODO: Runtime lead, Social service lead, Content lead
 - **Status**: Draft
@@ -16,7 +16,7 @@ sidebar_position: 4
 
 ## 1. Summary
 
-This document specifies the design for the initiative ``: stabilising the Idle Engine’s **global economy** by introducing a **server-authoritative ledger** and economy APIs in `services/social`, while keeping per-player simulation client-side and deterministic via `@idle-engine/core`. The proposal formalises a split between **local, client-authoritative soft progression** and **server-authoritative hard economic state** that underpins leaderboards, guilds, and shared world features. Using this design, the social service enforces invariants on spends, trades, and contributions without running a continuous per-player simulation, relying instead on deterministic replay and bounded validation. The impact is a globally consistent economy that tolerates untrusted clients, supports cross-device play, and scales operationally without a full server-side sim for every player.
+This document specifies the design for the initiative `GEL-001`: stabilising the Idle Engine’s **global economy** by introducing a **server-authoritative ledger** and economy APIs in `services/social`, while keeping per-player simulation client-side and deterministic via `@idle-engine/core`. The proposal formalises a split between **local, client-authoritative soft progression** and **server-authoritative hard economic state** that underpins leaderboards, guilds, and shared world features. Using this design, the social service enforces invariants on spends, trades, and contributions without running a continuous per-player simulation, relying instead on deterministic replay and bounded validation. The impact is a globally consistent economy that tolerates untrusted clients, supports cross-device play, and scales operationally without a full server-side sim for every player.
 
 ## 2. Context & Problem Statement
 
@@ -49,17 +49,17 @@ This document specifies the design for the initiative ``: stabilising the Idle E
     - Clients may be untrusted; malicious actors must not be able to destabilise the global economy.
   - **Timelines**
     - Initial implementation must be small, testable, and incrementally deployable (no big-bang migration).
-    - The initiative `` should be deliverable in phases that can be executed by AI agents following this document.
+    - The initiative `GEL-001` should be deliverable in phases that can be executed by AI agents following this document.
 
 ## 3. Goals & Non-Goals
 
 - **Goals**
-  1. Define a clear split between **hard, server-authoritative economies** and **soft, client-authoritative progression** within initiative ``.
+  1. Define a clear split between **hard, server-authoritative economies** and **soft, client-authoritative progression** within initiative `GEL-001`.
   2. Extend `services/social` with a **persistent ledger and APIs** for balances, spends, trades, and contributions, enforcing economic invariants.
   3. Ensure **leaderboard and guild endpoints** rely on server-authoritative values, not client-reported totals.
   4. Provide a **validation model** that uses deterministic replay via `IdleEngineRuntime` in Node only for bounded, on-demand verification (e.g., suspicious updates), not continuous per-player ticking.
   5. Instrument economic flows with **telemetry and diagnostics** (e.g., counters for rejected operations, anomaly flags).
-  6. Provide an **AI-ready work breakdown** and guardrails so autonomous agents can implement initiative `` safely.
+  6. Provide an **AI-ready work breakdown** and guardrails so autonomous agents can implement initiative `GEL-001` safely.
 
 - **Non-Goals**
   1. Implement a full in-game marketplace, auction house, or complex derivatives systems; this design focuses on linear balances and simple trades.
@@ -78,7 +78,7 @@ This document specifies the design for the initiative ``: stabilising the Idle E
 
 - **Agent Roles**
   - **Runtime Implementation Agent**
-    - Modifies `packages/core` only where needed to support economic verification hooks and diagnostic exports for initiative ``.
+    - Modifies `packages/core` only where needed to support economic verification hooks and diagnostic exports for initiative `GEL-001`.
     - Maintains determinism and test coverage.
   - **Social Service Implementation Agent**
     - Implements ledger schemas, routes, and persistence in `services/social`.
@@ -86,7 +86,7 @@ This document specifies the design for the initiative ``: stabilising the Idle E
   - **Content/Schema Agent**
     - Updates `content-schema` and `content-sample` if economy classifications (hard/soft currencies) need schema-level representation.
   - **Docs & Design Agent**
-    - Maintains this design and related docs in `docs/`, ensuring they track the implementation status of initiative ``.
+    - Maintains this design and related docs in `docs/`, ensuring they track the implementation status of initiative `GEL-001`.
   - **Testing & Validation Agent**
     - Extends Vitest suites in `packages/core`, `services/social`, and end-to-end smoke tests under `tools/a11y-smoke-tests`.
 
@@ -182,10 +182,20 @@ Conceptual flow (to be formalised as a diagram in a follow-up PR):
 - **Data & Schemas**
   - Introduce an economy schema in `services/social/src/types/economy.ts` (new file):
     - `HardCurrencyId` enum or string union (e.g., `"GEMS"`, `"BONDS"`, `"GUILD_TOKENS"`).
-    - `LedgerEntry` type: `{ userId, currencyId, balance, updatedAt }`.
-    - `EconomyOperation` type: `Earn`, `Spend`, `Transfer`, `GuildContribution`, with operation-specific payloads.
+    - `LedgerEntry` type: `{ userId, currencyId, balance, updatedAt }`, representing the latest canonical balance for a given `(userId, currencyId)` pair.
+    - `EconomyOperationKind` union: `"Earn" | "Spend" | "Transfer" | "GuildContribution"`.
+    - `EconomyOperationInput` type: request payloads for each operation kind (what the client sends).
+    - `EconomyOperationRecord` type: an immutable, persisted transaction history record:
+      - `{ id, userId, currencyId, kind, amount, source, reason, occurredAt, clientTimestamp?, guildId?, counterpartyUserId?, correlationId?, metadata? }`.
+      - `occurredAt` is the server timestamp used for rate limiting and replay windows; `clientTimestamp` is kept for anomaly detection.
+      - `source`/`reason` capture where the operation originated (e.g., quest reward, shop purchase) for telemetry.
   - Persistence:
-    - Initial implementation may start with an **in-memory store** for development, with a clear interface that can be backed by a database in a later milestone.
+    - Represent balances in a table or collection like `economy_ledger_entries` keyed by `(user_id, currency_id)`, mapping to `LedgerEntry`.
+    - Represent transaction history in an append-only `economy_operations` store keyed by `id`, mapping to `EconomyOperationRecord` and indexed by `user_id`, `guild_id`, `currency_id`, `kind`, and `occurred_at`.
+    - Initial implementation may start with an **in-memory store** that still keeps a full per-user operation log alongside ledger entries, with a clear interface that can be backed by a database in a later milestone.
+    - The ledger abstraction must compute balances from the ordered `EconomyOperationRecord` stream and expose helpers for:
+      - Querying operations for a user/currency/kind over a time window (e.g., “last 24h spends”) to enforce configurable max spend rates.
+      - Reconstructing a sequence of operations for deterministic replay and audit (e.g., recomputing expected balances for suspicious submissions).
     - The abstraction boundary should allow swapping implementation without changing route handlers.
   - Optional schema updates in `content-schema`:
     - Flag each resource as `hard` or `soft`, so the runtime and social service can agree on which resources must be mediated by the ledger.
@@ -255,17 +265,17 @@ Conceptual flow (to be formalised as a diagram in a follow-up PR):
   - Input must be validated with zod schemas (following existing pattern in `leaderboard.ts` and `guild.ts`).
   - Avoid storing sensitive personal data beyond what is already implied by OIDC (user IDs, usernames).
   - Implement basic rate limiting for economic endpoints (middleware or reverse proxy rules; TODO for infra owner).
-  - Audit logging should make it possible to trace economic changes per user and per guild.
+  - Audit logging should make it possible to trace economic changes per user and per guild by referencing `EconomyOperationRecord.id` and correlating log entries with stored operations.
 
 ## 7. Work Breakdown & Delivery Plan
 
 ### 7.1 Issue Map
 
-Populate GitHub issues based on the following table; all issues reference initiative `` in their descriptions.
+Populate GitHub issues based on the following table; all issues reference initiative `GEL-001` in their descriptions.
 
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
-| feat(design): formalise global economy stability (``) | Capture final design doc in `docs/` and link to related specs | Docs & Design Agent | None | Design merged; referenced from `docs/idle-engine-design.md`; reviewers sign off |
+| feat(design): formalise global economy stability (`GEL-001`) | Capture final design doc in `docs/` and link to related specs | Docs & Design Agent | None | Design merged; referenced from `docs/idle-engine-design.md`; reviewers sign off |
 | feat(schema): classify hard vs soft currencies | Extend content schema to mark hard currencies and sample content to use them | Content/Schema Agent | Design approval | Schema/docs updated; tests in `content-schema` pass; sample packs compile |
 | feat(social): introduce server-authoritative ledger abstraction | Add in-memory ledger types and interfaces in `services/social/src/types` | Social Service Implementation Agent | Schema classification (optional) | Ledger API supports create/read/update operations; unit tests cover basic operations |
 | feat(social): implement economy routes (/economy) | Add balances, spend, transfer, and guild contribution endpoints | Social Service Implementation Agent | Ledger abstraction | Routes validated with zod, protected by auth; tests verify invariants (no overspend, etc.) |
@@ -279,7 +289,7 @@ Populate GitHub issues based on the following table; all issues reference initia
 ### 7.2 Milestones
 
 - **Phase 1: Foundations**
-  - Finalise this design (initiative ``), including updated `docs/idle-engine-design.md`.
+  - Finalise this design (initiative `GEL-001`), including updated `docs/idle-engine-design.md`.
   - Implement ledger abstraction and in-memory store in `services/social`.
   - Add `/economy/balances` and `/economy/spend` endpoints with strong validation.
   - Establish economic tests and metrics.
@@ -312,14 +322,14 @@ Populate GitHub issues based on the following table; all issues reference initia
   - Test commands: `pnpm test --filter @idle-engine/social-service`, `pnpm test --filter @idle-engine/core`, `pnpm test:a11y`.
 
 - **Communication Cadence**
-  - Weekly status update on initiative `` summarising merged PRs and risk items.
+  - Weekly status update on initiative `GEL-001` summarising merged PRs and risk items.
   - Design reviews at the end of Phase 1 and Phase 2.
   - Escalation path: runtime lead → social lead → project owner.
 
 ## 8. Agent Guidance & Guardrails
 
 - **Context Packets**
-  - Before work on initiative ``, agents must load:
+  - Before work on initiative `GEL-001`, agents must load:
     - `docs/idle-engine-design.md`
     - This design document.
     - `packages/core/src/index.ts` and tests under `packages/core/src/__tests__`.
@@ -367,7 +377,7 @@ Populate GitHub issues based on the following table; all issues reference initia
      - Simplest implementation.
    - Cons:
      - Trivially exploitable; players can freely forge balances and destabilise any global system.
-     - Incompatible with “global economy must be stable” requirement of initiative ``.
+     - Incompatible with “global economy must be stable” requirement of initiative `GEL-001`.
    - Decision: Rejected.
 
 2. **Fully Server-Authoritative Per-Player Simulation**
@@ -486,7 +496,7 @@ Populate GitHub issues based on the following table; all issues reference initia
 
 ## 14. Follow-Up Work
 
-- Design and implement a **marketplace/auction house** model on top of the ledger for player-to-player trading (out of scope for initiative ``).
+- Design and implement a **marketplace/auction house** model on top of the ledger for player-to-player trading (out of scope for initiative `GEL-001`).
 - Evaluate and, if necessary, implement **currency sinks** to prevent runaway inflation (e.g., sink-only upgrades, fees).
 - Add **economy visualisation tools** (dashboards or exports) for designers to inspect global state and tune parameters.
 - Explore a lightweight **fraud detection/ML layer** using telemetry from economic operations.
@@ -507,10 +517,10 @@ Populate GitHub issues based on the following table; all issues reference initia
 - **Soft Currency**: Client-local resources that affect personal progression but do not directly impact shared global systems.
 - **Ledger**: A durable record of economic balances and operations per user and/or guild, maintained by the server.
 - **Deterministic Replay**: Re-running the core simulation with a known seed and content configuration to reconstruct expected economic outcomes.
-- **Initiative ``**: Token denoting this design’s focus on global economy stability via a server-authoritative ledger.
+- **Initiative `GEL-001`**: Token denoting this design’s focus on global economy stability via a server-authoritative ledger.
 
 ## Appendix B — Change Log
 
-| Date       | Author                          | Change Summary                                           |
-|------------|---------------------------------|----------------------------------------------------------|
-| 2025-11-16 | Idle Engine design-authoring AI | Initial draft of global economy stability design for `` |
+| Date       | Author                          | Change Summary                                                      |
+|------------|---------------------------------|---------------------------------------------------------------------|
+| 2025-11-16 | Idle Engine design-authoring AI | Initial draft of global economy stability design for `GEL-001`     |
