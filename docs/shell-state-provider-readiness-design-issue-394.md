@@ -157,7 +157,10 @@ This design defines a deterministic Shell state readiness contract for `ShellSta
     - Shell is considered *ready* when:
       1. The worker bridge has reported readiness (`bridge.isReady === true`).
       2. The provider is not currently restoring (`bridge.isRestoring === false`).
-      3. At least one runtime snapshot has been processed (`runtime.lastSnapshot` is non-null and `bridge.lastUpdateAt !== null`).
+      3. At least one runtime snapshot has been processed and recorded:
+         - `bridge.lastUpdateAt !== null`
+         - `runtime.lastSnapshot !== undefined`
+         - `state.runtime.progression.snapshot !== null`
   - Expose this contract in two ways:
     1. **State-Level Contract**: Document these invariants as the official readiness definition, accessible via `useShellState`.
     2. **Test-Level Helper**: Introduce a dedicated test helper `awaitShellStateReady` in `packages/shell-web/src/modules/__tests__/shell-state-ready.ts` (or similar test-only module) that:
@@ -178,7 +181,9 @@ This design defines a deterministic Shell state readiness contract for `ShellSta
       → `ShellState` transitions to:
         - `bridge.isReady === true`
         - `bridge.isRestoring === false`
-        - `runtime.lastSnapshot !== null` (after first snapshot)
+        - `bridge.lastUpdateAt !== null`
+        - `runtime.lastSnapshot !== undefined` (after first snapshot)
+        - `state.runtime.progression.snapshot !== null` (first progression snapshot)
       → `awaitShellStateReady` resolves.
 
 ### 6.2 Detailed Design
@@ -194,23 +199,24 @@ This design defines a deterministic Shell state readiness contract for `ShellSta
       - On a best-effort basis, at least one `state-update` has been dispatched following readiness (existing behaviour should already satisfy this).
   - Optionally, small internal refactoring to make readiness criteria easier to read for future maintainers (e.g., a derived boolean used only within tests and documentation).
 
-- **Data & Schemas**
-  - No changes to runtime data schemas or worker messages.
-  - Clarify semantics of existing state fields:
-    - `ShellBridgeState.isReady`: “`bridge.awaitReady()` has successfully completed at least once for the current bridge instance.”
-    - `ShellBridgeState.isRestoring`: “A restore operation started by the provider is currently in-flight.”
-    - `ShellRuntimeState.lastSnapshot`: “The latest runtime snapshot received; `null` indicates no snapshot yet.”
+  - **Data & Schemas**
+    - No changes to runtime data schemas or worker messages.
+    - Clarify semantics of existing state fields:
+      - `ShellBridgeState.isReady`: “`bridge.awaitReady()` has successfully completed at least once for the current bridge instance.”
+      - `ShellBridgeState.isRestoring`: “A restore operation started by the provider is currently in-flight.”
+      - `ShellRuntimeState.lastSnapshot`: “The latest runtime snapshot received; omitted / `undefined` indicates no snapshot has been processed yet (type `RuntimeStateSnapshot | undefined`).”
 
-- **APIs & Contracts**
-  - **Readiness Contract (logical)**
-    - Define `ShellStateProvider` readiness as the following predicate evaluated over `ShellState`:
-      - `bridge.isReady === true`
-      - `bridge.isRestoring === false`
-      - `bridge.lastUpdateAt !== null`
-      - `runtime.lastSnapshot !== undefined` (or non-null)
-    - This contract is:
-      - The canonical definition used by `awaitShellStateReady`.
-      - A documented expectation for future tests that need a ready Shell.
+  - **APIs & Contracts**
+    - **Readiness Contract (logical)**
+      - Define `ShellStateProvider` readiness as the following predicate evaluated over `ShellState`:
+        - `bridge.isReady === true`
+        - `bridge.isRestoring === false`
+        - `bridge.lastUpdateAt !== null`
+        - `runtime.lastSnapshot !== undefined`
+        - `state.runtime.progression.snapshot !== null`
+      - This contract is:
+        - The canonical definition used by `awaitShellStateReady`.
+        - A documented expectation for future tests that need a ready Shell.
 
   - **Test Helper API**
     - Add a new module, e.g. `packages/shell-web/src/modules/__tests__/shell-state-ready.ts` (or `test-helpers.shell-state-ready.ts` if co-locating with existing helpers), exporting:
@@ -496,8 +502,8 @@ Populate the table as the canonical source for downstream GitHub issues.
    - **Rationale**: A repository search shows that only these two suites currently rely on the implicit provider readiness boundary; other Shell UI tests either mock shell hooks or remain synchronous and do not need to await the provider. Keeping the helper’s usage limited to these suites keeps the migration small and avoids touching unrelated tests.
    - **Owner**: Test & Tooling Agent — **CLOSED**.
 3. Should we treat “first snapshot received” as mandatory for readiness, or is `bridge.isReady && !isRestoring` sufficient?
-   - **Decision**: Readiness is defined as “bridge is ready, not restoring, and the first progression snapshot has been processed”: `bridge.isReady === true`, `bridge.isRestoring === false`, and `state.runtime.progression.snapshot !== null`.
-   - **Rationale**: UI components such as `packages/shell-web/src/modules/ResourceDashboard.tsx` and `packages/shell-web/src/modules/GeneratorPanel.tsx` already treat readiness as “bridge ready plus at least one snapshot,” blocking on `progression.select*()` returning data while gating their loading indicators on `!bridge.isReady || bridge.lastUpdateAt === null`. Without a first snapshot, selectors continue to return `null` even if `bridge.isReady` has flipped, so the helper must also wait for the first snapshot to keep tests aligned with real UI semantics.
+   - **Decision**: Readiness is defined as the canonical predicate described in **Readiness Contract (logical)**: `bridge.isReady === true`, `bridge.isRestoring === false`, `bridge.lastUpdateAt !== null`, `state.runtime.lastSnapshot !== undefined`, and `state.runtime.progression.snapshot !== null`.
+   - **Rationale**: UI components such as `packages/shell-web/src/modules/ResourceDashboard.tsx` and `packages/shell-web/src/modules/GeneratorPanel.tsx` already treat readiness as “bridge ready plus at least one snapshot,” blocking on `progression.select*()` returning data while gating their loading indicators on `!bridge.isReady || bridge.lastUpdateAt === null`. Waiting for both `lastSnapshot` to become defined and `progression.snapshot` to become non-null keeps the helper aligned with real UI semantics and with the sentinel values used in `shell-state-store.ts`.
    - **Owner**: Runtime/Bridge Maintainer — **CLOSED**.
 4. Is there value in exposing a limited, public `useShellReady` hook for application code, or should readiness remain test-only for now?
    - **Decision**: Readiness remains a test-only concern; no public `useShellReady` hook will be added at this stage.
