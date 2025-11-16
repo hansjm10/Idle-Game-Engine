@@ -186,6 +186,16 @@ function shouldExposeWorkerBridgeDebugHandle(
     return true;
   }
 
+  const nodeEnv =
+    typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
+  if (typeof nodeEnv === 'string') {
+    const normalized = nodeEnv.toLowerCase();
+    if (normalized === 'production') {
+      return false;
+    }
+    return true;
+  }
+
   if (typeof import.meta !== 'undefined') {
     const devFlag = Boolean(import.meta.env?.DEV);
     const mode =
@@ -195,12 +205,6 @@ function shouldExposeWorkerBridgeDebugHandle(
     if (devFlag || mode === 'development' || mode === 'test') {
       return true;
     }
-  }
-
-  const nodeEnv =
-    typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
-  if (typeof nodeEnv === 'string') {
-    return nodeEnv.toLowerCase() !== 'production';
   }
 
   return false;

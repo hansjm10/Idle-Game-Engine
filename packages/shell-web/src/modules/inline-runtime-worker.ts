@@ -26,6 +26,26 @@ const workerListeners = new Set<MessageListener>();
 const pendingMessages: unknown[] = [];
 let sharedHarness: RuntimeWorkerHarness | null = null;
 
+function disposeInlineRuntimeHarness(): void {
+  if (sharedHarness) {
+    try {
+      sharedHarness.dispose();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[InlineRuntimeWorker] Failed to dispose runtime harness',
+        error,
+      );
+    } finally {
+      sharedHarness = null;
+    }
+  }
+
+  bridgeListeners.clear();
+  workerListeners.clear();
+  pendingMessages.length = 0;
+}
+
 function postToBridgeListeners(message: unknown): void {
   queueMicrotask(() => {
     for (const listener of bridgeListeners) {
@@ -138,7 +158,7 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
   }
 
   terminate(): void {
-    // Inline harness remains active for the session; no-op for bridge disposal.
+    disposeInlineRuntimeHarness();
   }
 }
 
