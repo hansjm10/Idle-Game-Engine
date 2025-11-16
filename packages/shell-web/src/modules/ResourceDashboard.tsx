@@ -231,6 +231,13 @@ export function ResourceDashboard(): JSX.Element | null {
   // Get resources from memoized selector (with optimistic updates)
   const resources = progression.selectOptimisticResources();
 
+  // Filter to unlocked and visible resources (runs on every render to keep
+  // hook order stable even before progression data is available).
+  const visibleResources = useMemo(
+    () => (resources ?? []).filter((r) => r.isUnlocked && r.isVisible),
+    [resources],
+  );
+
   // Distinguish between loading and truly locked states
   const isLoading = !bridge.isReady || bridge.lastUpdateAt === null;
 
@@ -248,12 +255,6 @@ export function ResourceDashboard(): JSX.Element | null {
       </section>
     );
   }
-
-  // Filter to unlocked and visible resources
-  const visibleResources = useMemo(
-    () => resources.filter((r) => r.isUnlocked && r.isVisible),
-    [resources],
-  );
 
   return (
     <section

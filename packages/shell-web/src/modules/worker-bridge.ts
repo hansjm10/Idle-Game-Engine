@@ -189,18 +189,20 @@ function shouldExposeWorkerBridgeDebugHandle(
   const nodeEnv =
     typeof process !== 'undefined' ? process.env?.NODE_ENV : undefined;
   if (typeof nodeEnv === 'string') {
-    return nodeEnv.toLowerCase() !== 'production';
+    const normalized = nodeEnv.toLowerCase();
+    if (normalized === 'production') {
+      return false;
+    }
+    return true;
   }
 
   if (typeof import.meta !== 'undefined') {
-    if (import.meta.env?.DEV) {
-      return true;
-    }
+    const devFlag = Boolean(import.meta.env?.DEV);
     const mode =
       typeof import.meta.env?.MODE === 'string'
         ? import.meta.env.MODE.toLowerCase()
         : undefined;
-    if (mode === 'development' || mode === 'test') {
+    if (devFlag || mode === 'development' || mode === 'test') {
       return true;
     }
   }
@@ -273,6 +275,8 @@ export class WorkerBridgeImpl<TState = unknown>
     }
 
     if (envelope.type === 'READY') {
+      // eslint-disable-next-line no-console
+      console.debug('[WorkerBridge] READY message received');
       this.markReady();
       return;
     }
@@ -346,6 +350,8 @@ export class WorkerBridgeImpl<TState = unknown>
     }
 
     if (envelope.type === 'STATE_UPDATE') {
+      // eslint-disable-next-line no-console
+      console.debug('[WorkerBridge] STATE_UPDATE received');
       for (const callback of this.stateUpdateCallbacks) {
         callback(envelope.state);
       }
@@ -739,6 +745,8 @@ export class WorkerBridgeImpl<TState = unknown>
       return;
     }
     this.disposed = true;
+    // eslint-disable-next-line no-console
+    console.debug('[WorkerBridge] Disposing worker bridge');
     this.worker.removeEventListener('message', this.handleMessage);
     const terminate: RuntimeWorkerInboundMessage = {
       type: 'TERMINATE',
@@ -805,30 +813,44 @@ export {
   shouldExposeWorkerBridgeDebugHandle as shouldExposeWorkerBridgeDebugHandleForTesting,
 };
 
+let sharedWorkerBridge: WorkerBridgeImpl<unknown> | null = null;
+
 export function useWorkerBridge<TState = RuntimeStateSnapshot>(): WorkerBridgeImpl<TState> {
   const bridgeRef = useRef<WorkerBridgeImpl<TState> | null>(null);
 
   if (!bridgeRef.current) {
-    // Feature flag keeps the worker bridge opt-in during rollout (docs/runtime-react-worker-bridge-design.md §12).
-    const worker: WorkerBridgeWorker = isWorkerBridgeEnabled()
-      ? (new Worker(
-          new URL('../runtime.worker.ts', import.meta.url),
-          { type: 'module' },
-        ) as unknown as WorkerBridgeWorker)
-      : createInlineRuntimeWorker();
+    if (!sharedWorkerBridge) {
+      // Feature flag keeps the worker bridge opt-in during rollout (docs/runtime-react-worker-bridge-design.md §12).
+      const workerBridgeEnabled = isWorkerBridgeEnabled();
+      const worker: WorkerBridgeWorker = workerBridgeEnabled
+        ? (new Worker(
+            new URL('../runtime.worker.ts', import.meta.url),
+            { type: 'module' },
+          ) as unknown as WorkerBridgeWorker)
+        : createInlineRuntimeWorker();
 
-    bridgeRef.current = new WorkerBridgeImpl<TState>(worker);
-    registerWorkerBridgeDebugHandle(
-      globalThis as WorkerBridgeDebugGlobal,
-      bridgeRef.current,
-    );
+      // eslint-disable-next-line no-console
+      console.debug(
+        '[WorkerBridge] Initialising',
+        workerBridgeEnabled
+          ? 'dedicated runtime worker'
+          : 'inline runtime worker',
+      );
+
+      sharedWorkerBridge = new WorkerBridgeImpl(worker);
+      registerWorkerBridgeDebugHandle(
+        globalThis as WorkerBridgeDebugGlobal,
+        sharedWorkerBridge,
+      );
+    }
+
+    bridgeRef.current = sharedWorkerBridge as WorkerBridgeImpl<TState>;
   }
 
   const bridge = bridgeRef.current;
 
   useEffect(() => {
     return () => {
-      bridge?.dispose();
       bridgeRef.current = null;
     };
   }, [bridge]);
