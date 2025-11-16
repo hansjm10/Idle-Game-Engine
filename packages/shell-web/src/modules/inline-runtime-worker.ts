@@ -1,8 +1,5 @@
 import './process-shim.js';
-import {
-  initializeRuntimeWorker,
-  type RuntimeWorkerHarness,
-} from '../runtime.worker.js';
+import type { RuntimeWorkerHarness } from '../runtime.worker.js';
 import type { WorkerBridgeWorker } from './worker-bridge-worker.js';
 
 type MessageListener = (event: MessageEvent<unknown>) => void;
@@ -26,6 +23,7 @@ const workerListeners = new Set<MessageListener>();
 const pendingMessages: unknown[] = [];
 const pendingBridgeMessages: unknown[] = [];
 let sharedHarness: RuntimeWorkerHarness | null = null;
+let harnessInitialization: Promise<void> | null = null;
 
 function disposeInlineRuntimeHarness(): void {
   if (sharedHarness) {
@@ -70,7 +68,7 @@ function postToWorkerListeners(message: unknown): void {
 }
 
 function ensureHarness(): void {
-  if (sharedHarness) {
+  if (sharedHarness || harnessInitialization) {
     return;
   }
 
@@ -108,26 +106,39 @@ function ensureHarness(): void {
         : undefined,
   };
 
-  try {
-    sharedHarness = initializeRuntimeWorker({
-      context: context as unknown as DedicatedWorkerGlobalScope,
-      fetch: context.fetch,
-      scheduleTick: (callback) => {
-        // Ensure at least one tick runs immediately in inline mode so the
-        // shell receives an initial progression snapshot even if timers are
-        // throttled in dev tools or test environments.
-        callback();
-        const id = setInterval(callback, 16);
-        return () => clearInterval(id);
-      },
+  harnessInitialization = import('../runtime.worker.js')
+    .then(({ initializeRuntimeWorker }) => {
+      try {
+        sharedHarness = initializeRuntimeWorker({
+          context: context as unknown as DedicatedWorkerGlobalScope,
+          fetch: context.fetch,
+          scheduleTick: (callback) => {
+            // Ensure at least one tick runs immediately in inline mode so the
+            // shell receives an initial progression snapshot even if timers are
+            // throttled in dev tools or test environments.
+            callback();
+            const id = setInterval(callback, 16);
+            return () => clearInterval(id);
+          },
+        });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error(
+          '[InlineRuntimeWorker] Failed to initialize runtime worker',
+          error,
+        );
+      }
+    })
+    .catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[InlineRuntimeWorker] Failed to dynamically import runtime worker',
+        error,
+      );
+    })
+    .finally(() => {
+      harnessInitialization = null;
     });
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(
-      '[InlineRuntimeWorker] Failed to initialize runtime worker',
-      error,
-    );
-  }
 }
 
 export class InlineRuntimeWorker implements WorkerBridgeWorker {
