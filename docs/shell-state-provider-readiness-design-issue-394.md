@@ -488,13 +488,21 @@ Populate the table as the canonical source for downstream GitHub issues.
 ## 13. Open Questions
 
 1. Should the readiness helper be exported from a central `test-utils` module (`packages/shell-web/src/test-utils.ts`) instead of a `__tests__`-local file to encourage reuse?
-   - **Owner**: Shell Web Maintainer — **TODO**.
+   - **Decision**: Keep the readiness helper out of the shared worker harness utilities and scope it to React-only test modules (e.g., `packages/shell-web/src/modules/test-helpers.ts` or a `modules/__tests__/shell-state-ready.ts`-style helper).
+   - **Rationale**: `packages/shell-web/src/test-utils.ts` is imported by worker-centric suites such as `packages/shell-web/src/runtime.worker.test.ts` and `packages/shell-web/src/modules/session-persistence-integration.test.ts`, which deliberately avoid React or DOM-specific dependencies so they can run in the Node-based worker harness. Exporting a React Testing Library–based readiness helper from that module would force those suites to pull in unnecessary DOM tooling and could break worker-only runs.
+   - **Owner**: Shell Web Maintainer — **CLOSED**.
 2. Do any other Shell tests (beyond `ShellStateProvider*`) need to await the same readiness boundary?
-   - **Owner**: Test & Tooling Agent — **TODO**.
+   - **Decision**: The readiness helper only needs to replace the local `flushMicrotasks` helpers in `packages/shell-web/src/modules/ShellStateProvider.test.tsx` and `packages/shell-web/src/modules/ShellStateProvider.telemetry.test.tsx`.
+   - **Rationale**: A repository search shows that only these two suites currently rely on the implicit provider readiness boundary; other Shell UI tests either mock shell hooks or remain synchronous and do not need to await the provider. Keeping the helper’s usage limited to these suites keeps the migration small and avoids touching unrelated tests.
+   - **Owner**: Test & Tooling Agent — **CLOSED**.
 3. Should we treat “first snapshot received” as mandatory for readiness, or is `bridge.isReady && !isRestoring` sufficient?
-   - **Owner**: Runtime/Bridge Maintainer — **TODO**.
+   - **Decision**: Readiness is defined as “bridge is ready, not restoring, and the first progression snapshot has been processed”: `bridge.isReady === true`, `bridge.isRestoring === false`, and `state.runtime.progression.snapshot !== null`.
+   - **Rationale**: UI components such as `packages/shell-web/src/modules/ResourceDashboard.tsx` and `packages/shell-web/src/modules/GeneratorPanel.tsx` already treat readiness as “bridge ready plus at least one snapshot,” blocking on `progression.select*()` returning data while gating their loading indicators on `!bridge.isReady || bridge.lastUpdateAt === null`. Without a first snapshot, selectors continue to return `null` even if `bridge.isReady` has flipped, so the helper must also wait for the first snapshot to keep tests aligned with real UI semantics.
+   - **Owner**: Runtime/Bridge Maintainer — **CLOSED**.
 4. Is there value in exposing a limited, public `useShellReady` hook for application code, or should readiness remain test-only for now?
-   - **Owner**: Shell Web Maintainer — **TODO**.
+   - **Decision**: Readiness remains a test-only concern; no public `useShellReady` hook will be added at this stage.
+   - **Rationale**: Production components that care about readiness (e.g., `ResourceDashboard`, `GeneratorPanel`) already consume `useShellState()` and check `bridge.isReady` / `bridge.lastUpdateAt` directly while handling `progression` selectors that may be `null`. Introducing a dedicated hook would expand the public API surface without current production consumers or clear benefit; it can be revisited when a concrete application use case emerges.
+   - **Owner**: Shell Web Maintainer — **CLOSED**.
 
 ## 14. Follow-Up Work
 
@@ -529,4 +537,3 @@ Populate the table as the canonical source for downstream GitHub issues.
 | Date       | Author                         | Change Summary                                                   |
 |------------|--------------------------------|------------------------------------------------------------------|
 | 2025-11-16 | Idle Engine Design-Authoring Agent | Initial draft of deterministic Shell state readiness contract for ShellStateProvider and test migration plan (targets `Fixes #394`). |
-
