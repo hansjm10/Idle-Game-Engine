@@ -5,20 +5,20 @@ sidebar_position: 4
 
 # Deterministic Shell State Readiness Contract for ShellStateProvider
 
-Use this document to define and implement a deterministic async boundary for Shell state initialisation and telemetry in the web shell, replacing the current `flushMicrotasks`-based workaround in `ShellStateProvider` tests (GitHub issue #394).
+Use this document to define and implement a deterministic async boundary for Shell state initialisation and telemetry in the web shell, replacing the historical `flushMicrotasks`-based workaround in `ShellStateProvider` tests (GitHub issue #394).
 
 ## Document Control
 - **Title**: Introduce deterministic Shell state readiness contract for ShellStateProvider
 - **Authors**: Idle Engine Design-Authoring Agent (Shell Web)
 - **Reviewers**: Shell Web Maintainer(s); Runtime/Bridge Maintainer(s)
-- **Status**: Draft
+- **Status**: Implemented
 - **Last Updated**: 2025-11-16
 - **Related Issues**: [#394](https://github.com/hansjm10/Idle-Game-Engine/issues/394)
 - **Execution Mode**: AI-led
 
 ## 1. Summary
 
-This design defines a deterministic Shell state readiness contract for `ShellStateProvider` in `shell-web` and replaces the brittle `flushMicrotasks` test helper with an explicit, documented async boundary. Today, Shell tests rely on chained microtasks and `setTimeout(0)` to “hope” the provider has completed its initial async work; this results in non-obvious coupling to the event loop and potential flakiness. The proposed solution introduces a canonical readiness condition, exposed via Shell state and a dedicated test helper, so tests (and future automation) can await `ShellStateProvider` initialisation and telemetry wiring without relying on event-loop timing. The change is scoped to `shell-web` and must preserve existing progression and telemetry behaviour while enabling AI-led agents to update tests and implementation safely.
+This design defines a deterministic Shell state readiness contract for `ShellStateProvider` in `shell-web` and replaces the brittle `flushMicrotasks` test helper with an explicit, documented async boundary. Historically, Shell tests relied on chained microtasks and `setTimeout(0)` to “hope” the provider had completed its initial async work; this resulted in non-obvious coupling to the event loop and potential flakiness. The implemented solution introduces a canonical readiness condition, exposed via Shell state and a dedicated test helper, so tests (and future automation) can await `ShellStateProvider` initialisation and telemetry wiring without relying on event-loop timing. The change is scoped to `shell-web` and preserves existing progression and telemetry behaviour while enabling AI-led agents to update tests and implementation safely.
 
 ## 2. Context & Problem Statement
 
@@ -29,10 +29,10 @@ This design defines a deterministic Shell state readiness contract for `ShellSta
   - The provider already:
     - Awaits `bridge.awaitReady()` and dispatches a `bridge-ready` action (`ShellStateProvider.tsx:308`–`:329`, `shell-state-store.tsx:149`–`:163`).
     - Orchestrates restore via `bridge.awaitReady()` followed by `restoreSession`, with telemetry on failure (`ShellStateProvider.tsx:448`–`:486`).
-  - Tests for Shell state and telemetry currently define local `flushMicrotasks` helpers that rely on multiple microtask and macrotask hops:
-    - `packages/shell-web/src/modules/ShellStateProvider.test.tsx:80`–`:99`.
-    - `packages/shell-web/src/modules/ShellStateProvider.telemetry.test.tsx:587`–`:593`.
-  - These helpers are used before making assertions about progression APIs and telemetry events in the Shell environment.
+  - Prior to PR #396, tests for Shell state and telemetry defined local `flushMicrotasks` helpers that relied on multiple microtask and macrotask hops before making assertions about progression APIs and telemetry events in the Shell environment:
+    - `packages/shell-web/src/modules/ShellStateProvider.test.tsx`.
+    - `packages/shell-web/src/modules/ShellStateProvider.telemetry.test.tsx`.
+  - Those helpers have since been removed in favour of an explicit readiness helper and targeted `waitFor`-based assertions.
 
 - **Problem**
   - Tests have no explicit, semantic contract for “Shell state is ready”; they instead depend on:
@@ -219,7 +219,7 @@ This design defines a deterministic Shell state readiness contract for `ShellSta
         - A documented expectation for future tests that need a ready Shell.
 
   - **Test Helper API**
-    - Add a new module, e.g. `packages/shell-web/src/modules/__tests__/shell-state-ready.ts` (or `test-helpers.shell-state-ready.ts` if co-locating with existing helpers), exporting:
+    - Implement a test-only helper module at `packages/shell-web/src/modules/__tests__/shell-state-ready.ts`, exporting:
 
       ```ts
       export interface ShellReadyOptions {
@@ -253,12 +253,13 @@ This design defines a deterministic Shell state readiness contract for `ShellSta
 
   - **Test Refactoring**
     - `ShellStateProvider.test.tsx`:
-      - Replace inline `flushMicrotasks` with calls to `awaitShellStateReady`, passing appropriate getters.
-      - Where tests currently rely on “all async work settled” but not on readiness per se (e.g. verifying error propagation), selectively use:
-        - `waitFor` with more local predicates (e.g. telemetry spy called).
-        - Or the readiness helper plus additional expectations.
+      - Remove the inline `flushMicrotasks` helper.
+      - Introduce a focused “readiness helper” test that uses `awaitShellStateReady` together with a mocked `state-update` to verify the readiness predicate over `ShellState`.
+      - For other cases, where tests rely on specific observable effects rather than full readiness (e.g. progression selector shapes, diagnostics toggling), use `waitFor` with local predicates.
     - `ShellStateProvider.telemetry.test.tsx`:
-      - Similar replacement for readiness-sensitive assertions, especially where telemetry from restore and `awaitReady` failures is expected.
+      - Remove its local `flushMicrotasks` helper.
+      - Use `waitFor` to observe telemetry calls in response to restore and `awaitReady` failures, and to diagnostics enable/disable behaviour.
+      - For diagnostics unsubscribe cleanup, rely on fake timers plus `vi.runAllTimers()` wrapped in `act` to flush the provider’s deferred reconciliation without introducing new timing helpers.
 
 - **Tooling & Automation**
   - Maintain Vitest-based tests; no new frameworks introduced.
@@ -526,8 +527,9 @@ Populate the table as the canonical source for downstream GitHub issues.
 - `packages/shell-web/src/modules/ShellStateProvider.tsx:448` — Restore effect and telemetry on failure.
 - `packages/shell-web/src/modules/shell-state-store.ts:103` — Initial Shell bridge state including `isReady` and `isRestoring`.
 - `packages/shell-web/src/modules/shell-state-store.ts:149` — Reducer handling `bridge-ready` action.
-- `packages/shell-web/src/modules/ShellStateProvider.test.tsx:80` — Existing `flushMicrotasks` helper.
-- `packages/shell-web/src/modules/ShellStateProvider.telemetry.test.tsx:587` — Existing telemetry `flushMicrotasks` helper.
+- `packages/shell-web/src/modules/__tests__/shell-state-ready.ts:1` — Test-only `awaitShellStateReady` helper implementing the readiness predicate.
+- `packages/shell-web/src/modules/ShellStateProvider.test.tsx:264` — Readiness helper integration test exercising the contract over `ShellState`.
+- `packages/shell-web/src/modules/ShellStateProvider.telemetry.test.tsx:187` — Telemetry tests using `waitFor` to observe restore and readiness failures without microtask flushing.
 - `packages/shell-web/src/modules/ResourceDashboard.tsx:242` — UI loading state based on `bridge.isReady`.
 - `packages/shell-web/src/modules/GeneratorPanel.tsx:124` — UI loading state based on `bridge.isReady`.
 - GitHub issue `#394` — “Investigate flushMicrotasks test helper and async boundaries”.
@@ -535,7 +537,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 ## Appendix A — Glossary
 
 - **Shell state readiness contract for ShellStateProvider**: The formal predicate over `ShellState` that defines when the Shell is considered initialised and stable for tests and UI (bridge ready, not restoring, snapshot received).
-- **`flushMicrotasks` helper**: A test-only function that chains `Promise.resolve()` and `setTimeout(0)` calls to approximate completion of pending microtasks and macrotasks.
+- **`flushMicrotasks` helper**: A legacy test-only function (removed in PR #396) that chained `Promise.resolve()` and `setTimeout(0)` calls to approximate completion of pending microtasks and macrotasks.
 - **Worker bridge**: The abstraction that connects the web shell to the deterministic runtime worker, providing `awaitReady`, state updates, telemetry, and social commands.
 
 ## Appendix B — Change Log
@@ -543,3 +545,4 @@ Populate the table as the canonical source for downstream GitHub issues.
 | Date       | Author                         | Change Summary                                                   |
 |------------|--------------------------------|------------------------------------------------------------------|
 | 2025-11-16 | Idle Engine Design-Authoring Agent | Initial draft of deterministic Shell state readiness contract for ShellStateProvider and test migration plan (targets `Fixes #394`). |
+| 2025-11-16 | Shell-Web Implementation Agent | Document updated to reflect implemented `awaitShellStateReady` helper, removal of `flushMicrotasks` from tests, and alignment with PR #396 (`Fixes #394`). |
