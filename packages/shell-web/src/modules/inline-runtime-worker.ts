@@ -18,131 +18,142 @@ interface InlineWorkerContext {
   fetch?: typeof fetch;
 }
 
-const bridgeListeners = new Set<MessageListener>();
-const workerListeners = new Set<MessageListener>();
-const pendingMessages: unknown[] = [];
-const pendingBridgeMessages: unknown[] = [];
-let sharedHarness: RuntimeWorkerHarness | null = null;
-let harnessInitialization: Promise<void> | null = null;
+export class InlineRuntimeWorker implements WorkerBridgeWorker {
+  private readonly bridgeListeners = new Set<MessageListener>();
+  private readonly workerListeners = new Set<MessageListener>();
+  private readonly pendingMessages: unknown[] = [];
+  private readonly pendingBridgeMessages: unknown[] = [];
+  private harness: RuntimeWorkerHarness | null = null;
+  private harnessInitialization: Promise<void> | null = null;
+  private disposed = false;
 
-function disposeInlineRuntimeHarness(): void {
-  if (sharedHarness) {
-    try {
-      sharedHarness.dispose();
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error(
-        '[InlineRuntimeWorker] Failed to dispose runtime harness',
-        error,
-      );
-    } finally {
-      sharedHarness = null;
-    }
+  constructor() {
   }
 
-  bridgeListeners.clear();
-  workerListeners.clear();
-  pendingMessages.length = 0;
-  pendingBridgeMessages.length = 0;
-}
-
-function postToBridgeListeners(message: unknown): void {
-  if (bridgeListeners.size === 0) {
-    pendingBridgeMessages.push(message);
-    return;
-  }
-
-  queueMicrotask(() => {
-    for (const listener of bridgeListeners) {
-      listener({ data: message } as MessageEvent<unknown>);
+  private postToBridgeListeners(message: unknown): void {
+    if (this.bridgeListeners.size === 0) {
+      this.pendingBridgeMessages.push(message);
+      return;
     }
-  });
-}
 
-function postToWorkerListeners(message: unknown): void {
-  queueMicrotask(() => {
-    for (const listener of workerListeners) {
-      listener({ data: message } as MessageEvent<unknown>);
-    }
-  });
-}
-
-function ensureHarness(): void {
-  if (sharedHarness || harnessInitialization) {
-    return;
-  }
-
-  const context: InlineWorkerContext = {
-    addEventListener: (type, listener) => {
-      if (type !== 'message') {
-        return;
+    queueMicrotask(() => {
+      for (const listener of this.bridgeListeners) {
+        listener({ data: message } as MessageEvent<unknown>);
       }
-      workerListeners.add(listener);
-      if (pendingMessages.length > 0) {
-        const buffered = pendingMessages.splice(
-          0,
-          pendingMessages.length,
-        );
-        for (const message of buffered) {
-          postToWorkerListeners(message);
+    });
+  }
+
+  private postToWorkerListeners(message: unknown): void {
+    queueMicrotask(() => {
+      for (const listener of this.workerListeners) {
+        listener({ data: message } as MessageEvent<unknown>);
+      }
+    });
+  }
+
+  private ensureHarness(): void {
+    if (this.harness || this.harnessInitialization || this.disposed) {
+      return;
+    }
+
+    const context: InlineWorkerContext = {
+      addEventListener: (type, listener) => {
+        if (type !== 'message') {
+          return;
         }
-      }
-    },
-    removeEventListener: (type, listener) => {
-      if (type !== 'message') {
-        return;
-      }
-      workerListeners.delete(listener);
-    },
-    postMessage: (message) => {
-      postToBridgeListeners(message);
-    },
-    close: () => {
-      // Inline harness stays alive for the lifetime of the page; no-op.
-    },
-    fetch:
-      typeof fetch === 'function'
-        ? fetch.bind(globalThis)
-        : undefined,
-  };
+        this.workerListeners.add(listener);
+        if (this.pendingMessages.length > 0) {
+          const buffered = this.pendingMessages.splice(
+            0,
+            this.pendingMessages.length,
+          );
+          for (const message of buffered) {
+            this.postToWorkerListeners(message);
+          }
+        }
+      },
+      removeEventListener: (type, listener) => {
+        if (type !== 'message') {
+          return;
+        }
+        this.workerListeners.delete(listener);
+      },
+      postMessage: (message) => {
+        if (this.disposed) {
+          return;
+        }
+        this.postToBridgeListeners(message);
+      },
+      close: () => {
+        this.disposeInternal();
+      },
+      fetch:
+        typeof fetch === 'function'
+          ? fetch.bind(globalThis)
+          : undefined,
+    };
 
-  harnessInitialization = import('../runtime.worker.js')
-    .then(({ initializeRuntimeWorker }) => {
+    this.harnessInitialization = import('../runtime.worker.js')
+      .then(({ initializeRuntimeWorker }) => {
+        if (this.disposed) {
+          return;
+        }
+
+        try {
+          this.harness = initializeRuntimeWorker({
+            context: context as unknown as DedicatedWorkerGlobalScope,
+            fetch: context.fetch,
+            scheduleTick: (callback) => {
+              // Ensure at least one tick runs immediately in inline mode so the
+              // shell receives an initial progression snapshot even if timers are
+              // throttled in dev tools or test environments.
+              callback();
+              const id = setInterval(callback, 16);
+              return () => clearInterval(id);
+            },
+          });
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error(
+            '[InlineRuntimeWorker] Failed to initialize runtime worker',
+            error,
+          );
+        }
+      })
+      .catch((error) => {
+        // eslint-disable-next-line no-console
+        console.error(
+          '[InlineRuntimeWorker] Failed to dynamically import runtime worker',
+          error,
+        );
+      })
+      .finally(() => {
+        this.harnessInitialization = null;
+      });
+  }
+
+  private disposeInternal(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.bridgeListeners.clear();
+    this.workerListeners.clear();
+    this.pendingMessages.length = 0;
+    this.pendingBridgeMessages.length = 0;
+    if (this.harness) {
       try {
-        sharedHarness = initializeRuntimeWorker({
-          context: context as unknown as DedicatedWorkerGlobalScope,
-          fetch: context.fetch,
-          scheduleTick: (callback) => {
-            // Ensure at least one tick runs immediately in inline mode so the
-            // shell receives an initial progression snapshot even if timers are
-            // throttled in dev tools or test environments.
-            callback();
-            const id = setInterval(callback, 16);
-            return () => clearInterval(id);
-          },
-        });
+        this.harness.dispose();
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error(
-          '[InlineRuntimeWorker] Failed to initialize runtime worker',
+          '[InlineRuntimeWorker] Failed to dispose runtime harness',
           error,
         );
+      } finally {
+        this.harness = null;
       }
-    })
-    .catch((error) => {
-      // eslint-disable-next-line no-console
-      console.error(
-        '[InlineRuntimeWorker] Failed to dynamically import runtime worker',
-        error,
-      );
-    })
-    .finally(() => {
-      harnessInitialization = null;
-    });
-}
-
-export class InlineRuntimeWorker implements WorkerBridgeWorker {
-  constructor() {
+    }
   }
 
   addEventListener(
@@ -152,17 +163,17 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
     if (type !== 'message') {
       return;
     }
-    bridgeListeners.add(listener);
-    if (pendingBridgeMessages.length > 0) {
-      const buffered = pendingBridgeMessages.splice(
+    this.bridgeListeners.add(listener);
+    if (this.pendingBridgeMessages.length > 0) {
+      const buffered = this.pendingBridgeMessages.splice(
         0,
-        pendingBridgeMessages.length,
+        this.pendingBridgeMessages.length,
       );
       for (const message of buffered) {
-        postToBridgeListeners(message);
+        this.postToBridgeListeners(message);
       }
     }
-    ensureHarness();
+    this.ensureHarness();
   }
 
   removeEventListener(
@@ -172,20 +183,23 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
     if (type !== 'message') {
       return;
     }
-    bridgeListeners.delete(listener);
+    this.bridgeListeners.delete(listener);
   }
 
   postMessage(message: unknown): void {
-    ensureHarness();
-    if (!sharedHarness || workerListeners.size === 0) {
-      pendingMessages.push(message);
+    if (this.disposed) {
       return;
     }
-    postToWorkerListeners(message);
+    this.ensureHarness();
+    if (!this.harness || this.workerListeners.size === 0) {
+      this.pendingMessages.push(message);
+      return;
+    }
+    this.postToWorkerListeners(message);
   }
 
   terminate(): void {
-    disposeInlineRuntimeHarness();
+    this.disposeInternal();
   }
 }
 

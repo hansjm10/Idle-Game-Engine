@@ -584,6 +584,55 @@ describe('Inline runtime worker integration', () => {
       vi.useRealTimers();
     }
   });
+
+  it('keeps inline worker instances isolated when one is terminated', async () => {
+    vi.useFakeTimers();
+    const workerA = createInlineRuntimeWorker();
+    const workerB = createInlineRuntimeWorker();
+    const bridgeA =
+      new WorkerBridgeImpl<RuntimeStateSnapshot>(workerA);
+    const bridgeB =
+      new WorkerBridgeImpl<RuntimeStateSnapshot>(workerB);
+
+    try {
+      await Promise.all([
+        bridgeA.awaitReady(),
+        bridgeB.awaitReady(),
+      ]);
+
+      const updatesA: RuntimeStateSnapshot[] = [];
+      const updatesB: RuntimeStateSnapshot[] = [];
+
+      bridgeA.onStateUpdate((state) => {
+        updatesA.push(state);
+      });
+      bridgeB.onStateUpdate((state) => {
+        updatesB.push(state);
+      });
+
+      await vi.advanceTimersByTimeAsync(160);
+      await Promise.resolve();
+
+      expect(updatesA.length).toBeGreaterThan(0);
+      expect(updatesB.length).toBeGreaterThan(0);
+
+      const lastStepB =
+        updatesB.at(-1)?.currentStep ?? 0;
+
+      bridgeA.dispose();
+
+      await vi.advanceTimersByTimeAsync(160);
+      await Promise.resolve();
+
+      const nextStepB =
+        updatesB.at(-1)?.currentStep ?? 0;
+
+      expect(nextStepB).toBeGreaterThan(lastStepB);
+    } finally {
+      bridgeB.dispose();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('worker bridge debug handle guard', () => {
