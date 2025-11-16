@@ -24,6 +24,7 @@ interface InlineWorkerContext {
 const bridgeListeners = new Set<MessageListener>();
 const workerListeners = new Set<MessageListener>();
 const pendingMessages: unknown[] = [];
+const pendingBridgeMessages: unknown[] = [];
 let sharedHarness: RuntimeWorkerHarness | null = null;
 
 function disposeInlineRuntimeHarness(): void {
@@ -44,9 +45,15 @@ function disposeInlineRuntimeHarness(): void {
   bridgeListeners.clear();
   workerListeners.clear();
   pendingMessages.length = 0;
+  pendingBridgeMessages.length = 0;
 }
 
 function postToBridgeListeners(message: unknown): void {
+  if (bridgeListeners.size === 0) {
+    pendingBridgeMessages.push(message);
+    return;
+  }
+
   queueMicrotask(() => {
     for (const listener of bridgeListeners) {
       listener({ data: message } as MessageEvent<unknown>);
@@ -134,8 +141,17 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
     if (type !== 'message') {
       return;
     }
-    ensureHarness();
     bridgeListeners.add(listener);
+    if (pendingBridgeMessages.length > 0) {
+      const buffered = pendingBridgeMessages.splice(
+        0,
+        pendingBridgeMessages.length,
+      );
+      for (const message of buffered) {
+        postToBridgeListeners(message);
+      }
+    }
+    ensureHarness();
   }
 
   removeEventListener(
