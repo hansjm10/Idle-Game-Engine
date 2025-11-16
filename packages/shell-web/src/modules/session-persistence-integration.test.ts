@@ -385,7 +385,7 @@ describe('Session Persistence Integration', () => {
       });
 
       // Advance runtime to generate state
-      timeController.advanceTime(110);
+      timeController.advanceTime(10);
       timeController.runTick();
 
       // Request and persist snapshot

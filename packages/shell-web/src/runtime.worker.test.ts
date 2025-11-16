@@ -83,7 +83,7 @@ describe('runtime.worker integration', () => {
     expect(firstQueued.step).toBe(0);
 
     // Advance the runtime by one fixed step through the worker tick loop.
-    timeController.advanceTime(110);
+    timeController.advanceTime(10);
     timeController.runTick();
 
     const stateEnvelope = context.postMessage.mock.calls.find(
@@ -153,7 +153,7 @@ describe('runtime.worker integration', () => {
     });
 
     context.postMessage.mockClear();
-    timeController.advanceTime(110);
+    timeController.advanceTime(10);
     timeController.runTick();
 
     const stateEnvelope = context.postMessage.mock.calls.find(
@@ -1582,7 +1582,7 @@ describe('session snapshot protocol', () => {
     });
 
     // Advance runtime to create some state
-    timeController.advanceTime(110);
+    timeController.advanceTime(10);
     timeController.runTick();
 
     context.postMessage.mockClear();
@@ -1712,7 +1712,7 @@ describe('session snapshot protocol', () => {
       scheduleTick: timeController.scheduleTick,
     });
 
-    timeController.advanceTime(110);
+    timeController.advanceTime(10);
     timeController.runTick();
 
     context.postMessage.mockClear();
@@ -1749,7 +1749,7 @@ describe('session snapshot protocol', () => {
       scheduleTick: timeController.scheduleTick,
     });
 
-    timeController.advanceTime(110);
+    timeController.advanceTime(10);
     timeController.runTick();
 
     // Request snapshot with reason
@@ -1787,7 +1787,7 @@ describe('session snapshot protocol', () => {
     });
 
     // Advance runtime to create some state
-    timeController.advanceTime(110);
+    timeController.advanceTime(10);
     timeController.runTick();
 
     context.postMessage.mockClear();

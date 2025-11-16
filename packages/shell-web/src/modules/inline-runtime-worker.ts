@@ -22,10 +22,40 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
   private readonly bridgeListeners = new Set<MessageListener>();
   private readonly workerListeners = new Set<MessageListener>();
   private readonly pendingMessages: unknown[] = [];
+  private readonly pendingBridgeMessages: unknown[] = [];
   private harness: RuntimeWorkerHarness | null = null;
+  private harnessInitialization: Promise<void> | null = null;
   private disposed = false;
 
   constructor() {
+  }
+
+  private postToBridgeListeners(message: unknown): void {
+    if (this.bridgeListeners.size === 0) {
+      this.pendingBridgeMessages.push(message);
+      return;
+    }
+
+    queueMicrotask(() => {
+      for (const listener of this.bridgeListeners) {
+        listener({ data: message } as MessageEvent<unknown>);
+      }
+    });
+  }
+
+  private postToWorkerListeners(message: unknown): void {
+    queueMicrotask(() => {
+      for (const listener of this.workerListeners) {
+        listener({ data: message } as MessageEvent<unknown>);
+      }
+    });
+  }
+
+  private ensureHarness(): void {
+    if (this.harness || this.harnessInitialization || this.disposed) {
+      return;
+    }
+
     const context: InlineWorkerContext = {
       addEventListener: (type, listener) => {
         if (type !== 'message') {
@@ -33,7 +63,10 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
         }
         this.workerListeners.add(listener);
         if (this.pendingMessages.length > 0) {
-          const buffered = this.pendingMessages.splice(0, this.pendingMessages.length);
+          const buffered = this.pendingMessages.splice(
+            0,
+            this.pendingMessages.length,
+          );
           for (const message of buffered) {
             this.postToWorkerListeners(message);
           }
@@ -60,26 +93,67 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
           : undefined,
     };
 
-    void import('../runtime.worker.js')
+    this.harnessInitialization = import('../runtime.worker.js')
       .then(({ initializeRuntimeWorker }) => {
         if (this.disposed) {
           return;
         }
-        this.harness = initializeRuntimeWorker({
-          context: context as unknown as DedicatedWorkerGlobalScope,
-          fetch: context.fetch,
-        });
-        if (this.pendingMessages.length > 0) {
-          const buffered = this.pendingMessages.splice(0, this.pendingMessages.length);
-          for (const message of buffered) {
-            this.postToWorkerListeners(message);
-          }
+
+        try {
+          this.harness = initializeRuntimeWorker({
+            context: context as unknown as DedicatedWorkerGlobalScope,
+            fetch: context.fetch,
+            scheduleTick: (callback) => {
+              // Ensure at least one tick runs immediately in inline mode so the
+              // shell receives an initial progression snapshot even if timers are
+              // throttled in dev tools or test environments.
+              callback();
+              const id = setInterval(callback, 16);
+              return () => clearInterval(id);
+            },
+          });
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error(
+            '[InlineRuntimeWorker] Failed to initialize runtime worker',
+            error,
+          );
         }
       })
       .catch((error) => {
         // eslint-disable-next-line no-console
-        console.error('[InlineRuntimeWorker] Failed to initialize runtime worker', error);
+        console.error(
+          '[InlineRuntimeWorker] Failed to dynamically import runtime worker',
+          error,
+        );
+      })
+      .finally(() => {
+        this.harnessInitialization = null;
       });
+  }
+
+  private disposeInternal(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.bridgeListeners.clear();
+    this.workerListeners.clear();
+    this.pendingMessages.length = 0;
+    this.pendingBridgeMessages.length = 0;
+    if (this.harness) {
+      try {
+        this.harness.dispose();
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error(
+          '[InlineRuntimeWorker] Failed to dispose runtime harness',
+          error,
+        );
+      } finally {
+        this.harness = null;
+      }
+    }
   }
 
   addEventListener(
@@ -90,6 +164,16 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
       return;
     }
     this.bridgeListeners.add(listener);
+    if (this.pendingBridgeMessages.length > 0) {
+      const buffered = this.pendingBridgeMessages.splice(
+        0,
+        this.pendingBridgeMessages.length,
+      );
+      for (const message of buffered) {
+        this.postToBridgeListeners(message);
+      }
+    }
+    this.ensureHarness();
   }
 
   removeEventListener(
@@ -106,7 +190,8 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
     if (this.disposed) {
       return;
     }
-    if (this.workerListeners.size === 0 || this.harness === null) {
+    this.ensureHarness();
+    if (!this.harness || this.workerListeners.size === 0) {
       this.pendingMessages.push(message);
       return;
     }
@@ -115,34 +200,6 @@ export class InlineRuntimeWorker implements WorkerBridgeWorker {
 
   terminate(): void {
     this.disposeInternal();
-  }
-
-  private disposeInternal(): void {
-    if (this.disposed) {
-      return;
-    }
-    this.disposed = true;
-    this.bridgeListeners.clear();
-    this.workerListeners.clear();
-    this.pendingMessages.length = 0;
-    this.harness?.dispose();
-    this.harness = null;
-  }
-
-  private postToBridgeListeners(message: unknown): void {
-    queueMicrotask(() => {
-      for (const listener of this.bridgeListeners) {
-        listener({ data: message } as MessageEvent<unknown>);
-      }
-    });
-  }
-
-  private postToWorkerListeners(message: unknown): void {
-    queueMicrotask(() => {
-      for (const listener of this.workerListeners) {
-        listener({ data: message } as MessageEvent<unknown>);
-      }
-    });
   }
 }
 
