@@ -2,7 +2,12 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor, render, screen, fireEvent } from '@testing-library/react';
 import React, { type ReactNode } from 'react';
 
-import { ShellStateProvider, useShellProgression, useShellDiagnostics } from './ShellStateProvider.js';
+import {
+  ShellStateProvider,
+  useShellProgression,
+  useShellDiagnostics,
+  useShellState,
+} from './ShellStateProvider.js';
 import type { ShellStateProviderConfig } from './shell-state.types.js';
 import type {
   RuntimeStateSnapshot,
@@ -349,6 +354,53 @@ describe('ShellStateProvider', () => {
         expect(mockBridge.disableDiagnostics).toHaveBeenCalledTimes(1);
         expect(status.textContent).toBe('idle');
       });
+    });
+  });
+
+  describe('bridge readiness tracking with shared worker bridge', () => {
+    function BridgeStatusProbe() {
+      const shellState = useShellState();
+      return (
+        <span data-testid="bridge-ready">
+          {shellState.bridge.isReady ? 'ready' : 'pending'}
+        </span>
+      );
+    }
+
+    function TestApp({ showProvider }: { showProvider: boolean }) {
+      if (!showProvider) {
+        return null;
+      }
+      return (
+        <ShellStateProvider {...defaultConfig}>
+          <BridgeStatusProbe />
+        </ShellStateProvider>
+      );
+    }
+
+    it('re-awaits readiness after provider remounts while reusing the same bridge instance', async () => {
+      const { rerender } = render(<TestApp showProvider />);
+
+      await act(async () => { await flushMicrotasks(); });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('bridge-ready').textContent).toBe('ready');
+      });
+      const firstMountCalls = mockBridge.awaitReady.mock.calls.length;
+      expect(firstMountCalls).toBeGreaterThanOrEqual(1);
+
+      rerender(<TestApp showProvider={false} />);
+      await act(async () => { await flushMicrotasks(); });
+
+      rerender(<TestApp showProvider />);
+      await act(async () => { await flushMicrotasks(); });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('bridge-ready').textContent).toBe('ready');
+      });
+
+      const secondMountCalls = mockBridge.awaitReady.mock.calls.length;
+      expect(secondMountCalls).toBeGreaterThan(firstMountCalls);
     });
   });
 });
