@@ -11,7 +11,7 @@ sidebar_position: 4
 - **Reviewers**: TODO: Runtime lead, Social service lead, Content lead
 - **Status**: Draft
 - **Last Updated**: 2025-11-16
-- **Related Issues**: TODO: Link GitHub issue for global economy stability (e.g., `#XXX`)
+- **Related Issues**: [#397](https://github.com/hansjm10/Idle-Game-Engine/issues/397)
 - **Execution Mode**: AI-led
 
 ## 1. Summary
@@ -514,4 +514,3 @@ Populate GitHub issues based on the following table; all issues reference initia
 | Date       | Author                          | Change Summary                                           |
 |------------|---------------------------------|----------------------------------------------------------|
 | 2025-11-16 | Idle Engine design-authoring AI | Initial draft of global economy stability design for `` |
-
