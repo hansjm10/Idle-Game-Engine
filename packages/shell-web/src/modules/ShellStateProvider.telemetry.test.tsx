@@ -6,6 +6,7 @@ import {
   afterEach,
   vi,
 } from 'vitest';
+import { waitFor } from '@testing-library/react';
 import type { DiagnosticTimelineResult } from '@idle-engine/core';
 import type {
   RuntimeStateSnapshot,
@@ -189,12 +190,12 @@ describe('ShellStateProvider telemetry integration', () => {
 
     const { unmount } = await setupProvider();
 
-    await act(async () => { await flushMicrotasks(); });
-
-    expect(telemetrySpy).toHaveBeenCalledWith(
-      'ShellStateProviderRestoreEffectFailed',
-      expect.objectContaining({ message: 'effect restore failed' }),
-    );
+    await waitFor(() => {
+      expect(telemetrySpy).toHaveBeenCalledWith(
+        'ShellStateProviderRestoreEffectFailed',
+        expect.objectContaining({ message: 'effect restore failed' }),
+      );
+    });
 
     await unmount();
   });
@@ -205,12 +206,12 @@ describe('ShellStateProvider telemetry integration', () => {
 
     const { unmount } = await setupProvider();
 
-    await act(async () => { await flushMicrotasks(); });
-
-    expect(telemetrySpy).toHaveBeenCalledWith(
-      'ShellStateProviderAwaitReadyFailed',
-      expect.objectContaining({ message: 'ready timeout' }),
-    );
+    await waitFor(() => {
+      expect(telemetrySpy).toHaveBeenCalledWith(
+        'ShellStateProviderAwaitReadyFailed',
+        expect.objectContaining({ message: 'ready timeout' }),
+      );
+    });
 
     await unmount();
   });
@@ -389,12 +390,13 @@ describe('ShellStateProvider telemetry integration', () => {
     await act(async () => {
       unsubscribe?.();
     });
-    await act(async () => { await flushMicrotasks(); });
 
-    expect(telemetrySpy).toHaveBeenCalledWith(
-      'ShellStateProviderDisableDiagnosticsFailed',
-      expect.objectContaining({ message: 'disable failed' }),
-    );
+    await waitFor(() => {
+      expect(telemetrySpy).toHaveBeenCalledWith(
+        'ShellStateProviderDisableDiagnosticsFailed',
+        expect.objectContaining({ message: 'disable failed' }),
+      );
+    });
 
     await unmount();
   });
@@ -509,66 +511,74 @@ describe('ShellStateProvider diagnostics subscriptions', () => {
     await act(async () => {
       first?.();
     });
-    await act(async () => { await flushMicrotasks(); });
 
-    expect(bridgeMock.disableDiagnostics).toHaveBeenCalledTimes(1);
-    expect(diagnosticsRef.current!.isEnabled).toBe(false);
+    await waitFor(() => {
+      expect(bridgeMock.disableDiagnostics).toHaveBeenCalledTimes(1);
+      expect(diagnosticsRef.current!.isEnabled).toBe(false);
+    });
 
     await unmount();
   });
 
   it('does not dispatch during diagnostics unsubscribe cleanup', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
+    vi.useFakeTimers();
+    try {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
 
-    const errors: string[] = [];
-    const errorSpy = vi
-      .spyOn(console, 'error')
-      .mockImplementation((...args: unknown[]) => {
-        errors.push(args.map(String).join(' '));
+      const errors: string[] = [];
+      const errorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation((...args: unknown[]) => {
+          errors.push(args.map(String).join(' '));
+        });
+      const warnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      function AutoSubscriber() {
+        const diagnostics = useShellDiagnostics();
+        // Subscribe on mount; cleanup unsubscribes. This used to trigger state updates
+        // during cleanup which leads to React depth-limit errors.
+        // The provider now defers reconciliation post-commit, so this should be clean.
+        useEffect(() => {
+          const unsubscribe = diagnostics.subscribe(() => {});
+          return () => unsubscribe();
+        }, [diagnostics]);
+        return null;
+      }
+
+      await act(async () => {
+        root.render(
+          <ShellStateProvider>
+            <AutoSubscriber />
+          </ShellStateProvider>,
+        );
       });
-    const warnSpy = vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => {});
 
-    function AutoSubscriber() {
-      const diagnostics = useShellDiagnostics();
-      // Subscribe on mount; cleanup unsubscribes. This used to trigger state updates
-      // during cleanup which leads to React depth-limit errors.
-      // The provider now defers reconciliation post-commit, so this should be clean.
-      useEffect(() => {
-        const unsubscribe = diagnostics.subscribe(() => {});
-        return () => unsubscribe();
-      }, [diagnostics]);
-      return null;
-    }
+      // Unmount the tree to trigger unsubscribe cleanup
+      await act(async () => {
+        root.unmount();
+      });
 
-    await act(async () => {
-      root.render(
-        <ShellStateProvider>
-          <AutoSubscriber />
-        </ShellStateProvider>,
+      // Flush any pending diagnostics reconciliation timers
+      await act(async () => {
+        vi.runAllTimers();
+      });
+
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+
+      container.remove();
+
+      const hasDepthLimitError = errors.some((e) =>
+        e.includes('Maximum update depth exceeded'),
       );
-    });
-
-    // Unmount the tree to trigger unsubscribe cleanup
-    await act(async () => {
-      root.unmount();
-    });
-
-    // Allow any queued microtasks in the provider to settle
-    await act(async () => { await flushMicrotasks(); });
-
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
-
-    container.remove();
-
-    const hasDepthLimitError = errors.some((e) =>
-      e.includes('Maximum update depth exceeded'),
-    );
-    expect(hasDepthLimitError).toBe(false);
+      expect(hasDepthLimitError).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -582,14 +592,6 @@ interface ProviderSetupResult {
   readonly bridgeRef: { current: ShellBridgeApi | null };
   readonly diagnosticsRef: { current: ShellDiagnosticsApi | null };
   unmount(): Promise<void>;
-}
-
-async function flushMicrotasks(): Promise<void> {
-  // Allow pending microtasks to flush
-  await Promise.resolve();
-  await Promise.resolve();
-  // Also allow next macrotask so setTimeout(0) deferrals settle
-  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function setupProvider(

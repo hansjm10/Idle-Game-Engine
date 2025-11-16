@@ -8,6 +8,7 @@ import {
   useShellDiagnostics,
   useShellState,
 } from './ShellStateProvider.js';
+import { awaitShellStateReady } from './__tests__/shell-state-ready.js';
 import type { ShellStateProviderConfig } from './shell-state.types.js';
 import type {
   RuntimeStateSnapshot,
@@ -87,13 +88,6 @@ describe('ShellStateProvider', () => {
     vi.clearAllMocks();
   });
 
-  async function flushMicrotasks(): Promise<void> {
-    // Let pending microtasks/effects settle, including any setTimeout(0)
-    await Promise.resolve();
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-
   describe('useShellProgression', () => {
     it('throws error when used outside ShellStateProvider', () => {
       expect(() => {
@@ -109,7 +103,6 @@ describe('ShellStateProvider', () => {
       const { result } = renderHook(() => useShellProgression(), {
         wrapper,
       });
-      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current).toBeDefined();
       expect(result.current.isEnabled).toBe(true);
@@ -131,7 +124,6 @@ describe('ShellStateProvider', () => {
         () => useShellProgression(),
         { wrapper },
       );
-      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current.selectResources()).toBeNull();
       expect(result.current.selectGenerators()).toBeNull();
@@ -163,7 +155,6 @@ describe('ShellStateProvider', () => {
       );
 
       const { rerender } = renderHook(() => useShellProgression(), { wrapper });
-      await act(async () => { await flushMicrotasks(); });
 
       await waitFor(() => {
         expect(bridgeA.restoreSession).toHaveBeenCalledTimes(1);
@@ -172,7 +163,6 @@ describe('ShellStateProvider', () => {
 
       activeBridge = bridgeB;
       rerender();
-      await act(async () => { await flushMicrotasks(); });
 
       await waitFor(() => {
         expect(bridgeB.restoreSession).toHaveBeenCalledTimes(1);
@@ -192,7 +182,10 @@ describe('ShellStateProvider', () => {
         () => useShellProgression(),
         { wrapper },
       );
-      await act(async () => { await flushMicrotasks(); });
+
+      await waitFor(() => {
+        expect(mockBridge.onStateUpdate).toHaveBeenCalled();
+      });
 
       const stateUpdateCalls = vi.mocked(mockBridge.onStateUpdate).mock.calls;
       const stateUpdateHandler =
@@ -225,13 +218,11 @@ describe('ShellStateProvider', () => {
         stateUpdateHandler!(snapshot);
       });
       rerender();
-      await act(async () => { await flushMicrotasks(); });
 
       act(() => {
         result.current.stageResourceDelta('gold', -30);
       });
       rerender();
-      await act(async () => { await flushMicrotasks(); });
 
       const readGoldAmount = () =>
         result.current
@@ -254,7 +245,6 @@ describe('ShellStateProvider', () => {
         });
       });
       rerender();
-      await act(async () => { await flushMicrotasks(); });
 
       expect(readGoldAmount()).toBe(70);
 
@@ -271,6 +261,51 @@ describe('ShellStateProvider', () => {
     });
   });
 
+  describe('readiness helper', () => {
+    it('resolves when bridge and runtime state are ready', async () => {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <ShellStateProvider {...defaultConfig}>{children}</ShellStateProvider>
+      );
+
+      const { result } = renderHook(() => useShellState(), { wrapper });
+
+      await waitFor(() => {
+        expect(mockBridge.onStateUpdate).toHaveBeenCalled();
+      });
+
+      const stateUpdateCalls = vi.mocked(mockBridge.onStateUpdate).mock.calls;
+      const stateUpdateHandler =
+        stateUpdateCalls[stateUpdateCalls.length - 1]?.[0];
+      expect(stateUpdateHandler).toBeDefined();
+
+      const snapshot: RuntimeStateSnapshot = {
+        currentStep: 1,
+        events: [],
+        backPressure: backPressureStub,
+        progression: {
+          step: 1,
+          publishedAt: 100,
+          resources: [],
+          generators: [],
+          upgrades: [],
+        },
+      };
+
+      act(() => {
+        stateUpdateHandler!(snapshot);
+      });
+
+      await awaitShellStateReady(() => result.current);
+
+      const state = result.current;
+      expect(state.bridge.isReady).toBe(true);
+      expect(state.bridge.isRestoring).toBe(false);
+      expect(state.bridge.lastUpdateAt).not.toBeNull();
+      expect(state.runtime.lastSnapshot).toEqual(snapshot);
+      expect(state.runtime.progression.snapshot).not.toBeNull();
+    });
+  });
+
   describe('feature flag integration', () => {
     it('reflects isProgressionUIEnabled config', async () => {
       const { isProgressionUIEnabled } = await import('./progression-config.js');
@@ -280,7 +315,6 @@ describe('ShellStateProvider', () => {
       );
 
       const { result } = renderHook(() => useShellProgression(), { wrapper });
-      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current.isEnabled).toBe(true);
       expect(isProgressionUIEnabled).toHaveBeenCalled();
@@ -294,7 +328,6 @@ describe('ShellStateProvider', () => {
       );
 
       const { result } = renderHook(() => useShellProgression(), { wrapper });
-      await act(async () => { await flushMicrotasks(); });
 
       expect(result.current.schemaVersion).toBe(1);
     });
@@ -333,7 +366,6 @@ describe('ShellStateProvider', () => {
       render(
         <DiagnosticsConsumer />, { wrapper },
       );
-      await act(async () => { await flushMicrotasks(); });
 
       const status = screen.getByTestId('diag-status');
       expect(status.textContent).toBe('idle');
@@ -381,8 +413,6 @@ describe('ShellStateProvider', () => {
     it('re-awaits readiness after provider remounts while reusing the same bridge instance', async () => {
       const { rerender } = render(<TestApp showProvider />);
 
-      await act(async () => { await flushMicrotasks(); });
-
       await waitFor(() => {
         expect(screen.getByTestId('bridge-ready').textContent).toBe('ready');
       });
@@ -390,10 +420,8 @@ describe('ShellStateProvider', () => {
       expect(firstMountCalls).toBeGreaterThanOrEqual(1);
 
       rerender(<TestApp showProvider={false} />);
-      await act(async () => { await flushMicrotasks(); });
 
       rerender(<TestApp showProvider />);
-      await act(async () => { await flushMicrotasks(); });
 
       await waitFor(() => {
         expect(screen.getByTestId('bridge-ready').textContent).toBe('ready');
