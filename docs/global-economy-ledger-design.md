@@ -7,11 +7,11 @@ sidebar_position: 4
 
 ## Document Control
 - **Title**: Stabilise Global Economy with Server-Authoritative Ledger (initiative token: `GEL-001`)
-- **Authors**: Idle Engine design-authoring agent (AI), TODO: Human Owner
-- **Reviewers**: TODO: Runtime lead, Social service lead, Content lead
-- **Status**: Draft
-- **Last Updated**: 2025-11-16
-- **Related Issues**: [#397](https://github.com/hansjm10/Idle-Game-Engine/issues/397)
+- **Authors**: Idle Engine design-authoring agent (AI); Jordan Hans (hansjm10)
+- **Reviewers**: Jordan Hans (hansjm10); Runtime Core Maintainers; Social Service Maintainers; Content/Design Maintainers
+- **Status**: Approved (Design Ready for Implementation)
+- **Last Updated**: 2025-11-17
+- **Related Issues**: [#397](https://github.com/hansjm10/Idle-Game-Engine/issues/397), [#399](https://github.com/hansjm10/Idle-Game-Engine/issues/399)
 - **Execution Mode**: AI-led
 
 ## 1. Summary
@@ -521,6 +521,7 @@ Populate GitHub issues based on the following table; all issues reference initia
 
 ## Appendix B — Change Log
 
-| Date       | Author                          | Change Summary                                                      |
-|------------|---------------------------------|---------------------------------------------------------------------|
-| 2025-11-16 | Idle Engine design-authoring AI | Initial draft of global economy stability design for `GEL-001`     |
+| Date       | Author                          | Change Summary                                                                                  |
+|------------|---------------------------------|-------------------------------------------------------------------------------------------------|
+| 2025-11-16 | Idle Engine design-authoring AI | Initial draft of global economy stability design for `GEL-001`                                 |
+| 2025-11-17 | Idle Engine design-authoring AI | Mark design as Approved and link initiative `GEL-001` from `docs/idle-engine-design.md` (#399) |
