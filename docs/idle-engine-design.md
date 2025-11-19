@@ -9,6 +9,7 @@ The Idle Engine is a reusable, data-driven runtime tailored for incremental/idle
 - Provide a declarative content pipeline for defining resources, generators, upgrades, achievements, and events.
 - Support instant deployment to browsers while enabling optional native packaging with the exact same engine build.
 - Keep the core easily testable, observable, and instrumentable for analytics and A/B experimentation.
+- Stabilise shared/global economy via a server-authoritative ledger and economic invariants as defined in `docs/global-economy-ledger-design.md` (initiative `GEL-001`).
 
 ## 3. Non-Goals
 - Building a general-purpose 3D engine or real-time action framework.
@@ -145,6 +146,7 @@ function runTick(deltaMs) {
 - Offer abstraction so implementations can swap between in-house services and third-party platforms without touching game logic.
 - Ship a reference self-host service (e.g., Node/Rust) with deployment scripts (Docker/Kubernetes) and clearly defined interfaces for alternative providers.
 - Document data schemas and synchronization contracts so external platforms can implement compatible APIs.
+- For global economy stability and hard-currency invariants, rely on a server-authoritative ledger and economy APIs as specified in `docs/global-economy-ledger-design.md` (initiative `GEL-001`).
 
 ### 9.7 Authentication & Integrity Controls
 - Self-hosted Keycloak instance issues short-lived JWT access tokens and rotation-backed refresh tokens; clients authenticate via email magic link or device key exchange.
