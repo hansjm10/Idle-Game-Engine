@@ -470,6 +470,10 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
   - `name`: `localizedTextSchema`.
   - `category`: enum (`primary`, `prestige`, `automation`, `currency`,
     `misc`).
+  - `economyClassification`: enum (`hard`, `soft`) classifying whether a
+    resource participates in the server-authoritative ledger (`hard`) or is
+    client-authoritative progression (`soft`). Defaults to `soft` when omitted,
+    aligning with initiative `GEL-001`’s hard/soft currency split.
   - `tier`: positive integer for UI grouping.
   - `icon`: optional icon path (SVG/PNG) resolved at build time.
   - `startAmount`: non-negative number (defaults to `0`).

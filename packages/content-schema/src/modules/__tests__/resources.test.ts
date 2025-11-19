@@ -22,6 +22,29 @@ describe('resourceDefinitionSchema', () => {
     expect(definition.capacity).toBe(100);
   });
 
+  it('defaults economyClassification to soft', () => {
+    const definition = resourceDefinitionSchema.parse({
+      id: 'energy',
+      name: { default: 'Energy', variants: {} },
+      category: 'primary',
+      tier: 1,
+    });
+
+    expect(definition.economyClassification).toBe('soft');
+  });
+
+  it('accepts explicit hard economyClassification', () => {
+    const definition = resourceDefinitionSchema.parse({
+      id: 'crystal',
+      name: { default: 'Crystal', variants: {} },
+      category: 'currency',
+      tier: 1,
+      economyClassification: 'hard',
+    });
+
+    expect(definition.economyClassification).toBe('hard');
+  });
+
   it('rejects start amounts that exceed capacity', () => {
     expect(() =>
       resourceDefinitionSchema.parse({

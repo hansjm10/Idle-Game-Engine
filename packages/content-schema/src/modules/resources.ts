@@ -24,12 +24,20 @@ const tagSchema = z
   })
   .transform((value) => value.toLowerCase());
 
-type ResourceCategory = 'primary' | 'prestige' | 'automation' | 'currency' | 'misc';
+export type ResourceCategory =
+  | 'primary'
+  | 'prestige'
+  | 'automation'
+  | 'currency'
+  | 'misc';
+
+export type ResourceEconomyClassification = 'hard' | 'soft';
 
 type ResourceDefinitionInput = {
   readonly id: z.input<typeof contentIdSchema>;
   readonly name: z.input<typeof localizedTextSchema>;
   readonly category: ResourceCategory;
+  readonly economyClassification?: ResourceEconomyClassification;
   readonly tier: z.input<typeof positiveIntSchema>;
   readonly icon?: string;
   readonly startAmount?: z.input<typeof nonNegativeNumberSchema>;
@@ -53,6 +61,7 @@ type ResourceDefinition = {
   readonly id: ResourceId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly category: ResourceCategory;
+  readonly economyClassification: ResourceEconomyClassification;
   readonly tier: number;
   readonly icon?: string;
   readonly startAmount: number;
@@ -95,6 +104,7 @@ export const resourceDefinitionSchema: z.ZodType<
     id: contentIdSchema,
     name: localizedTextSchema,
     category: z.enum(['primary', 'prestige', 'automation', 'currency', 'misc'] as const),
+    economyClassification: z.enum(['hard', 'soft'] as const).default('soft'),
     tier: positiveIntSchema,
     icon: z
       .string()

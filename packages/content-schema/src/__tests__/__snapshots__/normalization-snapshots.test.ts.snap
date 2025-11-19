@@ -162,6 +162,7 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
   {
     "capacity": 0,
     "category": "primary",
+    "economyClassification": "soft",
     "id": "alpha",
     "name": {
       "default": "Alpha",
@@ -179,6 +180,7 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
   {
     "capacity": 0,
     "category": "primary",
+    "economyClassification": "soft",
     "id": "mike",
     "name": {
       "default": "Mike",
@@ -196,6 +198,7 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
   {
     "capacity": 0,
     "category": "primary",
+    "economyClassification": "soft",
     "id": "zulu",
     "name": {
       "default": "Zulu",
@@ -425,6 +428,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "energy" => {
         "capacity": 1000,
         "category": "primary",
+        "economyClassification": "soft",
         "id": "energy",
         "name": {
           "default": "Energy",
@@ -444,6 +448,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "crystals" => {
         "capacity": 0,
         "category": "prestige",
+        "economyClassification": "soft",
         "id": "crystals",
         "name": {
           "default": "Crystals",
@@ -601,6 +606,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
     {
       "capacity": 1000,
       "category": "primary",
+      "economyClassification": "soft",
       "id": "energy",
       "name": {
         "default": "Energy",
@@ -620,6 +626,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
     {
       "capacity": 0,
       "category": "prestige",
+      "economyClassification": "soft",
       "id": "crystals",
       "name": {
         "default": "Crystals",
@@ -758,6 +765,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "crystals": {
         "capacity": 0,
         "category": "prestige",
+        "economyClassification": "soft",
         "id": "crystals",
         "name": {
           "default": "Crystals",
@@ -786,6 +794,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "energy": {
         "capacity": 1000,
         "category": "primary",
+        "economyClassification": "soft",
         "id": "energy",
         "name": {
           "default": "Energy",
