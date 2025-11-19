@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "088debe78deca5aec94f9664615c4e40f1bdd481ea8a826e045ba1d520208ae2",
+  "artifactHash": "620bac684f83e741343b858ffcd2c54496ad708881460426327cea6f9d76470e",
   "digest": {
     "hash": "fnv1a-30aeb60a",
     "version": 1
@@ -385,6 +385,7 @@ const serialized = {
       {
         "capacity": 100,
         "category": "primary",
+        "economyClassification": "soft",
         "id": "sample-pack.energy",
         "name": {
           "default": "Energy",
@@ -402,6 +403,7 @@ const serialized = {
       {
         "capacity": 0,
         "category": "currency",
+        "economyClassification": "hard",
         "id": "sample-pack.crystal",
         "name": {
           "default": "Crystal",

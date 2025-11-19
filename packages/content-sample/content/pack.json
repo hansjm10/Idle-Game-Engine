@@ -31,6 +31,7 @@
         "variants": {}
       },
       "category": "primary",
+      "economyClassification": "soft",
       "tier": 1,
       "startAmount": 10,
       "capacity": 100,
@@ -45,6 +46,7 @@
         "variants": {}
       },
       "category": "currency",
+      "economyClassification": "hard",
       "tier": 1,
       "startAmount": 0,
       "visible": true,
