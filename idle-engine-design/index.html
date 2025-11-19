@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Idle Engine Design Document | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Idle Engine Design Document | Idle Engine Docs"><meta data-rh="true" name="description" content="1. Overview"><meta data-rh="true" property="og:description" content="1. Overview"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Idle Engine Design Document","item":"https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.e340ce6e.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.b965844a.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.50c25233.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -21,6 +21,7 @@
 <li class="">Provide a declarative content pipeline for defining resources, generators, upgrades, achievements, and events.</li>
 <li class="">Support instant deployment to browsers while enabling optional native packaging with the exact same engine build.</li>
 <li class="">Keep the core easily testable, observable, and instrumentable for analytics and A/B experimentation.</li>
+<li class="">Stabilise shared/global economy via a server-authoritative ledger and economic invariants as defined in <code>docs/global-economy-ledger-design.md</code> (initiative <code>GEL-001</code>).</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="3-non-goals">3. Non-Goals<a href="#3-non-goals" class="hash-link" aria-label="Direct link to 3. Non-Goals" title="Direct link to 3. Non-Goals" translate="no">​</a></h2>
 <ul>
@@ -136,6 +137,7 @@ Social features interact with self-hosted backend services by default through th
 <li class="">Offer abstraction so implementations can swap between in-house services and third-party platforms without touching game logic.</li>
 <li class="">Ship a reference self-host service (e.g., Node/Rust) with deployment scripts (Docker/Kubernetes) and clearly defined interfaces for alternative providers.</li>
 <li class="">Document data schemas and synchronization contracts so external platforms can implement compatible APIs.</li>
+<li class="">For global economy stability and hard-currency invariants, rely on a server-authoritative ledger and economy APIs as specified in <code>docs/global-economy-ledger-design.md</code> (initiative <code>GEL-001</code>).</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="97-authentication--integrity-controls">9.7 Authentication &amp; Integrity Controls<a href="#97-authentication--integrity-controls" class="hash-link" aria-label="Direct link to 9.7 Authentication &amp; Integrity Controls" title="Direct link to 9.7 Authentication &amp; Integrity Controls" translate="no">​</a></h3>
 <ul>
