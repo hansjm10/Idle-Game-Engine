@@ -56,10 +56,8 @@ function resolveMetadata(
   return metadata ?? simMetadata;
 }
 
-export function createEconomyRouter(ledger: EconomyLedger): ReturnType<
-  typeof Router
-> {
-  const router: ReturnType<typeof Router> = Router();
+export function createEconomyRouter(ledger: EconomyLedger): Router {
+  const router = Router();
 
   router.get('/balances', async (req: Request, res: Response) => {
     const userId = getAuthenticatedUserId(req, res);
@@ -287,6 +285,6 @@ export function createEconomyRouter(ledger: EconomyLedger): ReturnType<
 
 const defaultLedger = createInMemoryEconomyLedger();
 
-const economyRouter = createEconomyRouter(defaultLedger);
+const economyRouter: Router = createEconomyRouter(defaultLedger);
 
 export { economyRouter };
