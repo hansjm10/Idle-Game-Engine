@@ -9,6 +9,7 @@ import { ResourceDashboard } from './ResourceDashboard.js';
 import { GeneratorPanel } from './GeneratorPanel.js';
 import { UpgradeModal } from './UpgradeModal.js';
 import { DiagnosticsPanel } from './DiagnosticsPanel.js';
+import { EconomyPreviewPanel } from './EconomyPreviewPanel.js';
 import {
   ShellStateProvider,
   useShellBridge,
@@ -17,6 +18,7 @@ import {
 } from './ShellStateProvider.js';
 import errorStyles from './ErrorBoundary.module.css';
 import appStyles from './App.module.css';
+import { isEconomyPreviewEnabled } from './economy-preview-config.js';
 
 const EVENT_HISTORY_LIMIT = 50;
 
@@ -33,6 +35,7 @@ function ShellAppSurface(): JSX.Element {
   const bridge = useShellBridge();
   const socialEnabled = bridge.isSocialFeatureEnabled();
   const progression = useShellProgression();
+  const economyPreviewEnabled = isEconomyPreviewEnabled();
   const [isUpgradeOpen, setUpgradeOpen] = useState(false);
 
   const handleSendCommand = useCallback(async () => {
@@ -52,6 +55,7 @@ function ShellAppSurface(): JSX.Element {
       </button>
 
       <ResourceDashboard />
+      {economyPreviewEnabled ? <EconomyPreviewPanel /> : null}
       {progression.isEnabled ? (
         <>
           <GeneratorPanel />

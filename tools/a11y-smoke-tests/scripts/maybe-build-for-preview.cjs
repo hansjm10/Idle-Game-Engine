@@ -37,7 +37,12 @@ function coerceBoolean(value) {
 }
 
 function run(cmd, args, opts = {}) {
-  const res = spawnSync(cmd, args, { stdio: 'inherit', cwd: MONOREPO_ROOT, ...opts });
+  const res = spawnSync(cmd, args, {
+    stdio: 'inherit',
+    cwd: MONOREPO_ROOT,
+    env: { ...process.env, VITE_ENABLE_ECONOMY_PREVIEW: '1' },
+    ...opts
+  });
   if (res.error) {
     console.error(res.error);
     process.exit(res.status ?? 1);
@@ -55,4 +60,3 @@ if (isCI) {
 run('pnpm', ['--filter', '@idle-engine/core', 'run', 'build']);
 run('pnpm', ['--filter', '@idle-engine/shell-web', 'run', 'build']);
 console.log('[a11y-pretest] Build complete.');
-
