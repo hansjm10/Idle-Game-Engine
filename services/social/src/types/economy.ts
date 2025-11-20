@@ -1,4 +1,6 @@
-export type HardCurrencyId = 'GEMS' | 'BONDS' | 'GUILD_TOKENS';
+export const HARD_CURRENCY_IDS = ['GEMS', 'BONDS', 'GUILD_TOKENS'] as const;
+
+export type HardCurrencyId = (typeof HARD_CURRENCY_IDS)[number];
 
 export type EconomyOperationKind =
   | 'Earn'
