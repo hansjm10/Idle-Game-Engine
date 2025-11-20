@@ -25,6 +25,16 @@ import type {
   DiagnosticTimelineResult,
   DiagnosticTimelineEventMetrics,
 } from './diagnostics/diagnostic-timeline.js';
+import {
+  createResourceState,
+  reconcileSaveAgainstDefinitions,
+  type ResourceDefinition,
+  type ResourceDefinitionDigest,
+  type ResourceDefinitionReconciliation,
+  type ResourceState,
+  type SerializedResourceState,
+} from './resource-state.js';
+import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
 
 export interface TickContext {
   readonly deltaMs: number;
@@ -64,6 +74,7 @@ export interface IdleEngineRuntimeOptions
     RuntimeDependencies {
   readonly eventBusOptions?: EventBusOptions;
   readonly diagnostics?: IdleEngineRuntimeDiagnosticsOptions;
+  readonly initialStep?: number;
 }
 
 const DEFAULT_STEP_MS = 100;
@@ -111,6 +122,12 @@ export class IdleEngineRuntime {
         stepSizeMs: this.stepSizeMs,
       },
     );
+
+    const initialStep = options.initialStep ?? 0;
+    if (Number.isFinite(initialStep) && initialStep >= 0) {
+      this.currentStep = initialStep;
+      this.nextExecutableStep = initialStep;
+    }
   }
 
   addSystem(system: System): void {
@@ -169,6 +186,14 @@ export class IdleEngineRuntime {
 
   getNextExecutableStep(): number {
     return this.nextExecutableStep;
+  }
+
+  getStepSizeMs(): number {
+    return this.stepSizeMs;
+  }
+
+  getMaxStepsPerFrame(): number {
+    return this.maxStepsPerFrame;
   }
 
   getEventBus(): EventBus {
@@ -361,6 +386,339 @@ function toDiagnosticTimelineEventMetrics(
       eventsPerSecond: channel.eventsPerSecond,
       softLimitActive: channel.softLimitActive,
     })),
+  };
+}
+
+export interface EconomyResourceSnapshot {
+  readonly id: string;
+  readonly amount: number;
+  readonly capacity: number | null;
+  readonly unlocked: boolean;
+  readonly visible: boolean;
+  readonly rates: Readonly<{
+    incomePerSecond: number;
+    expensePerSecond: number;
+    netPerSecond: number;
+  }>;
+}
+
+export interface EconomyStateSummary {
+  readonly step: number;
+  readonly stepSizeMs: number;
+  readonly publishedAt: number;
+  readonly definitionDigest: ResourceDefinitionDigest;
+  readonly rngSeed?: number;
+  readonly resources: readonly EconomyResourceSnapshot[];
+}
+
+export interface EconomyResourceDelta {
+  readonly id: string;
+  readonly startAmount: number;
+  readonly endAmount: number;
+  readonly delta: number;
+}
+
+export interface EconomyVerificationResult {
+  readonly start: EconomyStateSummary;
+  readonly end: EconomyStateSummary;
+  readonly deltas: readonly EconomyResourceDelta[];
+  readonly diagnostics?: DiagnosticTimelineResult;
+}
+
+export interface EconomyStateSummaryOptions {
+  readonly runtime: IdleEngineRuntime;
+  readonly resources: ResourceState;
+  readonly publishedAt?: number;
+  readonly rngSeed?: number;
+}
+
+export interface CreateVerificationRuntimeOptions {
+  readonly summary: EconomyStateSummary;
+  readonly definitions: readonly ResourceDefinition[];
+  readonly runtimeOptions?: IdleEngineRuntimeOptions;
+  readonly applyRngSeed?: boolean;
+}
+
+export interface VerificationRuntime {
+  readonly runtime: IdleEngineRuntime;
+  readonly resources: ResourceState;
+  readonly reconciliation: ResourceDefinitionReconciliation;
+}
+
+export interface VerificationRunOptions {
+  readonly ticks: number;
+  readonly includeDiagnostics?: boolean;
+}
+
+/**
+ * Build a deterministic, JSON-friendly economy snapshot for verification or replay.
+ */
+export function buildEconomyStateSummary(
+  options: EconomyStateSummaryOptions,
+): EconomyStateSummary {
+  const { runtime, resources } = options;
+  const publishedAt = options.publishedAt ?? Date.now();
+  const rngSeed = options.rngSeed ?? getCurrentRNGSeed();
+  const snapshot = resources.snapshot({ mode: 'recorder' });
+  const saveState = resources.exportForSave();
+  const summaryResources: EconomyResourceSnapshot[] = [];
+
+  for (let index = 0; index < saveState.ids.length; index += 1) {
+    const incomePerSecond = saveState.ids[index]
+      ? snapshot.incomePerSecond[index] ?? 0
+      : 0;
+    const expensePerSecond = saveState.ids[index]
+      ? snapshot.expensePerSecond[index] ?? 0
+      : 0;
+    const netPerSecond = incomePerSecond - expensePerSecond;
+
+    summaryResources.push({
+      id: saveState.ids[index],
+      amount: saveState.amounts[index] ?? 0,
+      capacity: saveState.capacities[index] ?? null,
+      unlocked: saveState.unlocked?.[index] ?? false,
+      visible: saveState.visible?.[index] ?? false,
+      rates: {
+        incomePerSecond,
+        expensePerSecond,
+        netPerSecond,
+      },
+    });
+  }
+
+  return {
+    step: runtime.getCurrentStep(),
+    stepSizeMs: runtime.getStepSizeMs(),
+    publishedAt,
+    definitionDigest: resources.getDefinitionDigest(),
+    rngSeed,
+    resources: summaryResources,
+  };
+}
+
+function toSerializedResourceState(
+  summary: EconomyStateSummary,
+): SerializedResourceState {
+  return {
+    ids: summary.resources.map((resource) => resource.id),
+    amounts: summary.resources.map((resource) => resource.amount),
+    capacities: summary.resources.map(
+      (resource) => resource.capacity ?? null,
+    ),
+    unlocked: summary.resources.map((resource) => resource.unlocked),
+    visible: summary.resources.map((resource) => resource.visible),
+    flags: summary.resources.map(() => 0),
+    definitionDigest: summary.definitionDigest,
+  };
+}
+
+function hydrateResourceStateFromSummary(
+  summary: EconomyStateSummary,
+  definitions: readonly ResourceDefinition[],
+): {
+  resources: ResourceState;
+  reconciliation: ResourceDefinitionReconciliation;
+} {
+  const resources = createResourceState(definitions);
+  const serialized = toSerializedResourceState(summary);
+  const reconciliation = reconcileSaveAgainstDefinitions(
+    serialized,
+    definitions,
+  );
+
+  const { remap } = reconciliation;
+
+  for (let savedIndex = 0; savedIndex < remap.length; savedIndex += 1) {
+    const liveIndex = remap[savedIndex];
+    if (liveIndex === undefined) {
+      continue;
+    }
+
+    const resource = summary.resources[savedIndex];
+    const capacity =
+      resource.capacity ?? Number.POSITIVE_INFINITY;
+    resources.setCapacity(liveIndex, capacity);
+
+    const targetAmount = resource.amount ?? 0;
+    const currentAmount = resources.getAmount(liveIndex);
+
+    if (targetAmount > currentAmount) {
+      resources.addAmount(liveIndex, targetAmount - currentAmount);
+    } else if (targetAmount < currentAmount) {
+      resources.spendAmount(liveIndex, currentAmount - targetAmount);
+    }
+
+    if (resource.unlocked) {
+      resources.unlock(liveIndex);
+    }
+
+    if (resource.visible) {
+      resources.grantVisibility(liveIndex);
+    }
+
+    const incomePerSecond = Number.isFinite(
+      resource.rates.incomePerSecond,
+    )
+      ? resource.rates.incomePerSecond
+      : 0;
+
+    const expensePerSecond = Number.isFinite(
+      resource.rates.expensePerSecond,
+    )
+      ? resource.rates.expensePerSecond
+      : 0;
+
+    if (incomePerSecond > 0) {
+      resources.applyIncome(liveIndex, incomePerSecond);
+    }
+
+    if (expensePerSecond > 0) {
+      resources.applyExpense(liveIndex, expensePerSecond);
+    }
+  }
+
+  resources.snapshot({ mode: 'publish' });
+
+  return { resources, reconciliation };
+}
+
+function createEconomyProjectionSystem(
+  resources: ResourceState,
+  netRates: ReadonlyMap<number, number>,
+): System {
+  return {
+    id: 'economy-verification',
+    tick: ({ deltaMs }) => {
+      const deltaSeconds = deltaMs / 1000;
+      for (const [index, netPerSecond] of netRates) {
+        if (!Number.isFinite(netPerSecond) || netPerSecond === 0) {
+          continue;
+        }
+
+        const delta = netPerSecond * deltaSeconds;
+        if (delta > 0) {
+          resources.addAmount(index, delta);
+          continue;
+        }
+
+        const spendable = Math.min(
+          resources.getAmount(index),
+          Math.abs(delta),
+        );
+
+        if (spendable > 0) {
+          resources.spendAmount(index, spendable, {
+            systemId: 'verification',
+            commandId: 'economy-projection',
+          });
+        }
+      }
+    },
+  };
+}
+
+function calculateResourceDeltas(
+  start: EconomyStateSummary,
+  end: EconomyStateSummary,
+): EconomyResourceDelta[] {
+  const startAmounts = new Map(
+    start.resources.map((resource) => [resource.id, resource.amount]),
+  );
+
+  return end.resources.map((resource) => {
+    const startAmount = startAmounts.get(resource.id) ?? 0;
+    return {
+      id: resource.id,
+      startAmount,
+      endAmount: resource.amount,
+      delta: resource.amount - startAmount,
+    };
+  });
+}
+
+/**
+ * Hydrate resources and a runtime from an economy summary so server-side validation can tick deterministically.
+ */
+export function createVerificationRuntime(
+  options: CreateVerificationRuntimeOptions,
+): VerificationRuntime {
+  const {
+    summary,
+    definitions,
+    runtimeOptions,
+    applyRngSeed = true,
+  } = options;
+  const { resources, reconciliation } = hydrateResourceStateFromSummary(
+    summary,
+    definitions,
+  );
+
+  const netRates = new Map<number, number>();
+  for (let savedIndex = 0; savedIndex < reconciliation.remap.length; savedIndex += 1) {
+    const liveIndex = reconciliation.remap[savedIndex];
+    if (liveIndex === undefined) {
+      continue;
+    }
+    const rate = summary.resources[savedIndex]?.rates.netPerSecond ?? 0;
+    netRates.set(liveIndex, rate);
+  }
+
+  const runtime = new IdleEngineRuntime({
+    ...runtimeOptions,
+    stepSizeMs: runtimeOptions?.stepSizeMs ?? summary.stepSizeMs,
+    initialStep: runtimeOptions?.initialStep ?? summary.step,
+  });
+
+  if (applyRngSeed && summary.rngSeed !== undefined) {
+    setRNGSeed(summary.rngSeed);
+  }
+
+  runtime.addSystem(
+    createEconomyProjectionSystem(resources, netRates),
+  );
+
+  return { runtime, resources, reconciliation };
+}
+
+/**
+ * Execute a bounded number of ticks against a verification runtime and return the expected deltas.
+ */
+export function runVerificationTicks(
+  context: VerificationRuntime,
+  options: VerificationRunOptions,
+): EconomyVerificationResult {
+  const { runtime, resources } = context;
+  const { ticks, includeDiagnostics } = options;
+
+  if (!Number.isInteger(ticks) || ticks < 0) {
+    throw new Error('ticks must be a non-negative integer.');
+  }
+
+  const startSummary = buildEconomyStateSummary({
+    runtime,
+    resources,
+  });
+
+  const stepSizeMs = runtime.getStepSizeMs();
+  for (let remaining = 0; remaining < ticks; remaining += 1) {
+    runtime.tick(stepSizeMs);
+  }
+
+  const endSummary = buildEconomyStateSummary({
+    runtime,
+    resources,
+  });
+
+  const deltas = calculateResourceDeltas(startSummary, endSummary);
+  const diagnostics = includeDiagnostics
+    ? runtime.getDiagnosticTimelineSnapshot()
+    : undefined;
+
+  return {
+    start: startSummary,
+    end: endSummary,
+    deltas,
+    diagnostics,
   };
 }
 
