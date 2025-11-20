@@ -1,0 +1,16 @@
+[
+  {
+    "id": "gems",
+    "startAmount": 10,
+    "capacity": 200,
+    "unlocked": true,
+    "visible": true
+  },
+  {
+    "id": "shards",
+    "startAmount": 5,
+    "capacity": 50,
+    "unlocked": true,
+    "visible": true
+  }
+]

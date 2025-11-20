@@ -1,0 +1,21 @@
+{
+  "name": "@idle-engine/economy-verification-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@idle-engine/content-sample": "workspace:*",
+    "@idle-engine/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@idle-engine/config-vitest": "workspace:*",
+    "@types/node": "^24.9.1",
+    "tsx": "^4.20.6",
+    "vitest": "^3.2.4",
+    "vitest-llm-reporter": "^1.2.0"
+  }
+}

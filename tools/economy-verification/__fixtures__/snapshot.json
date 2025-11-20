@@ -1,0 +1,40 @@
+{
+  "step": 4,
+  "stepSizeMs": 50,
+  "publishedAt": 1700000000000,
+  "definitionDigest": {
+    "ids": [
+      "gems",
+      "shards"
+    ],
+    "version": 2,
+    "hash": "fnv1a-cb84439c"
+  },
+  "rngSeed": 424242,
+  "resources": [
+    {
+      "id": "gems",
+      "amount": 10,
+      "capacity": 200,
+      "unlocked": true,
+      "visible": true,
+      "rates": {
+        "incomePerSecond": 4.5,
+        "expensePerSecond": 0,
+        "netPerSecond": 4.5
+      }
+    },
+    {
+      "id": "shards",
+      "amount": 5,
+      "capacity": 50,
+      "unlocked": true,
+      "visible": true,
+      "rates": {
+        "incomePerSecond": 0,
+        "expensePerSecond": 1.25,
+        "netPerSecond": -1.25
+      }
+    }
+  ]
+}

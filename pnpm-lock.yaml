@@ -471,6 +471,31 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0
 
+  tools/economy-verification:
+    dependencies:
+      '@idle-engine/content-sample':
+        specifier: workspace:*
+        version: link:../../packages/content-sample
+      '@idle-engine/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+    devDependencies:
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../../packages/config-vitest
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.9.1
+      tsx:
+        specifier: ^4.20.6
+        version: 4.20.6
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.9.1)(jiti@1.21.7)(jsdom@25.0.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1)
+      vitest-llm-reporter:
+        specifier: ^1.2.0
+        version: 1.2.0
+
 packages:
 
   '@adobe/css-tools@4.4.4':

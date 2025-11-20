@@ -42,3 +42,20 @@ Options:
 - `--max-steps-per-frame <n>`: Clamp steps per frame (default 50)
 - `--fail-on-slow`: Exit non-zero if any tick exceeds the configured budget
 - `--queue-backlog-cap <n>`: Exit non-zero if queue backlog exceeds `n`
+
+## Economy Verification CLI
+
+Project maximum plausible hard-currency deltas from an economy snapshot (GEL-001):
+
+```
+pnpm --silent core:economy-verify --snapshot tools/economy-verification/__fixtures__/snapshot.json --ticks 40
+```
+
+Flags:
+- `--snapshot <file>`: EconomyStateSummary JSON (required).
+- `--ticks <n>`: Tick count to simulate; omit and use `--offline-ms` to derive from offline duration.
+- `--offline-ms <ms>`: Offline duration converted to ticks with `stepSizeMs`.
+- `--definitions <file>`: Optional resource definitions (defaults to `@idle-engine/content-sample` resources).
+- `--include-diagnostics`: Include diagnostic timeline in the JSON payload.
+
+Use `pnpm --silent` (as above) or call `node --import tsx tools/economy-verification/src/index.ts ...` when piping stdout into automation to keep the output to a single JSON object.
