@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 
 import { createAuthMiddleware } from './middleware/auth.js';
+import { economyRouter } from './routes/economy.js';
 import { leaderboardRouter } from './routes/leaderboard.js';
 import { guildRouter } from './routes/guild.js';
 
@@ -14,6 +15,7 @@ app.use(express.json());
 app.use(morgan('combined'));
 app.use(createAuthMiddleware());
 
+app.use('/economy', economyRouter);
 app.use('/leaderboard', leaderboardRouter);
 app.use('/guilds', guildRouter);
 
