@@ -23,6 +23,13 @@ The Idle Engine is a reusable, data-driven runtime tailored for incremental/idle
 - Default deployment self-hosts social services, with adapter interface enabling migration to managed platforms when required.
 - Authentication built on OpenID Connect; baseline deployment uses self-hosted Keycloak (or Ory Hydra/Kratos), and tokens remain compatible with managed OIDC providers.
 
+## 4. Economy Model (GEL-001)
+- Hard vs soft split: **hard currencies** are server-authoritative and only mutate through validated social service operations; **soft progression** (local resources, upgrades, automation) stays client-authoritative and deterministic inside the runtime.
+- Ledger ownership: the social service maintains the canonical ledger for all hard currencies (balances, transactions, guild contributions) and enforces invariants such as no overspend, bounded earn rates, and authenticated identities.
+- Client/server cooperation: clients can render optimistic UI for spends/transfers but reconcile using authoritative ledger responses; discrepancies clamp to server values and can trigger anomaly flags.
+- Verification: when needed, the social service can perform deterministic replay using the runtime under Node to bound-check suspicious claims without running a continuous server-side simulation.
+- Navigation: see `docs/global-economy-ledger-design.md` (`GEL-001`) for API shapes, invariants, replay workflow, and delivery plan; high-level docs should point there when describing shared economy behaviour.
+
 ## 5. Use Cases
 - Wrap the engine with different content modules to create new idle games quickly.
 - Patch content live without redeploying the runtime (configuration-driven events, seasonal content).
@@ -260,3 +267,10 @@ Follow-up migration work: wire the DSL compiler to emit schema-aligned packs ins
 - How do we expose extensibility to partners while preserving engine stability (module vetting, version caps)?
 - Which managed providers should we validate adapters against, and what migration tooling do partners need?
 - Which telemetry thresholds or machine-learning models will we standardize on for automated cheat detection escalation?
+
+## Appendix A — Economy Glossary (GEL-001)
+- Hard currency: server-authoritative currency recorded in the global ledger; mutations only occur through authenticated social service operations that enforce invariants (no overspend, bounded earns).
+- Soft progression: client-authoritative simulation state (resources, upgrades, automation) managed deterministically by the runtime; reconciles only on sync boundaries where hard currency balances are authoritative.
+- Server-authoritative ledger: social service subsystem that maintains canonical balances and transaction history for hard currencies, powers leaderboards/guild contributions, and is documented in `docs/global-economy-ledger-design.md`.
+- Optimistic UI + reconciliation: client may show provisional spend/transfer results but must apply server responses to clamp balances to ledger truth and surface rejection metadata.
+- Deterministic replay verification: optional server-side check that replays a bounded segment of simulation using the runtime (Node) to validate suspicious economic claims without running continuous server ticks.
