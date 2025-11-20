@@ -3,12 +3,13 @@ import { z } from 'zod';
 
 import { createInMemoryEconomyLedger } from '../ledger/in-memory-economy-ledger.js';
 import {
+  HARD_CURRENCY_IDS,
   InsufficientFundsError,
   type EconomyLedger,
   type HardCurrencyId,
 } from '../types/economy.js';
 
-const hardCurrencyIdSchema = z.enum(['GEMS', 'BONDS', 'GUILD_TOKENS']);
+const hardCurrencyIdSchema = z.enum(HARD_CURRENCY_IDS);
 
 const metadataSchema = z.record(z.string(), z.unknown());
 
