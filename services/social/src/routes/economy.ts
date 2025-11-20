@@ -143,7 +143,7 @@ function enforceGuildContributionLimit(
   amount: number,
   limit?: number,
 ): void {
-  if (!limit) {
+  if (limit == null) {
     return;
   }
 

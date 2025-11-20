@@ -240,4 +240,30 @@ describe('economy routes', () => {
 
     expect(response.body.error).toBe('GuildContributionLimitExceeded');
   });
+
+  it('rejects guild contributions when limit is zero', async () => {
+    const app = createAuthenticatedApp(undefined, {
+      guildContributionLimit: 0,
+    });
+
+    await request(app)
+      .post('/economy/earn')
+      .send({
+        currencyId: TEST_CURRENCY,
+        amount: 25,
+        source: 'seed',
+      })
+      .expect(200);
+
+    const response = await request(app)
+      .post('/economy/guild-contribute')
+      .send({
+        currencyId: TEST_CURRENCY,
+        amount: 1,
+        guildId: 'guild-1',
+      })
+      .expect(400);
+
+    expect(response.body.error).toBe('GuildContributionLimitExceeded');
+  });
 });
