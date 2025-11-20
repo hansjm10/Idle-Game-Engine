@@ -16,15 +16,23 @@ const SHELL_WEB_DIST_INDEX = path.join(
   'dist',
   'index.html'
 );
+const SHELL_WEB_DIST_ASSETS = path.join(
+  MONOREPO_ROOT,
+  'packages',
+  'shell-web',
+  'dist',
+  'assets'
+);
 const shellWebBuildExists = fs.existsSync(SHELL_WEB_DIST_INDEX);
+const economyPreviewFlagBaked = shellWebBuildExists && distIncludesEconomyPreviewFlag();
 
 if (shouldSkipBuild) {
   console.log('[a11y-pretest] PLAYWRIGHT_A11Y_SKIP_BUILD set; skipping core/shell builds.');
   process.exit(0);
 }
 
-if (isCI && shellWebBuildExists) {
-  console.log('[a11y-pretest] CI detected; shell-web dist already built. Skipping rebuild.');
+if (isCI && shellWebBuildExists && economyPreviewFlagBaked) {
+  console.log('[a11y-pretest] CI detected; shell-web dist already includes economy preview flag. Skipping rebuild.');
   process.exit(0);
 }
 
@@ -34,6 +42,20 @@ function coerceBoolean(value) {
   }
   const normalized = value.trim().toLowerCase();
   return normalized === '1' || normalized === 'true';
+}
+
+function distIncludesEconomyPreviewFlag() {
+  try {
+    const assetFiles = fs.readdirSync(SHELL_WEB_DIST_ASSETS).filter((file) => file.endsWith('.js'));
+    const truthyFlagPattern = /VITE_ENABLE_ECONOMY_PREVIEW["']?\s*:\s*(?:true|!0|1|"1"|'1'|"true"|'true')/;
+
+    return assetFiles.some((file) => {
+      const contents = fs.readFileSync(path.join(SHELL_WEB_DIST_ASSETS, file), 'utf8');
+      return truthyFlagPattern.test(contents);
+    });
+  } catch {
+    return false;
+  }
 }
 
 function run(cmd, args, opts = {}) {
@@ -53,7 +75,7 @@ function run(cmd, args, opts = {}) {
 }
 
 if (isCI) {
-  console.log('[a11y-pretest] CI detected but shell-web dist missing; building preview prerequisites...');
+  console.log('[a11y-pretest] CI detected; rebuilding preview assets to bake VITE_ENABLE_ECONOMY_PREVIEW=1.');
 } else {
   console.log('[a11y-pretest] Building @idle-engine/core and @idle-engine/shell-web for preview...');
 }
