@@ -50,7 +50,7 @@ const PROJECTS = [
     host: HOST,
     port: PREVIEW_PORT,
     baseUrl: `http://${HOST}:${PREVIEW_PORT}`,
-    startCommand: `pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PREVIEW_PORT} --strictPort`
+    startCommand: `VITE_ENABLE_ECONOMY_PREVIEW=1 pnpm --filter @idle-engine/shell-web run preview -- --host ${HOST} --port ${PREVIEW_PORT} --strictPort`
   },
   {
     playwrightName: 'chromium-dev',
@@ -58,7 +58,7 @@ const PROJECTS = [
     host: HOST,
     port: DEV_PORT,
     baseUrl: `http://${HOST}:${DEV_PORT}`,
-    startCommand: `pnpm --filter @idle-engine/shell-web run dev -- --host ${HOST} --port ${DEV_PORT} --strictPort`
+    startCommand: `VITE_ENABLE_ECONOMY_PREVIEW=1 pnpm --filter @idle-engine/shell-web run dev -- --host ${HOST} --port ${DEV_PORT} --strictPort`
   }
 ];
 
