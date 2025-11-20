@@ -6,6 +6,7 @@ import {
   HARD_CURRENCY_IDS,
   InsufficientFundsError,
   type EconomyLedger,
+  type EconomyOperationKind,
   type HardCurrencyId,
 } from '../types/economy.js';
 
@@ -38,6 +39,29 @@ const guildContributionSchema = baseOperationSchema.extend({
   guildId: z.string().min(1),
 });
 
+interface RateLimitRule {
+  readonly windowMs: number;
+  readonly maxAmount: number;
+}
+
+export interface EconomyRouterOptions {
+  readonly earnRateLimit?: RateLimitRule;
+  readonly spendRateLimit?: RateLimitRule;
+  readonly guildContributionLimit?: number;
+}
+
+const DEFAULT_EARN_RATE_LIMIT: RateLimitRule = {
+  windowMs: 60 * 60 * 1000,
+  maxAmount: 1_000,
+};
+
+const DEFAULT_SPEND_RATE_LIMIT: RateLimitRule = {
+  windowMs: 60 * 60 * 1000,
+  maxAmount: 500,
+};
+
+const DEFAULT_GUILD_CONTRIBUTION_LIMIT = 10_000;
+
 function getAuthenticatedUserId(
   req: Request,
   res: Response,
@@ -57,8 +81,87 @@ function resolveMetadata(
   return metadata ?? simMetadata;
 }
 
-export function createEconomyRouter(ledger: EconomyLedger): Router {
+class RateLimitExceededError extends Error {
+  readonly code = 'RateLimitExceeded';
+
+  constructor(
+    readonly kind: EconomyOperationKind,
+    readonly maxAmount: number,
+    readonly windowMs: number,
+  ) {
+    super(
+      `Rate limit exceeded for ${kind}: attempted amount would exceed ${maxAmount} in the last ${windowMs}ms`,
+    );
+    this.name = 'RateLimitExceededError';
+  }
+}
+
+class GuildContributionLimitExceededError extends Error {
+  readonly code = 'GuildContributionLimitExceeded';
+
+  constructor(readonly maxAmount: number) {
+    super(
+      `Guild contributions cannot exceed ${maxAmount} in a single operation`,
+    );
+    this.name = 'GuildContributionLimitExceededError';
+  }
+}
+
+async function enforceRateLimit(
+  ledger: EconomyLedger,
+  userId: string,
+  currencyId: HardCurrencyId,
+  kind: EconomyOperationKind,
+  amount: number,
+  rule?: RateLimitRule,
+): Promise<void> {
+  if (!rule) {
+    return;
+  }
+
+  const from = new Date(Date.now() - rule.windowMs);
+  const operations = await ledger.getOperations({
+    userId,
+    currencyId,
+    kind,
+    from,
+  });
+
+  const totalInWindow = operations.reduce((sum, operation) => {
+    if (operation.kind !== kind) {
+      return sum;
+    }
+    return sum + operation.amount;
+  }, 0);
+
+  if (totalInWindow + amount > rule.maxAmount) {
+    throw new RateLimitExceededError(kind, rule.maxAmount, rule.windowMs);
+  }
+}
+
+function enforceGuildContributionLimit(
+  amount: number,
+  limit?: number,
+): void {
+  if (!limit) {
+    return;
+  }
+
+  if (amount > limit) {
+    throw new GuildContributionLimitExceededError(limit);
+  }
+}
+
+export function createEconomyRouter(
+  ledger: EconomyLedger,
+  options: EconomyRouterOptions = {},
+): Router {
   const router = Router();
+  const {
+    earnRateLimit = DEFAULT_EARN_RATE_LIMIT,
+    spendRateLimit = DEFAULT_SPEND_RATE_LIMIT,
+    guildContributionLimit = DEFAULT_GUILD_CONTRIBUTION_LIMIT,
+  } = options;
 
   router.get('/balances', async (req: Request, res: Response) => {
     const userId = getAuthenticatedUserId(req, res);
@@ -95,6 +198,15 @@ export function createEconomyRouter(ledger: EconomyLedger): Router {
       parsed.data;
 
     try {
+      await enforceRateLimit(
+        ledger,
+        userId,
+        currencyId as HardCurrencyId,
+        'Earn',
+        amount,
+        earnRateLimit,
+      );
+
       const operation = await ledger.earn({
         kind: 'Earn',
         userId,
@@ -111,7 +223,16 @@ export function createEconomyRouter(ledger: EconomyLedger): Router {
         operation,
         balance,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        return res.status(429).json({
+          error: error.code,
+          message: error.message,
+          windowMs: error.windowMs,
+          maxAmount: error.maxAmount,
+        });
+      }
+
       res.status(500).json({ error: 'internal_error' });
     }
   });
@@ -134,6 +255,15 @@ export function createEconomyRouter(ledger: EconomyLedger): Router {
       parsed.data;
 
     try {
+      await enforceRateLimit(
+        ledger,
+        userId,
+        currencyId as HardCurrencyId,
+        'Spend',
+        amount,
+        spendRateLimit,
+      );
+
       const operation = await ledger.spend({
         kind: 'Spend',
         userId,
@@ -155,6 +285,15 @@ export function createEconomyRouter(ledger: EconomyLedger): Router {
         return res.status(400).json({
           error: error.code,
           message: error.message,
+        });
+      }
+
+      if (error instanceof RateLimitExceededError) {
+        return res.status(429).json({
+          error: error.code,
+          message: error.message,
+          windowMs: error.windowMs,
+          maxAmount: error.maxAmount,
         });
       }
 
@@ -253,6 +392,8 @@ export function createEconomyRouter(ledger: EconomyLedger): Router {
     } = parsed.data;
 
     try {
+      enforceGuildContributionLimit(amount, guildContributionLimit);
+
       const operation = await ledger.guildContribute({
         kind: 'GuildContribution',
         userId,
@@ -270,6 +411,14 @@ export function createEconomyRouter(ledger: EconomyLedger): Router {
         balance,
       });
     } catch (error) {
+      if (error instanceof GuildContributionLimitExceededError) {
+        return res.status(400).json({
+          error: error.code,
+          message: error.message,
+          maxAmount: error.maxAmount,
+        });
+      }
+
       if (error instanceof InsufficientFundsError) {
         return res.status(400).json({
           error: error.code,
