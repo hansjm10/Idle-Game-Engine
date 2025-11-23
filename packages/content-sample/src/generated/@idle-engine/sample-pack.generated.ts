@@ -4,9 +4,9 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "620bac684f83e741343b858ffcd2c54496ad708881460426327cea6f9d76470e",
+  "artifactHash": "e7608c3c523ec775d90f295506cb271e651b896c1204f53f8ef5f9787eb73ee6",
   "digest": {
-    "hash": "fnv1a-30aeb60a",
+    "hash": "fnv1a-e5f9e9e9",
     "version": 1
   },
   "formatVersion": 1,
@@ -15,7 +15,7 @@ const serialized = {
       "Idle Engine Team"
     ],
     "defaultLocale": "en-US",
-    "engine": ">=0.3.0 <1.0.0",
+    "engine": ">=0.4.0 <1.0.0",
     "id": "@idle-engine/sample-pack",
     "links": [
       {
@@ -43,7 +43,7 @@ const serialized = {
         "en-US": "Sample Content Pack"
       }
     },
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "modules": {
     "achievements": [
@@ -279,6 +279,7 @@ const serialized = {
         "consumes": [],
         "effects": [],
         "id": "sample-pack.reactor",
+        "maxLevel": 50,
         "name": {
           "default": "Reactor",
           "variants": {
@@ -303,7 +304,8 @@ const serialized = {
             "kind": "exponential",
             "offset": 0
           },
-          "currencyId": "sample-pack.energy"
+          "currencyId": "sample-pack.energy",
+          "maxBulk": 10
         },
         "tags": []
       },
@@ -328,6 +330,7 @@ const serialized = {
         ],
         "effects": [],
         "id": "sample-pack.harvester",
+        "maxLevel": 40,
         "name": {
           "default": "Crystal Harvester",
           "variants": {
@@ -351,9 +354,187 @@ const serialized = {
             "kind": "linear",
             "slope": 5
           },
-          "currencyId": "sample-pack.energy"
+          "currencyId": "sample-pack.energy",
+          "maxBulk": 5
         },
         "tags": []
+      },
+      {
+        "baseUnlock": {
+          "amount": {
+            "kind": "constant",
+            "value": 50
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.crystal"
+        },
+        "consumes": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 1.5
+            },
+            "resourceId": "sample-pack.energy"
+          },
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.35
+            },
+            "resourceId": "sample-pack.crystal"
+          }
+        ],
+        "effects": [],
+        "id": "sample-pack.forge",
+        "maxLevel": 35,
+        "name": {
+          "default": "Forge",
+          "variants": {
+            "en-US": "Forge"
+          }
+        },
+        "order": 3,
+        "produces": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.2
+            },
+            "resourceId": "sample-pack.alloy"
+          }
+        ],
+        "purchase": {
+          "baseCost": 1,
+          "costCurve": {
+            "base": 75,
+            "kind": "linear",
+            "slope": 12
+          },
+          "currencyId": "sample-pack.energy",
+          "maxBulk": 5
+        },
+        "tags": []
+      },
+      {
+        "baseUnlock": {
+          "amount": {
+            "kind": "constant",
+            "value": 40
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.alloy"
+        },
+        "consumes": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 2.5
+            },
+            "resourceId": "sample-pack.energy"
+          },
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.5
+            },
+            "resourceId": "sample-pack.alloy"
+          }
+        ],
+        "effects": [],
+        "id": "sample-pack.lab",
+        "maxLevel": 25,
+        "name": {
+          "default": "Research Lab",
+          "variants": {
+            "en-US": "Research Lab"
+          }
+        },
+        "order": 4,
+        "produces": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.08
+            },
+            "resourceId": "sample-pack.data-core"
+          }
+        ],
+        "purchase": {
+          "baseCost": 120,
+          "costCurve": {
+            "base": 1,
+            "growth": 1.12,
+            "kind": "exponential"
+          },
+          "currencyId": "sample-pack.energy",
+          "maxBulk": 3
+        },
+        "tags": []
+      },
+      {
+        "baseUnlock": {
+          "conditions": [
+            {
+              "kind": "prestigeUnlocked",
+              "prestigeLayerId": "sample-pack.ascension-alpha"
+            },
+            {
+              "amount": {
+                "kind": "constant",
+                "value": 200
+              },
+              "comparator": "gte",
+              "kind": "resourceThreshold",
+              "resourceId": "sample-pack.data-core"
+            }
+          ],
+          "kind": "allOf"
+        },
+        "consumes": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 2
+            },
+            "resourceId": "sample-pack.data-core"
+          }
+        ],
+        "effects": [],
+        "id": "sample-pack.gate-reactor",
+        "maxLevel": 15,
+        "name": {
+          "default": "Gate Reactor",
+          "variants": {
+            "en-US": "Gate Reactor"
+          }
+        },
+        "order": 5,
+        "produces": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.05
+            },
+            "resourceId": "sample-pack.prestige-flux"
+          }
+        ],
+        "purchase": {
+          "baseCost": 500,
+          "costCurve": {
+            "base": 1,
+            "growth": 1.08,
+            "kind": "exponential"
+          },
+          "currencyId": "sample-pack.data-core",
+          "maxBulk": 2
+        },
+        "tags": [],
+        "visibilityCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "sample-pack.ascension-alpha"
+        }
       }
     ],
     "guildPerks": [],
@@ -380,7 +561,132 @@ const serialized = {
         "unit": "units"
       }
     ],
-    "prestigeLayers": [],
+    "prestigeLayers": [
+      {
+        "id": "sample-pack.ascension-alpha",
+        "name": {
+          "default": "Ascension Alpha",
+          "variants": {
+            "en-US": "Ascension Alpha"
+          }
+        },
+        "order": 1,
+        "resetTargets": [
+          "sample-pack.alloy",
+          "sample-pack.crystal",
+          "sample-pack.data-core",
+          "sample-pack.energy"
+        ],
+        "retention": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "kind": "resource",
+            "resourceId": "sample-pack.prestige-flux"
+          }
+        ],
+        "reward": {
+          "baseReward": {
+            "expression": {
+              "args": [
+                {
+                  "kind": "unary",
+                  "op": "floor",
+                  "operand": {
+                    "kind": "binary",
+                    "left": {
+                      "kind": "binary",
+                      "left": {
+                        "kind": "binary",
+                        "left": {
+                          "kind": "ref",
+                          "target": {
+                            "id": "sample-pack.energy",
+                            "type": "resource"
+                          }
+                        },
+                        "op": "add",
+                        "right": {
+                          "kind": "ref",
+                          "target": {
+                            "id": "sample-pack.crystal",
+                            "type": "resource"
+                          }
+                        }
+                      },
+                      "op": "add",
+                      "right": {
+                        "kind": "binary",
+                        "left": {
+                          "kind": "literal",
+                          "value": 2
+                        },
+                        "op": "mul",
+                        "right": {
+                          "kind": "ref",
+                          "target": {
+                            "id": "sample-pack.data-core",
+                            "type": "resource"
+                          }
+                        }
+                      }
+                    },
+                    "op": "div",
+                    "right": {
+                      "kind": "literal",
+                      "value": 750
+                    }
+                  }
+                },
+                {
+                  "kind": "literal",
+                  "value": 1
+                },
+                {
+                  "kind": "literal",
+                  "value": 5000
+                }
+              ],
+              "kind": "call",
+              "name": "clamp"
+            },
+            "kind": "expression"
+          },
+          "resourceId": "sample-pack.prestige-flux"
+        },
+        "summary": {
+          "default": "Reset generators and upgrades for long-term flux; unlock once your reactor hums at level 10 and data cores reach 500.",
+          "variants": {
+            "en-US": "Reset generators and upgrades for long-term flux; unlock once your reactor hums at level 10 and data cores reach 500."
+          }
+        },
+        "unlockCondition": {
+          "conditions": [
+            {
+              "amount": {
+                "kind": "constant",
+                "value": 500
+              },
+              "comparator": "gte",
+              "kind": "resourceThreshold",
+              "resourceId": "sample-pack.data-core"
+            },
+            {
+              "comparator": "gte",
+              "generatorId": "sample-pack.reactor",
+              "kind": "generatorLevel",
+              "level": {
+                "kind": "constant",
+                "value": 10
+              }
+            }
+          ],
+          "kind": "allOf"
+        }
+      }
+    ],
     "resources": [
       {
         "capacity": 100,
@@ -426,6 +732,89 @@ const serialized = {
         },
         "unlocked": false,
         "visible": true
+      },
+      {
+        "capacity": 0,
+        "category": "primary",
+        "economyClassification": "soft",
+        "id": "sample-pack.alloy",
+        "name": {
+          "default": "Alloy",
+          "variants": {
+            "en-US": "Alloy"
+          }
+        },
+        "order": 3,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 2,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 50
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.crystal"
+        },
+        "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": 0,
+        "category": "primary",
+        "economyClassification": "soft",
+        "id": "sample-pack.data-core",
+        "name": {
+          "default": "Data Core",
+          "variants": {
+            "en-US": "Data Core"
+          }
+        },
+        "order": 4,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 2,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 40
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.alloy"
+        },
+        "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": 0,
+        "category": "prestige",
+        "economyClassification": "soft",
+        "id": "sample-pack.prestige-flux",
+        "name": {
+          "default": "Prestige Flux",
+          "variants": {
+            "en-US": "Prestige Flux"
+          }
+        },
+        "order": 5,
+        "prestige": {
+          "layerId": "sample-pack.ascension-alpha",
+          "resetRetention": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "startAmount": 0,
+        "tags": [],
+        "tier": 3,
+        "unlockCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "sample-pack.ascension-alpha"
+        },
+        "unlocked": false,
+        "visible": false
       }
     ],
     "runtimeEvents": [],
@@ -540,6 +929,62 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
+          "baseCost": 400,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.energy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.reactor",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.75
+            }
+          }
+        ],
+        "id": "sample-pack.reactor-phase-cooling",
+        "name": {
+          "default": "Reactor Phase Cooling",
+          "variants": {
+            "en-US": "Reactor Phase Cooling"
+          }
+        },
+        "order": 3,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "sample-pack.reactor-overclock"
+          }
+        ],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.reactor",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "comparator": "gte",
+          "generatorId": "sample-pack.reactor",
+          "kind": "generatorLevel",
+          "level": {
+            "kind": "constant",
+            "value": 5
+          }
+        },
+        "visibilityCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
           "baseCost": 125,
           "costCurve": {
             "kind": "constant",
@@ -565,7 +1010,7 @@ const serialized = {
             "en-US": "Harvester Efficiency"
           }
         },
-        "order": 3,
+        "order": 4,
         "prerequisites": [],
         "tags": [],
         "targets": [
@@ -591,6 +1036,565 @@ const serialized = {
           "comparator": "gte",
           "kind": "resourceThreshold",
           "resourceId": "sample-pack.crystal"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 200,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.crystal"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.harvester",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.5
+            }
+          }
+        ],
+        "id": "sample-pack.harvester-deep-core",
+        "name": {
+          "default": "Harvester Deep Core",
+          "variants": {
+            "en-US": "Harvester Deep Core"
+          }
+        },
+        "order": 5,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "sample-pack.harvester-efficiency"
+          }
+        ],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.harvester",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 150
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.crystal"
+        },
+        "visibilityCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 250,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.crystal",
+          "maxBulk": 2
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.harvester",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.15
+            }
+          }
+        ],
+        "id": "sample-pack.harvester-quantum-sieve",
+        "name": {
+          "default": "Harvester Quantum Sieve",
+          "variants": {
+            "en-US": "Harvester Quantum Sieve"
+          }
+        },
+        "order": 6,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "sample-pack.harvester-deep-core"
+          }
+        ],
+        "repeatable": {
+          "costCurve": {
+            "base": 1,
+            "kind": "linear",
+            "slope": 0.25
+          },
+          "maxPurchases": 5
+        },
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.harvester",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "conditions": [
+            {
+              "amount": {
+                "kind": "constant",
+                "value": 200
+              },
+              "comparator": "gte",
+              "kind": "resourceThreshold",
+              "resourceId": "sample-pack.crystal"
+            },
+            {
+              "comparator": "gte",
+              "generatorId": "sample-pack.harvester",
+              "kind": "generatorLevel",
+              "level": {
+                "kind": "constant",
+                "value": 3
+              }
+            }
+          ],
+          "kind": "allOf"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 320,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.energy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.forge",
+            "kind": "modifyGeneratorCost",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 0.9
+            }
+          }
+        ],
+        "id": "sample-pack.forge-heat-shield",
+        "name": {
+          "default": "Forge Heat Shield",
+          "variants": {
+            "en-US": "Forge Heat Shield"
+          }
+        },
+        "order": 7,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.forge",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "comparator": "gte",
+          "generatorId": "sample-pack.forge",
+          "kind": "generatorLevel",
+          "level": {
+            "kind": "constant",
+            "value": 1
+          }
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 180,
+          "costCurve": {
+            "base": 1,
+            "kind": "linear",
+            "slope": 0.15
+          },
+          "currencyId": "sample-pack.alloy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.forge",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.3
+            }
+          }
+        ],
+        "id": "sample-pack.forge-auto-feed",
+        "name": {
+          "default": "Forge Auto-Feed",
+          "variants": {
+            "en-US": "Forge Auto-Feed"
+          }
+        },
+        "order": 8,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "sample-pack.forge-heat-shield"
+          }
+        ],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.forge",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 30
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.alloy"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 220,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.alloy"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.lab",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.4
+            }
+          }
+        ],
+        "id": "sample-pack.lab-insight-boost",
+        "name": {
+          "default": "Lab Insight Boost",
+          "variants": {
+            "en-US": "Lab Insight Boost"
+          }
+        },
+        "order": 9,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.lab",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 40
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.alloy"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "baseCost": 1,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.prestige-flux"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.lab",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1.05
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.02
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "name": "level",
+                      "type": "variable"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          }
+        ],
+        "id": "sample-pack.lab-simulation-stack",
+        "name": {
+          "default": "Lab Simulation Stack",
+          "variants": {
+            "en-US": "Lab Simulation Stack"
+          }
+        },
+        "order": 10,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "sample-pack.lab-insight-boost"
+          }
+        ],
+        "repeatable": {
+          "costCurve": {
+            "base": 1,
+            "growth": 1.1,
+            "kind": "exponential"
+          },
+          "maxPurchases": 10
+        },
+        "tags": [],
+        "targets": [
+          {
+            "id": "sample-pack.lab",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 1
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.prestige-flux"
+        }
+      },
+      {
+        "category": "prestige",
+        "cost": {
+          "baseCost": 0,
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "currencyId": "sample-pack.prestige-flux"
+        },
+        "effects": [
+          {
+            "generatorId": "sample-pack.reactor",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "sample-pack.prestige-flux",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          },
+          {
+            "generatorId": "sample-pack.harvester",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "sample-pack.prestige-flux",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          },
+          {
+            "generatorId": "sample-pack.forge",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "sample-pack.prestige-flux",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          },
+          {
+            "generatorId": "sample-pack.lab",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "sample-pack.prestige-flux",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          },
+          {
+            "generatorId": "sample-pack.gate-reactor",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "sample-pack.prestige-flux",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          }
+        ],
+        "id": "sample-pack.ascension-surge",
+        "name": {
+          "default": "Ascension Surge",
+          "variants": {
+            "en-US": "Ascension Surge"
+          }
+        },
+        "order": 11,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "kind": "global"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 1
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.prestige-flux"
+        },
+        "visibilityCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "sample-pack.ascension-alpha"
         }
       }
     ]
