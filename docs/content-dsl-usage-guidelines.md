@@ -55,6 +55,33 @@ Start from the structure maintained in `packages/content-sample`:
 - [ ] Commit the generated artifacts alongside `content/pack.json` so consumers
   never regenerate during install.
 
+### Sample pack (prestige + balance) reference
+
+The reference pack in `packages/content-sample/content/pack.json` embodies the
+expanded economy and prestige layer described in
+[`docs/sample-pack-balance-validation-design-issue-420.md`](sample-pack-balance-validation-design-issue-420.md).
+Use it as a template when authoring or validating new packs:
+
+- **Resources**: Energy (starts at 10), Crystal (hard currency, unlocks at
+  Energy ≥ 25), Alloy (tier 2, unlocks at Crystal ≥ 50), Data Core (tier 2,
+  unlocks at Alloy ≥ 40), and Prestige Flux (prestige-only, hidden until the
+  prestige layer unlocks).
+- **Generators**: Reactor (Energy), Crystal Harvester (consumes Energy), Forge
+  (consumes Energy + Crystal → Alloy, linear cost: base 75, slope 12), Research
+  Lab (consumes Energy + Alloy → Data Core, exponential cost: base 120,
+  growth 1.12), and Gate Reactor (consumes Data Core → Prestige Flux; only
+  visible/unlocked after prestige).
+- **Upgrades**: Multi-tier reactor line (Insulation → Overclock → Phase
+  Cooling), harvester line with repeatable Quantum Sieve, forge cost/rate tuning
+  (Heat Shield, Auto-Feed), lab rate boosts (Insight Boost + repeatable
+  Simulation Stack gated on Prestige Flux), and the prestige-centric Ascension
+  Surge multiplier.
+- **Prestige layer**: `sample-pack.ascension-alpha` unlocks at Data Core ≥ 500
+  and Reactor level ≥ 10, resets base resources/generators/upgrades, and grants
+  Prestige Flux via a clamped reward formula
+  (`floor((energy + crystal + 2 * data-core) / 750)` capped to 1–5000). A
+  minimum of 1 Prestige Flux is retained after each reset.
+
 ## Naming Conventions
 
 The schema enforces naming through `packSlugSchema`, `contentIdSchema`, and
@@ -459,6 +486,22 @@ Use the sample pack as a living reference:
 The CLI in `tools/content-schema-cli/src/generate.js` orchestrates validation,
 manifest regeneration, and compilation. It emits structured
 `content_pack.*` log lines—treat any new warning or error as a release blocker.
+
+## Balance validation defaults & commands
+
+- `pnpm generate` (or `pnpm generate --check`) runs schema + balance validation
+  and logs `content_pack.balance_warning` / `content_pack.balance_failed` when
+  invariants break; balance errors fail the run.
+- Defaults for `ContentSchemaOptions.balance`: enabled, `sampleSize` = 100
+  purchase indices (levels 0–100), `maxGrowth` = 20× between adjacent
+  purchases, `warnOnly` = false. Use `warnOnly` only for local exploration;
+  treat any warning as a regression before shipping.
+- Checks cover non-negative rates, non-decreasing costs for generators/upgrades
+  (including repeatables) and prestige rewards, growth-cap enforcement, and
+  unlock ordering so consumed resources unlock no later than their dependents.
+- Validation is deterministic; property suites that guard balance and formulas
+  are seeded (e.g., fast-check seeds in the 422000 range) to keep
+  `vitest-llm-reporter` output stable. Keep seeds unchanged unless debugging.
 
 ## Verification Runbook
 
