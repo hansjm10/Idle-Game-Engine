@@ -663,6 +663,7 @@ export class ContentPackValidationError extends Error {
 export async function validateContentPacks(manifestDefinitions, options = {}) {
   const { pretty = false } = options;
   const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
+  const balanceOptions = options.balance;
 
   const documents = await loadContentPackDocuments(rootDirectory);
   const validDocuments = documents.filter((entry) => entry.status === 'ok');
@@ -677,6 +678,7 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
     activePackIds,
     runtimeEventCatalogue,
     runtimeVersion: RUNTIME_VERSION,
+    ...(balanceOptions !== undefined ? { balance: balanceOptions } : {}),
   };
 
   if (validDocuments.length === 0 && documents.length === 0) {
@@ -708,16 +710,28 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
 
     const result = validator.safeParse(entry.document);
     if (result.success) {
-      const { pack, warnings } = result.data;
+      const {
+        pack,
+        warnings,
+        balanceWarnings,
+        balanceErrors,
+      } = result.data;
+      const balanceWarningCount = balanceWarnings.length;
+      const balanceErrorCount = balanceErrors.length;
+      const warningCount = warnings.length + balanceWarningCount + balanceErrorCount;
       const payload = {
         event: 'content_pack.validated',
         packSlug: pack.metadata.id,
         packVersion: pack.metadata.version,
         path: relativePath,
-        warningCount: warnings.length,
+        warningCount,
+        balanceWarningCount,
+        balanceErrorCount,
         warnings,
+        balanceWarnings,
+        balanceErrors,
       };
-      if (warnings.length > 0) {
+      if (warningCount > 0) {
         console.warn(formatLogPayload(payload, pretty));
       } else {
         console.log(formatLogPayload(payload, pretty));

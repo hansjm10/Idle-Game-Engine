@@ -275,7 +275,11 @@ export interface ContentValidationValidatedEvent {
   readonly packVersion?: string;
   readonly path: string;
   readonly warningCount: number;
+  readonly balanceWarningCount: number;
+  readonly balanceErrorCount: number;
   readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly balanceWarnings: readonly SerializedContentSchemaWarning[];
+  readonly balanceErrors: readonly SerializedContentSchemaWarning[];
 }
 
 export interface ContentValidationFailedEvent {

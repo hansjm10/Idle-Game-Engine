@@ -59,7 +59,7 @@ const createLevelSamples = (
 };
 
 const createEvaluationContext = (level: number) => ({
-  variables: { level },
+  variables: { level, time: 0, deltaTime: 1 },
   entities: {
     resource: () => 0,
     generator: () => 0,
