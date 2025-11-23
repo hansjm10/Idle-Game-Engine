@@ -7,6 +7,16 @@ export class ContentSchemaError extends Error {
   }
 }
 
+export class BalanceValidationError extends ContentSchemaError {
+  constructor(
+    message: string,
+    readonly issues: readonly ContentSchemaWarning[],
+  ) {
+    super(message);
+    this.name = 'BalanceValidationError';
+  }
+}
+
 export type ContentSchemaWarningSeverity = 'error' | 'warning' | 'info';
 
 export interface ContentSchemaWarning {
