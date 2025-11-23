@@ -241,6 +241,14 @@ function emitCompileEvents({ compileResult, logger, check }) {
     operationsBySlug.delete(result.packSlug);
     const artifacts = operations.map(formatOperation);
     const timestamp = new Date().toISOString();
+    const balanceWarnings =
+      result.status === 'compiled'
+        ? result.balanceWarnings.length
+        : result.balanceWarnings?.length ?? 0;
+    const balanceErrors =
+      result.status === 'compiled'
+        ? result.balanceErrors.length
+        : result.balanceErrors?.length ?? 0;
 
     if (result.status === 'compiled') {
       const warnings = result.warnings.length;
@@ -257,6 +265,8 @@ function emitCompileEvents({ compileResult, logger, check }) {
           timestamp,
           durationMs: result.durationMs,
           warnings,
+          balanceWarnings,
+          balanceErrors,
           artifacts,
           check,
         });
@@ -268,6 +278,8 @@ function emitCompileEvents({ compileResult, logger, check }) {
           timestamp,
           durationMs: result.durationMs,
           warnings,
+          balanceWarnings,
+          balanceErrors,
           artifacts,
           check,
         });
@@ -279,6 +291,9 @@ function emitCompileEvents({ compileResult, logger, check }) {
         path: result.document.relativePath,
         timestamp,
         durationMs: result.durationMs,
+        warnings: result.warnings.length,
+        balanceWarnings,
+        balanceErrors,
         message: result.error.message,
         stack: result.error.stack,
         artifacts,
@@ -487,6 +502,7 @@ function createValidationFailureSummary(failures) {
       status: 'failed',
       ...(failure.packVersion ? { version: failure.packVersion } : {}),
       warnings: [],
+      ...(deriveBalanceFromIssues(failure.issues) ?? {}),
       dependencies: emptySummaryDependencies(),
       artifacts: emptySummaryArtifacts(),
       error: failure.message,
@@ -897,4 +913,27 @@ function toPosixPath(inputPath) {
     return '';
   }
   return inputPath.split(path.sep).join('/');
+}
+
+function deriveBalanceFromIssues(issues) {
+  if (!Array.isArray(issues)) {
+    return undefined;
+  }
+
+  const balanceErrors = issues.filter(
+    (issue) => typeof issue?.code === 'string' && issue.code.startsWith('balance.'),
+  );
+
+  if (balanceErrors.length === 0) {
+    return undefined;
+  }
+
+  return {
+    balance: {
+      warnings: [],
+      errors: balanceErrors,
+      warningCount: 0,
+      errorCount: balanceErrors.length,
+    },
+  };
 }

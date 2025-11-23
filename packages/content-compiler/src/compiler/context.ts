@@ -24,6 +24,7 @@ function createSchemaOptions(
     ...(input.knownPacks !== undefined ? { knownPacks: input.knownPacks } : {}),
     ...(input.activePackIds !== undefined ? { activePackIds: input.activePackIds } : {}),
     ...(input.runtimeVersion !== undefined ? { runtimeVersion: input.runtimeVersion } : {}),
+    ...(input.balance !== undefined ? { balance: input.balance } : {}),
   };
 }
 

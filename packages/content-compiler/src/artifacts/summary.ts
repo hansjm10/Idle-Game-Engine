@@ -8,7 +8,9 @@ import {
   type WorkspaceSummaryArtifacts,
   type WorkspaceSummaryDependencies,
   type WorkspaceSummaryDependency,
+  type WorkspaceSummaryBalance,
   type WorkspaceSummaryPack,
+  type SerializedContentSchemaWarning,
 } from '../types.js';
 
 export interface WorkspaceSummaryOptions {
@@ -52,6 +54,7 @@ function createSummaryEntry(
       slug: result.packSlug,
       status: 'failed',
       warnings: result.warnings,
+      balance: createBalanceSummary(result.balanceWarnings, result.balanceErrors),
       dependencies: emptyDependencies(),
       artifacts: emptyArtifacts(),
       error: result.error.message,
@@ -71,6 +74,7 @@ function createSummaryEntry(
     digest,
     artifactHash,
     warnings: result.warnings,
+    balance: createBalanceSummary(result.balanceWarnings, result.balanceErrors),
     dependencies,
     artifacts,
   };
@@ -188,4 +192,19 @@ function emptyDependencies(): WorkspaceSummaryDependencies {
 
 function emptyArtifacts(): WorkspaceSummaryArtifacts {
   return {};
+}
+
+function createBalanceSummary(
+  warnings: readonly SerializedContentSchemaWarning[] | undefined,
+  errors: readonly SerializedContentSchemaWarning[] | undefined,
+): WorkspaceSummaryBalance {
+  const warningList = warnings ?? [];
+  const errorList = errors ?? [];
+
+  return {
+    warnings: warningList,
+    errors: errorList,
+    warningCount: warningList.length,
+    errorCount: errorList.length,
+  };
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createContentPackValidator } from '@idle-engine/content-schema';
+import { BalanceValidationError, createContentPackValidator } from '@idle-engine/content-schema';
 import { RUNTIME_VERSION } from '@idle-engine/core';
 import JSON5 from 'json5';
 import { promises as fs } from 'fs';
@@ -719,6 +719,28 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
       const balanceWarningCount = balanceWarnings.length;
       const balanceErrorCount = balanceErrors.length;
       const warningCount = warnings.length + balanceWarningCount + balanceErrorCount;
+      if (balanceWarningCount > 0) {
+        const balanceWarningPayload = {
+          event: 'content_pack.balance_warning',
+          packSlug: pack.metadata.id,
+          packVersion: pack.metadata.version,
+          path: relativePath,
+          warningCount: balanceWarningCount,
+          warnings: balanceWarnings,
+        };
+        console.warn(formatLogPayload(balanceWarningPayload, pretty));
+      }
+      if (balanceErrorCount > 0) {
+        const balanceErrorPayload = {
+          event: 'content_pack.balance_failed',
+          packSlug: pack.metadata.id,
+          packVersion: pack.metadata.version,
+          path: relativePath,
+          errorCount: balanceErrorCount,
+          errors: balanceErrors,
+        };
+        console.error(formatLogPayload(balanceErrorPayload, pretty));
+      }
       const payload = {
         event: 'content_pack.validated',
         packSlug: pack.metadata.id,
@@ -737,6 +759,23 @@ export async function validateContentPacks(manifestDefinitions, options = {}) {
         console.log(formatLogPayload(payload, pretty));
       }
       continue;
+    }
+
+    if (result.error instanceof BalanceValidationError) {
+      const balanceIssues = result.error.issues;
+      if (balanceIssues && balanceIssues.length > 0) {
+        const balanceErrorPayload = {
+          event: 'content_pack.balance_failed',
+          packSlug: entry.metadata?.packSlug ?? inferPackSlugFromRelativePath(relativePath),
+          ...(entry.metadata?.packVersion
+            ? { packVersion: entry.metadata.packVersion }
+            : {}),
+          path: relativePath,
+          errorCount: balanceIssues.length,
+          errors: balanceIssues,
+        };
+        console.error(formatLogPayload(balanceErrorPayload, pretty));
+      }
     }
 
     const failurePayload = createValidationFailurePayload({

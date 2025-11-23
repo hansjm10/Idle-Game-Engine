@@ -201,6 +201,11 @@ describe('validateContentPacks balance logging', () => {
           event?.event === 'content_pack.validated' &&
           event?.packSlug === BALANCE_WARNING_PACK_SLUG,
       );
+      const balanceWarningEvent = consoleCapture.events.find(
+        (event) =>
+          event?.event === 'content_pack.balance_warning' &&
+          event?.packSlug === BALANCE_WARNING_PACK_SLUG,
+      );
       expect(validationEvent).toBeDefined();
       expect(validationEvent?.balanceWarningCount).toBe(1);
       expect(validationEvent?.warningCount).toBe(1);
@@ -208,6 +213,8 @@ describe('validateContentPacks balance logging', () => {
         'balance.unlock.ordering',
       );
       expect(validationEvent?.balanceErrors ?? []).toHaveLength(0);
+      expect(balanceWarningEvent).toBeDefined();
+      expect(balanceWarningEvent?.warningCount).toBe(1);
     } finally {
       consoleCapture.restore();
       await workspace.cleanup();
@@ -229,6 +236,11 @@ describe('validateContentPacks balance logging', () => {
           event?.event === 'content_pack.validated' &&
           event?.packSlug === BALANCE_ERROR_PACK_SLUG,
       );
+      const balanceFailedEvent = consoleCapture.errors.find(
+        (event) =>
+          event?.event === 'content_pack.balance_failed' &&
+          event?.packSlug === BALANCE_ERROR_PACK_SLUG,
+      );
       expect(validationEvent).toBeDefined();
       expect(validationEvent?.balanceErrorCount).toBeGreaterThan(0);
       expect(validationEvent?.warningCount).toBe(
@@ -238,6 +250,8 @@ describe('validateContentPacks balance logging', () => {
       expect(validationEvent?.balanceErrors?.[0]?.code).toBe(
         'balance.cost.negative',
       );
+      expect(balanceFailedEvent).toBeDefined();
+      expect(balanceFailedEvent?.errorCount).toBeGreaterThan(0);
     } finally {
       consoleCapture.restore();
       await workspace.cleanup();
