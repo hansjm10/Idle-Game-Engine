@@ -127,7 +127,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 
 ## 10. Testing & Validation Plan
 - **Unit / Integration**: Balance property suites in `packages/content-schema`; compiler pipeline tests for gating; sample pack prestige/reset fixtures; shell progression tests for new IDs.
-- **Performance**: Track balance check runtime; target <5s per suite with bounded fast-check.
+- **Performance**: Track balance check runtime; target under 5s per suite with bounded fast-check.
 - **Tooling / A11y**: Preserve `vitest-llm-reporter` JSON; run `pnpm coverage:md` after test changes; no UI delta to trigger new a11y tests.
 
 ## 11. Risks & Mitigations
