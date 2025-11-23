@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content Validation CLI Design Document | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content Validation CLI Design Document | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #13"><meta data-rh="true" property="og:description" content="Issue: #13"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content Validation CLI Design Document","item":"https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.280370fa.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.9d885ff1.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.5f01a812.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -89,7 +89,7 @@
 <li class="">Discovers pack documents.</li>
 <li class="">Supports both <code>pack.json</code> and <code>pack.json5</code>, using JSON.parse for strict JSON files and the JSON5 parser for relaxed syntax.</li>
 <li class="">Builds a validator with <code>createContentPackValidator</code>.</li>
-<li class="">Emits a <code>content_pack.validated</code> log per pack, including warnings when present.</li>
+<li class="">Emits a <code>content_pack.validated</code> log per pack, including balance warnings/errors when present.</li>
 <li class="">Emits <code>content_pack.validation_failed</code> logs for schema errors and throws when any failure occurs.</li>
 <li class="">Serializes a failure summary to the workspace summary path before bubbling the error so consumers observe the latest validation status.</li>
 <li class="">Returns schema options to seed the compiler (known packs, active IDs, runtime event catalogue) when validation succeeds.</li>
@@ -112,7 +112,7 @@
 <li class="">Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with <code>docs/idle-engine-design.md</code> §10 logging guidance).</li>
 <li class="">Validation events include:<!-- -->
 <ul>
-<li class=""><code>content_pack.validated</code>: <code>{ event, packSlug, path, warningCount, warnings }</code>.</li>
+<li class=""><code>content_pack.validated</code>: <code>{ event, packSlug, path, warningCount, warnings, balanceWarningCount, balanceWarnings, balanceErrorCount, balanceErrors }</code> where <code>warningCount</code> aggregates legacy and balance findings.</li>
 <li class=""><code>content_pack.validation_failed</code>: <code>{ event, packSlug, packVersion, path, issues, message }</code> (with <code>packSlug</code>/<code>packVersion</code> populated when metadata can be read from the document).</li>
 </ul>
 </li>
