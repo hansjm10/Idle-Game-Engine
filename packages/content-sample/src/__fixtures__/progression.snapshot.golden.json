@@ -6,7 +6,9 @@
       "owned": 0,
       "isUnlocked": true,
       "isVisible": true,
-      "costs": [{ "resourceId": "sample-pack.energy", "amount": 100 }],
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 100 }
+      ],
       "produces": [{ "resourceId": "sample-pack.energy", "rate": 1 }],
       "consumes": [],
       "nextPurchaseReadyAtStep": 1
@@ -17,9 +19,56 @@
       "owned": 0,
       "isUnlocked": true,
       "isVisible": true,
-      "costs": [{ "resourceId": "sample-pack.energy", "amount": 625 }],
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 625 }
+      ],
       "produces": [{ "resourceId": "sample-pack.crystal", "rate": 0.25 }],
       "consumes": [{ "resourceId": "sample-pack.energy", "rate": 0.5 }],
+      "nextPurchaseReadyAtStep": 1
+    },
+    {
+      "id": "sample-pack.forge",
+      "displayName": "Forge",
+      "owned": 0,
+      "isUnlocked": true,
+      "isVisible": true,
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 75 }
+      ],
+      "produces": [{ "resourceId": "sample-pack.alloy", "rate": 0.2 }],
+      "consumes": [
+        { "resourceId": "sample-pack.energy", "rate": 1.5 },
+        { "resourceId": "sample-pack.crystal", "rate": 0.35 }
+      ],
+      "nextPurchaseReadyAtStep": 1
+    },
+    {
+      "id": "sample-pack.lab",
+      "displayName": "Research Lab",
+      "owned": 0,
+      "isUnlocked": true,
+      "isVisible": true,
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 120 }
+      ],
+      "produces": [{ "resourceId": "sample-pack.data-core", "rate": 0.08 }],
+      "consumes": [
+        { "resourceId": "sample-pack.energy", "rate": 2.5 },
+        { "resourceId": "sample-pack.alloy", "rate": 0.5 }
+      ],
+      "nextPurchaseReadyAtStep": 1
+    },
+    {
+      "id": "sample-pack.gate-reactor",
+      "displayName": "Gate Reactor",
+      "owned": 0,
+      "isUnlocked": true,
+      "isVisible": true,
+      "costs": [
+        { "resourceId": "sample-pack.data-core", "amount": 500 }
+      ],
+      "produces": [{ "resourceId": "sample-pack.prestige-flux", "rate": 0.05 }],
+      "consumes": [{ "resourceId": "sample-pack.data-core", "rate": 2 }],
       "nextPurchaseReadyAtStep": 1
     }
   ],
@@ -28,23 +77,100 @@
       "id": "sample-pack.reactor-insulation",
       "displayName": "Reactor Insulation",
       "status": "available",
-      "costs": [{ "resourceId": "sample-pack.energy", "amount": 75 }],
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 75 }
+      ],
       "isVisible": true
     },
     {
       "id": "sample-pack.reactor-overclock",
       "displayName": "Reactor Overclock",
       "status": "available",
-      "costs": [{ "resourceId": "sample-pack.energy", "amount": 150 }],
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 150 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.reactor-phase-cooling",
+      "displayName": "Reactor Phase Cooling",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 400 }
+      ],
       "isVisible": true
     },
     {
       "id": "sample-pack.harvester-efficiency",
       "displayName": "Harvester Efficiency",
       "status": "available",
-      "costs": [{ "resourceId": "sample-pack.energy", "amount": 125 }],
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 125 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.harvester-deep-core",
+      "displayName": "Harvester Deep Core",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.crystal", "amount": 200 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.harvester-quantum-sieve",
+      "displayName": "Harvester Quantum Sieve",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.crystal", "amount": 250 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.forge-heat-shield",
+      "displayName": "Forge Heat Shield",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.energy", "amount": 320 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.forge-auto-feed",
+      "displayName": "Forge Auto-Feed",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.alloy", "amount": 180 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.lab-insight-boost",
+      "displayName": "Lab Insight Boost",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.alloy", "amount": 220 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.lab-simulation-stack",
+      "displayName": "Lab Simulation Stack",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.prestige-flux", "amount": 1 }
+      ],
+      "isVisible": true
+    },
+    {
+      "id": "sample-pack.ascension-surge",
+      "displayName": "Ascension Surge",
+      "status": "available",
+      "costs": [
+        { "resourceId": "sample-pack.prestige-flux", "amount": 0 }
+      ],
       "isVisible": true
     }
   ]
 }
-

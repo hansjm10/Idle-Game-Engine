@@ -3,12 +3,12 @@
     {
       "slug": "@idle-engine/sample-pack",
       "status": "compiled",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "digest": {
         "version": 1,
-        "hash": "fnv1a-30aeb60a"
+        "hash": "fnv1a-e5f9e9e9"
       },
-      "artifactHash": "620bac684f83e741343b858ffcd2c54496ad708881460426327cea6f9d76470e",
+      "artifactHash": "e7608c3c523ec775d90f295506cb271e651b896c1204f53f8ef5f9787eb73ee6",
       "warnings": [],
       "balance": {
         "warnings": [],
