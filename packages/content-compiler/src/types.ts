@@ -12,6 +12,7 @@ import type {
   NormalizedRuntimeEventContribution,
   NormalizedTransform,
   NormalizedUpgrade,
+  BalanceValidationOptions,
 } from '@idle-engine/content-schema';
 
 export interface ContentDocument {
@@ -39,6 +40,7 @@ export interface SchemaContextInput {
   }[];
   readonly activePackIds?: readonly string[] | ReadonlySet<string>;
   readonly runtimeVersion?: string;
+  readonly balance?: BalanceValidationOptions;
 }
 
 interface PackResultBase {
@@ -51,6 +53,8 @@ interface PackCompileSuccess extends PackResultBase {
   readonly document: ContentDocument;
   readonly normalizedPack: NormalizedContentPack;
   readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly balanceWarnings: readonly SerializedContentSchemaWarning[];
+  readonly balanceErrors: readonly SerializedContentSchemaWarning[];
   readonly artifact: SerializedPackArtifact;
 }
 
@@ -60,6 +64,8 @@ interface PackCompileFailure extends PackResultBase {
   readonly document: ContentDocument;
   readonly error: Error;
   readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly balanceWarnings?: readonly SerializedContentSchemaWarning[];
+  readonly balanceErrors?: readonly SerializedContentSchemaWarning[];
 }
 
 export type PackArtifactResult = PackCompileSuccess | PackCompileFailure;
@@ -175,6 +181,8 @@ export type CompileLogEvent =
       readonly timestamp: string;
       readonly durationMs: number;
       readonly warnings: number;
+      readonly balanceWarnings: number;
+      readonly balanceErrors: number;
       readonly artifacts: readonly CompileLogArtifactOperation[];
       readonly check: boolean;
     }
@@ -184,6 +192,9 @@ export type CompileLogEvent =
       readonly path: string;
       readonly timestamp: string;
       readonly durationMs: number;
+      readonly warnings: number;
+      readonly balanceWarnings: number;
+      readonly balanceErrors: number;
       readonly message: string;
       readonly stack?: string;
       readonly artifacts: readonly CompileLogArtifactOperation[];
@@ -196,6 +207,8 @@ export type CompileLogEvent =
       readonly timestamp: string;
       readonly durationMs: number;
       readonly warnings: number;
+      readonly balanceWarnings: number;
+      readonly balanceErrors: number;
       readonly artifacts: readonly CompileLogArtifactOperation[];
       readonly check: boolean;
     }
@@ -249,6 +262,13 @@ export interface WorkspaceSummaryArtifacts {
   readonly module?: string;
 }
 
+export interface WorkspaceSummaryBalance {
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly errors: readonly SerializedContentSchemaWarning[];
+  readonly warningCount: number;
+  readonly errorCount: number;
+}
+
 export interface WorkspaceSummaryPack {
   readonly slug: string;
   readonly status: 'compiled' | 'failed';
@@ -256,6 +276,7 @@ export interface WorkspaceSummaryPack {
   readonly digest?: SerializedContentDigest;
   readonly artifactHash?: string;
   readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly balance?: WorkspaceSummaryBalance;
   readonly dependencies: WorkspaceSummaryDependencies;
   readonly artifacts: WorkspaceSummaryArtifacts;
   readonly error?: string;
@@ -267,7 +288,9 @@ export interface WorkspaceSummary {
 
 export type ContentValidationLogEvent =
   | ContentValidationValidatedEvent
-  | ContentValidationFailedEvent;
+  | ContentValidationFailedEvent
+  | ContentBalanceWarningLogEvent
+  | ContentBalanceFailedLogEvent;
 
 export interface ContentValidationValidatedEvent {
   readonly event: 'content_pack.validated';
@@ -289,6 +312,24 @@ export interface ContentValidationFailedEvent {
   readonly path: string;
   readonly message: string;
   readonly issues?: readonly unknown[];
+}
+
+export interface ContentBalanceWarningLogEvent {
+  readonly event: 'content_pack.balance_warning';
+  readonly packSlug: string;
+  readonly packVersion?: string;
+  readonly path: string;
+  readonly warningCount: number;
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+}
+
+export interface ContentBalanceFailedLogEvent {
+  readonly event: 'content_pack.balance_failed';
+  readonly packSlug: string;
+  readonly packVersion?: string;
+  readonly path: string;
+  readonly errorCount: number;
+  readonly errors: readonly SerializedContentSchemaWarning[];
 }
 
 export type RuntimeManifestLogEvent =

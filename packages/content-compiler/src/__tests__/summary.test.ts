@@ -122,6 +122,8 @@ describe('createWorkspaceSummary', () => {
     expect(alpha?.artifacts.json).toBe(
       'packages/alpha/content/compiled/alpha-pack.normalized.json',
     );
+    expect(alpha?.balance?.warningCount).toBe(0);
+    expect(alpha?.balance?.errorCount).toBe(0);
     expect(beta?.dependencies.requires[0]?.packId).toBe('alpha-pack');
     expect(beta?.dependencies.requires[0]?.digest).toBeDefined();
   });
@@ -153,5 +155,6 @@ describe('createWorkspaceSummary', () => {
     expect(entry?.status).toBe('failed');
     expect(entry?.artifacts.json).toBeUndefined();
     expect(entry?.error).toMatch(/normalization failed/);
+    expect(entry?.balance?.errorCount).toBe(0);
   });
 });

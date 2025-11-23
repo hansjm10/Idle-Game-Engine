@@ -86,6 +86,17 @@ describe('content schema CLI compile command', () => {
       await assertFileExists(
         path.join(workspace.root, 'content/compiled/index.json'),
       );
+
+      const summaryRaw = await fs.readFile(
+        path.join(workspace.root, 'content/compiled/index.json'),
+        'utf8',
+      );
+      const summary = JSON.parse(summaryRaw);
+      const summaryEntry = summary.packs.find(
+        (entry) => entry.slug === 'alpha-pack',
+      );
+      expect(summaryEntry?.balance?.warningCount).toBe(0);
+      expect(summaryEntry?.balance?.errorCount).toBe(0);
     } finally {
       await workspace.cleanup();
     }

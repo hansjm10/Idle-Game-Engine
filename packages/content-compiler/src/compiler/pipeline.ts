@@ -1,8 +1,11 @@
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
-import { parseContentPack } from '@idle-engine/content-schema';
-import type { NormalizedContentPack as SchemaNormalizedContentPack } from '@idle-engine/content-schema';
+import { BalanceValidationError, parseContentPack } from '@idle-engine/content-schema';
+import type {
+  ContentSchemaWarning,
+  NormalizedContentPack as SchemaNormalizedContentPack,
+} from '@idle-engine/content-schema';
 
 import { createCompilerContext } from './context.js';
 import { discoverContentDocuments } from '../fs/discovery.js';
@@ -35,7 +38,7 @@ export async function compileContentPack(
 
   try {
     const schemaOptions = context.schemaOptions as SchemaParseOptions;
-    const { pack, warnings } = parseContentPack(
+    const { pack, warnings, balanceWarnings, balanceErrors } = parseContentPack(
       document.document,
       schemaOptions,
     );
@@ -52,12 +55,17 @@ export async function compileContentPack(
       document,
       normalizedPack,
       warnings: normalizedWarnings,
+      balanceWarnings: Object.freeze([...balanceWarnings]),
+      balanceErrors: Object.freeze([...balanceErrors]),
       artifact,
       durationMs: performance.now() - start,
     };
   } catch (error) {
     const failureError =
       error instanceof Error ? error : new Error(String(error));
+    const balanceWarnings: readonly ContentSchemaWarning[] = [];
+    const balanceErrors: readonly ContentSchemaWarning[] =
+      error instanceof BalanceValidationError ? error.issues : [];
 
     return {
       status: 'failed',
@@ -65,6 +73,8 @@ export async function compileContentPack(
       document,
       error: failureError,
       warnings: Object.freeze([]),
+      balanceWarnings: Object.freeze(balanceWarnings),
+      balanceErrors: Object.freeze(balanceErrors),
       durationMs: performance.now() - start,
     };
   }
@@ -351,6 +361,8 @@ function createFailureResult(
     document,
     error: new Error(message),
     warnings: Object.freeze([]),
+    balanceWarnings: Object.freeze([]),
+    balanceErrors: Object.freeze([]),
     durationMs: 0,
   };
 }

@@ -10,6 +10,12 @@
       },
       "artifactHash": "620bac684f83e741343b858ffcd2c54496ad708881460426327cea6f9d76470e",
       "warnings": [],
+      "balance": {
+        "warnings": [],
+        "errors": [],
+        "warningCount": 0,
+        "errorCount": 0
+      },
       "dependencies": {
         "requires": [],
         "optional": [],
