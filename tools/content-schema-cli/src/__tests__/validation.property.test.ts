@@ -28,6 +28,8 @@ import {
 } from '../generate.js';
 
 const PACK_SLUG = 'property-pack';
+const BALANCE_WARNING_PACK_SLUG = 'balance-warning-pack';
+const BALANCE_ERROR_PACK_SLUG = 'balance-error-pack';
 const BASE_RESOURCES = [
   'resource/property/base',
   'resource/property/output',
@@ -180,6 +182,69 @@ describe('validateContentPacks property suites', () => {
   }, 30_000);
 });
 
+describe('validateContentPacks balance logging', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('logs balance warnings in validated events', async () => {
+    const workspace = await createWorkspace(buildBalanceWarningPackDocument());
+    const consoleCapture = captureConsole();
+
+    try {
+      await validateContentPacks(PROPERTY_MANIFEST_DEFINITIONS, {
+        rootDirectory: workspace.root,
+      });
+
+      const validationEvent = consoleCapture.events.find(
+        (event) =>
+          event?.event === 'content_pack.validated' &&
+          event?.packSlug === BALANCE_WARNING_PACK_SLUG,
+      );
+      expect(validationEvent).toBeDefined();
+      expect(validationEvent?.balanceWarningCount).toBe(1);
+      expect(validationEvent?.warningCount).toBe(1);
+      expect(validationEvent?.balanceWarnings?.[0]?.code).toBe(
+        'balance.unlock.ordering',
+      );
+      expect(validationEvent?.balanceErrors ?? []).toHaveLength(0);
+    } finally {
+      consoleCapture.restore();
+      await workspace.cleanup();
+    }
+  });
+
+  it('logs balance errors when warnOnly is enabled', async () => {
+    const workspace = await createWorkspace(buildBalanceErrorPackDocument());
+    const consoleCapture = captureConsole();
+
+    try {
+      await validateContentPacks(PROPERTY_MANIFEST_DEFINITIONS, {
+        rootDirectory: workspace.root,
+        balance: { warnOnly: true },
+      });
+
+      const validationEvent = consoleCapture.events.find(
+        (event) =>
+          event?.event === 'content_pack.validated' &&
+          event?.packSlug === BALANCE_ERROR_PACK_SLUG,
+      );
+      expect(validationEvent).toBeDefined();
+      expect(validationEvent?.balanceErrorCount).toBeGreaterThan(0);
+      expect(validationEvent?.warningCount).toBe(
+        validationEvent?.balanceErrorCount ?? 0,
+      );
+      expect(validationEvent?.balanceWarnings ?? []).toHaveLength(0);
+      expect(validationEvent?.balanceErrors?.[0]?.code).toBe(
+        'balance.cost.negative',
+      );
+    } finally {
+      consoleCapture.restore();
+      await workspace.cleanup();
+    }
+  });
+});
+
 const captureConsole = () => {
   const events: unknown[] = [];
   const errors: unknown[] = [];
@@ -270,6 +335,125 @@ const buildPackDocument = (
   };
 };
 
+const buildBalanceWarningPackDocument = () => ({
+  metadata: {
+    id: BALANCE_WARNING_PACK_SLUG,
+    title: { default: 'Balance Warning Pack', variants: {} },
+    version: '0.0.1',
+    engine: '^0.1.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource/balance/base',
+      name: { default: 'Balance Base', variants: {} },
+      category: 'primary',
+      tier: 1,
+      startAmount: 10,
+      capacity: 100,
+      visible: true,
+      unlocked: true,
+      order: 1,
+    },
+    {
+      id: 'resource/balance/locked',
+      name: { default: 'Locked Resource', variants: {} },
+      category: 'primary',
+      tier: 1,
+      visible: true,
+      unlocked: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource/balance/base',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      },
+      order: 2,
+    },
+  ],
+  generators: [
+    {
+      id: 'generator/balance/warning',
+      name: { default: 'Balance Warning Generator', variants: {} },
+      produces: [
+        {
+          resourceId: 'resource/balance/base',
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+      consumes: [],
+      purchase: {
+        currencyId: 'resource/balance/locked',
+        baseCost: 1,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      baseUnlock: { kind: 'always' },
+      order: 1,
+    },
+  ],
+  upgrades: [],
+  metrics: [],
+  achievements: [],
+  automations: [],
+  transforms: [],
+  prestigeLayers: [],
+  guildPerks: [],
+  runtimeEvents: [],
+});
+
+const buildBalanceErrorPackDocument = () => ({
+  metadata: {
+    id: BALANCE_ERROR_PACK_SLUG,
+    title: { default: 'Balance Error Pack', variants: {} },
+    version: '0.0.1',
+    engine: '^0.1.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource/balance/error-base',
+      name: { default: 'Balance Error Base', variants: {} },
+      category: 'currency',
+      tier: 1,
+      startAmount: 0,
+      capacity: 100,
+      visible: true,
+      unlocked: true,
+      order: 1,
+    },
+  ],
+  generators: [
+    {
+      id: 'generator/balance/error',
+      name: { default: 'Balance Error Generator', variants: {} },
+      produces: [
+        {
+          resourceId: 'resource/balance/error-base',
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+      consumes: [],
+      purchase: {
+        currencyId: 'resource/balance/error-base',
+        baseCost: 1,
+        costCurve: { kind: 'linear', base: 1, slope: -2 },
+      },
+      baseUnlock: { kind: 'always' },
+      order: 1,
+    },
+  ],
+  upgrades: [],
+  metrics: [],
+  achievements: [],
+  automations: [],
+  transforms: [],
+  prestigeLayers: [],
+  guildPerks: [],
+  runtimeEvents: [],
+});
+
 const createResourceDefinition = (id: string, order: number) => ({
   id,
   name: { default: `Resource ${order + 1}`, variants: {} },
@@ -282,9 +466,11 @@ const createResourceDefinition = (id: string, order: number) => ({
   order,
 });
 
-const createWorkspace = async (document: ReturnType<typeof buildPackDocument>) => {
+type PackDocument = { metadata: { id: string } } & Record<string, unknown>;
+
+const createWorkspace = async (document: PackDocument) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'content-cli-property-'));
-  const packDir = path.join(root, 'packages', PACK_SLUG, 'content');
+  const packDir = path.join(root, 'packages', document.metadata.id, 'content');
   await fs.mkdir(packDir, { recursive: true });
   await writeJson(path.join(packDir, 'pack.json'), document);
 

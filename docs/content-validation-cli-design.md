@@ -77,7 +77,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
    - Discovers pack documents.
    - Supports both `pack.json` and `pack.json5`, using JSON.parse for strict JSON files and the JSON5 parser for relaxed syntax.
    - Builds a validator with `createContentPackValidator`.
-   - Emits a `content_pack.validated` log per pack, including warnings when present.
+   - Emits a `content_pack.validated` log per pack, including balance warnings/errors when present.
    - Emits `content_pack.validation_failed` logs for schema errors and throws when any failure occurs.
    - Serializes a failure summary to the workspace summary path before bubbling the error so consumers observe the latest validation status.
    - Returns schema options to seed the compiler (known packs, active IDs, runtime event catalogue) when validation succeeds.
@@ -94,7 +94,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 
 - Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with `docs/idle-engine-design.md` §10 logging guidance).
 - Validation events include:
-  - `content_pack.validated`: `{ event, packSlug, path, warningCount, warnings }`.
+  - `content_pack.validated`: `{ event, packSlug, path, warningCount, warnings, balanceWarningCount, balanceWarnings, balanceErrorCount, balanceErrors }` where `warningCount` aggregates legacy and balance findings.
   - `content_pack.validation_failed`: `{ event, packSlug, packVersion, path, issues, message }` (with `packSlug`/`packVersion` populated when metadata can be read from the document).
 - Compiler events include:
   - `content_pack.compiled`: `{ name, slug, path, durationMs, warnings, artifacts, check }`.

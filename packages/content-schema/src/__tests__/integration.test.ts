@@ -38,6 +38,11 @@ import {
   selfReferencingTransformFixture,
   validComprehensivePackFixture,
 } from '../__fixtures__/integration-packs.js';
+
+const getZodIssues = (error: unknown) => {
+  expect(error).toBeInstanceOf(ZodError);
+  return (error as ZodError).issues;
+};
 import { createContentPackValidator } from '../index.js';
 
 type ContentId = z.infer<typeof contentIdSchema>;
@@ -117,7 +122,7 @@ describe('Integration: Missing References', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    const issues = result.error.issues;
+    const issues = getZodIssues(result.error);
     expect(issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -135,7 +140,7 @@ describe('Integration: Missing References', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringContaining('non-existent-metric'),
@@ -151,7 +156,7 @@ describe('Integration: Missing References', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringContaining('non-existent-resource'),
@@ -170,7 +175,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle between resource-a and resource-b
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/unlock condition cycle/i),
@@ -187,7 +192,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle between energy resource and solar-panel generator
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/unlock condition cycle/i),
@@ -204,7 +209,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle between transform-a and transform-b
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/transform cycle/i),
@@ -221,7 +226,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle through transform-a, transform-b, and transform-c
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/transform cycle/i),
@@ -238,7 +243,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the cycle with multiple resources involved
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/transform cycle/i),
@@ -253,7 +258,7 @@ describe('Integration: Cyclic Dependencies', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) {
-      console.error('Validation errors:', result.error.issues);
+      console.error('Validation errors:', getZodIssues(result.error));
     }
   });
 
@@ -263,7 +268,7 @@ describe('Integration: Cyclic Dependencies', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) {
-      console.error('Validation errors:', result.error.issues);
+      console.error('Validation errors:', getZodIssues(result.error));
     }
   });
 
@@ -273,7 +278,7 @@ describe('Integration: Cyclic Dependencies', () => {
 
     expect(result.success).toBe(true);
     if (!result.success) {
-      console.error('Validation errors:', result.error.issues);
+      console.error('Validation errors:', getZodIssues(result.error));
     }
   });
 
@@ -285,7 +290,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect the self-loop
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/transform cycle/i),
@@ -301,7 +306,7 @@ describe('Integration: Cyclic Dependencies', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringContaining('cannot declare a requires dependency on itself'),
@@ -329,7 +334,7 @@ describe('Integration: Cyclic Dependencies', () => {
     if (result.success) return;
 
     // Should detect: pack-a -> pack-b -> pack-a
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/cycl/i),
@@ -469,7 +474,7 @@ describe('Integration: Runtime Event Contributions', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/schema.*path/i),
@@ -521,7 +526,7 @@ describe('Integration: Runtime Event Contributions', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/duplicate|collision/i),
@@ -565,7 +570,7 @@ describe('Integration: Runtime Event Contributions', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/collid|conflict|duplicate|already exists/i),
@@ -583,7 +588,7 @@ describe('Integration: Feature Gates', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/automation.*0\.2\.0/i),
@@ -616,7 +621,7 @@ describe('Integration: Duplicate IDs', () => {
     expect(result.success).toBe(false);
     if (result.success) return;
 
-    expect(result.error.issues).toEqual(
+    expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringMatching(/duplicate.*id/i),
@@ -642,7 +647,7 @@ describe('Integration: Allowlist Validation', () => {
     // Should succeed if all flags are in allowlist
     if (!result.success) {
       // If it fails, it should be for a different reason
-      expect(result.error.issues).not.toEqual(
+      expect(getZodIssues(result.error)).not.toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             message: expect.stringMatching(/allowlist/i),

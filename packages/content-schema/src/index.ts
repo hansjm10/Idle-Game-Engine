@@ -21,9 +21,16 @@ export {
 
 export {
   ContentSchemaError,
+  BalanceValidationError,
   type ContentSchemaWarning,
   type ContentSchemaWarningSeverity,
 } from './errors.js';
+
+export {
+  validateContentPackBalance,
+  type BalanceCheckResult,
+  type BalanceValidationOptions,
+} from './balance.js';
 
 export * from './base/ids.js';
 export * from './base/localization.js';

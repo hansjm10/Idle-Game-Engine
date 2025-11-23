@@ -181,6 +181,8 @@ describe('Type Assertions: Validator Return Types', () => {
     expectTypeOf(validator.parse).returns.toMatchTypeOf<{
       pack: NormalizedContentPack;
       warnings: readonly ContentSchemaWarning[];
+      balanceWarnings: readonly ContentSchemaWarning[];
+      balanceErrors: readonly ContentSchemaWarning[];
     }>();
   });
 
@@ -190,7 +192,15 @@ describe('Type Assertions: Validator Return Types', () => {
     >;
 
     expectTypeOf<SafeParseResult>().toMatchTypeOf<
-      | { success: true; data: { pack: NormalizedContentPack; warnings: readonly ContentSchemaWarning[] } }
+      | {
+          success: true;
+          data: {
+            pack: NormalizedContentPack;
+            warnings: readonly ContentSchemaWarning[];
+            balanceWarnings: readonly ContentSchemaWarning[];
+            balanceErrors: readonly ContentSchemaWarning[];
+          };
+        }
       | { success: false; error: unknown }
     >();
   });
@@ -205,6 +215,7 @@ describe('Type Assertions: Content Schema Options', () => {
       runtimeEventCatalogue?: readonly string[] | ReadonlySet<string>;
       activePackIds?: readonly string[] | ReadonlySet<string>;
       warningSink?: (warning: ContentSchemaWarning) => void;
+      balance?: unknown;
     }>();
 
     // All fields should be optional - empty options object should be valid

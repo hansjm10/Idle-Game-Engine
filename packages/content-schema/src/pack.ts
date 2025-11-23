@@ -56,6 +56,8 @@ import {
   upgradeEffectSchema,
   type Upgrade,
 } from './modules/upgrades.js';
+import { validateContentPackBalance, type BalanceValidationOptions } from './balance.js';
+import { BalanceValidationError } from './errors.js';
 import type { ContentSchemaWarning } from './errors.js';
 import { resolveFeatureViolations, type FeatureGateMap } from './runtime-compat.js';
 import {
@@ -114,6 +116,7 @@ export interface ContentSchemaOptions {
   readonly runtimeEventCatalogue?: AllowlistEntries;
   readonly activePackIds?: AllowlistEntries;
   readonly warningSink?: (warning: ContentSchemaWarning) => void;
+  readonly balance?: BalanceValidationOptions;
 }
 
 type KnownPackEntry = NonNullable<ContentSchemaOptions['knownPacks']>[number];
@@ -125,6 +128,8 @@ type KnownPackDependency = {
 export interface ContentPackValidationResult {
   readonly pack: NormalizedContentPack;
   readonly warnings: readonly ContentSchemaWarning[];
+  readonly balanceWarnings: readonly ContentSchemaWarning[];
+  readonly balanceErrors: readonly ContentSchemaWarning[];
 }
 
 interface ParsedContentPack {
@@ -206,8 +211,6 @@ const baseContentPackSchema: z.ZodType<ParsedContentPack, z.ZodTypeDef, unknown>
 
 export const contentPackSchema = baseContentPackSchema;
 
-type ContentPackInput = z.input<typeof baseContentPackSchema>;
-
 export interface ContentPackSafeParseSuccess {
   readonly success: true;
   readonly data: ContentPackValidationResult;
@@ -215,7 +218,7 @@ export interface ContentPackSafeParseSuccess {
 
 export interface ContentPackSafeParseFailure {
   readonly success: false;
-  readonly error: z.ZodError<ContentPackInput>;
+  readonly error: unknown;
 }
 
 export type ContentPackSafeParseResult =
@@ -2339,7 +2342,22 @@ export const createContentPackValidator = (
     const schema = buildContentPackEffectsSchema(options, sink);
     const pack = schema.parse(input);
 
-    return { pack, warnings };
+    const balanceOptions = options.balance ?? {};
+    const balanceResult =
+      balanceOptions.enabled === false
+        ? { warnings: Object.freeze([] as ContentSchemaWarning[]), errors: Object.freeze([] as ContentSchemaWarning[]) }
+        : validateContentPackBalance(pack, balanceOptions, options.warningSink);
+
+    if (balanceResult.errors.length > 0 && balanceOptions.warnOnly !== true) {
+      throw new BalanceValidationError('Balance validation failed.', balanceResult.errors);
+    }
+
+    return {
+      pack,
+      warnings,
+      balanceWarnings: balanceResult.warnings,
+      balanceErrors: balanceResult.errors,
+    };
   },
   safeParse(input: unknown): ContentPackSafeParseResult {
     const warnings: ContentSchemaWarning[] = [];
@@ -2350,13 +2368,29 @@ export const createContentPackValidator = (
     const schema = buildContentPackEffectsSchema(options, sink);
     const result = schema.safeParse(input);
     if (result.success) {
-      return {
-        success: true,
-        data: {
-          pack: result.data,
-          warnings,
-        },
-      };
+      try {
+        const balanceOptions = options.balance ?? {};
+        const balanceResult =
+          balanceOptions.enabled === false
+            ? { warnings: Object.freeze([] as ContentSchemaWarning[]), errors: Object.freeze([] as ContentSchemaWarning[]) }
+            : validateContentPackBalance(result.data, balanceOptions, options.warningSink);
+
+        if (balanceResult.errors.length > 0 && balanceOptions.warnOnly !== true) {
+          throw new BalanceValidationError('Balance validation failed.', balanceResult.errors);
+        }
+
+        return {
+          success: true,
+          data: {
+            pack: result.data,
+            warnings,
+            balanceWarnings: balanceResult.warnings,
+            balanceErrors: balanceResult.errors,
+          },
+        };
+      } catch (error) {
+        return { success: false, error };
+      }
     }
     return { success: false, error: result.error };
   },
