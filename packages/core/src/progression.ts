@@ -62,12 +62,37 @@ export type UpgradeView = Readonly<{
   isVisible: boolean;
 }>;
 
+export type PrestigeRewardContribution = Readonly<{
+  sourceResourceId: string;
+  sourceAmount: number;
+  contribution: number;
+}>;
+
+export type PrestigeRewardPreview = Readonly<{
+  resourceId: string;
+  amount: number;
+  breakdown?: readonly PrestigeRewardContribution[];
+}>;
+
+export type PrestigeLayerView = Readonly<{
+  id: string;
+  displayName: string;
+  summary?: string;
+  status: 'locked' | 'available' | 'completed';
+  unlockHint?: string;
+  isVisible: boolean;
+  rewardPreview?: PrestigeRewardPreview;
+  resetTargets: readonly string[];
+  retainedTargets: readonly string[];
+}>;
+
 export type ProgressionSnapshot = Readonly<{
   step: number;
   publishedAt: number;
   resources: readonly ResourceView[];
   generators: readonly GeneratorView[];
   upgrades: readonly UpgradeView[];
+  prestigeLayers: readonly PrestigeLayerView[];
 }>;
 
 export interface ResourceProgressionMetadata {
@@ -132,6 +157,7 @@ export function buildProgressionSnapshot(
     resources,
     generators,
     upgrades,
+    prestigeLayers: EMPTY_ARRAY as readonly PrestigeLayerView[],
   });
 }
 

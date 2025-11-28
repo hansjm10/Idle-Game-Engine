@@ -60,6 +60,7 @@ const progressionSnapshotStub: ProgressionSnapshot = {
       isVisible: true,
     },
   ],
+  prestigeLayers: [],
 };
 
 describe('shell-state-store', () => {

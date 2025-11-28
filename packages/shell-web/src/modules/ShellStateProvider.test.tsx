@@ -211,6 +211,7 @@ describe('ShellStateProvider', () => {
           ],
           generators: [],
           upgrades: [],
+          prestigeLayers: [],
         },
       };
 
@@ -288,6 +289,7 @@ describe('ShellStateProvider', () => {
           resources: [],
           generators: [],
           upgrades: [],
+          prestigeLayers: [],
         },
       };
 

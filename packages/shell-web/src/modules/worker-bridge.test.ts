@@ -25,6 +25,7 @@ const progressionSnapshot: RuntimeStateSnapshot['progression'] = {
   resources: [],
   generators: [],
   upgrades: [],
+  prestigeLayers: [],
 };
 
 class MockWorker implements WorkerBridgeWorker {
