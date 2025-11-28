@@ -15,7 +15,7 @@ This design completes the prestige system by adding the missing runtime handler,
 
 ## 2. Context & Problem Statement
 
-- **Background**: The runtime defines `PRESTIGE_RESET` command type and authorization policy (`packages/core/src/command.ts:112,265-272`), but no production handler exists. The sample pack includes a complete prestige layer (`Ascension Alpha`) with unlock conditions, reset targets, and reward formulas (`packages/content-sample/content/pack.json:988-1070`). UI components exist for resources, generators, and upgrades, but prestige has no UI surface.
+- **Background**: The runtime defines `PRESTIGE_RESET` command type and authorization policy (`packages/core/src/command.ts:112,263-272`), but no production handler exists. The sample pack includes a complete prestige layer (`Ascension Alpha`) with unlock conditions, reset targets, and reward formulas (`packages/content-sample/content/pack.json:988-1070`). UI components exist for resources, generators, and upgrades, but prestige has no UI surface.
 
 - **Problem**: Players cannot interact with the prestige system despite content being defined. The `ProgressionSnapshot` omits prestige layer data, blocking the shell from displaying prestige status or rewards. This leaves a core idle game mechanic inaccessible.
 
@@ -154,6 +154,20 @@ export interface PrestigeSystemEvaluator {
 }
 ```
 
+**Implementation Location & Instantiation**
+
+The concrete `PrestigeSystemEvaluator` implementation lives in `packages/core/src/prestige-system.ts`. It is instantiated by the runtime during initialization when prestige layer definitions are loaded from compiled content:
+
+1. **Content Loading**: `IdleEngineRuntime` receives compiled content pack with `prestigeLayers` array
+2. **Evaluator Creation**: Runtime creates `PrestigeSystemEvaluatorImpl` passing:
+   - Prestige layer definitions from content
+   - Reference to `ResourceState` for current values and mutations
+   - Reference to expression evaluator for reward formula calculation
+3. **Handler Wiring**: Evaluator instance passed to `registerResourceCommandHandlers()` via `prestigeSystem` option
+4. **Snapshot Building**: Same evaluator instance used by `buildProgressionSnapshot()` to populate `prestigeLayers` field
+
+The evaluator maintains no internal state beyond references; all prestige state (completion count, timestamps) is stored in `ResourceState` as special resources or flags defined by content.
+
 #### PRESTIGE_RESET Command Handler
 
 **Handler Registration (in `packages/core/src/resource-command-handlers.ts`)**
@@ -178,7 +192,7 @@ export function registerResourceCommandHandlers(options: ResourceCommandHandlerO
 
 **Handler Flow**
 
-1. **Validate payload** - Check `layer` is valid number >= 0
+1. **Validate payload** - Check `layerId` is non-empty string
 2. **Get quote** - Call `prestigeSystem.getPrestigeQuote(layerId)`
 3. **Check status** - Reject if `locked` (warning telemetry)
 4. **Execute** - Call `prestigeSystem.applyPrestige(layerId, confirmationToken)`
@@ -196,9 +210,28 @@ export function registerResourceCommandHandlers(options: ResourceCommandHandlerO
 
 **Design Decisions**
 
+- **Change `PrestigeResetPayload.layer` from number to string**: The existing payload uses `layer: number`, but content packs define layers with string IDs (e.g., `"sample-pack.ascension-alpha"`). This design proposes changing to `layerId: string` for consistency with the content schema and evaluator interface. The existing numeric field was a placeholder; no production code depends on it. Update the payload interface in `packages/core/src/command.ts`:
+
+  ```typescript
+  export interface PrestigeResetPayload {
+    readonly layerId: string;           // Changed from layer: number
+    readonly confirmationToken?: string;
+  }
+  ```
+
 - **No resource cost for prestige**: Prestige layers don't have a purchase cost - they have unlock conditions and give rewards. The "cost" is losing progress. This simplifies the handler (no spend/refund transaction needed).
 
 - **Confirmation token is advisory**: The token is passed through to `applyPrestige()` for the evaluator to use if needed (e.g., UI-generated nonce), but the handler doesn't validate it. This matches how `metadata` is passed to `applyPurchase()` in upgrades.
+
+- **Reset scope is content-driven**: The `resetTargets` array in prestige layer definitions determines exactly what gets reset. Currently, the content schema supports resource IDs only. Generators and upgrades are reset implicitly when their backing resources are reset (e.g., resetting "energy" means generators that cost energy become re-purchasable). Future schema extensions could add explicit `resetGenerators` and `resetUpgrades` arrays if finer control is needed. For the sample pack's `Ascension Alpha` layer, resetting the four listed resources effectively resets early-game progression while preserving prestige currency.
+
+- **Retention specifies what survives with amounts**: The `retention` array in content defines not just which resources survive but how much (constant value or percentage). The UI simplifies this to `retainedTargets: readonly string[]` showing resource IDs only; exact retention amounts are an implementation detail handled by the evaluator during reset execution.
+
+- **Prestige layers are repeatable**: Status cycles `available` → `completed` → `available`, allowing players to prestige the same layer multiple times. Repeatable prestige creates compounding progression loops (each reset can grant scaling rewards via `multiplierCurve`), extends session lifetime engagement, and justifies tier expansion (Alpha→Beta→Gamma). This matches successful idle games like Cookie Clicker and AdCap.
+
+- **Track prestige count per layer as a resource**: Each prestige layer has an associated counter stored as a standard resource in `ResourceState` (e.g., `sample-pack.ascension-alpha-prestige-count`). This leverages existing architecture without special cases and enables: achievement systems, dynamic reward scaling via `multiplierCurve` expressions that reference the count, unlock conditions for higher prestige tiers (e.g., "Unlock Ascension Beta after 5 successful Alpha resets"), and player motivation through visible progress metrics.
+
+- **Locked layers visible with teaser hints**: Locked prestige layers appear in the UI with a dimmed/blurred appearance and an `unlockHint` teaser. This creates discovery motivation and prevents confusion about progression. Teaser hints should be thematic ("Reach deeper into the machine...") rather than revealing exact requirements, preserving mystery while showing players a roadmap of future progression.
 
 #### UI Components
 
@@ -264,7 +297,7 @@ export interface ShellProgressionContext {
 
 ```typescript
 shellBridge.sendCommand('PRESTIGE_RESET', {
-  layer: layerIndex,
+  layerId: layer.id,
   confirmationToken: crypto.randomUUID(),
 });
 ```
@@ -289,34 +322,35 @@ Unlike generator/upgrade purchases, prestige resets don't need optimistic resour
 
 **Phase 1: Core Runtime**
 
-| Issue Title | Scope | Acceptance Criteria |
-|-------------|-------|---------------------|
-| `feat(core): add PrestigeLayerView types` | Add types to `progression.ts`, export from `index.ts` | Types compile, exported in package |
-| `feat(core): implement PrestigeSystemEvaluator interface` | Define interface, add to `ResourceCommandHandlerOptions` | Interface matches design, optional field |
-| `feat(core): add PRESTIGE_RESET handler` | Handler with validation, status checks, telemetry | All handler tests pass |
-| `feat(core): extend buildProgressionSnapshot with prestigeLayers` | Add prestige layer view generation | Snapshot tests cover prestige data |
+| Issue Title | Scope | Agent | Dependencies | Acceptance Criteria |
+|-------------|-------|-------|--------------|---------------------|
+| `feat(core): change PrestigeResetPayload.layer to layerId` | Update payload type from `layer: number` to `layerId: string` | Runtime Agent | None | Payload uses string ID, tests updated |
+| `feat(core): add PrestigeLayerView types` | Add types to `progression.ts`, export from `index.ts` | Runtime Agent | Payload change | Types compile, exported in package |
+| `feat(core): implement PrestigeSystemEvaluator interface` | Define interface, add to `ResourceCommandHandlerOptions` | Runtime Agent | Types | Interface matches design, optional field |
+| `feat(core): add PRESTIGE_RESET handler` | Handler with validation, status checks, telemetry | Runtime Agent | Evaluator interface | All handler tests pass |
+| `feat(core): extend buildProgressionSnapshot with prestigeLayers` | Add prestige layer view generation | Runtime Agent | Types, Evaluator | Snapshot tests cover prestige data |
 
 **Phase 2: Worker Integration**
 
-| Issue Title | Scope | Acceptance Criteria |
-|-------------|-------|---------------------|
-| `feat(shell-web): wire PrestigeSystemEvaluator in worker` | Connect evaluator to runtime, pass to snapshot builder | Worker publishes prestige data |
-| `feat(shell-web): add prestige selectors to ShellStateProvider` | `selectPrestigeLayers`, `selectPrestigeLayerById` | Selectors return typed data |
+| Issue Title | Scope | Agent | Dependencies | Acceptance Criteria |
+|-------------|-------|-------|--------------|---------------------|
+| `feat(shell-web): wire PrestigeSystemEvaluator in worker` | Connect evaluator to runtime, pass to snapshot builder | Shell Agent | Phase 1 complete | Worker publishes prestige data |
+| `feat(shell-web): add prestige selectors to ShellStateProvider` | `selectPrestigeLayers`, `selectPrestigeLayerById` | Shell Agent | Worker wiring | Selectors return typed data |
 
 **Phase 3: UI Components**
 
-| Issue Title | Scope | Acceptance Criteria |
-|-------------|-------|---------------------|
-| `feat(shell-web): implement PrestigePanel component` | Layer list with locked/available states | Component tests pass, renders in app |
-| `feat(shell-web): implement PrestigeModal component` | Confirmation flow with breakdown and reset summary | Focus trap works, a11y tests pass |
-| `feat(shell-web): integrate PrestigePanel into App` | Add panel to main layout, wire command dispatch | End-to-end prestige flow works |
+| Issue Title | Scope | Agent | Dependencies | Acceptance Criteria |
+|-------------|-------|-------|--------------|---------------------|
+| `feat(shell-web): implement PrestigePanel component` | Layer list with locked/available states | Shell Agent | Selectors | Component tests pass, renders in app |
+| `feat(shell-web): implement PrestigeModal component` | Confirmation flow with breakdown and reset summary | Shell Agent | Selectors | Focus trap works, a11y tests pass |
+| `feat(shell-web): integrate PrestigePanel into App` | Add panel to main layout, wire command dispatch | Shell Agent | Panel, Modal | End-to-end prestige flow works |
 
 **Phase 4: Polish & Validation**
 
-| Issue Title | Scope | Acceptance Criteria |
-|-------------|-------|---------------------|
-| `test(a11y): add prestige panel to smoke tests` | Playwright tests for panel and modal | `pnpm test:a11y` passes |
-| `docs: update progression UI design doc` | Mark prestige sections complete, update references | Doc reflects implementation |
+| Issue Title | Scope | Agent | Dependencies | Acceptance Criteria |
+|-------------|-------|-------|--------------|---------------------|
+| `test(a11y): add prestige panel to smoke tests` | Playwright tests for panel and modal | QA Agent | Phase 3 complete | `pnpm test:a11y` passes |
+| `docs: update progression UI design doc` | Mark prestige sections complete, update references | QA Agent | Phase 3 complete | Doc reflects implementation |
 
 ### 7.2 Milestones
 
@@ -416,22 +450,16 @@ describe('PrestigeModal', () => {
 - **Migration Strategy**: None required; additive feature
 - **Communication**: Document prestige UI in user-facing changelog
 
-## 13. Open Questions
-
-1. **Should prestige layers be repeatable?** - Current design assumes yes (status cycles available → completed → available). Confirm this matches intended gameplay.
-
-2. **Reset generator levels?** - Sample pack's `resetTargets` only lists resources. Should generator `owned` counts also reset? Need to verify content schema supports this.
-
-3. **Prestige count tracking** - Should we track how many times each layer has been prestiged? Useful for achievements/statistics but adds state.
-
-## 14. Follow-Up Work
+## 13. Follow-Up Work
 
 - Prestige layer unlock animations and celebration effects
 - Cross-session prestige statistics and achievements
 - Prestige automation rules (if authorization policy changes)
 - Multi-currency prestige rewards (beyond single resource)
+- Explicit `resetGenerators` and `resetUpgrades` schema arrays (if use cases emerge)
+- Multiplier curve support for scaling rewards based on prestige count
 
-## 15. References
+## 14. References
 
 - `packages/core/src/command.ts:106-166` - Command types and payloads
 - `packages/core/src/command.ts:230-290` - Command authorizations
@@ -455,3 +483,4 @@ describe('PrestigeModal', () => {
 | Date | Author | Change Summary |
 |------|--------|----------------|
 | 2025-11-27 | Idle Engine Team | Initial draft |
+| 2025-11-28 | Idle Engine Team | Review and completion: clarified layer ID type change, added evaluator implementation location, expanded design decisions (repeatable prestige, prestige count tracking, locked layer visibility), updated work breakdown tables with Agent/Dependencies columns, removed Open Questions section (all resolved and integrated into design) |
