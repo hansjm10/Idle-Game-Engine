@@ -161,7 +161,7 @@ export interface CollectResourcePayload {
  * Player prestige reset request (docs/runtime-command-queue-design.md §5.2).
  */
 export interface PrestigeResetPayload {
-  readonly layer: number;
+  readonly layerId: string;
   readonly confirmationToken?: string;
 }
 
