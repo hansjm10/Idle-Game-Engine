@@ -871,6 +871,9 @@ export {
   type GeneratorRateView,
   type UpgradeCostView,
   type UpgradeView,
+  type PrestigeLayerView,
+  type PrestigeRewardPreview,
+  type PrestigeRewardContribution,
 } from './progression.js';
 export {
   TransportBufferPool,
