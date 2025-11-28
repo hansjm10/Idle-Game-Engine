@@ -874,6 +874,8 @@ export {
   type PrestigeLayerView,
   type PrestigeRewardPreview,
   type PrestigeRewardContribution,
+  type PrestigeQuote,
+  type PrestigeSystemEvaluator,
 } from './progression.js';
 export {
   TransportBufferPool,

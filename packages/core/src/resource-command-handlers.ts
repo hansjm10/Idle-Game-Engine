@@ -6,6 +6,7 @@ import {
   type PurchaseUpgradePayload,
 } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
+import type { PrestigeSystemEvaluator } from './progression.js';
 import type { ResourceState, ResourceSpendAttemptContext } from './resource-state.js';
 import { telemetry } from './telemetry.js';
 
@@ -58,6 +59,12 @@ export interface ResourceCommandHandlerOptions {
    */
   readonly automationSystemId?: string;
   readonly upgradePurchases?: UpgradePurchaseEvaluator;
+  /**
+   * Optional prestige system evaluator. When provided, the PRESTIGE_RESET
+   * command handler will be registered. The evaluator provides quote
+   * calculation and prestige application.
+   */
+  readonly prestigeSystem?: PrestigeSystemEvaluator;
 }
 
 const DEFAULT_AUTOMATION_SYSTEM_ID = 'automation';

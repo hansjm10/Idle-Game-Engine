@@ -86,6 +86,40 @@ export type PrestigeLayerView = Readonly<{
   retainedTargets: readonly string[];
 }>;
 
+/**
+ * Quote returned by PrestigeSystemEvaluator for a specific prestige layer.
+ * Contains the current status, calculated reward, and reset/retention targets.
+ */
+export interface PrestigeQuote {
+  readonly layerId: string;
+  readonly status: 'locked' | 'available' | 'completed';
+  readonly reward: PrestigeRewardPreview;
+  readonly resetTargets: readonly string[];
+  readonly retainedTargets: readonly string[];
+}
+
+/**
+ * Evaluator interface for the prestige system. Provides quote calculation
+ * and prestige application. The concrete implementation lives in
+ * `packages/core/src/prestige-system.ts` (follow-up issue).
+ */
+export interface PrestigeSystemEvaluator {
+  /**
+   * Calculate a prestige quote for the given layer.
+   * Returns undefined if the layer does not exist.
+   */
+  getPrestigeQuote(layerId: string): PrestigeQuote | undefined;
+
+  /**
+   * Execute prestige for the given layer. Applies reward, resets targets,
+   * and updates prestige count. The confirmationToken is advisory and passed
+   * through for the evaluator to use if needed (e.g., UI-generated nonce).
+   *
+   * @throws Error if layer is locked or does not exist
+   */
+  applyPrestige(layerId: string, confirmationToken?: string): void;
+}
+
 export type ProgressionSnapshot = Readonly<{
   step: number;
   publishedAt: number;
