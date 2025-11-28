@@ -437,7 +437,7 @@ describe('PrestigeModal', () => {
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Prestige reward formula evaluation complexity | Incorrect rewards, player frustration | Reuse existing expression evaluator from content-schema; add property-based tests for edge cases |
-| Worker snapshot size increase | Slower postMessage, UI lag | Prestige layers are few (<10 expected); monitor payload size in diagnostics |
+| Worker snapshot size increase | Slower postMessage, UI lag | Prestige layers are few (fewer than 10 expected); monitor payload size in diagnostics |
 | Modal focus trap conflicts with other modals | Accessibility issues | Ensure only one modal renders at a time; follow UpgradeModal pattern exactly |
 | Reset targets misconfigured in content | Wrong resources reset, data loss | Validate `resetTargets` reference valid resource IDs at content compile time |
 | Locked layer teaser hints reveal too much | Spoils progression discovery | Keep hints vague ("Reach deeper..."); content authors control hint text |
