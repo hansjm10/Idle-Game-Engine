@@ -159,6 +159,14 @@ export interface ProgressionUpgradeState {
   readonly costs?: readonly UpgradeResourceCost[];
 }
 
+export interface ProgressionPrestigeLayerState {
+  readonly id: string;
+  readonly displayName?: string;
+  readonly summary?: string;
+  readonly isVisible: boolean;
+  readonly unlockHint?: string;
+}
+
 export interface ProgressionAuthoritativeState {
   readonly stepDurationMs: number;
   readonly resources?: ProgressionResourceState;
@@ -166,6 +174,8 @@ export interface ProgressionAuthoritativeState {
   readonly generators?: readonly ProgressionGeneratorState[];
   readonly upgradePurchases?: UpgradePurchaseEvaluator;
   readonly upgrades?: readonly ProgressionUpgradeState[];
+  readonly prestigeSystem?: PrestigeSystemEvaluator;
+  readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
 }
 
 export function buildProgressionSnapshot(
@@ -184,6 +194,10 @@ export function buildProgressionSnapshot(
     state?.upgrades,
     state?.upgradePurchases,
   );
+  const prestigeLayers = createPrestigeLayerViews(
+    state?.prestigeLayers,
+    state?.prestigeSystem,
+  );
 
   return Object.freeze({
     step,
@@ -191,7 +205,7 @@ export function buildProgressionSnapshot(
     resources,
     generators,
     upgrades,
-    prestigeLayers: EMPTY_ARRAY as readonly PrestigeLayerView[],
+    prestigeLayers,
   });
 }
 
@@ -456,4 +470,51 @@ function normalizeUpgradeCosts(
   return views.length > 0
     ? Object.freeze(views)
     : (EMPTY_ARRAY as readonly UpgradeCostView[]);
+}
+
+function createPrestigeLayerViews(
+  prestigeLayers: readonly ProgressionPrestigeLayerState[] | undefined,
+  evaluator: PrestigeSystemEvaluator | undefined,
+): readonly PrestigeLayerView[] {
+  if (!prestigeLayers || prestigeLayers.length === 0) {
+    return EMPTY_ARRAY as readonly PrestigeLayerView[];
+  }
+
+  const views: PrestigeLayerView[] = [];
+
+  for (const layer of prestigeLayers) {
+    const quote = evaluatePrestigeQuote(evaluator, layer.id);
+
+    const view: PrestigeLayerView = Object.freeze({
+      id: layer.id,
+      displayName: layer.displayName ?? layer.id,
+      summary: layer.summary,
+      status: quote?.status ?? 'locked',
+      unlockHint: layer.unlockHint,
+      isVisible: Boolean(layer.isVisible),
+      rewardPreview: quote?.reward,
+      resetTargets: quote?.resetTargets ?? (EMPTY_ARRAY as readonly string[]),
+      retainedTargets:
+        quote?.retainedTargets ?? (EMPTY_ARRAY as readonly string[]),
+    });
+
+    views.push(view);
+  }
+
+  return Object.freeze(views);
+}
+
+function evaluatePrestigeQuote(
+  evaluator: PrestigeSystemEvaluator | undefined,
+  layerId: string,
+): PrestigeQuote | undefined {
+  if (!evaluator) {
+    return undefined;
+  }
+
+  try {
+    return evaluator.getPrestigeQuote(layerId);
+  } catch {
+    return undefined;
+  }
 }
