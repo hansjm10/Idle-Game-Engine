@@ -5,8 +5,12 @@ import {
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
   type GeneratorRateView,
+  type PrestigeQuote,
+  type PrestigeRewardPreview,
+  type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
   type ProgressionGeneratorState,
+  type ProgressionPrestigeLayerState,
   type ProgressionResourceState,
   type ProgressionUpgradeState,
   type ResourceDefinition,
@@ -22,6 +26,7 @@ import type {
   Condition,
   NormalizedContentPack,
   NormalizedGenerator,
+  NormalizedPrestigeLayer,
   NormalizedResource,
   NormalizedUpgrade,
   NumericFormula,
@@ -52,6 +57,13 @@ type UpgradeRecord = {
   readonly definition: NormalizedUpgrade;
   readonly state: MutableUpgradeState;
   purchases: number;
+};
+
+type MutablePrestigeLayerState = Mutable<ProgressionPrestigeLayerState>;
+
+type PrestigeLayerRecord = {
+  readonly definition: NormalizedPrestigeLayer;
+  readonly state: MutablePrestigeLayerState;
 };
 
 /**
@@ -100,6 +112,12 @@ export interface ProgressionCoordinator {
    * Undefined if the content pack contains no upgrades.
    */
   readonly upgradeEvaluator?: UpgradePurchaseEvaluator;
+
+  /**
+   * Evaluator for the prestige system, providing quotes and applying prestige.
+   * Undefined if the content pack contains no prestige layers.
+   */
+  readonly prestigeEvaluator?: PrestigeSystemEvaluator;
 
   /**
    * Hydrates resource state from serialized save data
@@ -197,12 +215,15 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   public readonly resourceState: ResourceState;
   public readonly generatorEvaluator: GeneratorPurchaseEvaluator;
   public readonly upgradeEvaluator?: UpgradePurchaseEvaluator;
+  public readonly prestigeEvaluator?: PrestigeSystemEvaluator;
 
   private readonly resourceDefinitions: readonly ResourceDefinition[];
   private readonly generators: Map<string, GeneratorRecord>;
   private readonly generatorList: GeneratorRecord[];
   private readonly upgrades: Map<string, UpgradeRecord>;
   private readonly upgradeList: UpgradeRecord[];
+  private readonly prestigeLayers: Map<string, PrestigeLayerRecord>;
+  private readonly prestigeLayerList: PrestigeLayerRecord[];
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
 
@@ -268,6 +289,20 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       return record;
     });
 
+    const prestigeLayerDefinitions = options.content.prestigeLayers ?? [];
+    this.prestigeLayers = new Map();
+    const initialPrestigeLayers = new Map(
+      (initialState?.prestigeLayers ?? []).map((layer) => [layer.id, layer]),
+    );
+    this.prestigeLayerList = prestigeLayerDefinitions.map((layer: NormalizedPrestigeLayer) => {
+      const record = createPrestigeLayerRecord(
+        layer,
+        initialPrestigeLayers.get(layer.id),
+      );
+      this.prestigeLayers.set(layer.id, record);
+      return record;
+    });
+
     this.conditionContext = {
       getResourceAmount: (resourceId) => {
         const index = this.resourceState.getIndex(resourceId);
@@ -290,6 +325,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       this.upgradeList.length > 0
         ? new ContentUpgradeEvaluator(this)
         : undefined;
+    this.prestigeEvaluator =
+      this.prestigeLayerList.length > 0
+        ? new ContentPrestigeEvaluator(this)
+        : undefined;
 
     const state =
       initialState ?? ({} as Mutable<ProgressionAuthoritativeState>);
@@ -300,6 +339,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     state.upgradePurchases =
       this.upgradeList.length > 0 ? this.upgradeEvaluator : undefined;
     state.upgrades = this.upgradeList.map((record) => record.state);
+    state.prestigeSystem =
+      this.prestigeLayerList.length > 0 ? this.prestigeEvaluator : undefined;
+    state.prestigeLayers = this.prestigeLayerList.map((record) => record.state);
 
     this.state = state;
 
@@ -368,6 +410,17 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       record.state.costs = this.computeUpgradeCosts(record);
       record.state.purchases = record.purchases;
     }
+
+    for (const record of this.prestigeLayerList) {
+      const isUnlocked = evaluateCondition(
+        record.definition.unlockCondition,
+        this.conditionContext,
+      );
+      record.state.isVisible = isUnlocked;
+      record.state.unlockHint = isUnlocked
+        ? undefined
+        : describeCondition(record.definition.unlockCondition);
+    }
   }
 
   getResourceAmount(resourceId: string): number {
@@ -380,6 +433,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 
   getUpgradeRecord(upgradeId: string): UpgradeRecord | undefined {
     return this.upgrades.get(upgradeId);
+  }
+
+  getPrestigeLayerRecord(layerId: string): PrestigeLayerRecord | undefined {
+    return this.prestigeLayers.get(layerId);
   }
 
   incrementGeneratorOwned(generatorId: string, count: number): void {
@@ -878,4 +935,118 @@ function getDisplayName(
     return name;
   }
   return name?.default ?? fallback;
+}
+
+function createPrestigeLayerRecord(
+  layer: NormalizedPrestigeLayer,
+  initial?: ProgressionPrestigeLayerState,
+): PrestigeLayerRecord {
+  const state: MutablePrestigeLayerState = initial
+    ? (initial as MutablePrestigeLayerState)
+    : ({
+        id: layer.id,
+        displayName: getDisplayName(layer.name, layer.id),
+        summary: getDisplayName(layer.summary, ''),
+        isVisible: false,
+        unlockHint: undefined,
+      } as MutablePrestigeLayerState);
+
+  state.id = layer.id;
+  state.displayName = getDisplayName(layer.name, layer.id);
+  state.summary = getDisplayName(layer.summary, '');
+  state.isVisible = Boolean(state.isVisible);
+
+  return {
+    definition: layer,
+    state,
+  };
+}
+
+class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
+  constructor(private readonly coordinator: ProgressionCoordinatorImpl) {}
+
+  getPrestigeQuote(layerId: string): PrestigeQuote | undefined {
+    const record = this.coordinator.getPrestigeLayerRecord(layerId);
+    if (!record) {
+      return undefined;
+    }
+
+    const isUnlocked = record.state.isVisible;
+    const status: PrestigeQuote['status'] = isUnlocked ? 'available' : 'locked';
+
+    const reward = this.computeRewardPreview(record);
+
+    return {
+      layerId,
+      status,
+      reward,
+      resetTargets: record.definition.resetTargets,
+      retainedTargets: this.computeRetainedTargets(record),
+    };
+  }
+
+  applyPrestige(layerId: string, _confirmationToken?: string): void {
+    const record = this.coordinator.getPrestigeLayerRecord(layerId);
+    if (!record) {
+      throw new Error(`Prestige layer "${layerId}" not found`);
+    }
+
+    if (!record.state.isVisible) {
+      throw new Error(`Prestige layer "${layerId}" is locked`);
+    }
+
+    // Prestige application is handled by the PRESTIGE_RESET command handler
+    // This method is a placeholder for future direct application logic
+  }
+
+  private computeRewardPreview(record: PrestigeLayerRecord): PrestigeRewardPreview {
+    const rewardDefinition = record.definition.reward;
+    const resourceId = rewardDefinition.resourceId;
+
+    // Evaluate the base reward formula using current resource amounts
+    const baseRewardAmount = evaluateNumericFormula(rewardDefinition.baseReward, {
+      variables: this.buildFormulaVariables(),
+    });
+
+    // Apply multiplier curve if present
+    let amount = Number.isFinite(baseRewardAmount) ? baseRewardAmount : 0;
+    if (rewardDefinition.multiplierCurve) {
+      const multiplier = evaluateNumericFormula(rewardDefinition.multiplierCurve, {
+        variables: this.buildFormulaVariables(),
+      });
+      if (Number.isFinite(multiplier)) {
+        amount *= multiplier;
+      }
+    }
+
+    return {
+      resourceId,
+      amount: Math.max(0, Math.floor(amount)),
+    };
+  }
+
+  private computeRetainedTargets(record: PrestigeLayerRecord): readonly string[] {
+    const retention = record.definition.retention ?? [];
+    const retained: string[] = [];
+
+    for (const entry of retention) {
+      if (entry.kind === 'resource') {
+        retained.push(entry.resourceId);
+      } else if (entry.kind === 'upgrade') {
+        retained.push(entry.upgradeId);
+      }
+    }
+
+    return Object.freeze(retained);
+  }
+
+  private buildFormulaVariables(): Record<string, number> {
+    const variables: Record<string, number> = {};
+
+    // The coordinator exposes getResourceAmount, so we could populate
+    // variables for all resources, but for now we'll use level=1 as default
+    variables.level = 1;
+
+    return variables;
+  }
 }

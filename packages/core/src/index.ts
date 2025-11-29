@@ -864,6 +864,7 @@ export {
   type ResourceProgressionMetadata,
   type ProgressionGeneratorState,
   type ProgressionUpgradeState,
+  type ProgressionPrestigeLayerState,
   type ProgressionSnapshot,
   type ResourceView,
   type GeneratorView,

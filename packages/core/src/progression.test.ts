@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildProgressionSnapshot,
+  type PrestigeQuote,
+  type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
   type ProgressionGeneratorState,
+  type ProgressionPrestigeLayerState,
   type ProgressionUpgradeState,
 } from './progression.js';
 import {
@@ -42,6 +45,22 @@ class StubUpgradeEvaluator implements UpgradePurchaseEvaluator {
   }
 
   applyPurchase(): void {
+    // noop for snapshot tests
+  }
+}
+
+class StubPrestigeEvaluator implements PrestigeSystemEvaluator {
+  public readonly quotes = new Map<string, PrestigeQuote>();
+  public throwOnLayerId: string | null = null;
+
+  getPrestigeQuote(layerId: string): PrestigeQuote | undefined {
+    if (this.throwOnLayerId === layerId) {
+      throw new Error('Evaluator error');
+    }
+    return this.quotes.get(layerId);
+  }
+
+  applyPrestige(): void {
     // noop for snapshot tests
   }
 }
@@ -322,5 +341,313 @@ describe('buildProgressionSnapshot', () => {
         costs: [{ resourceId: 'crystal', amount: 100 }],
       }),
     ]);
+  });
+
+  describe('prestigeLayers', () => {
+    it('returns empty array when no prestige layers provided', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers).toEqual([]);
+    });
+
+    it('returns empty array when no evaluator provided', () => {
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          isVisible: true,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers).toEqual([
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          summary: undefined,
+          status: 'locked',
+          unlockHint: undefined,
+          isVisible: true,
+          rewardPreview: undefined,
+          resetTargets: [],
+          retainedTargets: [],
+        },
+      ]);
+    });
+
+    it('includes all visible prestige layers with evaluator data', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+      prestigeEvaluator.quotes.set('sample.ascension-alpha', {
+        layerId: 'sample.ascension-alpha',
+        status: 'available',
+        reward: {
+          resourceId: 'prestige-flux',
+          amount: 100,
+          breakdown: [
+            { sourceResourceId: 'energy', sourceAmount: 1000, contribution: 100 },
+          ],
+        },
+        resetTargets: ['energy', 'crystal'],
+        retainedTargets: ['prestige-flux'],
+      });
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          summary: 'Reset for prestige currency',
+          isVisible: true,
+          unlockHint: 'Reach deeper into the machine...',
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers).toEqual([
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          summary: 'Reset for prestige currency',
+          status: 'available',
+          unlockHint: 'Reach deeper into the machine...',
+          isVisible: true,
+          rewardPreview: {
+            resourceId: 'prestige-flux',
+            amount: 100,
+            breakdown: [
+              { sourceResourceId: 'energy', sourceAmount: 1000, contribution: 100 },
+            ],
+          },
+          resetTargets: ['energy', 'crystal'],
+          retainedTargets: ['prestige-flux'],
+        },
+      ]);
+    });
+
+    it('maps locked layer with unlockHint', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+      prestigeEvaluator.quotes.set('sample.ascension-alpha', {
+        layerId: 'sample.ascension-alpha',
+        status: 'locked',
+        reward: { resourceId: 'prestige-flux', amount: 0 },
+        resetTargets: ['energy'],
+        retainedTargets: [],
+      });
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          isVisible: true,
+          unlockHint: 'Collect 1000 energy to unlock',
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.ascension-alpha',
+        status: 'locked',
+        unlockHint: 'Collect 1000 energy to unlock',
+      });
+    });
+
+    it('maps available layer with rewardPreview', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+      prestigeEvaluator.quotes.set('sample.ascension-alpha', {
+        layerId: 'sample.ascension-alpha',
+        status: 'available',
+        reward: {
+          resourceId: 'prestige-flux',
+          amount: 50,
+        },
+        resetTargets: ['energy'],
+        retainedTargets: ['prestige-flux'],
+      });
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          isVisible: true,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.ascension-alpha',
+        status: 'available',
+        rewardPreview: {
+          resourceId: 'prestige-flux',
+          amount: 50,
+        },
+      });
+    });
+
+    it('maps completed layer correctly', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+      prestigeEvaluator.quotes.set('sample.ascension-alpha', {
+        layerId: 'sample.ascension-alpha',
+        status: 'completed',
+        reward: {
+          resourceId: 'prestige-flux',
+          amount: 75,
+        },
+        resetTargets: ['energy'],
+        retainedTargets: ['prestige-flux'],
+      });
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          isVisible: true,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.ascension-alpha',
+        status: 'completed',
+      });
+    });
+
+    it('includes non-visible layers with isVisible false', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.ascension-alpha',
+          displayName: 'Ascension Alpha',
+          isVisible: true,
+        },
+        {
+          id: 'sample.ascension-beta',
+          displayName: 'Ascension Beta',
+          isVisible: false,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers).toHaveLength(2);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.ascension-alpha',
+        isVisible: true,
+      });
+      expect(snapshot.prestigeLayers[1]).toMatchObject({
+        id: 'sample.ascension-beta',
+        isVisible: false,
+      });
+    });
+
+    it('handles missing quotes gracefully', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+      // No quote set for this layer - evaluator returns undefined
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.unknown-layer',
+          displayName: 'Unknown Layer',
+          isVisible: true,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.unknown-layer',
+        displayName: 'Unknown Layer',
+        status: 'locked',
+        resetTargets: [],
+        retainedTargets: [],
+      });
+    });
+
+    it('handles evaluator errors gracefully', () => {
+      const prestigeEvaluator = new StubPrestigeEvaluator();
+      prestigeEvaluator.throwOnLayerId = 'sample.error-layer';
+
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.error-layer',
+          displayName: 'Error Layer',
+          isVisible: true,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+        prestigeSystem: prestigeEvaluator,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.error-layer',
+        displayName: 'Error Layer',
+        status: 'locked',
+      });
+    });
+
+    it('uses layer id as displayName when not provided', () => {
+      const prestigeLayers: ProgressionPrestigeLayerState[] = [
+        {
+          id: 'sample.no-display-name',
+          isVisible: true,
+        },
+      ];
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        prestigeLayers,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.prestigeLayers[0]).toMatchObject({
+        id: 'sample.no-display-name',
+        displayName: 'sample.no-display-name',
+      });
+    });
   });
 });
