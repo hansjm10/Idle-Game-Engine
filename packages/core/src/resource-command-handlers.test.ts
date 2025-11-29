@@ -21,6 +21,10 @@ import {
   type UpgradePurchaseEvaluator,
   type UpgradePurchaseQuote,
 } from './resource-command-handlers.js';
+import type {
+  PrestigeSystemEvaluator,
+  PrestigeQuote,
+} from './progression.js';
 import {
   createResourceState,
   type ResourceState,
@@ -100,6 +104,44 @@ class StubUpgradePurchases implements UpgradePurchaseEvaluator {
       upgradeId,
       metadata: options?.metadata,
     });
+  }
+}
+
+class StubPrestigeSystem implements PrestigeSystemEvaluator {
+  public readonly definitions = new Map<
+    string,
+    { readonly status: 'locked' | 'available' | 'completed'; readonly reward: PrestigeQuote['reward'] }
+  >();
+
+  public readonly applied: Array<{
+    readonly layerId: string;
+    readonly confirmationToken?: string;
+  }> = [];
+
+  public readonly quotes: Array<{ layerId: string }> = [];
+
+  public applyThrows: Error | null = null;
+
+  getPrestigeQuote(layerId: string): PrestigeQuote | undefined {
+    this.quotes.push({ layerId });
+    const definition = this.definitions.get(layerId);
+    if (!definition) {
+      return undefined;
+    }
+    return {
+      layerId,
+      status: definition.status,
+      reward: definition.reward,
+      resetTargets: ['energy', 'crystal'],
+      retainedTargets: ['prestige-flux'],
+    };
+  }
+
+  applyPrestige(layerId: string, confirmationToken?: string): void {
+    if (this.applyThrows) {
+      throw this.applyThrows;
+    }
+    this.applied.push({ layerId, confirmationToken });
   }
 }
 
@@ -459,5 +501,242 @@ describe('resource command handlers', () => {
         }),
       );
     });
+  });
+});
+
+describe('PRESTIGE_RESET handler', () => {
+  let dispatcher: CommandDispatcher;
+  let resources: ResourceState;
+  let telemetryStub: TelemetryFacade;
+  let purchases: StubGeneratorPurchases;
+  let prestigeSystem: StubPrestigeSystem;
+
+  beforeEach(() => {
+    dispatcher = new CommandDispatcher();
+    resources = createResourceState([
+      { id: 'energy', startAmount: 100 },
+      { id: 'crystal', startAmount: 50 },
+      { id: 'prestige-flux', startAmount: 0 },
+    ]);
+    purchases = new StubGeneratorPurchases();
+    prestigeSystem = new StubPrestigeSystem();
+
+    prestigeSystem.definitions.set('ascension-alpha', {
+      status: 'available',
+      reward: { resourceId: 'prestige-flux', amount: 10 },
+    });
+
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+
+    setTelemetry(telemetryStub);
+    registerResourceCommandHandlers({
+      dispatcher,
+      resources,
+      generatorPurchases: purchases,
+      prestigeSystem,
+    });
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  const execute = <TPayload>(command: Command<TPayload>): void => {
+    dispatcher.execute(command as Command);
+  };
+
+  it('rejects invalid layer with PrestigeResetInvalidLayer telemetry', () => {
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: '' },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toHaveLength(0);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'PrestigeResetInvalidLayer',
+      expect.objectContaining({
+        layerId: '',
+      }),
+    );
+  });
+
+  it('rejects whitespace-only layer with PrestigeResetInvalidLayer telemetry', () => {
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: '   ' },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toHaveLength(0);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'PrestigeResetInvalidLayer',
+      expect.objectContaining({
+        layerId: '   ',
+      }),
+    );
+  });
+
+  it('rejects unknown layer with PrestigeResetUnknown telemetry', () => {
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: 'nonexistent-layer' },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toHaveLength(0);
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'PrestigeResetUnknown',
+      expect.objectContaining({
+        layerId: 'nonexistent-layer',
+      }),
+    );
+  });
+
+  it('rejects locked layer with PrestigeResetLocked warning', () => {
+    prestigeSystem.definitions.set('ascension-alpha', {
+      status: 'locked',
+      reward: { resourceId: 'prestige-flux', amount: 10 },
+    });
+
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: 'ascension-alpha' },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toHaveLength(0);
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetLocked',
+      expect.objectContaining({
+        layerId: 'ascension-alpha',
+      }),
+    );
+  });
+
+  it('executes prestige and emits PrestigeResetConfirmed on success', () => {
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: 'ascension-alpha' },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toEqual([
+      { layerId: 'ascension-alpha', confirmationToken: undefined },
+    ]);
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'PrestigeResetConfirmed',
+      expect.objectContaining({
+        layerId: 'ascension-alpha',
+      }),
+    );
+  });
+
+  it('executes prestige for completed layers (repeatable prestige)', () => {
+    prestigeSystem.definitions.set('ascension-alpha', {
+      status: 'completed',
+      reward: { resourceId: 'prestige-flux', amount: 15 },
+    });
+
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: 'ascension-alpha' },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toEqual([
+      { layerId: 'ascension-alpha', confirmationToken: undefined },
+    ]);
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'PrestigeResetConfirmed',
+      expect.objectContaining({
+        layerId: 'ascension-alpha',
+      }),
+    );
+  });
+
+  it('emits PrestigeResetApplyFailed on evaluator error', () => {
+    const applyError = new Error('Evaluator failure');
+    prestigeSystem.applyThrows = applyError;
+
+    // The handler throws but the dispatcher catches it, so no error propagates
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: 'ascension-alpha' },
+      }),
+    );
+
+    // Handler records specific error before rethrowing
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'PrestigeResetApplyFailed',
+      expect.objectContaining({
+        layerId: 'ascension-alpha',
+        message: 'Evaluator failure',
+      }),
+    );
+
+    // Dispatcher also catches and records the error
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'CommandExecutionFailed',
+      expect.objectContaining({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        error: 'Evaluator failure',
+      }),
+    );
+  });
+
+  it('passes confirmationToken through to applyPrestige', () => {
+    execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: {
+          layerId: 'ascension-alpha',
+          confirmationToken: 'test-token-12345',
+        },
+      }),
+    );
+
+    expect(prestigeSystem.applied).toEqual([
+      { layerId: 'ascension-alpha', confirmationToken: 'test-token-12345' },
+    ]);
+  });
+
+  it('does not register handler when prestigeSystem is not provided', () => {
+    const dispatcherWithoutPrestige = new CommandDispatcher();
+    registerResourceCommandHandlers({
+      dispatcher: dispatcherWithoutPrestige,
+      resources,
+      generatorPurchases: purchases,
+      // No prestigeSystem
+    });
+
+    dispatcherWithoutPrestige.execute(
+      createCommand({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        payload: { layerId: 'ascension-alpha' },
+      }),
+    );
+
+    // CommandDispatcher records error for unknown command types
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'UnknownCommandType',
+      expect.objectContaining({
+        type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      }),
+    );
   });
 });

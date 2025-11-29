@@ -2,6 +2,7 @@ import {
   CommandPriority,
   RUNTIME_COMMAND_TYPES,
   type CollectResourcePayload,
+  type PrestigeResetPayload,
   type PurchaseGeneratorPayload,
   type PurchaseUpgradePayload,
 } from './command.js';
@@ -94,6 +95,13 @@ export function registerResourceCommandHandlers(
       createPurchaseUpgradeHandler(resources, options.upgradePurchases, {
         automationSystemId,
       }),
+    );
+  }
+
+  if (options.prestigeSystem) {
+    dispatcher.register<PrestigeResetPayload>(
+      RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      createPrestigeResetHandler(options.prestigeSystem),
     );
   }
 }
@@ -370,6 +378,63 @@ function createPurchaseUpgradeHandler(
 
     telemetry.recordProgress('UpgradePurchaseConfirmed', {
       upgradeId,
+      step: context.step,
+      priority: context.priority,
+    });
+  };
+}
+
+function createPrestigeResetHandler(
+  prestigeSystem: PrestigeSystemEvaluator,
+): CommandHandler<PrestigeResetPayload> {
+  return (payload, context) => {
+    if (
+      typeof payload.layerId !== 'string' ||
+      payload.layerId.trim().length === 0
+    ) {
+      telemetry.recordError('PrestigeResetInvalidLayer', {
+        layerId: payload.layerId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    const layerId = payload.layerId.trim();
+    const quote = prestigeSystem.getPrestigeQuote(layerId);
+
+    if (!quote) {
+      telemetry.recordError('PrestigeResetUnknown', {
+        layerId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    if (quote.status === 'locked') {
+      telemetry.recordWarning('PrestigeResetLocked', {
+        layerId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    try {
+      prestigeSystem.applyPrestige(layerId, payload.confirmationToken);
+    } catch (error) {
+      telemetry.recordError('PrestigeResetApplyFailed', {
+        layerId,
+        message: error instanceof Error ? error.message : String(error),
+        step: context.step,
+        priority: context.priority,
+      });
+      throw error;
+    }
+
+    telemetry.recordProgress('PrestigeResetConfirmed', {
+      layerId,
       step: context.step,
       priority: context.priority,
     });
