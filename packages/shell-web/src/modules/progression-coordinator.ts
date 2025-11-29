@@ -1,6 +1,7 @@
 import {
   createResourceState,
   reconcileSaveAgainstDefinitions,
+  __unsafeWriteAmountDirect,
   type GeneratorPurchaseEvaluator,
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
@@ -150,6 +151,15 @@ export interface ProgressionCoordinator {
    * @param upgradeId - Upgrade identifier
    */
   incrementUpgradePurchases(upgradeId: string): void;
+
+  /**
+   * Retrieves the resource definition for a given resource ID.
+   * Used by prestige system to access startAmount for resource resets.
+   *
+   * @param resourceId - Resource identifier
+   * @returns The resource definition, or undefined if not found
+   */
+  getResourceDefinition(resourceId: string): ResourceDefinition | undefined;
 }
 
 /**
@@ -468,6 +478,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       record.purchases = nextPurchases;
     }
     record.state.purchases = record.purchases;
+  }
+
+  getResourceDefinition(resourceId: string): ResourceDefinition | undefined {
+    return this.resourceDefinitions.find((r) => r.id === resourceId);
   }
 
   computeGeneratorCost(
@@ -995,8 +1009,61 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       throw new Error(`Prestige layer "${layerId}" is locked`);
     }
 
-    // Prestige application is handled by the PRESTIGE_RESET command handler
-    // This method is a placeholder for future direct application logic
+    const resourceState = this.coordinator.resourceState;
+
+    // 1. Calculate and grant reward (BEFORE reset so we capture current resource values)
+    const rewardPreview = this.computeRewardPreview(record);
+    const rewardIndex = resourceState.getIndex(rewardPreview.resourceId);
+    if (rewardIndex !== undefined && rewardPreview.amount > 0) {
+      resourceState.addAmount(rewardIndex, rewardPreview.amount);
+    }
+
+    // 2. Collect retained resource IDs to skip during reset
+    const retention = record.definition.retention ?? [];
+    const retainedResourceIds = new Set<string>();
+    for (const entry of retention) {
+      if (entry.kind === 'resource') {
+        retainedResourceIds.add(entry.resourceId);
+      }
+    }
+
+    // 3. Reset target resources to startAmount (skip retained resources)
+    for (const resetResourceId of record.definition.resetTargets) {
+      if (retainedResourceIds.has(resetResourceId)) {
+        continue; // Skip retained resources
+      }
+
+      const definition = this.coordinator.getResourceDefinition(resetResourceId);
+      if (definition) {
+        const index = resourceState.getIndex(resetResourceId);
+        if (index !== undefined) {
+          const startAmount = definition.startAmount ?? 0;
+          __unsafeWriteAmountDirect(resourceState, index, startAmount);
+        }
+      }
+    }
+
+    // 4. Apply retention amounts for resources that have formulas
+    for (const entry of retention) {
+      if (entry.kind === 'resource' && entry.amount) {
+        const index = resourceState.getIndex(entry.resourceId);
+        if (index !== undefined) {
+          const retainedAmount = evaluateNumericFormula(entry.amount, {
+            variables: this.buildFormulaVariables(),
+          });
+          const targetAmount = Math.max(0, Math.floor(retainedAmount));
+          __unsafeWriteAmountDirect(resourceState, index, targetAmount);
+        }
+      }
+      // Upgrades in retention: no action needed, purchase status preserved
+    }
+
+    // 5. Increment prestige counter if resource exists (convention: {layerId}-prestige-count)
+    const prestigeCountId = `${layerId}-prestige-count`;
+    const countIndex = resourceState.getIndex(prestigeCountId);
+    if (countIndex !== undefined) {
+      resourceState.addAmount(countIndex, 1);
+    }
   }
 
   private computeRewardPreview(record: PrestigeLayerRecord): PrestigeRewardPreview {
@@ -1041,11 +1108,17 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
   }
 
   private buildFormulaVariables(): Record<string, number> {
-    const variables: Record<string, number> = {};
+    const variables: Record<string, number> = {
+      level: 1, // Maintain for backwards compatibility
+    };
 
-    // The coordinator exposes getResourceAmount, so we could populate
-    // variables for all resources, but for now we'll use level=1 as default
-    variables.level = 1;
+    // Populate all current resource amounts so formulas can reference them
+    const resourceState = this.coordinator.resourceState;
+    const snapshot = resourceState.snapshot({ mode: 'publish' });
+    for (let i = 0; i < snapshot.ids.length; i++) {
+      const resourceId = snapshot.ids[i];
+      variables[resourceId] = snapshot.amounts[i] ?? 0;
+    }
 
     return variables;
   }

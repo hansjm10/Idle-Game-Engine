@@ -838,6 +838,7 @@ export {
   reconcileSaveAgainstDefinitions,
   createDefinitionDigest,
   computeStableDigest,
+  __unsafeWriteAmountDirect,
   type ResourceDefinition,
   type ResourceDefinitionDigest,
   type ResourceDefinitionReconciliation,
