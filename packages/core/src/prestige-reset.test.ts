@@ -144,6 +144,28 @@ describe('applyPrestigeReset', () => {
     expect(() => applyPrestigeReset(context)).not.toThrow();
   });
 
+  it('emits warning telemetry when reward resource not found', () => {
+    const { state } = createTestResources();
+
+    const context: PrestigeResetContext = {
+      layerId: 'test-layer',
+      resourceState: state,
+      reward: { resourceId: 'nonexistent-reward', amount: 100 },
+      resetTargets: [],
+      retentionTargets: [],
+    };
+
+    applyPrestigeReset(context);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetRewardSkipped',
+      expect.objectContaining({
+        layerId: 'test-layer',
+        resourceId: 'nonexistent-reward',
+      }),
+    );
+  });
+
   it('handles missing resource indices gracefully for reset targets', () => {
     const { state } = createTestResources();
 
@@ -161,6 +183,31 @@ describe('applyPrestigeReset', () => {
     expect(() => applyPrestigeReset(context)).not.toThrow();
   });
 
+  it('emits warning telemetry when reset target resource not found', () => {
+    const { state } = createTestResources();
+
+    const context: PrestigeResetContext = {
+      layerId: 'test-layer',
+      resourceState: state,
+      reward: { resourceId: 'prestige-flux', amount: 10 },
+      resetTargets: [
+        { resourceId: 'nonexistent-reset-target', resetToAmount: 0 },
+      ],
+      retentionTargets: [],
+    };
+
+    applyPrestigeReset(context);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetTargetSkipped',
+      expect.objectContaining({
+        layerId: 'test-layer',
+        resourceId: 'nonexistent-reset-target',
+        targetType: 'reset',
+      }),
+    );
+  });
+
   it('handles missing resource indices gracefully for retention targets', () => {
     const { state } = createTestResources();
 
@@ -176,6 +223,31 @@ describe('applyPrestigeReset', () => {
 
     // Should not throw
     expect(() => applyPrestigeReset(context)).not.toThrow();
+  });
+
+  it('emits warning telemetry when retention target resource not found', () => {
+    const { state } = createTestResources();
+
+    const context: PrestigeResetContext = {
+      layerId: 'test-layer',
+      resourceState: state,
+      reward: { resourceId: 'prestige-flux', amount: 10 },
+      resetTargets: [],
+      retentionTargets: [
+        { resourceId: 'nonexistent-retention-target', retainedAmount: 50 },
+      ],
+    };
+
+    applyPrestigeReset(context);
+
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetTargetSkipped',
+      expect.objectContaining({
+        layerId: 'test-layer',
+        resourceId: 'nonexistent-retention-target',
+        targetType: 'retention',
+      }),
+    );
   });
 
   it('normalizes negative amounts to zero', () => {

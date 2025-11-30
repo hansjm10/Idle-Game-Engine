@@ -2,6 +2,7 @@ import {
   createResourceState,
   reconcileSaveAgainstDefinitions,
   applyPrestigeReset,
+  telemetry,
   type GeneratorPurchaseEvaluator,
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
@@ -1005,7 +1006,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
   }
 
   // TODO(#451): Use confirmationToken for UI-generated nonce validation (per interface contract)
-  applyPrestige(layerId: string, _confirmationToken?: string): void {
+  applyPrestige(layerId: string, confirmationToken?: string): void {
     const record = this.coordinator.getPrestigeLayerRecord(layerId);
     if (!record) {
       throw new Error(`Prestige layer "${layerId}" not found`);
@@ -1013,6 +1014,14 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     if (!record.state.isVisible) {
       throw new Error(`Prestige layer "${layerId}" is locked`);
+    }
+
+    // Log token receipt for debugging (don't log token value to avoid leaking secrets)
+    if (confirmationToken) {
+      telemetry.recordProgress('PrestigeResetTokenReceived', {
+        layerId,
+        tokenLength: confirmationToken.length,
+      });
     }
 
     const resourceState = this.coordinator.resourceState;
@@ -1061,7 +1070,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
         );
         retentionTargets.push({
           resourceId: entry.resourceId,
-          retainedAmount: Math.max(0, Math.floor(retainedAmount)),
+          retainedAmount, // applyPrestigeReset handles normalization
         });
       }
       // Upgrades in retention: no action needed, purchase status preserved
