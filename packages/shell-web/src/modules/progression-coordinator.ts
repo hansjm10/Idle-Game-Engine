@@ -1,12 +1,14 @@
 import {
   createResourceState,
   reconcileSaveAgainstDefinitions,
-  __unsafeWriteAmountDirect,
+  applyPrestigeReset,
   type GeneratorPurchaseEvaluator,
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
   type GeneratorRateView,
   type PrestigeQuote,
+  type PrestigeResetTarget,
+  type PrestigeRetentionTarget,
   type PrestigeRewardPreview,
   type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
@@ -1019,14 +1021,10 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     const retention = record.definition.retention ?? [];
     const preResetFormulaContext = this.buildFormulaContext();
 
-    // 1. Calculate and grant reward (BEFORE reset so we capture current resource values)
+    // Calculate reward using current resource values
     const rewardPreview = this.computeRewardPreview(record);
-    const rewardIndex = resourceState.getIndex(rewardPreview.resourceId);
-    if (rewardIndex !== undefined && rewardPreview.amount > 0) {
-      resourceState.addAmount(rewardIndex, rewardPreview.amount);
-    }
 
-    // 2. Collect retained resource IDs to skip during reset
+    // Collect retained resource IDs to skip during reset
     const retainedResourceIds = new Set<string>();
     for (const entry of retention) {
       if (entry.kind === 'resource') {
@@ -1034,7 +1032,8 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       }
     }
 
-    // 3. Reset target resources to startAmount (skip retained resources)
+    // Build reset targets with calculated startAmounts (skip retained resources)
+    const resetTargets: PrestigeResetTarget[] = [];
     for (const resetResourceId of record.definition.resetTargets) {
       if (retainedResourceIds.has(resetResourceId)) {
         continue; // Skip retained resources
@@ -1042,32 +1041,43 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
       const definition = this.coordinator.getResourceDefinition(resetResourceId);
       if (definition) {
-        const index = resourceState.getIndex(resetResourceId);
-        if (index !== undefined) {
-          const startAmount = definition.startAmount ?? 0;
-          __unsafeWriteAmountDirect(resourceState, index, startAmount);
-        }
+        resetTargets.push({
+          resourceId: resetResourceId,
+          resetToAmount: definition.startAmount ?? 0,
+        });
       }
     }
 
-    // 4. Apply retention amounts for resources that have formulas
-    // Uses pre-reset context so formulas like "energy * 0.1" see original values
+    // Build retention targets with calculated amounts using pre-reset context
+    const retentionTargets: PrestigeRetentionTarget[] = [];
     for (const entry of retention) {
       if (entry.kind === 'resource' && entry.amount) {
-        const index = resourceState.getIndex(entry.resourceId);
-        if (index !== undefined) {
-          const retainedAmount = evaluateNumericFormula(
-            entry.amount,
-            preResetFormulaContext,
-          );
-          const targetAmount = Math.max(0, Math.floor(retainedAmount));
-          __unsafeWriteAmountDirect(resourceState, index, targetAmount);
-        }
+        const retainedAmount = evaluateNumericFormula(
+          entry.amount,
+          preResetFormulaContext,
+        );
+        retentionTargets.push({
+          resourceId: entry.resourceId,
+          retainedAmount: Math.max(0, Math.floor(retainedAmount)),
+        });
       }
       // Upgrades in retention: no action needed, purchase status preserved
     }
 
-    // 5. Increment prestige counter if resource exists (convention: {layerId}-prestige-count)
+    // Delegate all mutations to core
+    applyPrestigeReset({
+      layerId,
+      resourceState,
+      reward: {
+        resourceId: rewardPreview.resourceId,
+        amount: rewardPreview.amount,
+      },
+      resetTargets,
+      retentionTargets,
+    });
+
+    // Increment prestige counter if resource exists (convention: {layerId}-prestige-count)
+    // This is a safe operation using addAmount, can stay here
     const prestigeCountId = `${layerId}-prestige-count`;
     const countIndex = resourceState.getIndex(prestigeCountId);
     if (countIndex !== undefined) {
