@@ -972,3 +972,9 @@ export {
   registerAutomationCommandHandlers,
   type AutomationCommandHandlerOptions,
 } from './automation-command-handlers.js';
+export {
+  applyPrestigeReset,
+  type PrestigeResetContext,
+  type PrestigeResetTarget,
+  type PrestigeRetentionTarget,
+} from './prestige-reset.js';

@@ -1,6 +1,7 @@
 import type {
   NormalizedContentPack,
   NormalizedGenerator,
+  NormalizedPrestigeLayer,
   NormalizedResource,
   NormalizedUpgrade,
   NumericFormula,
@@ -15,6 +16,10 @@ type GeneratorOverrides = Record<string, unknown> & {
 };
 type UpgradeOverrides = Record<string, unknown> & {
   readonly name?: string | NormalizedUpgrade['name'];
+};
+type PrestigeLayerOverrides = Record<string, unknown> & {
+  readonly name?: string | NormalizedPrestigeLayer['name'];
+  readonly summary?: string | NormalizedPrestigeLayer['summary'];
 };
 
 function ensureLocalizedName<T extends LocalizedNameShape>(
@@ -76,6 +81,7 @@ export function createContentPack(config: {
   resources?: NormalizedResource[];
   generators?: NormalizedGenerator[];
   upgrades?: NormalizedUpgrade[];
+  prestigeLayers?: NormalizedPrestigeLayer[];
   metadata?: Record<string, unknown>;
   digest?: Record<string, unknown>;
 }): NormalizedContentPack {
@@ -83,6 +89,7 @@ export function createContentPack(config: {
     resources = [],
     generators = [],
     upgrades = [],
+    prestigeLayers = [],
     metadata = {},
     digest = {},
   } = config;
@@ -91,11 +98,13 @@ export function createContentPack(config: {
   const resourcesMap = new Map(resources.map((r) => [r.id, r]));
   const generatorsMap = new Map(generators.map((g) => [g.id, g]));
   const upgradesMap = new Map(upgrades.map((u) => [u.id, u]));
+  const prestigeLayersMap = new Map(prestigeLayers.map((p) => [p.id, p]));
 
   // Build serialized lookup objects
   const resourceById = Object.fromEntries(resources.map((r) => [r.id, r]));
   const generatorById = Object.fromEntries(generators.map((g) => [g.id, g]));
   const upgradeById = Object.fromEntries(upgrades.map((u) => [u.id, u]));
+  const prestigeLayerById = Object.fromEntries(prestigeLayers.map((p) => [p.id, p]));
 
   return {
     metadata: createTestMetadata(
@@ -108,7 +117,7 @@ export function createContentPack(config: {
     achievements: [],
     automations: [],
     transforms: [],
-    prestigeLayers: [],
+    prestigeLayers,
     guildPerks: [],
     runtimeEvents: [],
     lookup: {
@@ -119,7 +128,7 @@ export function createContentPack(config: {
       achievements: new Map(),
       automations: new Map(),
       transforms: new Map(),
-      prestigeLayers: new Map(),
+      prestigeLayers: prestigeLayersMap,
       guildPerks: new Map(),
       runtimeEvents: new Map(),
     },
@@ -131,7 +140,7 @@ export function createContentPack(config: {
       achievementById: {},
       automationById: {},
       transformById: {},
-      prestigeLayerById: {},
+      prestigeLayerById,
       guildPerkById: {},
       runtimeEventById: {},
     },
@@ -241,4 +250,44 @@ export function createUpgradeDefinition(
     ...overrides,
     name: normalizedName,
   } as unknown as NormalizedUpgrade;
+}
+
+/**
+ * Creates a basic prestige layer definition for testing
+ */
+export function createPrestigeLayerDefinition(
+  id: string,
+  overrides?: PrestigeLayerOverrides,
+): NormalizedPrestigeLayer {
+  const defaultName = id.split('.').pop() || id;
+  const rawName = overrides?.name as
+    | string
+    | NormalizedPrestigeLayer['name']
+    | undefined;
+  const normalizedName = ensureLocalizedName<NormalizedPrestigeLayer['name']>(
+    rawName,
+    defaultName,
+  );
+  const rawSummary = overrides?.summary as
+    | string
+    | NormalizedPrestigeLayer['summary']
+    | undefined;
+  const normalizedSummary = ensureLocalizedName<NormalizedPrestigeLayer['summary']>(
+    rawSummary,
+    '',
+  );
+
+  return {
+    id,
+    name: normalizedName,
+    summary: normalizedSummary,
+    resetTargets: ['resource.energy'],
+    unlockCondition: { kind: 'always' },
+    reward: {
+      resourceId: 'resource.prestige',
+      baseReward: literalOne,
+    },
+    retention: [],
+    ...overrides,
+  } as unknown as NormalizedPrestigeLayer;
 }

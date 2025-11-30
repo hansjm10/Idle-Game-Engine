@@ -6,12 +6,14 @@ export function buildProgressionSnapshot(step, publishedAt, state) {
     const resources = createResourceViews(stepDurationMs, state?.resources);
     const generators = createGeneratorViews(step, state?.generators, state?.generatorPurchases);
     const upgrades = createUpgradeViews(state?.upgrades, state?.upgradePurchases);
+    const prestigeLayers = createPrestigeLayerViews(state?.prestigeLayers, state?.prestigeSystem);
     return Object.freeze({
         step,
         publishedAt,
         resources,
         generators,
         upgrades,
+        prestigeLayers,
     });
 }
 function createResourceViews(stepDurationMs, source) {
@@ -198,5 +200,38 @@ function normalizeUpgradeCosts(costs) {
     return views.length > 0
         ? Object.freeze(views)
         : EMPTY_ARRAY;
+}
+function createPrestigeLayerViews(prestigeLayers, evaluator) {
+    if (!prestigeLayers || prestigeLayers.length === 0) {
+        return EMPTY_ARRAY;
+    }
+    const views = [];
+    for (const layer of prestigeLayers) {
+        const quote = evaluatePrestigeQuote(evaluator, layer.id);
+        const view = Object.freeze({
+            id: layer.id,
+            displayName: layer.displayName ?? layer.id,
+            summary: layer.summary,
+            status: quote?.status ?? 'locked',
+            unlockHint: layer.unlockHint,
+            isVisible: Boolean(layer.isVisible),
+            rewardPreview: quote?.reward,
+            resetTargets: quote?.resetTargets ?? EMPTY_ARRAY,
+            retainedTargets: quote?.retainedTargets ?? EMPTY_ARRAY,
+        });
+        views.push(view);
+    }
+    return Object.freeze(views);
+}
+function evaluatePrestigeQuote(evaluator, layerId) {
+    if (!evaluator) {
+        return undefined;
+    }
+    try {
+        return evaluator.getPrestigeQuote(layerId);
+    }
+    catch {
+        return undefined;
+    }
 }
 //# sourceMappingURL=progression.js.map
