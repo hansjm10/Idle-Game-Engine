@@ -32,7 +32,10 @@ import type {
   NormalizedUpgrade,
   NumericFormula,
 } from '@idle-engine/content-schema';
-import { evaluateNumericFormula } from '@idle-engine/content-schema';
+import {
+  evaluateNumericFormula,
+  type FormulaEvaluationContext,
+} from '@idle-engine/content-schema';
 
 import {
   combineConditions,
@@ -1011,6 +1014,11 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     const resourceState = this.coordinator.resourceState;
 
+    // CRITICAL: Capture pre-reset formula context BEFORE any mutations.
+    // Retention formulas must see original resource values, not post-reset values.
+    const retention = record.definition.retention ?? [];
+    const preResetFormulaContext = this.buildFormulaContext();
+
     // 1. Calculate and grant reward (BEFORE reset so we capture current resource values)
     const rewardPreview = this.computeRewardPreview(record);
     const rewardIndex = resourceState.getIndex(rewardPreview.resourceId);
@@ -1019,7 +1027,6 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     }
 
     // 2. Collect retained resource IDs to skip during reset
-    const retention = record.definition.retention ?? [];
     const retainedResourceIds = new Set<string>();
     for (const entry of retention) {
       if (entry.kind === 'resource') {
@@ -1044,13 +1051,15 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     }
 
     // 4. Apply retention amounts for resources that have formulas
+    // Uses pre-reset context so formulas like "energy * 0.1" see original values
     for (const entry of retention) {
       if (entry.kind === 'resource' && entry.amount) {
         const index = resourceState.getIndex(entry.resourceId);
         if (index !== undefined) {
-          const retainedAmount = evaluateNumericFormula(entry.amount, {
-            variables: this.buildFormulaVariables(),
-          });
+          const retainedAmount = evaluateNumericFormula(
+            entry.amount,
+            preResetFormulaContext,
+          );
           const targetAmount = Math.max(0, Math.floor(retainedAmount));
           __unsafeWriteAmountDirect(resourceState, index, targetAmount);
         }
@@ -1069,18 +1078,21 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
   private computeRewardPreview(record: PrestigeLayerRecord): PrestigeRewardPreview {
     const rewardDefinition = record.definition.reward;
     const resourceId = rewardDefinition.resourceId;
+    const context = this.buildFormulaContext();
 
     // Evaluate the base reward formula using current resource amounts
-    const baseRewardAmount = evaluateNumericFormula(rewardDefinition.baseReward, {
-      variables: this.buildFormulaVariables(),
-    });
+    const baseRewardAmount = evaluateNumericFormula(
+      rewardDefinition.baseReward,
+      context,
+    );
 
     // Apply multiplier curve if present
     let amount = Number.isFinite(baseRewardAmount) ? baseRewardAmount : 0;
     if (rewardDefinition.multiplierCurve) {
-      const multiplier = evaluateNumericFormula(rewardDefinition.multiplierCurve, {
-        variables: this.buildFormulaVariables(),
-      });
+      const multiplier = evaluateNumericFormula(
+        rewardDefinition.multiplierCurve,
+        context,
+      );
       if (Number.isFinite(multiplier)) {
         amount *= multiplier;
       }
@@ -1107,19 +1119,30 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     return Object.freeze(retained);
   }
 
-  private buildFormulaVariables(): Record<string, number> {
+  private buildFormulaContext(): FormulaEvaluationContext {
+    const resourceState = this.coordinator.resourceState;
+    const snapshot = resourceState.snapshot({ mode: 'publish' });
+
+    // Build variables lookup (for backwards compatibility with variable-style formulas)
     const variables: Record<string, number> = {
       level: 1, // Maintain for backwards compatibility
     };
-
-    // Populate all current resource amounts so formulas can reference them
-    const resourceState = this.coordinator.resourceState;
-    const snapshot = resourceState.snapshot({ mode: 'publish' });
     for (let i = 0; i < snapshot.ids.length; i++) {
       const resourceId = snapshot.ids[i];
       variables[resourceId] = snapshot.amounts[i] ?? 0;
     }
 
-    return variables;
+    // Build entities lookup for entity reference formulas
+    const resourceLookup = (id: string): number | undefined => {
+      const index = resourceState.getIndex(id);
+      return index !== undefined ? (snapshot.amounts[index] ?? 0) : undefined;
+    };
+
+    return {
+      variables,
+      entities: {
+        resource: resourceLookup,
+      },
+    };
   }
 }
