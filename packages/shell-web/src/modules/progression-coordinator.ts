@@ -1004,7 +1004,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     };
   }
 
-  // TODO: Use confirmationToken for UI-generated nonce validation (per interface contract)
+  // TODO(#451): Use confirmationToken for UI-generated nonce validation (per interface contract)
   applyPrestige(layerId: string, _confirmationToken?: string): void {
     const record = this.coordinator.getPrestigeLayerRecord(layerId);
     if (!record) {
@@ -1049,7 +1049,9 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       }
     }
 
-    // Build retention targets with calculated amounts using pre-reset context
+    // Build retention targets with calculated amounts using pre-reset context.
+    // Note: Resources in retention WITHOUT an amount formula are simply skipped
+    // from resetTargets (handled above), preserving their current value.
     const retentionTargets: PrestigeRetentionTarget[] = [];
     for (const entry of retention) {
       if (entry.kind === 'resource' && entry.amount) {
