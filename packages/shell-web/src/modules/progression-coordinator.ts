@@ -1004,6 +1004,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     };
   }
 
+  // TODO: Use confirmationToken for UI-generated nonce validation (per interface contract)
   applyPrestige(layerId: string, _confirmationToken?: string): void {
     const record = this.coordinator.getPrestigeLayerRecord(layerId);
     if (!record) {
@@ -1021,8 +1022,8 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     const retention = record.definition.retention ?? [];
     const preResetFormulaContext = this.buildFormulaContext();
 
-    // Calculate reward using current resource values
-    const rewardPreview = this.computeRewardPreview(record);
+    // Calculate reward using current resource values (reuse context to avoid rebuild)
+    const rewardPreview = this.computeRewardPreview(record, preResetFormulaContext);
 
     // Collect retained resource IDs to skip during reset
     const retainedResourceIds = new Set<string>();
@@ -1085,10 +1086,13 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     }
   }
 
-  private computeRewardPreview(record: PrestigeLayerRecord): PrestigeRewardPreview {
+  private computeRewardPreview(
+    record: PrestigeLayerRecord,
+    existingContext?: FormulaEvaluationContext,
+  ): PrestigeRewardPreview {
     const rewardDefinition = record.definition.reward;
     const resourceId = rewardDefinition.resourceId;
-    const context = this.buildFormulaContext();
+    const context = existingContext ?? this.buildFormulaContext();
 
     // Evaluate the base reward formula using current resource amounts
     const baseRewardAmount = evaluateNumericFormula(
