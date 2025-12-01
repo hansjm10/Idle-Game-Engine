@@ -130,6 +130,7 @@ export interface ProgressionPrestigeLayerState {
     readonly id: string;
     readonly displayName?: string;
     readonly summary?: string;
+    readonly isUnlocked: boolean;
     readonly isVisible: boolean;
     readonly unlockHint?: string;
 }

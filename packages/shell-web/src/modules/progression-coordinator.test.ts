@@ -2079,3 +2079,234 @@ describe('Integration: prestige telemetry', () => {
     );
   });
 });
+
+describe('Integration: prestige layer status transitions', () => {
+  it('prestige layer state includes isUnlocked property', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 500 },
+      },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Initially locked (energy = 100, requirement = 500)
+    coordinator.updateForStep(0);
+    const layerState = coordinator.state.prestigeLayers?.find(
+      (l) => l.id === 'prestige.ascension',
+    );
+    expect(layerState).toBeDefined();
+    expect(layerState!.isUnlocked).toBe(false);
+    expect(layerState!.isVisible).toBe(false);
+
+    // Add enough energy to unlock
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.updateForStep(1);
+
+    const updatedLayerState = coordinator.state.prestigeLayers?.find(
+      (l) => l.id === 'prestige.ascension',
+    );
+    expect(updatedLayerState!.isUnlocked).toBe(true);
+    expect(updatedLayerState!.isVisible).toBe(true);
+  });
+
+  it('status is locked when prestige layer unlock condition is not met', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 500 },
+      },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote).toBeDefined();
+    expect(quote!.status).toBe('locked');
+  });
+
+  it('status is available when unlocked but never prestiged', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote).toBeDefined();
+    expect(quote!.status).toBe('available');
+  });
+
+  it('status is completed after applying prestige (with prestige count resource)', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    // Prestige count resource tracks number of times prestige has been applied
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Before prestige: status should be 'available'
+    let quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('available');
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.updateForStep(1);
+
+    // After prestige: status should be 'completed' (prestige count >= 1)
+    quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('completed');
+  });
+
+  it('status remains available after prestige when prestige count resource does not exist', () => {
+    // Without a prestige count resource, we cannot track completion status
+    // Status remains 'available' since we don't know if it's been used
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Apply prestige (no prestige count resource to track)
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.updateForStep(1);
+
+    // Status should still be 'available' since no count resource exists
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('available');
+  });
+});

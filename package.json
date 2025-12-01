@@ -33,5 +33,8 @@
     "node": ">=20.10.0",
     "pnpm": ">=8.0.0"
   },
-  "packageManager": "pnpm@10.18.1"
+  "packageManager": "pnpm@10.18.1",
+  "dependencies": {
+    "pnpm": "^10.24.0"
+  }
 }

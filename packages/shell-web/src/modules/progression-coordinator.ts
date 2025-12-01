@@ -432,7 +432,8 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         record.definition.unlockCondition,
         this.conditionContext,
       );
-      record.state.isVisible = isUnlocked;
+      record.state.isUnlocked = isUnlocked;
+      record.state.isVisible = isUnlocked; // Default: visible when unlocked
       record.state.unlockHint = isUnlocked
         ? undefined
         : describeCondition(record.definition.unlockCondition);
@@ -967,6 +968,7 @@ function createPrestigeLayerRecord(
         id: layer.id,
         displayName: getDisplayName(layer.name, layer.id),
         summary: getDisplayName(layer.summary, ''),
+        isUnlocked: false,
         isVisible: false,
         unlockHint: undefined,
       } as MutablePrestigeLayerState);
@@ -974,6 +976,7 @@ function createPrestigeLayerRecord(
   state.id = layer.id;
   state.displayName = getDisplayName(layer.name, layer.id);
   state.summary = getDisplayName(layer.summary, '');
+  state.isUnlocked = Boolean(state.isUnlocked);
   state.isVisible = Boolean(state.isVisible);
 
   return {
@@ -991,8 +994,19 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       return undefined;
     }
 
-    const isUnlocked = record.state.isVisible;
-    const status: PrestigeQuote['status'] = isUnlocked ? 'available' : 'locked';
+    const isUnlocked = record.state.isUnlocked;
+
+    // Determine status: locked -> available -> completed
+    // 'completed' indicates "has prestiged at least once" but remains available for repeating
+    let status: PrestigeQuote['status'];
+    if (!isUnlocked) {
+      status = 'locked';
+    } else {
+      // Check if layer has been used at least once via prestige count resource
+      const prestigeCountId = `${layerId}-prestige-count`;
+      const prestigeCount = this.coordinator.getResourceAmount(prestigeCountId);
+      status = prestigeCount >= 1 ? 'completed' : 'available';
+    }
 
     const reward = this.computeRewardPreview(record);
 
@@ -1005,14 +1019,18 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     };
   }
 
-  // TODO(#451): Use confirmationToken for UI-generated nonce validation (per interface contract)
+  // TODO(#451): Validate confirmationToken for replay attack prevention.
+  // Current behavior: Token is logged for debugging/auditing but not validated.
+  // The confirmationToken is intended for UI-generated nonce validation to ensure
+  // the prestige operation matches user intent (e.g., preventing double-clicks).
+  // Full validation deferred to #451 to keep this PR focused on core wiring.
   applyPrestige(layerId: string, confirmationToken?: string): void {
     const record = this.coordinator.getPrestigeLayerRecord(layerId);
     if (!record) {
       throw new Error(`Prestige layer "${layerId}" not found`);
     }
 
-    if (!record.state.isVisible) {
+    if (!record.state.isUnlocked) {
       throw new Error(`Prestige layer "${layerId}" is locked`);
     }
 
