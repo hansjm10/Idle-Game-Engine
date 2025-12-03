@@ -1002,6 +1002,9 @@ function createPrestigeLayerRecord(
 }
 
 class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
+  private readonly usedTokens = new Map<string, number>();
+  private static readonly TOKEN_EXPIRATION_MS = 60_000;
+
   constructor(private readonly coordinator: ProgressionCoordinatorImpl) {}
 
   getPrestigeQuote(layerId: string): PrestigeQuote | undefined {
@@ -1035,12 +1038,29 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     };
   }
 
-  // TODO(#451): Validate confirmationToken for replay attack prevention.
-  // Current behavior: Token is logged for debugging/auditing but not validated.
-  // The confirmationToken is intended for UI-generated nonce validation to ensure
-  // the prestige operation matches user intent (e.g., preventing double-clicks).
-  // Full validation deferred to #451 to keep this PR focused on core wiring.
   applyPrestige(layerId: string, confirmationToken?: string): void {
+    // Require confirmation token for all prestige operations
+    if (!confirmationToken) {
+      throw new Error('Prestige operation requires a confirmation token');
+    }
+
+    // Clean up expired tokens first
+    const now = Date.now();
+    for (const [storedToken, timestamp] of this.usedTokens) {
+      if (now - timestamp > ContentPrestigeEvaluator.TOKEN_EXPIRATION_MS) {
+        this.usedTokens.delete(storedToken);
+      }
+    }
+
+    // Check for duplicate token
+    if (this.usedTokens.has(confirmationToken)) {
+      telemetry.recordWarning('PrestigeResetDuplicateToken', { layerId });
+      throw new Error('Confirmation token has already been used');
+    }
+
+    // Store token with current timestamp
+    this.usedTokens.set(confirmationToken, now);
+
     const record = this.coordinator.getPrestigeLayerRecord(layerId);
     if (!record) {
       throw new Error(`Prestige layer "${layerId}" not found`);
@@ -1051,12 +1071,10 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     }
 
     // Log token receipt for debugging (don't log token value to avoid leaking secrets)
-    if (confirmationToken) {
-      telemetry.recordProgress('PrestigeResetTokenReceived', {
-        layerId,
-        tokenLength: confirmationToken.length,
-      });
-    }
+    telemetry.recordProgress('PrestigeResetTokenReceived', {
+      layerId,
+      tokenLength: confirmationToken.length,
+    });
 
     const resourceState = this.coordinator.resourceState;
 

@@ -1686,7 +1686,7 @@ describe('Integration: prestige system applyPrestige', () => {
     expect(quote!.status).toBe('available');
 
     // Apply prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
 
     // Key assertion: energy should be 100 (10% of 1000), NOT 1 (10% of startAmount 10)
     const postPrestigeEnergy = coordinator.resourceState.getAmount(energyIndex);
@@ -1764,7 +1764,7 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.updateForStep(0);
 
     // Apply prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
 
     // Energy should be (1000 + 500) * 0.05 = 75
     const postPrestigeEnergy = coordinator.resourceState.getAmount(energyIndex);
@@ -1828,7 +1828,7 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.updateForStep(0);
 
     // Apply prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
 
     // Prestige flux should be 1000 * 0.01 = 10
     const postPrestigeFlux = coordinator.resourceState.getAmount(prestigeFluxIndex);
@@ -1893,7 +1893,7 @@ describe('Integration: prestige system applyPrestige', () => {
 
     // Attempting to apply prestige should throw
     expect(() => {
-      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
     }).toThrow('locked');
   });
 
@@ -1930,7 +1930,7 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.updateForStep(0);
 
     expect(() => {
-      coordinator.prestigeEvaluator!.applyPrestige('prestige.nonexistent');
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.nonexistent', 'test-token');
     }).toThrow('not found');
   });
 
@@ -1984,7 +1984,7 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.updateForStep(0);
 
     // Apply prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
 
     // Energy should reset to startAmount (50)
     expect(coordinator.resourceState.getAmount(energyIndex)).toBe(50);
@@ -2043,7 +2043,7 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.updateForStep(0);
 
     // Apply prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
 
     // Energy should be unchanged because it's in retention without a formula
     expect(coordinator.resourceState.getAmount(energyIndex)).toBe(1000);
@@ -2203,7 +2203,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
     // Execute PRESTIGE_RESET command
     dispatcher.execute({
       type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
-      payload: { layerId: 'prestige.ascension' },
+      payload: { layerId: 'prestige.ascension', confirmationToken: 'test-token' },
       priority: CommandPriority.PLAYER,
       timestamp: Date.now(),
       step: 1,
@@ -2284,7 +2284,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
     // Execute PRESTIGE_RESET command on locked layer
     dispatcher.execute({
       type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
-      payload: { layerId: 'prestige.ascension' },
+      payload: { layerId: 'prestige.ascension', confirmationToken: 'test-token' },
       priority: CommandPriority.PLAYER,
       timestamp: Date.now(),
       step: 1,
@@ -2358,7 +2358,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
 
     dispatcher.execute({
       type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
-      payload: { layerId: 'prestige.ascension' },
+      payload: { layerId: 'prestige.ascension', confirmationToken: 'test-token-1' },
       priority: CommandPriority.PLAYER,
       timestamp: Date.now(),
       step: 1,
@@ -2377,7 +2377,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
 
     dispatcher.execute({
       type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
-      payload: { layerId: 'prestige.ascension' },
+      payload: { layerId: 'prestige.ascension', confirmationToken: 'test-token-2' },
       priority: CommandPriority.PLAYER,
       timestamp: Date.now(),
       step: 2,
@@ -2654,7 +2654,7 @@ describe('Integration: prestige layer status transitions', () => {
     expect(quote!.status).toBe('available');
 
     // Apply prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
     coordinator.updateForStep(1);
 
     // After prestige: status should be 'completed' (prestige count >= 1)
@@ -2748,7 +2748,7 @@ describe('Integration: prestige layer status transitions', () => {
     // First prestige
     coordinator.resourceState.addAmount(energyIndex, 100);
     coordinator.updateForStep(0);
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token-1');
 
     // Count should be 1 after first prestige
     expect(coordinator.resourceState.getAmount(countIndex)).toBe(1);
@@ -2756,7 +2756,7 @@ describe('Integration: prestige layer status transitions', () => {
     // Second prestige
     coordinator.resourceState.addAmount(energyIndex, 100);
     coordinator.updateForStep(1);
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token-2');
 
     // Key assertion: count should be 2, NOT 1
     // If the counter is being reset before increment, this would fail
@@ -2765,7 +2765,7 @@ describe('Integration: prestige layer status transitions', () => {
     // Third prestige for good measure
     coordinator.resourceState.addAmount(energyIndex, 100);
     coordinator.updateForStep(2);
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token-3');
 
     expect(coordinator.resourceState.getAmount(countIndex)).toBe(3);
   });
@@ -2828,7 +2828,7 @@ describe('Integration: prestige layer status transitions', () => {
     expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(0);
 
     // Apply bonus prestige
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.bonus');
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.bonus', 'token-bonus');
 
     // Reward should be granted
     expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(50);
@@ -2836,5 +2836,197 @@ describe('Integration: prestige layer status transitions', () => {
     // All other resources should remain unchanged (empty resetTargets = no resets)
     expect(coordinator.resourceState.getAmount(energyIndex)).toBe(500);
     expect(coordinator.resourceState.getAmount(crystalIndex)).toBe(200);
+  });
+});
+
+describe('Integration: prestige confirmationToken validation', () => {
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('rejects prestige when no confirmation token provided', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Attempt prestige without a token - should throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    }).toThrow('Prestige operation requires a confirmation token');
+  });
+
+  it('rejects prestige with duplicate confirmation token', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // First prestige with a token - should succeed
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'unique-token-123');
+
+    // Second prestige with the same token - should throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'unique-token-123');
+    }).toThrow('Confirmation token has already been used');
+
+    // Verify telemetry warning was emitted
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetDuplicateToken',
+      expect.objectContaining({ layerId: 'prestige.ascension' }),
+    );
+  });
+
+  it('cleans up expired tokens from storage', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100, // Start with enough to prestige multiple times
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Mock Date.now to control time
+    let currentTime = 1000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    try {
+      // First prestige at t=1000000
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'token-to-expire');
+
+      // Try to use same token again at t=1000000 - should fail (duplicate)
+      expect(() => {
+        coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'token-to-expire');
+      }).toThrow('Confirmation token has already been used');
+
+      // Advance time by 61 seconds (past the 60 second expiration)
+      currentTime += 61_000;
+
+      // Restore enough energy to prestige again
+      const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+      coordinator.resourceState.addAmount(energyIndex, 100);
+      coordinator.updateForStep(1);
+
+      // Use a new token to trigger cleanup of expired tokens
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'trigger-cleanup');
+
+      // Now the old token should have been cleaned up, so using it again should work
+      // (it's no longer in the usedTokens map)
+      coordinator.resourceState.addAmount(energyIndex, 100);
+      coordinator.updateForStep(2);
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'token-to-expire');
+
+      // If we got here without throwing, the test passes
+      // The token was successfully reused after expiration
+    } finally {
+      vi.spyOn(Date, 'now').mockRestore();
+    }
   });
 });
