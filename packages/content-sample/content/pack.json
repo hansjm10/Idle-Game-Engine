@@ -126,6 +126,21 @@
         "resetRetention": { "kind": "constant", "value": 1 }
       },
       "order": 5
+    },
+    {
+      "id": "sample-pack.ascension-alpha-prestige-count",
+      "name": {
+        "default": "Ascension Count",
+        "variants": {}
+      },
+      "category": "misc",
+      "economyClassification": "soft",
+      "tier": 3,
+      "startAmount": 0,
+      "capacity": null,
+      "visible": false,
+      "unlocked": true,
+      "order": 6
     }
   ],
   "generators": [

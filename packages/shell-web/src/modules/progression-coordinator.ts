@@ -1,12 +1,20 @@
 import {
   createResourceState,
   reconcileSaveAgainstDefinitions,
+  applyPrestigeReset,
+  telemetry,
   type GeneratorPurchaseEvaluator,
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
   type GeneratorRateView,
+  type PrestigeQuote,
+  type PrestigeResetTarget,
+  type PrestigeRetentionTarget,
+  type PrestigeRewardPreview,
+  type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
   type ProgressionGeneratorState,
+  type ProgressionPrestigeLayerState,
   type ProgressionResourceState,
   type ProgressionUpgradeState,
   type ResourceDefinition,
@@ -22,11 +30,15 @@ import type {
   Condition,
   NormalizedContentPack,
   NormalizedGenerator,
+  NormalizedPrestigeLayer,
   NormalizedResource,
   NormalizedUpgrade,
   NumericFormula,
 } from '@idle-engine/content-schema';
-import { evaluateNumericFormula } from '@idle-engine/content-schema';
+import {
+  evaluateNumericFormula,
+  type FormulaEvaluationContext,
+} from '@idle-engine/content-schema';
 
 import {
   combineConditions,
@@ -52,6 +64,13 @@ type UpgradeRecord = {
   readonly definition: NormalizedUpgrade;
   readonly state: MutableUpgradeState;
   purchases: number;
+};
+
+type MutablePrestigeLayerState = Mutable<ProgressionPrestigeLayerState>;
+
+type PrestigeLayerRecord = {
+  readonly definition: NormalizedPrestigeLayer;
+  readonly state: MutablePrestigeLayerState;
 };
 
 /**
@@ -102,6 +121,12 @@ export interface ProgressionCoordinator {
   readonly upgradeEvaluator?: UpgradePurchaseEvaluator;
 
   /**
+   * Evaluator for the prestige system, providing quotes and applying prestige.
+   * Undefined if the content pack contains no prestige layers.
+   */
+  readonly prestigeEvaluator?: PrestigeSystemEvaluator;
+
+  /**
    * Hydrates resource state from serialized save data
    *
    * @param serialized - The serialized resource state from a save file, or undefined to skip hydration
@@ -132,6 +157,15 @@ export interface ProgressionCoordinator {
    * @param upgradeId - Upgrade identifier
    */
   incrementUpgradePurchases(upgradeId: string): void;
+
+  /**
+   * Retrieves the resource definition for a given resource ID.
+   * Used by prestige system to access startAmount for resource resets.
+   *
+   * @param resourceId - Resource identifier
+   * @returns The resource definition, or undefined if not found
+   */
+  getResourceDefinition(resourceId: string): ResourceDefinition | undefined;
 }
 
 /**
@@ -197,12 +231,15 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   public readonly resourceState: ResourceState;
   public readonly generatorEvaluator: GeneratorPurchaseEvaluator;
   public readonly upgradeEvaluator?: UpgradePurchaseEvaluator;
+  public readonly prestigeEvaluator?: PrestigeSystemEvaluator;
 
   private readonly resourceDefinitions: readonly ResourceDefinition[];
   private readonly generators: Map<string, GeneratorRecord>;
   private readonly generatorList: GeneratorRecord[];
   private readonly upgrades: Map<string, UpgradeRecord>;
   private readonly upgradeList: UpgradeRecord[];
+  private readonly prestigeLayers: Map<string, PrestigeLayerRecord>;
+  private readonly prestigeLayerList: PrestigeLayerRecord[];
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
 
@@ -268,6 +305,32 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       return record;
     });
 
+    const prestigeLayerDefinitions = options.content.prestigeLayers ?? [];
+    this.prestigeLayers = new Map();
+    const initialPrestigeLayers = new Map(
+      (initialState?.prestigeLayers ?? []).map((layer) => [layer.id, layer]),
+    );
+    this.prestigeLayerList = prestigeLayerDefinitions.map((layer: NormalizedPrestigeLayer) => {
+      const record = createPrestigeLayerRecord(
+        layer,
+        initialPrestigeLayers.get(layer.id),
+      );
+      this.prestigeLayers.set(layer.id, record);
+      return record;
+    });
+
+    // Validate that each prestige layer has a corresponding prestige count resource
+    for (const layer of prestigeLayerDefinitions) {
+      const prestigeCountId = `${layer.id}-prestige-count`;
+      const index = this.resourceState.getIndex(prestigeCountId);
+      if (index === undefined) {
+        throw new Error(
+          `Prestige layer "${layer.id}" requires a resource named "${prestigeCountId}" to track prestige count. ` +
+          `Add this resource to your content pack's resources array.`,
+        );
+      }
+    }
+
     this.conditionContext = {
       getResourceAmount: (resourceId) => {
         const index = this.resourceState.getIndex(resourceId);
@@ -283,12 +346,20 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         const record = this.upgrades.get(upgradeId);
         return record?.purchases ?? 0;
       },
+      hasPrestigeLayerUnlocked: (prestigeLayerId) => {
+        const record = this.prestigeLayers.get(prestigeLayerId);
+        return record?.state.isUnlocked ?? false;
+      },
     };
 
     this.generatorEvaluator = new ContentGeneratorEvaluator(this);
     this.upgradeEvaluator =
       this.upgradeList.length > 0
         ? new ContentUpgradeEvaluator(this)
+        : undefined;
+    this.prestigeEvaluator =
+      this.prestigeLayerList.length > 0
+        ? new ContentPrestigeEvaluator(this)
         : undefined;
 
     const state =
@@ -300,6 +371,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     state.upgradePurchases =
       this.upgradeList.length > 0 ? this.upgradeEvaluator : undefined;
     state.upgrades = this.upgradeList.map((record) => record.state);
+    state.prestigeSystem =
+      this.prestigeLayerList.length > 0 ? this.prestigeEvaluator : undefined;
+    state.prestigeLayers = this.prestigeLayerList.map((record) => record.state);
 
     this.state = state;
 
@@ -368,6 +442,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       record.state.costs = this.computeUpgradeCosts(record);
       record.state.purchases = record.purchases;
     }
+
+    for (const record of this.prestigeLayerList) {
+      const isUnlocked = evaluateCondition(
+        record.definition.unlockCondition,
+        this.conditionContext,
+      );
+      record.state.isUnlocked = isUnlocked;
+      record.state.isVisible = isUnlocked; // Default: visible when unlocked
+      record.state.unlockHint = isUnlocked
+        ? undefined
+        : describeCondition(record.definition.unlockCondition);
+    }
   }
 
   getResourceAmount(resourceId: string): number {
@@ -380,6 +466,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 
   getUpgradeRecord(upgradeId: string): UpgradeRecord | undefined {
     return this.upgrades.get(upgradeId);
+  }
+
+  getPrestigeLayerRecord(layerId: string): PrestigeLayerRecord | undefined {
+    return this.prestigeLayers.get(layerId);
   }
 
   incrementGeneratorOwned(generatorId: string, count: number): void {
@@ -411,6 +501,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       record.purchases = nextPurchases;
     }
     record.state.purchases = record.purchases;
+  }
+
+  getResourceDefinition(resourceId: string): ResourceDefinition | undefined {
+    return this.resourceDefinitions.find((r) => r.id === resourceId);
   }
 
   computeGeneratorCost(
@@ -878,4 +972,238 @@ function getDisplayName(
     return name;
   }
   return name?.default ?? fallback;
+}
+
+function createPrestigeLayerRecord(
+  layer: NormalizedPrestigeLayer,
+  initial?: ProgressionPrestigeLayerState,
+): PrestigeLayerRecord {
+  const state: MutablePrestigeLayerState = initial
+    ? (initial as MutablePrestigeLayerState)
+    : ({
+        id: layer.id,
+        displayName: getDisplayName(layer.name, layer.id),
+        summary: getDisplayName(layer.summary, ''),
+        isUnlocked: false,
+        isVisible: false,
+        unlockHint: undefined,
+      } as MutablePrestigeLayerState);
+
+  state.id = layer.id;
+  state.displayName = getDisplayName(layer.name, layer.id);
+  state.summary = getDisplayName(layer.summary, '');
+  state.isUnlocked = Boolean(state.isUnlocked);
+  state.isVisible = Boolean(state.isVisible);
+
+  return {
+    definition: layer,
+    state,
+  };
+}
+
+class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
+  constructor(private readonly coordinator: ProgressionCoordinatorImpl) {}
+
+  getPrestigeQuote(layerId: string): PrestigeQuote | undefined {
+    const record = this.coordinator.getPrestigeLayerRecord(layerId);
+    if (!record) {
+      return undefined;
+    }
+
+    const isUnlocked = record.state.isUnlocked;
+
+    // Determine status: locked -> available -> completed
+    // 'completed' indicates "has prestiged at least once" but remains available for repeating
+    let status: PrestigeQuote['status'];
+    if (!isUnlocked) {
+      status = 'locked';
+    } else {
+      // Check if layer has been used at least once via prestige count resource
+      const prestigeCountId = `${layerId}-prestige-count`;
+      const prestigeCount = this.coordinator.getResourceAmount(prestigeCountId);
+      status = prestigeCount >= 1 ? 'completed' : 'available';
+    }
+
+    const reward = this.computeRewardPreview(record);
+
+    return {
+      layerId,
+      status,
+      reward,
+      resetTargets: record.definition.resetTargets,
+      retainedTargets: this.computeRetainedTargets(record),
+    };
+  }
+
+  // TODO(#451): Validate confirmationToken for replay attack prevention.
+  // Current behavior: Token is logged for debugging/auditing but not validated.
+  // The confirmationToken is intended for UI-generated nonce validation to ensure
+  // the prestige operation matches user intent (e.g., preventing double-clicks).
+  // Full validation deferred to #451 to keep this PR focused on core wiring.
+  applyPrestige(layerId: string, confirmationToken?: string): void {
+    const record = this.coordinator.getPrestigeLayerRecord(layerId);
+    if (!record) {
+      throw new Error(`Prestige layer "${layerId}" not found`);
+    }
+
+    if (!record.state.isUnlocked) {
+      throw new Error(`Prestige layer "${layerId}" is locked`);
+    }
+
+    // Log token receipt for debugging (don't log token value to avoid leaking secrets)
+    if (confirmationToken) {
+      telemetry.recordProgress('PrestigeResetTokenReceived', {
+        layerId,
+        tokenLength: confirmationToken.length,
+      });
+    }
+
+    const resourceState = this.coordinator.resourceState;
+
+    // CRITICAL: Capture pre-reset formula context BEFORE any mutations.
+    // Retention formulas must see original resource values, not post-reset values.
+    const retention = record.definition.retention ?? [];
+    const preResetFormulaContext = this.buildFormulaContext();
+
+    // Calculate reward using current resource values (reuse context to avoid rebuild)
+    const rewardPreview = this.computeRewardPreview(record, preResetFormulaContext);
+
+    // Collect retained resource IDs to skip during reset
+    const retainedResourceIds = new Set<string>();
+    for (const entry of retention) {
+      if (entry.kind === 'resource') {
+        retainedResourceIds.add(entry.resourceId);
+      }
+    }
+
+    // Always protect the prestige counter from reset (convention: {layerId}-prestige-count)
+    const prestigeCountId = `${layerId}-prestige-count`;
+    retainedResourceIds.add(prestigeCountId);
+
+    // Build reset targets with calculated startAmounts (skip retained resources)
+    const resetTargets: PrestigeResetTarget[] = [];
+    for (const resetResourceId of record.definition.resetTargets) {
+      if (retainedResourceIds.has(resetResourceId)) {
+        continue; // Skip retained resources
+      }
+
+      const definition = this.coordinator.getResourceDefinition(resetResourceId);
+      if (definition) {
+        resetTargets.push({
+          resourceId: resetResourceId,
+          resetToAmount: definition.startAmount ?? 0,
+        });
+      }
+    }
+
+    // Build retention targets with calculated amounts using pre-reset context.
+    // Note: Resources in retention WITHOUT an amount formula are simply skipped
+    // from resetTargets (handled above), preserving their current value.
+    const retentionTargets: PrestigeRetentionTarget[] = [];
+    for (const entry of retention) {
+      if (entry.kind === 'resource' && entry.amount) {
+        const retainedAmount = evaluateNumericFormula(
+          entry.amount,
+          preResetFormulaContext,
+        );
+        retentionTargets.push({
+          resourceId: entry.resourceId,
+          retainedAmount, // applyPrestigeReset handles normalization
+        });
+      }
+      // Upgrades in retention: no action needed, purchase status preserved
+    }
+
+    // Delegate all mutations to core
+    applyPrestigeReset({
+      layerId,
+      resourceState,
+      reward: {
+        resourceId: rewardPreview.resourceId,
+        amount: rewardPreview.amount,
+      },
+      resetTargets,
+      retentionTargets,
+    });
+
+    // Increment prestige counter if resource exists
+    const countIndex = resourceState.getIndex(prestigeCountId);
+    if (countIndex !== undefined) {
+      resourceState.addAmount(countIndex, 1);
+    }
+  }
+
+  private computeRewardPreview(
+    record: PrestigeLayerRecord,
+    existingContext?: FormulaEvaluationContext,
+  ): PrestigeRewardPreview {
+    const rewardDefinition = record.definition.reward;
+    const resourceId = rewardDefinition.resourceId;
+    const context = existingContext ?? this.buildFormulaContext();
+
+    // Evaluate the base reward formula using current resource amounts
+    const baseRewardAmount = evaluateNumericFormula(
+      rewardDefinition.baseReward,
+      context,
+    );
+
+    // Apply multiplier curve if present
+    let amount = Number.isFinite(baseRewardAmount) ? baseRewardAmount : 0;
+    if (rewardDefinition.multiplierCurve) {
+      const multiplier = evaluateNumericFormula(
+        rewardDefinition.multiplierCurve,
+        context,
+      );
+      if (Number.isFinite(multiplier)) {
+        amount *= multiplier;
+      }
+    }
+
+    return {
+      resourceId,
+      amount: Math.max(0, Math.floor(amount)),
+    };
+  }
+
+  private computeRetainedTargets(record: PrestigeLayerRecord): readonly string[] {
+    const retention = record.definition.retention ?? [];
+    const retained: string[] = [];
+
+    for (const entry of retention) {
+      if (entry.kind === 'resource') {
+        retained.push(entry.resourceId);
+      } else if (entry.kind === 'upgrade') {
+        retained.push(entry.upgradeId);
+      }
+    }
+
+    return Object.freeze(retained);
+  }
+
+  private buildFormulaContext(): FormulaEvaluationContext {
+    const resourceState = this.coordinator.resourceState;
+    const snapshot = resourceState.snapshot({ mode: 'publish' });
+
+    // Build variables lookup (for backwards compatibility with variable-style formulas)
+    const variables: Record<string, number> = {
+      level: 1, // Maintain for backwards compatibility
+    };
+    for (let i = 0; i < snapshot.ids.length; i++) {
+      const resourceId = snapshot.ids[i];
+      variables[resourceId] = snapshot.amounts[i] ?? 0;
+    }
+
+    // Build entities lookup for entity reference formulas
+    const resourceLookup = (id: string): number | undefined => {
+      const index = resourceState.getIndex(id);
+      return index !== undefined ? (snapshot.amounts[index] ?? 0) : undefined;
+    };
+
+    return {
+      variables,
+      entities: {
+        resource: resourceLookup,
+      },
+    };
+  }
 }

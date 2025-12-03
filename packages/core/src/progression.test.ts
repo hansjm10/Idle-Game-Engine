@@ -358,6 +358,7 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.ascension-alpha',
           displayName: 'Ascension Alpha',
+          isUnlocked: false,
           isVisible: true,
         },
       ];
@@ -404,6 +405,7 @@ describe('buildProgressionSnapshot', () => {
           id: 'sample.ascension-alpha',
           displayName: 'Ascension Alpha',
           summary: 'Reset for prestige currency',
+          isUnlocked: true,
           isVisible: true,
           unlockHint: 'Reach deeper into the machine...',
         },
@@ -451,6 +453,7 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.ascension-alpha',
           displayName: 'Ascension Alpha',
+          isUnlocked: false,
           isVisible: true,
           unlockHint: 'Collect 1000 energy to unlock',
         },
@@ -487,6 +490,7 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.ascension-alpha',
           displayName: 'Ascension Alpha',
+          isUnlocked: true,
           isVisible: true,
         },
       ];
@@ -525,6 +529,7 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.ascension-alpha',
           displayName: 'Ascension Alpha',
+          isUnlocked: true,
           isVisible: true,
         },
       ];
@@ -549,11 +554,13 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.ascension-alpha',
           displayName: 'Ascension Alpha',
+          isUnlocked: true,
           isVisible: true,
         },
         {
           id: 'sample.ascension-beta',
           displayName: 'Ascension Beta',
+          isUnlocked: false,
           isVisible: false,
         },
       ];
@@ -584,6 +591,7 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.unknown-layer',
           displayName: 'Unknown Layer',
+          isUnlocked: false,
           isVisible: true,
         },
       ];
@@ -612,6 +620,7 @@ describe('buildProgressionSnapshot', () => {
         {
           id: 'sample.error-layer',
           displayName: 'Error Layer',
+          isUnlocked: false,
           isVisible: true,
         },
       ];
@@ -634,6 +643,7 @@ describe('buildProgressionSnapshot', () => {
       const prestigeLayers: ProgressionPrestigeLayerState[] = [
         {
           id: 'sample.no-display-name',
+          isUnlocked: false,
           isVisible: true,
         },
       ];

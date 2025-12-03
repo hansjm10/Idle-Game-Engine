@@ -175,6 +175,11 @@ export function initializeRuntimeWorker(
           upgradePurchases: progressionCoordinator.upgradeEvaluator,
         }
       : {}),
+    ...(progressionCoordinator.prestigeEvaluator
+      ? {
+          prestigeSystem: progressionCoordinator.prestigeEvaluator,
+        }
+      : {}),
   };
   registerResourceCommandHandlers(commandHandlerOptions);
 

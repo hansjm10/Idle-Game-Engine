@@ -1,11 +1,13 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
-import type { SerializedResourceState } from '@idle-engine/core';
-import { describe, expect, it } from 'vitest';
+import type { SerializedResourceState, TelemetryFacade } from '@idle-engine/core';
+import { resetTelemetry, setTelemetry } from '@idle-engine/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createProgressionCoordinator } from './progression-coordinator.js';
 import {
   createContentPack,
   createGeneratorDefinition,
+  createPrestigeLayerDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
@@ -1608,5 +1610,1231 @@ describe('Integration: enhanced error messages', () => {
 
     expect(cost).toBeDefined();
     expect(errors).toHaveLength(0);
+  });
+});
+
+describe('Integration: prestige system applyPrestige', () => {
+  it('retention formulas see pre-reset resource values', () => {
+    // This test verifies the fix for the retention formula timing bug.
+    // Retention formulas like "energy * 0.1" should see the PRE-reset value of energy,
+    // not the post-reset value (which would be startAmount, typically 0).
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0, // Will be reset to this value
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    // Retention formula: energy * 0.1 (retain 10% of energy)
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      retention: [
+        {
+          kind: 'resource',
+          resourceId: 'resource.energy',
+          // Formula: energy * 0.1 (10% of energy)
+          amount: {
+            kind: 'expression',
+            expression: {
+              kind: 'binary',
+              op: 'mul',
+              left: { kind: 'ref', target: { type: 'resource', id: 'resource.energy' } },
+              right: { kind: 'literal', value: 0.1 },
+            },
+          },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: Give player 1000 energy
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 1000);
+    coordinator.updateForStep(0);
+
+    // Verify pre-prestige state
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(1000);
+
+    // Verify prestige evaluator exists and layer is available
+    expect(coordinator.prestigeEvaluator).toBeDefined();
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote).toBeDefined();
+    expect(quote!.status).toBe('available');
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Key assertion: energy should be 100 (10% of 1000), NOT 1 (10% of startAmount 10)
+    const postPrestigeEnergy = coordinator.resourceState.getAmount(energyIndex);
+    expect(postPrestigeEnergy).toBe(100);
+  });
+
+  it('retention formulas can reference multiple resources', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const crystal = createResourceDefinition('resource.crystal', {
+      name: 'Crystal',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    // Retention formula: (energy + crystal) * 0.05 (5% of combined resources)
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy', 'resource.crystal'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      retention: [
+        {
+          kind: 'resource',
+          resourceId: 'resource.energy',
+          // Formula: (energy + crystal) * 0.05
+          amount: {
+            kind: 'expression',
+            expression: {
+              kind: 'binary',
+              op: 'mul',
+              left: {
+                kind: 'binary',
+                op: 'add',
+                left: { kind: 'ref', target: { type: 'resource', id: 'resource.energy' } },
+                right: { kind: 'ref', target: { type: 'resource', id: 'resource.crystal' } },
+              },
+              right: { kind: 'literal', value: 0.05 },
+            },
+          },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, crystal, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: energy = 1000, crystal = 500
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const crystalIndex = coordinator.resourceState.requireIndex('resource.crystal');
+    coordinator.resourceState.addAmount(energyIndex, 1000);
+    coordinator.resourceState.addAmount(crystalIndex, 500);
+    coordinator.updateForStep(0);
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Energy should be (1000 + 500) * 0.05 = 75
+    const postPrestigeEnergy = coordinator.resourceState.getAmount(energyIndex);
+    expect(postPrestigeEnergy).toBe(75);
+
+    // Crystal should be reset to startAmount (0) since it's not in retention
+    const postPrestigeCrystal = coordinator.resourceState.getAmount(crystalIndex);
+    expect(postPrestigeCrystal).toBe(0);
+  });
+
+  it('grants prestige reward before evaluating retention formulas', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        // Reward: energy * 0.01 (1% of energy as prestige flux)
+        baseReward: {
+          kind: 'expression',
+          expression: {
+            kind: 'binary',
+            op: 'mul',
+            left: { kind: 'ref', target: { type: 'resource', id: 'resource.energy' } },
+            right: { kind: 'literal', value: 0.01 },
+          },
+        },
+      },
+      retention: [],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: energy = 1000
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const prestigeFluxIndex = coordinator.resourceState.requireIndex('resource.prestige-flux');
+    coordinator.resourceState.addAmount(energyIndex, 1000);
+    coordinator.updateForStep(0);
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Prestige flux should be 1000 * 0.01 = 10
+    const postPrestigeFlux = coordinator.resourceState.getAmount(prestigeFluxIndex);
+    expect(postPrestigeFlux).toBe(10);
+
+    // Energy should be reset to startAmount (0)
+    const postPrestigeEnergy = coordinator.resourceState.getAmount(energyIndex);
+    expect(postPrestigeEnergy).toBe(0);
+  });
+
+  it('throws error when prestige layer is locked', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      // Requires 1000 energy to unlock
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 1000 },
+      },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      retention: [],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Only add 500 energy - not enough to unlock
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.updateForStep(0);
+
+    // Verify layer is locked
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('locked');
+
+    // Attempting to apply prestige should throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    }).toThrow('locked');
+  });
+
+  it('throws error when prestige layer not found', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.energy',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.nonexistent');
+    }).toThrow('not found');
+  });
+
+  it('resets non-retained resources to startAmount', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 50, // Custom startAmount
+    });
+
+    const crystal = createResourceDefinition('resource.crystal', {
+      name: 'Crystal',
+      startAmount: 25,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy', 'resource.crystal'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 10 },
+      },
+      retention: [], // No retention - all reset targets should reset
+    });
+
+    const pack = createContentPack({
+      resources: [energy, crystal, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: energy = 1000, crystal = 500
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const crystalIndex = coordinator.resourceState.requireIndex('resource.crystal');
+    coordinator.resourceState.addAmount(energyIndex, 1000);
+    coordinator.resourceState.addAmount(crystalIndex, 500);
+    coordinator.updateForStep(0);
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Energy should reset to startAmount (50)
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(50);
+
+    // Crystal should reset to startAmount (25)
+    expect(coordinator.resourceState.getAmount(crystalIndex)).toBe(25);
+  });
+
+  it('skips resetting resources that are in retention list', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      // Retain energy with no formula (keep existing value)
+      retention: [
+        {
+          kind: 'resource',
+          resourceId: 'resource.energy',
+          // No amount formula = don't modify after reset skip
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: energy = 1000
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 1000);
+    coordinator.updateForStep(0);
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Energy should be unchanged because it's in retention without a formula
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(1000);
+  });
+});
+
+describe('Integration: prestige telemetry', () => {
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('emits telemetry when confirmationToken is provided', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Apply prestige with a confirmation token
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token-abc123');
+
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'PrestigeResetTokenReceived',
+      expect.objectContaining({
+        layerId: 'prestige.ascension',
+        tokenLength: 17, // 'test-token-abc123'.length
+      }),
+    );
+  });
+});
+
+describe('Integration: PRESTIGE_RESET command handler with real evaluator', () => {
+  // These tests exercise the full command flow through registerResourceCommandHandlers
+  // using the real ContentPrestigeEvaluator, verifying end-to-end resource mutations.
+
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('executes prestige reset via command dispatcher and mutates resource state', async () => {
+    // Import command infrastructure
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 10,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 5 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: Give player 1000 energy
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const prestigeFluxIndex = coordinator.resourceState.requireIndex('resource.prestige-flux');
+    coordinator.resourceState.addAmount(energyIndex, 1000);
+    coordinator.updateForStep(0);
+
+    // Wire up command dispatcher with real prestige evaluator
+    const dispatcher = new CommandDispatcher();
+    registerResourceCommandHandlers({
+      dispatcher,
+      resources: coordinator.resourceState,
+      generatorPurchases: coordinator.generatorEvaluator,
+      prestigeSystem: coordinator.prestigeEvaluator,
+    });
+
+    // Verify pre-prestige state
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(1010); // 1000 + 10 startAmount
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(0);
+
+    // Execute PRESTIGE_RESET command
+    dispatcher.execute({
+      type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      payload: { layerId: 'prestige.ascension' },
+      priority: CommandPriority.PLAYER,
+      timestamp: Date.now(),
+      step: 1,
+    });
+
+    // Verify post-prestige state
+    // Energy should be reset to startAmount (10)
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(10);
+    // Prestige flux should be granted (5)
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(5);
+
+    // Verify telemetry was emitted
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'PrestigeResetConfirmed',
+      expect.objectContaining({
+        layerId: 'prestige.ascension',
+      }),
+    );
+  });
+
+  it('rejects locked prestige layer via command dispatcher', async () => {
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      // Requires 1000 energy to unlock
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 1000 },
+      },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 5 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Only 100 energy - not enough to unlock
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+
+    const dispatcher = new CommandDispatcher();
+    registerResourceCommandHandlers({
+      dispatcher,
+      resources: coordinator.resourceState,
+      generatorPurchases: coordinator.generatorEvaluator,
+      prestigeSystem: coordinator.prestigeEvaluator,
+    });
+
+    // Execute PRESTIGE_RESET command on locked layer
+    dispatcher.execute({
+      type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      payload: { layerId: 'prestige.ascension' },
+      priority: CommandPriority.PLAYER,
+      timestamp: Date.now(),
+      step: 1,
+    });
+
+    // Energy should remain unchanged (not reset)
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(100);
+
+    // Verify PrestigeResetLocked warning was emitted
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetLocked',
+      expect.objectContaining({
+        layerId: 'prestige.ascension',
+      }),
+    );
+  });
+
+  it('handles repeatable prestige (completed status) via command dispatcher', async () => {
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 10 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const prestigeFluxIndex = coordinator.resourceState.requireIndex('resource.prestige-flux');
+    const countIndex = coordinator.resourceState.requireIndex('prestige.ascension-prestige-count');
+
+    const dispatcher = new CommandDispatcher();
+    registerResourceCommandHandlers({
+      dispatcher,
+      resources: coordinator.resourceState,
+      generatorPurchases: coordinator.generatorEvaluator,
+      prestigeSystem: coordinator.prestigeEvaluator,
+    });
+
+    // First prestige
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.updateForStep(0);
+
+    dispatcher.execute({
+      type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      payload: { layerId: 'prestige.ascension' },
+      priority: CommandPriority.PLAYER,
+      timestamp: Date.now(),
+      step: 1,
+    });
+
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(10);
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(1);
+
+    // Second prestige (layer status is now 'completed')
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.updateForStep(1);
+
+    // Verify status is 'completed' before second prestige
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('completed');
+
+    dispatcher.execute({
+      type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      payload: { layerId: 'prestige.ascension' },
+      priority: CommandPriority.PLAYER,
+      timestamp: Date.now(),
+      step: 2,
+    });
+
+    // Flux should accumulate (10 + 10 = 20)
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(20);
+    // Count should increment to 2
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(2);
+  });
+
+  it('passes confirmationToken through full command flow', async () => {
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const dispatcher = new CommandDispatcher();
+    registerResourceCommandHandlers({
+      dispatcher,
+      resources: coordinator.resourceState,
+      generatorPurchases: coordinator.generatorEvaluator,
+      prestigeSystem: coordinator.prestigeEvaluator,
+    });
+
+    // Execute with confirmationToken
+    dispatcher.execute({
+      type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      payload: {
+        layerId: 'prestige.ascension',
+        confirmationToken: 'user-confirmed-prestige-token',
+      },
+      priority: CommandPriority.PLAYER,
+      timestamp: Date.now(),
+      step: 1,
+    });
+
+    // Token receipt should be logged via telemetry
+    expect(telemetryStub.recordProgress).toHaveBeenCalledWith(
+      'PrestigeResetTokenReceived',
+      expect.objectContaining({
+        layerId: 'prestige.ascension',
+        tokenLength: 'user-confirmed-prestige-token'.length,
+      }),
+    );
+  });
+});
+
+describe('Integration: prestige layer status transitions', () => {
+  it('prestige layer state includes isUnlocked property', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 500 },
+      },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Initially locked (energy = 100, requirement = 500)
+    coordinator.updateForStep(0);
+    const layerState = coordinator.state.prestigeLayers?.find(
+      (l) => l.id === 'prestige.ascension',
+    );
+    expect(layerState).toBeDefined();
+    expect(layerState!.isUnlocked).toBe(false);
+    expect(layerState!.isVisible).toBe(false);
+
+    // Add enough energy to unlock
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.updateForStep(1);
+
+    const updatedLayerState = coordinator.state.prestigeLayers?.find(
+      (l) => l.id === 'prestige.ascension',
+    );
+    expect(updatedLayerState!.isUnlocked).toBe(true);
+    expect(updatedLayerState!.isVisible).toBe(true);
+  });
+
+  it('status is locked when prestige layer unlock condition is not met', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 500 },
+      },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote).toBeDefined();
+    expect(quote!.status).toBe('locked');
+  });
+
+  it('status is available when unlocked but never prestiged', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote).toBeDefined();
+    expect(quote!.status).toBe('available');
+  });
+
+  it('status is completed after applying prestige (with prestige count resource)', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    // Prestige count resource tracks number of times prestige has been applied
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Before prestige: status should be 'available'
+    let quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('available');
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+    coordinator.updateForStep(1);
+
+    // After prestige: status should be 'completed' (prestige count >= 1)
+    quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote!.status).toBe('completed');
+  });
+
+  it('throws error when prestige count resource does not exist', () => {
+    // Fail-fast validation ensures content authors don't forget the prestige count resource
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux],
+      // Missing: prestige.ascension-prestige-count resource
+      prestigeLayers: [prestigeLayer],
+    });
+
+    // Should throw during initialization due to missing prestige count resource
+    expect(() => {
+      createProgressionCoordinator({
+        content: pack,
+        stepDurationMs: 100,
+      });
+    }).toThrow('prestige.ascension-prestige-count');
+  });
+
+  it('prestige counter is preserved when included in resetTargets', () => {
+    // This test verifies that the prestige counter resource is automatically
+    // protected from being reset, even if it's included in resetTargets.
+    // Without this protection, multi-prestige tracking would break:
+    // - First prestige: counter reset to 0, then incremented to 1
+    // - Second prestige: counter reset to 0, then incremented to 1 (should be 2!)
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    // The prestige counter resource follows the convention: {layerId}-prestige-count
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      // Bug scenario: resetTargets includes the prestige counter
+      resetTargets: ['resource.energy', 'prestige.ascension-prestige-count'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const countIndex = coordinator.resourceState.requireIndex('prestige.ascension-prestige-count');
+
+    // First prestige
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Count should be 1 after first prestige
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(1);
+
+    // Second prestige
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(1);
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Key assertion: count should be 2, NOT 1
+    // If the counter is being reset before increment, this would fail
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(2);
+
+    // Third prestige for good measure
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(2);
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(3);
+  });
+
+  it('bonus layer with empty resetTargets grants reward without resetting any resources', () => {
+    // Bonus layers have empty resetTargets - they grant rewards without sacrifice.
+    // Use cases: milestone rewards, achievement-style prestige, tutorial layers.
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const crystal = createResourceDefinition('resource.crystal', {
+      name: 'Crystal',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.bonus-prestige-count', {
+      name: 'Bonus Prestige Count',
+      startAmount: 0,
+    });
+
+    const bonusLayer = createPrestigeLayerDefinition('prestige.bonus', {
+      name: 'Bonus Layer',
+      resetTargets: [], // Empty - no resources are reset
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 50 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, crystal, prestigeFlux, prestigeCount],
+      prestigeLayers: [bonusLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: Give player resources
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const crystalIndex = coordinator.resourceState.requireIndex('resource.crystal');
+    const prestigeFluxIndex = coordinator.resourceState.requireIndex('resource.prestige-flux');
+
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.resourceState.addAmount(crystalIndex, 200);
+    coordinator.updateForStep(0);
+
+    // Verify initial state
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(500);
+    expect(coordinator.resourceState.getAmount(crystalIndex)).toBe(200);
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(0);
+
+    // Apply bonus prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.bonus');
+
+    // Reward should be granted
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(50);
+
+    // All other resources should remain unchanged (empty resetTargets = no resets)
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(500);
+    expect(coordinator.resourceState.getAmount(crystalIndex)).toBe(200);
   });
 });
