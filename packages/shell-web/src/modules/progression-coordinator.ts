@@ -334,6 +334,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         const record = this.upgrades.get(upgradeId);
         return record?.purchases ?? 0;
       },
+      hasPrestigeLayerUnlocked: (prestigeLayerId) => {
+        const record = this.prestigeLayers.get(prestigeLayerId);
+        return record?.state.isUnlocked ?? false;
+      },
     };
 
     this.generatorEvaluator = new ContentGeneratorEvaluator(this);
