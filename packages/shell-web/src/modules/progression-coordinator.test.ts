@@ -2995,7 +2995,7 @@ describe('Integration: prestige confirmationToken validation', () => {
 
     // Mock Date.now to control time
     let currentTime = 1000000;
-    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+    const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
 
     try {
       // First prestige at t=1000000
@@ -3026,7 +3026,7 @@ describe('Integration: prestige confirmationToken validation', () => {
       // If we got here without throwing, the test passes
       // The token was successfully reused after expiration
     } finally {
-      vi.spyOn(Date, 'now').mockRestore();
+      dateNowSpy.mockRestore();
     }
   });
 });
