@@ -4,9 +4,9 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "e7608c3c523ec775d90f295506cb271e651b896c1204f53f8ef5f9787eb73ee6",
+  "artifactHash": "b7f29fedfcd5f16a33df0b8476c55b2475c970aac60044433b1cde5915e81f42",
   "digest": {
-    "hash": "fnv1a-e5f9e9e9",
+    "hash": "fnv1a-7f7e84f9",
     "version": 1
   },
   "formatVersion": 1,
@@ -814,6 +814,24 @@ const serialized = {
           "prestigeLayerId": "sample-pack.ascension-alpha"
         },
         "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": 0,
+        "category": "misc",
+        "economyClassification": "soft",
+        "id": "sample-pack.ascension-alpha-prestige-count",
+        "name": {
+          "default": "Ascension Count",
+          "variants": {
+            "en-US": "Ascension Count"
+          }
+        },
+        "order": 6,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 3,
+        "unlocked": true,
         "visible": false
       }
     ],

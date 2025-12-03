@@ -319,6 +319,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       return record;
     });
 
+    // Validate that each prestige layer has a corresponding prestige count resource
+    for (const layer of prestigeLayerDefinitions) {
+      const prestigeCountId = `${layer.id}-prestige-count`;
+      const index = this.resourceState.getIndex(prestigeCountId);
+      if (index === undefined) {
+        throw new Error(
+          `Prestige layer "${layer.id}" requires a resource named "${prestigeCountId}" to track prestige count. ` +
+          `Add this resource to your content pack's resources array.`,
+        );
+      }
+    }
+
     this.conditionContext = {
       getResourceAmount: (resourceId) => {
         const index = this.resourceState.getIndex(resourceId);

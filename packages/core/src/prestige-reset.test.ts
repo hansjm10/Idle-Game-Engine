@@ -356,4 +356,32 @@ describe('applyPrestigeReset', () => {
 
     expect(state.getAmount(energyIndex)).toBe(99);
   });
+
+  it('handles empty resetTargets array for bonus layers', () => {
+    const { state } = createTestResources();
+    const energyIndex = state.requireIndex('energy');
+    const crystalIndex = state.requireIndex('crystal');
+    const prestigeFluxIndex = state.requireIndex('prestige-flux');
+
+    // Set initial values
+    state.addAmount(energyIndex, 500);
+    state.addAmount(crystalIndex, 200);
+
+    // Bonus layer: grants reward without resetting any resources
+    const context: PrestigeResetContext = {
+      layerId: 'bonus-layer',
+      resourceState: state,
+      reward: { resourceId: 'prestige-flux', amount: 25 },
+      resetTargets: [], // Empty - no resources are reset
+      retentionTargets: [],
+    };
+
+    applyPrestigeReset(context);
+
+    // Reward should be granted
+    expect(state.getAmount(prestigeFluxIndex)).toBe(25);
+    // All other resources should remain unchanged
+    expect(state.getAmount(energyIndex)).toBe(500);
+    expect(state.getAmount(crystalIndex)).toBe(200);
+  });
 });

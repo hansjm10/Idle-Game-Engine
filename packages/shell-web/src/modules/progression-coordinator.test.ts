@@ -1629,6 +1629,11 @@ describe('Integration: prestige system applyPrestige', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     // Retention formula: energy * 0.1 (retain 10% of energy)
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
@@ -1657,7 +1662,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -1704,6 +1709,11 @@ describe('Integration: prestige system applyPrestige', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     // Retention formula: (energy + crystal) * 0.05 (5% of combined resources)
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
@@ -1737,7 +1747,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, crystal, prestigeFlux],
+      resources: [energy, crystal, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -1776,6 +1786,11 @@ describe('Integration: prestige system applyPrestige', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -1797,7 +1812,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -1835,6 +1850,11 @@ describe('Integration: prestige system applyPrestige', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -1853,7 +1873,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -1882,6 +1902,11 @@ describe('Integration: prestige system applyPrestige', () => {
       name: 'Energy',
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -1893,7 +1918,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy],
+      resources: [energy, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -1925,6 +1950,11 @@ describe('Integration: prestige system applyPrestige', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy', 'resource.crystal'],
@@ -1937,7 +1967,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, crystal, prestigeFlux],
+      resources: [energy, crystal, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -1974,6 +2004,11 @@ describe('Integration: prestige system applyPrestige', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -1993,7 +2028,7 @@ describe('Integration: prestige system applyPrestige', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -2045,6 +2080,11 @@ describe('Integration: prestige telemetry', () => {
       startAmount: 0,
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -2056,7 +2096,7 @@ describe('Integration: prestige telemetry', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -2091,6 +2131,11 @@ describe('Integration: prestige layer status transitions', () => {
       name: 'Prestige Flux',
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -2107,7 +2152,7 @@ describe('Integration: prestige layer status transitions', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -2147,6 +2192,11 @@ describe('Integration: prestige layer status transitions', () => {
       name: 'Prestige Flux',
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -2163,7 +2213,7 @@ describe('Integration: prestige layer status transitions', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -2189,6 +2239,11 @@ describe('Integration: prestige layer status transitions', () => {
       name: 'Prestige Flux',
     });
 
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
     const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
       name: 'Ascension',
       resetTargets: ['resource.energy'],
@@ -2200,7 +2255,7 @@ describe('Integration: prestige layer status transitions', () => {
     });
 
     const pack = createContentPack({
-      resources: [energy, prestigeFlux],
+      resources: [energy, prestigeFlux, prestigeCount],
       prestigeLayers: [prestigeLayer],
     });
 
@@ -2267,9 +2322,8 @@ describe('Integration: prestige layer status transitions', () => {
     expect(quote!.status).toBe('completed');
   });
 
-  it('status remains available after prestige when prestige count resource does not exist', () => {
-    // Without a prestige count resource, we cannot track completion status
-    // Status remains 'available' since we don't know if it's been used
+  it('throws error when prestige count resource does not exist', () => {
+    // Fail-fast validation ensures content authors don't forget the prestige count resource
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
       startAmount: 0,
@@ -2291,23 +2345,17 @@ describe('Integration: prestige layer status transitions', () => {
 
     const pack = createContentPack({
       resources: [energy, prestigeFlux],
+      // Missing: prestige.ascension-prestige-count resource
       prestigeLayers: [prestigeLayer],
     });
 
-    const coordinator = createProgressionCoordinator({
-      content: pack,
-      stepDurationMs: 100,
-    });
-
-    coordinator.updateForStep(0);
-
-    // Apply prestige (no prestige count resource to track)
-    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
-    coordinator.updateForStep(1);
-
-    // Status should still be 'available' since no count resource exists
-    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
-    expect(quote!.status).toBe('available');
+    // Should throw during initialization due to missing prestige count resource
+    expect(() => {
+      createProgressionCoordinator({
+        content: pack,
+        stepDurationMs: 100,
+      });
+    }).toThrow('prestige.ascension-prestige-count');
   });
 
   it('prestige counter is preserved when included in resetTargets', () => {
@@ -2380,5 +2428,73 @@ describe('Integration: prestige layer status transitions', () => {
     coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
 
     expect(coordinator.resourceState.getAmount(countIndex)).toBe(3);
+  });
+
+  it('bonus layer with empty resetTargets grants reward without resetting any resources', () => {
+    // Bonus layers have empty resetTargets - they grant rewards without sacrifice.
+    // Use cases: milestone rewards, achievement-style prestige, tutorial layers.
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const crystal = createResourceDefinition('resource.crystal', {
+      name: 'Crystal',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.bonus-prestige-count', {
+      name: 'Bonus Prestige Count',
+      startAmount: 0,
+    });
+
+    const bonusLayer = createPrestigeLayerDefinition('prestige.bonus', {
+      name: 'Bonus Layer',
+      resetTargets: [], // Empty - no resources are reset
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 50 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, crystal, prestigeFlux, prestigeCount],
+      prestigeLayers: [bonusLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: Give player resources
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const crystalIndex = coordinator.resourceState.requireIndex('resource.crystal');
+    const prestigeFluxIndex = coordinator.resourceState.requireIndex('resource.prestige-flux');
+
+    coordinator.resourceState.addAmount(energyIndex, 500);
+    coordinator.resourceState.addAmount(crystalIndex, 200);
+    coordinator.updateForStep(0);
+
+    // Verify initial state
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(500);
+    expect(coordinator.resourceState.getAmount(crystalIndex)).toBe(200);
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(0);
+
+    // Apply bonus prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.bonus');
+
+    // Reward should be granted
+    expect(coordinator.resourceState.getAmount(prestigeFluxIndex)).toBe(50);
+
+    // All other resources should remain unchanged (empty resetTargets = no resets)
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(500);
+    expect(coordinator.resourceState.getAmount(crystalIndex)).toBe(200);
   });
 });
