@@ -2309,4 +2309,76 @@ describe('Integration: prestige layer status transitions', () => {
     const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
     expect(quote!.status).toBe('available');
   });
+
+  it('prestige counter is preserved when included in resetTargets', () => {
+    // This test verifies that the prestige counter resource is automatically
+    // protected from being reset, even if it's included in resetTargets.
+    // Without this protection, multi-prestige tracking would break:
+    // - First prestige: counter reset to 0, then incremented to 1
+    // - Second prestige: counter reset to 0, then incremented to 1 (should be 2!)
+
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    // The prestige counter resource follows the convention: {layerId}-prestige-count
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      // Bug scenario: resetTargets includes the prestige counter
+      resetTargets: ['resource.energy', 'prestige.ascension-prestige-count'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    const countIndex = coordinator.resourceState.requireIndex('prestige.ascension-prestige-count');
+
+    // First prestige
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Count should be 1 after first prestige
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(1);
+
+    // Second prestige
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(1);
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    // Key assertion: count should be 2, NOT 1
+    // If the counter is being reset before increment, this would fail
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(2);
+
+    // Third prestige for good measure
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(2);
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension');
+
+    expect(coordinator.resourceState.getAmount(countIndex)).toBe(3);
+  });
 });

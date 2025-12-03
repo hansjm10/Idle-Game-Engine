@@ -1064,6 +1064,10 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       }
     }
 
+    // Always protect the prestige counter from reset (convention: {layerId}-prestige-count)
+    const prestigeCountId = `${layerId}-prestige-count`;
+    retainedResourceIds.add(prestigeCountId);
+
     // Build reset targets with calculated startAmounts (skip retained resources)
     const resetTargets: PrestigeResetTarget[] = [];
     for (const resetResourceId of record.definition.resetTargets) {
@@ -1110,9 +1114,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       retentionTargets,
     });
 
-    // Increment prestige counter if resource exists (convention: {layerId}-prestige-count)
-    // This is a safe operation using addAmount, can stay here
-    const prestigeCountId = `${layerId}-prestige-count`;
+    // Increment prestige counter if resource exists
     const countIndex = resourceState.getIndex(prestigeCountId);
     if (countIndex !== undefined) {
       resourceState.addAmount(countIndex, 1);
