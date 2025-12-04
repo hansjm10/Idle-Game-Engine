@@ -160,7 +160,7 @@ exports[`Normalization Snapshots > normalizes metadata fields deterministically 
 exports[`Normalization Snapshots > normalizes resource ordering deterministically > ordered-resources 1`] = `
 [
   {
-    "capacity": 0,
+    "capacity": null,
     "category": "primary",
     "economyClassification": "soft",
     "id": "alpha",
@@ -178,7 +178,7 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
     "visible": true,
   },
   {
-    "capacity": 0,
+    "capacity": null,
     "category": "primary",
     "economyClassification": "soft",
     "id": "mike",
@@ -196,7 +196,7 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
     "visible": true,
   },
   {
-    "capacity": 0,
+    "capacity": null,
     "category": "primary",
     "economyClassification": "soft",
     "id": "zulu",
@@ -446,7 +446,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "visible": true,
       },
       "crystals" => {
-        "capacity": 0,
+        "capacity": null,
         "category": "prestige",
         "economyClassification": "soft",
         "id": "crystals",
@@ -624,7 +624,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "visible": true,
     },
     {
-      "capacity": 0,
+      "capacity": null,
       "category": "prestige",
       "economyClassification": "soft",
       "id": "crystals",
@@ -763,7 +763,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
     "prestigeLayerById": {},
     "resourceById": {
       "crystals": {
-        "capacity": 0,
+        "capacity": null,
         "category": "prestige",
         "economyClassification": "soft",
         "id": "crystals",

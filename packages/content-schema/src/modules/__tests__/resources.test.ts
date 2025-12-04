@@ -57,6 +57,29 @@ describe('resourceDefinitionSchema', () => {
       }),
     ).toThrowError(/cannot exceed capacity/i);
   });
+
+  it('preserves null capacity for unlimited resources', () => {
+    const definition = resourceDefinitionSchema.parse({
+      id: 'unlimited-resource',
+      name: { default: 'Unlimited', variants: {} },
+      category: 'primary',
+      tier: 1,
+      capacity: null,
+    });
+
+    expect(definition.capacity).toBe(null);
+  });
+
+  it('defaults capacity to null when not provided', () => {
+    const definition = resourceDefinitionSchema.parse({
+      id: 'default-capacity',
+      name: { default: 'Default', variants: {} },
+      category: 'primary',
+      tier: 1,
+    });
+
+    expect(definition.capacity).toBe(null);
+  });
 });
 
 describe('resourceCollectionSchema', () => {
