@@ -676,3 +676,46 @@ describe('Integration: Allowlist Validation', () => {
     }
   });
 });
+
+describe('Integration: Resource Capacity Normalization', () => {
+  it('preserves null capacity through pack normalization', () => {
+    const validator = createContentPackValidator();
+
+    const pack = {
+      metadata: {
+        id: 'capacity-test',
+        title: { default: 'Capacity Test', variants: {} },
+        version: '1.0.0',
+        engine: '^1.0.0',
+        defaultLocale: 'en-US',
+        supportedLocales: ['en-US'],
+      },
+      resources: [
+        {
+          id: 'unlimited',
+          name: { default: 'Unlimited Resource', variants: {} },
+          category: 'primary' as const,
+          tier: 1,
+          capacity: null,
+        },
+        {
+          id: 'no-capacity-specified',
+          name: { default: 'Default Capacity', variants: {} },
+          category: 'primary' as const,
+          tier: 1,
+          // capacity not specified - should default to null
+        },
+      ],
+      generators: [],
+      upgrades: [],
+    };
+
+    const result = validator.parse(pack);
+
+    const unlimited = result.pack.resources.find(r => r.id === 'unlimited');
+    const defaultCap = result.pack.resources.find(r => r.id === 'no-capacity-specified');
+
+    expect(unlimited?.capacity).toBe(null);
+    expect(defaultCap?.capacity).toBe(null);
+  });
+});

@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "b7f29fedfcd5f16a33df0b8476c55b2475c970aac60044433b1cde5915e81f42",
+  "artifactHash": "f2a45ef0cc984125557377a22393cbbc979dde1726c2f7e2b06e7ec29a30ae3c",
   "digest": {
     "hash": "fnv1a-7f7e84f9",
     "version": 1
@@ -707,7 +707,7 @@ const serialized = {
         "visible": true
       },
       {
-        "capacity": 0,
+        "capacity": null,
         "category": "currency",
         "economyClassification": "hard",
         "id": "sample-pack.crystal",
@@ -734,7 +734,7 @@ const serialized = {
         "visible": true
       },
       {
-        "capacity": 0,
+        "capacity": null,
         "category": "primary",
         "economyClassification": "soft",
         "id": "sample-pack.alloy",
@@ -761,7 +761,7 @@ const serialized = {
         "visible": false
       },
       {
-        "capacity": 0,
+        "capacity": null,
         "category": "primary",
         "economyClassification": "soft",
         "id": "sample-pack.data-core",
@@ -788,7 +788,7 @@ const serialized = {
         "visible": false
       },
       {
-        "capacity": 0,
+        "capacity": null,
         "category": "prestige",
         "economyClassification": "soft",
         "id": "sample-pack.prestige-flux",
@@ -817,7 +817,7 @@ const serialized = {
         "visible": false
       },
       {
-        "capacity": 0,
+        "capacity": null,
         "category": "misc",
         "economyClassification": "soft",
         "id": "sample-pack.ascension-alpha-prestige-count",

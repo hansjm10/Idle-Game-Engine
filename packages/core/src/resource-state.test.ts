@@ -678,6 +678,43 @@ describe('ResourceState', () => {
     );
   });
 
+  it('treats null capacity as unlimited', () => {
+    const definitions: ResourceDefinition[] = [
+      {
+        id: 'unlimited',
+        startAmount: 0,
+        capacity: null,
+      },
+    ];
+
+    const state = createResourceState(definitions);
+    const idx = state.requireIndex('unlimited');
+
+    // Should be able to add large amounts
+    const applied = state.addAmount(idx, 1_000_000);
+    expect(applied).toBe(1_000_000);
+    expect(state.getAmount(idx)).toBe(1_000_000);
+    expect(state.getCapacity(idx)).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('treats undefined capacity as unlimited', () => {
+    const definitions: ResourceDefinition[] = [
+      {
+        id: 'unlimited',
+        startAmount: 0,
+        // capacity not specified
+      },
+    ];
+
+    const state = createResourceState(definitions);
+    const idx = state.requireIndex('unlimited');
+
+    const applied = state.addAmount(idx, 1_000_000);
+    expect(applied).toBe(1_000_000);
+    expect(state.getAmount(idx)).toBe(1_000_000);
+    expect(state.getCapacity(idx)).toBe(Number.POSITIVE_INFINITY);
+  });
+
   it('emits telemetry when index-based helpers receive out-of-range indices', () => {
     const state = createResourceState([{ id: 'energy' }]);
     expect(() => state.getAmount(5)).toThrowError(/out of bounds/);
