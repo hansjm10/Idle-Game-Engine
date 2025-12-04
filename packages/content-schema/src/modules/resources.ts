@@ -115,9 +115,12 @@ export const resourceDefinitionSchema: z.ZodType<
     startAmount: nonNegativeNumberSchema.default(0),
     capacity: z
       .union([
-        finiteNumberSchema.refine((value) => value >= 0, {
-          message: 'Capacity must be greater than or equal to 0.',
-        }),
+        z
+          .number()
+          .finite({ message: 'Capacity must be a finite number.' })
+          .refine((value) => value >= 0, {
+            message: 'Capacity must be greater than or equal to 0.',
+          }),
         z.literal(null),
       ])
       .default(null),
