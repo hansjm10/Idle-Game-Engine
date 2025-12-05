@@ -27,7 +27,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -52,7 +52,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const woodIndex = resources.getIndex('wood')!;
@@ -75,7 +75,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const woodIndex = resources.getIndex('wood')!;
@@ -103,7 +103,7 @@ describe('createProductionSystem', () => {
         getMultiplier: (id) => multipliers.get(id) ?? 1,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -126,7 +126,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -151,7 +151,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -176,7 +176,7 @@ describe('createProductionSystem', () => {
 
       // Should not throw
       expect(() => {
-        system.tick({ deltaMs: 1000 });
+        system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       }).not.toThrow();
     });
 
@@ -196,7 +196,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 100 }); // 0.1 seconds
+      system.tick({ deltaMs: 100, step: 0, events: {} as any }); // 0.1 seconds
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -219,7 +219,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 0 });
+      system.tick({ deltaMs: 0, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -242,7 +242,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000 });
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -267,7 +267,7 @@ describe('createProductionSystem', () => {
 
       // Should not throw
       expect(() => {
-        system.tick({ deltaMs: 1000 });
+        system.tick({ deltaMs: 1000, step: 0, events: {} as any });
       }).not.toThrow();
 
       resources.snapshot({ mode: 'publish' });
