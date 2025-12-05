@@ -34,4 +34,53 @@ describe('createProductionSystem', () => {
       expect(resources.getAmount(goldIndex)).toBe(10); // 5 rate * 2 owned * 1 second
     });
   });
+
+  describe('consumption', () => {
+    it('should spend consumed resources based on rate and owned count', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'sawmill',
+          owned: 2,
+          produces: [],
+          consumes: [{ resourceId: 'wood', rate: 10 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick({ deltaMs: 1000 });
+      resources.snapshot({ mode: 'publish' });
+
+      const woodIndex = resources.getIndex('wood')!;
+      expect(resources.getAmount(woodIndex)).toBe(80); // 100 - (10 rate * 2 owned * 1 second)
+    });
+
+    it('should not consume more than available', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'sawmill',
+          owned: 10,
+          produces: [],
+          consumes: [{ resourceId: 'wood', rate: 50 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick({ deltaMs: 1000 });
+      resources.snapshot({ mode: 'publish' });
+
+      const woodIndex = resources.getIndex('wood')!;
+      // Would consume 500, but only 100 available
+      expect(resources.getAmount(woodIndex)).toBe(0);
+    });
+  });
 });
