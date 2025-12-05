@@ -44,6 +44,10 @@ export function createProductionSystem(
             continue;
           }
 
+          if (!Number.isFinite(production.rate) || production.rate <= 0) {
+            continue;
+          }
+
           const delta = production.rate * effectiveOwned * deltaSeconds;
           if (delta > 0) {
             resourceState.addAmount(index, delta);
@@ -53,6 +57,10 @@ export function createProductionSystem(
         for (const consumption of generator.consumes) {
           const index = resourceState.getIndex(consumption.resourceId);
           if (index === undefined) {
+            continue;
+          }
+
+          if (!Number.isFinite(consumption.rate) || consumption.rate <= 0) {
             continue;
           }
 
