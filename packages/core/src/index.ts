@@ -978,3 +978,9 @@ export {
   type PrestigeResetTarget,
   type PrestigeRetentionTarget,
 } from './prestige-reset.js';
+export {
+  createProductionSystem,
+  type ProductionSystemOptions,
+  type GeneratorProductionRate,
+  type GeneratorProductionState,
+} from './production-system.js';
