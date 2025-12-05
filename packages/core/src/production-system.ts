@@ -49,6 +49,24 @@ export function createProductionSystem(
             resourceState.addAmount(index, delta);
           }
         }
+
+        for (const consumption of generator.consumes) {
+          const index = resourceState.getIndex(consumption.resourceId);
+          if (index === undefined) {
+            continue;
+          }
+
+          const targetConsumption = consumption.rate * effectiveOwned * deltaSeconds;
+          if (targetConsumption > 0) {
+            const available = resourceState.getAmount(index);
+            const actualConsumption = Math.min(available, targetConsumption);
+            if (actualConsumption > 0) {
+              resourceState.spendAmount(index, actualConsumption, {
+                systemId: 'production',
+              });
+            }
+          }
+        }
       }
     },
   };
