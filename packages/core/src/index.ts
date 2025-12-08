@@ -980,6 +980,7 @@ export {
 } from './prestige-reset.js';
 export {
   createProductionSystem,
+  type ProductionSystem,
   type ProductionSystemOptions,
   type GeneratorProductionRate,
   type GeneratorProductionState,

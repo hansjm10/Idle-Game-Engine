@@ -399,6 +399,163 @@ describe('createProductionSystem', () => {
     });
   });
 
+  describe('onTick callback', () => {
+    it('should call onTick with correct produced amounts', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'gold-mine',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 5 }],
+          consumes: [],
+        },
+      ];
+
+      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        onTick: (stats) => tickStats.push(stats),
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      expect(tickStats).toHaveLength(1);
+      expect(tickStats[0].produced.get('gold')).toBe(10); // 5 rate * 2 owned * 1 second
+      expect(tickStats[0].consumed.size).toBe(0);
+    });
+
+    it('should call onTick with correct consumed amounts', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'sawmill',
+          owned: 2,
+          produces: [],
+          consumes: [{ resourceId: 'wood', rate: 10 }],
+        },
+      ];
+
+      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        onTick: (stats) => tickStats.push(stats),
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      expect(tickStats).toHaveLength(1);
+      expect(tickStats[0].produced.size).toBe(0);
+      expect(tickStats[0].consumed.get('wood')).toBe(20); // 10 rate * 2 owned * 1 second
+    });
+
+    it('should not error when onTick is not provided', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'gold-mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 5 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        // onTick not provided
+      });
+
+      // Should not throw
+      expect(() => {
+        system.tick(createTickContext(1000, 0));
+        resources.snapshot({ mode: 'publish' });
+      }).not.toThrow();
+
+      const goldIndex = resources.getIndex('gold')!;
+      expect(resources.getAmount(goldIndex)).toBe(5);
+    });
+
+    it('should reflect actual applied values after threshold', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+        onTick: (stats) => tickStats.push(stats),
+      });
+
+      // First tick: 0.003 accumulated, nothing applied (below 0.01)
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+      expect(tickStats).toHaveLength(1);
+      expect(tickStats[0].produced.size).toBe(0); // Nothing applied yet
+
+      // Second tick: 0.006 accumulated, nothing applied
+      system.tick(createTickContext(1000, 1));
+      resources.snapshot({ mode: 'publish' });
+      expect(tickStats).toHaveLength(2);
+      expect(tickStats[1].produced.size).toBe(0); // Still nothing applied
+
+      // Third tick: 0.009 accumulated, nothing applied
+      system.tick(createTickContext(1000, 2));
+      resources.snapshot({ mode: 'publish' });
+      expect(tickStats).toHaveLength(3);
+      expect(tickStats[2].produced.size).toBe(0); // Still nothing applied
+
+      // Fourth tick: 0.012 accumulated, 0.01 applied, 0.002 remainder
+      system.tick(createTickContext(1000, 3));
+      resources.snapshot({ mode: 'publish' });
+      expect(tickStats).toHaveLength(4);
+      expect(tickStats[3].produced.get('gold')).toBe(0.01); // Now 0.01 is applied
+    });
+
+    it('should aggregate amounts from multiple generators', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'gold-mine-1',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 3 }],
+          consumes: [],
+        },
+        {
+          id: 'gold-mine-2',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 2 }],
+          consumes: [],
+        },
+      ];
+
+      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        onTick: (stats) => tickStats.push(stats),
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      expect(tickStats).toHaveLength(1);
+      // Total gold: (3 * 1) + (2 * 2) = 7
+      expect(tickStats[0].produced.get('gold')).toBe(7);
+    });
+  });
+
   describe('applyThreshold option', () => {
     it('should throw for invalid threshold values', () => {
       const resources = createTestResources();
@@ -539,6 +696,167 @@ describe('createProductionSystem', () => {
       system.tick(createTickContext(1000, 3));
       resources.snapshot({ mode: 'publish' });
       expect(resources.getAmount(resources.getIndex('gold')!)).toBe(2);
+    });
+  });
+
+  describe('clearAccumulators', () => {
+    it('should reset accumulated sub-threshold amounts', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Tick 1: 0.003 accumulated, nothing applied
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Tick 2: 0.006 accumulated, nothing applied
+      system.tick(createTickContext(1000, 1));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Clear accumulators
+      system.clearAccumulators();
+
+      // Tick 3: Should start fresh with 0.003 (not 0.009)
+      system.tick(createTickContext(1000, 2));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Tick 4: Should have 0.006 accumulated (not 0.012)
+      system.tick(createTickContext(1000, 3));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+    });
+
+    it('should allow production to continue normally after clearing', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Accumulate some sub-threshold amounts
+      system.tick(createTickContext(1000, 0));
+      system.tick(createTickContext(1000, 1));
+
+      // Clear accumulators
+      system.clearAccumulators();
+
+      // Continue production - should eventually apply amounts again
+      system.tick(createTickContext(1000, 2));
+      system.tick(createTickContext(1000, 3));
+      system.tick(createTickContext(1000, 4));
+      system.tick(createTickContext(1000, 5)); // 4 ticks * 0.003 = 0.012, should apply 0.01
+
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
+    });
+
+    it('should prevent old accumulated values from being applied after clearing mid-accumulation', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Build up 0.009 accumulated (3 ticks * 0.003)
+      system.tick(createTickContext(1000, 0));
+      system.tick(createTickContext(1000, 1));
+      system.tick(createTickContext(1000, 2));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0); // Not yet applied
+
+      // Clear accumulators before the threshold is reached
+      system.clearAccumulators();
+
+      // Next tick would have pushed it over 0.01 if we hadn't cleared
+      // But since we cleared, we start fresh
+      system.tick(createTickContext(1000, 3));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0); // Only 0.003 accumulated, not 0.012
+
+      // Verify we need 4 more ticks to reach the threshold
+      system.tick(createTickContext(1000, 4));
+      system.tick(createTickContext(1000, 5));
+      system.tick(createTickContext(1000, 6));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01); // Now we've accumulated enough
+    });
+
+    it('should clear accumulators for multiple generators and resources', () => {
+      const resources = createResourceState([
+        { id: 'gold', startAmount: 0 },
+        { id: 'wood', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'gold-mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+        {
+          id: 'lumbermill',
+          owned: 1,
+          produces: [{ resourceId: 'wood', rate: 0.004 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Accumulate sub-threshold amounts for both generators
+      system.tick(createTickContext(1000, 0));
+      system.tick(createTickContext(1000, 1));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+      expect(resources.getAmount(resources.getIndex('wood')!)).toBe(0);
+
+      // Clear all accumulators
+      system.clearAccumulators();
+
+      // Both should start fresh
+      system.tick(createTickContext(1000, 2));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+      expect(resources.getAmount(resources.getIndex('wood')!)).toBe(0);
     });
   });
 });
