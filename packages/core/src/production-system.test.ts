@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createProductionSystem } from './production-system.js';
 import { createResourceState, type ResourceState } from './resource-state.js';
+import { createTickContext } from './test-utils.js';
 
 describe('createProductionSystem', () => {
   const createTestResources = (): ResourceState => {
@@ -27,7 +28,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -52,7 +53,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const woodIndex = resources.getIndex('wood')!;
@@ -75,7 +76,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const woodIndex = resources.getIndex('wood')!;
@@ -103,7 +104,7 @@ describe('createProductionSystem', () => {
         getMultiplier: (id) => multipliers.get(id) ?? 1,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -126,7 +127,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -154,7 +155,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const oreIndex = resources.getIndex('ore')!;
@@ -181,7 +182,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const oreIndex = resources.getIndex('ore')!;
@@ -210,7 +211,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const oreIndex = resources.getIndex('ore')!;
@@ -242,7 +243,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const oreIndex = resources.getIndex('ore')!;
@@ -273,7 +274,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -298,7 +299,7 @@ describe('createProductionSystem', () => {
 
       // Should not throw
       expect(() => {
-        system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+        system.tick(createTickContext(1000, 0));
       }).not.toThrow();
     });
 
@@ -318,7 +319,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 100, step: 0, events: {} as any }); // 0.1 seconds
+      system.tick(createTickContext(100, 0)); // 0.1 seconds
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -341,7 +342,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 0, step: 0, events: {} as any });
+      system.tick(createTickContext(0, 0));
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -364,7 +365,7 @@ describe('createProductionSystem', () => {
         resourceState: resources,
       });
 
-      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      system.tick(createTickContext(1000, 0));
       resources.snapshot({ mode: 'publish' });
 
       const goldIndex = resources.getIndex('gold')!;
@@ -389,7 +390,7 @@ describe('createProductionSystem', () => {
 
       // Should not throw
       expect(() => {
-        system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+        system.tick(createTickContext(1000, 0));
       }).not.toThrow();
 
       resources.snapshot({ mode: 'publish' });
