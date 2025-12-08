@@ -85,22 +85,8 @@ export function createProductionSystem(
         const multiplier = getMultiplier?.(generator.id) ?? 1;
         const effectiveOwned = generator.owned * multiplier;
 
-        for (const production of generator.produces) {
-          const index = resourceState.getIndex(production.resourceId);
-          if (index === undefined) {
-            continue;
-          }
-
-          if (!Number.isFinite(production.rate) || production.rate <= 0) {
-            continue;
-          }
-
-          const delta = production.rate * effectiveOwned * deltaSeconds;
-          if (delta > 0) {
-            resourceState.addAmount(index, delta);
-          }
-        }
-
+        // Calculate consumption ratio first - production is throttled by available inputs
+        let consumptionRatio = 1;
         for (const consumption of generator.consumes) {
           const index = resourceState.getIndex(consumption.resourceId);
           if (index === undefined) {
@@ -114,12 +100,44 @@ export function createProductionSystem(
           const targetConsumption = consumption.rate * effectiveOwned * deltaSeconds;
           if (targetConsumption > 0) {
             const available = resourceState.getAmount(index);
-            const actualConsumption = Math.min(available, targetConsumption);
-            if (actualConsumption > 0) {
-              resourceState.spendAmount(index, actualConsumption, {
-                systemId: 'production',
-              });
-            }
+            const ratio = available / targetConsumption;
+            consumptionRatio = Math.min(consumptionRatio, ratio);
+          }
+        }
+
+        // Apply production scaled by consumption ratio
+        for (const production of generator.produces) {
+          const index = resourceState.getIndex(production.resourceId);
+          if (index === undefined) {
+            continue;
+          }
+
+          if (!Number.isFinite(production.rate) || production.rate <= 0) {
+            continue;
+          }
+
+          const delta = production.rate * effectiveOwned * deltaSeconds * consumptionRatio;
+          if (delta > 0) {
+            resourceState.addAmount(index, delta);
+          }
+        }
+
+        // Apply consumption scaled by the same ratio
+        for (const consumption of generator.consumes) {
+          const index = resourceState.getIndex(consumption.resourceId);
+          if (index === undefined) {
+            continue;
+          }
+
+          if (!Number.isFinite(consumption.rate) || consumption.rate <= 0) {
+            continue;
+          }
+
+          const targetConsumption = consumption.rate * effectiveOwned * deltaSeconds * consumptionRatio;
+          if (targetConsumption > 0) {
+            resourceState.spendAmount(index, targetConsumption, {
+              systemId: 'production',
+            });
           }
         }
       }

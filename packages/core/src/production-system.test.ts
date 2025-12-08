@@ -134,6 +134,128 @@ describe('createProductionSystem', () => {
     });
   });
 
+  describe('production with consumption requirements', () => {
+    it('should not produce when consumed resource is empty', () => {
+      const resources = createResourceState([
+        { id: 'energy', startAmount: 0 },
+        { id: 'ore', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'harvester',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      resources.snapshot({ mode: 'publish' });
+
+      const oreIndex = resources.getIndex('ore')!;
+      // No energy available, so no ore should be produced
+      expect(resources.getAmount(oreIndex)).toBe(0);
+    });
+
+    it('should scale production proportionally to available consumed resource', () => {
+      const resources = createResourceState([
+        { id: 'energy', startAmount: 2.5 },
+        { id: 'ore', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'harvester',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      resources.snapshot({ mode: 'publish' });
+
+      const oreIndex = resources.getIndex('ore')!;
+      const energyIndex = resources.getIndex('energy')!;
+      // Only 2.5 energy available out of 5 needed (50%), so produce 5 ore instead of 10
+      expect(resources.getAmount(oreIndex)).toBe(5);
+      expect(resources.getAmount(energyIndex)).toBe(0); // All energy consumed
+    });
+
+    it('should produce at full rate when all consumption requirements are met', () => {
+      const resources = createResourceState([
+        { id: 'energy', startAmount: 100 },
+        { id: 'ore', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'harvester',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      resources.snapshot({ mode: 'publish' });
+
+      const oreIndex = resources.getIndex('ore')!;
+      const energyIndex = resources.getIndex('energy')!;
+      expect(resources.getAmount(oreIndex)).toBe(10); // Full production
+      expect(resources.getAmount(energyIndex)).toBe(95); // 100 - 5 consumed
+    });
+
+    it('should use minimum consumption ratio when multiple resources are consumed', () => {
+      const resources = createResourceState([
+        { id: 'energy', startAmount: 5 },
+        { id: 'water', startAmount: 2 },
+        { id: 'ore', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'harvester',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 10 }],
+          consumes: [
+            { resourceId: 'energy', rate: 5 },
+            { resourceId: 'water', rate: 4 },
+          ],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick({ deltaMs: 1000, step: 0, events: {} as any });
+      resources.snapshot({ mode: 'publish' });
+
+      const oreIndex = resources.getIndex('ore')!;
+      const energyIndex = resources.getIndex('energy')!;
+      const waterIndex = resources.getIndex('water')!;
+      // Water is limiting: 2/4 = 50%, so produce 5 ore
+      // Energy consumption also scaled: 5 * 0.5 = 2.5
+      expect(resources.getAmount(oreIndex)).toBe(5);
+      expect(resources.getAmount(waterIndex)).toBe(0);
+      expect(resources.getAmount(energyIndex)).toBe(2.5);
+    });
+  });
+
   describe('edge cases', () => {
     it('should skip generators with zero owned count', () => {
       const resources = createTestResources();
