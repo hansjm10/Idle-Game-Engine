@@ -327,15 +327,11 @@ export function createProductionSystem(
   ): { toApply: number; newTotal: number } {
     const current = accumulators.get(key) ?? 0;
     const total = current + delta;
-    const toApply = Math.floor(total / applyThreshold) * applyThreshold;
+    // Use a small epsilon to handle floating-point precision issues
+    // (e.g., 0.09 + 0.01 = 0.09999999999999999 should count as 0.10)
+    const epsilon = applyThreshold * 1e-9;
+    const toApply = Math.floor((total + epsilon) / applyThreshold) * applyThreshold;
     return { toApply, newTotal: total };
-  }
-
-  /**
-   * Commits an accumulator update, storing the remainder.
-   */
-  function commitAccumulate(key: string, newTotal: number, toApply: number): void {
-    accumulators.set(key, newTotal - toApply);
   }
 
   return {
@@ -371,6 +367,8 @@ export function createProductionSystem(
         }> = [];
 
         let consumptionRatio = 1;
+        // Track whether any consumption will actually be applied this tick
+        let anyConsumptionApplied = validConsumptions.length === 0;
         for (const { resourceId, index, rate } of validConsumptions) {
           const targetDelta = rate * effectiveOwned * deltaSeconds;
           const key = getAccumulatorKey(generator.id, 'consume', resourceId);
@@ -378,40 +376,50 @@ export function createProductionSystem(
 
           consumptionPeeks.push({ key, resourceId, index, targetDelta, toApply, newTotal });
 
-          // Calculate ratio based on what would ACTUALLY be consumed this tick
+          // Calculate ratio based on total accumulated consumption vs available
           if (toApply > 0) {
+            anyConsumptionApplied = true;
             const available = resourceState.getAmount(index);
-            const ratio = available / toApply;
+            // Use newTotal (full accumulated amount) for ratio calculation
+            // to ensure production scales correctly with actual consumption
+            const ratio = available / newTotal;
             consumptionRatio = Math.min(consumptionRatio, ratio);
           }
         }
 
-        // Phase 2: Apply production scaled by the accurate consumption ratio
+        // Phase 2: Accumulate production at full rate, apply scaled by consumption ratio
         for (const { resourceId, index, rate } of validProductions) {
-          const delta = rate * effectiveOwned * deltaSeconds * consumptionRatio;
+          // Accumulate at full rate (not scaled) so production tracks consumption
+          const delta = rate * effectiveOwned * deltaSeconds;
           const key = getAccumulatorKey(generator.id, 'produce', resourceId);
           const { toApply, newTotal } = peekAccumulate(key, delta);
-          commitAccumulate(key, newTotal, toApply);
 
-          if (toApply > 0) {
-            resourceState.addAmount(index, toApply);
-            produced.set(resourceId, (produced.get(resourceId) ?? 0) + toApply);
+          // Scale the applied amount by consumption ratio
+          const actualToApply = anyConsumptionApplied ? toApply * consumptionRatio : 0;
+          const remainder = newTotal - toApply;
+          // Store remainder + unapplied portion
+          accumulators.set(key, remainder + (toApply - actualToApply));
+
+          if (actualToApply > 0) {
+            resourceState.addAmount(index, actualToApply);
+            produced.set(resourceId, (produced.get(resourceId) ?? 0) + actualToApply);
           }
         }
 
         // Phase 3: Apply consumption, scaling by ratio if resources were limited
         for (const peek of consumptionPeeks) {
-          // Scale the delta by the consumption ratio if we're resource-limited
-          const scaledDelta = peek.targetDelta * consumptionRatio;
-          const key = peek.key;
-          const { toApply, newTotal } = peekAccumulate(key, scaledDelta);
-          commitAccumulate(key, newTotal, toApply);
+          // Scale the amount to apply by the consumption ratio, but always
+          // accumulate at full rate so we eventually reach threshold
+          const actualToApply = peek.toApply * consumptionRatio;
+          const remainder = peek.newTotal - peek.toApply;
+          // Commit: store remainder + any unapplied portion due to ratio scaling
+          accumulators.set(peek.key, remainder + (peek.toApply - actualToApply));
 
-          if (toApply > 0) {
-            resourceState.spendAmount(peek.index, toApply, {
+          if (actualToApply > 0) {
+            resourceState.spendAmount(peek.index, actualToApply, {
               systemId,
             });
-            consumed.set(peek.resourceId, (consumed.get(peek.resourceId) ?? 0) + toApply);
+            consumed.set(peek.resourceId, (consumed.get(peek.resourceId) ?? 0) + actualToApply);
           }
         }
       }
