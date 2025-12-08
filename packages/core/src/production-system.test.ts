@@ -473,5 +473,72 @@ describe('createProductionSystem', () => {
       resources.snapshot({ mode: 'publish' });
       expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
     });
+
+    it('should not accumulate floating-point drift over many ticks', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.1 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.0001,
+      });
+
+      // Run 10,000 ticks of 100ms each (1000 seconds total)
+      for (let i = 0; i < 10000; i++) {
+        system.tick(createTickContext(100, i));
+      }
+      resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      // 0.1 rate * 1000 seconds = exactly 100
+      // With accumulator, we should be very close (within threshold)
+      expect(resources.getAmount(goldIndex)).toBeCloseTo(100, 4);
+    });
+
+    it('should handle whole-unit threshold', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.5 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 1,
+      });
+
+      // Tick 1: 0.5 accumulated, nothing applied
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Tick 2: 1.0 accumulated, 1 applied
+      system.tick(createTickContext(1000, 1));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(1);
+
+      // Tick 3: 0.5 accumulated (remainder from tick 2 + new), nothing applied
+      system.tick(createTickContext(1000, 2));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(1);
+
+      // Tick 4: 1.0 accumulated, 1 applied (total: 2)
+      system.tick(createTickContext(1000, 3));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(2);
+    });
   });
 });
