@@ -435,5 +435,43 @@ describe('createProductionSystem', () => {
         }),
       ).toThrow('applyThreshold must be a positive finite number');
     });
+
+    it('should accumulate sub-threshold amounts across ticks', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // First tick: 0.003 accumulated, nothing applied (below 0.01)
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Second tick: 0.006 accumulated, nothing applied
+      system.tick(createTickContext(1000, 1));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Third tick: 0.009 accumulated, nothing applied
+      system.tick(createTickContext(1000, 2));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Fourth tick: 0.012 accumulated, 0.01 applied, 0.002 remainder
+      system.tick(createTickContext(1000, 3));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
+    });
   });
 });

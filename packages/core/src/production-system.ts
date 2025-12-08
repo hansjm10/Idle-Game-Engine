@@ -128,6 +128,25 @@ export function createProductionSystem(
     throw new Error('applyThreshold must be a positive finite number');
   }
 
+  // Track accumulated fractional amounts per generator/resource
+  const accumulators = new Map<string, number>();
+
+  function accumulate(
+    generatorId: string,
+    resourceId: string,
+    delta: number,
+  ): number {
+    const key = `${generatorId}:${resourceId}`;
+    const current = accumulators.get(key) ?? 0;
+    const total = current + delta;
+
+    // Apply in threshold-sized chunks
+    const toApply = Math.floor(total / applyThreshold) * applyThreshold;
+    accumulators.set(key, total - toApply);
+
+    return toApply;
+  }
+
   return {
     id: 'production',
     tick: ({ deltaMs }) => {
