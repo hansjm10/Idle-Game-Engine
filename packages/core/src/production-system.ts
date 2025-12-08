@@ -42,6 +42,24 @@ export interface ProductionSystemOptions {
    * @returns Multiplier value (defaults to 1 if not provided)
    */
   readonly getMultiplier?: (generatorId: string) => number;
+  /**
+   * Minimum amount to apply to resources per tick.
+   *
+   * Fractional amounts below this threshold are accumulated internally
+   * and applied once they reach the threshold. This prevents floating-point
+   * drift while allowing smooth resource updates.
+   *
+   * @example
+   * // Apply changes in increments of 0.01 (good for displayed values)
+   * applyThreshold: 0.01
+   *
+   * @example
+   * // Apply changes in increments of 1 (whole units only)
+   * applyThreshold: 1
+   *
+   * @default 0.0001
+   */
+  readonly applyThreshold?: number;
 }
 
 /**
@@ -70,6 +88,11 @@ export function createProductionSystem(
   options: ProductionSystemOptions,
 ): System {
   const { generators, resourceState, getMultiplier } = options;
+  const applyThreshold = options.applyThreshold ?? 0.0001;
+
+  if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
+    throw new Error('applyThreshold must be a positive finite number');
+  }
 
   return {
     id: 'production',

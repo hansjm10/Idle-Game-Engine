@@ -398,4 +398,42 @@ describe('createProductionSystem', () => {
       expect(resources.getAmount(goldIndex)).toBe(0); // Non-finite rate treated as 0
     });
   });
+
+  describe('applyThreshold option', () => {
+    it('should throw for invalid threshold values', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 1 }],
+          consumes: [],
+        },
+      ];
+
+      expect(() =>
+        createProductionSystem({
+          generators: () => generators,
+          resourceState: resources,
+          applyThreshold: 0,
+        }),
+      ).toThrow('applyThreshold must be a positive finite number');
+
+      expect(() =>
+        createProductionSystem({
+          generators: () => generators,
+          resourceState: resources,
+          applyThreshold: -1,
+        }),
+      ).toThrow('applyThreshold must be a positive finite number');
+
+      expect(() =>
+        createProductionSystem({
+          generators: () => generators,
+          resourceState: resources,
+          applyThreshold: Infinity,
+        }),
+      ).toThrow('applyThreshold must be a positive finite number');
+    });
+  });
 });
