@@ -64,6 +64,11 @@ export interface ProductionSystem extends System {
    * - When generators change significantly (e.g., upgrades that drastically alter rates)
    * - When you want to ensure fresh accumulation starts from zero
    *
+   * @remarks
+   * Accumulators are not automatically cleaned up when generators are removed.
+   * For games with many dynamic/temporary generators, call clearAccumulators() periodically
+   * or after removing generators to free memory. For typical idle games with static generators, this is not a concern.
+   *
    * @example
    * ```typescript
    * // After a prestige reset
@@ -287,20 +292,33 @@ export function createProductionSystem(
   // Track accumulated fractional amounts per generator/resource
   const accumulators = new Map<string, number>();
 
-  function accumulate(
+  function getAccumulatorKey(
     generatorId: string,
+    operation: 'produce' | 'consume',
     resourceId: string,
+  ): string {
+    return `${generatorId}:${operation}:${resourceId}`;
+  }
+
+  /**
+   * Calculates what would be applied without modifying accumulator state.
+   * Returns both the amount that would be applied and the new accumulator total.
+   */
+  function peekAccumulate(
+    key: string,
     delta: number,
-  ): number {
-    const key = `${generatorId}:${resourceId}`;
+  ): { toApply: number; newTotal: number } {
     const current = accumulators.get(key) ?? 0;
     const total = current + delta;
-
-    // Apply in threshold-sized chunks
     const toApply = Math.floor(total / applyThreshold) * applyThreshold;
-    accumulators.set(key, total - toApply);
+    return { toApply, newTotal: total };
+  }
 
-    return toApply;
+  /**
+   * Commits an accumulator update, storing the remainder.
+   */
+  function commitAccumulate(key: string, newTotal: number, toApply: number): void {
+    accumulators.set(key, newTotal - toApply);
   }
 
   return {
@@ -324,36 +342,59 @@ export function createProductionSystem(
         const validProductions = validateRates(generator.produces, resourceState);
         const validConsumptions = validateRates(generator.consumes, resourceState);
 
-        // Calculate consumption ratio - production is throttled by available inputs
+        // Phase 1: Peek at what each consumption accumulator would apply
+        // and calculate ratio based on ACTUAL consumable amounts (post-threshold)
+        const consumptionPeeks: Array<{
+          key: string;
+          resourceId: string;
+          index: number;
+          targetDelta: number;
+          toApply: number;
+          newTotal: number;
+        }> = [];
+
         let consumptionRatio = 1;
-        for (const { index, rate } of validConsumptions) {
-          const targetConsumption = rate * effectiveOwned * deltaSeconds;
-          if (targetConsumption > 0) {
+        for (const { resourceId, index, rate } of validConsumptions) {
+          const targetDelta = rate * effectiveOwned * deltaSeconds;
+          const key = getAccumulatorKey(generator.id, 'consume', resourceId);
+          const { toApply, newTotal } = peekAccumulate(key, targetDelta);
+
+          consumptionPeeks.push({ key, resourceId, index, targetDelta, toApply, newTotal });
+
+          // Calculate ratio based on what would ACTUALLY be consumed this tick
+          if (toApply > 0) {
             const available = resourceState.getAmount(index);
-            const ratio = available / targetConsumption;
+            const ratio = available / toApply;
             consumptionRatio = Math.min(consumptionRatio, ratio);
           }
         }
 
-        // Apply production with accumulator
+        // Phase 2: Apply production scaled by the accurate consumption ratio
         for (const { resourceId, index, rate } of validProductions) {
           const delta = rate * effectiveOwned * deltaSeconds * consumptionRatio;
-          const toApply = accumulate(generator.id, resourceId, delta);
+          const key = getAccumulatorKey(generator.id, 'produce', resourceId);
+          const { toApply, newTotal } = peekAccumulate(key, delta);
+          commitAccumulate(key, newTotal, toApply);
+
           if (toApply > 0) {
             resourceState.addAmount(index, toApply);
             produced.set(resourceId, (produced.get(resourceId) ?? 0) + toApply);
           }
         }
 
-        // Apply consumption with accumulator
-        for (const { resourceId, index, rate } of validConsumptions) {
-          const delta = rate * effectiveOwned * deltaSeconds * consumptionRatio;
-          const toApply = accumulate(generator.id, resourceId, delta);
+        // Phase 3: Apply consumption, scaling by ratio if resources were limited
+        for (const peek of consumptionPeeks) {
+          // Scale the delta by the consumption ratio if we're resource-limited
+          const scaledDelta = peek.targetDelta * consumptionRatio;
+          const key = peek.key;
+          const { toApply, newTotal } = peekAccumulate(key, scaledDelta);
+          commitAccumulate(key, newTotal, toApply);
+
           if (toApply > 0) {
-            resourceState.spendAmount(index, toApply, {
+            resourceState.spendAmount(peek.index, toApply, {
               systemId: 'production',
             });
-            consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + toApply);
+            consumed.set(peek.resourceId, (consumed.get(peek.resourceId) ?? 0) + toApply);
           }
         }
       }

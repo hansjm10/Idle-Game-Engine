@@ -397,6 +397,31 @@ describe('createProductionSystem', () => {
       const goldIndex = resources.getIndex('gold')!;
       expect(resources.getAmount(goldIndex)).toBe(0); // Non-finite rate treated as 0
     });
+
+    it('should handle generator that produces and consumes same resource', () => {
+      const resources = createResourceState([{ id: 'ore', startAmount: 100 }]);
+      const generators = [
+        {
+          id: 'ore-refiner',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 8 }],
+          consumes: [{ resourceId: 'ore', rate: 10 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      const oreIndex = resources.getIndex('ore')!;
+      // Net effect: -2/s (consumes 10, produces 8)
+      // After 1 second: 100 - 10 + 8 = 98
+      expect(resources.getAmount(oreIndex)).toBe(98);
+    });
   });
 
   describe('onTick callback', () => {
@@ -696,6 +721,56 @@ describe('createProductionSystem', () => {
       system.tick(createTickContext(1000, 3));
       resources.snapshot({ mode: 'publish' });
       expect(resources.getAmount(resources.getIndex('gold')!)).toBe(2);
+    });
+
+    it('should calculate consumption ratio based on actual accumulated amounts', () => {
+      // This test verifies the fix for the consumption ratio desync issue:
+      // The ratio should be based on what will ACTUALLY be consumed (after threshold),
+      // not the raw target amount. This prevents production from running at full rate
+      // when consumption is still accumulating below threshold.
+      const resources = createResourceState([
+        { id: 'energy', startAmount: 0.005 }, // Just enough for ~half the threshold
+        { id: 'ore', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'harvester',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 1 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Tick 1: Consumes 0.001 energy (1 rate * 0.001s), accumulates below threshold
+      // Since no consumption is actually applied (below threshold),
+      // production should also not apply (no consumption = no production)
+      system.tick(createTickContext(1, 0)); // 1ms = 0.001s
+      resources.snapshot({ mode: 'publish' });
+
+      const oreIndex = resources.getIndex('ore')!;
+      const energyIndex = resources.getIndex('energy')!;
+
+      // Before fix: ratio calculated on raw amounts, production might proceed incorrectly
+      // After fix: no consumption applied yet (below threshold), so production waits too
+      expect(resources.getAmount(energyIndex)).toBe(0.005); // Energy unchanged
+      expect(resources.getAmount(oreIndex)).toBe(0); // No ore produced yet
+
+      // Run more ticks until consumption threshold is reached
+      for (let i = 1; i <= 10; i++) {
+        system.tick(createTickContext(1, i));
+      }
+      resources.snapshot({ mode: 'publish' });
+
+      // After 11ms total: 0.011 energy would be consumed, 0.01 applied
+      // This should trigger proportional production
+      expect(resources.getAmount(energyIndex)).toBeCloseTo(0.005 - 0.005, 5); // 0.005 consumed (limited by available)
+      expect(resources.getAmount(oreIndex)).toBeCloseTo(0.05, 5); // 10 * 0.005 = 0.05 ore produced (scaled by ratio)
     });
   });
 
