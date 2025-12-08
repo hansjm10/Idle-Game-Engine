@@ -935,6 +935,119 @@ describe('createProductionSystem', () => {
     });
   });
 
+  describe('cleanupAccumulators', () => {
+    it('should remove entries with effectively zero values', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.01 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Tick to create accumulator entry, then apply exactly threshold
+      // This should leave a near-zero remainder
+      system.tick(createTickContext(1000, 0)); // 0.01 produced, 0.01 applied, ~0 remainder
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
+
+      // Cleanup should remove the near-zero entry
+      system.cleanupAccumulators();
+
+      // Continuing should work normally (creates fresh accumulator)
+      system.tick(createTickContext(1000, 1));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.02);
+    });
+
+    it('should preserve entries with significant accumulated values', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Accumulate sub-threshold amount
+      system.tick(createTickContext(1000, 0)); // 0.003 accumulated
+      system.tick(createTickContext(1000, 1)); // 0.006 accumulated
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0);
+
+      // Cleanup should NOT remove this entry (0.006 is significant)
+      system.cleanupAccumulators();
+
+      // Next ticks should continue from accumulated value
+      system.tick(createTickContext(1000, 2)); // 0.009 accumulated
+      system.tick(createTickContext(1000, 3)); // 0.012 accumulated, 0.01 applied
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
+    });
+
+    it('should remove stale entries from removed generators', () => {
+      const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
+      let generators = [
+        {
+          id: 'temp-mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      // Accumulate for temp-mine
+      system.tick(createTickContext(1000, 0));
+      system.tick(createTickContext(1000, 1));
+
+      // "Remove" the generator
+      generators = [];
+
+      // Run a tick with no generators (accumulators remain but get no updates)
+      system.tick(createTickContext(1000, 2));
+
+      // Clear the accumulator (this simulates prestige cleanup)
+      system.clearAccumulators();
+
+      // Add back a different generator
+      generators = [
+        {
+          id: 'new-mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0.01 }],
+          consumes: [],
+        },
+      ];
+
+      // New generator should start fresh
+      system.tick(createTickContext(1000, 3));
+      resources.snapshot({ mode: 'publish' });
+      expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
+    });
+  });
+
   describe('systemId option', () => {
     it('should use default system id when not provided', () => {
       const resources = createTestResources();
