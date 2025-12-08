@@ -1,5 +1,33 @@
-import type { ResourceState } from './resource-state.js';
 import type { System } from './index.js';
+
+/**
+ * Minimal interface for resource state operations needed by the production system.
+ * This abstraction allows for easier testing and reduces tight coupling to the
+ * full ResourceState implementation.
+ */
+export interface ProductionResourceState {
+  /** Get the internal index for a resource ID. Returns undefined if not found. */
+  getIndex(resourceId: string): number | undefined;
+  /** Get the current amount of a resource by index. */
+  getAmount(index: number): number;
+  /** Add an amount to a resource by index. */
+  addAmount(index: number, amount: number): void;
+  /** Spend an amount from a resource by index. Returns true if successful. */
+  spendAmount(
+    index: number,
+    amount: number,
+    context?: { systemId?: string },
+  ): boolean;
+}
+
+/**
+ * Serialized accumulator state for save/load persistence.
+ * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
+ */
+export interface SerializedProductionAccumulators {
+  /** Map of accumulator keys to their current fractional values */
+  readonly accumulators: Record<string, number>;
+}
 
 /**
  * Represents a production or consumption rate for a specific resource.
@@ -97,6 +125,62 @@ export interface ProductionSystem extends System {
    * ```
    */
   cleanupAccumulators(): void;
+
+  /**
+   * Removes all accumulator entries for a specific generator.
+   *
+   * Call this when a generator is removed from the game to free memory
+   * associated with that generator's accumulated fractional amounts.
+   *
+   * @param generatorId - The ID of the generator whose accumulators should be removed
+   *
+   * @example
+   * ```typescript
+   * // When removing a generator
+   * gameState.removeGenerator('gold-mine');
+   * productionSystem.clearGeneratorAccumulators('gold-mine');
+   * ```
+   */
+  clearGeneratorAccumulators(generatorId: string): void;
+
+  /**
+   * Exports accumulator state for persistence.
+   *
+   * Call this when saving game state to preserve fractional amounts that
+   * haven't yet reached the apply threshold. Without this, small accumulated
+   * amounts would be lost on save/load.
+   *
+   * @returns Serialized accumulator state suitable for JSON storage
+   *
+   * @example
+   * ```typescript
+   * // When saving game state
+   * const saveData = {
+   *   resources: resourceState.exportForSave(),
+   *   productionAccumulators: productionSystem.exportAccumulators(),
+   * };
+   * ```
+   */
+  exportAccumulators(): SerializedProductionAccumulators;
+
+  /**
+   * Restores accumulator state from a previous save.
+   *
+   * Call this after loading game state to restore fractional amounts.
+   * Invalid or unknown accumulator keys are silently ignored for
+   * forward compatibility.
+   *
+   * @param state - Previously exported accumulator state
+   *
+   * @example
+   * ```typescript
+   * // When loading game state
+   * if (saveData.productionAccumulators) {
+   *   productionSystem.restoreAccumulators(saveData.productionAccumulators);
+   * }
+   * ```
+   */
+  restoreAccumulators(state: SerializedProductionAccumulators): void;
 }
 
 /**
@@ -113,8 +197,11 @@ export interface ProductionSystemOptions {
    * Called each tick to get fresh generator data.
    */
   readonly generators: () => readonly GeneratorProductionState[];
-  /** The resource state to apply production/consumption to */
-  readonly resourceState: ResourceState;
+  /**
+   * The resource state to apply production/consumption to.
+   * Accepts any object implementing ProductionResourceState, including the full ResourceState.
+   */
+  readonly resourceState: ProductionResourceState;
   /**
    * Unique identifier for this production system.
    * Used for the system's `id` property and recorded in telemetry when
@@ -193,7 +280,7 @@ interface ValidatedRate {
  */
 function validateRates(
   rates: readonly GeneratorProductionRate[],
-  resourceState: ResourceState,
+  resourceState: ProductionResourceState,
 ): ValidatedRate[] {
   const validated: ValidatedRate[] = [];
 
@@ -313,6 +400,33 @@ function validateRates(
  * runtime.addSystem(productionSystem);
  * ```
  *
+ * ## Accumulator Memory Management
+ *
+ * The production system maintains internal accumulators to track fractional amounts
+ * below the `applyThreshold`. These accumulators are keyed by generator ID and resource ID,
+ * meaning **memory grows with the number of unique generator/resource combinations**.
+ *
+ * **Important:** Accumulators are NOT automatically cleaned up when generators are removed.
+ * For games with dynamic generators (created/destroyed at runtime), you should manage
+ * accumulator memory using these methods:
+ *
+ * - `clearGeneratorAccumulators(generatorId)` - Call when removing a specific generator
+ * - `cleanupAccumulators()` - Removes entries with near-zero values (safe to call periodically)
+ * - `clearAccumulators()` - Removes ALL entries (use after prestige resets)
+ *
+ * For typical idle games with a fixed set of generators, this is not a concern.
+ *
+ * @example
+ * **Memory management for dynamic generators:**
+ * ```typescript
+ * // When removing a generator
+ * gameState.removeGenerator('temporary-boost');
+ * productionSystem.clearGeneratorAccumulators('temporary-boost');
+ *
+ * // After prestige reset
+ * productionSystem.clearAccumulators();
+ * ```
+ *
  * @param options - Configuration options
  * @returns A ProductionSystem that can be added to the runtime
  */
@@ -369,10 +483,9 @@ export function createProductionSystem(
       toApply,
       newTotal: total,
       commit: (scale = 1) => {
-        const actualApplied = toApply * scale;
-        const remainder = total - toApply;
-        // Store remainder + any unapplied portion due to scaling
-        accumulators.set(key, remainder + (toApply - actualApplied));
+        // Store the difference between total accumulated and what was actually applied.
+        // This preserves both the sub-threshold remainder and any portion not applied due to scaling.
+        accumulators.set(key, total - toApply * scale);
       },
     };
   }
@@ -423,8 +536,10 @@ export function createProductionSystem(
             willApplyProduction = true;
             const available = resourceState.getAmount(index);
             // Use newTotal (full accumulated amount) for ratio calculation
-            // to ensure production scales correctly with actual consumption
-            const ratio = available / result.newTotal;
+            // to ensure production scales correctly with actual consumption.
+            // Guard against division by zero (theoretically possible with extremely
+            // small delta times that round to zero after floating-point operations).
+            const ratio = result.newTotal > 0 ? available / result.newTotal : 1;
             consumptionRatio = Math.min(consumptionRatio, ratio);
           }
         }
@@ -471,6 +586,39 @@ export function createProductionSystem(
       for (const [key, value] of accumulators) {
         if (Math.abs(value) < zeroThreshold) {
           accumulators.delete(key);
+        }
+      }
+    },
+    clearGeneratorAccumulators: (generatorId: string) => {
+      const prefix = `${generatorId}:`;
+      for (const key of accumulators.keys()) {
+        if (key.startsWith(prefix)) {
+          accumulators.delete(key);
+        }
+      }
+    },
+    exportAccumulators: (): SerializedProductionAccumulators => {
+      const result: Record<string, number> = {};
+      for (const [key, value] of accumulators) {
+        // Only export non-zero values to minimize save size
+        if (value !== 0) {
+          result[key] = value;
+        }
+      }
+      return { accumulators: result };
+    },
+    restoreAccumulators: (state: SerializedProductionAccumulators) => {
+      // Clear existing accumulators before restoring
+      accumulators.clear();
+
+      if (!state || !state.accumulators) {
+        return;
+      }
+
+      // Restore each accumulator, filtering out invalid values
+      for (const [key, value] of Object.entries(state.accumulators)) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          accumulators.set(key, value);
         }
       }
     },

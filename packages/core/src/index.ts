@@ -982,6 +982,8 @@ export {
   createProductionSystem,
   type ProductionSystem,
   type ProductionSystemOptions,
+  type ProductionResourceState,
+  type SerializedProductionAccumulators,
   type GeneratorProductionRate,
   type GeneratorProductionState,
 } from './production-system.js';
