@@ -63,6 +63,40 @@ export interface ProductionSystemOptions {
 }
 
 /**
+ * Internal type for pre-validated production/consumption rates.
+ */
+interface ValidatedRate {
+  readonly resourceId: string;
+  readonly index: number;
+  readonly rate: number;
+}
+
+/**
+ * Pre-processes rates, filtering invalid ones and resolving resource indices.
+ */
+function validateRates(
+  rates: readonly GeneratorProductionRate[],
+  resourceState: ResourceState,
+): ValidatedRate[] {
+  const validated: ValidatedRate[] = [];
+
+  for (const { resourceId, rate } of rates) {
+    if (!Number.isFinite(rate) || rate <= 0) {
+      continue;
+    }
+
+    const index = resourceState.getIndex(resourceId);
+    if (index === undefined) {
+      continue;
+    }
+
+    validated.push({ resourceId, index, rate });
+  }
+
+  return validated;
+}
+
+/**
  * Creates a production system that applies generator produces/consumes rates
  * to resources each tick.
  *
