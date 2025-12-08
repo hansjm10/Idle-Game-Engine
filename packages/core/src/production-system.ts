@@ -79,6 +79,11 @@ export interface ProductionSystem extends System {
 }
 
 /**
+ * Default system ID used for telemetry and resource spend tracking.
+ */
+const DEFAULT_PRODUCTION_SYSTEM_ID = 'production';
+
+/**
  * Configuration options for creating a production system.
  */
 export interface ProductionSystemOptions {
@@ -89,6 +94,17 @@ export interface ProductionSystemOptions {
   readonly generators: () => readonly GeneratorProductionState[];
   /** The resource state to apply production/consumption to */
   readonly resourceState: ResourceState;
+  /**
+   * Unique identifier for this production system.
+   * Used for the system's `id` property and recorded in telemetry when
+   * resources are consumed. Defaults to "production" when omitted.
+   *
+   * Specify a unique ID when creating multiple production systems to
+   * distinguish their resource operations in telemetry and debugging.
+   *
+   * @default "production"
+   */
+  readonly systemId?: string;
   /**
    * Optional function to get a production multiplier for a generator.
    * Can be used to apply upgrade bonuses.
@@ -283,6 +299,7 @@ export function createProductionSystem(
   options: ProductionSystemOptions,
 ): ProductionSystem {
   const { generators, resourceState, getMultiplier, onTick } = options;
+  const systemId = options.systemId ?? DEFAULT_PRODUCTION_SYSTEM_ID;
   const applyThreshold = options.applyThreshold ?? 0.0001;
 
   if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
@@ -322,7 +339,7 @@ export function createProductionSystem(
   }
 
   return {
-    id: 'production',
+    id: systemId,
     tick: ({ deltaMs }) => {
       const deltaSeconds = deltaMs / 1000;
       const generatorList = generators();
@@ -392,7 +409,7 @@ export function createProductionSystem(
 
           if (toApply > 0) {
             resourceState.spendAmount(peek.index, toApply, {
-              systemId: 'production',
+              systemId,
             });
             consumed.set(peek.resourceId, (consumed.get(peek.resourceId) ?? 0) + toApply);
           }

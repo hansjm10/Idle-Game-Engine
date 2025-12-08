@@ -934,4 +934,73 @@ describe('createProductionSystem', () => {
       expect(resources.getAmount(resources.getIndex('wood')!)).toBe(0);
     });
   });
+
+  describe('systemId option', () => {
+    it('should use default system id when not provided', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 1 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      expect(system.id).toBe('production');
+    });
+
+    it('should use custom system id when provided', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 1 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        systemId: 'custom-production',
+      });
+
+      expect(system.id).toBe('custom-production');
+    });
+
+    it('should allow multiple production systems with different ids', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 1 }],
+          consumes: [],
+        },
+      ];
+
+      const system1 = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        systemId: 'production-layer-1',
+      });
+
+      const system2 = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        systemId: 'production-layer-2',
+      });
+
+      expect(system1.id).toBe('production-layer-1');
+      expect(system2.id).toBe('production-layer-2');
+      expect(system1.id).not.toBe(system2.id);
+    });
+  });
 });
