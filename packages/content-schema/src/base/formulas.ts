@@ -95,7 +95,7 @@ type NumericFormulaInput =
   | { kind: 'linear'; base: number; slope: number }
   | {
       kind: 'exponential';
-      base: number;
+      base?: number;
       growth: number;
       offset?: number;
     }
@@ -277,7 +277,7 @@ const createNumericFormulaSchema = (
     z
       .object({
         kind: z.literal('exponential'),
-        base: finiteNumberSchema,
+        base: finiteNumberSchema.default(1),
         growth: finiteNumberSchema,
         offset: finiteNumberSchema.optional(),
       })
