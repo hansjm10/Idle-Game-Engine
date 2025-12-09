@@ -624,7 +624,7 @@ export function createProductionSystem(
     },
     cleanupAccumulators: () => {
       const zeroThreshold = applyThreshold * 1e-6;
-      for (const [key, value] of Array.from(accumulators)) {
+      for (const [key, value] of accumulators) {
         if (Math.abs(value) < zeroThreshold) {
           accumulators.delete(key);
         }
@@ -632,7 +632,7 @@ export function createProductionSystem(
     },
     clearGeneratorAccumulators: (generatorId: string) => {
       const prefix = `${generatorId}:`;
-      for (const key of Array.from(accumulators.keys())) {
+      for (const key of accumulators.keys()) {
         if (key.startsWith(prefix)) {
           accumulators.delete(key);
         }
