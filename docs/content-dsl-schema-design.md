@@ -194,8 +194,8 @@ const localizedTextSchema = z
   common progression curves and explicit expressions:
   - `constant`: `{ kind: 'constant'; value: number }`.
   - `linear`: `{ kind: 'linear'; base: number; slope: number }`.
-  - `exponential`: `{ kind: 'exponential'; base: number; growth: number;
-    offset?: number }`.
+  - `exponential`: `{ kind: 'exponential'; base?: number; growth: number;
+    offset?: number }`. `base` defaults to `1`.
   - `polynomial`: `{ kind: 'polynomial'; coefficients: number[] }`.
   - `piecewise`: `{ kind: 'piecewise'; pieces: { untilLevel?: number;
     formula: NumericFormula }[] }`.
