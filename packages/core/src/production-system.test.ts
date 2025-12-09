@@ -398,6 +398,200 @@ describe('createProductionSystem', () => {
       expect(resources.getAmount(goldIndex)).toBe(0); // Non-finite rate treated as 0
     });
 
+    it('should handle zero production rate', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'idle-mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 0 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      expect(resources.getAmount(goldIndex)).toBe(0); // Zero rate produces nothing
+    });
+
+    it('should handle NaN production rate', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'nan-mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: NaN }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      // Should not throw
+      expect(() => {
+        system.tick(createTickContext(1000, 0));
+      }).not.toThrow();
+
+      resources.snapshot({ mode: 'publish' });
+      const goldIndex = resources.getIndex('gold')!;
+      expect(resources.getAmount(goldIndex)).toBe(0); // NaN rate treated as 0
+    });
+
+    it('should handle negative consumption rate', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'broken-consumer',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'wood', rate: -5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+      // Negative consumption rate is filtered out, so generator runs at full rate
+      expect(resources.getAmount(goldIndex)).toBe(10);
+      expect(resources.getAmount(woodIndex)).toBe(100); // No consumption
+    });
+
+    it('should handle zero consumption rate', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'free-producer',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'wood', rate: 0 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+      // Zero consumption rate is filtered out, so generator runs at full rate
+      expect(resources.getAmount(goldIndex)).toBe(10);
+      expect(resources.getAmount(woodIndex)).toBe(100); // No consumption
+    });
+
+    it('should handle NaN consumption rate', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'nan-consumer',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'wood', rate: NaN }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      // Should not throw
+      expect(() => {
+        system.tick(createTickContext(1000, 0));
+      }).not.toThrow();
+
+      resources.snapshot({ mode: 'publish' });
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+      // NaN consumption rate is filtered out, so generator runs at full rate
+      expect(resources.getAmount(goldIndex)).toBe(10);
+      expect(resources.getAmount(woodIndex)).toBe(100); // No consumption
+    });
+
+    it('should handle Infinity consumption rate', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'infinity-consumer',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'wood', rate: Infinity }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      // Should not throw
+      expect(() => {
+        system.tick(createTickContext(1000, 0));
+      }).not.toThrow();
+
+      resources.snapshot({ mode: 'publish' });
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+      // Infinity consumption rate is filtered out, so generator runs at full rate
+      expect(resources.getAmount(goldIndex)).toBe(10);
+      expect(resources.getAmount(woodIndex)).toBe(100); // No consumption
+    });
+
+    it('should skip invalid rates while processing valid ones in same generator', () => {
+      const resources = createResourceState([
+        { id: 'gold', startAmount: 0 },
+        { id: 'silver', startAmount: 0 },
+        { id: 'copper', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'mixed-mine',
+          owned: 1,
+          produces: [
+            { resourceId: 'gold', rate: 5 },
+            { resourceId: 'silver', rate: -3 }, // Invalid: negative
+            { resourceId: 'copper', rate: 2 },
+          ],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      const silverIndex = resources.getIndex('silver')!;
+      const copperIndex = resources.getIndex('copper')!;
+      expect(resources.getAmount(goldIndex)).toBe(5); // Valid rate applied
+      expect(resources.getAmount(silverIndex)).toBe(0); // Invalid rate skipped
+      expect(resources.getAmount(copperIndex)).toBe(2); // Valid rate applied
+    });
+
     it('should handle generator that produces and consumes same resource', () => {
       const resources = createResourceState([{ id: 'ore', startAmount: 100 }]);
       const generators = [

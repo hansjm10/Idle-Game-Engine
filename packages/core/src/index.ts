@@ -987,3 +987,5 @@ export {
   type GeneratorProductionRate,
   type GeneratorProductionState,
 } from './production-system.js';
+// Test utilities - useful for consumers writing tests for their game logic
+export { createTickContext, createMockEventPublisher } from './test-utils.js';
