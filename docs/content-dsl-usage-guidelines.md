@@ -535,6 +535,39 @@ Content formulas must evaluate to finite, non-negative numbers across determinis
 - Avoid NaN/Infinity: inputs are validated (`finiteNumberSchema`), and formulas with impossible evaluations are rejected.
 - Piecewise: ensure strictly increasing `untilLevel` thresholds and a final catch-all segment.
 
+### Exponential Cost Curve Formula
+
+The exponential formula evaluates as: `base × growth^level + offset`
+
+When used as a `costCurve`, this combines with `baseCost` to produce:
+
+```
+totalCost = baseCost × (base × growth^level + offset)
+```
+
+**Important**: The `base` parameter defaults to `1`. For the standard idle game cost curve where `baseCost` alone represents the level-0 cost, simply omit `base`:
+
+```json
+{
+  "baseCost": 120,
+  "costCurve": { "kind": "exponential", "growth": 1.15 }
+}
+// At level 0: 120 × 1 × 1.15^0 = 120
+// At level 1: 120 × 1 × 1.15^1 = 138
+```
+
+**Common mistake**: Setting `base` equal to `baseCost` doubles the multiplier:
+
+```json
+{
+  "baseCost": 50,
+  "costCurve": { "kind": "exponential", "base": 50, "growth": 1.15 }
+}
+// At level 0: 50 × 50 × 1.15^0 = 2500 (not 50!)
+```
+
+Use a non-default `base` only when you need an additional scaling factor independent of `baseCost`.
+
 Automation authoring guidance:
 - `resourceCost.rate` represents units per second; keep bounds realistic for your economy to avoid runaway drains.
 - `cooldown` must be finite (milliseconds). Prefer ≥ 0. Extremely small values can lead to noisy behavior during testing.

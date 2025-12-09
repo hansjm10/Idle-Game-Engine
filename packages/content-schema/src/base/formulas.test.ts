@@ -28,6 +28,33 @@ describe('numericFormulaSchema', () => {
     });
   });
 
+  it('defaults exponential base to 1 when omitted', () => {
+    const result = numericFormulaSchema.parse({
+      kind: 'exponential',
+      growth: 1.15,
+    });
+    expect(result).toEqual({
+      kind: 'exponential',
+      base: 1,
+      growth: 1.15,
+    });
+  });
+
+  it('preserves explicit exponential base when provided', () => {
+    const result = numericFormulaSchema.parse({
+      kind: 'exponential',
+      base: 10,
+      growth: 1.15,
+      offset: 5,
+    });
+    expect(result).toEqual({
+      kind: 'exponential',
+      base: 10,
+      growth: 1.15,
+      offset: 5,
+    });
+  });
+
   it('validates piecewise segments with strict ordering and catch-all', () => {
     const piecewise = {
       kind: 'piecewise' as const,
