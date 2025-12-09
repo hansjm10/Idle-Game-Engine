@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { TelemetryEventData, TelemetryFacade } from './telemetry.js';
-import { resetTelemetry, setTelemetry, telemetry } from './telemetry.js';
+import {
+  createConsoleTelemetry,
+  resetTelemetry,
+  setTelemetry,
+  silentTelemetry,
+  telemetry,
+} from './telemetry.js';
 
 describe('telemetry facade', () => {
   afterEach(() => {
@@ -89,5 +95,79 @@ describe('telemetry facade', () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+
+  it('is silent by default', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    try {
+      // After resetTelemetry(), telemetry should be silent
+      resetTelemetry();
+
+      telemetry.recordError('error');
+      telemetry.recordWarning('warning');
+      telemetry.recordProgress('progress');
+      telemetry.recordCounters('counters', { count: 1 });
+      telemetry.recordTick();
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(infoSpy).not.toHaveBeenCalled();
+      expect(debugSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+      infoSpy.mockRestore();
+      debugSpy.mockRestore();
+    }
+  });
+
+  it('createConsoleTelemetry returns a facade that logs to console', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    try {
+      const consoleFacade = createConsoleTelemetry();
+      setTelemetry(consoleFacade);
+
+      telemetry.recordError('error');
+      telemetry.recordWarning('warning');
+      telemetry.recordProgress('progress');
+      telemetry.recordCounters('counters', { count: 1 });
+      telemetry.recordTick();
+
+      expect(errorSpy).toHaveBeenCalledWith('[telemetry:error] error', undefined);
+      expect(warnSpy).toHaveBeenCalledWith('[telemetry:warning] warning', undefined);
+      expect(infoSpy).toHaveBeenCalledWith('[telemetry:progress] progress', undefined);
+      expect(infoSpy).toHaveBeenCalledWith('[telemetry:counters] counters', { count: 1 });
+      expect(debugSpy).toHaveBeenCalledWith('[telemetry:tick]');
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+      infoSpy.mockRestore();
+      debugSpy.mockRestore();
+    }
+  });
+
+  it('silentTelemetry is a no-op facade', () => {
+    expect(silentTelemetry.recordError).toBeDefined();
+    expect(silentTelemetry.recordWarning).toBeDefined();
+    expect(silentTelemetry.recordProgress).toBeDefined();
+    expect(silentTelemetry.recordCounters).toBeDefined();
+    expect(silentTelemetry.recordTick).toBeDefined();
+
+    // Should not throw when called
+    expect(() => {
+      silentTelemetry.recordError('error');
+      silentTelemetry.recordWarning('warning');
+      silentTelemetry.recordProgress('progress');
+      silentTelemetry.recordCounters('counters', { count: 1 });
+      silentTelemetry.recordTick();
+    }).not.toThrow();
   });
 });

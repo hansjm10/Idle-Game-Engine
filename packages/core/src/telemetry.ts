@@ -28,7 +28,31 @@ const consoleTelemetry: TelemetryFacade = {
   },
 };
 
-let activeTelemetry: TelemetryFacade = consoleTelemetry;
+/**
+ * A no-op telemetry implementation that silently discards all events.
+ * This is the default telemetry facade.
+ */
+export const silentTelemetry: TelemetryFacade = {
+  recordError() {},
+  recordWarning() {},
+  recordProgress() {},
+  recordCounters() {},
+  recordTick() {},
+};
+
+/**
+ * Creates a telemetry facade that logs all events to the console.
+ * Use this for development/debugging when you want to see telemetry output.
+ *
+ * @example
+ * import { setTelemetry, createConsoleTelemetry } from '@idle-engine/core';
+ * setTelemetry(createConsoleTelemetry());
+ */
+export function createConsoleTelemetry(): TelemetryFacade {
+  return consoleTelemetry;
+}
+
+let activeTelemetry: TelemetryFacade = silentTelemetry;
 
 export const telemetry: TelemetryFacade = {
   recordError(event, data) {
@@ -53,7 +77,7 @@ export function setTelemetry(facade: TelemetryFacade): void {
 }
 
 export function resetTelemetry(): void {
-  activeTelemetry = consoleTelemetry;
+  activeTelemetry = silentTelemetry;
 }
 
 function invokeSafely<TMethod extends keyof TelemetryFacade>(

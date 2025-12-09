@@ -7,24 +7,11 @@ import process from 'node:process';
 import {
   createVerificationRuntime,
   runVerificationTicks,
-  setTelemetry,
 } from '@idle-engine/core';
-import type {
-  EconomyStateSummary,
-  ResourceDefinition,
-  TelemetryFacade,
-} from '@idle-engine/core';
+import type { EconomyStateSummary, ResourceDefinition } from '@idle-engine/core';
 import { sampleContent } from '@idle-engine/content-sample';
 
-const silentTelemetry: TelemetryFacade = {
-  recordError() {},
-  recordWarning() {},
-  recordProgress() {},
-  recordCounters() {},
-  recordTick() {},
-};
-
-setTelemetry(silentTelemetry);
+// Telemetry is silent by default in @idle-engine/core, no configuration needed.
 
 interface CliArgs {
   readonly snapshotPath?: string;

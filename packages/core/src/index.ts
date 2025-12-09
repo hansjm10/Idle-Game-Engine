@@ -896,11 +896,13 @@ export {
   type TransportConstructorName,
 } from './resource-publish-transport.js';
 export {
+  createConsoleTelemetry,
+  resetTelemetry,
+  setTelemetry,
+  silentTelemetry,
   telemetry,
   type TelemetryEventData,
   type TelemetryFacade,
-  resetTelemetry,
-  setTelemetry,
 } from './telemetry.js';
 export {
   RUNTIME_VERSION,
