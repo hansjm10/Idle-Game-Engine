@@ -35,7 +35,11 @@ export interface SerializedProductionAccumulators {
 export interface GeneratorProductionRate {
   /** The ID of the resource being produced or consumed */
   readonly resourceId: string;
-  /** The rate per second at which the resource is produced/consumed per owned generator */
+  /**
+   * The rate per second at which the resource is produced/consumed per owned generator.
+   * Must be a positive finite number. Invalid values (negative, zero, NaN, Infinity)
+   * are silently ignored during production calculations.
+   */
   readonly rate: number;
 }
 
@@ -267,18 +271,35 @@ export interface ProductionSystemOptions {
 }
 
 /**
- * Internal type for pre-validated production/consumption rates.
+ * A validated production/consumption rate with resolved resource index.
+ * Returned by `validateRates` after filtering invalid rates.
  */
-interface ValidatedRate {
+export interface ValidatedRate {
+  /** The ID of the resource */
   readonly resourceId: string;
+  /** The resolved index in the resource state */
   readonly index: number;
+  /** The validated rate (guaranteed positive and finite) */
   readonly rate: number;
 }
 
 /**
- * Pre-processes rates, filtering invalid ones and resolving resource indices.
+ * Pre-processes production/consumption rates, filtering invalid ones and resolving resource indices.
+ *
+ * This function is exported primarily for testing purposes, allowing consumers to
+ * pre-validate their generator configurations before runtime.
+ *
+ * @param rates - Array of production rates to validate
+ * @param resourceState - Resource state to resolve indices against
+ * @returns Array of validated rates with resolved indices
+ *
+ * @example
+ * ```typescript
+ * const validated = validateRates(generator.produces, resourceState);
+ * // validated contains only rates that are positive, finite, and have valid resource indices
+ * ```
  */
-function validateRates(
+export function validateRates(
   rates: readonly GeneratorProductionRate[],
   resourceState: ProductionResourceState,
 ): ValidatedRate[] {
@@ -430,6 +451,19 @@ function validateRates(
  * @param options - Configuration options
  * @returns A ProductionSystem that can be added to the runtime
  */
+/**
+ * Checks if running in development mode for dev-only warnings.
+ */
+function isDevelopmentMode(): boolean {
+  const globalObject = globalThis as {
+    readonly process?: {
+      readonly env?: Record<string, string | undefined>;
+    };
+  };
+  const nodeEnv = globalObject.process?.env?.NODE_ENV;
+  return nodeEnv !== 'production';
+}
+
 export function createProductionSystem(
   options: ProductionSystemOptions,
 ): ProductionSystem {
@@ -501,6 +535,13 @@ export function createProductionSystem(
       const consumed = new Map<string, number>();
 
       for (const generator of generatorList) {
+        if (isDevelopmentMode() && generator.id.includes(':')) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `Generator ID "${generator.id}" contains ':' which may cause accumulator key collisions`,
+          );
+        }
+
         if (generator.owned <= 0) {
           continue;
         }

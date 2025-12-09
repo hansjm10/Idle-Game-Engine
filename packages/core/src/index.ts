@@ -980,12 +980,14 @@ export {
 } from './prestige-reset.js';
 export {
   createProductionSystem,
+  validateRates,
   type ProductionSystem,
   type ProductionSystemOptions,
   type ProductionResourceState,
   type SerializedProductionAccumulators,
   type GeneratorProductionRate,
   type GeneratorProductionState,
+  type ValidatedRate,
 } from './production-system.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';
