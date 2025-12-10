@@ -991,5 +991,19 @@ export {
   type GeneratorProductionState,
   type ValidatedRate,
 } from './production-system.js';
+export {
+  createProgressionCoordinator,
+  type ProgressionCoordinator,
+  type ProgressionCoordinatorOptions,
+} from './progression-coordinator.js';
+export {
+  combineConditions,
+  compareWithComparator,
+  describeCondition,
+  evaluateCondition,
+  formatComparator,
+  formatNumber,
+  type ConditionContext,
+} from './condition-evaluator.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';

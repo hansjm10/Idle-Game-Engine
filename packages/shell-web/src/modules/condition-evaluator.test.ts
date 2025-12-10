@@ -1,6 +1,4 @@
 import type { Condition } from '@idle-engine/content-schema';
-import { describe, expect, it } from 'vitest';
-
 import {
   combineConditions,
   compareWithComparator,
@@ -9,7 +7,8 @@ import {
   evaluateCondition,
   formatComparator,
   formatNumber,
-} from './condition-evaluator.js';
+} from '@idle-engine/core';
+import { describe, expect, it } from 'vitest';
 
 type ConditionContentId =
   & Extract<Condition, { resourceId: unknown }>['resourceId']

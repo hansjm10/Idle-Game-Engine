@@ -1,9 +1,7 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import type { SerializedResourceState, TelemetryFacade } from '@idle-engine/core';
-import { resetTelemetry, setTelemetry } from '@idle-engine/core';
+import { createProgressionCoordinator, resetTelemetry, setTelemetry } from '@idle-engine/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { createProgressionCoordinator } from './progression-coordinator.js';
 import {
   createContentPack,
   createGeneratorDefinition,

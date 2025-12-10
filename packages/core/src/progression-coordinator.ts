@@ -1,31 +1,3 @@
-import {
-  createResourceState,
-  reconcileSaveAgainstDefinitions,
-  applyPrestigeReset,
-  telemetry,
-  type GeneratorPurchaseEvaluator,
-  type GeneratorPurchaseQuote,
-  type GeneratorResourceCost,
-  type GeneratorRateView,
-  type PrestigeQuote,
-  type PrestigeResetTarget,
-  type PrestigeRetentionTarget,
-  type PrestigeRewardPreview,
-  type PrestigeSystemEvaluator,
-  type ProgressionAuthoritativeState,
-  type ProgressionGeneratorState,
-  type ProgressionPrestigeLayerState,
-  type ProgressionResourceState,
-  type ProgressionUpgradeState,
-  type ResourceDefinition,
-  type ResourceProgressionMetadata,
-  type ResourceState,
-  type SerializedResourceState,
-  type UpgradePurchaseEvaluator,
-  type UpgradePurchaseQuote,
-  type UpgradeResourceCost,
-  type UpgradeStatus,
-} from '@idle-engine/core';
 import type {
   Condition,
   NormalizedContentPack,
@@ -40,6 +12,40 @@ import {
   type FormulaEvaluationContext,
 } from '@idle-engine/content-schema';
 
+import {
+  createResourceState,
+  reconcileSaveAgainstDefinitions,
+  type ResourceDefinition,
+  type ResourceState,
+  type SerializedResourceState,
+} from './resource-state.js';
+import {
+  type GeneratorPurchaseEvaluator,
+  type GeneratorPurchaseQuote,
+  type GeneratorResourceCost,
+  type UpgradePurchaseEvaluator,
+  type UpgradePurchaseQuote,
+  type UpgradeResourceCost,
+  type UpgradeStatus,
+} from './resource-command-handlers.js';
+import {
+  type GeneratorRateView,
+  type PrestigeQuote,
+  type PrestigeRewardPreview,
+  type PrestigeSystemEvaluator,
+  type ProgressionAuthoritativeState,
+  type ProgressionGeneratorState,
+  type ProgressionPrestigeLayerState,
+  type ProgressionResourceState,
+  type ProgressionUpgradeState,
+  type ResourceProgressionMetadata,
+} from './progression.js';
+import {
+  applyPrestigeReset,
+  type PrestigeResetTarget,
+  type PrestigeRetentionTarget,
+} from './prestige-reset.js';
+import { telemetry } from './telemetry.js';
 import {
   combineConditions,
   type ConditionContext,

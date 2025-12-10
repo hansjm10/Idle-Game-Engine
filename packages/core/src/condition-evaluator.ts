@@ -2,6 +2,23 @@ import type { Condition } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 
 /**
+ * Checks if running in development mode for error reporting behavior.
+ *
+ * Uses safe global access pattern to work in all JavaScript environments
+ * (browser, Node.js, Deno, web workers, etc.).
+ */
+function isDevelopmentMode(): boolean {
+  const globalObject = globalThis as {
+    readonly process?: {
+      readonly env?: Record<string, string | undefined>;
+    };
+  };
+
+  const nodeEnv = globalObject.process?.env?.NODE_ENV;
+  return nodeEnv !== 'production';
+}
+
+/**
  * Level value used for evaluating static unlock thresholds.
  *
  * @remarks
@@ -68,7 +85,7 @@ function reportMissingContextHook(
       hook,
     )}()`,
   );
-  if (process.env.NODE_ENV !== 'production') {
+  if (isDevelopmentMode()) {
     context.onError?.(error);
   } else {
     // eslint-disable-next-line no-console -- log degradation path in production builds
@@ -117,7 +134,7 @@ export function evaluateCondition(
     const error = new Error(
       `Condition evaluation exceeded maximum depth of ${MAX_CONDITION_DEPTH} at recursion level ${depth}${conditionInfo}. Possible circular dependency detected. Check for conditions that reference each other in a cycle.`,
     );
-    if (process.env.NODE_ENV !== 'production') {
+    if (isDevelopmentMode()) {
       context.onError?.(error);
     } else {
       // eslint-disable-next-line no-console -- Graceful degradation: log circular dependency warning in production
@@ -201,7 +218,7 @@ export function evaluateCondition(
       const error = new Error(
         `Unknown condition kind: ${(_exhaustive as Condition).kind}`,
       );
-      if (process.env.NODE_ENV !== 'production') {
+      if (isDevelopmentMode()) {
         context.onError?.(error);
       } else {
         // eslint-disable-next-line no-console -- Graceful degradation: log unknown condition types in production
@@ -243,7 +260,7 @@ export function compareWithComparator(
       // Exhaustive check: if we reach here, TypeScript knows this should never happen
       const _exhaustive: never = comparator;
       const error = new Error(`Unknown comparator: ${_exhaustive}`);
-      if (process.env.NODE_ENV !== 'production') {
+      if (isDevelopmentMode()) {
         context?.onError?.(error);
       } else {
         // eslint-disable-next-line no-console -- Graceful degradation: log unknown comparators in production
