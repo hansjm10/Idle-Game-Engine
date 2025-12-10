@@ -1,22 +1,7 @@
 import type { Condition } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 
-/**
- * Checks if running in development mode for error reporting behavior.
- *
- * Uses safe global access pattern to work in all JavaScript environments
- * (browser, Node.js, Deno, web workers, etc.).
- */
-function isDevelopmentMode(): boolean {
-  const globalObject = globalThis as {
-    readonly process?: {
-      readonly env?: Record<string, string | undefined>;
-    };
-  };
-
-  const nodeEnv = globalObject.process?.env?.NODE_ENV;
-  return nodeEnv !== 'production';
-}
+import { isDevelopmentMode } from './env-utils.js';
 
 /**
  * Level value used for evaluating static unlock thresholds.
