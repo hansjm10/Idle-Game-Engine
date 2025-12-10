@@ -54,3 +54,24 @@ export * from './modules/runtime-events.js';
 export * from './modules/dependencies.js';
 
 export * from './runtime-compat.js';
+
+export {
+  createResource,
+  createGenerator,
+  createUpgrade,
+  createMetric,
+  createAchievement,
+  createAutomation,
+  createTransform,
+  createPrestigeLayer,
+  createGuildPerk,
+  type ResourceInput,
+  type GeneratorInput,
+  type UpgradeInput,
+  type MetricInput,
+  type AchievementInput,
+  type AutomationInput,
+  type TransformInput,
+  type PrestigeLayerInput,
+  type GuildPerkInput,
+} from './factories.js';
