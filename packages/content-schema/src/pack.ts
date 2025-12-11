@@ -1394,6 +1394,15 @@ const validateCrossReferences = (
       upgradeIndex,
       prestigeIndex,
     );
+    // Validate that the required prestige count resource exists
+    const prestigeCountId = `${layer.id}-prestige-count`;
+    ensureContentReference(
+      resourceIndex,
+      prestigeCountId,
+      ['prestigeLayers', index, 'id'],
+      `Prestige layer "${layer.id}" requires a resource named "${prestigeCountId}" to track prestige count. ` +
+        `Add this resource to your content pack's resources array.`,
+    );
   });
 
   pack.guildPerks.forEach((perk, index) => {

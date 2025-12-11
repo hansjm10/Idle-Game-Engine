@@ -32,6 +32,7 @@ import {
   linearTransformChainFixture,
   localizationGapsFixture,
   missingMetricReferenceFixture,
+  missingPrestigeCountResourceFixture,
   missingResourceReferenceFixture,
   resourceSinkTransformFixture,
   selfReferencingDependencyFixture,
@@ -717,5 +718,44 @@ describe('Integration: Resource Capacity Normalization', () => {
 
     expect(unlimited?.capacity).toBe(null);
     expect(defaultCap?.capacity).toBe(null);
+  });
+});
+
+describe('Integration: Missing Prestige Count Resource', () => {
+  it('rejects pack with prestige layer missing required prestige count resource', () => {
+    const validator = createContentPackValidator();
+    expect(() => validator.parse(missingPrestigeCountResourceFixture)).toThrow(
+      ZodError,
+    );
+
+    const result = validator.safeParse(missingPrestigeCountResourceFixture);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('prestige-test-pack.ascension-prestige-count'),
+          path: expect.arrayContaining(['prestigeLayers']),
+        }),
+      ]),
+    );
+  });
+
+  it('provides clear error message explaining the required resource naming convention', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(missingPrestigeCountResourceFixture);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    const prestigeIssue = issues.find(issue =>
+      issue.message.includes('prestige-test-pack.ascension-prestige-count')
+    );
+
+    expect(prestigeIssue).toBeDefined();
+    expect(prestigeIssue?.message).toContain('track prestige count');
+    expect(prestigeIssue?.message).toContain('Add this resource');
   });
 });

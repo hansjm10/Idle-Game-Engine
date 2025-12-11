@@ -1306,3 +1306,54 @@ export const selfReferencingTransformFixture = {
     },
   ],
 };
+
+/**
+ * PRESTIGE LAYER: Pack with prestige layer but missing the required prestige count resource.
+ * Should fail validation with a clear error message.
+ */
+export const missingPrestigeCountResourceFixture = {
+  metadata: {
+    id: 'prestige-test-pack',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'prestige-test-pack.energy',
+      name: { default: 'Energy', variants: {} },
+      category: 'primary' as const,
+      tier: 1,
+      startAmount: 100,
+    },
+    {
+      id: 'prestige-test-pack.prestige-points',
+      name: { default: 'Prestige Points', variants: {} },
+      category: 'prestige' as const,
+      tier: 2,
+    },
+    // Note: Missing 'prestige-test-pack.ascension-prestige-count' resource
+  ],
+  generators: [],
+  upgrades: [],
+  prestigeLayers: [
+    {
+      id: 'prestige-test-pack.ascension',
+      name: { default: 'Ascension', variants: {} },
+      summary: { default: 'Reset for prestige points.', variants: {} },
+      resetTargets: ['prestige-test-pack.energy'],
+      unlockCondition: {
+        kind: 'resourceThreshold' as const,
+        resourceId: 'prestige-test-pack.energy',
+        comparator: 'gte' as const,
+        amount: { kind: 'constant', value: 100 },
+      },
+      reward: {
+        resourceId: 'prestige-test-pack.prestige-points',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    },
+  ],
+};
