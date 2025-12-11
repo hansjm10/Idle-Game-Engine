@@ -1,4 +1,20 @@
+import { useGameEngine } from './hooks/useGameEngine.js';
+import { ResourcePanel } from './components/ResourcePanel.js';
+import { GeneratorPanel } from './components/GeneratorPanel.js';
+
 export function App() {
+  const { state, buyGenerator } = useGameEngine();
+
+  if (!state.ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gold-400 font-display text-2xl animate-pulse">
+          Loading Cosmic Bakery...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen p-4">
       <header className="text-center mb-8">
@@ -9,10 +25,14 @@ export function App() {
           Bake your way across the cosmos!
         </p>
       </header>
-      <main className="max-w-6xl mx-auto">
-        <p className="text-center text-cosmic-300">
-          Game loading...
-        </p>
+
+      <main className="max-w-6xl mx-auto space-y-6">
+        <ResourcePanel resources={state.resources} />
+        <GeneratorPanel
+          generators={state.generators}
+          resources={state.resources}
+          onBuy={buyGenerator}
+        />
       </main>
     </div>
   );
