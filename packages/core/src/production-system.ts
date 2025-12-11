@@ -1,3 +1,4 @@
+import { isDevelopmentMode } from './env-utils.js';
 import type { System } from './index.js';
 
 /**
@@ -451,19 +452,6 @@ export function validateRates(
  * @param options - Configuration options
  * @returns A ProductionSystem that can be added to the runtime
  */
-/**
- * Checks if running in development mode for dev-only warnings.
- */
-function isDevelopmentMode(): boolean {
-  const globalObject = globalThis as {
-    readonly process?: {
-      readonly env?: Record<string, string | undefined>;
-    };
-  };
-  const nodeEnv = globalObject.process?.env?.NODE_ENV;
-  return nodeEnv !== 'production';
-}
-
 export function createProductionSystem(
   options: ProductionSystemOptions,
 ): ProductionSystem {

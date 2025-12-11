@@ -1,9 +1,8 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
-import type { SerializedResourceState, TelemetryFacade } from '@idle-engine/core';
-import { resetTelemetry, setTelemetry } from '@idle-engine/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createProgressionCoordinator } from './progression-coordinator.js';
+import type { SerializedResourceState, TelemetryFacade } from './index.js';
+import { createProgressionCoordinator, resetTelemetry, setTelemetry } from './index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
@@ -11,7 +10,7 @@ import {
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './test-helpers.js';
+} from './content-test-helpers.js';
 
 function createRepeatableContentPack(): NormalizedContentPack {
   const resource = createResourceDefinition('resource.test', {
@@ -2144,7 +2143,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
 
   it('executes prestige reset via command dispatcher and mutates resource state', async () => {
     // Import command infrastructure
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('./index.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
@@ -2225,7 +2224,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
   });
 
   it('rejects locked prestige layer via command dispatcher', async () => {
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('./index.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
@@ -2303,7 +2302,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
   });
 
   it('handles repeatable prestige (completed status) via command dispatcher', async () => {
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('./index.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
@@ -2390,7 +2389,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
   });
 
   it('passes confirmationToken through full command flow', async () => {
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('@idle-engine/core');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('./index.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',

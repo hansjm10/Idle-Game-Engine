@@ -9,7 +9,7 @@ import {
   evaluateCondition,
   formatComparator,
   formatNumber,
-} from './condition-evaluator.js';
+} from './index.js';
 
 type ConditionContentId =
   & Extract<Condition, { resourceId: unknown }>['resourceId']

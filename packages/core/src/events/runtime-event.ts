@@ -1,3 +1,5 @@
+import { isDevelopmentMode } from '../env-utils.js';
+
 type Primitive =
   | string
   | number
@@ -156,15 +158,4 @@ function deepFreeze(value: unknown): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- recursion over object entries
     deepFreeze((value as Record<PropertyKey, any>)[symbol]);
   }
-}
-
-function isDevelopmentMode(): boolean {
-  const globalObject = globalThis as {
-    readonly process?: {
-      readonly env?: Record<string, string | undefined>;
-    };
-  };
-
-  const nodeEnv = globalObject.process?.env?.NODE_ENV;
-  return nodeEnv !== 'production';
 }

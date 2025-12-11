@@ -1,6 +1,8 @@
 import type { Condition } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 
+import { isDevelopmentMode } from './env-utils.js';
+
 /**
  * Level value used for evaluating static unlock thresholds.
  *
@@ -68,7 +70,7 @@ function reportMissingContextHook(
       hook,
     )}()`,
   );
-  if (process.env.NODE_ENV !== 'production') {
+  if (isDevelopmentMode()) {
     context.onError?.(error);
   } else {
     // eslint-disable-next-line no-console -- log degradation path in production builds
@@ -117,7 +119,7 @@ export function evaluateCondition(
     const error = new Error(
       `Condition evaluation exceeded maximum depth of ${MAX_CONDITION_DEPTH} at recursion level ${depth}${conditionInfo}. Possible circular dependency detected. Check for conditions that reference each other in a cycle.`,
     );
-    if (process.env.NODE_ENV !== 'production') {
+    if (isDevelopmentMode()) {
       context.onError?.(error);
     } else {
       // eslint-disable-next-line no-console -- Graceful degradation: log circular dependency warning in production
@@ -201,7 +203,7 @@ export function evaluateCondition(
       const error = new Error(
         `Unknown condition kind: ${(_exhaustive as Condition).kind}`,
       );
-      if (process.env.NODE_ENV !== 'production') {
+      if (isDevelopmentMode()) {
         context.onError?.(error);
       } else {
         // eslint-disable-next-line no-console -- Graceful degradation: log unknown condition types in production
@@ -243,7 +245,7 @@ export function compareWithComparator(
       // Exhaustive check: if we reach here, TypeScript knows this should never happen
       const _exhaustive: never = comparator;
       const error = new Error(`Unknown comparator: ${_exhaustive}`);
-      if (process.env.NODE_ENV !== 'production') {
+      if (isDevelopmentMode()) {
         context?.onError?.(error);
       } else {
         // eslint-disable-next-line no-console -- Graceful degradation: log unknown comparators in production

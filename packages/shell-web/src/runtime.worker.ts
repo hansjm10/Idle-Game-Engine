@@ -15,6 +15,7 @@ import {
   registerAutomationCommandHandlers,
   createAutomationSystem,
   createResourceStateAdapter,
+  createProgressionCoordinator,
   telemetry,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
@@ -64,7 +65,6 @@ import {
   getSocialServiceBaseUrl,
   isSocialCommandsEnabled,
 } from './modules/social-config.js';
-import { createProgressionCoordinator } from './modules/progression-coordinator.js';
 import { extractErrorDetails } from './modules/error-utils.js';
 
 const RAF_INTERVAL_MS = 16;
