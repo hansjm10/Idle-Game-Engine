@@ -13,8 +13,13 @@ export interface GameState {
   resources: Map<string, { amount: number; capacity: number | null; rate: number }>;
   generators: Map<string, { level: number; unlocked: boolean }>;
   upgrades: Map<string, { purchased: number; unlocked: boolean }>;
+  achievements: Map<string, { earned: boolean }>;
   ready: boolean;
 }
+
+// TODO: Enable when persistence API is available
+// const SAVE_KEY = 'cosmic-bakery-save';
+// const SAVE_INTERVAL = 30000; // 30 seconds
 
 export function useGameEngine() {
   const runtimeRef = useRef<IdleEngineRuntime | null>(null);
@@ -23,6 +28,7 @@ export function useGameEngine() {
     resources: new Map(),
     generators: new Map(),
     upgrades: new Map(),
+    achievements: new Map(),
     ready: false,
   });
 
@@ -62,6 +68,16 @@ export function useGameEngine() {
     });
     runtime.addSystem(productionSystem);
 
+    // TODO: Load saved state - requires persistence API
+    // const savedState = localStorage.getItem(SAVE_KEY);
+    // if (savedState) {
+    //   try {
+    //     // Load state when persistence API is available
+    //   } catch (e) {
+    //     console.warn('Failed to load save:', e);
+    //   }
+    // }
+
     // Initial state sync
     coordinator.updateForStep(0);
     const snapshot = buildProgressionSnapshot(
@@ -99,8 +115,22 @@ export function useGameEngine() {
 
     animationId = requestAnimationFrame(tick);
 
+    // TODO: Auto-save interval - requires persistence API
+    // const saveInterval = setInterval(() => {
+    //   const state = runtimeRef.current?.getSerializableState();
+    //   if (state) {
+    //     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    //   }
+    // }, SAVE_INTERVAL);
+
     return () => {
       cancelAnimationFrame(animationId);
+      // TODO: clearInterval(saveInterval);
+      // TODO: Save on cleanup - requires persistence API
+      // const state = runtimeRef.current?.getSerializableState();
+      // if (state) {
+      //   localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+      // }
     };
   }, []);
 
@@ -127,11 +157,18 @@ export function useGameEngine() {
       upgrades.set(u.id, { purchased, unlocked });
     }
 
+    // TODO: Achievements not yet available in ProgressionSnapshot
+    const achievements = new Map<string, { earned: boolean }>();
+    // for (const a of snapshot.achievements ?? []) {
+    //   achievements.set(a.id, { earned: a.isEarned });
+    // }
+
     setState(prev => ({
       ...prev,
       resources,
       generators,
       upgrades,
+      achievements,
     }));
   }, []);
 
@@ -164,5 +201,30 @@ export function useGameEngine() {
     });
   }, []);
 
-  return { state, buyGenerator, buyUpgrade };
+  const saveGame = useCallback(() => {
+    // TODO: Implement save functionality when persistence API is available
+    console.log('Save functionality not yet implemented - requires persistence API');
+  }, []);
+
+  const resetGame = useCallback(() => {
+    // TODO: Implement reset when persistence is available
+    // localStorage.removeItem(SAVE_KEY);
+    window.location.reload();
+  }, []);
+
+  const triggerPrestige = useCallback(() => {
+    if (!runtimeRef.current) return;
+
+    runtimeRef.current.getCommandDispatcher().execute({
+      type: 'TRIGGER_PRESTIGE',
+      payload: {
+        prestigeLayerId: 'cosmic-bakery.celestial-ascension',
+      },
+      step: runtimeRef.current.getCurrentStep(),
+      priority: 1, // PLAYER priority
+      timestamp: performance.now(),
+    });
+  }, []);
+
+  return { state, buyGenerator, buyUpgrade, saveGame, resetGame, triggerPrestige };
 }
