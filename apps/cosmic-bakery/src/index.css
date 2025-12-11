@@ -1,0 +1,14 @@
+@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700&display=swap');
+
+body {
+  margin: 0;
+  font-family: 'Nunito', sans-serif;
+  background: linear-gradient(135deg, #2d1b4e 0%, #4c1d95 50%, #78350f 100%);
+  min-height: 100vh;
+  color: #fff8dc;
+}
+
+#root {
+  min-height: 100vh;
+}
