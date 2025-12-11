@@ -5,6 +5,22 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "browser": {
+        "types": "./dist/index.browser.d.ts",
+        "default": "./dist/index.browser.js"
+      },
+      "default": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./prometheus": {
+      "types": "./dist/prometheus.d.ts",
+      "default": "./dist/prometheus.js"
+    }
+  },
   "scripts": {
     "prebuild": "node ../../tools/scripts/generate-version.mjs",
     "build": "tsc -p tsconfig.json",
