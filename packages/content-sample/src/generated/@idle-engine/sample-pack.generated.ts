@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "f2a45ef0cc984125557377a22393cbbc979dde1726c2f7e2b06e7ec29a30ae3c",
+  "artifactHash": "1852a68efbc1573704bc090789a380cd05462d09bdff1366b65925724799eada",
   "digest": {
     "hash": "fnv1a-7f7e84f9",
     "version": 1
@@ -822,15 +822,14 @@ const serialized = {
         "economyClassification": "soft",
         "id": "sample-pack.ascension-alpha-prestige-count",
         "name": {
-          "default": "Ascension Count",
+          "default": "Ascension Alpha Count",
           "variants": {
-            "en-US": "Ascension Count"
+            "en-US": "Ascension Alpha Count"
           }
         },
-        "order": 6,
         "startAmount": 0,
         "tags": [],
-        "tier": 3,
+        "tier": 1,
         "unlocked": true,
         "visible": false
       }
