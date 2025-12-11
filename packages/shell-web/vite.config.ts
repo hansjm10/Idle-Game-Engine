@@ -21,7 +21,7 @@ export default defineConfig({
     alias: {
       '@idle-engine/core': path.resolve(
         projectRoot,
-        '../core/src/index.ts',
+        '../core/src/index.browser.ts',
       ),
       '@idle-engine/runtime-bridge-contracts': path.resolve(
         projectRoot,
