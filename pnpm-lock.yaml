@@ -211,6 +211,16 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0
 
+  packages/cosmic-bakery-content:
+    dependencies:
+      '@idle-engine/content-schema':
+        specifier: workspace:*
+        version: link:../content-schema
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/docs:
     dependencies:
       '@docusaurus/core':
