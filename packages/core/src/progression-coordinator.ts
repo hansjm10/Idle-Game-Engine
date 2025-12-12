@@ -62,6 +62,12 @@ type GeneratorRecord = {
   readonly state: Mutable<ProgressionGeneratorState>;
 };
 
+type ResourceConditionRecord = {
+  readonly id: string;
+  readonly unlockCondition?: Condition;
+  readonly visibilityCondition?: Condition;
+};
+
 type MutableUpgradeState = Mutable<ProgressionUpgradeState> & {
   purchases?: number;
 };
@@ -249,6 +255,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   public readonly prestigeEvaluator?: PrestigeSystemEvaluator;
 
   private readonly resourceDefinitions: readonly ResourceDefinition[];
+  private readonly resourceConditions: readonly ResourceConditionRecord[];
   private readonly generators: Map<string, GeneratorRecord>;
   private readonly generatorList: GeneratorRecord[];
   private readonly upgrades: Map<string, UpgradeRecord>;
@@ -280,6 +287,11 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     );
 
     this.resourceDefinitions = resourceDefinitions;
+    this.resourceConditions = options.content.resources.map((resource) => ({
+      id: resource.id,
+      unlockCondition: resource.unlockCondition,
+      visibilityCondition: resource.visibilityCondition,
+    }));
 
     const initialResourceState =
       initialState?.resources?.state ?? undefined;
@@ -412,6 +424,22 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   public updateForStep(step: number): void {
     const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
     mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
+
+    for (let index = 0; index < this.resourceConditions.length; index += 1) {
+      const record = this.resourceConditions[index];
+
+      if (record.unlockCondition && !this.resourceState.isUnlocked(index)) {
+        if (evaluateCondition(record.unlockCondition, this.conditionContext)) {
+          this.resourceState.unlock(index);
+        }
+      }
+
+      if (record.visibilityCondition && !this.resourceState.isVisible(index)) {
+        if (evaluateCondition(record.visibilityCondition, this.conditionContext)) {
+          this.resourceState.grantVisibility(index);
+        }
+      }
+    }
 
     for (const record of this.generatorList) {
       const baseUnlock = evaluateCondition(
