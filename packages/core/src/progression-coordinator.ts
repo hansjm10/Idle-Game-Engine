@@ -264,6 +264,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly prestigeLayerList: PrestigeLayerRecord[];
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
+  private lastUpdatedStep = 0;
 
   constructor(options: ProgressionCoordinatorOptions) {
     this.onError = options.onError;
@@ -422,6 +423,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   }
 
   public updateForStep(step: number): void {
+    this.lastUpdatedStep = step;
     const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
     mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
 
@@ -526,6 +528,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     return this.conditionContext.getResourceAmount(resourceId);
   }
 
+  getLastUpdatedStep(): number {
+    return this.lastUpdatedStep;
+  }
+
   getGeneratorRecord(generatorId: string): GeneratorRecord | undefined {
     return this.generators.get(generatorId);
   }
@@ -604,7 +610,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
     const evaluatedCost = evaluateCostFormula(
       record.definition.purchase.costCurve,
-      purchaseIndex,
+      this.createFormulaEvaluationContext(purchaseIndex, this.lastUpdatedStep, {
+        generatorLevels: { [generatorId]: purchaseIndex },
+      }),
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
       const error = new Error(
@@ -639,7 +647,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
     const evaluatedCost = evaluateCostFormula(
       record.definition.cost.costCurve,
-      purchaseLevel,
+      this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
       const error = new Error(
@@ -653,7 +661,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     if (repeatableCostCurve) {
       const repeatableAdjustment = evaluateCostFormula(
         repeatableCostCurve,
-        purchaseLevel,
+        this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
       );
       if (repeatableAdjustment === undefined || repeatableAdjustment < 0) {
         const error = new Error(
@@ -684,36 +692,53 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
    * @param condition - Optional visibility condition to evaluate
    * @returns true if condition passes or is undefined (default visible), false otherwise
    */
-	  private evaluateVisibility(condition: Condition | undefined): boolean {
-	    return condition
-	      ? evaluateCondition(condition, this.conditionContext)
-	      : true;
-	  }
+  private evaluateVisibility(condition: Condition | undefined): boolean {
+    return condition ? evaluateCondition(condition, this.conditionContext) : true;
+  }
 
-	  private createFormulaEvaluationContext(
-	    level: number,
-	    step: number,
-	  ): FormulaEvaluationContext {
-	    const deltaTime = (this.state.stepDurationMs ?? 0) / 1000;
-	    const time = step * deltaTime;
-	    return {
-	      variables: {
-	        level,
-	        time,
-	        deltaTime,
-	      },
-	      entities: {
-	        resource: (resourceId) =>
-	          this.conditionContext.getResourceAmount(resourceId),
-	        generator: (generatorId) =>
-	          this.conditionContext.getGeneratorLevel(generatorId),
-	        upgrade: (upgradeId) =>
-	          this.conditionContext.getUpgradePurchases(upgradeId),
-	        automation: () => 0,
-	        prestigeLayer: () => 0,
-	      },
-	    };
-	  }
+  private createFormulaEvaluationContext(
+    level: number,
+    step: number,
+    overrides?: {
+      readonly generatorLevels?: Readonly<Record<string, number>>;
+      readonly upgradePurchases?: Readonly<Record<string, number>>;
+    },
+  ): FormulaEvaluationContext {
+    const deltaTime = (this.state.stepDurationMs ?? 0) / 1000;
+    const time = step * deltaTime;
+    const generatorLevels = overrides?.generatorLevels;
+    const upgradePurchases = overrides?.upgradePurchases;
+    return {
+      variables: {
+        level,
+        time,
+        deltaTime,
+      },
+      entities: {
+        resource: (resourceId) => this.conditionContext.getResourceAmount(resourceId),
+        generator: (generatorId) => {
+          if (
+            generatorLevels &&
+            Object.prototype.hasOwnProperty.call(generatorLevels, generatorId)
+          ) {
+            return generatorLevels[generatorId];
+          }
+          return this.conditionContext.getGeneratorLevel(generatorId);
+        },
+        upgrade: (upgradeId) => {
+          if (
+            upgradePurchases &&
+            Object.prototype.hasOwnProperty.call(upgradePurchases, upgradeId)
+          ) {
+            return upgradePurchases[upgradeId];
+          }
+          return this.conditionContext.getUpgradePurchases(upgradeId);
+        },
+        automation: () => 0,
+        prestigeLayer: () => 0,
+      },
+    };
+  }
 
 		  private computeGeneratorRateMultipliers(step: number): Map<string, number> {
 		    const multipliers = new Map<string, number>();
@@ -1128,12 +1153,14 @@ function hydrateResourceState(
 
 function evaluateCostFormula(
   formula: NumericFormula,
-  purchaseLevel: number,
+  context: FormulaEvaluationContext,
 ): number | undefined {
-  const amount = evaluateNumericFormula(formula, {
-    variables: { level: purchaseLevel },
-  });
-  return Number.isFinite(amount) ? amount : undefined;
+  try {
+    const amount = evaluateNumericFormula(formula, context);
+    return Number.isFinite(amount) ? amount : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function clampOwned(owned: number, maxLevel?: number): number {
@@ -1383,9 +1410,15 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     const resourceState = this.coordinator.resourceState;
     const snapshot = resourceState.snapshot({ mode: 'publish' });
 
+    const step = this.coordinator.getLastUpdatedStep();
+    const deltaTime = (this.coordinator.state.stepDurationMs ?? 0) / 1000;
+    const time = step * deltaTime;
+
     // Build variables lookup (for backwards compatibility with variable-style formulas)
     const variables: Record<string, number> = {
       level: 1, // Maintain for backwards compatibility
+      time,
+      deltaTime,
     };
     for (let i = 0; i < snapshot.ids.length; i++) {
       const resourceId = snapshot.ids[i];
@@ -1398,10 +1431,22 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       return index !== undefined ? (snapshot.amounts[index] ?? 0) : undefined;
     };
 
+    const generatorLookup = (id: string): number | undefined => {
+      const record = this.coordinator.getGeneratorRecord(id);
+      return record?.state.owned;
+    };
+
+    const upgradeLookup = (id: string): number | undefined => {
+      const record = this.coordinator.getUpgradeRecord(id);
+      return record?.purchases;
+    };
+
     return {
       variables,
       entities: {
         resource: resourceLookup,
+        generator: generatorLookup,
+        upgrade: upgradeLookup,
       },
     };
   }

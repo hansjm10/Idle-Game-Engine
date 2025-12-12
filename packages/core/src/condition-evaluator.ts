@@ -1,4 +1,4 @@
-import type { Condition } from '@idle-engine/content-schema';
+import type { Condition, FormulaEvaluationContext } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 
 import { isDevelopmentMode } from './env-utils.js';
@@ -58,6 +58,21 @@ export type ConditionContext = {
    */
   readonly onError?: (error: Error) => void;
 };
+
+const createStaticFormulaEvaluationContext = (
+  context: ConditionContext,
+): FormulaEvaluationContext => ({
+  variables: {
+    level: STATIC_THRESHOLD_LEVEL,
+    time: 0,
+    deltaTime: 0,
+  },
+  entities: {
+    resource: (resourceId) => context.getResourceAmount(resourceId),
+    generator: (generatorId) => context.getGeneratorLevel(generatorId),
+    upgrade: (upgradeId) => context.getUpgradePurchases(upgradeId),
+  },
+});
 
 function reportMissingContextHook(
   context: ConditionContext,
@@ -135,15 +150,17 @@ export function evaluateCondition(
       return false;
     case 'resourceThreshold': {
       const left = context.getResourceAmount(condition.resourceId);
+      const formulaContext = createStaticFormulaEvaluationContext(context);
       const target = evaluateNumericFormula(condition.amount, {
-        variables: { level: STATIC_THRESHOLD_LEVEL },
+        ...formulaContext,
       });
       return compareWithComparator(left, target, condition.comparator, context);
     }
     case 'generatorLevel': {
       const owned = context.getGeneratorLevel(condition.generatorId);
+      const formulaContext = createStaticFormulaEvaluationContext(context);
       const required = evaluateNumericFormula(condition.level, {
-        variables: { level: STATIC_THRESHOLD_LEVEL },
+        ...formulaContext,
       });
       return compareWithComparator(owned, required, condition.comparator, context);
     }

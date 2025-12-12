@@ -1,4 +1,4 @@
-import type { NormalizedContentPack } from '@idle-engine/content-schema';
+import type { NormalizedContentPack, NumericFormula } from '@idle-engine/content-schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SerializedResourceState, TelemetryFacade } from './index.js';
@@ -234,6 +234,124 @@ function createBaseCostUpgradeContentPack(): NormalizedContentPack {
 }
 
 describe('progression-coordinator', () => {
+  it('allows upgrade cost formulas to reference generator and upgrade entities', () => {
+    const currency = createResourceDefinition('resource.currency', {
+      name: 'Currency',
+    });
+
+    const generatorId = 'generator.alpha';
+    const upgradeId = 'upgrade.scaling';
+
+    const generator = createGeneratorDefinition(generatorId, {
+      purchase: {
+        currencyId: currency.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const costCurve = {
+      kind: 'expression',
+      expression: {
+        kind: 'binary',
+        op: 'add',
+        left: { kind: 'literal', value: 1 },
+        right: {
+          kind: 'binary',
+          op: 'add',
+          left: {
+            kind: 'ref',
+            target: { type: 'generator', id: generatorId },
+          },
+          right: {
+            kind: 'ref',
+            target: { type: 'upgrade', id: upgradeId },
+          },
+        },
+      },
+    } as unknown as NumericFormula;
+
+    const upgrade = createUpgradeDefinition(upgradeId, {
+      name: 'Scaling Upgrade',
+      cost: {
+        currencyId: currency.id,
+        baseCost: 10,
+        costCurve,
+      },
+      repeatable: {
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.scaling',
+          value: true,
+        },
+      ],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [currency],
+        generators: [generator],
+        upgrades: [upgrade],
+      }),
+      stepDurationMs: 100,
+    });
+
+    coordinator.generatorEvaluator.applyPurchase(generatorId, 3);
+    coordinator.upgradeEvaluator?.applyPurchase(upgradeId);
+    coordinator.upgradeEvaluator?.applyPurchase(upgradeId);
+
+    const quote = coordinator.upgradeEvaluator?.getPurchaseQuote(upgradeId);
+    expect(quote).toBeDefined();
+    expect(quote?.status).toBe('available');
+    expect(quote?.costs).toEqual([{ resourceId: currency.id, amount: 60 }]);
+  });
+
+  it('quotes bulk generator purchases using simulated owned values in cost formulas', () => {
+    const currency = createResourceDefinition('resource.currency', {
+      name: 'Currency',
+    });
+
+    const generatorId = 'generator.alpha';
+
+    const costCurve = {
+      kind: 'expression',
+      expression: {
+        kind: 'binary',
+        op: 'add',
+        left: { kind: 'literal', value: 1 },
+        right: {
+          kind: 'ref',
+          target: { type: 'generator', id: generatorId },
+        },
+      },
+    } as unknown as NumericFormula;
+
+    const generator = createGeneratorDefinition(generatorId, {
+      purchase: {
+        currencyId: currency.id,
+        baseCost: 10,
+        costCurve,
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [currency],
+        generators: [generator],
+      }),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(generatorId, 2);
+    expect(quote).toBeDefined();
+    expect(quote?.costs).toEqual([{ resourceId: currency.id, amount: 30 }]);
+  });
+
   it('keeps repeatable upgrades without maxPurchases available after purchase', () => {
     const coordinator = createProgressionCoordinator({
       content: createRepeatableContentPack(),
@@ -447,6 +565,161 @@ describe('progression-coordinator', () => {
     expect(quote?.costs).toEqual([
       { resourceId: 'resource.currency', amount: 200 },
     ]);
+  });
+
+  it('allows prestige reward formulas to reference generator and upgrade entities', () => {
+    const currency = createResourceDefinition('resource.currency', {
+      name: 'Currency',
+    });
+    const rewardCurrency = createResourceDefinition('resource.prestige', {
+      name: 'Prestige',
+    });
+
+    const generatorId = 'generator.alpha';
+    const upgradeId = 'upgrade.scaling';
+    const prestigeLayerId = 'prestige.alpha';
+
+    const prestigeCountResource = createResourceDefinition(
+      `${prestigeLayerId}-prestige-count`,
+      { name: 'Prestige Count' },
+    );
+
+    const generator = createGeneratorDefinition(generatorId, {
+      purchase: {
+        currencyId: currency.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const upgrade = createUpgradeDefinition(upgradeId, {
+      name: 'Scaling Upgrade',
+      cost: {
+        currencyId: currency.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      repeatable: {
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.scaling',
+          value: true,
+        },
+      ],
+    });
+
+    const baseReward = {
+      kind: 'expression',
+      expression: {
+        kind: 'binary',
+        op: 'add',
+        left: {
+          kind: 'ref',
+          target: { type: 'generator', id: generatorId },
+        },
+        right: {
+          kind: 'ref',
+          target: { type: 'upgrade', id: upgradeId },
+        },
+      },
+    } as unknown as NumericFormula;
+
+    const prestigeLayer = createPrestigeLayerDefinition(prestigeLayerId, {
+      resetTargets: [],
+      reward: {
+        resourceId: rewardCurrency.id,
+        baseReward,
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [currency, rewardCurrency, prestigeCountResource],
+        generators: [generator],
+        upgrades: [upgrade],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+    });
+
+    coordinator.generatorEvaluator.applyPurchase(generatorId, 3);
+    coordinator.upgradeEvaluator?.applyPurchase(upgradeId);
+    coordinator.upgradeEvaluator?.applyPurchase(upgradeId);
+
+    const quote = coordinator.prestigeEvaluator?.getPrestigeQuote(prestigeLayerId);
+    expect(quote).toBeDefined();
+    expect(quote?.reward.amount).toBe(5);
+  });
+
+  it('allows unlock condition formulas to reference upgrade entities', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const upgradeId = 'upgrade.gate';
+    const generatorId = 'generator.locked';
+
+    const upgrade = createUpgradeDefinition(upgradeId, {
+      name: 'Gate Upgrade',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.gate',
+          value: true,
+        },
+      ],
+    });
+
+    const threshold = {
+      kind: 'expression',
+      expression: {
+        kind: 'binary',
+        op: 'add',
+        left: {
+          kind: 'ref',
+          target: { type: 'upgrade', id: upgradeId },
+        },
+        right: { kind: 'literal', value: 1 },
+      },
+    } as unknown as NumericFormula;
+
+    const generator = createGeneratorDefinition(generatorId, {
+      baseUnlock: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: threshold,
+      } as any,
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy],
+        generators: [generator],
+        upgrades: [upgrade],
+      }),
+      stepDurationMs: 100,
+    });
+
+    const generatorRecord = coordinator.state.generators?.find(
+      (record) => record.id === generatorId,
+    );
+    expect(generatorRecord?.isUnlocked).toBe(false);
+
+    coordinator.upgradeEvaluator?.applyPurchase(upgradeId);
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 2);
+    coordinator.updateForStep(1);
+
+    expect(generatorRecord?.isUnlocked).toBe(true);
   });
 });
 
