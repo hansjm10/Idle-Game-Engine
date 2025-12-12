@@ -860,6 +860,7 @@ function resetPerTickAccumulators(internal: ResourceStateInternal): void {
   const { buffers } = internal;
   buffers.incomePerSecond.fill(0);
   buffers.expensePerSecond.fill(0);
+  buffers.netPerSecond.fill(0);
   buffers.tickDelta.fill(0);
   internal.publishGuardState = PublishGuardState.Idle;
 }
@@ -880,6 +881,7 @@ function forceClearDirtyState(internal: ResourceStateInternal): void {
   clearDirtyScratch(internal);
   internal.buffers.incomePerSecond.fill(0);
   internal.buffers.expensePerSecond.fill(0);
+  internal.buffers.netPerSecond.fill(0);
   internal.buffers.tickDelta.fill(0);
   internal.publishGuardState = PublishGuardState.Idle;
 

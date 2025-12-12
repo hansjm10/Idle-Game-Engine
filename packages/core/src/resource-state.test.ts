@@ -160,9 +160,11 @@ describe('ResourceState', () => {
     expect(publishSnapshot.dirtyCount).toBe(1);
 
     state.resetPerTickAccumulators();
+    expect(state.getNetPerSecond(energy)).toBe(0);
     const recorderSnapshot = state.snapshot({ mode: 'recorder' });
     expect(recorderSnapshot.incomePerSecond[energy]).toBe(0);
     expect(recorderSnapshot.expensePerSecond[energy]).toBe(0);
+    expect(recorderSnapshot.netPerSecond[energy]).toBe(0);
     expect(recorderSnapshot.tickDelta[energy]).toBe(0);
   });
 
