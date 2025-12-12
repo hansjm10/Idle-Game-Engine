@@ -170,6 +170,7 @@ export function initializeRuntimeWorker(
     dispatcher: runtime.getCommandDispatcher(),
     resources: progressionCoordinator.resourceState,
     generatorPurchases: progressionCoordinator.generatorEvaluator,
+    generatorToggles: progressionCoordinator,
     ...(progressionCoordinator.upgradeEvaluator
       ? {
           upgradePurchases: progressionCoordinator.upgradeEvaluator,

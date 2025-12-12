@@ -4,6 +4,7 @@
       "id": "sample-pack.reactor",
       "displayName": "Reactor",
       "owned": 0,
+      "enabled": true,
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
@@ -17,6 +18,7 @@
       "id": "sample-pack.harvester",
       "displayName": "Crystal Harvester",
       "owned": 0,
+      "enabled": true,
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
@@ -30,6 +32,7 @@
       "id": "sample-pack.forge",
       "displayName": "Forge",
       "owned": 0,
+      "enabled": true,
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
@@ -46,6 +49,7 @@
       "id": "sample-pack.lab",
       "displayName": "Research Lab",
       "owned": 0,
+      "enabled": true,
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
@@ -62,6 +66,7 @@
       "id": "sample-pack.gate-reactor",
       "displayName": "Gate Reactor",
       "owned": 0,
+      "enabled": true,
       "isUnlocked": true,
       "isVisible": true,
       "costs": [

@@ -86,6 +86,7 @@ function createGeneratorViews(step, generators, evaluator) {
             id: generator.id,
             displayName: generator.displayName ?? generator.id,
             owned: Number.isFinite(generator.owned) ? generator.owned : 0,
+            enabled: generator.enabled ?? true,
             isUnlocked: Boolean(generator.isUnlocked),
             isVisible: Boolean(generator.isVisible),
             costs: quote,

@@ -60,7 +60,7 @@ describe('AutomationSystem Integration', () => {
 
   // SKIPPED: Requires TOGGLE_GENERATOR command handler (issue #324)
   // This test will be enabled once generator toggle commands are implemented
-  it.skip('should fire interval automation after sufficient ticks', () => {
+  it('should fire interval automation after sufficient ticks', () => {
     let currentTime = 0;
     const stepSizeMs = 100;
 

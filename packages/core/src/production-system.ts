@@ -52,6 +52,8 @@ export interface GeneratorProductionState {
   readonly id: string;
   /** Number of generators owned (acts as a multiplier) */
   readonly owned: number;
+  /** Whether the generator is enabled (defaults to true when omitted). */
+  readonly enabled?: boolean;
   /** Resources produced by this generator per tick */
   readonly produces: readonly GeneratorProductionRate[];
   /**
@@ -531,6 +533,9 @@ export function createProductionSystem(
         }
 
         if (generator.owned <= 0) {
+          continue;
+        }
+        if (generator.enabled === false) {
           continue;
         }
 

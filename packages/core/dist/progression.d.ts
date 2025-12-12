@@ -21,6 +21,7 @@ export type GeneratorView = Readonly<{
     id: string;
     displayName: string;
     owned: number;
+    enabled: boolean;
     isUnlocked: boolean;
     isVisible: boolean;
     costs: readonly GeneratorCostView[];
@@ -112,6 +113,7 @@ export interface ProgressionGeneratorState {
     readonly id: string;
     readonly displayName?: string;
     readonly owned: number;
+    readonly enabled: boolean;
     readonly isUnlocked: boolean;
     readonly isVisible: boolean;
     readonly produces?: readonly GeneratorRateView[];

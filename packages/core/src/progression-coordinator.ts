@@ -158,6 +158,15 @@ export interface ProgressionCoordinator {
   incrementGeneratorOwned(generatorId: string, count: number): void;
 
   /**
+   * Enables or disables a generator by ID.
+   *
+   * @param generatorId - Generator identifier
+   * @param enabled - Desired enabled state
+   * @returns true when generator exists and was updated
+   */
+  setGeneratorEnabled(generatorId: string, enabled: boolean): boolean;
+
+  /**
    * Increments the purchase count for an upgrade, respecting max purchase limits.
    *
    * @param upgradeId - Upgrade identifier
@@ -490,6 +499,15 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     record.state.owned = nextOwned;
   }
 
+  setGeneratorEnabled(generatorId: string, enabled: boolean): boolean {
+    const record = this.generators.get(generatorId);
+    if (!record) {
+      return false;
+    }
+    record.state.enabled = enabled;
+    return true;
+  }
+
   incrementUpgradePurchases(upgradeId: string): void {
     const record = this.upgrades.get(upgradeId);
     if (!record) {
@@ -782,6 +800,7 @@ function createGeneratorRecord(
         id: generator.id,
         displayName: getDisplayName(generator.name, generator.id),
         owned: 0,
+        enabled: true,
         isUnlocked: false,
         isVisible: true,
         produces,
@@ -792,6 +811,7 @@ function createGeneratorRecord(
   state.id = generator.id;
   state.displayName = getDisplayName(generator.name, generator.id);
   state.owned = Number.isFinite(state.owned) ? state.owned : 0;
+  state.enabled = typeof state.enabled === 'boolean' ? state.enabled : true;
   state.isUnlocked = Boolean(state.isUnlocked);
   state.isVisible = state.isVisible ?? true;
   state.produces = produces;
