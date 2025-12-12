@@ -850,6 +850,7 @@ export {
   registerResourceCommandHandlers,
   type ResourceCommandHandlerOptions,
   type GeneratorPurchaseEvaluator,
+  type GeneratorToggleEvaluator,
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
   type UpgradePurchaseEvaluator,

@@ -128,6 +128,7 @@ describe('sample content progression snapshot (golden)', () => {
       id: g.id,
       displayName: toDisplayName(g.name),
       owned: 0,
+      enabled: true,
       isUnlocked: true,
       isVisible: true,
       produces: g.produces.map((p) => ({

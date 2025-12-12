@@ -18,6 +18,7 @@ import {
   type GeneratorResourceCost,
   type GeneratorPurchaseQuote,
   type GeneratorPurchaseEvaluator,
+  type GeneratorToggleEvaluator,
   type UpgradePurchaseEvaluator,
   type UpgradePurchaseQuote,
 } from './resource-command-handlers.js';
@@ -64,6 +65,20 @@ class StubGeneratorPurchases implements GeneratorPurchaseEvaluator {
 
   applyPurchase(generatorId: string, count: number): void {
     this.applied.push({ generatorId, count });
+  }
+}
+
+class StubGeneratorToggles implements GeneratorToggleEvaluator {
+  public readonly enabledById = new Map<string, boolean>();
+  public readonly calls: Array<{ generatorId: string; enabled: boolean }> = [];
+
+  setGeneratorEnabled(generatorId: string, enabled: boolean): boolean {
+    this.calls.push({ generatorId, enabled });
+    if (!this.enabledById.has(generatorId)) {
+      return false;
+    }
+    this.enabledById.set(generatorId, enabled);
+    return true;
   }
 }
 
@@ -162,6 +177,7 @@ describe('resource command handlers', () => {
   let resources: ResourceState;
   let telemetryStub: TelemetryFacade;
   let purchases: StubGeneratorPurchases;
+  let generatorToggles: StubGeneratorToggles;
   let upgrades: StubUpgradePurchases;
 
   beforeEach(() => {
@@ -171,11 +187,13 @@ describe('resource command handlers', () => {
       { id: 'crystal', startAmount: 0 },
     ]);
     purchases = new StubGeneratorPurchases();
+    generatorToggles = new StubGeneratorToggles();
     upgrades = new StubUpgradePurchases();
 
     purchases.definitions.set('reactor', {
       costs: [{ resourceId: 'energy', amount: 10 }],
     });
+    generatorToggles.enabledById.set('reactor', true);
 
     upgrades.definitions.set('reactor-insulation', {
       status: 'available',
@@ -195,6 +213,7 @@ describe('resource command handlers', () => {
       dispatcher,
       resources,
       generatorPurchases: purchases,
+      generatorToggles,
       automationSystemId: 'auto-buy',
       upgradePurchases: upgrades,
     });
@@ -353,6 +372,54 @@ describe('resource command handlers', () => {
         expect.objectContaining({ count: 0 }),
       );
       expect(purchases.applied).toHaveLength(0);
+    });
+  });
+
+  describe('TOGGLE_GENERATOR', () => {
+    it('updates generator enabled state through evaluator', () => {
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'reactor', enabled: false },
+        }),
+      );
+
+      expect(generatorToggles.calls).toEqual([
+        { generatorId: 'reactor', enabled: false },
+      ]);
+      expect(generatorToggles.enabledById.get('reactor')).toBe(false);
+      expect(telemetryStub.recordError).not.toHaveBeenCalled();
+    });
+
+    it('records warning when generator is not found', () => {
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'missing', enabled: false },
+        }),
+      );
+
+      expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+        'ToggleGeneratorNotFound',
+        expect.objectContaining({
+          generatorId: 'missing',
+          enabled: false,
+        }),
+      );
+    });
+
+    it('records error on invalid payload', () => {
+      execute(
+        createCommand({
+          type: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: '', enabled: true } as any,
+        }),
+      );
+
+      expect(telemetryStub.recordError).toHaveBeenCalledWith(
+        'ToggleGeneratorInvalidId',
+        expect.objectContaining({ generatorId: '' }),
+      );
     });
   });
 

@@ -5,6 +5,7 @@ import {
   type PrestigeResetPayload,
   type PurchaseGeneratorPayload,
   type PurchaseUpgradePayload,
+  type ToggleGeneratorPayload,
 } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
 import type { PrestigeSystemEvaluator } from './progression.js';
@@ -27,6 +28,10 @@ export interface GeneratorPurchaseEvaluator {
     count: number,
   ): GeneratorPurchaseQuote | undefined;
   applyPurchase(generatorId: string, count: number): void;
+}
+
+export interface GeneratorToggleEvaluator {
+  setGeneratorEnabled(generatorId: string, enabled: boolean): boolean;
 }
 
 export type UpgradeStatus = 'locked' | 'available' | 'purchased';
@@ -54,6 +59,7 @@ export interface ResourceCommandHandlerOptions {
   readonly dispatcher: CommandDispatcher;
   readonly resources: ResourceState;
   readonly generatorPurchases: GeneratorPurchaseEvaluator;
+  readonly generatorToggles?: GeneratorToggleEvaluator;
   /**
    * Identifier recorded alongside telemetry when automation attempts to
    * purchase generators. Defaults to "automation" when omitted.
@@ -87,6 +93,11 @@ export function registerResourceCommandHandlers(
     createPurchaseGeneratorHandler(resources, generatorPurchases, {
       automationSystemId,
     }),
+  );
+
+  dispatcher.register<ToggleGeneratorPayload>(
+    RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+    createToggleGeneratorHandler(options.generatorToggles),
   );
 
   if (options.upgradePurchases) {
@@ -123,6 +134,55 @@ function createCollectResourceHandler(resources: ResourceState): CommandHandler<
       step: context.step,
       priority: context.priority,
     });
+  };
+}
+
+function createToggleGeneratorHandler(
+  generatorToggles: GeneratorToggleEvaluator | undefined,
+): CommandHandler<ToggleGeneratorPayload> {
+  return (payload, context) => {
+    if (typeof payload.generatorId !== 'string' || payload.generatorId.trim().length === 0) {
+      telemetry.recordError('ToggleGeneratorInvalidId', {
+        generatorId: payload.generatorId,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    if (typeof payload.enabled !== 'boolean') {
+      telemetry.recordError('ToggleGeneratorInvalidEnabled', {
+        generatorId: payload.generatorId,
+        enabled: payload.enabled,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    if (!generatorToggles) {
+      telemetry.recordError('ToggleGeneratorMissingEvaluator', {
+        generatorId: payload.generatorId,
+        enabled: payload.enabled,
+        step: context.step,
+        priority: context.priority,
+      });
+      return;
+    }
+
+    const updated = generatorToggles.setGeneratorEnabled(
+      payload.generatorId,
+      payload.enabled,
+    );
+
+    if (!updated) {
+      telemetry.recordWarning('ToggleGeneratorNotFound', {
+        generatorId: payload.generatorId,
+        enabled: payload.enabled,
+        step: context.step,
+        priority: context.priority,
+      });
+    }
   };
 }
 
