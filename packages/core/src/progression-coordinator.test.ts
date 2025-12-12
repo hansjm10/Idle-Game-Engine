@@ -137,6 +137,38 @@ function createInvisibleGeneratorContentPack(): NormalizedContentPack {
   });
 }
 
+function createResourceConditionContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.conditional.energy', {
+    name: 'Energy',
+  });
+
+  const gems = createResourceDefinition('resource.conditional.gems', {
+    name: 'Gems',
+    unlocked: false,
+    visible: false,
+    unlockCondition: {
+      kind: 'resourceThreshold',
+      resourceId: energy.id,
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 10 },
+    } as any,
+    visibilityCondition: {
+      kind: 'resourceThreshold',
+      resourceId: energy.id,
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 20 },
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy, gems],
+    metadata: {
+      id: 'pack.resources.conditional',
+      title: 'Conditional Resources Pack',
+    },
+  });
+}
+
 function createBaseCostGeneratorContentPack(): NormalizedContentPack {
   const currency = createResourceDefinition('resource.currency', {
     name: 'Currency',
@@ -320,6 +352,43 @@ describe('progression-coordinator', () => {
     const record = internalCoordinator.getGeneratorRecord('generator.hidden');
     expect(record?.state.isUnlocked).toBe(true);
     expect(record?.state.isVisible).toBe(false);
+  });
+
+  it('evaluates unlock and visibility conditions for resources', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createResourceConditionContentPack(),
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(
+      'resource.conditional.energy',
+    );
+    const gemsIndex = coordinator.resourceState.requireIndex(
+      'resource.conditional.gems',
+    );
+
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(false);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(false);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(0);
+
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(false);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(1);
+
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(true);
+
+    const spent = coordinator.resourceState.spendAmount(energyIndex, 20);
+    expect(spent).toBe(true);
+
+    coordinator.updateForStep(2);
+
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(true);
   });
 
   it('keeps generators unlocked after initially satisfying the base unlock condition', () => {
