@@ -44,6 +44,7 @@ const progressionSnapshotStub: ProgressionSnapshot = {
       id: 'mine',
       displayName: 'Mine',
       owned: 5,
+      enabled: true,
       isUnlocked: true,
       isVisible: true,
       costs: [],
