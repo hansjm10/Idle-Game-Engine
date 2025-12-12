@@ -2899,6 +2899,71 @@ describe('Integration: upgrade effects', () => {
     coordinator.updateForStep(2);
     expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
   });
+
+  it('evaluates level-based modifyGeneratorRate formulas using current purchases', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.scaling', {
+      name: 'Scaling Generator',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.scaling-boost', {
+      name: 'Scaling Boost',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      repeatable: {
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorRate',
+          generatorId: generator.id,
+          operation: 'multiply',
+          value: { kind: 'linear', base: 1, slope: 1 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(1);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(1);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(2);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(3);
+  });
 });
 
 describe('Integration: prestige confirmationToken validation', () => {

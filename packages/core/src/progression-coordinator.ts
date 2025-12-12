@@ -694,7 +694,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	      if (record.purchases <= 0) {
 	        continue;
 	      }
-	      const purchaseLevel = Math.max(0, record.purchases - 1);
+	      const purchaseLevel = record.purchases;
 	      const context = this.createFormulaEvaluationContext(
 	        purchaseLevel,
 	        step,
