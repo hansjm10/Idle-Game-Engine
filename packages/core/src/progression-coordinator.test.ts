@@ -2838,6 +2838,199 @@ describe('Integration: prestige layer status transitions', () => {
   });
 });
 
+describe('Integration: upgrade effects', () => {
+  it('applies modifyGeneratorRate upgrade effects to generator rates', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.boosted', {
+      name: 'Boosted Generator',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.generator-boost', {
+      name: 'Generator Boost',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorRate',
+          generatorId: generator.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(1);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(1);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
+
+    coordinator.updateForStep(2);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
+  });
+
+  it('stacks repeatable modifyGeneratorRate effects per purchase', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.scaling', {
+      name: 'Scaling Generator',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.scaling-boost', {
+      name: 'Scaling Boost',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      repeatable: {
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorRate',
+          generatorId: generator.id,
+          operation: 'multiply',
+          value: { kind: 'linear', base: 1, slope: 1 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(1);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(1);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(2);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(6);
+  });
+
+  it('stacks constant modifyGeneratorRate repeatables multiplicatively', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.constant-repeatable', {
+      name: 'Constant Repeatable Generator',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.constant-repeatable-boost', {
+      name: 'Constant Repeatable Boost',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      repeatable: {
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorRate',
+          generatorId: generator.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(1);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(1);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(2);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(4);
+  });
+});
+
 describe('Integration: prestige confirmationToken validation', () => {
   let telemetryStub: TelemetryFacade;
 
