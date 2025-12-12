@@ -986,7 +986,7 @@ Key invariants for handlers:
 
 After `CommandDispatcher.execute` drains the tick, the runtime coordinates the publish/reset sequence with the façade:
 
-1. **Finalize**: Once systems finish queuing per-second rates, call `resourceState.finalizeTick(context.deltaMs)` so accumulated income/expense rolls into balances and `netPerSecond` updates deterministically (§5.2).
+1. **Finalize**: Once systems finish queuing per-second rates, call `resourceState.finalizeTick(context.deltaMs)` so accumulated income/expense rolls into balances and `netPerSecond` is recomputed deterministically (§5.2).
 2. **Snapshot**: Capture `resourceState.snapshot({ mode: 'publish' })`; the result is immutable-by-contract and exposes the active publish buffers (ids, amounts, capacities, per-second rates, `tickDelta`, flags, tolerance, and `dirtyIndices`).
 3. **Transport**: Feed the snapshot into `buildResourcePublishTransport(snapshot, pool, { mode: 'share'|'transfer', tick })` or use `createResourcePublishTransport(resourceState, pool, options)`. The helper allocates slabs from `TransportBufferPool`, copies only the dirty prefix, and returns `{ transport, transferables, release }`.
 4. **Publish/Reset**: Post `transport` to the shell worker (optionally transferring buffers). After the shell consumes the frame, call `resourceState.resetPerTickAccumulators()` to zero per-second totals; tests may use `forceClearDirtyState()` when they need a full reset without publishing.

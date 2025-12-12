@@ -21,6 +21,53 @@ export interface ProductionResourceState {
   ): boolean;
 }
 
+interface ProductionResourceStateRateTracker {
+  applyIncome(index: number, amountPerSecond: number): void;
+  applyExpense(index: number, amountPerSecond: number): void;
+}
+
+type ProductionResourceStateWithRateTracking =
+  ProductionResourceState & ProductionResourceStateRateTracker;
+
+function supportsRateTracking(
+  resourceState: ProductionResourceState,
+): resourceState is ProductionResourceStateWithRateTracking {
+  return (
+    typeof (resourceState as ProductionResourceStateWithRateTracking).applyIncome === 'function' &&
+    typeof (resourceState as ProductionResourceStateWithRateTracking).applyExpense === 'function'
+  );
+}
+
+interface ProductionResourceStateFinalizer {
+  finalizeTick(deltaMs: number): void;
+}
+
+type ProductionResourceStateWithFinalizeTick =
+  ProductionResourceState & ProductionResourceStateFinalizer;
+
+function supportsFinalizeTick(
+  resourceState: ProductionResourceState,
+): resourceState is ProductionResourceStateWithFinalizeTick {
+  return (
+    typeof (resourceState as ProductionResourceStateWithFinalizeTick).finalizeTick === 'function'
+  );
+}
+
+interface ProductionResourceStateCapacityAccessor {
+  getCapacity(index: number): number;
+}
+
+type ProductionResourceStateWithCapacity =
+  ProductionResourceState & ProductionResourceStateCapacityAccessor;
+
+function supportsCapacity(
+  resourceState: ProductionResourceState,
+): resourceState is ProductionResourceStateWithCapacity {
+  return (
+    typeof (resourceState as ProductionResourceStateWithCapacity).getCapacity === 'function'
+  );
+}
+
 /**
  * Serialized accumulator state for save/load persistence.
  * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
@@ -245,6 +292,20 @@ export interface ProductionSystemOptions {
    */
   readonly applyThreshold?: number;
   /**
+   * When enabled, the system also populates per-second income/expense buffers
+   * by calling `resourceState.applyIncome/applyExpense` (when available).
+   *
+   * When the provided `resourceState` also supports `finalizeTick`, the production
+   * system will only queue per-second rates and expects the caller to apply them
+   * via `resourceState.finalizeTick(deltaMs)` after systems run.
+   *
+   * When `finalizeTick` is not available, enabling this option only affects
+   * per-second buffers and does not change balance mutations.
+   *
+   * @default false
+   */
+  readonly trackRates?: boolean;
+  /**
    * Optional callback invoked after each tick with production statistics.
    *
    * Useful for debugging, metrics collection, or UI updates. The callback
@@ -460,6 +521,12 @@ export function createProductionSystem(
   const { generators, resourceState, getMultiplier, onTick } = options;
   const systemId = options.systemId ?? DEFAULT_PRODUCTION_SYSTEM_ID;
   const applyThreshold = options.applyThreshold ?? 0.0001;
+  const rateTrackingState = supportsRateTracking(resourceState)
+    ? resourceState
+    : undefined;
+  const trackRates = options.trackRates === true;
+  const useFinalizeTickRates =
+    trackRates && rateTrackingState !== undefined && supportsFinalizeTick(resourceState);
 
   if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
     throw new Error('applyThreshold must be a positive finite number');
@@ -524,6 +591,184 @@ export function createProductionSystem(
       const produced = new Map<string, number>();
       const consumed = new Map<string, number>();
 
+      if (useFinalizeTickRates && rateTrackingState) {
+        if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+          if (onTick) {
+            onTick({ produced, consumed });
+          }
+          return;
+        }
+
+        const capacityState = supportsCapacity(resourceState)
+          ? resourceState
+          : undefined;
+        const shadowAmounts = new Map<number, number>();
+        const tickIncome = new Map<number, number>();
+        const tickExpense = new Map<number, number>();
+
+        const getShadowAmount = (index: number): number =>
+          shadowAmounts.get(index) ?? resourceState.getAmount(index);
+
+        const getShadowCapacity = (index: number): number => {
+          if (!capacityState) {
+            return Number.POSITIVE_INFINITY;
+          }
+
+          const capacity = capacityState.getCapacity(index);
+          if (capacity === Number.POSITIVE_INFINITY) {
+            return Number.POSITIVE_INFINITY;
+          }
+          if (!Number.isFinite(capacity) || capacity < 0) {
+            return Number.POSITIVE_INFINITY;
+          }
+          return capacity;
+        };
+
+        const clampShadowAmount = (amount: number, capacity: number): number => {
+          if (amount < 0) {
+            return 0;
+          }
+          if (amount > capacity) {
+            return capacity;
+          }
+          return amount;
+        };
+
+        const addShadowAmount = (index: number, amount: number): number => {
+          const current = getShadowAmount(index);
+          const capacity = getShadowCapacity(index);
+          const next = clampShadowAmount(current + amount, capacity);
+          shadowAmounts.set(index, next);
+          return next - current;
+        };
+
+        const spendShadowAmount = (index: number, amount: number): boolean => {
+          const current = getShadowAmount(index);
+          if (current < amount) {
+            return false;
+          }
+          shadowAmounts.set(index, current - amount);
+          return true;
+        };
+
+        const recordTickAmount = (map: Map<number, number>, index: number, amount: number): void => {
+          if (!Number.isFinite(amount) || amount <= 0) {
+            return;
+          }
+          map.set(index, (map.get(index) ?? 0) + amount);
+        };
+
+        for (const generator of generatorList) {
+          if (isDevelopmentMode() && generator.id.includes(':')) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `Generator ID "${generator.id}" contains ':' which may cause accumulator key collisions`,
+            );
+          }
+
+          if (generator.owned <= 0) {
+            continue;
+          }
+          if (generator.enabled === false) {
+            continue;
+          }
+
+          const multiplier = getMultiplier?.(generator.id) ?? 1;
+          const effectiveOwned = generator.owned * multiplier;
+
+          const validProductions = validateRates(generator.produces, resourceState);
+          const validConsumptions = validateRates(generator.consumes, resourceState);
+
+          // Phase 1: Peek at what each consumption accumulator would apply
+          // and calculate ratio based on ACTUAL consumable amounts (post-threshold)
+          const consumptionAccumulators: Array<{
+            resourceId: string;
+            index: number;
+            result: AccumulatorResult;
+          }> = [];
+
+          let consumptionRatio = 1;
+          // Generators without consumption requirements always produce at full rate.
+          // For generators WITH consumption, we only apply production when at least
+          // one consumption crosses the threshold (keeps production/consumption in sync).
+          let willApplyProduction = validConsumptions.length === 0;
+          for (const { resourceId, index, rate } of validConsumptions) {
+            const delta = rate * effectiveOwned * deltaSeconds;
+            const key = getAccumulatorKey(generator.id, 'consume', resourceId);
+            const result = accumulate(key, delta);
+
+            consumptionAccumulators.push({ resourceId, index, result });
+
+            // Calculate ratio based on total accumulated consumption vs available
+            if (result.toApply > 0) {
+              willApplyProduction = true;
+              const available = getShadowAmount(index);
+              // Use newTotal (full accumulated amount) for ratio calculation
+              // to ensure production scales correctly with actual consumption.
+              // Guard against division by zero (theoretically possible with extremely
+              // small delta times that round to zero after floating-point operations).
+              const ratio = result.newTotal > 0 ? available / result.newTotal : 1;
+              consumptionRatio = Math.min(consumptionRatio, ratio);
+            }
+          }
+
+          // Phase 2: Accumulate production at full rate, apply scaled by consumption ratio
+          for (const { resourceId, index, rate } of validProductions) {
+            const delta = rate * effectiveOwned * deltaSeconds;
+            const key = getAccumulatorKey(generator.id, 'produce', resourceId);
+            const result = accumulate(key, delta);
+
+            // Scale the applied amount by consumption ratio
+            const scale = willApplyProduction ? consumptionRatio : 0;
+            result.commit(scale);
+
+            const actualToApply = result.toApply * scale;
+            if (actualToApply > 0) {
+              const applied = addShadowAmount(index, actualToApply);
+              recordTickAmount(tickIncome, index, applied);
+              if (onTick && applied > 0) {
+                produced.set(resourceId, (produced.get(resourceId) ?? 0) + applied);
+              }
+            }
+          }
+
+          // Phase 3: Apply consumption, scaling by ratio if resources were limited
+          for (const { resourceId, index, result } of consumptionAccumulators) {
+            result.commit(consumptionRatio);
+
+            const actualToApply = result.toApply * consumptionRatio;
+            if (actualToApply > 0 && spendShadowAmount(index, actualToApply)) {
+              recordTickAmount(tickExpense, index, actualToApply);
+              if (onTick) {
+                consumed.set(
+                  resourceId,
+                  (consumed.get(resourceId) ?? 0) + actualToApply,
+                );
+              }
+            }
+          }
+        }
+
+        for (const [index, amount] of tickIncome) {
+          const amountPerSecond = amount / deltaSeconds;
+          if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+            rateTrackingState.applyIncome(index, amountPerSecond);
+          }
+        }
+
+        for (const [index, amount] of tickExpense) {
+          const amountPerSecond = amount / deltaSeconds;
+          if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+            rateTrackingState.applyExpense(index, amountPerSecond);
+          }
+        }
+
+        if (onTick) {
+          onTick({ produced, consumed });
+        }
+        return;
+      }
+
       for (const generator of generatorList) {
         if (isDevelopmentMode() && generator.id.includes(':')) {
           // eslint-disable-next-line no-console
@@ -544,6 +789,52 @@ export function createProductionSystem(
 
         const validProductions = validateRates(generator.produces, resourceState);
         const validConsumptions = validateRates(generator.consumes, resourceState);
+
+        if (trackRates && rateTrackingState) {
+          let rateConsumptionRatio = 1;
+
+          if (validConsumptions.length > 0) {
+            for (const { index, rate } of validConsumptions) {
+              const required = rate * effectiveOwned * deltaSeconds;
+              if (!Number.isFinite(required) || required <= 0) {
+                continue;
+              }
+
+              const available = resourceState.getAmount(index);
+              if (!Number.isFinite(available) || available <= 0) {
+                rateConsumptionRatio = 0;
+                break;
+              }
+
+              const ratio = available / required;
+              if (Number.isFinite(ratio)) {
+                rateConsumptionRatio = Math.min(rateConsumptionRatio, ratio);
+              }
+            }
+
+            if (rateConsumptionRatio < 0) {
+              rateConsumptionRatio = 0;
+            } else if (rateConsumptionRatio > 1) {
+              rateConsumptionRatio = 1;
+            }
+          }
+
+          if (rateConsumptionRatio > 0) {
+            for (const { index, rate } of validProductions) {
+              const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
+              if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+                rateTrackingState.applyIncome(index, amountPerSecond);
+              }
+            }
+
+            for (const { index, rate } of validConsumptions) {
+              const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
+              if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+                rateTrackingState.applyExpense(index, amountPerSecond);
+              }
+            }
+          }
+        }
 
         // Phase 1: Peek at what each consumption accumulator would apply
         // and calculate ratio based on ACTUAL consumable amounts (post-threshold)
@@ -591,7 +882,9 @@ export function createProductionSystem(
           const actualToApply = result.toApply * scale;
           if (actualToApply > 0) {
             resourceState.addAmount(index, actualToApply);
-            produced.set(resourceId, (produced.get(resourceId) ?? 0) + actualToApply);
+            if (onTick) {
+              produced.set(resourceId, (produced.get(resourceId) ?? 0) + actualToApply);
+            }
           }
         }
 
@@ -602,7 +895,9 @@ export function createProductionSystem(
           const actualToApply = result.toApply * consumptionRatio;
           if (actualToApply > 0) {
             resourceState.spendAmount(index, actualToApply, { systemId });
-            consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + actualToApply);
+            if (onTick) {
+              consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + actualToApply);
+            }
           }
         }
       }

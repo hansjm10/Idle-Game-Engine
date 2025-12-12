@@ -126,6 +126,23 @@ describe('ResourceState', () => {
     expect(recorderSnapshot.tickDelta[energy]).toBe(postSpend.tickDelta[energy]);
   });
 
+  it('keeps netPerSecond in sync with applyIncome/applyExpense', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 0, capacity: 10 },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    state.applyIncome(energy, 6);
+    state.applyExpense(energy, 1);
+
+    expect(state.getNetPerSecond(energy)).toBeCloseTo(5, 6);
+
+    const publishSnapshot = state.snapshot();
+    expect(publishSnapshot.incomePerSecond[energy]).toBeCloseTo(6, 6);
+    expect(publishSnapshot.expensePerSecond[energy]).toBeCloseTo(1, 6);
+    expect(publishSnapshot.netPerSecond[energy]).toBeCloseTo(5, 6);
+  });
+
   it('applies per-second rates during finalizeTick and resets accumulators after publish', () => {
     const state = createResourceState([
       { id: 'energy', startAmount: 0, capacity: 10 },
@@ -143,10 +160,38 @@ describe('ResourceState', () => {
     expect(publishSnapshot.dirtyCount).toBe(1);
 
     state.resetPerTickAccumulators();
+    expect(state.getNetPerSecond(energy)).toBe(0);
     const recorderSnapshot = state.snapshot({ mode: 'recorder' });
     expect(recorderSnapshot.incomePerSecond[energy]).toBe(0);
     expect(recorderSnapshot.expensePerSecond[energy]).toBe(0);
+    expect(recorderSnapshot.netPerSecond[energy]).toBe(0);
     expect(recorderSnapshot.tickDelta[energy]).toBe(0);
+  });
+
+  it('publishes zero per-second rates when no new rates are applied', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 0, capacity: 10 },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    state.applyIncome(energy, 6);
+    state.applyExpense(energy, 1);
+    state.finalizeTick(1000);
+
+    const snapshot = state.snapshot();
+    expect(snapshot.incomePerSecond[energy]).toBeCloseTo(6, 6);
+    expect(snapshot.expensePerSecond[energy]).toBeCloseTo(1, 6);
+    expect(snapshot.netPerSecond[energy]).toBeCloseTo(5, 6);
+
+    state.resetPerTickAccumulators();
+    state.finalizeTick(1000);
+
+    const nextSnapshot = state.snapshot();
+    expect(nextSnapshot.incomePerSecond[energy]).toBe(0);
+    expect(nextSnapshot.expensePerSecond[energy]).toBe(0);
+    expect(nextSnapshot.netPerSecond[energy]).toBe(0);
+    expect(nextSnapshot.dirtyCount).toBe(1);
+    expect(nextSnapshot.dirtyIndices[0]).toBe(energy);
   });
 
   it('guards snapshot arrays against mutation by default', () => {
