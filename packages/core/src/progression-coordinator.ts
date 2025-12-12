@@ -610,7 +610,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
     const evaluatedCost = evaluateCostFormula(
       record.definition.purchase.costCurve,
-      this.createFormulaEvaluationContext(purchaseIndex, this.lastUpdatedStep),
+      this.createFormulaEvaluationContext(purchaseIndex, this.lastUpdatedStep, {
+        generatorLevels: { [generatorId]: purchaseIndex },
+      }),
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
       const error = new Error(
@@ -690,36 +692,53 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
    * @param condition - Optional visibility condition to evaluate
    * @returns true if condition passes or is undefined (default visible), false otherwise
    */
-	  private evaluateVisibility(condition: Condition | undefined): boolean {
-	    return condition
-	      ? evaluateCondition(condition, this.conditionContext)
-	      : true;
-	  }
+  private evaluateVisibility(condition: Condition | undefined): boolean {
+    return condition ? evaluateCondition(condition, this.conditionContext) : true;
+  }
 
-	  private createFormulaEvaluationContext(
-	    level: number,
-	    step: number,
-	  ): FormulaEvaluationContext {
-	    const deltaTime = (this.state.stepDurationMs ?? 0) / 1000;
-	    const time = step * deltaTime;
-	    return {
-	      variables: {
-	        level,
-	        time,
-	        deltaTime,
-	      },
-	      entities: {
-	        resource: (resourceId) =>
-	          this.conditionContext.getResourceAmount(resourceId),
-	        generator: (generatorId) =>
-	          this.conditionContext.getGeneratorLevel(generatorId),
-	        upgrade: (upgradeId) =>
-	          this.conditionContext.getUpgradePurchases(upgradeId),
-	        automation: () => 0,
-	        prestigeLayer: () => 0,
-	      },
-	    };
-	  }
+  private createFormulaEvaluationContext(
+    level: number,
+    step: number,
+    overrides?: {
+      readonly generatorLevels?: Readonly<Record<string, number>>;
+      readonly upgradePurchases?: Readonly<Record<string, number>>;
+    },
+  ): FormulaEvaluationContext {
+    const deltaTime = (this.state.stepDurationMs ?? 0) / 1000;
+    const time = step * deltaTime;
+    const generatorLevels = overrides?.generatorLevels;
+    const upgradePurchases = overrides?.upgradePurchases;
+    return {
+      variables: {
+        level,
+        time,
+        deltaTime,
+      },
+      entities: {
+        resource: (resourceId) => this.conditionContext.getResourceAmount(resourceId),
+        generator: (generatorId) => {
+          if (
+            generatorLevels &&
+            Object.prototype.hasOwnProperty.call(generatorLevels, generatorId)
+          ) {
+            return generatorLevels[generatorId];
+          }
+          return this.conditionContext.getGeneratorLevel(generatorId);
+        },
+        upgrade: (upgradeId) => {
+          if (
+            upgradePurchases &&
+            Object.prototype.hasOwnProperty.call(upgradePurchases, upgradeId)
+          ) {
+            return upgradePurchases[upgradeId];
+          }
+          return this.conditionContext.getUpgradePurchases(upgradeId);
+        },
+        automation: () => 0,
+        prestigeLayer: () => 0,
+      },
+    };
+  }
 
 		  private computeGeneratorRateMultipliers(step: number): Map<string, number> {
 		    const multipliers = new Map<string, number>();

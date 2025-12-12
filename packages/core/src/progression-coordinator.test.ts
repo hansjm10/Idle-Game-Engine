@@ -309,6 +309,49 @@ describe('progression-coordinator', () => {
     expect(quote?.costs).toEqual([{ resourceId: currency.id, amount: 60 }]);
   });
 
+  it('quotes bulk generator purchases using simulated owned values in cost formulas', () => {
+    const currency = createResourceDefinition('resource.currency', {
+      name: 'Currency',
+    });
+
+    const generatorId = 'generator.alpha';
+
+    const costCurve = {
+      kind: 'expression',
+      expression: {
+        kind: 'binary',
+        op: 'add',
+        left: { kind: 'literal', value: 1 },
+        right: {
+          kind: 'ref',
+          target: { type: 'generator', id: generatorId },
+        },
+      },
+    } as unknown as NumericFormula;
+
+    const generator = createGeneratorDefinition(generatorId, {
+      purchase: {
+        currencyId: currency.id,
+        baseCost: 10,
+        costCurve,
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [currency],
+        generators: [generator],
+      }),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(generatorId, 2);
+    expect(quote).toBeDefined();
+    expect(quote?.costs).toEqual([{ resourceId: currency.id, amount: 30 }]);
+  });
+
   it('keeps repeatable upgrades without maxPurchases available after purchase', () => {
     const coordinator = createProgressionCoordinator({
       content: createRepeatableContentPack(),
