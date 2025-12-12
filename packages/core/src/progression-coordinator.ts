@@ -439,11 +439,11 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       );
     }
 
-    for (const record of this.upgradeList) {
-      const status = this.resolveUpgradeStatus(record);
-      record.state.status = status;
-      record.state.isVisible = this.evaluateVisibility(
-        record.definition.visibilityCondition,
+	    for (const record of this.upgradeList) {
+	      const status = this.resolveUpgradeStatus(record);
+	      record.state.status = status;
+	      record.state.isVisible = this.evaluateVisibility(
+	        record.definition.visibilityCondition,
       );
 
       record.state.unlockHint =
@@ -454,14 +454,37 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
             )
           : undefined;
 
-      record.state.costs = this.computeUpgradeCosts(record);
-      record.state.purchases = record.purchases;
-    }
+	      record.state.costs = this.computeUpgradeCosts(record);
+	      record.state.purchases = record.purchases;
+	    }
 
-    for (const record of this.prestigeLayerList) {
-      const isUnlocked = evaluateCondition(
-        record.definition.unlockCondition,
-        this.conditionContext,
+	    const generatorRateMultipliers = this.computeGeneratorRateMultipliers(step);
+	    const baseRateContext = this.createFormulaEvaluationContext(1, step);
+	    for (const record of this.generatorList) {
+	      const baseProduces = buildGeneratorRates(
+	        record.definition.produces,
+	        baseRateContext,
+	      );
+	      const baseConsumes = buildGeneratorRates(
+	        record.definition.consumes,
+	        baseRateContext,
+	      );
+	      const multiplier =
+	        generatorRateMultipliers.get(record.definition.id) ?? 1;
+	      record.state.produces = baseProduces.map((rate) => ({
+	        ...rate,
+	        rate: rate.rate * multiplier,
+	      }));
+	      record.state.consumes = baseConsumes.map((rate) => ({
+	        ...rate,
+	        rate: rate.rate * multiplier,
+	      }));
+	    }
+
+	    for (const record of this.prestigeLayerList) {
+	      const isUnlocked = evaluateCondition(
+	        record.definition.unlockCondition,
+	        this.conditionContext,
       );
       record.state.isUnlocked = isUnlocked;
       record.state.isVisible = isUnlocked; // Default: visible when unlocked
@@ -633,16 +656,113 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
    * @param condition - Optional visibility condition to evaluate
    * @returns true if condition passes or is undefined (default visible), false otherwise
    */
-  private evaluateVisibility(condition: Condition | undefined): boolean {
-    return condition
-      ? evaluateCondition(condition, this.conditionContext)
-      : true;
-  }
+	  private evaluateVisibility(condition: Condition | undefined): boolean {
+	    return condition
+	      ? evaluateCondition(condition, this.conditionContext)
+	      : true;
+	  }
 
-  resolveUpgradeStatus(record: UpgradeRecord): UpgradeStatus {
-    const maxPurchases = record.definition.repeatable
-      ? record.definition.repeatable.maxPurchases ?? Number.POSITIVE_INFINITY
-      : 1;
+	  private createFormulaEvaluationContext(
+	    level: number,
+	    step: number,
+	  ): FormulaEvaluationContext {
+	    const deltaTime = (this.state.stepDurationMs ?? 0) / 1000;
+	    const time = step * deltaTime;
+	    return {
+	      variables: {
+	        level,
+	        time,
+	        deltaTime,
+	      },
+	      entities: {
+	        resource: (resourceId) =>
+	          this.conditionContext.getResourceAmount(resourceId),
+	        generator: (generatorId) =>
+	          this.conditionContext.getGeneratorLevel(generatorId),
+	        upgrade: (upgradeId) =>
+	          this.conditionContext.getUpgradePurchases(upgradeId),
+	        automation: () => 0,
+	        prestigeLayer: () => 0,
+	      },
+	    };
+	  }
+
+	  private computeGeneratorRateMultipliers(step: number): Map<string, number> {
+	    const multipliers = new Map<string, number>();
+
+	    for (const record of this.upgradeList) {
+	      if (record.purchases <= 0) {
+	        continue;
+	      }
+	      const purchaseLevel = Math.max(0, record.purchases - 1);
+	      const context = this.createFormulaEvaluationContext(
+	        purchaseLevel,
+	        step,
+	      );
+
+	      for (const effect of record.definition.effects) {
+	        if (effect.kind !== 'modifyGeneratorRate') {
+	          continue;
+	        }
+
+	        let value: number;
+	        try {
+	          value = evaluateNumericFormula(effect.value, context);
+	        } catch (error) {
+	          const message =
+	            error instanceof Error ? error.message : String(error);
+	          this.onError?.(
+	            new Error(
+	              `Upgrade effect evaluation failed for "${record.definition.id}" (${effect.kind}): ${message}`,
+	            ),
+	          );
+	          continue;
+	        }
+
+	        if (!Number.isFinite(value)) {
+	          this.onError?.(
+	            new Error(
+	              `Upgrade effect evaluation returned invalid value for "${record.definition.id}" (${effect.kind}): ${value}`,
+	            ),
+	          );
+	          continue;
+	        }
+
+	        const current = multipliers.get(effect.generatorId) ?? 1;
+	        let next = current;
+	        switch (effect.operation) {
+	          case 'add':
+	            next = current + value;
+	            break;
+	          case 'multiply':
+	            next = current * value;
+	            break;
+	          case 'set':
+	            next = value;
+	            break;
+	          default: {
+	            const _exhaustive: never = effect.operation;
+	            this.onError?.(
+	              new Error(
+	                `Unknown generator rate operation "${String(
+	                  _exhaustive,
+	                )}" for upgrade "${record.definition.id}".`,
+	              ),
+	            );
+	            continue;
+	          }
+	        }
+	        multipliers.set(effect.generatorId, next);
+	      }
+	    }
+
+	    return multipliers;
+	  }
+
+	  resolveUpgradeStatus(record: UpgradeRecord): UpgradeStatus {
+	    const maxPurchases = record.definition.repeatable
+	      ? record.definition.repeatable.maxPurchases ?? Number.POSITIVE_INFINITY
+	      : 1;
     if (record.purchases >= maxPurchases) {
       return 'purchased';
     }
@@ -903,13 +1023,14 @@ function buildResourceMetadata(
 
 function buildGeneratorRates(
   entries: readonly { resourceId: string; rate: NumericFormula }[],
+  context: FormulaEvaluationContext = {
+    variables: { level: 1, time: 0, deltaTime: 0 },
+  },
 ): readonly GeneratorRateView[] {
   const rates: GeneratorRateView[] = [];
 
   for (const entry of entries) {
-    const rate = evaluateNumericFormula(entry.rate, {
-      variables: { level: 1 },
-    });
+    const rate = evaluateNumericFormula(entry.rate, context);
     if (!Number.isFinite(rate)) {
       continue;
     }
