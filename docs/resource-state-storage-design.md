@@ -456,10 +456,10 @@ that:
   `expensePerSecond[index]`, allowing multiple systems to compose within a
   single frame. The helpers also keep `netPerSecond[index]` in sync immediately
   so shells can read `getNetPerSecond` without requiring `finalizeTick` in
-  integrations that mutate balances directly (for example,
-  `createProductionSystem({ trackRates: true })` still mutates balances via
-  `addAmount/spendAmount`, but uses rate accumulation to publish UI-friendly
-  rates). Helpers ignore zero-valued inputs
+  integrations that want to display live rates. Systems that queue rates (for
+  example, `createProductionSystem({ trackRates: true })`) rely on
+  `finalizeTick` to roll accumulated income/expense into balances. Helpers
+  ignore zero-valued inputs
   and mark the resource dirty
   only when the accumulator fails `epsilonEquals` against the most recent
   publish buffer. If opposing calls cancel each other within the same tick,

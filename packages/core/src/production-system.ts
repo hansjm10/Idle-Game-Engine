@@ -38,6 +38,21 @@ function supportsRateTracking(
   );
 }
 
+interface ProductionResourceStateFinalizer {
+  finalizeTick(deltaMs: number): void;
+}
+
+type ProductionResourceStateWithFinalizeTick =
+  ProductionResourceState & ProductionResourceStateFinalizer;
+
+function supportsFinalizeTick(
+  resourceState: ProductionResourceState,
+): resourceState is ProductionResourceStateWithFinalizeTick {
+  return (
+    typeof (resourceState as ProductionResourceStateWithFinalizeTick).finalizeTick === 'function'
+  );
+}
+
 /**
  * Serialized accumulator state for save/load persistence.
  * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
@@ -265,8 +280,12 @@ export interface ProductionSystemOptions {
    * When enabled, the system also populates per-second income/expense buffers
    * by calling `resourceState.applyIncome/applyExpense` (when available).
    *
-   * This is intended for UI/diagnostics so shells can read `ResourceState.snapshot`
-   * rates without recomputing production math.
+   * When the provided `resourceState` also supports `finalizeTick`, the production
+   * system will only queue per-second rates and expects the caller to apply them
+   * via `resourceState.finalizeTick(deltaMs)` after systems run.
+   *
+   * When `finalizeTick` is not available, enabling this option only affects
+   * per-second buffers and does not change balance mutations.
    *
    * @default false
    */
@@ -491,6 +510,8 @@ export function createProductionSystem(
     ? resourceState
     : undefined;
   const trackRates = options.trackRates === true;
+  const useFinalizeTickRates =
+    trackRates && rateTrackingState !== undefined && supportsFinalizeTick(resourceState);
 
   if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
     throw new Error('applyThreshold must be a positive finite number');
@@ -606,20 +627,36 @@ export function createProductionSystem(
           }
 
           if (rateConsumptionRatio > 0) {
-            for (const { index, rate } of validProductions) {
+            for (const { resourceId, index, rate } of validProductions) {
               const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
               if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
                 rateTrackingState.applyIncome(index, amountPerSecond);
+                if (useFinalizeTickRates && onTick) {
+                  produced.set(
+                    resourceId,
+                    (produced.get(resourceId) ?? 0) + amountPerSecond * deltaSeconds,
+                  );
+                }
               }
             }
 
-            for (const { index, rate } of validConsumptions) {
+            for (const { resourceId, index, rate } of validConsumptions) {
               const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
               if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
                 rateTrackingState.applyExpense(index, amountPerSecond);
+                if (useFinalizeTickRates && onTick) {
+                  consumed.set(
+                    resourceId,
+                    (consumed.get(resourceId) ?? 0) + amountPerSecond * deltaSeconds,
+                  );
+                }
               }
             }
           }
+        }
+
+        if (useFinalizeTickRates) {
+          continue;
         }
 
         // Phase 1: Peek at what each consumption accumulator would apply
@@ -668,7 +705,9 @@ export function createProductionSystem(
           const actualToApply = result.toApply * scale;
           if (actualToApply > 0) {
             resourceState.addAmount(index, actualToApply);
-            produced.set(resourceId, (produced.get(resourceId) ?? 0) + actualToApply);
+            if (onTick) {
+              produced.set(resourceId, (produced.get(resourceId) ?? 0) + actualToApply);
+            }
           }
         }
 
@@ -679,7 +718,9 @@ export function createProductionSystem(
           const actualToApply = result.toApply * consumptionRatio;
           if (actualToApply > 0) {
             resourceState.spendAmount(index, actualToApply, { systemId });
-            consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + actualToApply);
+            if (onTick) {
+              consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + actualToApply);
+            }
           }
         }
       }

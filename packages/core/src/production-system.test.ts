@@ -1003,5 +1003,37 @@ describe('createProductionSystem', () => {
       expect(snapshot.netPerSecond[goldIndex]).toBeCloseTo(2.5, 6);
       expect(snapshot.netPerSecond[woodIndex]).toBeCloseTo(-5, 6);
     });
+
+    it('does not double-apply amounts when finalizeTick is called', () => {
+      const resources = createResourceState([
+        { id: 'gold', startAmount: 0 },
+        { id: 'wood', startAmount: 100 },
+      ]);
+
+      const generators = [
+        {
+          id: 'converter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 5 }], // 10 gold/s
+          consumes: [{ resourceId: 'wood', rate: 10 }], // 20 wood/s
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        trackRates: true,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.finalizeTick(1000);
+      resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+
+      expect(resources.getAmount(goldIndex)).toBeCloseTo(10, 6);
+      expect(resources.getAmount(woodIndex)).toBeCloseTo(80, 6);
+    });
   });
 });
