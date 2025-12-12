@@ -264,6 +264,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly prestigeLayerList: PrestigeLayerRecord[];
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
+  private lastUpdatedStep = 0;
 
   constructor(options: ProgressionCoordinatorOptions) {
     this.onError = options.onError;
@@ -422,6 +423,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   }
 
   public updateForStep(step: number): void {
+    this.lastUpdatedStep = step;
     const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
     mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
 
@@ -526,6 +528,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     return this.conditionContext.getResourceAmount(resourceId);
   }
 
+  getLastUpdatedStep(): number {
+    return this.lastUpdatedStep;
+  }
+
   getGeneratorRecord(generatorId: string): GeneratorRecord | undefined {
     return this.generators.get(generatorId);
   }
@@ -604,7 +610,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
     const evaluatedCost = evaluateCostFormula(
       record.definition.purchase.costCurve,
-      purchaseIndex,
+      this.createFormulaEvaluationContext(purchaseIndex, this.lastUpdatedStep),
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
       const error = new Error(
@@ -639,7 +645,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
     const evaluatedCost = evaluateCostFormula(
       record.definition.cost.costCurve,
-      purchaseLevel,
+      this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
     );
     if (evaluatedCost === undefined || evaluatedCost < 0) {
       const error = new Error(
@@ -653,7 +659,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     if (repeatableCostCurve) {
       const repeatableAdjustment = evaluateCostFormula(
         repeatableCostCurve,
-        purchaseLevel,
+        this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
       );
       if (repeatableAdjustment === undefined || repeatableAdjustment < 0) {
         const error = new Error(
@@ -1128,12 +1134,14 @@ function hydrateResourceState(
 
 function evaluateCostFormula(
   formula: NumericFormula,
-  purchaseLevel: number,
+  context: FormulaEvaluationContext,
 ): number | undefined {
-  const amount = evaluateNumericFormula(formula, {
-    variables: { level: purchaseLevel },
-  });
-  return Number.isFinite(amount) ? amount : undefined;
+  try {
+    const amount = evaluateNumericFormula(formula, context);
+    return Number.isFinite(amount) ? amount : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function clampOwned(owned: number, maxLevel?: number): number {
@@ -1383,9 +1391,15 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     const resourceState = this.coordinator.resourceState;
     const snapshot = resourceState.snapshot({ mode: 'publish' });
 
+    const step = this.coordinator.getLastUpdatedStep();
+    const deltaTime = (this.coordinator.state.stepDurationMs ?? 0) / 1000;
+    const time = step * deltaTime;
+
     // Build variables lookup (for backwards compatibility with variable-style formulas)
     const variables: Record<string, number> = {
       level: 1, // Maintain for backwards compatibility
+      time,
+      deltaTime,
     };
     for (let i = 0; i < snapshot.ids.length; i++) {
       const resourceId = snapshot.ids[i];
@@ -1398,10 +1412,22 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       return index !== undefined ? (snapshot.amounts[index] ?? 0) : undefined;
     };
 
+    const generatorLookup = (id: string): number | undefined => {
+      const record = this.coordinator.getGeneratorRecord(id);
+      return record?.state.owned;
+    };
+
+    const upgradeLookup = (id: string): number | undefined => {
+      const record = this.coordinator.getUpgradeRecord(id);
+      return record?.purchases;
+    };
+
     return {
       variables,
       entities: {
         resource: resourceLookup,
+        generator: generatorLookup,
+        upgrade: upgradeLookup,
       },
     };
   }
