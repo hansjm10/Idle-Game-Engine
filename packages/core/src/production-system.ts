@@ -21,6 +21,23 @@ export interface ProductionResourceState {
   ): boolean;
 }
 
+interface ProductionResourceStateRateTracker {
+  applyIncome(index: number, amountPerSecond: number): void;
+  applyExpense(index: number, amountPerSecond: number): void;
+}
+
+type ProductionResourceStateWithRateTracking =
+  ProductionResourceState & ProductionResourceStateRateTracker;
+
+function supportsRateTracking(
+  resourceState: ProductionResourceState,
+): resourceState is ProductionResourceStateWithRateTracking {
+  return (
+    typeof (resourceState as ProductionResourceStateWithRateTracking).applyIncome === 'function' &&
+    typeof (resourceState as ProductionResourceStateWithRateTracking).applyExpense === 'function'
+  );
+}
+
 /**
  * Serialized accumulator state for save/load persistence.
  * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
@@ -245,6 +262,16 @@ export interface ProductionSystemOptions {
    */
   readonly applyThreshold?: number;
   /**
+   * When enabled, the system also populates per-second income/expense buffers
+   * by calling `resourceState.applyIncome/applyExpense` (when available).
+   *
+   * This is intended for UI/diagnostics so shells can read `ResourceState.snapshot`
+   * rates without recomputing production math.
+   *
+   * @default false
+   */
+  readonly trackRates?: boolean;
+  /**
    * Optional callback invoked after each tick with production statistics.
    *
    * Useful for debugging, metrics collection, or UI updates. The callback
@@ -460,6 +487,10 @@ export function createProductionSystem(
   const { generators, resourceState, getMultiplier, onTick } = options;
   const systemId = options.systemId ?? DEFAULT_PRODUCTION_SYSTEM_ID;
   const applyThreshold = options.applyThreshold ?? 0.0001;
+  const rateTrackingState = supportsRateTracking(resourceState)
+    ? resourceState
+    : undefined;
+  const trackRates = options.trackRates === true;
 
   if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
     throw new Error('applyThreshold must be a positive finite number');
@@ -544,6 +575,52 @@ export function createProductionSystem(
 
         const validProductions = validateRates(generator.produces, resourceState);
         const validConsumptions = validateRates(generator.consumes, resourceState);
+
+        if (trackRates && rateTrackingState) {
+          let rateConsumptionRatio = 1;
+
+          if (validConsumptions.length > 0) {
+            for (const { index, rate } of validConsumptions) {
+              const required = rate * effectiveOwned * deltaSeconds;
+              if (!Number.isFinite(required) || required <= 0) {
+                continue;
+              }
+
+              const available = resourceState.getAmount(index);
+              if (!Number.isFinite(available) || available <= 0) {
+                rateConsumptionRatio = 0;
+                break;
+              }
+
+              const ratio = available / required;
+              if (Number.isFinite(ratio)) {
+                rateConsumptionRatio = Math.min(rateConsumptionRatio, ratio);
+              }
+            }
+
+            if (rateConsumptionRatio < 0) {
+              rateConsumptionRatio = 0;
+            } else if (rateConsumptionRatio > 1) {
+              rateConsumptionRatio = 1;
+            }
+          }
+
+          if (rateConsumptionRatio > 0) {
+            for (const { index, rate } of validProductions) {
+              const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
+              if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+                rateTrackingState.applyIncome(index, amountPerSecond);
+              }
+            }
+
+            for (const { index, rate } of validConsumptions) {
+              const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
+              if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+                rateTrackingState.applyExpense(index, amountPerSecond);
+              }
+            }
+          }
+        }
 
         // Phase 1: Peek at what each consumption accumulator would apply
         // and calculate ratio based on ACTUAL consumable amounts (post-threshold)

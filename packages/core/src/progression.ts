@@ -249,7 +249,9 @@ function createResourceViews(
       views.push(view);
     }
 
-    return Object.freeze(views);
+    const frozen = Object.freeze(views);
+    source.state.resetPerTickAccumulators();
+    return frozen;
   }
 
   if (source.serialized) {

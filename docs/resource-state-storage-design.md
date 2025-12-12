@@ -107,8 +107,9 @@ interface ResourceStateBuffers {
   each tick to support production diagnostics and UI stat panels. These values
   are mirrored into the publish buffers before `resetPerTickAccumulators` clears
   the live arrays so rate changes survive the publish/reset cycle.
-- `netPerSecond`: derived buffer updated at the end of each tick to avoid
-  recomputing `income - expense` during reads.
+- `netPerSecond`: derived buffer updated whenever rate accumulators change (and
+  recomputed during `finalizeTick`) to avoid recomputing `income - expense`
+  during reads.
 - `tickDelta`: tracks the signed delta applied during the current tick, enabling
   compact state diffs for the presentation layer and recorder.
 - `flags`: bit field storing boolean metadata. Bits are allocated as
@@ -453,11 +454,20 @@ that:
   attempts to submit negative, `NaN`, or infinite rates log telemetry and throw.
   Each helper adds to (`+=`) `incomePerSecond[index]` and
   `expensePerSecond[index]`, allowing multiple systems to compose within a
-  single frame. Helpers ignore zero-valued inputs and mark the resource dirty
+  single frame. The helpers also keep `netPerSecond[index]` in sync immediately
+  so shells can read `getNetPerSecond` without requiring `finalizeTick` in
+  integrations that mutate balances directly (for example,
+  `createProductionSystem({ trackRates: true })` still mutates balances via
+  `addAmount/spendAmount`, but uses rate accumulation to publish UI-friendly
+  rates). Helpers ignore zero-valued inputs
+  and mark the resource dirty
   only when the accumulator fails `epsilonEquals` against the most recent
   publish buffer. If opposing calls cancel each other within the same tick,
   `unmarkIfClean` clears the dirty flag once the accumulators drift back inside
   the epsilon band and the previously published buffer retains the prior rates.
+  Because the per-second fields are additive, publish flows must call
+  `resetPerTickAccumulators()` once per tick after `snapshot({ mode: 'publish' })`
+  to avoid rates accumulating across ticks.
 - **Capacity updates:** `setCapacity` validates the requested capacity (must be
   `>= 0`, not `NaN`; `Infinity` is permitted to represent uncapped resources)
   before writing into the buffer. Invalid values log telemetry and throw. On

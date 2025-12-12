@@ -126,6 +126,23 @@ describe('ResourceState', () => {
     expect(recorderSnapshot.tickDelta[energy]).toBe(postSpend.tickDelta[energy]);
   });
 
+  it('keeps netPerSecond in sync with applyIncome/applyExpense', () => {
+    const state = createResourceState([
+      { id: 'energy', startAmount: 0, capacity: 10 },
+    ]);
+    const energy = state.requireIndex('energy');
+
+    state.applyIncome(energy, 6);
+    state.applyExpense(energy, 1);
+
+    expect(state.getNetPerSecond(energy)).toBeCloseTo(5, 6);
+
+    const publishSnapshot = state.snapshot();
+    expect(publishSnapshot.incomePerSecond[energy]).toBeCloseTo(6, 6);
+    expect(publishSnapshot.expensePerSecond[energy]).toBeCloseTo(1, 6);
+    expect(publishSnapshot.netPerSecond[energy]).toBeCloseTo(5, 6);
+  });
+
   it('applies per-second rates during finalizeTick and resets accumulators after publish', () => {
     const state = createResourceState([
       { id: 'energy', startAmount: 0, capacity: 10 },

@@ -781,6 +781,16 @@ function applyRate(
     nextValue,
     fieldName,
   );
+
+  const net = buffers.incomePerSecond[index] - buffers.expensePerSecond[index];
+  writeFloatField(
+    internal,
+    buffers.netPerSecond,
+    (publish) => publish.netPerSecond,
+    index,
+    net,
+    'netPerSecond',
+  );
 }
 
 function finalizeTick(

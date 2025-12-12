@@ -943,4 +943,65 @@ describe('createProductionSystem', () => {
       expect(amounts.get(1)).toBe(0);
     });
   });
+
+  describe('rate tracking', () => {
+    it('does not update per-second rates by default', () => {
+      const resources = createTestResources();
+      const generators = [
+        {
+          id: 'gold-mine',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 5 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      const snapshot = resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      expect(snapshot.incomePerSecond[goldIndex]).toBe(0);
+      expect(snapshot.expensePerSecond[goldIndex]).toBe(0);
+      expect(snapshot.netPerSecond[goldIndex]).toBe(0);
+    });
+
+    it('populates per-second rates when enabled', () => {
+      const resources = createResourceState([
+        { id: 'gold', startAmount: 0 },
+        { id: 'wood', startAmount: 5 },
+      ]);
+
+      const generators = [
+        {
+          id: 'converter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 5 }], // 10 gold/s base
+          consumes: [{ resourceId: 'wood', rate: 10 }], // 20 wood/s base
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        trackRates: true,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      const snapshot = resources.snapshot({ mode: 'publish' });
+
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+
+      // Only 5 wood available out of 20 needed => throttled to 25%.
+      expect(snapshot.incomePerSecond[goldIndex]).toBeCloseTo(2.5, 6);
+      expect(snapshot.expensePerSecond[woodIndex]).toBeCloseTo(5, 6);
+      expect(snapshot.netPerSecond[goldIndex]).toBeCloseTo(2.5, 6);
+      expect(snapshot.netPerSecond[woodIndex]).toBeCloseTo(-5, 6);
+    });
+  });
 });
