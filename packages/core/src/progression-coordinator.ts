@@ -687,77 +687,83 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	    };
 	  }
 
-	  private computeGeneratorRateMultipliers(step: number): Map<string, number> {
-	    const multipliers = new Map<string, number>();
+		  private computeGeneratorRateMultipliers(step: number): Map<string, number> {
+		    const multipliers = new Map<string, number>();
 
-	    for (const record of this.upgradeList) {
-	      if (record.purchases <= 0) {
-	        continue;
-	      }
-	      const purchaseLevel = record.purchases;
-	      const context = this.createFormulaEvaluationContext(
-	        purchaseLevel,
-	        step,
-	      );
+		    for (const record of this.upgradeList) {
+		      if (record.purchases <= 0) {
+		        continue;
+		      }
+		      const purchases = record.purchases;
+		      const isRepeatable = record.definition.repeatable !== undefined;
+		      const applications = isRepeatable ? purchases : 1;
 
-	      for (const effect of record.definition.effects) {
-	        if (effect.kind !== 'modifyGeneratorRate') {
-	          continue;
-	        }
+		      for (let applicationLevel = 1; applicationLevel <= applications; applicationLevel += 1) {
+		        const contextLevel = isRepeatable ? applicationLevel : purchases;
+		        const context = this.createFormulaEvaluationContext(
+		          contextLevel,
+		          step,
+		        );
 
-	        let value: number;
-	        try {
-	          value = evaluateNumericFormula(effect.value, context);
-	        } catch (error) {
-	          const message =
-	            error instanceof Error ? error.message : String(error);
-	          this.onError?.(
-	            new Error(
-	              `Upgrade effect evaluation failed for "${record.definition.id}" (${effect.kind}): ${message}`,
-	            ),
-	          );
-	          continue;
-	        }
+		        for (const effect of record.definition.effects) {
+		          if (effect.kind !== 'modifyGeneratorRate') {
+		            continue;
+		          }
 
-	        if (!Number.isFinite(value)) {
-	          this.onError?.(
-	            new Error(
-	              `Upgrade effect evaluation returned invalid value for "${record.definition.id}" (${effect.kind}): ${value}`,
-	            ),
-	          );
-	          continue;
-	        }
+		          let value: number;
+		          try {
+		            value = evaluateNumericFormula(effect.value, context);
+		          } catch (error) {
+		            const message =
+		              error instanceof Error ? error.message : String(error);
+		            this.onError?.(
+		              new Error(
+		                `Upgrade effect evaluation failed for "${record.definition.id}" (${effect.kind}): ${message}`,
+		              ),
+		            );
+		            continue;
+		          }
 
-	        const current = multipliers.get(effect.generatorId) ?? 1;
-	        let next = current;
-	        switch (effect.operation) {
-	          case 'add':
-	            next = current + value;
-	            break;
-	          case 'multiply':
-	            next = current * value;
-	            break;
-	          case 'set':
-	            next = value;
-	            break;
-	          default: {
-	            const _exhaustive: never = effect.operation;
-	            this.onError?.(
-	              new Error(
-	                `Unknown generator rate operation "${String(
-	                  _exhaustive,
-	                )}" for upgrade "${record.definition.id}".`,
-	              ),
-	            );
-	            continue;
-	          }
-	        }
-	        multipliers.set(effect.generatorId, next);
-	      }
-	    }
+		          if (!Number.isFinite(value)) {
+		            this.onError?.(
+		              new Error(
+		                `Upgrade effect evaluation returned invalid value for "${record.definition.id}" (${effect.kind}): ${value}`,
+		              ),
+		            );
+		            continue;
+		          }
 
-	    return multipliers;
-	  }
+		          const current = multipliers.get(effect.generatorId) ?? 1;
+		          let next = current;
+		          switch (effect.operation) {
+		            case 'add':
+		              next = current + value;
+		              break;
+		            case 'multiply':
+		              next = current * value;
+		              break;
+		            case 'set':
+		              next = value;
+		              break;
+		            default: {
+		              const _exhaustive: never = effect.operation;
+		              this.onError?.(
+		                new Error(
+		                  `Unknown generator rate operation "${String(
+		                    _exhaustive,
+		                  )}" for upgrade "${record.definition.id}".`,
+		                ),
+		              );
+		              continue;
+		            }
+		          }
+		          multipliers.set(effect.generatorId, next);
+		        }
+		      }
+		    }
+
+		    return multipliers;
+		  }
 
 	  resolveUpgradeStatus(record: UpgradeRecord): UpgradeStatus {
 	    const maxPurchases = record.definition.repeatable
