@@ -52,6 +52,10 @@ interface EpsilonEqualsOptions {
   readonly floorToleranceOverride?: boolean;
 }
 
+const EPSILON_FLOOR_OVERRIDE_OPTIONS: EpsilonEqualsOptions = Object.freeze({
+  floorToleranceOverride: true,
+});
+
 export interface ResourceDefinition {
   readonly id: string;
   readonly startAmount?: number;
@@ -807,6 +811,7 @@ function finalizeTick(
   const { buffers } = internal;
   const deltaSeconds = deltaMs / 1_000;
   const resourceCount = buffers.ids.length;
+  const publish = buffers.publish[internal.activePublishIndex];
 
   for (let index = 0; index < resourceCount; index += 1) {
     const incomePerSecond = buffers.incomePerSecond[index];
@@ -844,6 +849,37 @@ function finalizeTick(
       net,
       'netPerSecond',
     );
+
+    const tolerance = buffers.dirtyTolerance[index];
+    const epsilonOptions = Object.is(tolerance, DIRTY_EPSILON_CEILING)
+      ? undefined
+      : EPSILON_FLOOR_OVERRIDE_OPTIONS;
+
+    if (
+      !epsilonEquals(
+        incomePerSecond,
+        publish.incomePerSecond[index],
+        tolerance,
+        undefined,
+        epsilonOptions,
+      ) ||
+      !epsilonEquals(
+        expensePerSecond,
+        publish.expensePerSecond[index],
+        tolerance,
+        undefined,
+        epsilonOptions,
+      ) ||
+      !epsilonEquals(
+        buffers.netPerSecond[index],
+        publish.netPerSecond[index],
+        tolerance,
+        undefined,
+        epsilonOptions,
+      )
+    ) {
+      markDirty(internal, index);
+    }
   }
 
   internal.publishGuardState = PublishGuardState.Finalized;
