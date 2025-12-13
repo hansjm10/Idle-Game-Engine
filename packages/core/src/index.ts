@@ -998,6 +998,19 @@ export {
   type ProgressionCoordinatorOptions,
 } from './progression-coordinator.js';
 export {
+  PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION,
+  serializeProgressionCoordinatorState,
+  hydrateProgressionCoordinatorState,
+  type SerializedProgressionCoordinatorState,
+  type SerializedProgressionCoordinatorStateV1,
+  type SerializedProgressionGeneratorStateV1,
+  type SerializedProgressionUpgradeStateV1,
+} from './progression-coordinator-save.js';
+export {
+  applyOfflineProgress,
+  type ApplyOfflineProgressOptions,
+} from './offline-progress.js';
+export {
   combineConditions,
   compareWithComparator,
   describeCondition,
