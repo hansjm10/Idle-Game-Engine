@@ -156,6 +156,14 @@ export interface ProgressionCoordinator {
   updateForStep(step: number): void;
 
   /**
+   * Returns the most recent step passed to {@link updateForStep}.
+   *
+   * This is typically aligned with the runtime's `currentStep` and is useful
+   * when persisting progression state for save/load.
+   */
+  getLastUpdatedStep(): number;
+
+  /**
    * Increments the owned count for a generator, respecting max level constraints.
    *
    * @param generatorId - Generator identifier
@@ -178,6 +186,14 @@ export interface ProgressionCoordinator {
    * @param upgradeId - Upgrade identifier
    */
   incrementUpgradePurchases(upgradeId: string): void;
+
+  /**
+   * Sets the purchase count for an upgrade, respecting max purchase limits.
+   *
+   * @param upgradeId - Upgrade identifier
+   * @param purchases - Desired purchase count (clamped to a non-negative integer)
+   */
+  setUpgradePurchases(upgradeId: string, purchases: number): void;
 
   /**
    * Retrieves the resource definition for a given resource ID.
@@ -581,6 +597,32 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     } else {
       record.purchases = nextPurchases;
     }
+    record.state.purchases = record.purchases;
+  }
+
+  setUpgradePurchases(upgradeId: string, purchases: number): void {
+    const record = this.upgrades.get(upgradeId);
+    if (!record) {
+      return;
+    }
+
+    const normalizedPurchases =
+      Number.isFinite(purchases) && purchases >= 0
+        ? Math.floor(purchases)
+        : 0;
+
+    const repeatableConfig = record.definition.repeatable;
+    const rawMaxPurchases =
+      repeatableConfig?.maxPurchases ??
+      (repeatableConfig ? Number.POSITIVE_INFINITY : 1);
+
+    if (Number.isFinite(rawMaxPurchases)) {
+      const normalizedMax = Math.max(0, Math.floor(rawMaxPurchases));
+      record.purchases = Math.min(normalizedPurchases, normalizedMax);
+    } else {
+      record.purchases = normalizedPurchases;
+    }
+
     record.state.purchases = record.purchases;
   }
 
