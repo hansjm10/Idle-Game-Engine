@@ -196,6 +196,13 @@ export class IdleEngineRuntime {
     return this.maxStepsPerFrame;
   }
 
+  creditTime(deltaMs: number): void {
+    if (typeof deltaMs !== 'number' || !Number.isFinite(deltaMs) || deltaMs <= 0) {
+      return;
+    }
+    this.accumulator += deltaMs;
+  }
+
   getEventBus(): EventBus {
     return this.eventBus;
   }
@@ -232,113 +239,121 @@ export class IdleEngineRuntime {
     }
 
     this.accumulator += deltaMs;
-    const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
-    const steps = Math.min(availableSteps, this.maxStepsPerFrame);
+    let remainingStepBudget = this.maxStepsPerFrame;
 
-    if (steps === 0) {
-      return;
-    }
+    while (remainingStepBudget > 0) {
+      const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
+      const steps = Math.min(availableSteps, remainingStepBudget);
 
-    this.accumulator -= steps * this.stepSizeMs;
+      if (steps === 0) {
+        return;
+      }
 
-    for (let i = 0; i < steps; i += 1) {
-      const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
+      this.accumulator -= steps * this.stepSizeMs;
+      let resetOutbound = true;
 
-      const queueSizeBefore = this.commandQueue.size;
-      let queueSizeAfter = queueSizeBefore;
-      let capturedCommands = 0;
-      let executedCommands = 0;
-      let skippedCommands = 0;
+      for (let i = 0; i < steps; i += 1) {
+        const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
 
-      try {
-        this.eventBus.beginTick(this.currentStep, {
-          resetOutbound: i === 0,
-        });
+        const queueSizeBefore = this.commandQueue.size;
+        let queueSizeAfter = queueSizeBefore;
+        let capturedCommands = 0;
+        let executedCommands = 0;
+        let skippedCommands = 0;
 
-        // Accept commands for the current step until the batch is captured.
-        this.nextExecutableStep = this.currentStep;
-        const commands =
-          this.commandQueue.dequeueUpToStep(this.currentStep);
-        capturedCommands = commands.length;
+        try {
+          this.eventBus.beginTick(this.currentStep, {
+            resetOutbound,
+          });
+          resetOutbound = false;
 
-        // Commands enqueued during execution target the next tick.
-        this.nextExecutableStep = this.currentStep + 1;
+          // Accept commands for the current step until the batch is captured.
+          this.nextExecutableStep = this.currentStep;
+          const commands =
+            this.commandQueue.dequeueUpToStep(this.currentStep);
+          capturedCommands = commands.length;
 
-        for (const command of commands) {
-          if (command.step !== this.currentStep) {
-            skippedCommands += 1;
-            telemetry.recordError('CommandStepMismatch', {
-              expectedStep: this.currentStep,
-              commandStep: command.step,
-              type: command.type,
-            });
-            continue;
-          }
+          // Commands enqueued during execution target the next tick.
+          this.nextExecutableStep = this.currentStep + 1;
 
-          this.commandDispatcher.execute(command as Command);
-          executedCommands += 1;
-        }
-
-        const dispatchContext: EventDispatchContext = {
-          tick: this.currentStep,
-        };
-
-        this.eventBus.dispatch(dispatchContext);
-
-        const context: TickContext = {
-          deltaMs: this.stepSizeMs,
-          step: this.currentStep,
-          events: this.eventPublisher,
-        };
-
-        for (const { system } of this.systems) {
-          const systemSpan = tickDiagnostics.startSystem(system.id);
-          try {
-            system.tick(context);
-            systemSpan.end();
-          } catch (error) {
-            try {
-              systemSpan.fail(error);
-            } catch (annotatedError) {
-              telemetry.recordError('SystemExecutionFailed', {
-                systemId: system.id,
-                error:
-                  annotatedError instanceof Error
-                    ? annotatedError
-                    : new Error(String(annotatedError)),
+          for (const command of commands) {
+            if (command.step !== this.currentStep) {
+              skippedCommands += 1;
+              telemetry.recordError('CommandStepMismatch', {
+                expectedStep: this.currentStep,
+                commandStep: command.step,
+                type: command.type,
               });
+              continue;
             }
+
+            this.commandDispatcher.execute(command as Command);
+            executedCommands += 1;
           }
+
+          const dispatchContext: EventDispatchContext = {
+            tick: this.currentStep,
+          };
 
           this.eventBus.dispatch(dispatchContext);
+
+          const context: TickContext = {
+            deltaMs: this.stepSizeMs,
+            step: this.currentStep,
+            events: this.eventPublisher,
+          };
+
+          for (const { system } of this.systems) {
+            const systemSpan = tickDiagnostics.startSystem(system.id);
+            try {
+              system.tick(context);
+              systemSpan.end();
+            } catch (error) {
+              try {
+                systemSpan.fail(error);
+              } catch (annotatedError) {
+                telemetry.recordError('SystemExecutionFailed', {
+                  systemId: system.id,
+                  error:
+                    annotatedError instanceof Error
+                      ? annotatedError
+                      : new Error(String(annotatedError)),
+                });
+              }
+            }
+
+            this.eventBus.dispatch(dispatchContext);
+          }
+
+          queueSizeAfter = this.commandQueue.size;
+
+          const backPressure = this.eventBus.getBackPressureSnapshot();
+
+          tickDiagnostics.recordEventMetrics(
+            toDiagnosticTimelineEventMetrics(backPressure),
+          );
+          tickDiagnostics.recordQueueMetrics({
+            sizeBefore: queueSizeBefore,
+            sizeAfter: queueSizeAfter,
+            captured: capturedCommands,
+            executed: executedCommands,
+            skipped: skippedCommands,
+          });
+          tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
+
+          recordBackPressureTelemetry(backPressure);
+
+          this.currentStep += 1;
+          this.nextExecutableStep = this.currentStep;
+          telemetry.recordTick();
+
+          tickDiagnostics.complete();
+        } catch (error) {
+          tickDiagnostics.fail(error);
         }
-
-        queueSizeAfter = this.commandQueue.size;
-
-        const backPressure = this.eventBus.getBackPressureSnapshot();
-
-        tickDiagnostics.recordEventMetrics(
-          toDiagnosticTimelineEventMetrics(backPressure),
-        );
-        tickDiagnostics.recordQueueMetrics({
-          sizeBefore: queueSizeBefore,
-          sizeAfter: queueSizeAfter,
-          captured: capturedCommands,
-          executed: executedCommands,
-          skipped: skippedCommands,
-        });
-        tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
-
-        recordBackPressureTelemetry(backPressure);
-
-        this.currentStep += 1;
-        this.nextExecutableStep = this.currentStep;
-        telemetry.recordTick();
-
-        tickDiagnostics.complete();
-      } catch (error) {
-        tickDiagnostics.fail(error);
       }
+
+      remainingStepBudget -= steps;
     }
   }
 }
@@ -1010,6 +1025,11 @@ export {
   applyOfflineProgress,
   type ApplyOfflineProgressOptions,
 } from './offline-progress.js';
+export {
+  registerOfflineCatchupCommandHandler,
+  type OfflineCatchupCommandHandlerOptions,
+  type OfflineCatchupRuntime,
+} from './offline-catchup-command-handlers.js';
 export {
   combineConditions,
   compareWithComparator,

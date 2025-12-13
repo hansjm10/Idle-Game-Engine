@@ -13,6 +13,7 @@ import {
   buildProgressionSnapshot,
   registerResourceCommandHandlers,
   registerAutomationCommandHandlers,
+  registerOfflineCatchupCommandHandler,
   createAutomationSystem,
   createResourceStateAdapter,
   createProgressionCoordinator,
@@ -184,6 +185,12 @@ export function initializeRuntimeWorker(
   };
   registerResourceCommandHandlers(commandHandlerOptions);
 
+  registerOfflineCatchupCommandHandler({
+    dispatcher: runtime.getCommandDispatcher(),
+    coordinator: progressionCoordinator,
+    runtime,
+  });
+
   // Create and register AutomationSystem
   // Wrap resourceState with adapter to map getIndex -> getResourceIndex
   const automationSystem = createAutomationSystem({
@@ -196,6 +203,13 @@ export function initializeRuntimeWorker(
   });
 
   runtime.addSystem(automationSystem);
+
+  runtime.addSystem({
+    id: 'progression-coordinator',
+    tick: ({ step }) => {
+      progressionCoordinator.updateForStep(step + 1);
+    },
+  });
 
   // Register automation command handlers
   registerAutomationCommandHandlers({
@@ -266,7 +280,6 @@ export function initializeRuntimeWorker(
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
-      progressionCoordinator.updateForStep(after);
       const publishedAt = monotonicClock.now();
       const progression = buildProgressionSnapshot(
         after,

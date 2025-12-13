@@ -334,6 +334,86 @@ describe('IdleEngineRuntime', () => {
     expect(queue.size).toBe(4);
   });
 
+  it('resets outbound events between tick batches when time is credited mid-tick', () => {
+    const { runtime, queue, dispatcher } = createRuntime({
+      stepSizeMs: 10,
+      maxStepsPerFrame: 4,
+    });
+
+    const manifest = runtime.getEventBus().getManifest();
+    const automationChannel = manifest.entries.find(
+      (entry) => entry.type === 'automation:toggled',
+    );
+    expect(automationChannel).toBeDefined();
+
+    const outboundAfterStep0: Array<{ tick: number }> = [];
+    const outboundAtStep1Start: Array<{ tick: number }> = [];
+
+    dispatcher.register('PUBLISH', (_, ctx) => {
+      ctx.events.publish('automation:toggled', {
+        automationId: 'auto-1',
+        enabled: true,
+      } satisfies AutomationToggledEventPayload);
+    });
+
+    dispatcher.register('CREDIT', () => {
+      runtime.creditTime(10);
+    });
+
+    dispatcher.register('SNAPSHOT_STEP0', () => {
+      const buffer = runtime
+        .getEventBus()
+        .getOutboundBuffer(automationChannel!.channel);
+      for (let index = 0; index < buffer.length; index += 1) {
+        outboundAfterStep0.push({ tick: buffer.at(index).tick });
+      }
+    });
+
+    dispatcher.register('SNAPSHOT_STEP1', () => {
+      const buffer = runtime
+        .getEventBus()
+        .getOutboundBuffer(automationChannel!.channel);
+      for (let index = 0; index < buffer.length; index += 1) {
+        outboundAtStep1Start.push({ tick: buffer.at(index).tick });
+      }
+    });
+
+    queue.enqueue({
+      type: 'PUBLISH',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 0,
+      step: 0,
+    });
+    queue.enqueue({
+      type: 'CREDIT',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+    });
+    queue.enqueue({
+      type: 'SNAPSHOT_STEP0',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 2,
+      step: 0,
+    });
+    queue.enqueue({
+      type: 'SNAPSHOT_STEP1',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 0,
+      step: 1,
+    });
+
+    runtime.tick(10);
+
+    expect(runtime.getCurrentStep()).toBe(2);
+    expect(outboundAfterStep0).toEqual([{ tick: 0 }]);
+    expect(outboundAtStep1Start).toEqual([]);
+  });
+
   it('records accumulator backlog telemetry when clamped by maxStepsPerFrame', () => {
     const clock = new TestClock();
     const { runtime, diagnostics } = createRuntime({
