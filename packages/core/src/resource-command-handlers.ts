@@ -8,6 +8,7 @@ import {
   type ToggleGeneratorPayload,
 } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
+import type { EventPublisher } from './events/event-bus.js';
 import type { PrestigeSystemEvaluator } from './progression.js';
 import type { ResourceState, ResourceSpendAttemptContext } from './resource-state.js';
 import { telemetry } from './telemetry.js';
@@ -47,11 +48,17 @@ export interface UpgradePurchaseQuote {
   readonly costs: readonly UpgradeResourceCost[];
 }
 
+export interface UpgradePurchaseApplicationOptions {
+  readonly metadata?: Readonly<Record<string, unknown>>;
+  readonly events?: EventPublisher;
+  readonly issuedAt?: number;
+}
+
 export interface UpgradePurchaseEvaluator {
   getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined;
   applyPurchase(
     upgradeId: string,
-    options?: { metadata?: Readonly<Record<string, unknown>> },
+    options?: UpgradePurchaseApplicationOptions,
   ): void;
 }
 
@@ -426,6 +433,8 @@ function createPurchaseUpgradeHandler(
     try {
       upgradePurchases.applyPurchase(upgradeId, {
         metadata: payload.metadata,
+        events: context.events,
+        issuedAt: context.timestamp,
       });
     } catch (error) {
       telemetry.recordError('UpgradePurchaseApplyFailed', {

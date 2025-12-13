@@ -2,7 +2,17 @@ import type { NormalizedContentPack, NumericFormula } from '@idle-engine/content
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SerializedResourceState, TelemetryFacade } from './index.js';
-import { createProgressionCoordinator, resetTelemetry, setTelemetry } from './index.js';
+import {
+  CommandPriority,
+  IdleEngineRuntime,
+  RUNTIME_COMMAND_TYPES,
+  createAutomationSystem,
+  createProgressionCoordinator,
+  createResourceStateAdapter,
+  registerResourceCommandHandlers,
+  resetTelemetry,
+  setTelemetry,
+} from './index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
@@ -3568,6 +3578,402 @@ describe('Integration: upgrade effects', () => {
     coordinator.incrementUpgradePurchases(upgrade.id);
     coordinator.updateForStep(2);
     expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(12);
+  });
+
+  it('applies modifyGeneratorCost upgrade effects to generator purchase quotes', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.discounted', {
+      name: 'Discounted Generator',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: literalOne,
+      },
+      produces: [],
+      consumes: [],
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.generator-discount', {
+      name: 'Generator Discount',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorCost',
+          generatorId: generator.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 0.5 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const before = coordinator.generatorEvaluator.getPurchaseQuote(generator.id, 1);
+    expect(before?.costs[0]?.amount).toBeCloseTo(10);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+
+    const after = coordinator.generatorEvaluator.getPurchaseQuote(generator.id, 1);
+    expect(after?.costs[0]?.amount).toBeCloseTo(5);
+  });
+
+  it('applies modifyResourceRate upgrade effects to generator resource rates', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+    const gold = createResourceDefinition('resource.gold', {
+      name: 'Gold',
+    });
+
+    const generator = createGeneratorDefinition('generator.gold-mine', {
+      name: 'Gold Mine',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: gold.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.gold-rate', {
+      name: 'Gold Rate Boost',
+      category: 'resource',
+      targets: [{ kind: 'resource', id: gold.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyResourceRate',
+          resourceId: gold.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, gold],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(1);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+    coordinator.updateForStep(1);
+    expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
+  });
+
+  it('applies grantFlag so flag conditions can gate upgrades', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const flagUpgrade = createUpgradeDefinition('upgrade.grant-flag', {
+      name: 'Grant Flag',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.gated',
+          value: true,
+        },
+      ],
+    });
+
+    const gatedUpgrade = createUpgradeDefinition('upgrade.gated-by-flag', {
+      name: 'Gated Upgrade',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      unlockCondition: {
+        kind: 'flag',
+        flagId: 'flag.gated',
+      },
+      effects: [],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [flagUpgrade, gatedUpgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    expect(coordinator.upgradeEvaluator?.getPurchaseQuote(gatedUpgrade.id)?.status).toBe(
+      'locked',
+    );
+
+    coordinator.upgradeEvaluator?.applyPurchase(flagUpgrade.id);
+
+    expect(coordinator.upgradeEvaluator?.getPurchaseQuote(gatedUpgrade.id)?.status).toBe(
+      'available',
+    );
+  });
+
+  it('applies unlockResource and unlockGenerator upgrade effects immediately', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+    const hidden = createResourceDefinition('resource.hidden', {
+      name: 'Hidden',
+      unlocked: false,
+      visible: false,
+      unlockCondition: { kind: 'never' },
+      visibilityCondition: { kind: 'never' },
+    });
+
+    const generator = createGeneratorDefinition('generator.hidden', {
+      name: 'Hidden Generator',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      baseUnlock: { kind: 'never' },
+      visibilityCondition: { kind: 'never' },
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.unlock-stuff', {
+      name: 'Unlock Stuff',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        { kind: 'unlockResource', resourceId: hidden.id },
+        { kind: 'unlockGenerator', generatorId: generator.id },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, hidden],
+      generators: [generator],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const hiddenIndex = coordinator.resourceState.requireIndex(hidden.id);
+    expect(coordinator.resourceState.isUnlocked(hiddenIndex)).toBe(false);
+    expect(coordinator.resourceState.isVisible(hiddenIndex)).toBe(false);
+    expect(coordinator.generatorEvaluator.getPurchaseQuote(generator.id, 1)).toBeUndefined();
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+
+    expect(coordinator.resourceState.isUnlocked(hiddenIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(hiddenIndex)).toBe(true);
+    expect(coordinator.generatorEvaluator.getPurchaseQuote(generator.id, 1)).toBeDefined();
+  });
+
+  it('applies alterDirtyTolerance upgrade effects to resource state', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      dirtyTolerance: 0.001,
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.dirty-tolerance', {
+      name: 'Dirty Tolerance Override',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'alterDirtyTolerance',
+          resourceId: energy.id,
+          operation: 'set',
+          value: { kind: 'constant', value: 0.01 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    expect(coordinator.resourceState.getDirtyTolerance(energyIndex)).toBeCloseTo(0.001);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+
+    expect(coordinator.resourceState.getDirtyTolerance(energyIndex)).toBeCloseTo(0.01);
+  });
+
+  it('applies grantAutomation upgrade effects to the automation system via unlock hook', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const automation = {
+      id: 'automation.test',
+      name: { default: 'Test Automation', variants: {} },
+      description: { default: 'Test', variants: {} },
+      targetType: 'system',
+      systemTargetId: 'offline-catchup',
+      trigger: { kind: 'commandQueueEmpty' },
+      unlockCondition: { kind: 'never' },
+      enabledByDefault: false,
+    } as any;
+
+    const upgrade = createUpgradeDefinition('upgrade.grant-automation', {
+      name: 'Grant Automation',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantAutomation',
+          automationId: automation.id,
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      automations: [automation],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+    const automationSystem = createAutomationSystem({
+      automations: pack.automations,
+      commandQueue: runtime.getCommandQueue(),
+      resourceState: createResourceStateAdapter(coordinator.resourceState),
+      stepDurationMs: 100,
+      isAutomationUnlocked: (automationId) =>
+        coordinator.getGrantedAutomationIds().has(automationId),
+    });
+
+    automationSystem.tick({ step: 0, deltaMs: 100, events: {} as any });
+    expect(automationSystem.getState().get(automation.id)?.unlocked).toBe(false);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+
+    automationSystem.tick({ step: 1, deltaMs: 100, events: {} as any });
+    expect(automationSystem.getState().get(automation.id)?.unlocked).toBe(true);
+  });
+
+  it('emits runtime events when purchasing upgrades with emitEvent effects', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.emit', {
+      name: 'Emit Event',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'emitEvent',
+          eventId: 'sample:reactor-primed',
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const runtime = new IdleEngineRuntime({ stepSizeMs: 100, initialStep: 0 });
+    registerResourceCommandHandlers({
+      dispatcher: runtime.getCommandDispatcher(),
+      resources: coordinator.resourceState,
+      generatorPurchases: coordinator.generatorEvaluator,
+      generatorToggles: coordinator,
+      upgradePurchases: coordinator.upgradeEvaluator,
+    });
+
+    const commandQueue = runtime.getCommandQueue();
+    commandQueue.enqueue({
+      type: RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+      payload: { upgradeId: upgrade.id },
+      priority: CommandPriority.PLAYER,
+      timestamp: 0,
+      step: runtime.getNextExecutableStep(),
+    });
+
+    const manifest = runtime.getEventBus().getManifest();
+    const entry = manifest.entries.find(
+      (candidate) => candidate.type === 'sample:reactor-primed',
+    );
+    expect(entry).toBeDefined();
+
+    runtime.tick(100);
+
+    const buffer = runtime.getEventBus().getOutboundBuffer(entry!.channel);
+    expect(buffer.length).toBe(1);
+    expect(buffer.at(0).type).toBe('sample:reactor-primed');
+    expect(buffer.at(0).issuedAt).toBe(0);
+    expect(buffer.at(0).payload).toEqual({});
   });
 });
 

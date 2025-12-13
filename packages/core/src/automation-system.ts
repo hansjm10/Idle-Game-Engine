@@ -87,6 +87,14 @@ export interface AutomationSystemOptions {
   readonly commandQueue: CommandQueue;
   readonly resourceState: ResourceStateAccessor;
   readonly initialState?: Map<string, AutomationState>;
+  /**
+   * Optional hook for externally unlocking automations (e.g. via upgrade effects).
+   *
+   * @remarks
+   * Unlock state is persistent: once unlocked, automations stay unlocked even if
+   * this callback later returns false.
+   */
+  readonly isAutomationUnlocked?: (automationId: string) => boolean;
 }
 
 /**
@@ -125,7 +133,7 @@ export function createAutomationSystem(
     options?: { savedWorkerStep?: number; currentStep?: number },
   ) => void;
 } {
-  const { automations, stepDurationMs, commandQueue, resourceState } = options;
+  const { automations, stepDurationMs, commandQueue, resourceState, isAutomationUnlocked } = options;
   const automationStates = new Map<string, AutomationState>();
   const pendingEventTriggers = new Set<string>();
 
@@ -242,6 +250,9 @@ export function createAutomationSystem(
         // Once unlocked, automations stay unlocked (unlock state is persistent)
         // For MVP, only 'always' condition is evaluated; full unlock evaluation
         // requires condition context (deferred to integration)
+        if (!state.unlocked && isAutomationUnlocked?.(automation.id)) {
+          state.unlocked = true;
+        }
         if (!state.unlocked && automation.unlockCondition.kind === 'always') {
           state.unlocked = true;
         }
