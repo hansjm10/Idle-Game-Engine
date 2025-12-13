@@ -280,7 +280,6 @@ export function initializeRuntimeWorker(
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
-      progressionCoordinator.updateForStep(after);
       const publishedAt = monotonicClock.now();
       const progression = buildProgressionSnapshot(
         after,
