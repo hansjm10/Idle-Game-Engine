@@ -191,6 +191,8 @@ export function initializeRuntimeWorker(
     commandQueue: runtime.getCommandQueue(),
     resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
     stepDurationMs,
+    isAutomationUnlocked: (automationId) =>
+      progressionCoordinator.getGrantedAutomationIds().has(automationId),
   });
 
   runtime.addSystem(automationSystem);

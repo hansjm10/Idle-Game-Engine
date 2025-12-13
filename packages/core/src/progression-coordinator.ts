@@ -23,6 +23,7 @@ import {
   type GeneratorPurchaseEvaluator,
   type GeneratorPurchaseQuote,
   type GeneratorResourceCost,
+  type UpgradePurchaseApplicationOptions,
   type UpgradePurchaseEvaluator,
   type UpgradePurchaseQuote,
   type UpgradeResourceCost,
@@ -52,6 +53,12 @@ import {
   describeCondition,
   evaluateCondition,
 } from './condition-evaluator.js';
+import type { RuntimeEventType } from './events/runtime-event.js';
+import {
+  evaluateUpgradeEffects,
+  type EvaluatedUpgradeEffects,
+  type UpgradeEffectSource,
+} from './upgrade-effects.js';
 
 type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
@@ -196,6 +203,15 @@ export interface ProgressionCoordinator {
   setUpgradePurchases(upgradeId: string, purchases: number): void;
 
   /**
+   * Returns automation ids granted by purchased upgrades.
+   *
+   * @remarks
+   * This is derived state (not persisted) and is intended for wiring into the
+   * automation system so content packs can unlock automations via upgrade effects.
+   */
+  getGrantedAutomationIds(): ReadonlySet<string>;
+
+  /**
    * Retrieves the resource definition for a given resource ID.
    * Used by prestige system to access startAmount for resource resets.
    *
@@ -280,6 +296,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly prestigeLayerList: PrestigeLayerRecord[];
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
+  private readonly baseDirtyToleranceByIndex: Float64Array;
+  private readonly dirtyToleranceOverrideIds = new Set<string>();
+  private readonly flagState = new Map<string, boolean>();
+  private readonly grantedAutomationIds = new Set<string>();
+  private upgradePurchasesRevision = 0;
+  private upgradeEffectsCache:
+    | {
+        readonly step: number;
+        readonly revision: number;
+        readonly effects: EvaluatedUpgradeEffects;
+      }
+    | undefined;
   private lastUpdatedStep = 0;
 
   constructor(options: ProgressionCoordinatorOptions) {
@@ -315,6 +343,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     this.resourceState =
       initialResourceState ?? createResourceState(resourceDefinitions);
     this.hydrateResources(initialState?.resources?.serialized);
+    this.baseDirtyToleranceByIndex = new Float64Array(resourceDefinitions.length);
+    for (let index = 0; index < resourceDefinitions.length; index += 1) {
+      this.baseDirtyToleranceByIndex[index] = this.resourceState.getDirtyTolerance(
+        index,
+      );
+    }
 
     const resourceMetadata = buildResourceMetadata(options.content.resources);
     const progressionResources =
@@ -394,6 +428,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         const record = this.prestigeLayers.get(prestigeLayerId);
         return record?.state.isUnlocked ?? false;
       },
+      isFlagSet: (flagId) => this.flagState.get(flagId) ?? false,
     };
 
     this.generatorEvaluator = new ContentGeneratorEvaluator(this);
@@ -424,27 +459,129 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     this.updateForStep(0);
   }
 
-  public hydrateResources(
-    serialized: SerializedResourceState | undefined,
-  ): void {
-    if (!serialized) {
-      return;
-    }
+	  public hydrateResources(
+	    serialized: SerializedResourceState | undefined,
+	  ): void {
+	    if (!serialized) {
+	      return;
+	    }
 
     hydrateResourceState(
       this.resourceState,
       serialized,
       this.resourceDefinitions,
-    );
-  }
+	    );
+	  }
 
-  public updateForStep(step: number): void {
-    this.lastUpdatedStep = step;
-    const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
-    mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
+	  private getUpgradeEffects(step: number): EvaluatedUpgradeEffects {
+	    const cached = this.upgradeEffectsCache;
+	    if (
+	      cached &&
+	      cached.step === step &&
+	      cached.revision === this.upgradePurchasesRevision
+	    ) {
+	      return cached.effects;
+	    }
 
-    for (let index = 0; index < this.resourceConditions.length; index += 1) {
-      const record = this.resourceConditions[index];
+	    const effects = evaluateUpgradeEffects(
+	      this.upgradeList as readonly UpgradeEffectSource[],
+	      {
+	        step,
+	        createFormulaEvaluationContext: (level, stepValue) =>
+	          this.createFormulaEvaluationContext(level, stepValue),
+	        getBaseDirtyTolerance: (resourceId) => {
+	          const index = this.resourceState.getIndex(resourceId);
+	          if (index === undefined) {
+	            return 0;
+	          }
+	          return this.baseDirtyToleranceByIndex[index] ?? 0;
+	        },
+	        onError: this.onError,
+	      },
+	    );
+
+	    this.applyUpgradeEffectState(effects, step);
+	    this.upgradeEffectsCache = {
+	      step,
+	      revision: this.upgradePurchasesRevision,
+	      effects,
+	    };
+	    return effects;
+	  }
+
+	  private applyUpgradeEffectState(
+	    effects: EvaluatedUpgradeEffects,
+	    step: number,
+	  ): void {
+	    this.flagState.clear();
+	    for (const [flagId, value] of effects.grantedFlags) {
+	      this.flagState.set(flagId, value);
+	    }
+
+	    this.grantedAutomationIds.clear();
+	    for (const automationId of effects.grantedAutomations) {
+	      this.grantedAutomationIds.add(automationId);
+	    }
+
+	    for (const resourceId of effects.unlockedResources) {
+	      const index = this.resourceState.getIndex(resourceId);
+	      if (index === undefined) {
+	        continue;
+	      }
+	      if (!this.resourceState.isUnlocked(index)) {
+	        this.resourceState.unlock(index);
+	      }
+	      if (!this.resourceState.isVisible(index)) {
+	        this.resourceState.grantVisibility(index);
+	      }
+	    }
+
+	    for (const generatorId of effects.unlockedGenerators) {
+	      const record = this.generators.get(generatorId);
+	      if (!record) {
+	        continue;
+	      }
+	      const wasUnlocked = record.state.isUnlocked;
+	      if (!record.state.isUnlocked) {
+	        record.state.isUnlocked = true;
+	      }
+	      record.state.isVisible = true;
+	      if (!wasUnlocked) {
+	        record.state.nextPurchaseReadyAtStep = step + 1;
+	      }
+	    }
+
+	    for (const resourceId of this.dirtyToleranceOverrideIds) {
+	      const index = this.resourceState.getIndex(resourceId);
+	      if (index === undefined) {
+	        continue;
+	      }
+	      this.resourceState.setDirtyTolerance(
+	        index,
+	        this.baseDirtyToleranceByIndex[index] ?? 0,
+	      );
+	    }
+	    this.dirtyToleranceOverrideIds.clear();
+
+	    for (const [resourceId, tolerance] of effects.dirtyToleranceOverrides) {
+	      const index = this.resourceState.getIndex(resourceId);
+	      if (index === undefined) {
+	        continue;
+	      }
+	      this.resourceState.setDirtyTolerance(index, tolerance);
+	      this.dirtyToleranceOverrideIds.add(resourceId);
+	    }
+	  }
+
+	  public updateForStep(step: number): void {
+	    this.lastUpdatedStep = step;
+	    const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
+	    mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
+
+	    const upgradeEffects = this.getUpgradeEffects(step);
+
+	    for (let index = 0; index < this.resourceConditions.length; index += 1) {
+	      const record = this.resourceConditions[index];
 
       if (record.unlockCondition && !this.resourceState.isUnlocked(index)) {
         if (evaluateCondition(record.unlockCondition, this.conditionContext)) {
@@ -459,19 +596,22 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       }
     }
 
-    for (const record of this.generatorList) {
-      const baseUnlock = evaluateCondition(
-        record.definition.baseUnlock,
-        this.conditionContext,
-      );
-      const wasUnlocked = record.state.isUnlocked;
-      if (!record.state.isUnlocked && baseUnlock) {
-        record.state.isUnlocked = true;
-      }
+	    for (const record of this.generatorList) {
+	      const unlockedByUpgrade = upgradeEffects.unlockedGenerators.has(
+	        record.definition.id,
+	      );
+	      const baseUnlock = evaluateCondition(
+	        record.definition.baseUnlock,
+	        this.conditionContext,
+	      );
+	      const wasUnlocked = record.state.isUnlocked;
+	      if (!record.state.isUnlocked && (baseUnlock || unlockedByUpgrade)) {
+	        record.state.isUnlocked = true;
+	      }
 
-      record.state.isVisible = this.evaluateVisibility(
-        record.definition.visibilityCondition,
-      );
+	      record.state.isVisible = unlockedByUpgrade
+	        ? true
+	        : this.evaluateVisibility(record.definition.visibilityCondition);
 
       if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
         record.state.nextPurchaseReadyAtStep = step + 1;
@@ -504,7 +644,8 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	      record.state.purchases = record.purchases;
 	    }
 
-	    const generatorRateMultipliers = this.computeGeneratorRateMultipliers(step);
+	    const generatorRateMultipliers = upgradeEffects.generatorRateMultipliers;
+	    const resourceRateMultipliers = upgradeEffects.resourceRateMultipliers;
 	    const baseRateContext = this.createFormulaEvaluationContext(1, step);
 	    for (const record of this.generatorList) {
 	      const baseProduces = buildGeneratorRates(
@@ -515,16 +656,24 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	        record.definition.consumes,
 	        baseRateContext,
 	      );
-	      const multiplier =
+	      const generatorMultiplier =
 	        generatorRateMultipliers.get(record.definition.id) ?? 1;
-	      record.state.produces = baseProduces.map((rate) => ({
-	        ...rate,
-	        rate: rate.rate * multiplier,
-	      }));
-	      record.state.consumes = baseConsumes.map((rate) => ({
-	        ...rate,
-	        rate: rate.rate * multiplier,
-	      }));
+	      record.state.produces = baseProduces.map((rate) => {
+	        const resourceMultiplier =
+	          resourceRateMultipliers.get(rate.resourceId) ?? 1;
+	        return {
+	          ...rate,
+	          rate: rate.rate * generatorMultiplier * resourceMultiplier,
+	        };
+	      });
+	      record.state.consumes = baseConsumes.map((rate) => {
+	        const resourceMultiplier =
+	          resourceRateMultipliers.get(rate.resourceId) ?? 1;
+	        return {
+	          ...rate,
+	          rate: rate.rate * generatorMultiplier * resourceMultiplier,
+	        };
+	      });
 	    }
 
 	    for (const record of this.prestigeLayerList) {
@@ -581,11 +730,11 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     return true;
   }
 
-  incrementUpgradePurchases(upgradeId: string): void {
-    const record = this.upgrades.get(upgradeId);
-    if (!record) {
-      return;
-    }
+	  incrementUpgradePurchases(upgradeId: string): void {
+	    const record = this.upgrades.get(upgradeId);
+	    if (!record) {
+	      return;
+	    }
     const repeatableConfig = record.definition.repeatable;
     const rawMaxPurchases =
       repeatableConfig?.maxPurchases ??
@@ -596,15 +745,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       record.purchases = Math.min(nextPurchases, normalizedMax);
     } else {
       record.purchases = nextPurchases;
-    }
-    record.state.purchases = record.purchases;
-  }
+	    }
+	    record.state.purchases = record.purchases;
+	    this.upgradePurchasesRevision += 1;
+	    this.upgradeEffectsCache = undefined;
+	    this.getUpgradeEffects(this.lastUpdatedStep);
+	  }
 
-  setUpgradePurchases(upgradeId: string, purchases: number): void {
-    const record = this.upgrades.get(upgradeId);
-    if (!record) {
-      return;
-    }
+	  setUpgradePurchases(upgradeId: string, purchases: number): void {
+	    const record = this.upgrades.get(upgradeId);
+	    if (!record) {
+	      return;
+	    }
 
     const normalizedPurchases =
       Number.isFinite(purchases) && purchases >= 0
@@ -623,12 +775,19 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       record.purchases = normalizedPurchases;
     }
 
-    record.state.purchases = record.purchases;
-  }
+	    record.state.purchases = record.purchases;
+	    this.upgradePurchasesRevision += 1;
+		    this.upgradeEffectsCache = undefined;
+		    this.getUpgradeEffects(this.lastUpdatedStep);
+		  }
 
-  getResourceDefinition(resourceId: string): ResourceDefinition | undefined {
-    return this.resourceDefinitions.find((r) => r.id === resourceId);
-  }
+	  getGrantedAutomationIds(): ReadonlySet<string> {
+	    return this.grantedAutomationIds;
+	  }
+
+	  getResourceDefinition(resourceId: string): ResourceDefinition | undefined {
+	    return this.resourceDefinitions.find((r) => r.id === resourceId);
+	  }
 
   computeGeneratorCost(
     generatorId: string,
@@ -663,11 +822,14 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       this.onError?.(error);
       return undefined;
     }
-    const cost = evaluatedCost * baseCost;
-    if (!Number.isFinite(cost) || cost < 0) {
-      const error = new Error(
-        `Generator cost calculation failed for "${generatorId}" at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
-      );
+	    const upgradeEffects = this.getUpgradeEffects(this.lastUpdatedStep);
+	    const multiplier =
+	      upgradeEffects.generatorCostMultipliers.get(generatorId) ?? 1;
+	    const cost = evaluatedCost * baseCost * multiplier;
+	    if (!Number.isFinite(cost) || cost < 0) {
+	      const error = new Error(
+	        `Generator cost calculation failed for "${generatorId}" at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
+	      );
       this.onError?.(error);
       return undefined;
     }
@@ -782,122 +944,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     };
   }
 
-			  private computeGeneratorRateMultipliers(step: number): Map<string, number> {
-			    const multipliers = new Map<string, number>();
-
-			    for (const record of this.upgradeList) {
-			      if (record.purchases <= 0) {
-			        continue;
-			      }
-			      const purchases = record.purchases;
-			      const isRepeatable = record.definition.repeatable !== undefined;
-			      const effectCurve = record.definition.repeatable?.effectCurve;
-			      const applications = isRepeatable ? purchases : 1;
-
-			      for (let applicationLevel = 1; applicationLevel <= applications; applicationLevel += 1) {
-			        const contextLevel = isRepeatable ? applicationLevel : purchases;
-			        const context = this.createFormulaEvaluationContext(
-			          contextLevel,
-			          step,
-			        );
-			        let effectCurveMultiplier = 1;
-			        if (effectCurve) {
-			          try {
-			            effectCurveMultiplier = evaluateNumericFormula(effectCurve, context);
-			          } catch (error) {
-			            const message =
-			              error instanceof Error ? error.message : String(error);
-			            this.onError?.(
-			              new Error(
-			                `Upgrade effect curve evaluation failed for "${record.definition.id}": ${message}`,
-			              ),
-			            );
-			            continue;
-			          }
-
-			          if (!Number.isFinite(effectCurveMultiplier)) {
-			            this.onError?.(
-			              new Error(
-			                `Upgrade effect curve evaluation returned invalid value for "${record.definition.id}": ${effectCurveMultiplier}`,
-			              ),
-			            );
-			            continue;
-			          }
-			        }
-
-			        for (const effect of record.definition.effects) {
-			          if (effect.kind !== 'modifyGeneratorRate') {
-			            continue;
-			          }
-
-			          let value: number;
-			          try {
-			            value = evaluateNumericFormula(effect.value, context);
-			          } catch (error) {
-			            const message =
-			              error instanceof Error ? error.message : String(error);
-			            this.onError?.(
-			              new Error(
-			                `Upgrade effect evaluation failed for "${record.definition.id}" (${effect.kind}): ${message}`,
-			              ),
-			            );
-			            continue;
-			          }
-
-			          if (!Number.isFinite(value)) {
-			            this.onError?.(
-			              new Error(
-			                `Upgrade effect evaluation returned invalid value for "${record.definition.id}" (${effect.kind}): ${value}`,
-			              ),
-			            );
-			            continue;
-			          }
-
-			          const effectiveValue = value * effectCurveMultiplier;
-			          if (!Number.isFinite(effectiveValue)) {
-			            this.onError?.(
-			              new Error(
-			                `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effectiveValue}`,
-			              ),
-			            );
-			            continue;
-			          }
-
-			          const current = multipliers.get(effect.generatorId) ?? 1;
-			          let next = current;
-			          switch (effect.operation) {
-			            case 'add':
-			              next = current + effectiveValue;
-			              break;
-			            case 'multiply':
-			              next = current * effectiveValue;
-			              break;
-			            case 'set':
-			              next = effectiveValue;
-			              break;
-			            default: {
-			              const _exhaustive: never = effect.operation;
-			              this.onError?.(
-			                new Error(
-		                  `Unknown generator rate operation "${String(
-		                    _exhaustive,
-		                  )}" for upgrade "${record.definition.id}".`,
-		                ),
-		              );
-		              continue;
-		            }
-		          }
-		          multipliers.set(effect.generatorId, next);
-		        }
-		      }
-		    }
-
-		    return multipliers;
-		  }
-
-	  resolveUpgradeStatus(record: UpgradeRecord): UpgradeStatus {
-	    const maxPurchases = record.definition.repeatable
-	      ? record.definition.repeatable.maxPurchases ?? Number.POSITIVE_INFINITY
+		  resolveUpgradeStatus(record: UpgradeRecord): UpgradeStatus {
+		    const maxPurchases = record.definition.repeatable
+		      ? record.definition.repeatable.maxPurchases ?? Number.POSITIVE_INFINITY
 	      : 1;
     if (record.purchases >= maxPurchases) {
       return 'purchased';
@@ -1038,9 +1087,42 @@ class ContentUpgradeEvaluator implements UpgradePurchaseEvaluator {
     };
   }
 
-  applyPurchase(upgradeId: string): void {
-    this.coordinator.incrementUpgradePurchases(upgradeId);
-  }
+	  applyPurchase(
+	    upgradeId: string,
+	    options?: UpgradePurchaseApplicationOptions,
+	  ): void {
+	    this.coordinator.incrementUpgradePurchases(upgradeId);
+
+	    const publisher = options?.events;
+	    if (!publisher) {
+	      return;
+	    }
+
+	    const record = this.coordinator.getUpgradeRecord(upgradeId);
+	    if (!record) {
+	      return;
+	    }
+
+	    const issuedAt = options?.issuedAt;
+	    const metadata = issuedAt !== undefined ? { issuedAt } : undefined;
+
+	    for (const effect of record.definition.effects) {
+	      if (effect.kind !== 'emitEvent') {
+	        continue;
+	      }
+
+	      try {
+	        publisher.publish(effect.eventId as unknown as RuntimeEventType, {}, metadata);
+	      } catch (error) {
+	        const message = error instanceof Error ? error.message : String(error);
+	        telemetry.recordWarning('UpgradeEmitEventFailed', {
+	          upgradeId,
+	          eventId: effect.eventId,
+	          message,
+	        });
+	      }
+	    }
+	  }
 }
 
 function createGeneratorRecord(

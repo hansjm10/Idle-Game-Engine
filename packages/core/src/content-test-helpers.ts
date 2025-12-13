@@ -1,5 +1,6 @@
 import type {
   NormalizedContentPack,
+  NormalizedAutomation,
   NormalizedGenerator,
   NormalizedPrestigeLayer,
   NormalizedResource,
@@ -79,6 +80,7 @@ export function createTestDigest(overrides?: Partial<NormalizedContentPack['dige
  */
 export function createContentPack(config: {
   resources?: NormalizedResource[];
+  automations?: NormalizedAutomation[];
   generators?: NormalizedGenerator[];
   upgrades?: NormalizedUpgrade[];
   prestigeLayers?: NormalizedPrestigeLayer[];
@@ -87,6 +89,7 @@ export function createContentPack(config: {
 }): NormalizedContentPack {
   const {
     resources = [],
+    automations = [],
     generators = [],
     upgrades = [],
     prestigeLayers = [],
@@ -96,12 +99,14 @@ export function createContentPack(config: {
 
   // Build lookup maps
   const resourcesMap = new Map(resources.map((r) => [r.id, r]));
+  const automationsMap = new Map(automations.map((a) => [a.id, a]));
   const generatorsMap = new Map(generators.map((g) => [g.id, g]));
   const upgradesMap = new Map(upgrades.map((u) => [u.id, u]));
   const prestigeLayersMap = new Map(prestigeLayers.map((p) => [p.id, p]));
 
   // Build serialized lookup objects
   const resourceById = Object.fromEntries(resources.map((r) => [r.id, r]));
+  const automationById = Object.fromEntries(automations.map((a) => [a.id, a]));
   const generatorById = Object.fromEntries(generators.map((g) => [g.id, g]));
   const upgradeById = Object.fromEntries(upgrades.map((u) => [u.id, u]));
   const prestigeLayerById = Object.fromEntries(prestigeLayers.map((p) => [p.id, p]));
@@ -115,7 +120,7 @@ export function createContentPack(config: {
     upgrades,
     metrics: [],
     achievements: [],
-    automations: [],
+    automations,
     transforms: [],
     prestigeLayers,
     guildPerks: [],
@@ -126,7 +131,7 @@ export function createContentPack(config: {
       upgrades: upgradesMap,
       metrics: new Map(),
       achievements: new Map(),
-      automations: new Map(),
+      automations: automationsMap,
       transforms: new Map(),
       prestigeLayers: prestigeLayersMap,
       guildPerks: new Map(),
@@ -138,7 +143,7 @@ export function createContentPack(config: {
       upgradeById,
       metricById: {},
       achievementById: {},
-      automationById: {},
+      automationById,
       transformById: {},
       prestigeLayerById,
       guildPerkById: {},

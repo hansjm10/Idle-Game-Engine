@@ -143,11 +143,13 @@ export interface ResourceState {
   getAmount(index: number): number;
   getCapacity(index: number): number;
   getNetPerSecond(index: number): number;
+  getDirtyTolerance(index: number): number;
   isUnlocked(index: number): boolean;
   isVisible(index: number): boolean;
   grantVisibility(index: number): void;
   unlock(index: number): void;
   setCapacity(index: number, capacity: number): number;
+  setDirtyTolerance(index: number, dirtyTolerance: number): number;
   addAmount(index: number, amount: number): number;
   spendAmount(
     index: number,
@@ -505,14 +507,18 @@ function createResourceStateFacade(
       assertValidIndex(internal, index);
       return buffers.capacities[index];
     },
-    getNetPerSecond: (index) => {
-      assertValidIndex(internal, index);
-      return buffers.netPerSecond[index];
-    },
-    isUnlocked: (index) => {
-      assertValidIndex(internal, index);
-      return (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
-    },
+	    getNetPerSecond: (index) => {
+	      assertValidIndex(internal, index);
+	      return buffers.netPerSecond[index];
+	    },
+	    getDirtyTolerance: (index) => {
+	      assertValidIndex(internal, index);
+	      return buffers.dirtyTolerance[index];
+	    },
+	    isUnlocked: (index) => {
+	      assertValidIndex(internal, index);
+	      return (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
+	    },
     isVisible: (index) => {
       assertValidIndex(internal, index);
       return (buffers.flags[index] & FLAG_VISIBLE) !== 0;
@@ -520,13 +526,15 @@ function createResourceStateFacade(
     grantVisibility: (index) => {
       setFlagField(internal, index, FLAG_VISIBLE, true);
     },
-    unlock: (index) => {
-      setFlagField(internal, index, FLAG_UNLOCKED, true);
-    },
-    setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
-    addAmount: (index, amount) => addAmount(internal, index, amount),
-    spendAmount: (index, amount, context) =>
-      spendAmount(internal, index, amount, context),
+	    unlock: (index) => {
+	      setFlagField(internal, index, FLAG_UNLOCKED, true);
+	    },
+	    setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
+	    setDirtyTolerance: (index, dirtyTolerance) =>
+	      setDirtyTolerance(internal, index, dirtyTolerance),
+	    addAmount: (index, amount) => addAmount(internal, index, amount),
+	    spendAmount: (index, amount, context) =>
+	      spendAmount(internal, index, amount, context),
     applyIncome: (index, amountPerSecond) =>
       applyRate(internal, index, amountPerSecond, 'income'),
     applyExpense: (index, amountPerSecond) =>
@@ -615,6 +623,27 @@ function setCapacity(
   }
 
   return buffers.capacities[index];
+}
+
+function setDirtyTolerance(
+  internal: ResourceStateInternal,
+  index: number,
+  dirtyTolerance: number,
+): number {
+  assertValidIndex(internal, index);
+
+  const resourceId = internal.buffers.ids[index] ?? String(index);
+  const nextTolerance = clampDirtyTolerance(dirtyTolerance, resourceId);
+
+  const { buffers } = internal;
+  const previousTolerance = buffers.dirtyTolerance[index];
+  if (Object.is(previousTolerance, nextTolerance)) {
+    return previousTolerance;
+  }
+
+  buffers.dirtyTolerance[index] = nextTolerance;
+  markDirty(internal, index);
+  return nextTolerance;
 }
 
 function addAmount(
