@@ -324,6 +324,7 @@ export async function restoreSession(
     // Restore session via worker bridge
     await bridge.restoreSession({
       state: snapshot.state,
+      commandQueue: snapshot.commandQueue,
       elapsedMs,
       savedWorkerStep: snapshot.workerStep,
       // resourceDeltas would come from migration transforms

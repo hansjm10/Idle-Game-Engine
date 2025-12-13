@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import type {
   DiagnosticTimelineResult,
+  SerializedCommandQueue,
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
@@ -37,6 +38,7 @@ installShellTelemetryFacade();
 
 export interface WorkerRestoreSessionPayload {
   readonly state?: SerializedResourceState;
+  readonly commandQueue?: SerializedCommandQueue;
   readonly elapsedMs?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
   /**
@@ -118,6 +120,7 @@ export interface SessionSnapshotPayload {
   readonly workerStep: number;
   readonly monotonicMs: number;
   readonly state: SerializedResourceState;
+  readonly commandQueue?: SerializedCommandQueue;
   readonly runtimeVersion: string;
   readonly contentDigest: ResourceDefinitionDigest;
   readonly flags?: {
@@ -527,6 +530,9 @@ export class WorkerBridgeImpl<TState = unknown>
       type: 'RESTORE_SESSION',
       schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
       ...(payload.state !== undefined && { state: payload.state }),
+      ...(payload.commandQueue !== undefined && {
+        commandQueue: payload.commandQueue,
+      }),
       ...(payload.elapsedMs !== undefined && {
         elapsedMs: payload.elapsedMs,
       }),

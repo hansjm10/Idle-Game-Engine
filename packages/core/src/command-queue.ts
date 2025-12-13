@@ -30,6 +30,47 @@ export interface CommandQueueOptions {
   readonly maxSize?: number;
 }
 
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue =
+  | JsonPrimitive
+  | { readonly [key: string]: JsonValue }
+  | readonly JsonValue[];
+
+export const COMMAND_QUEUE_SAVE_SCHEMA_VERSION = 1;
+
+export type SerializedCommandQueueEntryV1 = Readonly<{
+  readonly type: string;
+  readonly priority: CommandPriority;
+  readonly timestamp: number;
+  readonly step: number;
+  readonly payload: JsonValue;
+}>;
+
+export type SerializedCommandQueueV1 = Readonly<{
+  readonly schemaVersion: 1;
+  readonly entries: readonly SerializedCommandQueueEntryV1[];
+}>;
+
+export type SerializedCommandQueue = SerializedCommandQueueV1;
+
+export interface RestoreCommandQueueOptions {
+  /**
+   * Optional predicate for skipping command types that are not supported by the
+   * current runtime (forward-compatibility).
+   */
+  readonly isCommandTypeSupported?: (type: string) => boolean;
+  /**
+   * Optional step rebasing information for restores that reset the runtime step
+   * counter (e.g., worker restore). When provided, each command's `step` is
+   * shifted by `currentStep - savedStep`.
+   */
+  readonly rebaseStep?: Readonly<{
+    readonly savedStep: number;
+    readonly currentStep: number;
+  }>;
+}
+
 export class CommandQueue {
   private readonly lanes = new Map<CommandPriority, SnapshotQueueEntry[]>([
     [CommandPriority.SYSTEM, []],
@@ -163,6 +204,106 @@ export class CommandQueue {
     return this.totalSize;
   }
 
+  exportForSave(): SerializedCommandQueueV1 {
+    const entries: SerializedCommandQueueEntryV1[] = [];
+    if (this.totalSize === 0) {
+      return {
+        schemaVersion: COMMAND_QUEUE_SAVE_SCHEMA_VERSION,
+        entries,
+      };
+    }
+
+    for (const priority of COMMAND_PRIORITY_ORDER) {
+      const queue = this.lanes.get(priority);
+      if (!queue || queue.length === 0) {
+        continue;
+      }
+
+      for (const entry of queue) {
+        const command = entry.command;
+        try {
+          entries.push({
+            type: command.type,
+            priority: command.priority,
+            timestamp: command.timestamp,
+            step: command.step,
+            payload: cloneJsonValue(command.payload),
+          });
+        } catch (error) {
+          telemetry.recordWarning('CommandQueueSnapshotSkipped', {
+            type: command.type,
+            priority: command.priority,
+            step: command.step,
+            timestamp: command.timestamp,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    return {
+      schemaVersion: COMMAND_QUEUE_SAVE_SCHEMA_VERSION,
+      entries,
+    };
+  }
+
+  restoreFromSave(
+    serialized: SerializedCommandQueue | undefined,
+    options: RestoreCommandQueueOptions = {},
+  ): { restored: number; skipped: number } {
+    this.clear();
+
+    if (!serialized) {
+      return { restored: 0, skipped: 0 };
+    }
+
+    if (
+      typeof serialized !== 'object' ||
+      serialized === null ||
+      (serialized as { schemaVersion?: unknown }).schemaVersion !==
+        COMMAND_QUEUE_SAVE_SCHEMA_VERSION
+    ) {
+      telemetry.recordWarning('CommandQueueRestoreUnsupportedSchema', {
+        schemaVersion:
+          serialized && typeof serialized === 'object'
+            ? (serialized as { schemaVersion?: unknown }).schemaVersion
+            : null,
+      });
+      return { restored: 0, skipped: 0 };
+    }
+
+    const entriesValue = (serialized as { entries?: unknown }).entries;
+    const entries: readonly unknown[] = Array.isArray(entriesValue)
+      ? entriesValue
+      : [];
+
+    let restored = 0;
+    let skipped = 0;
+
+    for (const entry of entries) {
+      const command = normalizeSerializedCommandEntry(entry, options);
+      if (!command) {
+        skipped += 1;
+        continue;
+      }
+
+      if (options.isCommandTypeSupported && !options.isCommandTypeSupported(command.type)) {
+        skipped += 1;
+        continue;
+      }
+
+      const sizeBefore = this.totalSize;
+      this.enqueue(command);
+      if (this.totalSize > sizeBefore) {
+        restored += 1;
+      } else {
+        skipped += 1;
+      }
+    }
+
+    return { restored, skipped };
+  }
+
   private dropLowestPriorityUpTo(maxPriority: CommandPriority): boolean {
     for (let index = COMMAND_PRIORITY_ORDER.length - 1; index >= 0; index -= 1) {
       const priority = COMMAND_PRIORITY_ORDER[index];
@@ -189,6 +330,137 @@ export class CommandQueue {
     }
     return false;
   }
+}
+
+function normalizeSerializedCommandEntry(
+  entry: unknown,
+  options: RestoreCommandQueueOptions,
+): Command | undefined {
+  if (!entry || typeof entry !== 'object') {
+    return undefined;
+  }
+
+  const record = entry as Record<string, unknown>;
+
+  const type = record.type;
+  if (typeof type !== 'string' || type.trim().length === 0) {
+    return undefined;
+  }
+
+  const priority = record.priority;
+  if (
+    typeof priority !== 'number' ||
+    !Number.isFinite(priority) ||
+    !Object.values(CommandPriority).includes(priority as CommandPriority)
+  ) {
+    return undefined;
+  }
+
+  const timestamp = record.timestamp;
+  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+    return undefined;
+  }
+
+  const step = record.step;
+  if (
+    typeof step !== 'number' ||
+    !Number.isFinite(step) ||
+    !Number.isInteger(step) ||
+    step < 0
+  ) {
+    return undefined;
+  }
+
+  let normalizedPayload: JsonValue;
+  try {
+    normalizedPayload = cloneJsonValue(record.payload);
+  } catch {
+    return undefined;
+  }
+
+  const rebase = options.rebaseStep;
+  const rebasedStep =
+    rebase &&
+    typeof rebase.savedStep === 'number' &&
+    Number.isFinite(rebase.savedStep) &&
+    typeof rebase.currentStep === 'number' &&
+    Number.isFinite(rebase.currentStep)
+      ? Math.max(0, step + (rebase.currentStep - rebase.savedStep))
+      : step;
+
+  return {
+    type,
+    priority: priority as CommandPriority,
+    payload: normalizedPayload,
+    timestamp,
+    step: rebasedStep,
+  };
+}
+
+function cloneJsonValue(value: unknown): JsonValue {
+  const seen = new WeakSet<object>();
+  return cloneJsonValueInner(value, seen);
+}
+
+function cloneJsonValueInner(
+  value: unknown,
+  seen: WeakSet<object>,
+): JsonValue {
+  if (value === null) {
+    return null;
+  }
+
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
+      return value;
+    case 'number':
+      if (!Number.isFinite(value)) {
+        throw new Error('Command payload contains non-finite number');
+      }
+      return value;
+    case 'object':
+      break;
+    default:
+      throw new Error(
+        `Command payload contains unsupported JSON type: ${typeof value}`,
+      );
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) {
+      throw new Error('Command payload contains a circular reference');
+    }
+    seen.add(value);
+    const cloned = value.map((entry) => cloneJsonValueInner(entry, seen));
+    seen.delete(value);
+    return cloned;
+  }
+
+  if (seen.has(value as object)) {
+    throw new Error('Command payload contains a circular reference');
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new Error('Command payload must be a plain JSON object');
+  }
+
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new Error('Command payload contains symbol keys');
+  }
+
+  seen.add(value as object);
+  const record = value as Record<string, unknown>;
+  const result: Record<string, JsonValue> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (entry === undefined) {
+      throw new Error('Command payload contains undefined value');
+    }
+    result[key] = cloneJsonValueInner(entry, seen);
+  }
+  seen.delete(value as object);
+  return result;
 }
 
 const MAP_MUTATORS = new Set<PropertyKey>(['set', 'delete', 'clear']);

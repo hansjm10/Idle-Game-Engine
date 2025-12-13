@@ -1613,6 +1613,7 @@ describe('session snapshot protocol', () => {
         workerStep: number;
         monotonicMs: number;
         state: unknown;
+        commandQueue: unknown;
         runtimeVersion: string;
         contentDigest: { ids: readonly string[]; version: number; hash: string };
       };
@@ -1631,6 +1632,7 @@ describe('session snapshot protocol', () => {
     expect(typeof snapshotEnvelope.snapshot.contentDigest.hash).toBe('string');
     expect(Array.isArray(snapshotEnvelope.snapshot.contentDigest.ids)).toBe(true);
     expect(snapshotEnvelope.snapshot.state).toBeDefined();
+    expect(snapshotEnvelope.snapshot.commandQueue).toBeDefined();
   });
 
   it('documents snapshot gating during session restoration', () => {

@@ -1,6 +1,7 @@
 import type {
   BackPressureSnapshot,
   DiagnosticTimelineResult,
+  SerializedCommandQueue,
   SerializedResourceState,
   ProgressionSnapshot,
   ResourceDefinitionDigest,
@@ -183,6 +184,7 @@ export interface RuntimeWorkerRestoreSession {
   readonly type: 'RESTORE_SESSION';
   readonly schemaVersion: number;
   readonly state?: SerializedResourceState;
+  readonly commandQueue?: SerializedCommandQueue;
   readonly elapsedMs?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
   /**
@@ -263,6 +265,7 @@ export interface RuntimeWorkerSessionSnapshot {
     readonly workerStep: number;
     readonly monotonicMs: number;
     readonly state: SerializedResourceState;
+    readonly commandQueue?: SerializedCommandQueue;
     readonly runtimeVersion: string;
     readonly contentDigest: ResourceDefinitionDigest;
     readonly flags?: {
@@ -280,4 +283,3 @@ export type RuntimeWorkerOutboundMessage<TState = RuntimeStatePayload> =
   | RuntimeWorkerSessionRestored
   | RuntimeWorkerSessionSnapshot
   | RuntimeWorkerSocialCommandResult;
-
