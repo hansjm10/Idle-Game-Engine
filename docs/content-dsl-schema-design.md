@@ -552,6 +552,21 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
     - `alterDirtyTolerance`.
     - `emitEvent` (hooks into runtime event bus).
   - `unlockCondition` / `visibilityCondition`.
+- Runtime semantics for repeatable upgrades:
+  - Repeatable upgrades apply their effects once per purchase (stacking in
+    purchase order).
+  - For each purchase application at `level = 1..purchases`, runtime evaluates:
+    - `curve = repeatable.effectCurve(level)` (defaults to `1` when omitted).
+    - `raw = effects[].value(level)` for each numeric effect.
+    - `effective = raw × curve` (only when `effectCurve` is present).
+  - The `effective` value is applied per `operation` to a per-target modifier
+    that starts at `1`:
+    - `add`: `modifier += effective`.
+    - `multiply`: `modifier *= effective`.
+    - `set`: `modifier = effective`.
+  - Authoring note: if `effects[].value` also references `level`, scaling
+    composes multiplicatively with `effectCurve`; avoid double-scaling unless
+    intentional.
 - Validation ensures effect targets exist, repeatable upgrades specify consistent
   bounds, and cost curves match runtime expectations using the explicit `kind`
   information in `targets` and the effect payloads.
