@@ -259,7 +259,6 @@ export class IdleEngineRuntime {
 
     this.accumulator += deltaMs;
     let remainingStepBudget = this.maxStepsPerFrame;
-    let resetOutbound = true;
 
     while (remainingStepBudget > 0) {
       const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
@@ -270,6 +269,7 @@ export class IdleEngineRuntime {
       }
 
       this.accumulator -= steps * this.stepSizeMs;
+      let resetOutbound = true;
 
       for (let i = 0; i < steps; i += 1) {
         const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
