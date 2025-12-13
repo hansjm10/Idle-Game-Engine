@@ -226,6 +226,7 @@ export class AutosaveController {
       workerStep: snapshot.workerStep,
       monotonicMs: snapshot.monotonicMs,
       state: snapshot.state,
+      commandQueue: snapshot.commandQueue,
       runtimeVersion: snapshot.runtimeVersion,
       contentDigest: snapshot.contentDigest,
       // TODO: Populate contentPacks field when worker supplies content pack metadata

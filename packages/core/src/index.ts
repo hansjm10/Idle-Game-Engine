@@ -765,7 +765,17 @@ export {
   authorizeCommand,
   DEFAULT_UNAUTHORIZED_EVENT,
 } from './command-authorization.js';
-export { CommandQueue, deepFreezeInPlace } from './command-queue.js';
+export {
+  CommandQueue,
+  deepFreezeInPlace,
+  COMMAND_QUEUE_SAVE_SCHEMA_VERSION,
+  type JsonPrimitive,
+  type JsonValue,
+  type RestoreCommandQueueOptions,
+  type SerializedCommandQueueEntryV1,
+  type SerializedCommandQueueV1,
+  type SerializedCommandQueue,
+} from './command-queue.js';
 export {
   CommandDispatcher,
   type CommandHandler,

@@ -47,6 +47,7 @@ interface StoredSessionSnapshot {
   readonly workerStep: number;             // Runtime step counter
   readonly monotonicMs: number;            // Monotonic clock reference
   readonly state: SerializedResourceState; // Serialized game state
+  readonly commandQueue?: SerializedCommandQueue; // Pending command queue snapshot
   readonly runtimeVersion: string;         // @idle-engine/core version
   readonly contentDigest: ResourceDefinitionDigest;  // Content pack hash
   readonly flags?: {
