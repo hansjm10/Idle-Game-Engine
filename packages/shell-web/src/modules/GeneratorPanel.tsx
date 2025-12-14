@@ -155,9 +155,7 @@ export function GeneratorPanel(): JSX.Element | null {
       // Clear any optimistic pending deltas when a command fails
       progression.clearPendingDeltas();
       // Show a brief, accessible toast for any command error
-      setErrorMessage(
-        error instanceof Error ? error.message : 'An error occurred while processing your request.',
-      );
+      setErrorMessage(toToastErrorMessage(error));
       // Auto-clear after 4 seconds (error toasts remain long enough to be noticed)
       if (errorTimeoutRef.current) {
         window.clearTimeout(errorTimeoutRef.current);
@@ -201,5 +199,30 @@ export function GeneratorPanel(): JSX.Element | null {
       )}
       {errorMessage ? <ErrorToast message={errorMessage} /> : null}
     </section>
+  );
+}
+
+function toToastErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (isWorkerErrorDetails(error) && error.code === 'COMMAND_FAILED') {
+    return error.message;
+  }
+
+  return 'An error occurred while processing your request.';
+}
+
+function isWorkerErrorDetails(
+  value: unknown,
+): value is { readonly code: string; readonly message: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'code' in value &&
+    'message' in value &&
+    typeof (value as { code?: unknown }).code === 'string' &&
+    typeof (value as { message?: unknown }).message === 'string'
   );
 }

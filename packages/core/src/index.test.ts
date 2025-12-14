@@ -184,6 +184,74 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getNextExecutableStep()).toBe(1);
   });
 
+  it('records command failures when async handlers resolve to a failure result', async () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+
+    dispatcher.register('ASYNC_FAIL', async () => ({
+      success: false,
+      error: {
+        code: 'TEST_FAILURE',
+        message: 'Nope',
+      },
+    }));
+
+    queue.enqueue({
+      type: 'ASYNC_FAIL',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+      requestId: 'command:async',
+    });
+
+    runtime.tick(10);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtime.drainCommandFailures()).toEqual([
+      expect.objectContaining({
+        requestId: 'command:async',
+        type: 'ASYNC_FAIL',
+        priority: CommandPriority.PLAYER,
+        timestamp: 1,
+        step: 0,
+        error: expect.objectContaining({
+          code: 'TEST_FAILURE',
+          message: 'Nope',
+        }),
+      }),
+    ]);
+  });
+
+  it('records command failures when async handlers reject', async () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+
+    dispatcher.register('ASYNC_THROW', () => Promise.reject(new Error('boom')));
+
+    queue.enqueue({
+      type: 'ASYNC_THROW',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+    });
+
+    runtime.tick(10);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtime.drainCommandFailures()).toEqual([
+      expect.objectContaining({
+        type: 'ASYNC_THROW',
+        error: expect.objectContaining({
+          code: 'COMMAND_EXECUTION_FAILED',
+        }),
+      }),
+    ]);
+  });
+
   it('skips commands whose step does not match the executing tick', () => {
     const { runtime, queue, dispatcher } = createRuntime();
     const handler = vi.fn();

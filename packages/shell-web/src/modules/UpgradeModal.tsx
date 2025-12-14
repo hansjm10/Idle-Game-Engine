@@ -93,9 +93,7 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
     const onError = (error: unknown) => {
       // Clear any optimistic pending deltas when a command fails
       progression.clearPendingDeltas();
-      setErrorMessage(
-        error instanceof Error ? error.message : 'An error occurred while processing your request.',
-      );
+      setErrorMessage(toToastErrorMessage(error));
     };
     bridge.onError(onError);
     return () => bridge.offError(onError);
@@ -186,5 +184,30 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
         ) : null}
       </div>
     </div>
+  );
+}
+
+function toToastErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (isWorkerErrorDetails(error) && error.code === 'COMMAND_FAILED') {
+    return error.message;
+  }
+
+  return 'An error occurred while processing your request.';
+}
+
+function isWorkerErrorDetails(
+  value: unknown,
+): value is { readonly code: string; readonly message: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'code' in value &&
+    'message' in value &&
+    typeof (value as { code?: unknown }).code === 'string' &&
+    typeof (value as { message?: unknown }).message === 'string'
   );
 }
