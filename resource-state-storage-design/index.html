@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Resource State Storage Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/resource-state-storage-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Resource State Storage Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #7"><meta data-rh="true" property="og:description" content="Issue: #7"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/resource-state-storage-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/resource-state-storage-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/resource-state-storage-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Resource State Storage Design","item":"https://hansjm10.github.io/Idle-Game-Engine/resource-state-storage-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.88ad5e70.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.fe3c074c.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f7253bbf.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -18,7 +18,7 @@
 <strong>Last Updated:</strong> 2025-10-12</p>
 <blockquote>
 <p>This document defines the struct-of-arrays resource storage that anchors the
-runtime state model described in <code>docs/idle-engine-design.md</code> §9.2. The design
+runtime state model described in <code>docs/idle-engine-design.md</code> §6.2. The design
 focuses on deterministic updates, cache-friendly iteration, and snapshot
 ergonomics so downstream systems (production, upgrades, offline catch-up, UI
 diffing) can evolve without revisiting the underlying layout.</p>
@@ -30,7 +30,7 @@ deterministic mutation through commands and systems, efficient aggregation for
 per-frame calculations, and inexpensive snapshots for UI consumption and save
 serialization. A data-oriented, struct-of-arrays layout keeps iteration costs
 bounded as content packs scale and aligns with the performance strategy in
-<code>docs/idle-engine-design.md</code> §12.</p>
+<code>docs/idle-engine-design.md</code> §6.2.</p>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="2-goals">2. Goals<a href="#2-goals" class="hash-link" aria-label="Direct link to 2. Goals" title="Direct link to 2. Goals" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Deterministic mutations:</strong> All adjustments flow through typed helpers that
@@ -62,7 +62,7 @@ defined but have no backing storage APIs.</li>
 <li class="">No snapshot contract exists for resource quantities; UI and persistence cannot
 consume structured deltas.</li>
 <li class="">Prior design docs commit to struct-of-arrays (<code>docs/idle-engine-design.md</code>
-§9.2) yet no implementation details exist.</li>
+§6.2) yet no implementation details exist.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-proposed-solution">5. Proposed Solution<a href="#5-proposed-solution" class="hash-link" aria-label="Direct link to 5. Proposed Solution" title="Direct link to 5. Proposed Solution" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="51-data-layout">5.1 Data Layout<a href="#51-data-layout" class="hash-link" aria-label="Direct link to 5.1 Data Layout" title="Direct link to 5.1 Data Layout" translate="no">​</a></h3>

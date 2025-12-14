@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content Validation CLI Design Document | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content Validation CLI Design Document | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #13"><meta data-rh="true" property="og:description" content="Issue: #13"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content Validation CLI Design Document","item":"https://hansjm10.github.io/Idle-Game-Engine/content-validation-cli-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.88ad5e70.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.fe3c074c.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f7253bbf.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -17,13 +17,13 @@
 <strong>Status:</strong> Design<br>
 <strong>Last Updated:</strong> 2025-10-23</p>
 <blockquote>
-<p>Issue #13 wires the content validation tooling into the shared CLI so <code>pnpm generate</code> enforces schema health before the compiler emits artifacts. The design builds on <code>docs/idle-engine-design.md</code> §10 and the schema contracts from <code>docs/content-dsl-schema-design.md</code>.</p>
+<p>Issue #13 wires the content validation tooling into the shared CLI so <code>pnpm generate</code> enforces schema health before the compiler emits artifacts. The design builds on <code>docs/idle-engine-design.md</code> §6.2 and the schema contracts from <code>docs/content-dsl-schema-design.md</code>.</p>
 </blockquote>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="1-overview">1. Overview<a href="#1-overview" class="hash-link" aria-label="Direct link to 1. Overview" title="Direct link to 1. Overview" translate="no">​</a></h2>
 <p>The Idle Engine repository currently ships a schema package (<code>@idle-engine/content-schema</code>) and a CLI scaffold under <code>tools/content-schema-cli</code>. The CLI generates the runtime event manifest but content packs can still ship invalid data because validation is not part of the default workflow. This document defines how the CLI discovers packs, runs validation with actionable diagnostics, and integrates the results with the compiler pipeline so contributors cannot land malformed content.</p>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="2-goals">2. Goals<a href="#2-goals" class="hash-link" aria-label="Direct link to 2. Goals" title="Direct link to 2. Goals" translate="no">​</a></h2>
 <ul>
-<li class=""><strong>Deterministic enforcement:</strong> Every <code>pnpm generate</code> run must validate all discovered packs before emitting runtime artifacts, aborting on schema failures to protect the deterministic runtime loop (<code>docs/idle-engine-design.md</code> §6 &amp; §10).</li>
+<li class=""><strong>Deterministic enforcement:</strong> Every <code>pnpm generate</code> run must validate all discovered packs before emitting runtime artifacts, aborting on schema failures to protect the deterministic runtime loop (<code>docs/idle-engine-design.md</code> §6.2).</li>
 <li class=""><strong>Actionable diagnostics:</strong> Emit machine-readable JSON events (<code>content_pack.*</code>) that surface pack slug, file path, warning counts, and blocker details so CI and humans can triage quickly without parsing prose logs.</li>
 <li class=""><strong>Workflow integration:</strong> Support one-shot, <code>--check</code>, and <code>--watch</code> modes with consistent exit codes, clean handling of drift, and optional pretty-printing to keep the developer experience aligned with other repo tooling.</li>
 <li class=""><strong>Summary visibility:</strong> Persist a workspace-level summary (<code>content/compiled/index.json</code>) that records validation and compilation outcomes—even when validation aborts compilation—so downstream scripts never read stale success snapshots.</li>
@@ -41,7 +41,7 @@
 <ul>
 <li class=""><code>tools/content-schema-cli/src/generate.js</code> reads runtime event metadata, builds the manifest module, and exposes <code>validateContentPacks</code> but this function is not wired into the default command.</li>
 <li class=""><code>pnpm generate</code> executes <code>pnpm --filter @idle-engine/content-validation-cli run compile</code>, which currently focuses on manifest regeneration and does not surface pack-level diagnostics or compiler integration.</li>
-<li class="">Structured logging guidance in <code>docs/idle-engine-design.md</code> (§10) is unmet; existing runs emit human-readable console noise that downstream automation cannot parse reliably.</li>
+<li class="">Structured logging guidance in <code>docs/idle-engine-design.md</code> (§6.2) is unmet; existing runs emit human-readable console noise that downstream automation cannot parse reliably.</li>
 <li class=""><code>packages/content-compiler</code> can compile packs into deterministic JSON/TypeScript artifacts (<code>docs/content-compiler-design.md</code>), but nothing triggers it during workspace routines and artifacts may drift.</li>
 <li class="">CI and Lefthook depend on <code>pnpm generate</code>; without validation wiring, schema regressions slip through local workflows.</li>
 </ul>
@@ -109,7 +109,7 @@
 </ol>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="63-structured-logging--telemetry">6.3 Structured Logging &amp; Telemetry<a href="#63-structured-logging--telemetry" class="hash-link" aria-label="Direct link to 6.3 Structured Logging &amp; Telemetry" title="Direct link to 6.3 Structured Logging &amp; Telemetry" translate="no">​</a></h3>
 <ul>
-<li class="">Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with <code>docs/idle-engine-design.md</code> §10 logging guidance).</li>
+<li class="">Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with <code>docs/idle-engine-design.md</code> §6.2 logging guidance).</li>
 <li class="">Validation events include:<!-- -->
 <ul>
 <li class=""><code>content_pack.validated</code>: <code>{ event, packSlug, path, warningCount, warnings, balanceWarningCount, balanceWarnings, balanceErrorCount, balanceErrors }</code> where <code>warningCount</code> aggregates legacy and balance findings.</li>

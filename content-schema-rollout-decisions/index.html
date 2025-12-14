@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content Schema Rollout: Decision Log | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content Schema Rollout: Decision Log | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue #11)"><meta data-rh="true" property="og:description" content="Issue #11)"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content Schema Rollout: Decision Log","item":"https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.88ad5e70.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.fe3c074c.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f7253bbf.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -120,7 +120,7 @@
 <li class="">Function calls against allowlist (clamp, lerp, etc.)</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="analysis-2">Analysis<a href="#analysis-2" class="hash-link" aria-label="Direct link to Analysis" title="Direct link to Analysis" translate="no">​</a></h3>
-<p><strong>Scripting Layer Status (idle-engine-design.md §9.4):</strong></p>
+<p><strong>Scripting Layer Status (<code>docs/idle-engine-design.md</code> §6.2):</strong></p>
 <ul>
 <li class="">&quot;Script layer exposes deterministic APIs (no direct async)&quot;</li>
 <li class="">&quot;Script host provides whitelisted math/util modules and deterministic random via seeded RNG&quot;</li>
@@ -145,7 +145,7 @@
 <p><strong>Rationale:</strong></p>
 <ul>
 <li class="">Current formula system covers prototype phase needs (Phase 0-6 in implementation-plan.md)</li>
-<li class="">Scripting requires security sandbox design (idle-engine-design.md §13: &quot;Sandbox third-party scripts&quot;)</li>
+<li class="">Scripting requires security sandbox design (<code>docs/idle-engine-design.md</code> §6.3: &quot;Sandbox third-party scripts&quot;)</li>
 <li class="">Feature gate model supports incremental rollout (runtime-compat.ts FEATURE_GATES)</li>
 <li class="">No content pack has requested scripted modifiers yet</li>
 </ul>
@@ -211,7 +211,7 @@
 <p><strong>Save System Status (implementation-plan.md Phase 4):</strong></p>
 <ul>
 <li class="">Phase 4: &quot;Implement save slot manager (IndexedDB/localStorage) with migration hooks&quot;</li>
-<li class="">Versioned schemas mentioned in design (idle-engine-design.md:35,137)</li>
+<li class="">Versioned schemas mentioned in design (<code>docs/idle-engine-design.md</code> §6.2)</li>
 <li class="">No save format specification exists yet</li>
 <li class="">Migration pipeline not yet designed</li>
 </ul>
