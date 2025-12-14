@@ -7,7 +7,7 @@
 
 ## 1. Problem Statement
 - The fixed-step accumulator in `IdleEngineRuntime.tick` (packages/core/src/index.ts) keeps the simulation deterministic when host frame timings jitter, yet only basic happy-path behaviour is currently exercised.
-- Existing tests confirm command execution order and simple fractional carry-over, but they never validate the backlog telemetry or precision guarantees that `docs/idle-engine-design.md` §9.1 depends on.
+- Existing tests confirm command execution order and simple fractional carry-over, but they never validate the backlog telemetry or precision guarantees that `docs/idle-engine-design.md` §6.2 depends on.
 - Without explicit coverage of clamp and drift scenarios, scheduler or diagnostics changes could silently break offline catch-up, spiral-of-death protections, or the devtools timeline consumers rely on.
 
 ## 2. Goals

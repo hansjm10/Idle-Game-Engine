@@ -20,7 +20,7 @@ To fulfill issue #15 (Document DSL usage guidelines), this proposal directs AI-l
 ## 2. Context & Problem Statement
 - **Background**: The content DSL already defines metadata, dependency, and compatibility semantics in depth (`docs/content-dsl-schema-design.md:298-356`) and the sample pack demonstrates generated artifacts (`packages/content-sample/src/index.ts:1-45`), yet contributors still rely on implicit knowledge when authoring packs highlighted by issue #15.
 - **Problem**: The implementation plan explicitly lists “Document DSL usage guidelines (naming, versioning, compatibility matrix)” as outstanding work for issue #15 (`docs/implementation-plan.md:96-101`), leaving newcomers without a canonical reference and risking inconsistent data contracts.
-- **Forces**: Deliverables for issue #15 must align with upcoming compiler automation (`docs/content-compiler-design.md:16-23`), honor runtime feature gating rules (`packages/content-schema/src/runtime-compat.ts:1-98`), and stay within the Phase 2 content roadmap commitments in `docs/idle-engine-design.md:166-244`.
+- **Forces**: Deliverables for issue #15 must align with upcoming compiler automation (`docs/content-compiler-design.md:16-23`), honor runtime feature gating rules (`packages/content-schema/src/runtime-compat.ts:1-98`), and stay within the prototype milestone sequencing in `docs/idle-engine-design.md` §7.2.
 
 ## 3. Goals & Non-Goals
 - **Goals**:

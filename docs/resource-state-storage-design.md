@@ -6,7 +6,7 @@
 **Last Updated:** 2025-10-12
 
 > This document defines the struct-of-arrays resource storage that anchors the
-> runtime state model described in `docs/idle-engine-design.md` §9.2. The design
+> runtime state model described in `docs/idle-engine-design.md` §6.2. The design
 > focuses on deterministic updates, cache-friendly iteration, and snapshot
 > ergonomics so downstream systems (production, upgrades, offline catch-up, UI
 > diffing) can evolve without revisiting the underlying layout.
@@ -19,7 +19,7 @@ deterministic mutation through commands and systems, efficient aggregation for
 per-frame calculations, and inexpensive snapshots for UI consumption and save
 serialization. A data-oriented, struct-of-arrays layout keeps iteration costs
 bounded as content packs scale and aligns with the performance strategy in
-`docs/idle-engine-design.md` §12.
+`docs/idle-engine-design.md` §6.2.
 
 ## 2. Goals
 
@@ -52,7 +52,7 @@ bounded as content packs scale and aligns with the performance strategy in
 - No snapshot contract exists for resource quantities; UI and persistence cannot
   consume structured deltas.
 - Prior design docs commit to struct-of-arrays (`docs/idle-engine-design.md`
-  §9.2) yet no implementation details exist.
+  §6.2) yet no implementation details exist.
 
 ## 5. Proposed Solution
 

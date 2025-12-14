@@ -13,7 +13,7 @@
 This design fulfils GitHub Issue #14 by extending property-based formula sanitization for the Idle Engine content pipeline, grounding each decision in `docs/idle-engine-design.md` and reinforcing deterministic behaviour guaranteed by `packages/content-schema/src/base/formulas.ts:1`. The proposal equips AI agents with richer fast-check arbitraries, cross-package invariants, and CI gating so that all numeric formulas authored for Idle Engine remain finite, monotonic where required, and non-negative for protected outputs.
 
 ## 2. Context & Problem Statement
-- **Background**: The Idle Engine runtime depends on declarative numeric formulas to model progression (`docs/idle-engine-design.md:37`). Core schema validation occurs in `numericFormulaSchema` (`packages/content-schema/src/base/formulas.ts:38`), and existing property-based checks focus on narrow cases (`packages/content-schema/src/base/formulas.test.ts:151`). Implementation Plan Section 4 flagged property-based tests as outstanding (`docs/implementation-plan.md:100`).
+- **Background**: The Idle Engine runtime depends on declarative numeric formulas to model progression (`docs/idle-engine-design.md` §6.2). Core schema validation occurs in `numericFormulaSchema` (`packages/content-schema/src/base/formulas.ts:38`), and existing property-based checks focus on narrow cases (`packages/content-schema/src/base/formulas.test.ts:151`). Implementation Plan Section 4 flagged property-based tests as outstanding (`docs/implementation-plan.md:100`).
 - **Problem**: Current fast-check suites cover only single-formula families and run solely within `content-schema`, leaving expression references, cross-module invariants, and CLI sanitization paths unverified. This gap risks accepting formulas that yield negative totals, overflow, or illegal references during content ingestion.
 - **Forces**: Constraints include deterministic Vitest execution, low-noise reporters for downstream AI agents, and the requirement to align with the Content Pipeline roadmap (`docs/content-schema-rollout-decisions.md:298`). Tests must complete within CI budgets and remain reproducible.
 
@@ -116,7 +116,7 @@ This design fulfils GitHub Issue #14 by extending property-based formula sanitiz
 - Investigate leveraging WebAssembly fuzzers for future formula optimizations (Owner: Research Agent, Timing: Backlog).
 
 ## 15. References
-- `docs/idle-engine-design.md:1`
+- `docs/idle-engine-design.md` §1
 - `docs/implementation-plan.md:100`
 - `docs/content-schema-rollout-decisions.md:298`
 - `packages/content-schema/src/base/formulas.ts:38`

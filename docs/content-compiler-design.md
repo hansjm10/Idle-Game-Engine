@@ -298,7 +298,7 @@ export interface ModuleIndexTables {
 
 - `docs/content-dsl-schema-design.md`
 - `docs/content-schema-rollout-decisions.md`
-- `docs/idle-engine-design.md` §10
+- `docs/idle-engine-design.md` §6.2
 - `docs/runtime-command-queue-design.md` §13
 - `tools/content-schema-cli/src/generate.js`
 - `packages/content-schema/src/pack.ts`
