@@ -1,4 +1,5 @@
 import type {
+  SerializedCommandQueue,
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
@@ -68,6 +69,7 @@ export interface StoredSessionSnapshot {
   readonly workerStep: number;
   readonly monotonicMs: number;
   readonly state: SerializedResourceState;
+  readonly commandQueue?: SerializedCommandQueue;
   readonly runtimeVersion: string;
   readonly contentDigest: ResourceDefinitionDigest;
   /**

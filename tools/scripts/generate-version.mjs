@@ -16,14 +16,50 @@
  * - 1: Error (generation failed or file is stale in --check mode)
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '../..');
 
 const CHECK_MODE = process.argv.includes('--check');
+
+async function writeFileIfChangedAtomic(filePath, nextContent) {
+  try {
+    const currentContent = await readFile(filePath, 'utf-8');
+    if (currentContent === nextContent) {
+      return { wrote: false };
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  const dirPath = dirname(filePath);
+  const tempPath = join(
+    dirPath,
+    `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+
+  await writeFile(tempPath, nextContent, 'utf-8');
+
+  try {
+    await rename(tempPath, filePath);
+  } catch (error) {
+    if (error.code === 'EEXIST' || error.code === 'EPERM') {
+      await rm(filePath, { force: true });
+      await rename(tempPath, filePath);
+    } else {
+      throw error;
+    }
+  } finally {
+    await rm(tempPath, { force: true });
+  }
+
+  return { wrote: true };
+}
 
 async function generateVersionFile() {
   try {
@@ -150,9 +186,13 @@ export const PERSISTENCE_SCHEMA_VERSION = ${persistenceSchemaVersion};
     }
 
     // Write the generated file
-    await writeFile(versionTsPath, generatedContent, 'utf-8');
+    const result = await writeFileIfChangedAtomic(versionTsPath, generatedContent);
 
-    console.log('✅ Generated version.ts successfully');
+    console.log(
+      result.wrote
+        ? '✅ Generated version.ts successfully'
+        : '✅ version.ts already up-to-date',
+    );
     console.log(`   RUNTIME_VERSION: ${packageVersion}`);
     console.log(`   PERSISTENCE_SCHEMA_VERSION: ${persistenceSchemaVersion}`);
     process.exit(0);

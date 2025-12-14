@@ -816,6 +816,21 @@ export function initializeRuntimeWorker(
         setGameState(gameState);
       }
 
+      if (message.commandQueue) {
+        const currentStep = runtime.getCurrentStep();
+        const savedStep = message.savedWorkerStep;
+        const rebaseStep =
+          typeof savedStep === 'number' && Number.isFinite(savedStep)
+            ? { savedStep, currentStep }
+            : undefined;
+
+        commandQueue.restoreFromSave(message.commandQueue, {
+          isCommandTypeSupported: (type) =>
+            commandDispatcher.getHandler(type) !== undefined,
+          ...(rebaseStep ? { rebaseStep } : {}),
+        });
+      }
+
       const offlineElapsedMs = message.elapsedMs ?? 0;
       const offlineResourceDeltas =
         message.resourceDeltas !== undefined
@@ -897,6 +912,7 @@ export function initializeRuntimeWorker(
     try {
       const automationStateMap = automationSystem.getState();
       const state = progressionCoordinator.resourceState.exportForSave(automationStateMap);
+      const commandQueueSnapshot = commandQueue.exportForSave();
       const currentStep = runtime.getCurrentStep();
       const monotonicMs = monotonicClock.now();
       const capturedAt = new Date().toISOString();
@@ -913,13 +929,17 @@ export function initializeRuntimeWorker(
           workerStep: currentStep,
           monotonicMs,
           state,
+          commandQueue: commandQueueSnapshot,
           runtimeVersion: RUNTIME_VERSION,
           contentDigest,
         },
       };
 
       // Telemetry: Record snapshot size and capture metadata for monitoring
-      const snapshotBytes = JSON.stringify(state).length;
+      const snapshotBytes = JSON.stringify({
+        state,
+        commandQueue: commandQueueSnapshot,
+      }).length;
       const snapshotKB = (snapshotBytes / 1024).toFixed(2);
 
       // Record snapshot event with metadata for production monitoring
