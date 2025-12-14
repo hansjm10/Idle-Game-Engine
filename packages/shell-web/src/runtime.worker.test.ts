@@ -206,6 +206,90 @@ describe('runtime.worker integration', () => {
     });
   });
 
+  it('emits COMMAND_FAILED errors for async handler failures even when the step does not advance', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      stepSizeMs: 100,
+    });
+
+    harness.runtime.getCommandDispatcher().register('ASYNC_FAIL', async () => ({
+      success: false,
+      error: {
+        code: 'TEST_FAILURE',
+        message: 'Async nope',
+        details: {
+          reason: 'testing',
+        },
+      },
+    }));
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      requestId: 'command:async-1',
+      command: {
+        type: 'ASYNC_FAIL',
+        payload: {},
+        issuedAt: 1,
+      },
+    });
+
+    // First tick executes the command and advances the step, but the async failure has not
+    // settled yet so the worker has nothing to emit.
+    timeController.runTick();
+
+    expect(
+      context.postMessage.mock.calls.some(
+        ([payload]) =>
+          (payload as RuntimeWorkerError | undefined)?.type === 'ERROR' &&
+          (payload as RuntimeWorkerError | undefined)?.error?.requestId ===
+            'command:async-1',
+      ),
+    ).toBe(false);
+
+    await flushAsync();
+    context.postMessage.mockClear();
+
+    // Second tick does not advance the step, but should still flush async command failures.
+    timeController.advanceTime(1);
+    timeController.runTick();
+
+    const errorEnvelope = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as RuntimeWorkerError | undefined)?.type === 'ERROR' &&
+        (payload as RuntimeWorkerError | undefined)?.error?.requestId ===
+          'command:async-1',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(errorEnvelope).toBeDefined();
+    expect(errorEnvelope).toMatchObject({
+      type: 'ERROR',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      error: {
+        code: 'COMMAND_FAILED',
+        message: 'Async nope',
+        requestId: 'command:async-1',
+        details: expect.objectContaining({
+          command: expect.objectContaining({
+            type: 'ASYNC_FAIL',
+          }),
+          error: expect.objectContaining({
+            code: 'TEST_FAILURE',
+          }),
+        }),
+      },
+    });
+  });
+
   it('hydrates progression snapshot from sample content state', () => {
 
     harness = initializeRuntimeWorker({

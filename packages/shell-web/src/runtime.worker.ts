@@ -263,7 +263,32 @@ export function initializeRuntimeWorker(
   const monotonicClock = createMonotonicClock(now);
 
   let lastTimestamp = now() - stepDurationMs;
+
+  const emitCommandFailures = () => {
+    const commandFailures = runtime.drainCommandFailures();
+    for (const failure of commandFailures) {
+      if (failure.priority !== CommandPriority.PLAYER) {
+        continue;
+      }
+      postError({
+        code: 'COMMAND_FAILED',
+        message: failure.error.message,
+        requestId: failure.requestId,
+        details: {
+          command: {
+            type: failure.type,
+            step: failure.step,
+            priority: failure.priority,
+            timestamp: failure.timestamp,
+          },
+          error: failure.error,
+        },
+      });
+    }
+  };
+
   const tick = () => {
+    emitCommandFailures();
     if (restoreInProgress) {
       return;
     }
@@ -276,28 +301,9 @@ export function initializeRuntimeWorker(
     runtime.tick(delta);
     const after = runtime.getCurrentStep();
 
-    if (after > before) {
-      const commandFailures = runtime.drainCommandFailures();
-      for (const failure of commandFailures) {
-        if (failure.priority !== CommandPriority.PLAYER) {
-          continue;
-        }
-        postError({
-          code: 'COMMAND_FAILED',
-          message: failure.error.message,
-          requestId: failure.requestId,
-          details: {
-            command: {
-              type: failure.type,
-              step: failure.step,
-              priority: failure.priority,
-              timestamp: failure.timestamp,
-            },
-            error: failure.error,
-          },
-        });
-      }
+    emitCommandFailures();
 
+    if (after > before) {
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
