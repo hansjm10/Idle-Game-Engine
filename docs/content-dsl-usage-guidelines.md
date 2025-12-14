@@ -179,11 +179,11 @@ lives in `packages/content-schema/src/runtime-compat.ts`:
 
 | Module | Introduced in | Documentation |
 | --- | --- | --- |
-| `automations` | `0.2.0` | `docs/idle-engine-design.md` (§9, §18) |
-| `transforms` | `0.3.0` | `docs/idle-engine-design.md` (§6) |
+| `automations` | `0.2.0` | `docs/idle-engine-design.md` (§6.2) |
+| `transforms` | `0.3.0` | `docs/idle-engine-design.md` (§6.2) |
 | `runtimeEvents` | `0.3.0` | `docs/runtime-event-pubsub-design.md` |
-| `prestigeLayers` | `0.4.0` | `docs/idle-engine-design.md` (§6, §18) |
-| `guildPerks` | `0.5.0` | `docs/idle-engine-design.md` (§18) |
+| `prestigeLayers` | `0.4.0` | `docs/idle-engine-design.md` (§6.2) |
+| `guildPerks` | `0.5.0` | `docs/idle-engine-design.md` (§6.2) |
 
 When `metadata.engine` omits or predates the required version, validation pushes
 structured `FeatureViolation` errors or warnings (see

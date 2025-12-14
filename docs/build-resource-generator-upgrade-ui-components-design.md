@@ -13,7 +13,7 @@
 The progression UI initiative replaces the placeholder shell with production-ready progression surfaces by extending worker snapshots, surfacing generator and upgrade contracts, and composing accessible React components that dispatch deterministic commands, enabling players and AI automation to interact with the Idle Engine loop end to end.
 
 ## 2. Context & Problem Statement
-- **Background**: The current shell renders only runtime ticks and diagnostics (`packages/shell-web/src/modules/App.tsx:32`) while core systems already model resources and generator purchases (`packages/core/src/resource-command-handlers.ts:54`) and sample packs describe generators/resources (`packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:90`); existing design guidance mandates default UI kits for resources and upgrades (`docs/idle-engine-design.md:178`).
+- **Background**: The current shell renders only runtime ticks and diagnostics (`packages/shell-web/src/modules/App.tsx:32`) while core systems already model resources and generator purchases (`packages/core/src/resource-command-handlers.ts:54`) and sample packs describe generators/resources (`packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:90`); existing design guidance mandates default UI kits for resources and upgrades (`docs/idle-engine-design.md` §6.2).
 - **Problem**: There is no way to visualise or interact with resources, generators, or upgrades in the shell, blocking the progression UI milestone and contradicting Presentation Phase goals (`docs/implementation-plan.md:56`); `ShellRuntimeState` omits resource payloads (`packages/shell-web/src/modules/shell-state.types.ts:16`) and the worker protocol publishes no progression detail (`@idle-engine/runtime-bridge-contracts`).
 - **Forces**: Progression UI work must preserve deterministic worker messaging (`docs/runtime-command-queue-design.md:1034`), obey worker-bridge safety rails (`docs/runtime-react-worker-bridge-design.md:160`), remain accessible for upcoming smoke tests (`docs/accessibility-smoke-tests-design.md:57`), and align with AI board workflows (`docs/project-board-workflow.md:21`).
 
@@ -355,7 +355,7 @@ Tested in `packages/shell-web/src/modules/progression-coordinator.test.ts:203-26
 - `@idle-engine/runtime-bridge-contracts`
 - `packages/core/src/resource-command-handlers.ts:54`
 - `packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:90`
-- `docs/idle-engine-design.md:175`
+- `docs/idle-engine-design.md` §6.2
 - `docs/implementation-plan.md:56`
 - `docs/runtime-command-queue-design.md:1034`
 - `docs/runtime-react-worker-bridge-design.md:160`

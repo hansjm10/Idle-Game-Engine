@@ -3,7 +3,7 @@
 Issue: #9 — Runtime Core Workstream
 
 ## 1. Problem Statement
-- The runtime core lacks a structured view of per-tick execution time, queue pressure, and system-level latency, making it hard to diagnose scheduling regressions described in `docs/idle-engine-design.md` §9.1.
+- The runtime core lacks a structured view of per-tick execution time, queue pressure, and system-level latency, making it hard to diagnose scheduling regressions described in `docs/idle-engine-design.md` §6.2.
 - Current telemetry only records coarse counters (`telemetry.recordTick`, event back-pressure snapshots) and cannot explain why a tick exceeded its budget or which system introduced jitter.
 - Without a deterministic diagnostic timeline, downstream tooling (shell devtools overlay, automated profiling agents) cannot surface actionable insights when the engine stutters or falls behind real time.
 

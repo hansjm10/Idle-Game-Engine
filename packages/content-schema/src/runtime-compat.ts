@@ -4,12 +4,12 @@ export const FEATURE_GATES = [
   {
     module: 'automations',
     introducedIn: '0.2.0',
-    docRef: 'docs/idle-engine-design.md (§9, §18)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
   {
     module: 'transforms',
     introducedIn: '0.3.0',
-    docRef: 'docs/idle-engine-design.md (§6)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
   {
     module: 'runtimeEvents',
@@ -19,12 +19,12 @@ export const FEATURE_GATES = [
   {
     module: 'prestigeLayers',
     introducedIn: '0.4.0',
-    docRef: 'docs/idle-engine-design.md (§6, §18)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
   {
     module: 'guildPerks',
     introducedIn: '0.5.0',
-    docRef: 'docs/idle-engine-design.md (§18)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
 ] as const;
 

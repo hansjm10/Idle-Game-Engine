@@ -19,7 +19,7 @@ or shared mutable state. The engine currently relies on direct callbacks and
 resource polling; the new event layer supplies an explicit contract for domain
 events (threshold triggers, automation toggles, social notifications, etc.)
 while preserving the single-threaded simulation model described in
-`docs/idle-engine-design.md` §9.
+`docs/idle-engine-design.md` §6.2.
 
 The pub/sub system emits immutable event payloads tagged with tick metadata and
 routes them to two audiences:

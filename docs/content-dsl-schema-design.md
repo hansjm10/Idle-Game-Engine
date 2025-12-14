@@ -8,7 +8,7 @@
 > Issue #11 defines the canonical Zod schema contract for Idle Engine content
 > packs. The schema guards authoring-time invariants, normalises inputs for the
 > compiler, and aligns with the content expectations outlined in
-> `docs/idle-engine-design.md` §10.
+> `docs/idle-engine-design.md` §6.2.
 
 ## 1. Overview
 
@@ -451,8 +451,8 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
      a targeted error is raised (per the
      [`node-semver` README example](https://github.com/npm/node-semver#ranges)).
   2. The validator consults the `FEATURE_GATES` map in `runtime-compat.ts`. Each
-     non-prototype module (anchored to the roadmap described in
-     `docs/idle-engine-design.md` §18 and `docs/implementation-plan.md`)
+     non-prototype module (anchored to the milestones described in
+     `docs/idle-engine-design.md` §7.2 and `docs/implementation-plan.md`)
      declares the minimum runtime version it supports. For example, automations
      require `>=0.2.0`, transforms and runtime event contributions require
      `>=0.3.0`, prestige layers require `>=0.4.0`, and guild perks require
@@ -574,7 +574,7 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
 ### 5.9 Metric Schema
 
 - `metricDefinitionSchema` describes pack-authored telemetry counters that plug
-  into the instrumentation pipeline promised in `docs/idle-engine-design.md` §16
+  into the instrumentation pipeline promised in `docs/idle-engine-design.md` §6.3
   (“allow games to register custom metrics using shared instrumentation API”):
   - `id`: `contentIdSchema` canonical slug aligned with the instrumentation name
     grammar. Normalisation lowercases ids and collapses duplicate separators so
@@ -620,7 +620,7 @@ https://raw.githubusercontent.com/open-telemetry/opentelemetry-specification/mai
 ### 5.10 Achievement Schema
 
 - `achievementDefinitionSchema` models milestone tracking promised in
-  `docs/idle-engine-design.md` §6 and §10:
+  `docs/idle-engine-design.md` §6.2:
   - `id`: `contentIdSchema`.
   - `name`: `localizedTextSchema`.
   - `description`: `localizedSummarySchema` (≤512 chars) so UI blurbs can be
@@ -704,7 +704,7 @@ https://raw.githubusercontent.com/open-telemetry/opentelemetry-specification/mai
 
 - `transformDefinitionSchema` captures deterministic conversions sitting between
   generators and prestige resets, satisfying the “transforms” requirement in
-  `docs/idle-engine-design.md` §6:
+  `docs/idle-engine-design.md` §6.2:
   - `id`: `contentIdSchema`.
   - `name`: `localizedTextSchema`.
   - `description`: `localizedSummarySchema` clarifying the conversion behaviour.
@@ -990,12 +990,12 @@ export const FEATURE_GATES = [
   {
     module: 'automations',
     introducedIn: '0.2.0',
-    docRef: 'docs/idle-engine-design.md (§9, §18)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
   {
     module: 'transforms',
     introducedIn: '0.3.0',
-    docRef: 'docs/idle-engine-design.md (§6)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
   {
     module: 'runtimeEvents',
@@ -1005,12 +1005,12 @@ export const FEATURE_GATES = [
   {
     module: 'prestigeLayers',
     introducedIn: '0.4.0',
-    docRef: 'docs/idle-engine-design.md (§6, §18)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
   {
     module: 'guildPerks',
     introducedIn: '0.5.0',
-    docRef: 'docs/idle-engine-design.md (§18)',
+    docRef: 'docs/idle-engine-design.md (§6.2)',
   },
 ] as const;
 ```
@@ -1173,7 +1173,7 @@ automation triggers must capture the exact `automationId`.
     `inputs`/`outputs` plus optional `automationId`, runtime event `emits`
     handles, and prestige reset/reward resources resolve against
     declared entities, matching the pipeline guarantees laid out in
-    `docs/idle-engine-design.md` §10.
+    `docs/idle-engine-design.md` §6.2.
   - Checking `customMetric` achievement tracks and automation/resource bindings
     against the pack's metric catalogue, verifying metric `source` hooks (e.g.,
     script bindings) against the relevant allowlists, emitting errors when

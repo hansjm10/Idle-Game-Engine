@@ -5,7 +5,7 @@
 **Status:** Design  
 **Last Updated:** 2025-10-23
 
-> Issue #13 wires the content validation tooling into the shared CLI so `pnpm generate` enforces schema health before the compiler emits artifacts. The design builds on `docs/idle-engine-design.md` §10 and the schema contracts from `docs/content-dsl-schema-design.md`.
+> Issue #13 wires the content validation tooling into the shared CLI so `pnpm generate` enforces schema health before the compiler emits artifacts. The design builds on `docs/idle-engine-design.md` §6.2 and the schema contracts from `docs/content-dsl-schema-design.md`.
 
 ## 1. Overview
 
@@ -13,7 +13,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 
 ## 2. Goals
 
-- **Deterministic enforcement:** Every `pnpm generate` run must validate all discovered packs before emitting runtime artifacts, aborting on schema failures to protect the deterministic runtime loop (`docs/idle-engine-design.md` §6 & §10).
+- **Deterministic enforcement:** Every `pnpm generate` run must validate all discovered packs before emitting runtime artifacts, aborting on schema failures to protect the deterministic runtime loop (`docs/idle-engine-design.md` §6.2).
 - **Actionable diagnostics:** Emit machine-readable JSON events (`content_pack.*`) that surface pack slug, file path, warning counts, and blocker details so CI and humans can triage quickly without parsing prose logs.
 - **Workflow integration:** Support one-shot, `--check`, and `--watch` modes with consistent exit codes, clean handling of drift, and optional pretty-printing to keep the developer experience aligned with other repo tooling.
 - **Summary visibility:** Persist a workspace-level summary (`content/compiled/index.json`) that records validation and compilation outcomes—even when validation aborts compilation—so downstream scripts never read stale success snapshots.
@@ -31,7 +31,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 
 - `tools/content-schema-cli/src/generate.js` reads runtime event metadata, builds the manifest module, and exposes `validateContentPacks` but this function is not wired into the default command.
 - `pnpm generate` executes `pnpm --filter @idle-engine/content-validation-cli run compile`, which currently focuses on manifest regeneration and does not surface pack-level diagnostics or compiler integration.
-- Structured logging guidance in `docs/idle-engine-design.md` (§10) is unmet; existing runs emit human-readable console noise that downstream automation cannot parse reliably.
+- Structured logging guidance in `docs/idle-engine-design.md` (§6.2) is unmet; existing runs emit human-readable console noise that downstream automation cannot parse reliably.
 - `packages/content-compiler` can compile packs into deterministic JSON/TypeScript artifacts (`docs/content-compiler-design.md`), but nothing triggers it during workspace routines and artifacts may drift.
 - CI and Lefthook depend on `pnpm generate`; without validation wiring, schema regressions slip through local workflows.
 
@@ -92,7 +92,7 @@ The Idle Engine repository currently ships a schema package (`@idle-engine/conte
 
 ### 6.3 Structured Logging & Telemetry
 
-- Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with `docs/idle-engine-design.md` §10 logging guidance).
+- Stick to JSON-per-line logs with no trailing commentary to protect downstream ingestion (aligned with `docs/idle-engine-design.md` §6.2 logging guidance).
 - Validation events include:
   - `content_pack.validated`: `{ event, packSlug, path, warningCount, warnings, balanceWarningCount, balanceWarnings, balanceErrorCount, balanceErrors }` where `warningCount` aggregates legacy and balance findings.
   - `content_pack.validation_failed`: `{ event, packSlug, packVersion, path, issues, message }` (with `packSlug`/`packVersion` populated when metadata can be read from the document).

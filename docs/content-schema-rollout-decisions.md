@@ -110,7 +110,7 @@ All modification effects use `NumericFormula` (formulas.ts), which supports:
 - Function calls against allowlist (clamp, lerp, etc.)
 
 ### Analysis
-**Scripting Layer Status (idle-engine-design.md §9.4):**
+**Scripting Layer Status (`docs/idle-engine-design.md` §6.2):**
 - "Script layer exposes deterministic APIs (no direct async)"
 - "Script host provides whitelisted math/util modules and deterministic random via seeded RNG"
 - No scripting design document exists yet
@@ -132,7 +132,7 @@ All modification effects use `NumericFormula` (formulas.ts), which supports:
 
 **Rationale:**
 - Current formula system covers prototype phase needs (Phase 0-6 in implementation-plan.md)
-- Scripting requires security sandbox design (idle-engine-design.md §13: "Sandbox third-party scripts")
+- Scripting requires security sandbox design (`docs/idle-engine-design.md` §6.3: "Sandbox third-party scripts")
 - Feature gate model supports incremental rollout (runtime-compat.ts FEATURE_GATES)
 - No content pack has requested scripted modifiers yet
 
@@ -199,7 +199,7 @@ All modification effects use `NumericFormula` (formulas.ts), which supports:
 
 **Save System Status (implementation-plan.md Phase 4):**
 - Phase 4: "Implement save slot manager (IndexedDB/localStorage) with migration hooks"
-- Versioned schemas mentioned in design (idle-engine-design.md:35,137)
+- Versioned schemas mentioned in design (`docs/idle-engine-design.md` §6.2)
 - No save format specification exists yet
 - Migration pipeline not yet designed
 
