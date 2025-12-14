@@ -68,6 +68,29 @@ describe('content pack validator', () => {
     expect(() => validator.parse(invalidPack)).toThrow(ZodError);
   });
 
+  it('rejects resource unlock conditions that reference unknown entities', () => {
+    const invalidPack = createMinimalPack();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (invalidPack.resources[0] as any).unlockCondition = {
+      kind: 'generatorLevel',
+      generatorId: 'generator:missing',
+      comparator: 'gte',
+      level: { kind: 'constant', value: 1 },
+    };
+
+    const validator = createContentPackValidator();
+    expect(() => validator.parse(invalidPack)).toThrow(ZodError);
+  });
+
+  it('rejects resource prestige blocks that reference unknown prestige layers', () => {
+    const invalidPack = createMinimalPack();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (invalidPack.resources[0] as any).prestige = { layerId: 'prestige:missing' };
+
+    const validator = createContentPackValidator();
+    expect(() => validator.parse(invalidPack)).toThrow(ZodError);
+  });
+
   it('collects warnings for missing optional dependencies when active pack ids are supplied', () => {
     const packWithOptionalDependency = createMinimalPack();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

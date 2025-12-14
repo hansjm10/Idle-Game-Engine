@@ -731,6 +731,49 @@ const validateCrossReferences = (
     });
   };
 
+  pack.resources.forEach((resource, index) => {
+    if (resource.unlockCondition) {
+      validateConditionNode(
+        resource.unlockCondition,
+        ['resources', index, 'unlockCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
+
+    if (resource.visibilityCondition) {
+      validateConditionNode(
+        resource.visibilityCondition,
+        ['resources', index, 'visibilityCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
+
+    if (resource.prestige) {
+      ensureContentReference(
+        prestigeIndex,
+        resource.prestige.layerId,
+        ['resources', index, 'prestige', 'layerId'],
+        `Resource "${resource.id}" references unknown prestige layer "${resource.prestige.layerId}".`,
+      );
+
+      if (resource.prestige.resetRetention) {
+        collectFormulaEntityReferences(resource.prestige.resetRetention, (reference) => {
+          ensureFormulaReference(reference, ['resources', index, 'prestige', 'resetRetention'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
+        });
+      }
+    }
+  });
+
   pack.runtimeEvents.forEach((event, index) => {
     if (context.runtimeEventCatalogue.has(event.id)) {
       ctx.addIssue({
