@@ -66,6 +66,30 @@ describe('CommandDispatcher', () => {
     });
   });
 
+  it('returns a failure result when async handler resolves to a failure object', async () => {
+    const dispatcher = new CommandDispatcher();
+    dispatcher.register('ASYNC_REJECT', async () => ({
+      success: false,
+      error: {
+        code: 'INSUFFICIENT_RESOURCES',
+        message: 'Insufficient resources.',
+      },
+    }));
+
+    const result = await dispatcher.executeWithResult({
+      ...baseCommand,
+      type: 'ASYNC_REJECT',
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'INSUFFICIENT_RESOURCES',
+        message: 'Insufficient resources.',
+      },
+    });
+  });
+
   it('records telemetry when handler throws', () => {
     const dispatcher = new CommandDispatcher();
     const telemetryStub: TelemetryFacade = {
@@ -119,6 +143,39 @@ describe('CommandDispatcher', () => {
       success: false,
       error: expect.objectContaining({
         code: 'UNKNOWN_COMMAND_TYPE',
+      }),
+    });
+  });
+
+  it('returns a failure result and records telemetry when async handler rejects', async () => {
+    const dispatcher = new CommandDispatcher();
+    const telemetryStub: TelemetryFacade = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+
+    dispatcher.register('ASYNC_THROW', () => Promise.reject(new Error('boom')));
+
+    const result = await dispatcher.executeWithResult({
+      ...baseCommand,
+      type: 'ASYNC_THROW',
+    });
+
+    expect(telemetryStub.recordError).toHaveBeenCalledWith(
+      'CommandExecutionFailed',
+      {
+        type: 'ASYNC_THROW',
+        error: 'boom',
+      },
+    );
+    expect(result).toEqual({
+      success: false,
+      error: expect.objectContaining({
+        code: 'COMMAND_EXECUTION_FAILED',
       }),
     });
   });

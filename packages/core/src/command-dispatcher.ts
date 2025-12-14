@@ -75,7 +75,7 @@ export class CommandDispatcher {
     void this.executeWithResult(command);
   }
 
-  executeWithResult(command: Command): CommandResult {
+  executeWithResult(command: Command): CommandResult | Promise<CommandResult> {
     const handler = this.handlers.get(command.type);
     if (!handler) {
       telemetry.recordError('UnknownCommandType', { type: command.type });
@@ -105,13 +105,30 @@ export class CommandDispatcher {
     try {
       const result = handler(command.payload, context);
       if (isPromiseLike(result)) {
-        result.catch((error) => {
-          telemetry.recordError('CommandExecutionFailed', {
-            type: command.type,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-        return COMMAND_SUCCESS_RESULT;
+        return Promise.resolve(result).then(
+          (resolved) => {
+            if (isCommandResult(resolved)) {
+              return normalizeCommandResult(resolved);
+            }
+
+            return COMMAND_SUCCESS_RESULT;
+          },
+          (error) => {
+            telemetry.recordError('CommandExecutionFailed', {
+              type: command.type,
+              error: error instanceof Error ? error.message : String(error),
+            });
+
+            return createCommandFailure(
+              'COMMAND_EXECUTION_FAILED',
+              'Command execution failed.',
+              {
+                type: command.type,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
+          },
+        );
       }
 
       if (isCommandResult(result)) {

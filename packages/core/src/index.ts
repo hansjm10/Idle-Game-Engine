@@ -296,9 +296,27 @@ export class IdleEngineRuntime {
               continue;
             }
 
-            const result = this.commandDispatcher.executeWithResult(command as Command);
+            const result = this.commandDispatcher.executeWithResult(
+              command as Command,
+            );
             executedCommands += 1;
-            if (!result.success) {
+
+            if (result instanceof Promise) {
+              void result.then((resolved) => {
+                if (resolved.success) {
+                  return;
+                }
+
+                this.commandFailures.push({
+                  requestId: command.requestId,
+                  type: command.type,
+                  priority: command.priority,
+                  timestamp: command.timestamp,
+                  step: command.step,
+                  error: resolved.error,
+                });
+              });
+            } else if (!result.success) {
               this.commandFailures.push({
                 requestId: command.requestId,
                 type: command.type,
