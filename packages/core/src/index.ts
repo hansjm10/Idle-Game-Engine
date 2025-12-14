@@ -11,7 +11,7 @@ import {
 import type { RuntimeEventType } from './events/runtime-event.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
 import type { Command } from './command.js';
-import { CommandDispatcher } from './command-dispatcher.js';
+import { CommandDispatcher, type CommandFailure } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import { telemetry } from './telemetry.js';
 import {
@@ -99,6 +99,7 @@ export class IdleEngineRuntime {
   private readonly commandDispatcher: CommandDispatcher;
   private readonly eventBus: EventBus;
   private readonly eventPublisher: EventPublisher;
+  private readonly commandFailures: CommandFailure[] = [];
   private currentStep = 0;
   private nextExecutableStep = 0;
   private readonly diagnostics: RuntimeDiagnosticsController;
@@ -178,6 +179,14 @@ export class IdleEngineRuntime {
 
   getCommandDispatcher(): CommandDispatcher {
     return this.commandDispatcher;
+  }
+
+  drainCommandFailures(): CommandFailure[] {
+    if (this.commandFailures.length === 0) {
+      return [];
+    }
+
+    return this.commandFailures.splice(0, this.commandFailures.length);
   }
 
   getCurrentStep(): number {
@@ -287,8 +296,18 @@ export class IdleEngineRuntime {
               continue;
             }
 
-            this.commandDispatcher.execute(command as Command);
+            const result = this.commandDispatcher.executeWithResult(command as Command);
             executedCommands += 1;
+            if (!result.success) {
+              this.commandFailures.push({
+                requestId: command.requestId,
+                type: command.type,
+                priority: command.priority,
+                timestamp: command.timestamp,
+                step: command.step,
+                error: result.error,
+              });
+            }
           }
 
           const dispatchContext: EventDispatchContext = {
@@ -779,6 +798,12 @@ export {
 export {
   CommandDispatcher,
   type CommandHandler,
+  type CommandHandlerResult,
+  type CommandResult,
+  type CommandResultFailure,
+  type CommandResultSuccess,
+  type CommandError,
+  type CommandFailure,
   type ExecutionContext,
 } from './command-dispatcher.js';
 export {

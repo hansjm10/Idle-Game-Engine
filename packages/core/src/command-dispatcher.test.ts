@@ -40,6 +40,32 @@ describe('CommandDispatcher', () => {
     );
   });
 
+  it('returns a success result for handlers that return void', () => {
+    const dispatcher = new CommandDispatcher();
+    dispatcher.register('TEST', () => {});
+
+    expect(dispatcher.executeWithResult(baseCommand)).toEqual({ success: true });
+  });
+
+  it('returns a failure result when handler returns a failure object', () => {
+    const dispatcher = new CommandDispatcher();
+    dispatcher.register('REJECT', () => ({
+      success: false,
+      error: {
+        code: 'INSUFFICIENT_RESOURCES',
+        message: 'Insufficient resources.',
+      },
+    }));
+
+    expect(dispatcher.executeWithResult({ ...baseCommand, type: 'REJECT' })).toEqual({
+      success: false,
+      error: {
+        code: 'INSUFFICIENT_RESOURCES',
+        message: 'Insufficient resources.',
+      },
+    });
+  });
+
   it('records telemetry when handler throws', () => {
     const dispatcher = new CommandDispatcher();
     const telemetryStub: TelemetryFacade = {
@@ -55,7 +81,7 @@ describe('CommandDispatcher', () => {
       throw new Error('boom');
     });
 
-    dispatcher.execute({ ...baseCommand, type: 'FAIL' });
+    const result = dispatcher.executeWithResult({ ...baseCommand, type: 'FAIL' });
 
     expect(telemetryStub.recordError).toHaveBeenCalledWith(
       'CommandExecutionFailed',
@@ -64,6 +90,12 @@ describe('CommandDispatcher', () => {
         error: 'boom',
       },
     );
+    expect(result).toEqual({
+      success: false,
+      error: expect.objectContaining({
+        code: 'COMMAND_EXECUTION_FAILED',
+      }),
+    });
   });
 
   it('records telemetry when command type is unknown', () => {
@@ -77,12 +109,18 @@ describe('CommandDispatcher', () => {
     };
     setTelemetry(telemetryStub);
 
-    dispatcher.execute({ ...baseCommand, type: 'UNKNOWN' });
+    const result = dispatcher.executeWithResult({ ...baseCommand, type: 'UNKNOWN' });
 
     expect(telemetryStub.recordError).toHaveBeenCalledWith(
       'UnknownCommandType',
       { type: 'UNKNOWN' },
     );
+    expect(result).toEqual({
+      success: false,
+      error: expect.objectContaining({
+        code: 'UNKNOWN_COMMAND_TYPE',
+      }),
+    });
   });
 
   it('records telemetry when async handler rejects', async () => {
@@ -126,7 +164,7 @@ describe('CommandDispatcher', () => {
 
     dispatcher.register('PRESTIGE_RESET', handler);
 
-    dispatcher.execute({
+    const result = dispatcher.executeWithResult({
       ...baseCommand,
       type: 'PRESTIGE_RESET',
       priority: CommandPriority.AUTOMATION,
@@ -142,6 +180,12 @@ describe('CommandDispatcher', () => {
         reason: 'dispatcher',
       }),
     );
+    expect(result).toEqual({
+      success: false,
+      error: expect.objectContaining({
+        code: 'COMMAND_UNAUTHORIZED',
+      }),
+    });
   });
 
   it('exposes registered handlers via forEachHandler', () => {

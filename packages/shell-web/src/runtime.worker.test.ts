@@ -143,6 +143,69 @@ describe('runtime.worker integration', () => {
     expect(timeController.scheduledTick).toBeNull();
   });
 
+  it('emits COMMAND_FAILED errors when command handlers report failure', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    harness.runtime.getCommandDispatcher().register('FAIL', () => ({
+      success: false,
+      error: {
+        code: 'TEST_FAILURE',
+        message: 'Nope',
+        details: {
+          reason: 'testing',
+        },
+      },
+    }));
+
+    context.dispatch({
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      requestId: 'command:99',
+      command: {
+        type: 'FAIL',
+        payload: {},
+        issuedAt: 1,
+      },
+    });
+
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    const errorEnvelope = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as RuntimeWorkerError | undefined)?.type === 'ERROR' &&
+        (payload as RuntimeWorkerError | undefined)?.error?.requestId === 'command:99',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(errorEnvelope).toBeDefined();
+    expect(errorEnvelope).toMatchObject({
+      type: 'ERROR',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      error: {
+        code: 'COMMAND_FAILED',
+        message: 'Nope',
+        requestId: 'command:99',
+        details: expect.objectContaining({
+          command: expect.objectContaining({
+            type: 'FAIL',
+          }),
+          error: expect.objectContaining({
+            code: 'TEST_FAILURE',
+          }),
+        }),
+      },
+    });
+  });
+
   it('hydrates progression snapshot from sample content state', () => {
 
     harness = initializeRuntimeWorker({

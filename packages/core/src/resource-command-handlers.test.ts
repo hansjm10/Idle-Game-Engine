@@ -285,7 +285,7 @@ describe('resource command handlers', () => {
       const energyIndex = resources.requireIndex('energy');
       resources.addAmount(energyIndex, 5);
 
-      execute(
+      const result = dispatcher.executeWithResult(
         createCommand({
           type: RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR,
           priority: CommandPriority.AUTOMATION,
@@ -293,6 +293,12 @@ describe('resource command handlers', () => {
         }),
       );
 
+      expect(result).toEqual({
+        success: false,
+        error: expect.objectContaining({
+          code: 'INSUFFICIENT_RESOURCES',
+        }),
+      });
       expect(resources.getAmount(energyIndex)).toBe(5);
       expect(purchases.applied).toHaveLength(0);
 

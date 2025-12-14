@@ -277,6 +277,27 @@ export function initializeRuntimeWorker(
     const after = runtime.getCurrentStep();
 
     if (after > before) {
+      const commandFailures = runtime.drainCommandFailures();
+      for (const failure of commandFailures) {
+        if (failure.priority !== CommandPriority.PLAYER) {
+          continue;
+        }
+        postError({
+          code: 'COMMAND_FAILED',
+          message: failure.error.message,
+          requestId: failure.requestId,
+          details: {
+            command: {
+              type: failure.type,
+              step: failure.step,
+              priority: failure.priority,
+              timestamp: failure.timestamp,
+            },
+            error: failure.error,
+          },
+        });
+      }
+
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
@@ -1085,6 +1106,7 @@ export function initializeRuntimeWorker(
       priority: CommandPriority.PLAYER,
       timestamp: monotonicClock.now(),
       step: runtime.getNextExecutableStep(),
+      requestId,
     });
   };
 

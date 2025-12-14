@@ -61,7 +61,13 @@ function createToggleAutomationHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_AUTOMATION_ID',
+          message: 'Automation id must be a non-empty string.',
+        },
+      };
     }
 
     if (typeof payload.enabled !== 'boolean') {
@@ -71,7 +77,13 @@ function createToggleAutomationHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_AUTOMATION_ENABLED',
+          message: 'Automation enabled flag must be a boolean.',
+        },
+      };
     }
 
     // Get automation state
@@ -84,7 +96,16 @@ function createToggleAutomationHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN_AUTOMATION',
+          message: 'Automation not found.',
+          details: {
+            automationId: payload.automationId,
+          },
+        },
+      };
     }
 
     // Update state directly (mutable operation on internal state)

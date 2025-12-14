@@ -154,7 +154,13 @@ function createToggleGeneratorHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_GENERATOR_ID',
+          message: 'Generator id must be a non-empty string.',
+        },
+      };
     }
 
     if (typeof payload.enabled !== 'boolean') {
@@ -164,7 +170,13 @@ function createToggleGeneratorHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_TOGGLE_STATE',
+          message: 'Generator enabled flag must be a boolean.',
+        },
+      };
     }
 
     if (!generatorToggles) {
@@ -174,7 +186,13 @@ function createToggleGeneratorHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'TOGGLE_GENERATOR_UNSUPPORTED',
+          message: 'Generator toggling is not supported in this runtime.',
+        },
+      };
     }
 
     const updated = generatorToggles.setGeneratorEnabled(
@@ -189,6 +207,16 @@ function createToggleGeneratorHandler(
         step: context.step,
         priority: context.priority,
       });
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN_GENERATOR',
+          message: 'Generator not found.',
+          details: {
+            generatorId: payload.generatorId,
+          },
+        },
+      };
     }
   };
 }
@@ -212,7 +240,17 @@ function createPurchaseGeneratorHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_PURCHASE_COUNT',
+          message: 'Purchase count must be a positive integer.',
+          details: {
+            generatorId: payload.generatorId,
+            count: payload.count,
+          },
+        },
+      };
     }
 
     const quote = generatorPurchases.getPurchaseQuote(
@@ -227,7 +265,17 @@ function createPurchaseGeneratorHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN_GENERATOR',
+          message: 'Generator not found.',
+          details: {
+            generatorId: payload.generatorId,
+            count: payload.count,
+          },
+        },
+      };
     }
 
     if (!Array.isArray(quote.costs) || quote.costs.length === 0) {
@@ -236,7 +284,18 @@ function createPurchaseGeneratorHandler(
         count: payload.count,
         reason: 'costs-empty',
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_PURCHASE_QUOTE',
+          message: 'Generator purchase quote is invalid.',
+          details: {
+            generatorId: payload.generatorId,
+            count: payload.count,
+            reason: 'costs-empty',
+          },
+        },
+      };
     }
 
     const spendContext: ResourceSpendAttemptContext = {
@@ -259,7 +318,20 @@ function createPurchaseGeneratorHandler(
           amount: cost.amount,
         });
         refund(resources, spendContext, successfulSpends);
-        return;
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_PURCHASE_QUOTE',
+            message: 'Generator purchase quote is invalid.',
+            details: {
+              generatorId: payload.generatorId,
+              count: payload.count,
+              reason: 'cost-invalid',
+              resourceId: cost.resourceId,
+              amount: cost.amount,
+            },
+          },
+        };
       }
 
       let resourceIndex: number;
@@ -290,7 +362,19 @@ function createPurchaseGeneratorHandler(
           priority: context.priority,
         });
         refund(resources, spendContext, successfulSpends);
-        return;
+        return {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_RESOURCES',
+            message: 'Insufficient resources.',
+            details: {
+              generatorId: payload.generatorId,
+              resourceId: cost.resourceId,
+              required: cost.amount,
+              count: payload.count,
+            },
+          },
+        };
       }
 
       successfulSpends.push({
@@ -330,7 +414,13 @@ function createPurchaseUpgradeHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_UPGRADE_ID',
+          message: 'Upgrade id must be a non-empty string.',
+        },
+      };
     }
 
     const upgradeId = payload.upgradeId.trim();
@@ -342,7 +432,16 @@ function createPurchaseUpgradeHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN_UPGRADE',
+          message: 'Upgrade not found.',
+          details: {
+            upgradeId,
+          },
+        },
+      };
     }
 
     if (quote.status === 'purchased') {
@@ -351,7 +450,16 @@ function createPurchaseUpgradeHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'UPGRADE_ALREADY_OWNED',
+          message: 'Upgrade already owned.',
+          details: {
+            upgradeId,
+          },
+        },
+      };
     }
 
     if (quote.status === 'locked') {
@@ -360,7 +468,16 @@ function createPurchaseUpgradeHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'UPGRADE_LOCKED',
+          message: 'Upgrade is locked.',
+          details: {
+            upgradeId,
+          },
+        },
+      };
     }
 
     if (!Array.isArray(quote.costs)) {
@@ -368,7 +485,17 @@ function createPurchaseUpgradeHandler(
         upgradeId,
         reason: 'costs-missing',
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_PURCHASE_QUOTE',
+          message: 'Upgrade purchase quote is invalid.',
+          details: {
+            upgradeId,
+            reason: 'costs-missing',
+          },
+        },
+      };
     }
 
     const spendContext: ResourceSpendAttemptContext = {
@@ -390,7 +517,19 @@ function createPurchaseUpgradeHandler(
           amount: cost.amount,
         });
         refund(resources, spendContext, successfulSpends);
-        return;
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_PURCHASE_QUOTE',
+            message: 'Upgrade purchase quote is invalid.',
+            details: {
+              upgradeId,
+              reason: 'cost-invalid',
+              resourceId: cost.resourceId,
+              amount: cost.amount,
+            },
+          },
+        };
       }
 
       if (cost.amount === 0) {
@@ -421,7 +560,18 @@ function createPurchaseUpgradeHandler(
           reason: 'insufficient-resources',
         });
         refund(resources, spendContext, successfulSpends);
-        return;
+        return {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_RESOURCES',
+            message: 'Insufficient resources.',
+            details: {
+              upgradeId,
+              resourceId: cost.resourceId,
+              required: cost.amount,
+            },
+          },
+        };
       }
 
       successfulSpends.push({
@@ -466,7 +616,13 @@ function createPrestigeResetHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_PRESTIGE_LAYER',
+          message: 'Prestige layer id must be a non-empty string.',
+        },
+      };
     }
 
     const layerId = payload.layerId.trim();
@@ -478,7 +634,16 @@ function createPrestigeResetHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN_PRESTIGE_LAYER',
+          message: 'Prestige layer not found.',
+          details: {
+            layerId,
+          },
+        },
+      };
     }
 
     if (quote.status === 'locked') {
@@ -487,7 +652,16 @@ function createPrestigeResetHandler(
         step: context.step,
         priority: context.priority,
       });
-      return;
+      return {
+        success: false,
+        error: {
+          code: 'PRESTIGE_LOCKED',
+          message: 'Prestige layer is locked.',
+          details: {
+            layerId,
+          },
+        },
+      };
     }
 
     try {

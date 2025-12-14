@@ -223,6 +223,7 @@ export interface RuntimeWorkerErrorDetails {
     | 'SCHEMA_VERSION_MISMATCH'
     | 'INVALID_COMMAND_PAYLOAD'
     | 'STALE_COMMAND'
+    | 'COMMAND_FAILED'
     | 'UNSUPPORTED_MESSAGE'
     | 'RESTORE_FAILED'
     | 'SNAPSHOT_FAILED';

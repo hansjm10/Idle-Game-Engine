@@ -21,6 +21,7 @@ export interface Command<TPayload = unknown> {
   readonly payload: TPayload;
   readonly timestamp: number;
   readonly step: number;
+  readonly requestId?: string;
 }
 
 type ImmutablePrimitive =

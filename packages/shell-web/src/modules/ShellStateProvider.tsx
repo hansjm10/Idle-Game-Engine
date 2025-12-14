@@ -64,7 +64,7 @@ const ShellProgressionContext = createContext<ShellProgressionApi | null>(null);
 
 const COMMAND_REQUEST_ID_PREFIX = 'command:';
 const COMMAND_ERROR_CODES: ReadonlySet<WorkerBridgeErrorDetails['code']> =
-  new Set(['INVALID_COMMAND_PAYLOAD', 'STALE_COMMAND']);
+  new Set(['INVALID_COMMAND_PAYLOAD', 'STALE_COMMAND', 'COMMAND_FAILED']);
 const RESTORE_PAYLOAD_NOT_SET = Symbol('ShellStateProvider.restorePayload.initial');
 
 export function ShellStateProvider({
