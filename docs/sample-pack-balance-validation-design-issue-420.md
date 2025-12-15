@@ -16,7 +16,7 @@ sidebar_position: 4
 around github issue 419 expands the sample pack with new resources, generators, multi-tier upgrades, and a prestige layer while adding fast-check-based balance validation to the content schema and compiler pipeline. Balance failures will block `pnpm generate (--check)` and CI, and updated core/shell fixtures will consume the richer content without regressions.
 
 ## 2. Context & Problem Statement
-- **Background**: Sample content is minimal (energy/crystal, few upgrades) in `packages/content-sample/content/pack.json`; docs outline usage (`packages/content-sample/README.md`) but no prestige coverage. Schema checks are structural (`packages/content-schema/src/modules/generators.ts`) with property tests only for formulas (`packages/content-schema/src/base/formulas.property.test.ts`). Compiler artifacts are deterministic (`packages/content-compiler/src/__tests__/compiler.test.ts`) yet balance is unchecked, and `pnpm generate` via `tools/content-schema-cli/src/compile.js` omits balance validation (`docs/content-validation-cli-design.md`). Shell progression relies on pack IDs/costs (`packages/shell-web/src/modules/progression-coordinator.ts:395`).
+- **Background**: Sample content is minimal (energy/crystal, few upgrades) in `packages/content-sample/content/pack.json`; docs outline usage (`packages/content-sample/README.md`) but no prestige coverage. Schema checks are structural (`packages/content-schema/src/modules/generators.ts`) with property tests only for formulas (`packages/content-schema/src/base/formulas.property.test.ts`). Compiler artifacts are deterministic (`packages/content-compiler/src/__tests__/compiler.test.ts`) yet balance is unchecked, and `pnpm generate` via `tools/content-schema-cli/src/compile.js` omits balance validation (`docs/content-validation-cli-design.md`). Shell progression relies on pack IDs/costs (`packages/core/src/progression-coordinator.ts`).
 - **Problem**: Issue 419 calls out insufficient content coverage and missing balance/property validation, risking negative rates or unstable costs and leaving prestige untested.
 - **Forces**: Maintain deterministic artifacts/hashes and structured logs (`vitest-llm-reporter` final JSON); honor DSL rules (`docs/content-dsl-usage-guidelines.md`) and implementation plan expectations for richer packs (`docs/implementation-plan.md`); avoid manual `dist/` edits.
 
@@ -36,13 +36,13 @@ around github issue 419 expands the sample pack with new resources, generators, 
 - **Primary Stakeholders**: Content pipeline maintainers; Runtime core maintainers; Shell UX maintainers.
 - **Agent Roles**: Content Authoring Agent (pack expansion); Balance Validation Agent (fast-check invariants); Compiler Integration Agent (CLI wiring); Shell Consumer Agent (progression updates); Docs Agent (guides/readme).
 - **Affected Packages/Services**: `packages/content-schema`, `packages/content-compiler`, `packages/content-sample`, `packages/core`, `packages/shell-web`, `tools/content-schema-cli`, `docs/`.
-- **Compatibility Considerations**: Preserve deterministic ordering/hashes; keep `content/compiled/index.json` shape; avoid schema breaks; maintain shell cost/visibility expectations (`packages/shell-web/src/modules/progression-coordinator.ts:395`).
+- **Compatibility Considerations**: Preserve deterministic ordering/hashes; keep `content/compiled/index.json` shape; avoid schema breaks; maintain shell cost/visibility expectations (`packages/core/src/progression-coordinator.ts`).
 
 ## 5. Current State
 - Sample pack limited to two resources/two generators, minimal upgrades, no prestige (`packages/content-sample/content/pack.json`).
 - Schema validation enforces structure/uniqueness; no balance/monotonicity (`packages/content-schema/src/modules/generators.ts`, `packages/content-schema/src/modules/prestige.ts`); property suites only for formulas (`packages/content-schema/src/base/formulas.property.test.ts`).
 - Compiler and CLI ignore balance results (`packages/content-compiler/src/compiler/index.ts`, `packages/content-compiler/src/__tests__/compiler.test.ts`, `tools/content-schema-cli/src/compile.js`).
-- Shell progression uses pack data for costs/unlocks (`packages/shell-web/src/modules/progression-coordinator.ts:395`); new IDs would currently break fixtures.
+- Shell progression uses pack data for costs/unlocks (`packages/core/src/progression-coordinator.ts`); new IDs would currently break fixtures.
 - Implementation plan demands richer packs and prestige coverage (`docs/implementation-plan.md`); progression guidance exists (`docs/progression-coordinator-design.md`).
 
 ## 6. Proposed Solution
@@ -115,7 +115,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 - **Communication Cadence**: Daily async updates in issue 419; reviewer checkpoints at each phase; escalate schema questions to content pipeline maintainers.
 
 ## 8. Agent Guidance & Guardrails
-- **Context Packets**: `docs/content-dsl-usage-guidelines.md`, `docs/content-compiler-design.md`, `docs/content-validation-cli-design.md`, `docs/progression-coordinator-design.md`, `packages/content-sample/content/pack.json`, `packages/shell-web/src/modules/progression-coordinator.ts`.
+- **Context Packets**: `docs/content-dsl-usage-guidelines.md`, `docs/content-compiler-design.md`, `docs/content-validation-cli-design.md`, `docs/progression-coordinator-design.md`, `packages/content-sample/content/pack.json`, `packages/core/src/progression-coordinator.ts`.
 - **Prompting & Constraints**: Use ES modules, two-space indentation, type-only imports/exports; keep generated output deterministic; never edit `dist/` manually.
 - **Safety Rails**: Avoid destructive git commands; keep console output JSON-only; cap fast-check runs; avoid non-ASCII text.
 - **Validation Hooks**: `pnpm generate --check`, `pnpm test --filter content-schema`, `pnpm test --filter content-compiler`, `pnpm test --filter content-sample`, `pnpm test --filter shell-web`, `pnpm coverage:md` when coverage changes.
@@ -159,7 +159,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 - `packages/content-schema/src/base/formulas.property.test.ts`
 - `packages/content-compiler/src/__tests__/compiler.test.ts`
 - `tools/content-schema-cli/src/compile.js`
-- `packages/shell-web/src/modules/progression-coordinator.ts:395`
+- `packages/core/src/progression-coordinator.ts`
 - `docs/content-dsl-usage-guidelines.md`
 - `docs/content-compiler-design.md`
 - `docs/content-validation-cli-design.md`

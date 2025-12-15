@@ -1337,7 +1337,7 @@ const prestigeResetHandler = (
 
 #### 7.2.1 Purchase Evaluator Pattern (Existing Implementation)
 
-> **Note**: This subsection documents the **existing purchase evaluator pattern** as shipped in PR #303 (`packages/shell-web/src/modules/progression-coordinator.ts:483-604`). This is retroactive documentation of production code.
+> **Note**: This subsection documents the **existing purchase evaluator pattern** as shipped in PR #303 (`packages/core/src/progression-coordinator.ts`). This is retroactive documentation of production code.
 
 **Separation of Quote vs. Application**:
 
@@ -1376,7 +1376,7 @@ type UpgradePurchaseQuote = {
 
 **Evaluator Implementation**:
 
-The progression coordinator (`packages/shell-web/src/modules/progression-coordinator.ts`) provides concrete implementations:
+The progression coordinator (`packages/core/src/progression-coordinator.ts`) provides concrete implementations:
 
 ```typescript
 class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
@@ -1467,8 +1467,8 @@ Command handlers treat `undefined` quotes as validation failures and no-op witho
 3. **Command Handlers**: Resource command handlers delegate validation and application to evaluators (`packages/core/src/resource-command-handlers.ts`)
 
 **Implementation Reference**:
-- Generator evaluator: `packages/shell-web/src/modules/progression-coordinator.ts:483-557`
-- Upgrade evaluator: `packages/shell-web/src/modules/progression-coordinator.ts:559-604`
+- Generator evaluator: `packages/core/src/progression-coordinator.ts`
+- Upgrade evaluator: `packages/core/src/progression-coordinator.ts`
 - Command handler registration: `packages/shell-web/src/runtime.worker.ts:151-160`
 - Evaluator interfaces: `packages/core/src/progression.ts` (type exports)
 
