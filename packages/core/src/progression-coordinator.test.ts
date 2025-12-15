@@ -243,6 +243,70 @@ function createBaseCostUpgradeContentPack(): NormalizedContentPack {
   });
 }
 
+function createMultiCostGeneratorContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+  const parts = createResourceDefinition('resource.parts', {
+    name: 'Parts',
+  });
+
+  const generator = createGeneratorDefinition('generator.multi-cost', {
+    name: 'Multi Cost Generator',
+    purchase: {
+      costs: [
+        { resourceId: energy.id, baseCost: 10, costCurve: literalOne },
+        { resourceId: parts.id, baseCost: 25, costCurve: literalOne },
+      ],
+    },
+    produces: [{ resourceId: energy.id, rate: literalOne }],
+  });
+
+  return createContentPack({
+    resources: [energy, parts],
+    generators: [generator],
+    metadata: {
+      id: 'pack.generator.multi-cost',
+      title: 'Generator Multi Cost Pack',
+    },
+  });
+}
+
+function createMultiCostUpgradeContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+  const parts = createResourceDefinition('resource.parts', {
+    name: 'Parts',
+  });
+
+  const upgrade = createUpgradeDefinition('upgrade.multi-cost', {
+    name: 'Multi Cost Upgrade',
+    cost: {
+      costs: [
+        { resourceId: energy.id, baseCost: 10, costCurve: literalOne },
+        { resourceId: parts.id, baseCost: 25, costCurve: literalOne },
+      ],
+    },
+    effects: [
+      {
+        kind: 'grantFlag',
+        flagId: 'flag.multi-cost',
+        value: true,
+      },
+    ],
+  });
+
+  return createContentPack({
+    resources: [energy, parts],
+    upgrades: [upgrade],
+    metadata: {
+      id: 'pack.upgrade.multi-cost',
+      title: 'Upgrade Multi Cost Pack',
+    },
+  });
+}
+
 describe('progression-coordinator', () => {
   it('allows upgrade cost formulas to reference generator and upgrade entities', () => {
     const currency = createResourceDefinition('resource.currency', {
@@ -434,6 +498,39 @@ describe('progression-coordinator', () => {
     expect(quote).toBeDefined();
     expect(quote?.costs).toEqual([
       { resourceId: 'resource.currency', amount: 250 },
+    ]);
+  });
+
+  it('quotes multi-resource generator purchases', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createMultiCostGeneratorContentPack(),
+      stepDurationMs: 100,
+    });
+
+    const quote = coordinator.generatorEvaluator.getPurchaseQuote(
+      'generator.multi-cost',
+      2,
+    );
+
+    expect(quote?.costs).toEqual([
+      { resourceId: 'resource.energy', amount: 20 },
+      { resourceId: 'resource.parts', amount: 50 },
+    ]);
+  });
+
+  it('quotes multi-resource upgrade purchases', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createMultiCostUpgradeContentPack(),
+      stepDurationMs: 100,
+    });
+
+    const quote = coordinator.upgradeEvaluator?.getPurchaseQuote(
+      'upgrade.multi-cost',
+    );
+
+    expect(quote?.costs).toEqual([
+      { resourceId: 'resource.energy', amount: 10 },
+      { resourceId: 'resource.parts', amount: 25 },
     ]);
   });
 

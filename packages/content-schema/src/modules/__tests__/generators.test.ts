@@ -58,6 +58,56 @@ describe('generatorDefinitionSchema', () => {
       }),
     ).toThrowError(/bulk purchase limit/i);
   });
+
+  it('accepts multi-resource generator costs', () => {
+    const definition = generatorDefinitionSchema.parse({
+      ...baseGenerator,
+      purchase: {
+        costs: [
+          {
+            resourceId: 'crystal',
+            baseCost: 5,
+            costCurve: { kind: 'constant', value: 1 },
+          },
+          {
+            resourceId: 'energy',
+            baseCost: 10,
+            costCurve: { kind: 'constant', value: 1 },
+          },
+        ],
+      },
+    });
+
+    expect('costs' in definition.purchase).toBe(true);
+    if ('costs' in definition.purchase) {
+      expect(definition.purchase.costs.map((cost) => cost.resourceId)).toEqual([
+        'crystal',
+        'energy',
+      ]);
+    }
+  });
+
+  it('rejects duplicate multi-resource generator costs', () => {
+    expect(() =>
+      generatorDefinitionSchema.parse({
+        ...baseGenerator,
+        purchase: {
+          costs: [
+            {
+              resourceId: 'energy',
+              baseCost: 5,
+              costCurve: { kind: 'constant', value: 1 },
+            },
+            {
+              resourceId: 'energy',
+              baseCost: 10,
+              costCurve: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      }),
+    ).toThrowError(/duplicate cost resource/i);
+  });
 });
 
 describe('generatorCollectionSchema', () => {

@@ -815,7 +815,16 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       this.onError?.(error);
       return undefined;
     }
-    const baseCost = record.definition.purchase.baseCost;
+    const purchase = record.definition.purchase;
+    if ('costs' in purchase) {
+      const error = new Error(
+        `Generator cost calculation failed for "${generatorId}": multi-cost purchase definitions require computeGeneratorCosts()`,
+      );
+      this.onError?.(error);
+      return undefined;
+    }
+
+    const baseCost = purchase.baseCost;
     if (!Number.isFinite(baseCost) || baseCost < 0) {
       const error = new Error(
         `Generator cost calculation failed for "${generatorId}": baseCost is invalid (${baseCost})`,
@@ -824,7 +833,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       return undefined;
     }
     const evaluatedCost = evaluateCostFormula(
-      record.definition.purchase.costCurve,
+      purchase.costCurve,
       this.createFormulaEvaluationContext(purchaseIndex, this.lastUpdatedStep, {
         generatorLevels: { [generatorId]: purchaseIndex },
       }),
@@ -850,57 +859,162 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     return cost;
   }
 
+  computeGeneratorCosts(
+    generatorId: string,
+    purchaseIndex: number,
+  ): readonly GeneratorResourceCost[] | undefined {
+    const record = this.generators.get(generatorId);
+    if (!record) {
+      const error = new Error(
+        `Generator cost calculation failed: generator "${generatorId}" not found`,
+      );
+      this.onError?.(error);
+      return undefined;
+    }
+
+    const purchase = record.definition.purchase;
+    if (!('costs' in purchase)) {
+      const cost = this.computeGeneratorCost(generatorId, purchaseIndex);
+      if (cost === undefined) {
+        return undefined;
+      }
+      return [
+        {
+          resourceId: purchase.currencyId,
+          amount: cost,
+        },
+      ];
+    }
+
+    const upgradeEffects = this.getUpgradeEffects(this.lastUpdatedStep);
+    const multiplier = upgradeEffects.generatorCostMultipliers.get(generatorId) ?? 1;
+
+    const costs: GeneratorResourceCost[] = [];
+    for (const entry of purchase.costs) {
+      const baseCost = entry.baseCost;
+      if (!Number.isFinite(baseCost) || baseCost < 0) {
+        const error = new Error(
+          `Generator cost calculation failed for "${generatorId}" (${entry.resourceId}): baseCost is invalid (${baseCost})`,
+        );
+        this.onError?.(error);
+        return undefined;
+      }
+
+      const evaluatedCost = evaluateCostFormula(
+        entry.costCurve,
+        this.createFormulaEvaluationContext(purchaseIndex, this.lastUpdatedStep, {
+          generatorLevels: { [generatorId]: purchaseIndex },
+        }),
+      );
+      if (evaluatedCost === undefined || evaluatedCost < 0) {
+        const error = new Error(
+          `Generator cost calculation failed for "${generatorId}" (${entry.resourceId}) at purchase index ${purchaseIndex}: cost curve evaluation returned ${evaluatedCost}`,
+        );
+        this.onError?.(error);
+        return undefined;
+      }
+
+      const cost = evaluatedCost * baseCost * multiplier;
+      if (!Number.isFinite(cost) || cost < 0) {
+        const error = new Error(
+          `Generator cost calculation failed for "${generatorId}" (${entry.resourceId}) at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
+        );
+        this.onError?.(error);
+        return undefined;
+      }
+
+      costs.push({
+        resourceId: entry.resourceId,
+        amount: cost,
+      });
+    }
+
+    return costs;
+  }
+
   computeUpgradeCosts(record: UpgradeRecord): readonly UpgradeResourceCost[] | undefined {
     const costs: UpgradeResourceCost[] = [];
     const purchaseLevel = record.purchases;
     const upgradeId = record.definition.id;
 
-    const baseCost = record.definition.cost.baseCost;
-    if (!Number.isFinite(baseCost) || baseCost < 0) {
-      const error = new Error(
-        `Upgrade cost calculation failed for "${upgradeId}": baseCost is invalid (${baseCost})`,
-      );
-      this.onError?.(error);
-      return undefined;
-    }
-    const evaluatedCost = evaluateCostFormula(
-      record.definition.cost.costCurve,
-      this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
-    );
-    if (evaluatedCost === undefined || evaluatedCost < 0) {
-      const error = new Error(
-        `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: cost curve evaluation returned ${evaluatedCost}`,
-      );
-      this.onError?.(error);
-      return undefined;
-    }
-    let amount = evaluatedCost * baseCost;
     const repeatableCostCurve = record.definition.repeatable?.costCurve;
+    let repeatableAdjustment = 1;
     if (repeatableCostCurve) {
-      const repeatableAdjustment = evaluateCostFormula(
+      const evaluatedRepeatable = evaluateCostFormula(
         repeatableCostCurve,
         this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
       );
-      if (repeatableAdjustment === undefined || repeatableAdjustment < 0) {
+      if (evaluatedRepeatable === undefined || evaluatedRepeatable < 0) {
         const error = new Error(
-          `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: repeatable cost curve evaluation returned ${repeatableAdjustment}`,
+          `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: repeatable cost curve evaluation returned ${evaluatedRepeatable}`,
         );
         this.onError?.(error);
         return undefined;
       }
-      amount *= repeatableAdjustment;
+      repeatableAdjustment = evaluatedRepeatable;
     }
-    if (!Number.isFinite(amount) || amount < 0) {
-      const error = new Error(
-        `Upgrade cost calculation failed for "${upgradeId}" at purchase level ${purchaseLevel}: final amount is invalid (${amount})`,
+
+    const evaluateCostEntry = (
+      resourceId: string,
+      baseCost: number,
+      costCurve: NumericFormula,
+    ) => {
+      if (!Number.isFinite(baseCost) || baseCost < 0) {
+        const error = new Error(
+          `Upgrade cost calculation failed for "${upgradeId}" (${resourceId}): baseCost is invalid (${baseCost})`,
+        );
+        this.onError?.(error);
+        return false;
+      }
+
+      const evaluatedCost = evaluateCostFormula(
+        costCurve,
+        this.createFormulaEvaluationContext(purchaseLevel, this.lastUpdatedStep),
       );
-      this.onError?.(error);
-      return undefined;
+      if (evaluatedCost === undefined || evaluatedCost < 0) {
+        const error = new Error(
+          `Upgrade cost calculation failed for "${upgradeId}" (${resourceId}) at purchase level ${purchaseLevel}: cost curve evaluation returned ${evaluatedCost}`,
+        );
+        this.onError?.(error);
+        return false;
+      }
+
+      const amount = evaluatedCost * baseCost * repeatableAdjustment;
+      if (!Number.isFinite(amount) || amount < 0) {
+        const error = new Error(
+          `Upgrade cost calculation failed for "${upgradeId}" (${resourceId}) at purchase level ${purchaseLevel}: final amount is invalid (${amount})`,
+        );
+        this.onError?.(error);
+        return false;
+      }
+
+      costs.push({
+        resourceId,
+        amount,
+      });
+
+      return true;
+    };
+
+    const cost = record.definition.cost;
+    if ('costs' in cost) {
+      for (const entry of cost.costs) {
+        if (!evaluateCostEntry(entry.resourceId, entry.baseCost, entry.costCurve)) {
+          return undefined;
+        }
+      }
+    } else {
+      if (
+        !evaluateCostEntry(
+          cost.currencyId,
+          cost.baseCost,
+          cost.costCurve,
+        )
+      ) {
+        return undefined;
+      }
     }
-    costs.push({
-      resourceId: record.definition.cost.currencyId,
-      amount,
-    });
+
     return costs;
   }
 
@@ -1017,8 +1131,7 @@ class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
       return undefined;
     }
 
-    const currencyId = record.definition.purchase.currencyId;
-    let totalCost = 0;
+    const totalCostsByResource = new Map<string, number>();
 
     for (let offset = 0; offset < count; offset += 1) {
       const purchaseLevel = record.state.owned + offset;
@@ -1028,22 +1141,29 @@ class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
       ) {
         return undefined;
       }
-      const cost = this.coordinator.computeGeneratorCost(
-        generatorId,
-        purchaseLevel,
-      );
-      if (cost === undefined || !Number.isFinite(cost) || cost < 0) {
+
+      const costs = this.coordinator.computeGeneratorCosts(generatorId, purchaseLevel);
+      if (!costs || costs.length === 0) {
         return undefined;
       }
-      totalCost += cost;
+
+      for (const cost of costs) {
+        const previous = totalCostsByResource.get(cost.resourceId) ?? 0;
+        const updated = previous + cost.amount;
+        if (!Number.isFinite(updated) || updated < 0) {
+          return undefined;
+        }
+        totalCostsByResource.set(cost.resourceId, updated);
+      }
     }
 
-    const costs: GeneratorResourceCost[] = [
-      {
-        resourceId: currencyId,
-        amount: totalCost,
-      },
-    ];
+    const costs: GeneratorResourceCost[] = Array.from(
+      totalCostsByResource,
+      ([resourceId, amount]) => ({
+        resourceId,
+        amount,
+      }),
+    );
 
     return {
       generatorId,

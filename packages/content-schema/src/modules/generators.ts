@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 import { conditionSchema } from '../base/conditions.js';
+import {
+  costEntrySchema,
+  ensureUniqueCostEntries,
+  normalizeCostEntries,
+} from '../base/costs.js';
 import { contentIdSchema } from '../base/ids.js';
 import { localizedTextSchema } from '../base/localization.js';
 import { numericFormulaSchema } from '../base/formulas.js';
@@ -23,6 +28,8 @@ const tagSchema = z
   .transform((value) => value.toLowerCase());
 
 type ContentId = z.infer<typeof contentIdSchema>;
+type CostEntry = z.infer<typeof costEntrySchema>;
+type CostEntryInput = z.input<typeof costEntrySchema>;
 
 const productionEntrySchema = z
   .object({
@@ -63,19 +70,35 @@ const normalizeTags = (tags: readonly string[]): readonly string[] =>
     [...new Set(tags)].sort((left, right) => left.localeCompare(right)),
   );
 
-type PurchaseDefinition = {
+type SingleCurrencyPurchaseDefinition = {
   readonly currencyId: ContentId;
   readonly baseCost: number;
   readonly costCurve: z.infer<typeof numericFormulaSchema>;
   readonly maxBulk?: number;
 };
 
-type PurchaseInput = {
+type MultiCurrencyPurchaseDefinition = {
+  readonly costs: readonly CostEntry[];
+  readonly maxBulk?: number;
+};
+
+type PurchaseDefinition =
+  | SingleCurrencyPurchaseDefinition
+  | MultiCurrencyPurchaseDefinition;
+
+type SingleCurrencyPurchaseInput = {
   readonly currencyId: z.input<typeof contentIdSchema>;
   readonly baseCost: z.input<typeof nonNegativeNumberSchema>;
   readonly costCurve: z.input<typeof numericFormulaSchema>;
   readonly maxBulk?: z.input<typeof positiveIntSchema>;
 };
+
+type MultiCurrencyPurchaseInput = {
+  readonly costs: readonly CostEntryInput[];
+  readonly maxBulk?: z.input<typeof positiveIntSchema>;
+};
+
+type PurchaseInput = SingleCurrencyPurchaseInput | MultiCurrencyPurchaseInput;
 
 type GeneratorDefinitionInput = {
   readonly id: z.input<typeof contentIdSchema>;
@@ -109,7 +132,11 @@ type GeneratorDefinition = {
   readonly effects: readonly z.infer<typeof upgradeEffectSchema>[];
 };
 
-const purchaseSchema: z.ZodType<PurchaseDefinition, z.ZodTypeDef, PurchaseInput> = z
+const singleCurrencyPurchaseSchema: z.ZodType<
+  SingleCurrencyPurchaseDefinition,
+  z.ZodTypeDef,
+  SingleCurrencyPurchaseInput
+> = z
   .object({
     currencyId: contentIdSchema,
     baseCost: nonNegativeNumberSchema,
@@ -117,6 +144,29 @@ const purchaseSchema: z.ZodType<PurchaseDefinition, z.ZodTypeDef, PurchaseInput>
     maxBulk: positiveIntSchema.optional(),
   })
   .strict();
+
+const multiCurrencyPurchaseSchema: z.ZodType<
+  MultiCurrencyPurchaseDefinition,
+  z.ZodTypeDef,
+  MultiCurrencyPurchaseInput
+> = z
+  .object({
+    costs: z.array(costEntrySchema).min(1, {
+      message: 'Generators must declare at least one cost entry.',
+    }),
+    maxBulk: positiveIntSchema.optional(),
+  })
+  .strict()
+  .superRefine((purchase, ctx) => {
+    ensureUniqueCostEntries(purchase.costs, ctx, ['costs']);
+  })
+  .transform((purchase) => ({
+    ...purchase,
+    costs: normalizeCostEntries(purchase.costs),
+  }));
+
+const purchaseSchema: z.ZodType<PurchaseDefinition, z.ZodTypeDef, PurchaseInput> =
+  z.union([singleCurrencyPurchaseSchema, multiCurrencyPurchaseSchema]);
 
 const compareOrderable = (left: GeneratorDefinition, right: GeneratorDefinition) => {
   const leftOrder =

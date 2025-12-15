@@ -68,6 +68,65 @@ describe('content pack validator', () => {
     expect(() => validator.parse(invalidPack)).toThrow(ZodError);
   });
 
+  it('rejects multi-cost generator purchases that reference unknown resources', () => {
+    const invalidPack = createMinimalPack();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (invalidPack.generators[0] as any).purchase = {
+      costs: [
+        {
+          resourceId: 'resource:energy',
+          baseCost: 1,
+          costCurve: { kind: 'constant', value: 1 },
+        },
+        {
+          resourceId: 'resource:missing',
+          baseCost: 1,
+          costCurve: { kind: 'constant', value: 1 },
+        },
+      ],
+    };
+    const validator = createContentPackValidator();
+    expect(() => validator.parse(invalidPack)).toThrow(ZodError);
+  });
+
+  it('rejects multi-cost upgrade purchases that reference unknown resources', () => {
+    const invalidPack = createMinimalPack();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (invalidPack.upgrades as any) = [
+      {
+        id: 'upgrade:test',
+        name: { default: 'Test Upgrade' },
+        category: 'global' as const,
+        targets: [{ kind: 'global' }],
+        cost: {
+          costs: [
+            {
+              resourceId: 'resource:energy',
+              baseCost: 1,
+              costCurve: { kind: 'constant', value: 1 },
+            },
+            {
+              resourceId: 'resource:missing',
+              baseCost: 1,
+              costCurve: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+        effects: [
+          {
+            kind: 'modifyResourceRate',
+            resourceId: 'resource:energy',
+            operation: 'add',
+            value: { kind: 'constant', value: 1 },
+          },
+        ],
+      },
+    ];
+
+    const validator = createContentPackValidator();
+    expect(() => validator.parse(invalidPack)).toThrow(ZodError);
+  });
+
   it('rejects resource unlock conditions that reference unknown entities', () => {
     const invalidPack = createMinimalPack();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

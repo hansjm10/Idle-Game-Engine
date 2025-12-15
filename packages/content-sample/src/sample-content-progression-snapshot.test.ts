@@ -55,12 +55,19 @@ const createGeneratorEvaluator = (
       if (count !== 1) return undefined;
       const gen = byId.get(generatorId);
       if (!gen) return undefined;
-      const amount = evaluateCost(
-        gen.purchase.costCurve,
-        0,
-        gen.purchase.baseCost,
-        entities,
-      );
+
+      if ('costs' in gen.purchase) {
+        const costs = gen.purchase.costs.map((cost) => ({
+          resourceId: cost.resourceId,
+          amount: evaluateCost(cost.costCurve, 0, cost.baseCost, entities),
+        }));
+        return {
+          generatorId,
+          costs,
+        };
+      }
+
+      const amount = evaluateCost(gen.purchase.costCurve, 0, gen.purchase.baseCost, entities);
       return {
         generatorId,
         costs: [{ resourceId: gen.purchase.currencyId, amount }],
@@ -81,6 +88,19 @@ const createUpgradeEvaluator = (
     getPurchaseQuote(upgradeId: string): UpgradePurchaseQuote | undefined {
       const up = byId.get(upgradeId);
       if (!up) return undefined;
+
+      if ('costs' in up.cost) {
+        const costs = up.cost.costs.map((cost) => ({
+          resourceId: cost.resourceId,
+          amount: evaluateCost(cost.costCurve, 0, cost.baseCost, entities),
+        }));
+        return {
+          upgradeId,
+          status: 'available',
+          costs,
+        };
+      }
+
       const amount = evaluateCost(up.cost.costCurve, 0, up.cost.baseCost, entities);
       return {
         upgradeId,

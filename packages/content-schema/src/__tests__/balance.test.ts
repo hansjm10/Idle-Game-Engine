@@ -142,6 +142,45 @@ describe('balance validation', () => {
     );
   });
 
+  it('accepts monotone, non-negative multi-cost curves across sampled purchases', () => {
+    const pack = createBasePack();
+    pack.resources.push({
+      id: 'resource:crystal',
+      name: { default: 'Crystal' },
+      category: 'primary' as const,
+      tier: 1,
+      unlocked: true,
+    });
+
+    pack.generators.push({
+      id: 'generator:multi-cost',
+      name: { default: 'Multi Cost Generator' },
+      produces: [
+        { resourceId: 'resource:primary', rate: { kind: 'constant', value: 1 } },
+      ],
+      consumes: [],
+      purchase: {
+        costs: [
+          {
+            resourceId: 'resource:currency',
+            baseCost: 1,
+            costCurve: { kind: 'constant', value: 1 },
+          },
+          {
+            resourceId: 'resource:crystal',
+            baseCost: 2,
+            costCurve: { kind: 'constant', value: 1 },
+          },
+        ],
+      },
+      baseUnlock: { kind: 'always' as const },
+    });
+
+    const validator = createValidator({ sampleSize: 8, maxGrowth: 20 });
+    const result = validator.parse(pack);
+    expect(result.balanceErrors).toHaveLength(0);
+  });
+
   it('flags decreasing costs as balance errors', async () => {
     await fc.assert(
       fc.property(

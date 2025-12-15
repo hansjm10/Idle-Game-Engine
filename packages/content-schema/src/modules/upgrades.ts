@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 import { conditionSchema, type Condition } from '../base/conditions.js';
+import {
+  costEntrySchema,
+  ensureUniqueCostEntries,
+  normalizeCostEntries,
+} from '../base/costs.js';
 import { contentIdSchema, flagIdSchema } from '../base/ids.js';
 import { localizedTextSchema } from '../base/localization.js';
 import { numericFormulaSchema } from '../base/formulas.js';
@@ -10,6 +15,8 @@ type ContentId = z.infer<typeof contentIdSchema>;
 type ContentIdInput = z.input<typeof contentIdSchema>;
 type NumericFormula = z.infer<typeof numericFormulaSchema>;
 type NumericFormulaInput = z.input<typeof numericFormulaSchema>;
+type CostEntry = z.infer<typeof costEntrySchema>;
+type CostEntryInput = z.input<typeof costEntrySchema>;
 type FlagId = z.infer<typeof flagIdSchema>;
 type FlagIdInput = z.input<typeof flagIdSchema>;
 type ConditionInput = z.input<typeof conditionSchema>;
@@ -67,7 +74,37 @@ const upgradeTargetSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
-const costSchema = z
+type SingleCurrencyCost = {
+  readonly currencyId: ContentId;
+  readonly baseCost: number;
+  readonly costCurve: NumericFormula;
+  readonly maxBulk?: number;
+};
+
+type MultiCurrencyCost = {
+  readonly costs: readonly CostEntry[];
+  readonly maxBulk?: number;
+};
+
+type SingleCurrencyCostInput = {
+  readonly currencyId: ContentIdInput;
+  readonly baseCost: z.input<typeof nonNegativeNumberSchema>;
+  readonly costCurve: NumericFormulaInput;
+  readonly maxBulk?: z.input<typeof positiveIntSchema>;
+};
+
+type MultiCurrencyCostInput = {
+  readonly costs: readonly CostEntryInput[];
+  readonly maxBulk?: z.input<typeof positiveIntSchema>;
+};
+
+type CostInput = SingleCurrencyCostInput | MultiCurrencyCostInput;
+
+const singleCurrencyCostSchema: z.ZodType<
+  SingleCurrencyCost,
+  z.ZodTypeDef,
+  SingleCurrencyCostInput
+> = z
   .object({
     currencyId: contentIdSchema,
     baseCost: nonNegativeNumberSchema,
@@ -75,6 +112,32 @@ const costSchema = z
     maxBulk: positiveIntSchema.optional(),
   })
   .strict();
+
+const multiCurrencyCostSchema: z.ZodType<
+  MultiCurrencyCost,
+  z.ZodTypeDef,
+  MultiCurrencyCostInput
+> = z
+  .object({
+    costs: z.array(costEntrySchema).min(1, {
+      message: 'Upgrades must declare at least one cost entry.',
+    }),
+    maxBulk: positiveIntSchema.optional(),
+  })
+  .strict()
+  .superRefine((cost, ctx) => {
+    ensureUniqueCostEntries(cost.costs, ctx, ['costs']);
+  })
+  .transform((cost) => ({
+    ...cost,
+    costs: normalizeCostEntries(cost.costs),
+  }));
+
+const costSchema: z.ZodType<
+  SingleCurrencyCost | MultiCurrencyCost,
+  z.ZodTypeDef,
+  CostInput
+> = z.union([singleCurrencyCostSchema, multiCurrencyCostSchema]);
 
 type UpgradeEffect =
   | {

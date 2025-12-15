@@ -105,6 +105,7 @@ export function createResource(input: ResourceInput): Resource {
  *   name: { default: 'Solar Panel' },
  *   produces: [{ resourceId: 'my-pack.energy', rate: { kind: 'constant', value: 1 } }],
  *   purchase: { currencyId: 'my-pack.gold', baseCost: 10, costCurve: { kind: 'constant', value: 1 } },
+ *   // Or: purchase: { costs: [{ resourceId: 'my-pack.gold', baseCost: 10, costCurve: { kind: 'constant', value: 1 } }] },
  *   baseUnlock: { kind: 'always' },
  * });
  * ```
@@ -124,6 +125,7 @@ export function createGenerator(input: GeneratorInput): Generator {
  *   category: 'generator',
  *   targets: [{ kind: 'generator', id: 'my-pack.solar-panel' }],
  *   cost: { currencyId: 'my-pack.gold', baseCost: 100, costCurve: { kind: 'constant', value: 1 } },
+ *   // Or: cost: { costs: [{ resourceId: 'my-pack.gold', baseCost: 100, costCurve: { kind: 'constant', value: 1 } }] },
  *   effects: [{ kind: 'modifyGeneratorRate', generatorId: 'my-pack.solar-panel', operation: 'multiply', value: { kind: 'constant', value: 1.5 } }],
  * });
  * ```
