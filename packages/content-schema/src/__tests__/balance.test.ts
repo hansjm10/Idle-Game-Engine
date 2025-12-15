@@ -171,4 +171,62 @@ describe('balance validation', () => {
       { ...propertyConfig, seed: 422001 },
     );
   });
+
+  it('treats generatorLevel gating on a producer as satisfying unlock ordering', () => {
+    const pack = createBasePack();
+    pack.resources.push({
+      id: 'resource:fuel',
+      name: { default: 'Fuel' },
+      category: 'primary' as const,
+      tier: 1,
+      unlocked: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource:primary',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 1 },
+      },
+    });
+
+    pack.generators.push({
+      id: 'generator:fuel-pump',
+      name: { default: 'Fuel Pump' },
+      produces: [
+        { resourceId: 'resource:fuel', rate: { kind: 'constant', value: 1 } },
+      ],
+      consumes: [],
+      purchase: {
+        currencyId: 'resource:currency',
+        baseCost: 1,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      baseUnlock: { kind: 'always' as const },
+    });
+
+    pack.generators.push({
+      id: 'generator:burner',
+      name: { default: 'Burner' },
+      produces: [
+        { resourceId: 'resource:primary', rate: { kind: 'constant', value: 1 } },
+      ],
+      consumes: [],
+      purchase: {
+        currencyId: 'resource:fuel',
+        baseCost: 1,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      baseUnlock: {
+        kind: 'generatorLevel',
+        generatorId: 'generator:fuel-pump',
+        comparator: 'gte',
+        level: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const validator = createValidator();
+    const result = validator.parse(pack);
+    expect(
+      result.balanceWarnings.some((warning) => warning.code === 'balance.unlock.ordering'),
+    ).toBe(false);
+  });
 });
