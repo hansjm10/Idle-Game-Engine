@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Runtime Automation Execution System Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/automation-execution-system-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Runtime Automation Execution System Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/automation-execution-system-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/automation-execution-system-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/automation-execution-system-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.3d9a9f80.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.b1c60334.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f7253bbf.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -130,7 +130,7 @@
 <li class="">System lifecycle: <code>setup(context)</code> for event subscriptions, <code>tick(context)</code> for per-step execution</li>
 <li class="">Fixed-step tick loop with deterministic command dispatch</li>
 </ul>
-<p><strong>Progression Coordinator</strong> (<code>packages/shell-web/src/modules/progression-coordinator.ts:1-100</code>):</p>
+<p><strong>Progression Coordinator</strong> (<code>packages/core/src/progression-coordinator.ts</code>):</p>
 <ul>
 <li class="">Manages resource, generator, upgrade state</li>
 <li class="">Provides purchase evaluators for cost calculations</li>
@@ -247,7 +247,7 @@
 <li class="">This design document (all sections)</li>
 <li class=""><code>packages/content-schema/src/modules/automations.ts</code> (schema reference)</li>
 <li class=""><code>packages/core/src/index.ts</code> (system registration pattern)</li>
-<li class=""><code>packages/shell-web/src/modules/progression-coordinator.ts</code> (state management pattern)</li>
+<li class=""><code>packages/core/src/progression-coordinator.ts</code> (state management pattern)</li>
 </ul>
 <p><strong>Communication Cadence</strong>:</p>
 <ul>
@@ -263,7 +263,7 @@
 <li class=""><code>packages/core/src/index.ts</code> (runtime architecture)</li>
 <li class=""><code>packages/core/src/command.ts</code> (command priority definitions)</li>
 <li class=""><code>packages/core/src/events/runtime-event-catalog.ts</code> (event definitions)</li>
-<li class=""><code>packages/shell-web/src/modules/progression-coordinator.ts</code> (state management patterns)</li>
+<li class=""><code>packages/core/src/progression-coordinator.ts</code> (state management patterns)</li>
 <li class=""><code>docs/runtime-command-queue-design.md</code> (command queue design)</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="prompting--constraints">Prompting &amp; Constraints<a href="#prompting--constraints" class="hash-link" aria-label="Direct link to Prompting &amp; Constraints" title="Direct link to Prompting &amp; Constraints" translate="no">​</a></h3>

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Build Resource/Generator/Upgrade UI Components | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Build Resource/Generator/Upgrade UI Components | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/build-resource-generator-upgrade-ui-components-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.3d9a9f80.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.b1c60334.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f7253bbf.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -78,7 +78,7 @@
 <p>Upgrades in the snapshot illustration use placeholder IDs; update them once <code>packages/content-sample</code> adds real upgrade definitions alongside the generator content. The example covers locked, available, and purchased states so UI consumers can map every variant.</p>
 <h4 class="anchor anchorTargetStickyNavbar_EdDC" id="cost-calculation-formulas-existing-implementation">Cost Calculation Formulas (Existing Implementation)<a href="#cost-calculation-formulas-existing-implementation" class="hash-link" aria-label="Direct link to Cost Calculation Formulas (Existing Implementation)" title="Direct link to Cost Calculation Formulas (Existing Implementation)" translate="no">​</a></h4>
 <blockquote>
-<p><strong>Note</strong>: This subsection documents the <strong>existing cost calculation implementation</strong> as shipped in PR #303 (<code>packages/shell-web/src/modules/progression-coordinator.ts:395-456</code>). This is retroactive documentation of production code.</p>
+<p><strong>Note</strong>: This subsection documents the <strong>existing cost calculation implementation</strong> as shipped in PR #303 (<code>packages/core/src/progression-coordinator.ts</code>). This is retroactive documentation of production code.</p>
 </blockquote>
 <p><strong>Generator Costs</strong>:</p>
 <p>Generator purchase costs scale with the number already owned. The cost for purchasing a generator at a specific level is calculated as:</p>
@@ -109,13 +109,13 @@
 <div class="language-text codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-text codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">100 × (1 + 0.1×3) × 1.2^3 = 100 × 1.3 × 1.728 = 224.64</span><br></span></code></pre></div></div>
 <p><strong>Repeatable Upgrade Status</strong>:</p>
 <p>Repeatable upgrades remain <code>status: &#x27;available&#x27;</code> after purchase as long as <code>purchases &lt; maxPurchases</code>. If <code>maxPurchases</code> is undefined or <code>Infinity</code>, the upgrade stays perpetually available. This allows upgrades to be purchased multiple times with escalating costs.</p>
-<p>Tested in <code>packages/shell-web/src/modules/progression-coordinator.test.ts:203-260</code>.</p>
+<p>Tested in <code>packages/core/src/progression-coordinator.test.ts</code>.</p>
 <p><strong>Implementation Reference</strong>:</p>
 <ul>
-<li class="">Generator cost calculation: <code>packages/shell-web/src/modules/progression-coordinator.ts:395-419</code></li>
-<li class="">Upgrade cost calculation: <code>packages/shell-web/src/modules/progression-coordinator.ts:421-456</code></li>
-<li class="">Bulk purchase accumulation: <code>packages/shell-web/src/modules/progression-coordinator.ts:520-536</code></li>
-<li class="">Repeatable upgrade test: <code>packages/shell-web/src/modules/progression-coordinator.test.ts:203-260</code></li>
+<li class="">Generator cost calculation: <code>packages/core/src/progression-coordinator.ts</code></li>
+<li class="">Upgrade cost calculation: <code>packages/core/src/progression-coordinator.ts</code></li>
+<li class="">Bulk purchase accumulation: <code>packages/core/src/progression-coordinator.ts</code></li>
+<li class="">Repeatable upgrade test: <code>packages/core/src/progression-coordinator.test.ts</code></li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_EdDC" id="example-snapshot--command-flow-1">Example Snapshot &amp; Command Flow<a href="#example-snapshot--command-flow-1" class="hash-link" aria-label="Direct link to Example Snapshot &amp; Command Flow" title="Direct link to Example Snapshot &amp; Command Flow" translate="no">​</a></h4>
 <ol>
