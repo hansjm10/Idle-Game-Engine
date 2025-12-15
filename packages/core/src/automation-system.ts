@@ -27,7 +27,10 @@
  * ```
  */
 
-import type { AutomationDefinition } from '@idle-engine/content-schema';
+import type {
+  AutomationDefinition,
+  FormulaEvaluationContext,
+} from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 import type { CommandQueue } from './command-queue.js';
@@ -37,6 +40,63 @@ import type { ConditionContext } from './condition-evaluator.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
 import { mapSystemTargetToCommandType } from './system-automation-target-mapping.js';
+
+const STATIC_AUTOMATION_FORMULA_LEVEL = 0;
+
+const createAutomationFormulaEvaluationContext = (options: {
+  readonly currentStep?: number;
+  readonly stepDurationMs?: number;
+  readonly resourceState?: ResourceStateAccessor;
+  readonly conditionContext?: ConditionContext;
+}): FormulaEvaluationContext => {
+  const currentStep =
+    typeof options.currentStep === 'number' && Number.isFinite(options.currentStep)
+      ? options.currentStep
+      : 0;
+  const stepDurationMs =
+    typeof options.stepDurationMs === 'number' &&
+    Number.isFinite(options.stepDurationMs)
+      ? options.stepDurationMs
+      : 0;
+  const deltaTime = stepDurationMs / 1000;
+  const time = currentStep * deltaTime;
+
+  const conditionContext = options.conditionContext;
+  const resourceState = options.resourceState;
+
+  const resolveResourceAmount = (resourceId: string): number => {
+    if (conditionContext) {
+      return conditionContext.getResourceAmount(resourceId);
+    }
+
+    if (resourceState?.getResourceIndex) {
+      const idx = resourceState.getResourceIndex(resourceId);
+      return idx === -1 ? 0 : resourceState.getAmount(idx);
+    }
+
+    if (resourceState) {
+      return resourceState.getAmount(0);
+    }
+
+    return 0;
+  };
+
+  return {
+    variables: {
+      level: STATIC_AUTOMATION_FORMULA_LEVEL,
+      time,
+      deltaTime,
+    },
+    entities: {
+      resource: resolveResourceAmount,
+      generator: (generatorId) =>
+        conditionContext?.getGeneratorLevel(generatorId) ?? 0,
+      upgrade: (upgradeId) => conditionContext?.getUpgradePurchases(upgradeId) ?? 0,
+      automation: () => 0,
+      prestigeLayer: () => 0,
+    },
+  };
+};
 
 /**
  * Internal state for a single automation.
@@ -260,6 +320,13 @@ export function createAutomationSystem(
     },
 
     tick({ step }) {
+      const formulaContext = createAutomationFormulaEvaluationContext({
+        currentStep: step,
+        stepDurationMs,
+        resourceState,
+        conditionContext,
+      });
+
       // Collect event triggers to retain across ticks on failed spend
       const retainedEventTriggers = new Set<string>();
 
@@ -301,7 +368,11 @@ export function createAutomationSystem(
           // back above, the "false" state is preserved, allowing the crossing
           // to be detected when cooldown expires.
           if (automation.trigger.kind === 'resourceThreshold') {
-            const currentlySatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+            const currentlySatisfied = evaluateResourceThresholdTrigger(
+              automation,
+              resourceState,
+              formulaContext,
+            );
             if (!currentlySatisfied) {
               state.lastThresholdSatisfied = currentlySatisfied;
             }
@@ -315,11 +386,21 @@ export function createAutomationSystem(
         let currentThresholdSatisfied = false;
         switch (automation.trigger.kind) {
           case 'interval':
-            triggered = evaluateIntervalTrigger(automation, state, step, stepDurationMs);
+            triggered = evaluateIntervalTrigger(
+              automation,
+              state,
+              step,
+              stepDurationMs,
+              formulaContext,
+            );
             break;
           case 'resourceThreshold': {
             // Detect threshold crossings instead of continuous firing
-            currentThresholdSatisfied = evaluateResourceThresholdTrigger(automation, resourceState);
+            currentThresholdSatisfied = evaluateResourceThresholdTrigger(
+              automation,
+              resourceState,
+              formulaContext,
+            );
             const previouslySatisfied = state.lastThresholdSatisfied ?? false;
 
             // Fire only on transition from false -> true (crossing event)
@@ -347,7 +428,7 @@ export function createAutomationSystem(
         // Enforce optional resource cost atomically before enqueue
         if (automation.resourceCost) {
           const cost = automation.resourceCost;
-          const amountRaw = evaluateNumericFormula(cost.rate, { variables: { level: 0 } });
+          const amountRaw = evaluateNumericFormula(cost.rate, formulaContext);
           if (!Number.isFinite(amountRaw)) {
             // Reject NaN/Infinity: treat as failed spend
             if (automation.trigger.kind === 'event') {
@@ -379,7 +460,13 @@ export function createAutomationSystem(
         }
 
         // Enqueue command
-        enqueueAutomationCommand(automation, commandQueue, step, stepDurationMs);
+        enqueueAutomationCommand(
+          automation,
+          commandQueue,
+          step,
+          stepDurationMs,
+          formulaContext,
+        );
 
         // Update state
         state.lastFiredStep = step;
@@ -510,6 +597,7 @@ export function evaluateIntervalTrigger(
   state: AutomationState,
   currentStep: number,
   stepDurationMs: number,
+  formulaContext?: FormulaEvaluationContext,
 ): boolean {
   if (automation.trigger.kind !== 'interval') {
     throw new Error('Expected interval trigger');
@@ -521,9 +609,14 @@ export function evaluateIntervalTrigger(
   }
 
   // Calculate interval in steps
-  const intervalMs = evaluateNumericFormula(automation.trigger.interval, {
-    variables: { level: 0 }, // Static evaluation
-  });
+  const intervalMs = evaluateNumericFormula(
+    automation.trigger.interval,
+    formulaContext ??
+      createAutomationFormulaEvaluationContext({
+        currentStep,
+        stepDurationMs,
+      }),
+  );
   const intervalSteps = Math.ceil(intervalMs / stepDurationMs);
 
   // Check if enough steps have elapsed
@@ -638,6 +731,7 @@ export type ResourceStateReader = ResourceStateAccessor;
 export function evaluateResourceThresholdTrigger(
   automation: AutomationDefinition,
   resourceState: ResourceStateAccessor,
+  formulaContext?: FormulaEvaluationContext,
 ): boolean {
   if (automation.trigger.kind !== 'resourceThreshold') {
     throw new Error('Expected resourceThreshold trigger');
@@ -665,9 +759,13 @@ export function evaluateResourceThresholdTrigger(
   }
 
   // Evaluate threshold formula
-  const thresholdValue = evaluateNumericFormula(threshold, {
-    variables: { level: 0 }, // Static evaluation
-  });
+  const thresholdValue = evaluateNumericFormula(
+    threshold,
+    formulaContext ??
+      createAutomationFormulaEvaluationContext({
+        resourceState,
+      }),
+  );
 
   // Compare resource amount to threshold
   switch (comparator) {
@@ -721,8 +819,16 @@ export function enqueueAutomationCommand(
   commandQueue: CommandQueue,
   currentStep: number,
   stepDurationMs: number,
+  formulaContext?: FormulaEvaluationContext,
 ): void {
   const { targetType, targetId, systemTargetId } = automation;
+
+  const evaluationContext =
+    formulaContext ??
+    createAutomationFormulaEvaluationContext({
+      currentStep,
+      stepDurationMs,
+    });
 
   let commandType: string;
   let payload: unknown;
@@ -739,9 +845,7 @@ export function enqueueAutomationCommand(
   } else if (targetType === 'purchaseGenerator') {
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR;
     const rawCount = automation.targetCount
-      ? evaluateNumericFormula(automation.targetCount, {
-          variables: { level: 0 },
-        })
+      ? evaluateNumericFormula(automation.targetCount, evaluationContext)
       : 1;
     const count = Number.isFinite(rawCount)
       ? Math.max(1, Math.floor(rawCount))
@@ -750,9 +854,7 @@ export function enqueueAutomationCommand(
   } else if (targetType === 'collectResource') {
     commandType = RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE;
     const rawAmount = automation.targetAmount
-      ? evaluateNumericFormula(automation.targetAmount, {
-          variables: { level: 0 },
-        })
+      ? evaluateNumericFormula(automation.targetAmount, evaluationContext)
       : 1;
     const amount =
       Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 0;

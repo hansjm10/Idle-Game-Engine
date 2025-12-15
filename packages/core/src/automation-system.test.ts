@@ -46,7 +46,7 @@ describe('AutomationSystem', () => {
           description: { default: 'Collects automatically', variants: {} },
           targetType: 'generator',
           targetId: 'gen:clicks' as any,
-          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
           order: 0,
@@ -1974,6 +1974,75 @@ describe('AutomationSystem', () => {
       expect(commands.length).toBe(1);
       const command = commands[0];
       expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+    });
+
+    it('should evaluate targetCount formulas against entities when enqueuing commands', () => {
+      const gold = 2.2;
+      const clicksLevel = 3;
+      const upgradePurchases = 4;
+
+      const conditionContext = {
+        getResourceAmount: (resourceId: string) =>
+          resourceId === 'res:gold' ? gold : 0,
+        getGeneratorLevel: (generatorId: string) =>
+          generatorId === 'gen:clicks' ? clicksLevel : 0,
+        getUpgradePurchases: (upgradeId: string) =>
+          upgradeId === 'upg:auto' ? upgradePurchases : 0,
+      };
+
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:buyer' as any,
+          name: { default: 'Auto Buyer', variants: {} },
+          description: { default: 'Buys based on formulas', variants: {} },
+          targetType: 'purchaseGenerator',
+          targetId: 'gen:clicks' as any,
+          targetCount: {
+            kind: 'expression',
+            expression: {
+              kind: 'binary',
+              op: 'add',
+              left: {
+                kind: 'binary',
+                op: 'add',
+                left: { kind: 'ref', target: { type: 'resource', id: 'res:gold' as any } },
+                right: { kind: 'ref', target: { type: 'generator', id: 'gen:clicks' as any } },
+              },
+              right: {
+                kind: 'binary',
+                op: 'add',
+                left: { kind: 'ref', target: { type: 'upgrade', id: 'upg:auto' as any } },
+                right: { kind: 'ref', target: { type: 'automation', id: 'auto:buyer' as any } },
+              },
+            },
+          },
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+        conditionContext,
+      });
+
+      runtime.addSystem(system);
+      runtime.tick(stepDurationMs);
+
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR);
+      expect(commands[0]?.payload).toEqual({
+        generatorId: 'gen:clicks',
+        count: 9, // floor(2.2 + 3 + 4 + 0)
+      });
     });
 
     it('should respect enabled flag', () => {
