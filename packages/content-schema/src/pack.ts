@@ -1428,6 +1428,22 @@ const validateCrossReferences = (
         `Prestige layer "${layer.id}" resets unknown resource "${target}".`,
       );
     });
+    layer.resetGenerators?.forEach((target, targetIndex) => {
+      ensureContentReference(
+        generatorIndex,
+        target,
+        ['prestigeLayers', index, 'resetGenerators', targetIndex],
+        `Prestige layer "${layer.id}" resets unknown generator "${target}".`,
+      );
+    });
+    layer.resetUpgrades?.forEach((target, targetIndex) => {
+      ensureContentReference(
+        upgradeIndex,
+        target,
+        ['prestigeLayers', index, 'resetUpgrades', targetIndex],
+        `Prestige layer "${layer.id}" resets unknown upgrade "${target}".`,
+      );
+    });
     ensureContentReference(
       resourceIndex,
       layer.reward.resourceId,
@@ -1449,6 +1465,13 @@ const validateCrossReferences = (
           entry.resourceId,
           ['prestigeLayers', index, 'retention', retentionIndex, 'resourceId'],
           `Prestige layer "${layer.id}" retains unknown resource "${entry.resourceId}".`,
+        );
+      } else if (entry.kind === 'generator') {
+        ensureContentReference(
+          generatorIndex,
+          entry.generatorId,
+          ['prestigeLayers', index, 'retention', retentionIndex, 'generatorId'],
+          `Prestige layer "${layer.id}" retains unknown generator "${entry.generatorId}".`,
         );
       } else if (entry.kind === 'upgrade') {
         ensureContentReference(

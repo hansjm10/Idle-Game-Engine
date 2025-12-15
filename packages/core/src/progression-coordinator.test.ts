@@ -2044,6 +2044,107 @@ describe('Integration: prestige system applyPrestige', () => {
     expect(postPrestigeEnergy).toBe(100);
   });
 
+  it('resets generators and upgrades when configured, respecting retention', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const generatorReset = createGeneratorDefinition('generator.reset-me', {
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const generatorRetained = createGeneratorDefinition('generator.keep-me', {
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const upgradeReset = createUpgradeDefinition('upgrade.reset-me', {
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [],
+    });
+
+    const upgradeRetained = createUpgradeDefinition('upgrade.keep-me', {
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [],
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      resetGenerators: ['generator.reset-me', 'generator.keep-me'],
+      resetUpgrades: ['upgrade.reset-me', 'upgrade.keep-me'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      retention: [
+        { kind: 'generator', generatorId: 'generator.keep-me' },
+        { kind: 'upgrade', upgradeId: 'upgrade.keep-me' },
+      ],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, prestigeFlux, prestigeCount],
+        generators: [generatorReset, generatorRetained],
+        upgrades: [upgradeReset, upgradeRetained],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+    }) as unknown as {
+      generatorEvaluator: { applyPurchase(id: string, count: number): void };
+      upgradeEvaluator?: { applyPurchase(id: string): void };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(id: string): { state: { owned: number; enabled: boolean } } | undefined;
+      getUpgradeRecord(id: string): { purchases: number } | undefined;
+      setGeneratorEnabled(id: string, enabled: boolean): boolean;
+    };
+
+    coordinator.generatorEvaluator.applyPurchase('generator.reset-me', 3);
+    coordinator.generatorEvaluator.applyPurchase('generator.keep-me', 2);
+    coordinator.upgradeEvaluator?.applyPurchase('upgrade.reset-me');
+    coordinator.upgradeEvaluator?.applyPurchase('upgrade.keep-me');
+    coordinator.setGeneratorEnabled('generator.reset-me', false);
+    coordinator.setGeneratorEnabled('generator.keep-me', false);
+
+    coordinator.prestigeEvaluator?.applyPrestige('prestige.ascension', 'token-reset');
+
+    expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.owned).toBe(0);
+    expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.enabled).toBe(true);
+    expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.owned).toBe(2);
+    expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.enabled).toBe(false);
+
+    expect(coordinator.getUpgradeRecord('upgrade.reset-me')?.purchases).toBe(0);
+    expect(coordinator.getUpgradeRecord('upgrade.keep-me')?.purchases).toBe(1);
+  });
+
   it('retention formulas can reference multiple resources', () => {
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',

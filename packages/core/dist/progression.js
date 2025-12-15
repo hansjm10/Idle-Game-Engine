@@ -220,6 +220,8 @@ function createPrestigeLayerViews(prestigeLayers, evaluator) {
             isVisible: Boolean(layer.isVisible),
             rewardPreview: quote?.reward,
             resetTargets: quote?.resetTargets ?? EMPTY_ARRAY,
+            resetGenerators: quote?.resetGenerators,
+            resetUpgrades: quote?.resetUpgrades,
             retainedTargets: quote?.retainedTargets ?? EMPTY_ARRAY,
         });
         views.push(view);

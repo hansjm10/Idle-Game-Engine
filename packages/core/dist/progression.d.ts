@@ -60,6 +60,8 @@ export type PrestigeLayerView = Readonly<{
     isVisible: boolean;
     rewardPreview?: PrestigeRewardPreview;
     resetTargets: readonly string[];
+    resetGenerators?: readonly string[];
+    resetUpgrades?: readonly string[];
     retainedTargets: readonly string[];
 }>;
 /**
@@ -71,6 +73,8 @@ export interface PrestigeQuote {
     readonly status: 'locked' | 'available' | 'completed';
     readonly reward: PrestigeRewardPreview;
     readonly resetTargets: readonly string[];
+    readonly resetGenerators?: readonly string[];
+    readonly resetUpgrades?: readonly string[];
     readonly retainedTargets: readonly string[];
 }
 /**

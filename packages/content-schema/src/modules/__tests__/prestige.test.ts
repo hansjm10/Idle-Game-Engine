@@ -35,6 +35,28 @@ describe('prestigeLayerSchema', () => {
       }),
     ).toThrowError(/must reset at least one resource/i);
   });
+
+  it('normalizes generator and upgrade reset lists', () => {
+    const layer = prestigeLayerSchema.parse({
+      ...baseLayer,
+      resetGenerators: ['Generator.Alpha', 'generator.alpha'],
+      resetUpgrades: ['Upgrade.One', 'upgrade.one'],
+    });
+
+    expect(layer.resetGenerators).toEqual(['generator.alpha']);
+    expect(layer.resetUpgrades).toEqual(['upgrade.one']);
+  });
+
+  it('accepts generator retention entries', () => {
+    const layer = prestigeLayerSchema.parse({
+      ...baseLayer,
+      retention: [{ kind: 'generator', generatorId: 'generator.alpha' }],
+    });
+
+    expect(layer.retention).toEqual([
+      { kind: 'generator', generatorId: 'generator.alpha' },
+    ]);
+  });
 });
 
 describe('prestigeCollectionSchema', () => {

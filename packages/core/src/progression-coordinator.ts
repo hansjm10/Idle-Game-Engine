@@ -1414,6 +1414,8 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       status,
       reward,
       resetTargets: record.definition.resetTargets,
+      resetGenerators: record.definition.resetGenerators,
+      resetUpgrades: record.definition.resetUpgrades,
       retainedTargets: this.computeRetainedTargets(record),
     };
   }
@@ -1468,9 +1470,15 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     // Collect retained resource IDs to skip during reset
     const retainedResourceIds = new Set<string>();
+    const retainedGeneratorIds = new Set<string>();
+    const retainedUpgradeIds = new Set<string>();
     for (const entry of retention) {
       if (entry.kind === 'resource') {
         retainedResourceIds.add(entry.resourceId);
+      } else if (entry.kind === 'generator') {
+        retainedGeneratorIds.add(entry.generatorId);
+      } else if (entry.kind === 'upgrade') {
+        retainedUpgradeIds.add(entry.upgradeId);
       }
     }
 
@@ -1524,6 +1532,46 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       retentionTargets,
     });
 
+    const resetStep = this.coordinator.getLastUpdatedStep();
+
+    // Reset generators (owned + enabled) unless explicitly retained.
+    for (const generatorId of record.definition.resetGenerators ?? []) {
+      if (retainedGeneratorIds.has(generatorId)) {
+        continue;
+      }
+
+      const generatorRecord = this.coordinator.getGeneratorRecord(generatorId);
+      if (!generatorRecord) {
+        telemetry.recordWarning('PrestigeResetGeneratorSkipped', {
+          layerId,
+          generatorId,
+        });
+        continue;
+      }
+
+      generatorRecord.state.owned = 0;
+      generatorRecord.state.enabled = true;
+      generatorRecord.state.nextPurchaseReadyAtStep = resetStep + 1;
+    }
+
+    // Reset upgrade purchases unless explicitly retained.
+    for (const upgradeId of record.definition.resetUpgrades ?? []) {
+      if (retainedUpgradeIds.has(upgradeId)) {
+        continue;
+      }
+
+      const upgradeRecord = this.coordinator.getUpgradeRecord(upgradeId);
+      if (!upgradeRecord) {
+        telemetry.recordWarning('PrestigeResetUpgradeSkipped', {
+          layerId,
+          upgradeId,
+        });
+        continue;
+      }
+
+      this.coordinator.setUpgradePurchases(upgradeId, 0);
+    }
+
     // Increment prestige counter if resource exists
     const countIndex = resourceState.getIndex(prestigeCountId);
     if (countIndex !== undefined) {
@@ -1570,6 +1618,8 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     for (const entry of retention) {
       if (entry.kind === 'resource') {
         retained.push(entry.resourceId);
+      } else if (entry.kind === 'generator') {
+        retained.push(entry.generatorId);
       } else if (entry.kind === 'upgrade') {
         retained.push(entry.upgradeId);
       }
