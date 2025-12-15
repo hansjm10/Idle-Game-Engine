@@ -693,7 +693,7 @@ export function evaluateResourceThresholdTrigger(
  * enqueues it to the command queue at AUTOMATION priority. Supports three
  * target types:
  * - generator: Enqueues TOGGLE_GENERATOR command with enabled: true
- * - upgrade: Enqueues PURCHASE_UPGRADE command (quantity 1)
+ * - upgrade: Enqueues PURCHASE_UPGRADE command (one purchase)
  * - system: Enqueues system command with the systemTargetId
  *
  * The command is scheduled to execute on the next step (currentStep + 1).
@@ -733,7 +733,7 @@ export function enqueueAutomationCommand(
     payload = { generatorId: targetId, enabled: true };
   } else if (targetType === 'upgrade') {
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
-    payload = { upgradeId: targetId, quantity: 1 };
+    payload = { upgradeId: targetId };
   } else if (targetType === 'system') {
     commandType = mapSystemTargetToCommandType(
       systemTargetId ?? 'system:unknown',

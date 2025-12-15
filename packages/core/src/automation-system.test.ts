@@ -1795,7 +1795,7 @@ describe('AutomationSystem', () => {
       const command = commands[0];
       expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE);
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
-      expect(command?.payload).toEqual({ upgradeId: 'upg:doubler', quantity: 1 });
+      expect(command?.payload).toEqual({ upgradeId: 'upg:doubler' });
     });
 
     it('should enqueue system command with mapped command type', () => {

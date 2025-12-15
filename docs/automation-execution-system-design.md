@@ -322,10 +322,10 @@ function enqueueAutomationCommand(
 
   if (targetType === 'generator') {
     commandType = RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR;
-    payload = { generatorId: targetId };
+    payload = { generatorId: targetId, enabled: true };
   } else if (targetType === 'upgrade') {
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
-    payload = { upgradeId: targetId, quantity: 1 };
+    payload = { upgradeId: targetId };
   } else if (targetType === 'system') {
     // System automations require custom handling
     commandType = systemTargetId; // e.g., 'system:prestige'

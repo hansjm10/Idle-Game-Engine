@@ -549,7 +549,7 @@ function enqueueAutomationCommand(
 | Target Type | Command Type | Payload |
 |-------------|--------------|---------|
 | `generator` | `TOGGLE_GENERATOR` | `{ generatorId: targetId, enabled: true }` |
-| `upgrade` | `PURCHASE_UPGRADE` | `{ upgradeId: targetId, quantity: 1 }` |
+| `upgrade` | `PURCHASE_UPGRADE` | `{ upgradeId: targetId }` |
 | `system` | System-specific | Mapped via `mapSystemTargetToCommandType()` |
 
 **Generator Behavior:**
