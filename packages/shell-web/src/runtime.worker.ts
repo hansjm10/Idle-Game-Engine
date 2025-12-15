@@ -298,19 +298,18 @@ export function initializeRuntimeWorker(
     const delta = current - lastTimestamp;
     lastTimestamp = current;
 
-    const before = runtime.getCurrentStep();
-    runtime.tick(delta);
-    const after = runtime.getCurrentStep();
+    const stepsProcessed = runtime.tick(delta);
 
     emitCommandFailures();
 
-    if (after > before) {
+    if (stepsProcessed > 0) {
+      const currentStep = runtime.getCurrentStep();
       const eventBus = runtime.getEventBus();
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
       const publishedAt = monotonicClock.now();
       const progression = buildProgressionSnapshot(
-        after,
+        currentStep,
         publishedAt,
         progressionCoordinator.state,
       );
@@ -319,7 +318,7 @@ export function initializeRuntimeWorker(
         type: 'STATE_UPDATE',
         schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
         state: {
-          currentStep: after,
+          currentStep,
           events,
           backPressure,
           progression,

@@ -184,6 +184,24 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getNextExecutableStep()).toBe(1);
   });
 
+  it('returns 0 steps when deltaMs does not cross a step boundary', () => {
+    const { runtime } = createRuntime();
+
+    const stepsProcessed = runtime.tick(5);
+
+    expect(stepsProcessed).toBe(0);
+    expect(runtime.getCurrentStep()).toBe(0);
+  });
+
+  it('returns steps processed when deltaMs spans multiple steps', () => {
+    const { runtime } = createRuntime();
+
+    const stepsProcessed = runtime.tick(25);
+
+    expect(stepsProcessed).toBe(2);
+    expect(runtime.getCurrentStep()).toBe(2);
+  });
+
   it('records command failures when async handlers resolve to a failure result', async () => {
     const { runtime, queue, dispatcher } = createRuntime();
 

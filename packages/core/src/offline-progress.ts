@@ -5,7 +5,7 @@ export type ApplyOfflineProgressOptions = Readonly<{
   readonly elapsedMs: number;
   readonly coordinator: ProgressionCoordinator;
   readonly runtime: Readonly<{
-    tick(deltaMs: number): void;
+    tick(deltaMs: number): number;
     getCurrentStep(): number;
     getStepSizeMs(): number;
   }>;
@@ -44,20 +44,16 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
   const remainderMs = clampedElapsedMs - fullSteps * stepSizeMs;
 
   for (let i = 0; i < fullSteps; i += 1) {
-    const before = runtime.getCurrentStep();
-    runtime.tick(stepSizeMs);
-    const after = runtime.getCurrentStep();
-    if (after !== before) {
-      coordinator.updateForStep(after);
+    const stepsProcessed = runtime.tick(stepSizeMs);
+    if (stepsProcessed > 0) {
+      coordinator.updateForStep(runtime.getCurrentStep());
     }
   }
 
   if (remainderMs > 0) {
-    const before = runtime.getCurrentStep();
-    runtime.tick(remainderMs);
-    const after = runtime.getCurrentStep();
-    if (after !== before) {
-      coordinator.updateForStep(after);
+    const stepsProcessed = runtime.tick(remainderMs);
+    if (stepsProcessed > 0) {
+      coordinator.updateForStep(runtime.getCurrentStep());
     }
   }
 }
