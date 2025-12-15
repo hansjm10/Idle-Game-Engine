@@ -13,7 +13,7 @@ This guide teaches content authors how to define automations in Idle Engine cont
 Automations are defined in the `automations` array of your `pack.json` file. Each automation specifies:
 
 1. **Trigger**: When the automation fires (interval, resource threshold, event, or queue empty)
-2. **Target**: What command to execute (generator, upgrade, or system)
+2. **Target**: What command to execute (generator, upgrade, purchaseGenerator, collectResource, or system)
 3. **Conditions**: When the automation is available (unlock conditions, enabled state)
 4. **Constraints**: Rate limiting and costs (cooldowns, resource costs)
 
@@ -26,8 +26,8 @@ Automations are defined in the `automations` array of your `pack.json` file. Eac
   "id": "pack-slug.automation-name",        // Unique identifier
   "name": { "default": "Display Name" },     // Localized name
   "description": { "default": "..." },       // Localized description
-  "targetType": "generator" | "upgrade" | "system",  // What to trigger
-  "targetId": "pack-slug.target-id",         // Target identifier (for generator/upgrade)
+  "targetType": "generator" | "upgrade" | "purchaseGenerator" | "collectResource" | "system",  // What to trigger
+  "targetId": "pack-slug.target-id",         // Target identifier (for generator/upgrade/purchaseGenerator/collectResource)
   "trigger": { /* trigger definition */ },   // When to fire
   "unlockCondition": { "kind": "always" }    // When available
 }
@@ -38,6 +38,9 @@ Automations are defined in the `automations` array of your `pack.json` file. Eac
 ```typescript
 {
   "cooldown": 5000,                          // Milliseconds between fires
+  "targetEnabled": false,                    // Generator enabled state (generator target only, default: true)
+  "targetCount": { "kind": "constant", "value": 1 }, // Purchase count formula (purchaseGenerator target only)
+  "targetAmount": { "kind": "constant", "value": 1 }, // Collect amount formula (collectResource target only)
   "resourceCost": {                          // Deduct resources when firing
     "resourceId": "pack.resource",
     "rate": { "kind": "constant", "value": 10 }
@@ -313,16 +316,17 @@ Triggers a generator to start producing resources.
 ```json
 {
   "targetType": "generator",
-  "targetId": "pack-slug.generator-id"
+  "targetId": "pack-slug.generator-id",
+  "targetEnabled": true
 }
 ```
 
-**Generated Command:** `TOGGLE_GENERATOR` with `enabled: true`
+**Generated Command:** `TOGGLE_GENERATOR` with `enabled: targetEnabled ?? true`
 
 **Behavior:**
 
-- Enables the generator (starts production)
-- Does **not** toggle off (automation always enables)
+- Enables the generator (starts production) by default
+- Set `"targetEnabled": false` to disable a generator via automation
 - Generator must be unlocked for command to succeed
 
 **Example:**
@@ -332,6 +336,80 @@ Triggers a generator to start producing resources.
   "targetType": "generator",
   "targetId": "sample-pack.reactor",
   "trigger": { "kind": "interval", "interval": { "kind": "constant", "value": 3000 } },
+  "unlockCondition": { "kind": "always" }
+}
+```
+
+---
+
+### Purchase Generator Target
+
+Purchases one or more generator levels.
+
+**Schema:**
+```json
+{
+  "targetType": "purchaseGenerator",
+  "targetId": "pack-slug.generator-id",
+  "targetCount": { "kind": "constant", "value": 1 }
+}
+```
+
+**Generated Command:** `PURCHASE_GENERATOR` with `{ generatorId: targetId, count: floor(targetCount ?? 1) (min 1) }`
+
+**Behavior:**
+
+- Defaults to buying 1 generator level when `targetCount` is omitted
+- Floors non-integer counts and clamps to a minimum of 1 before enqueueing
+- Purchase can fail if the generator is locked or the player cannot afford the quote
+
+**Example:**
+```json
+{
+  "id": "sample-pack.auto-buy-reactor",
+  "targetType": "purchaseGenerator",
+  "targetId": "sample-pack.reactor",
+  "targetCount": { "kind": "constant", "value": 1 },
+  "trigger": {
+    "kind": "resourceThreshold",
+    "resourceId": "sample-pack.energy",
+    "comparator": "gte",
+    "threshold": { "kind": "constant", "value": 25 }
+  },
+  "unlockCondition": { "kind": "always" }
+}
+```
+
+---
+
+### Collect Resource Target
+
+Collects (adds) a resource amount via the shared `COLLECT_RESOURCE` command path.
+
+**Schema:**
+```json
+{
+  "targetType": "collectResource",
+  "targetId": "pack-slug.resource-id",
+  "targetAmount": { "kind": "constant", "value": 1 }
+}
+```
+
+**Generated Command:** `COLLECT_RESOURCE` with `{ resourceId: targetId, amount: max(targetAmount ?? 1, 0) }`
+
+**Behavior:**
+
+- Defaults to collecting 1 when `targetAmount` is omitted
+- Non-positive or non-finite amounts are treated as 0 before enqueueing
+
+**Example:**
+```json
+{
+  "id": "sample-pack.auto-collect-energy",
+  "targetType": "collectResource",
+  "targetId": "sample-pack.energy",
+  "targetAmount": { "kind": "constant", "value": 1 },
+  "trigger": { "kind": "interval", "interval": { "kind": "constant", "value": 1000 } },
   "unlockCondition": { "kind": "always" }
 }
 ```

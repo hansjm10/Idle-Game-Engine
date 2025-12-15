@@ -690,18 +690,17 @@ export function evaluateResourceThresholdTrigger(
  * Enqueues a command for an automation trigger.
  *
  * Converts an automation's target into the appropriate command type and
- * enqueues it to the command queue at AUTOMATION priority. Supports three
+ * enqueues it to the command queue at AUTOMATION priority. Supports
  * target types:
- * - generator: Enqueues TOGGLE_GENERATOR command with enabled: true
+ * - generator: Enqueues TOGGLE_GENERATOR command with enabled derived from targetEnabled (default: true)
  * - upgrade: Enqueues PURCHASE_UPGRADE command (one purchase)
+ * - purchaseGenerator: Enqueues PURCHASE_GENERATOR command (default count: 1)
+ * - collectResource: Enqueues COLLECT_RESOURCE command (default amount: 1)
  * - system: Enqueues system command with the systemTargetId
  *
  * The command is scheduled to execute on the next step (currentStep + 1).
  * Timestamps are derived from the simulation clock (step * stepDurationMs)
  * to ensure deterministic replay behavior.
- *
- * Generator automations always enable generators (enabled: true). Disabling
- * generators requires manual player commands or system-initiated toggles.
  *
  * @param automation - The automation definition containing the target information.
  * @param commandQueue - The command queue to enqueue the command to.
@@ -730,17 +729,42 @@ export function enqueueAutomationCommand(
 
   if (targetType === 'generator') {
     commandType = RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR;
-    payload = { generatorId: targetId, enabled: true };
+    payload = {
+      generatorId: targetId,
+      enabled: automation.targetEnabled ?? true,
+    };
   } else if (targetType === 'upgrade') {
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
     payload = { upgradeId: targetId };
+  } else if (targetType === 'purchaseGenerator') {
+    commandType = RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR;
+    const rawCount = automation.targetCount
+      ? evaluateNumericFormula(automation.targetCount, {
+          variables: { level: 0 },
+        })
+      : 1;
+    const count = Number.isFinite(rawCount)
+      ? Math.max(1, Math.floor(rawCount))
+      : 1;
+    payload = { generatorId: targetId, count };
+  } else if (targetType === 'collectResource') {
+    commandType = RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE;
+    const rawAmount = automation.targetAmount
+      ? evaluateNumericFormula(automation.targetAmount, {
+          variables: { level: 0 },
+        })
+      : 1;
+    const amount =
+      Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 0;
+    payload = { resourceId: targetId, amount };
   } else if (targetType === 'system') {
     commandType = mapSystemTargetToCommandType(
       systemTargetId ?? 'system:unknown',
     );
     payload = {};
   } else {
-    throw new Error(`Unknown target type: ${targetType}`);
+    const exhaustiveCheck: never = targetType;
+    throw new Error(`Unknown target type: ${exhaustiveCheck}`);
   }
 
   const timestamp = currentStep * stepDurationMs;

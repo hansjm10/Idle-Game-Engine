@@ -1772,6 +1772,36 @@ describe('AutomationSystem', () => {
       });
     });
 
+    it('should enqueue TOGGLE_GENERATOR command with enabled false when targetEnabled is false', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:clicks' as any,
+        targetEnabled: false,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      enqueueAutomationCommand(automation, commandQueue, 10, 1000);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR);
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+      expect(command?.payload).toEqual({
+        generatorId: 'gen:clicks',
+        enabled: false,
+      });
+    });
+
     it('should enqueue PURCHASE_UPGRADE command for upgrade target', () => {
       const automation: AutomationDefinition = {
         id: 'auto:test' as any,
@@ -1796,6 +1826,66 @@ describe('AutomationSystem', () => {
       expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE);
       expect(command?.priority).toBe(CommandPriority.AUTOMATION);
       expect(command?.payload).toEqual({ upgradeId: 'upg:doubler' });
+    });
+
+    it('should enqueue PURCHASE_GENERATOR command for purchaseGenerator target', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'purchaseGenerator',
+        targetId: 'gen:clicks' as any,
+        targetCount: { kind: 'constant', value: 3 },
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      enqueueAutomationCommand(automation, commandQueue, 10, 1000);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR);
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+      expect(command?.payload).toEqual({
+        generatorId: 'gen:clicks',
+        count: 3,
+      });
+    });
+
+    it('should enqueue COLLECT_RESOURCE command for collectResource target', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:test' as any,
+        name: { default: 'Test', variants: {} },
+        description: { default: 'Test', variants: {} },
+        targetType: 'collectResource',
+        targetId: 'res:gold' as any,
+        targetAmount: { kind: 'constant', value: 2 },
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const commandQueue = new CommandQueue();
+
+      enqueueAutomationCommand(automation, commandQueue, 10, 1000);
+
+      expect(commandQueue.size).toBe(1);
+      const commands = commandQueue.dequeueUpToStep(11);
+      expect(commands.length).toBe(1);
+      const command = commands[0];
+      expect(command?.type).toBe(RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE);
+      expect(command?.priority).toBe(CommandPriority.AUTOMATION);
+      expect(command?.payload).toEqual({
+        resourceId: 'res:gold',
+        amount: 2,
+      });
     });
 
     it('should enqueue system command with mapped command type', () => {

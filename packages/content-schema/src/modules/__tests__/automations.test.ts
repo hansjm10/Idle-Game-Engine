@@ -46,6 +46,47 @@ describe('automationDefinitionSchema', () => {
       }),
     ).toThrowError(/targetId/i);
   });
+
+  it('accepts targetEnabled for generator automations', () => {
+    const automation = automationDefinitionSchema.parse({
+      ...baseAutomation,
+      targetEnabled: false,
+    });
+
+    expect(automation.targetEnabled).toBe(false);
+  });
+
+  it('rejects targetEnabled for non-generator automations', () => {
+    expect(() =>
+      automationDefinitionSchema.parse({
+        ...baseAutomation,
+        targetType: 'upgrade',
+        targetEnabled: true,
+      }),
+    ).toThrowError(/targetEnabled/i);
+  });
+
+  it('accepts purchaseGenerator automations with targetCount', () => {
+    const automation = automationDefinitionSchema.parse({
+      ...baseAutomation,
+      targetType: 'purchaseGenerator',
+      targetCount: { kind: 'constant', value: 3 },
+    });
+
+    expect(automation.targetType).toBe('purchaseGenerator');
+    expect(automation.targetCount).toEqual({ kind: 'constant', value: 3 });
+  });
+
+  it('accepts collectResource automations with targetAmount', () => {
+    const automation = automationDefinitionSchema.parse({
+      ...baseAutomation,
+      targetType: 'collectResource',
+      targetAmount: { kind: 'constant', value: 2 },
+    });
+
+    expect(automation.targetType).toBe('collectResource');
+    expect(automation.targetAmount).toEqual({ kind: 'constant', value: 2 });
+  });
 });
 
 describe('automationCollectionSchema', () => {
