@@ -41,6 +41,38 @@ export type UpgradeView = Readonly<{
     unlockHint?: string;
     isVisible: boolean;
 }>;
+export type AchievementCategory = 'progression' | 'prestige' | 'automation' | 'social' | 'collection';
+export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
+export type AchievementProgressMode = 'oneShot' | 'incremental' | 'repeatable';
+export type AchievementView = Readonly<{
+    id: string;
+    displayName: string;
+    description: string;
+    category: AchievementCategory;
+    tier: AchievementTier;
+    mode: AchievementProgressMode;
+    isVisible: boolean;
+    isUnlocked: boolean;
+    completions: number;
+    progress: number;
+    target: number;
+    nextRepeatableAtStep?: number;
+    lastCompletedStep?: number;
+}>;
+export interface ProgressionAchievementState {
+    readonly id: string;
+    readonly displayName?: string;
+    readonly description?: string;
+    readonly category: AchievementCategory;
+    readonly tier: AchievementTier;
+    readonly mode: AchievementProgressMode;
+    readonly isVisible: boolean;
+    readonly completions: number;
+    readonly progress: number;
+    readonly target: number;
+    readonly nextRepeatableAtStep?: number;
+    readonly lastCompletedStep?: number;
+}
 export type PrestigeRewardContribution = Readonly<{
     sourceResourceId: string;
     sourceAmount: number;
@@ -103,6 +135,7 @@ export type ProgressionSnapshot = Readonly<{
     resources: readonly ResourceView[];
     generators: readonly GeneratorView[];
     upgrades: readonly UpgradeView[];
+    achievements?: readonly AchievementView[];
     prestigeLayers: readonly PrestigeLayerView[];
 }>;
 export interface ResourceProgressionMetadata {
@@ -147,6 +180,7 @@ export interface ProgressionAuthoritativeState {
     readonly generators?: readonly ProgressionGeneratorState[];
     readonly upgradePurchases?: UpgradePurchaseEvaluator;
     readonly upgrades?: readonly ProgressionUpgradeState[];
+    readonly achievements?: readonly ProgressionAchievementState[];
     readonly prestigeSystem?: PrestigeSystemEvaluator;
     readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
 }

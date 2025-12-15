@@ -1,6 +1,7 @@
 import type { SerializedProductionAccumulators } from './production-system.js';
 import type { ProgressionCoordinator } from './progression-coordinator.js';
 import type {
+  ProgressionAchievementState,
   ProgressionGeneratorState,
   ProgressionUpgradeState,
 } from './progression.js';
@@ -10,7 +11,7 @@ type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
 };
 
-export const PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION = 1;
+export const PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION = 2;
 
 export type SerializedProgressionGeneratorStateV1 = Readonly<{
   readonly id: string;
@@ -34,8 +35,27 @@ export type SerializedProgressionCoordinatorStateV1 = Readonly<{
   readonly productionAccumulators?: SerializedProductionAccumulators;
 }>;
 
+export type SerializedProgressionAchievementStateV2 = Readonly<{
+  readonly id: string;
+  readonly completions: number;
+  readonly progress: number;
+  readonly nextRepeatableAtStep?: number;
+  readonly lastCompletedStep?: number;
+}>;
+
+export type SerializedProgressionCoordinatorStateV2 = Readonly<{
+  readonly schemaVersion: 2;
+  readonly step: number;
+  readonly resources: SerializedResourceState;
+  readonly generators: readonly SerializedProgressionGeneratorStateV1[];
+  readonly upgrades: readonly SerializedProgressionUpgradeStateV1[];
+  readonly achievements: readonly SerializedProgressionAchievementStateV2[];
+  readonly productionAccumulators?: SerializedProductionAccumulators;
+}>;
+
 export type SerializedProgressionCoordinatorState =
-  SerializedProgressionCoordinatorStateV1;
+  | SerializedProgressionCoordinatorStateV1
+  | SerializedProgressionCoordinatorStateV2;
 
 function normalizeNonNegativeInt(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
@@ -46,6 +66,23 @@ function normalizeNonNegativeInt(value: unknown): number {
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeNonNegativeNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return value;
+}
+
+function normalizeOptionalNonNegativeInt(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  return Math.floor(value);
 }
 
 function normalizeGeneratorStateV1(
@@ -92,10 +129,34 @@ function normalizeUpgradeStateV1(
   };
 }
 
+function normalizeAchievementStateV2(
+  value: unknown,
+): SerializedProgressionAchievementStateV2 | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = record.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    return undefined;
+  }
+
+  return {
+    id,
+    completions: normalizeNonNegativeInt(record.completions),
+    progress: normalizeNonNegativeNumber(record.progress),
+    nextRepeatableAtStep: normalizeOptionalNonNegativeInt(
+      record.nextRepeatableAtStep,
+    ),
+    lastCompletedStep: normalizeOptionalNonNegativeInt(record.lastCompletedStep),
+  };
+}
+
 export function serializeProgressionCoordinatorState(
   coordinator: ProgressionCoordinator,
   productionSystem?: { exportAccumulators: () => SerializedProductionAccumulators },
-): SerializedProgressionCoordinatorStateV1 {
+): SerializedProgressionCoordinatorStateV2 {
   const resources = coordinator.resourceState.exportForSave();
 
   const step = normalizeNonNegativeInt(coordinator.getLastUpdatedStep());
@@ -120,12 +181,31 @@ export function serializeProgressionCoordinatorState(
     };
   });
 
+  const achievements = (coordinator.state.achievements ?? []).map((achievement) => ({
+    id: achievement.id,
+    completions: normalizeNonNegativeInt(
+      (achievement as unknown as { completions?: unknown }).completions,
+    ),
+    progress: normalizeNonNegativeNumber(
+      (achievement as unknown as { progress?: unknown }).progress,
+    ),
+    nextRepeatableAtStep: normalizeOptionalNonNegativeInt(
+      (achievement as unknown as { nextRepeatableAtStep?: unknown })
+        .nextRepeatableAtStep,
+    ),
+    lastCompletedStep: normalizeOptionalNonNegativeInt(
+      (achievement as unknown as { lastCompletedStep?: unknown })
+        .lastCompletedStep,
+    ),
+  }));
+
   return {
     schemaVersion: PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION,
     step,
     resources,
     generators,
     upgrades,
+    achievements,
     productionAccumulators: productionSystem?.exportAccumulators(),
   };
 }
@@ -139,9 +219,10 @@ export function hydrateProgressionCoordinatorState(
     return;
   }
 
-  if (serialized.schemaVersion !== PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION) {
+  const schemaVersion = serialized.schemaVersion;
+  if (schemaVersion !== 1 && schemaVersion !== PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION) {
     throw new Error(
-      `Unsupported progression coordinator save schema version: ${serialized.schemaVersion}`,
+      `Unsupported progression coordinator save schema version: ${schemaVersion}`,
     );
   }
 
@@ -203,10 +284,46 @@ export function hydrateProgressionCoordinatorState(
     coordinator.setUpgradePurchases(normalized.id, normalized.purchases);
   }
 
+  const achievementById = new Map<string, Mutable<ProgressionAchievementState>>();
+  for (const achievement of coordinator.state.achievements ?? []) {
+    achievementById.set(
+      achievement.id,
+      achievement as Mutable<ProgressionAchievementState>,
+    );
+  }
+
+  for (const achievement of achievementById.values()) {
+    achievement.isVisible = false;
+    achievement.completions = 0;
+    achievement.progress = 0;
+    achievement.target = 0;
+    achievement.nextRepeatableAtStep = undefined;
+    achievement.lastCompletedStep = undefined;
+  }
+
+  if (schemaVersion === 2) {
+    const achievements = (serialized as SerializedProgressionCoordinatorStateV2).achievements;
+    for (const entry of achievements) {
+      const normalized = normalizeAchievementStateV2(entry);
+      if (!normalized) {
+        continue;
+      }
+
+      const achievement = achievementById.get(normalized.id);
+      if (!achievement) {
+        continue;
+      }
+
+      achievement.completions = normalized.completions;
+      achievement.progress = normalized.progress;
+      achievement.nextRepeatableAtStep = normalized.nextRepeatableAtStep;
+      achievement.lastCompletedStep = normalized.lastCompletedStep;
+    }
+  }
+
   if (serialized.productionAccumulators && productionSystem) {
     productionSystem.restoreAccumulators(serialized.productionAccumulators);
   }
 
   coordinator.updateForStep(normalizeNonNegativeInt(serialized.step));
 }
-
