@@ -1503,7 +1503,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
         });
         resetResourceFlags.push({
           resourceId: resetResourceId,
-          unlocked: Boolean(definition.unlocked),
+          unlocked: definition.unlocked ?? true,
           visible: Boolean(definition.visible ?? true),
         });
       }

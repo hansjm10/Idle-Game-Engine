@@ -2145,7 +2145,7 @@ describe('Integration: prestige system applyPrestige', () => {
     expect(coordinator.getUpgradeRecord('upgrade.keep-me')?.purchases).toBe(1);
   });
 
-  it('re-locks reset resources and generators after prestige', () => {
+  it('re-locks gated reset resources and preserves default-unlocked resources after prestige', () => {
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
       startAmount: 0,
@@ -2229,6 +2229,8 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.resourceState.addAmount(energyIndex, 10);
     coordinator.updateForStep(0);
 
+    expect(coordinator.resourceState.isUnlocked(energyIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(energyIndex)).toBe(true);
     expect(coordinator.resourceState.isUnlocked(gatedIndex)).toBe(true);
     expect(coordinator.resourceState.isVisible(gatedIndex)).toBe(true);
     expect(coordinator.getGeneratorRecord(gatedGenerator.id)?.state.isUnlocked).toBe(
@@ -2237,6 +2239,8 @@ describe('Integration: prestige system applyPrestige', () => {
 
     coordinator.prestigeEvaluator?.applyPrestige('prestige.test', 'token-relock');
 
+    expect(coordinator.resourceState.isUnlocked(energyIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(energyIndex)).toBe(true);
     expect(coordinator.resourceState.isUnlocked(gatedIndex)).toBe(false);
     expect(coordinator.resourceState.isVisible(gatedIndex)).toBe(false);
     expect(coordinator.getGeneratorRecord(gatedGenerator.id)?.state.isUnlocked).toBe(
