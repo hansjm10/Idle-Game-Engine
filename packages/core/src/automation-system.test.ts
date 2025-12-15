@@ -2045,6 +2045,144 @@ describe('AutomationSystem', () => {
       });
     });
 
+    it('should floor targetCount to 1 when formula evaluates to 0.5', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:buyer' as any,
+          name: { default: 'Auto Buyer', variants: {} },
+          description: { default: 'Buys fractional', variants: {} },
+          targetType: 'purchaseGenerator',
+          targetId: 'gen:clicks' as any,
+          targetCount: { kind: 'constant', value: 0.5 },
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+      runtime.tick(stepDurationMs);
+
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR);
+      expect(commands[0]?.payload).toEqual({
+        generatorId: 'gen:clicks',
+        count: 1, // floor(0.5) = 0, clamped to min 1
+      });
+    });
+
+    it('should clamp targetAmount to 0 when formula evaluates to -5', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects negative', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          targetAmount: { kind: 'constant', value: -5 },
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      runtime.addSystem(system);
+      runtime.tick(stepDurationMs);
+
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE);
+      expect(commands[0]?.payload).toEqual({
+        resourceId: 'res:gold',
+        amount: 0, // negative clamped to 0
+      });
+    });
+
+    it('should evaluate targetAmount formulas against entities', () => {
+      const gold = 1.5;
+      const clicksLevel = 2;
+      const upgradePurchases = 3;
+
+      const conditionContext = {
+        getResourceAmount: (resourceId: string) =>
+          resourceId === 'res:gold' ? gold : 0,
+        getGeneratorLevel: (generatorId: string) =>
+          generatorId === 'gen:clicks' ? clicksLevel : 0,
+        getUpgradePurchases: (upgradeId: string) =>
+          upgradeId === 'upg:auto' ? upgradePurchases : 0,
+      };
+
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects based on formulas', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          targetAmount: {
+            kind: 'expression',
+            expression: {
+              kind: 'binary',
+              op: 'add',
+              left: {
+                kind: 'binary',
+                op: 'add',
+                left: { kind: 'ref', target: { type: 'resource', id: 'res:gold' as any } },
+                right: { kind: 'ref', target: { type: 'generator', id: 'gen:clicks' as any } },
+              },
+              right: { kind: 'ref', target: { type: 'upgrade', id: 'upg:auto' as any } },
+            },
+          },
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+        conditionContext,
+      });
+
+      runtime.addSystem(system);
+      runtime.tick(stepDurationMs);
+
+      const commands = commandQueue.dequeueUpToStep(1);
+      expect(commands.length).toBe(1);
+      expect(commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE);
+      expect(commands[0]?.payload).toEqual({
+        resourceId: 'res:gold',
+        amount: 6.5, // 1.5 + 2 + 3
+      });
+    });
+
     it('should respect enabled flag', () => {
       const automations: AutomationDefinition[] = [
         {
