@@ -295,6 +295,11 @@ export interface ProductionSystemOptions {
    * When enabled, the system also populates per-second income/expense buffers
    * by calling `resourceState.applyIncome/applyExpense` (when available).
    *
+   * Note: if the provided `resourceState` also exposes `finalizeTick`, these
+   * per-second rates may be rolled into balances during `finalizeTick(deltaMs)`.
+   * To avoid double-applying when balances are mutated immediately, this option
+   * is ignored for states with `finalizeTick`; use `applyViaFinalizeTick` instead.
+   *
    * This option is intended for telemetry / UI (live income/expense display) and
    * does **not** change how balances are mutated.
    *
@@ -535,12 +540,13 @@ export function createProductionSystem(
   const rateTrackingState = supportsRateTracking(resourceState)
     ? resourceState
     : undefined;
+  const hasFinalizeTick = supportsFinalizeTick(resourceState);
   const applyViaFinalizeTick = options.applyViaFinalizeTick === true;
   const trackRates = options.trackRates === true || applyViaFinalizeTick;
   const useFinalizeTickRates =
     applyViaFinalizeTick &&
     rateTrackingState !== undefined &&
-    supportsFinalizeTick(resourceState);
+    hasFinalizeTick;
 
   if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
     throw new Error('applyThreshold must be a positive finite number');
@@ -810,7 +816,7 @@ export function createProductionSystem(
         const validProductions = validateRates(generator.produces, resourceState);
         const validConsumptions = validateRates(generator.consumes, resourceState);
 
-        if (trackRates && rateTrackingState) {
+        if (trackRates && rateTrackingState && !hasFinalizeTick) {
           let rateConsumptionRatio = 1;
 
           if (validConsumptions.length > 0) {

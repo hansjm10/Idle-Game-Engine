@@ -970,7 +970,7 @@ describe('createProductionSystem', () => {
       expect(snapshot.netPerSecond[goldIndex]).toBe(0);
     });
 
-    it('populates per-second rates when enabled', () => {
+    it('populates per-second rates when applyViaFinalizeTick is enabled', () => {
       const resources = createResourceState([
         { id: 'gold', startAmount: 0 },
         { id: 'wood', startAmount: 5 },
@@ -988,7 +988,7 @@ describe('createProductionSystem', () => {
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
-        trackRates: true,
+        applyViaFinalizeTick: true,
       });
 
       system.tick(createTickContext(1000, 0));
@@ -1029,6 +1029,42 @@ describe('createProductionSystem', () => {
 
       const goldIndex = resources.getIndex('gold')!;
       const woodIndex = resources.getIndex('wood')!;
+
+      expect(resources.getAmount(goldIndex)).toBeCloseTo(10, 6);
+      expect(resources.getAmount(woodIndex)).toBeCloseTo(80, 6);
+    });
+
+    it('does not double-apply when finalizeTick runs without applyViaFinalizeTick', () => {
+      const resources = createResourceState([
+        { id: 'gold', startAmount: 0 },
+        { id: 'wood', startAmount: 100 },
+      ]);
+
+      const generators = [
+        {
+          id: 'converter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 5 }], // 10 gold/s
+          consumes: [{ resourceId: 'wood', rate: 10 }], // 20 wood/s
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        trackRates: true,
+      });
+
+      system.tick(createTickContext(1000, 0));
+
+      const goldIndex = resources.getIndex('gold')!;
+      const woodIndex = resources.getIndex('wood')!;
+
+      expect(resources.getAmount(goldIndex)).toBeCloseTo(10, 6);
+      expect(resources.getAmount(woodIndex)).toBeCloseTo(80, 6);
+
+      resources.finalizeTick(1000);
+      resources.snapshot({ mode: 'publish' });
 
       expect(resources.getAmount(goldIndex)).toBeCloseTo(10, 6);
       expect(resources.getAmount(woodIndex)).toBeCloseTo(80, 6);
