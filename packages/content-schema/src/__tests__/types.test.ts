@@ -250,6 +250,7 @@ describe('Type Assertions: Base Schema Primitives', () => {
       | { kind: 'generatorLevel'; generatorId: string }
       | { kind: 'upgradeOwned'; upgradeId: string }
       | { kind: 'prestigeCountThreshold'; prestigeLayerId: string }
+      | { kind: 'prestigeCompleted'; prestigeLayerId: string }
       | { kind: 'prestigeUnlocked'; prestigeLayerId: string }
       | { kind: 'flag'; flagId: string }
       | { kind: 'script'; scriptId: string }

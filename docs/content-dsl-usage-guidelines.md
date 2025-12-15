@@ -89,13 +89,25 @@ Use it as a template when authoring or validating new packs:
 available right now).
 
 For "post-prestige only" content ("the player has prestiged at least once"),
-use `prestigeCountThreshold`, which evaluates against the `{layerId}-prestige-count`
+use `prestigeCompleted`, which evaluates against the `{layerId}-prestige-count`
 resource internally (so you don't need magic-string resource IDs).
 
 ```json
 {
-  "kind": "prestigeCountThreshold",
+  "kind": "prestigeCompleted",
   "prestigeLayerId": "sample-pack.ascension-alpha"
+}
+```
+
+If you need a higher threshold (for example "after 5 prestiges"), use
+`prestigeCountThreshold`:
+
+```json
+{
+  "kind": "prestigeCountThreshold",
+  "prestigeLayerId": "sample-pack.ascension-alpha",
+  "comparator": "gte",
+  "count": 5
 }
 ```
 

@@ -1768,6 +1768,15 @@ const validateConditionNode = (
           });
         }
         break;
+      case 'prestigeCompleted':
+        if (!prestigeLayers.has(node.prestigeLayerId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
+            message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
+          });
+        }
+        break;
       case 'prestigeUnlocked':
         if (!prestigeLayers.has(node.prestigeLayerId)) {
           ctx.addIssue({
@@ -2142,6 +2151,9 @@ const validateUnlockConditionCycles = (
 	          refs.add(node.upgradeId);
 	          break;
 	        case 'prestigeCountThreshold':
+	          refs.add(`${node.prestigeLayerId}-prestige-count`);
+	          break;
+	        case 'prestigeCompleted':
 	          refs.add(`${node.prestigeLayerId}-prestige-count`);
 	          break;
 	        case 'prestigeUnlocked':

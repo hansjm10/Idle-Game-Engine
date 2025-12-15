@@ -263,6 +263,7 @@ type Condition =
       comparator?: 'gte' | 'gt' | 'lte' | 'lt'; // defaults to 'gte' during normalisation
       count?: number; // positive int, defaults to 1 during normalisation
     }
+  | { kind: 'prestigeCompleted'; prestigeLayerId: ContentId }
   | { kind: 'prestigeUnlocked'; prestigeLayerId: ContentId }
   | { kind: 'flag'; flagId: FlagId }
   | { kind: 'script'; scriptId: ScriptId }
@@ -348,10 +349,14 @@ This differs from **dynamic cost curves** which evaluate with `level: purchaseIn
   - Uses `context.hasPrestigeLayerUnlocked(prestigeLayerId)`
   - Semantics: **prestige layer is currently available/unlocked**, not "player has prestiged at least once"
   - Example: `{ kind: 'prestigeUnlocked', prestigeLayerId: 'sample-pack.ascension-alpha' }` checks if the layer is available now
+- **`prestigeCompleted`**:
+  - Shorthand for "has prestiged at least once" on the given layer
+  - Reads the prestige counter resource using the convention `{prestigeLayerId}-prestige-count` and checks it is ≥ 1
+  - Example: `{ kind: 'prestigeCompleted', prestigeLayerId: 'sample-pack.ascension-alpha' }` checks if player has prestiged at least once
 - **`prestigeCountThreshold`**:
   - Reads the prestige counter resource using the convention `{prestigeLayerId}-prestige-count`
   - Compares the current count against `count` (defaults to 1) using `comparator` (defaults to `gte`)
-  - Example: `{ kind: 'prestigeCountThreshold', prestigeLayerId: 'sample-pack.ascension-alpha' }` checks if player has prestiged at least once
+  - Example: `{ kind: 'prestigeCountThreshold', prestigeLayerId: 'sample-pack.ascension-alpha', comparator: 'gte', count: 5 }` checks if player has prestiged at least 5 times
 - **`flag`**:
   - Uses `context.isFlagSet(flagId)` when supplied
 - **`script`**:

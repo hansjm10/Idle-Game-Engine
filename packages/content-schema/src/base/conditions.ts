@@ -51,6 +51,10 @@ type ConditionNode =
       count: PositiveInt;
     }
   | {
+      kind: 'prestigeCompleted';
+      prestigeLayerId: ContentId;
+    }
+  | {
       kind: 'prestigeUnlocked';
       prestigeLayerId: ContentId;
     }
@@ -100,6 +104,10 @@ type ConditionNodeInput =
       prestigeLayerId: ContentIdInput;
       comparator?: ConditionComparatorValue;
       count?: PositiveIntInput;
+    }
+  | {
+      kind: 'prestigeCompleted';
+      prestigeLayerId: ContentIdInput;
     }
   | {
       kind: 'prestigeUnlocked';
@@ -165,6 +173,12 @@ const createConditionSchema = (
         prestigeLayerId: contentIdSchema,
         comparator: comparatorSchema.default('gte'),
         count: positiveIntSchema.default(1),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('prestigeCompleted'),
+        prestigeLayerId: contentIdSchema,
       })
       .strict(),
     z

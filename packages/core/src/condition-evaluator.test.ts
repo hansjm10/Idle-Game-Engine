@@ -209,6 +209,32 @@ describe('evaluateCondition', () => {
 	    ).toBe(false);
 	  });
 
+	  it('evaluates prestigeCompleted condition via {layerId}-prestige-count resource', () => {
+	    const context = createContext({
+	      getResourceAmount: (id) => (id === 'prestige.alpha-prestige-count' ? 1 : 0),
+	    });
+
+	    expect(
+	      evaluateCondition(
+	        {
+	          kind: 'prestigeCompleted',
+	          prestigeLayerId: cid('prestige.alpha'),
+	        },
+	        context,
+	      ),
+	    ).toBe(true);
+
+	    expect(
+	      evaluateCondition(
+	        {
+	          kind: 'prestigeCompleted',
+	          prestigeLayerId: cid('prestige.beta'),
+	        },
+	        context,
+	      ),
+	    ).toBe(false);
+	  });
+
 	  it('evaluates prestigeUnlocked condition via context hook', () => {
 	    const context = createContext({
 	      hasPrestigeLayerUnlocked: (id) => id === 'prestige.alpha',
@@ -667,6 +693,16 @@ describe('describeCondition', () => {
 	    };
 	    expect(describeCondition(condition)).toBe(
 	      'Requires prestige count for prestige.alpha >= 1',
+	    );
+	  });
+
+	  it('describes prestigeCompleted condition', () => {
+	    const condition: Condition = {
+	      kind: 'prestigeCompleted',
+	      prestigeLayerId: cid('prestige.alpha'),
+	    };
+	    expect(describeCondition(condition)).toBe(
+	      'Requires prestiged at least once in prestige.alpha',
 	    );
 	  });
 

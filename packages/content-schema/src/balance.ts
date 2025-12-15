@@ -632,6 +632,8 @@ const conditionReferencesResource = (
       );
     case 'prestigeCountThreshold':
       return `${condition.prestigeLayerId}-prestige-count` === resource.id;
+    case 'prestigeCompleted':
+      return `${condition.prestigeLayerId}-prestige-count` === resource.id;
     case 'prestigeUnlocked':
     case 'flag':
     case 'script':

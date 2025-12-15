@@ -173,6 +173,11 @@ export function evaluateCondition(
       const count = context.getResourceAmount(prestigeCountId);
       return compareWithComparator(count, condition.count, condition.comparator, context);
     }
+    case 'prestigeCompleted': {
+      const prestigeCountId = `${condition.prestigeLayerId}-prestige-count`;
+      const count = context.getResourceAmount(prestigeCountId);
+      return count >= 1;
+    }
     case 'prestigeUnlocked': {
       if (!context.hasPrestigeLayerUnlocked) {
         reportMissingContextHook(
@@ -351,6 +356,8 @@ export function describeCondition(
       return `Requires prestige count for ${condition.prestigeLayerId} ${formatComparator(
         condition.comparator,
       )} ${formatNumber(condition.count)}`;
+    case 'prestigeCompleted':
+      return `Requires prestiged at least once in ${condition.prestigeLayerId}`;
     case 'prestigeUnlocked':
       return `Requires prestige layer ${condition.prestigeLayerId} available`;
     case 'allOf': {
