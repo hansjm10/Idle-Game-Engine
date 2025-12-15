@@ -776,11 +776,13 @@ https://raw.githubusercontent.com/open-telemetry/opentelemetry-specification/mai
 - `prestigeLayerSchema` supports reset mechanics:
   - `id`, `name`, `icon`.
   - `summary`: `localizedTextSchema`.
-  - `resetTargets`: array of resource ids reset when the layer triggers.
+  - `resetTargets`: array of resource ids reset when the layer triggers (amount + unlock/visibility reset to content defaults).
+  - `resetGenerators`: optional array of generator ids reset when the layer triggers (owned/enabled + re-lock).
+  - `resetUpgrades`: optional array of upgrade ids reset when the layer triggers.
   - `unlockCondition`: `conditionSchema`.
   - `reward`: block specifying output currency `{ resourceId, baseReward:
     NumericFormula, multiplierCurve?: NumericFormula }`.
-  - `retention`: optional array describing retained resources/upgrades.
+  - `retention`: optional array describing retained resources/generators/upgrades.
   - `automation`: optional reference enabling auto-prestige triggers.
   - `order`: optional float for menu ordering.
 - Validation enforces that prestige rewards reference prestige-class resources

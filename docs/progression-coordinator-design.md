@@ -246,6 +246,7 @@ for (const record of this.generatorList) {
 - `baseUnlock` condition evaluated every tick
 - **Once `isUnlocked` transitions to `true`, it NEVER reverts** (line 310-312)
 - This ensures generators remain available after unlock conditions are met, even if conditions later fail (e.g., player spends resources below threshold)
+- **Prestige reset exception**: When a prestige layer resets a generator/resource, the prestige evaluator may re-lock unlock/visibility back to content defaults as part of the reset flow.
 
 **Upgrade update loop** (lines 331-349):
 ```typescript

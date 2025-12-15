@@ -287,6 +287,36 @@ export function __unsafeWriteAmountDirect(
   writeAmountDirect(internal, index, amount);
 }
 
+/** @internal */
+export function __unsafeWriteUnlockedDirect(
+  state: ResourceState,
+  index: number,
+  unlocked: boolean,
+): void {
+  const internal = resourceStateInternals.get(state);
+  if (internal === undefined) {
+    telemetry.recordError('ResourceStateInternalUnavailable');
+    throw new Error('ResourceState internals are unavailable for the provided instance.');
+  }
+
+  setFlagField(internal, index, FLAG_UNLOCKED, unlocked);
+}
+
+/** @internal */
+export function __unsafeWriteVisibleDirect(
+  state: ResourceState,
+  index: number,
+  visible: boolean,
+): void {
+  const internal = resourceStateInternals.get(state);
+  if (internal === undefined) {
+    telemetry.recordError('ResourceStateInternalUnavailable');
+    throw new Error('ResourceState internals are unavailable for the provided instance.');
+  }
+
+  setFlagField(internal, index, FLAG_VISIBLE, visible);
+}
+
 function initializeBuffers(
   buffers: ResourceStateBuffers,
   definitions: readonly ResourceDefinition[],

@@ -18,6 +18,12 @@ const retentionEntrySchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('generator'),
+      generatorId: contentIdSchema,
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('upgrade'),
       upgradeId: contentIdSchema,
     })
@@ -40,6 +46,8 @@ type PrestigeLayerInput = {
   readonly icon?: string;
   readonly summary: z.input<typeof localizedTextSchema>;
   readonly resetTargets: readonly z.input<typeof contentIdSchema>[];
+  readonly resetGenerators?: readonly z.input<typeof contentIdSchema>[];
+  readonly resetUpgrades?: readonly z.input<typeof contentIdSchema>[];
   readonly unlockCondition: z.input<typeof conditionSchema>;
   readonly reward: z.input<typeof rewardSchema>;
   readonly retention?: readonly z.input<typeof retentionEntrySchema>[];
@@ -53,6 +61,8 @@ type PrestigeLayerModel = {
   readonly icon?: string;
   readonly summary: z.infer<typeof localizedTextSchema>;
   readonly resetTargets: readonly ContentId[];
+  readonly resetGenerators?: readonly ContentId[];
+  readonly resetUpgrades?: readonly ContentId[];
   readonly unlockCondition: z.infer<typeof conditionSchema>;
   readonly reward: z.infer<typeof rewardSchema>;
   readonly retention: readonly z.infer<typeof retentionEntrySchema>[];
@@ -61,11 +71,16 @@ type PrestigeLayerModel = {
 };
 
 const normalizeResetTargets = (
-  targets: readonly ContentId[],
-): readonly ContentId[] =>
-  Object.freeze(
+  targets: readonly ContentId[] | undefined,
+): readonly ContentId[] | undefined => {
+  if (!targets) {
+    return undefined;
+  }
+
+  return Object.freeze(
     [...new Set(targets)].sort((left, right) => left.localeCompare(right)),
   );
+};
 
 export const prestigeLayerSchema: z.ZodType<
   PrestigeLayerModel,
@@ -87,6 +102,8 @@ export const prestigeLayerSchema: z.ZodType<
     resetTargets: z.array(contentIdSchema).min(1, {
       message: 'Prestige layers must reset at least one resource.',
     }),
+    resetGenerators: z.array(contentIdSchema).optional(),
+    resetUpgrades: z.array(contentIdSchema).optional(),
     unlockCondition: conditionSchema,
     reward: rewardSchema,
     retention: z.array(retentionEntrySchema).default([]),
@@ -101,7 +118,9 @@ export const prestigeLayerSchema: z.ZodType<
   .strict()
   .transform((layer) => ({
     ...layer,
-    resetTargets: normalizeResetTargets(layer.resetTargets),
+    resetTargets: normalizeResetTargets(layer.resetTargets) ?? [],
+    resetGenerators: normalizeResetTargets(layer.resetGenerators),
+    resetUpgrades: normalizeResetTargets(layer.resetUpgrades),
     retention: Object.freeze([...layer.retention]),
   }));
 

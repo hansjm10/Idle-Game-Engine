@@ -223,7 +223,7 @@ export function registerResourceCommandHandlers(options: ResourceCommandHandlerO
 
 - **Confirmation token is advisory**: The token is passed through to `applyPrestige()` for the evaluator to use if needed (e.g., UI-generated nonce), but the handler doesn't validate it. This matches how `metadata` is passed to `applyPurchase()` in upgrades.
 
-- **Reset scope is content-driven**: The `resetTargets` array in prestige layer definitions determines exactly what gets reset. Currently, the content schema supports resource IDs only. Generators and upgrades are reset implicitly when their backing resources are reset (e.g., resetting "energy" means generators that cost energy become re-purchasable). Future schema extensions could add explicit `resetGenerators` and `resetUpgrades` arrays if finer control is needed. For the sample pack's `Ascension Alpha` layer, resetting the four listed resources effectively resets early-game progression while preserving prestige currency.
+- **Reset scope is content-driven**: The `resetTargets` array in prestige layer definitions determines which resources are reset (amounts + unlock/visibility returned to content defaults). Packs can also opt into classic prestige resets by specifying `resetGenerators` (owned/enabled + re-lock) and `resetUpgrades` (purchase count). The `retention` list can preserve specific resources, generators, or upgrades across the reset. For the sample pack's `Ascension Alpha` layer, resetting the four listed resources effectively resets early-game progression while preserving prestige currency.
 
 - **Empty resetTargets arrays are valid**: Prestige layers with empty `resetTargets` arrays are intentional "bonus layers" that grant rewards without resetting any resources. Use cases include: milestone rewards that don't require sacrifice, achievement-style prestige that stacks with other layers, and tutorial/onboarding layers that introduce prestige mechanics gently without penalizing players.
 
@@ -458,7 +458,7 @@ describe('PrestigeModal', () => {
 - Cross-session prestige statistics and achievements
 - Prestige automation rules (if authorization policy changes)
 - Multi-currency prestige rewards (beyond single resource)
-- Explicit `resetGenerators` and `resetUpgrades` schema arrays (if use cases emerge)
+- Prestige UI: surface generator/upgrade reset + retention targets in the reset summary
 - Multiplier curve support for scaling rewards based on prestige count
 
 ## 14. References

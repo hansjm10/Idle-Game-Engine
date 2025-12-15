@@ -44,6 +44,7 @@ import {
 import {
   applyPrestigeReset,
   type PrestigeResetTarget,
+  type PrestigeResourceFlagTarget,
   type PrestigeRetentionTarget,
 } from './prestige-reset.js';
 import { telemetry } from './telemetry.js';
@@ -1414,6 +1415,8 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       status,
       reward,
       resetTargets: record.definition.resetTargets,
+      resetGenerators: record.definition.resetGenerators,
+      resetUpgrades: record.definition.resetUpgrades,
       retainedTargets: this.computeRetainedTargets(record),
     };
   }
@@ -1468,9 +1471,15 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     // Collect retained resource IDs to skip during reset
     const retainedResourceIds = new Set<string>();
+    const retainedGeneratorIds = new Set<string>();
+    const retainedUpgradeIds = new Set<string>();
     for (const entry of retention) {
       if (entry.kind === 'resource') {
         retainedResourceIds.add(entry.resourceId);
+      } else if (entry.kind === 'generator') {
+        retainedGeneratorIds.add(entry.generatorId);
+      } else if (entry.kind === 'upgrade') {
+        retainedUpgradeIds.add(entry.upgradeId);
       }
     }
 
@@ -1480,6 +1489,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     // Build reset targets with calculated startAmounts (skip retained resources)
     const resetTargets: PrestigeResetTarget[] = [];
+    const resetResourceFlags: PrestigeResourceFlagTarget[] = [];
     for (const resetResourceId of record.definition.resetTargets) {
       if (retainedResourceIds.has(resetResourceId)) {
         continue; // Skip retained resources
@@ -1490,6 +1500,11 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
         resetTargets.push({
           resourceId: resetResourceId,
           resetToAmount: definition.startAmount ?? 0,
+        });
+        resetResourceFlags.push({
+          resourceId: resetResourceId,
+          unlocked: definition.unlocked ?? true,
+          visible: Boolean(definition.visible ?? true),
         });
       }
     }
@@ -1522,13 +1537,58 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       },
       resetTargets,
       retentionTargets,
+      resetResourceFlags,
     });
+
+    const resetStep = this.coordinator.getLastUpdatedStep();
+
+    // Reset generators (owned + enabled) unless explicitly retained.
+    for (const generatorId of record.definition.resetGenerators ?? []) {
+      if (retainedGeneratorIds.has(generatorId)) {
+        continue;
+      }
+
+      const generatorRecord = this.coordinator.getGeneratorRecord(generatorId);
+      if (!generatorRecord) {
+        telemetry.recordWarning('PrestigeResetGeneratorSkipped', {
+          layerId,
+          generatorId,
+        });
+        continue;
+      }
+
+      generatorRecord.state.owned = 0;
+      generatorRecord.state.enabled = true;
+      generatorRecord.state.isUnlocked = false;
+      generatorRecord.state.nextPurchaseReadyAtStep = resetStep + 1;
+    }
+
+    // Reset upgrade purchases unless explicitly retained.
+    for (const upgradeId of record.definition.resetUpgrades ?? []) {
+      if (retainedUpgradeIds.has(upgradeId)) {
+        continue;
+      }
+
+      const upgradeRecord = this.coordinator.getUpgradeRecord(upgradeId);
+      if (!upgradeRecord) {
+        telemetry.recordWarning('PrestigeResetUpgradeSkipped', {
+          layerId,
+          upgradeId,
+        });
+        continue;
+      }
+
+      this.coordinator.setUpgradePurchases(upgradeId, 0);
+    }
 
     // Increment prestige counter if resource exists
     const countIndex = resourceState.getIndex(prestigeCountId);
     if (countIndex !== undefined) {
       resourceState.addAmount(countIndex, 1);
     }
+
+    // Re-evaluate unlock/visibility and upgrade effects after destructive reset.
+    this.coordinator.updateForStep(resetStep);
   }
 
   private computeRewardPreview(
@@ -1570,6 +1630,8 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     for (const entry of retention) {
       if (entry.kind === 'resource') {
         retained.push(entry.resourceId);
+      } else if (entry.kind === 'generator') {
+        retained.push(entry.generatorId);
       } else if (entry.kind === 'upgrade') {
         retained.push(entry.upgradeId);
       }
