@@ -350,7 +350,7 @@ Purchases an upgrade.
 }
 ```
 
-**Generated Command:** `PURCHASE_UPGRADE` with `quantity: 1`
+**Generated Command:** `PURCHASE_UPGRADE` with `{ upgradeId: targetId }`
 
 **Behavior:**
 
