@@ -457,7 +457,7 @@ that:
   single frame. The helpers also keep `netPerSecond[index]` in sync immediately
   so shells can read `getNetPerSecond` without requiring `finalizeTick` in
   integrations that want to display live rates. Systems that queue rates (for
-  example, `createProductionSystem({ trackRates: true })`) rely on
+  example, `createProductionSystem({ applyViaFinalizeTick: true })`) rely on
   `finalizeTick` to roll accumulated income/expense into balances. Helpers
   ignore zero-valued inputs
   and mark the resource dirty

@@ -295,16 +295,27 @@ export interface ProductionSystemOptions {
    * When enabled, the system also populates per-second income/expense buffers
    * by calling `resourceState.applyIncome/applyExpense` (when available).
    *
-   * When the provided `resourceState` also supports `finalizeTick`, the production
-   * system will only queue per-second rates and expects the caller to apply them
-   * via `resourceState.finalizeTick(deltaMs)` after systems run.
-   *
-   * When `finalizeTick` is not available, enabling this option only affects
-   * per-second buffers and does not change balance mutations.
+   * This option is intended for telemetry / UI (live income/expense display) and
+   * does **not** change how balances are mutated.
    *
    * @default false
    */
   readonly trackRates?: boolean;
+  /**
+   * Apply production/consumption by queuing per-second rates (via
+   * `resourceState.applyIncome/applyExpense`) and deferring balance mutations to
+   * `resourceState.finalizeTick(deltaMs)`.
+   *
+   * This makes rate-based application an explicit opt-in so enabling `trackRates`
+   * cannot silently stall balances.
+   *
+   * When enabled, the provided `resourceState` must support:
+   * - `applyIncome` / `applyExpense` (rate tracking), and
+   * - `finalizeTick` (to roll rates into balances).
+   *
+   * @default false
+   */
+  readonly applyViaFinalizeTick?: boolean;
   /**
    * Optional callback invoked after each tick with production statistics.
    *
@@ -524,12 +535,21 @@ export function createProductionSystem(
   const rateTrackingState = supportsRateTracking(resourceState)
     ? resourceState
     : undefined;
-  const trackRates = options.trackRates === true;
+  const applyViaFinalizeTick = options.applyViaFinalizeTick === true;
+  const trackRates = options.trackRates === true || applyViaFinalizeTick;
   const useFinalizeTickRates =
-    trackRates && rateTrackingState !== undefined && supportsFinalizeTick(resourceState);
+    applyViaFinalizeTick &&
+    rateTrackingState !== undefined &&
+    supportsFinalizeTick(resourceState);
 
   if (applyThreshold <= 0 || !Number.isFinite(applyThreshold)) {
     throw new Error('applyThreshold must be a positive finite number');
+  }
+
+  if (applyViaFinalizeTick && !useFinalizeTickRates) {
+    throw new Error(
+      'applyViaFinalizeTick requires resourceState.applyIncome/applyExpense and resourceState.finalizeTick.',
+    );
   }
 
   // Track accumulated fractional amounts per generator/resource
