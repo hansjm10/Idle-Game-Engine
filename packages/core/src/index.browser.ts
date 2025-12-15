@@ -261,11 +261,12 @@ export class IdleEngineRuntime {
    * Advance the simulation by `deltaMs`, clamping the number of processed
    * steps to avoid spiral of death scenarios.
    */
-  tick(deltaMs: number): void {
+  tick(deltaMs: number): number {
     if (deltaMs <= 0) {
-      return;
+      return 0;
     }
 
+    let processedSteps = 0;
     this.accumulator += deltaMs;
     let remainingStepBudget = this.maxStepsPerFrame;
 
@@ -274,7 +275,7 @@ export class IdleEngineRuntime {
       const steps = Math.min(availableSteps, remainingStepBudget);
 
       if (steps === 0) {
-        return;
+        return processedSteps;
       }
 
       this.accumulator -= steps * this.stepSizeMs;
@@ -400,6 +401,7 @@ export class IdleEngineRuntime {
         recordBackPressureTelemetry(backPressure);
 
         this.currentStep += 1;
+        processedSteps += 1;
         this.nextExecutableStep = this.currentStep;
         telemetry.recordTick();
 
@@ -411,6 +413,8 @@ export class IdleEngineRuntime {
 
       remainingStepBudget -= steps;
     }
+
+    return processedSteps;
   }
 }
 

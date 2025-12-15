@@ -640,6 +640,7 @@ describe('runtime.worker integration', () => {
     let currentStep = 0;
     vi.spyOn(harness.runtime, 'tick').mockImplementation(() => {
       currentStep += 1;
+      return 1;
     });
     vi.spyOn(harness.runtime, 'getCurrentStep').mockImplementation(
       () => currentStep,
