@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content DSL Schema Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content DSL Schema Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #11"><meta data-rh="true" property="og:description" content="Issue: #11"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content DSL Schema Design","item":"https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.9e1e0589.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.e40af7bf.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f7253bbf.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -485,12 +485,23 @@ diagnostics.</li>
 <li class=""><code>produces</code>: array of <code>{ resourceId, rate: NumericFormula }</code>.</li>
 <li class=""><code>consumes</code>: optional array of <code>{ resourceId, rate: NumericFormula }</code> for
 upkeep costs.</li>
-<li class=""><code>purchase</code>: strict object with explicit scalar schemas:<!-- -->
+<li class=""><code>purchase</code>: strict object describing purchase costs:<!-- -->
+<ul>
+<li class="">Backwards-compatible single-currency form:<!-- -->
 <ul>
 <li class=""><code>currencyId</code>: <code>contentIdSchema</code> (lowercased during normalisation).</li>
 <li class=""><code>baseCost</code>: <code>nonNegativeNumberSchema</code> ensuring finite, ≥0 values.</li>
 <li class=""><code>costCurve</code>: <code>numericFormulaSchema</code> evaluated in the runtime against the
 current purchase count.</li>
+</ul>
+</li>
+<li class="">Multi-resource form:<!-- -->
+<ul>
+<li class=""><code>costs</code>: array of <code>{ resourceId, baseCost, costCurve }</code> entries, where
+<code>resourceId</code> is a <code>contentIdSchema</code> reference. Entries must be unique by
+<code>resourceId</code> and are normalised to a deterministic ordering.</li>
+</ul>
+</li>
 <li class=""><code>maxBulk</code>: optional <code>positiveIntSchema</code> constraining bulk-buy UI affordances.</li>
 </ul>
 </li>
@@ -523,8 +534,9 @@ rates are finite, and <code>maxBulk</code> respects <code>maxLevel</code>.</li>
 <code>{ kind: &#x27;guildPerk&#x27;; id: ContentId }</code>, or <code>{ kind: &#x27;global&#x27; }</code>) so upgrade
 payloads stay strongly typed and avoid the stringly typed anti-pattern noted
 above.</li>
-<li class=""><code>cost</code>: same schema as generator <code>purchase</code>, reusing the scalar contracts for
-<code>currencyId</code>, <code>baseCost</code>, <code>costCurve</code>, and <code>maxBulk</code>.</li>
+<li class=""><code>cost</code>: same schema as generator <code>purchase</code>, supporting either the
+single-currency shorthand (<code>currencyId</code>/<code>baseCost</code>/<code>costCurve</code>) or a
+multi-resource <code>costs[]</code> list, plus optional <code>maxBulk</code>.</li>
 <li class=""><code>repeatable</code>: optional block describing stacking rules (<code>maxPurchases</code>,
 <code>costCurve</code>, <code>effectCurve</code>).</li>
 <li class=""><code>prerequisites</code>: array of <code>conditionSchema</code> or upgrade ids (internally
