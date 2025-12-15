@@ -14,7 +14,7 @@
     "docs:dev": "pnpm --filter @idle-engine/docs run start",
     "docs:build": "pnpm --filter @idle-engine/docs run build",
     "docs:serve": "pnpm --filter @idle-engine/docs run serve",
-    "core:tick-sim": "pnpm tsx tools/runtime-sim/index.ts",
+    "core:tick-sim": "pnpm --filter @idle-engine/runtime-sim-cli run sim --",
     "core:economy-verify": "pnpm tsx tools/economy-verification/src/index.ts",
     "generate": "pnpm --filter @idle-engine/content-validation-cli run compile",
     "generate:version": "node tools/scripts/generate-version.mjs",
