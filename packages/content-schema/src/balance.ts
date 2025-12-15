@@ -46,6 +46,12 @@ type CostProgression = {
   readonly kind: 'generator' | 'upgrade' | 'prestige';
 };
 
+type UnlockOrderingLookup = Readonly<{
+  readonly resources: ReadonlyMap<string, NormalizedResource>;
+  readonly generators: ReadonlyMap<string, NormalizedGenerator>;
+  readonly upgrades: ReadonlyMap<string, NormalizedUpgrade>;
+}>;
+
 const createLevelSamples = (
   sampleSize: number,
   maxLevel: number | undefined,
@@ -599,7 +605,8 @@ const collectPrestigeRewards = (
 
 const conditionReferencesResource = (
   condition: Condition | undefined,
-  resourceId: string,
+  resource: NormalizedResource,
+  lookup: UnlockOrderingLookup,
 ): boolean => {
   if (!condition) {
     return false;
@@ -607,9 +614,22 @@ const conditionReferencesResource = (
 
   switch (condition.kind) {
     case 'resourceThreshold':
-      return condition.resourceId === resourceId;
+      return condition.resourceId === resource.id;
     case 'generatorLevel':
+      return (
+        lookup.generators
+          .get(condition.generatorId)
+          ?.produces.some((entry) => entry.resourceId === resource.id) ?? false
+      );
     case 'upgradeOwned':
+      return (
+        lookup.upgrades
+          .get(condition.upgradeId)
+          ?.effects.some(
+            (effect) =>
+              effect.kind === 'unlockResource' && effect.resourceId === resource.id,
+          ) ?? false
+      );
     case 'prestigeUnlocked':
     case 'flag':
     case 'script':
@@ -619,10 +639,10 @@ const conditionReferencesResource = (
     case 'allOf':
     case 'anyOf':
       return condition.conditions.some((nested) =>
-        conditionReferencesResource(nested, resourceId),
+        conditionReferencesResource(nested, resource, lookup),
       );
     case 'not':
-      return conditionReferencesResource(condition.condition, resourceId);
+      return conditionReferencesResource(condition.condition, resource, lookup);
     default:
       return false;
   }
@@ -646,12 +666,12 @@ const checkResourceOrdering = (
   unlockCondition: Condition | undefined,
   dependentPath: readonly (string | number)[],
   dependentId: string,
-  resources: ReadonlyMap<string, NormalizedResource>,
+  lookup: UnlockOrderingLookup,
   warnings: ContentSchemaWarning[],
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
 ) => {
-  const resource = resources.get(resourceId);
+  const resource = lookup.resources.get(resourceId);
   if (!resource) {
     return;
   }
@@ -660,7 +680,7 @@ const checkResourceOrdering = (
     return;
   }
 
-  if (conditionReferencesResource(unlockCondition, resourceId)) {
+  if (conditionReferencesResource(unlockCondition, resource, lookup)) {
     return;
   }
 
@@ -685,6 +705,7 @@ const validateGenerators = (
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
 ) => {
+  const unlockOrderingLookup: UnlockOrderingLookup = pack.lookup;
   pack.generators.forEach((generator, index) => {
     checkNonNegativeRates(generator, index, sampleLevels, warnings, errors, sink);
     collectGeneratorCosts(generator, index, sampleLevels, maxGrowth, warnings, errors, sink);
@@ -693,7 +714,7 @@ const validateGenerators = (
       generator.baseUnlock,
       ['generators', index, 'purchase', 'currencyId'],
       generator.id,
-      pack.lookup.resources,
+      unlockOrderingLookup,
       warnings,
       errors,
       sink,
@@ -704,7 +725,7 @@ const validateGenerators = (
         generator.baseUnlock,
         ['generators', index, 'consumes', consumeIndex, 'resourceId'],
         generator.id,
-        pack.lookup.resources,
+        unlockOrderingLookup,
         warnings,
         errors,
         sink,
@@ -721,6 +742,7 @@ const validateUpgrades = (
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
 ) => {
+  const unlockOrderingLookup: UnlockOrderingLookup = pack.lookup;
   pack.upgrades.forEach((upgrade, index) => {
     const maxPurchases = upgrade.repeatable
       ? upgrade.repeatable.maxPurchases ?? sampleSize
@@ -732,7 +754,7 @@ const validateUpgrades = (
       upgrade.unlockCondition,
       ['upgrades', index, 'cost', 'currencyId'],
       upgrade.id,
-      pack.lookup.resources,
+      unlockOrderingLookup,
       warnings,
       errors,
       sink,
