@@ -212,6 +212,15 @@ export interface ProgressionCoordinator {
   getGrantedAutomationIds(): ReadonlySet<string>;
 
   /**
+   * Returns a {@link ConditionContext} bound to the coordinator's current state.
+   *
+   * @remarks
+   * This is intended for wiring into other systems (e.g. AutomationSystem) that
+   * need to evaluate shared unlock/visibility semantics.
+   */
+  getConditionContext(): ConditionContext;
+
+  /**
    * Retrieves the resource definition for a given resource ID.
    * Used by prestige system to access startAmount for resource resets.
    *
@@ -783,6 +792,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 
 	  getGrantedAutomationIds(): ReadonlySet<string> {
 	    return this.grantedAutomationIds;
+	  }
+
+	  getConditionContext(): ConditionContext {
+	    return this.conditionContext;
 	  }
 
 	  getResourceDefinition(resourceId: string): ResourceDefinition | undefined {

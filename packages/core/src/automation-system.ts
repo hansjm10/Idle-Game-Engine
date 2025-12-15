@@ -32,6 +32,8 @@ import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 import type { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
+import { evaluateCondition } from './condition-evaluator.js';
+import type { ConditionContext } from './condition-evaluator.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
 import { mapSystemTargetToCommandType } from './system-automation-target-mapping.js';
@@ -88,6 +90,18 @@ export interface AutomationSystemOptions {
   readonly resourceState: ResourceStateAccessor;
   readonly initialState?: Map<string, AutomationState>;
   /**
+   * Optional context for evaluating automation unlock conditions.
+   *
+   * @remarks
+   * When provided, {@link AutomationDefinition.unlockCondition} is evaluated
+   * using {@link evaluateCondition} and applied monotonically: once unlocked,
+   * an automation stays unlocked even if the condition later becomes false.
+   *
+   * When omitted, the system only auto-unlocks `{ kind: 'always' }` conditions
+   * (or uses {@link isAutomationUnlocked}) for backwards compatibility.
+   */
+  readonly conditionContext?: ConditionContext;
+  /**
    * Optional hook for externally unlocking automations (e.g. via upgrade effects).
    *
    * @remarks
@@ -107,8 +121,9 @@ export interface AutomationSystemOptions {
  * Unlock state is persistent: once an automation is unlocked (either via
  * initialState or unlock condition evaluation), it remains unlocked. The
  * system only evaluates unlock conditions for automations that are not yet
- * unlocked. Currently, only 'always' unlock conditions are evaluated; full
- * condition evaluation requires integration with progression systems.
+ * unlocked. When `conditionContext` is provided, `unlockCondition` is evaluated
+ * via {@link evaluateCondition}; otherwise only `{ kind: 'always' }` is
+ * auto-unlocked (plus {@link isAutomationUnlocked}).
  *
  * @param options - Configuration options including automations, step duration,
  *                  command queue, resource state, and optional initial state.
@@ -133,7 +148,14 @@ export function createAutomationSystem(
     options?: { savedWorkerStep?: number; currentStep?: number },
   ) => void;
 } {
-  const { automations, stepDurationMs, commandQueue, resourceState, isAutomationUnlocked } = options;
+  const {
+    automations,
+    stepDurationMs,
+    commandQueue,
+    resourceState,
+    isAutomationUnlocked,
+    conditionContext,
+  } = options;
   const automationStates = new Map<string, AutomationState>();
   const pendingEventTriggers = new Set<string>();
 
@@ -248,13 +270,17 @@ export function createAutomationSystem(
 
         // Update unlock status (only if not already unlocked)
         // Once unlocked, automations stay unlocked (unlock state is persistent)
-        // For MVP, only 'always' condition is evaluated; full unlock evaluation
-        // requires condition context (deferred to integration)
         if (!state.unlocked && isAutomationUnlocked?.(automation.id)) {
           state.unlocked = true;
         }
-        if (!state.unlocked && automation.unlockCondition.kind === 'always') {
-          state.unlocked = true;
+        if (!state.unlocked) {
+          if (conditionContext) {
+            if (evaluateCondition(automation.unlockCondition, conditionContext)) {
+              state.unlocked = true;
+            }
+          } else if (automation.unlockCondition.kind === 'always') {
+            state.unlocked = true;
+          }
         }
 
         // Skip if not unlocked or not enabled
