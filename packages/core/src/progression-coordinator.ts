@@ -44,6 +44,7 @@ import {
 import {
   applyPrestigeReset,
   type PrestigeResetTarget,
+  type PrestigeResourceFlagTarget,
   type PrestigeRetentionTarget,
 } from './prestige-reset.js';
 import { telemetry } from './telemetry.js';
@@ -1488,6 +1489,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     // Build reset targets with calculated startAmounts (skip retained resources)
     const resetTargets: PrestigeResetTarget[] = [];
+    const resetResourceFlags: PrestigeResourceFlagTarget[] = [];
     for (const resetResourceId of record.definition.resetTargets) {
       if (retainedResourceIds.has(resetResourceId)) {
         continue; // Skip retained resources
@@ -1498,6 +1500,11 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
         resetTargets.push({
           resourceId: resetResourceId,
           resetToAmount: definition.startAmount ?? 0,
+        });
+        resetResourceFlags.push({
+          resourceId: resetResourceId,
+          unlocked: Boolean(definition.unlocked),
+          visible: Boolean(definition.visible ?? true),
         });
       }
     }
@@ -1530,6 +1537,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       },
       resetTargets,
       retentionTargets,
+      resetResourceFlags,
     });
 
     const resetStep = this.coordinator.getLastUpdatedStep();
@@ -1551,6 +1559,7 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
       generatorRecord.state.owned = 0;
       generatorRecord.state.enabled = true;
+      generatorRecord.state.isUnlocked = false;
       generatorRecord.state.nextPurchaseReadyAtStep = resetStep + 1;
     }
 
@@ -1577,6 +1586,9 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     if (countIndex !== undefined) {
       resourceState.addAmount(countIndex, 1);
     }
+
+    // Re-evaluate unlock/visibility and upgrade effects after destructive reset.
+    this.coordinator.updateForStep(resetStep);
   }
 
   private computeRewardPreview(

@@ -2145,6 +2145,105 @@ describe('Integration: prestige system applyPrestige', () => {
     expect(coordinator.getUpgradeRecord('upgrade.keep-me')?.purchases).toBe(1);
   });
 
+  it('re-locks reset resources and generators after prestige', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const gated = createResourceDefinition('resource.gated', {
+      name: 'Gated',
+      startAmount: 0,
+      unlocked: false,
+      visible: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      } as any,
+      visibilityCondition: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      } as any,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.test-prestige-count', {
+      name: 'Prestige Count',
+      startAmount: 0,
+    });
+
+    const gatedGenerator = createGeneratorDefinition('generator.gated', {
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      baseUnlock: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      } as any,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.test', {
+      resetTargets: [energy.id, gated.id],
+      resetGenerators: [gatedGenerator.id],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: { kind: 'constant', value: 1 },
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, gated, prestigeFlux, prestigeCount],
+        generators: [gatedGenerator],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+    }) as unknown as {
+      updateForStep(step: number): void;
+      resourceState: {
+        requireIndex(id: string): number;
+        addAmount(index: number, amount: number): number;
+        isUnlocked(index: number): boolean;
+        isVisible(index: number): boolean;
+      };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(id: string): { state: { isUnlocked: boolean } } | undefined;
+    };
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const gatedIndex = coordinator.resourceState.requireIndex(gated.id);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(0);
+
+    expect(coordinator.resourceState.isUnlocked(gatedIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(gatedIndex)).toBe(true);
+    expect(coordinator.getGeneratorRecord(gatedGenerator.id)?.state.isUnlocked).toBe(
+      true,
+    );
+
+    coordinator.prestigeEvaluator?.applyPrestige('prestige.test', 'token-relock');
+
+    expect(coordinator.resourceState.isUnlocked(gatedIndex)).toBe(false);
+    expect(coordinator.resourceState.isVisible(gatedIndex)).toBe(false);
+    expect(coordinator.getGeneratorRecord(gatedGenerator.id)?.state.isUnlocked).toBe(
+      false,
+    );
+  });
+
   it('retention formulas can reference multiple resources', () => {
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',

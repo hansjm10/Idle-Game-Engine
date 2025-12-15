@@ -1,5 +1,9 @@
 import type { ResourceState } from './resource-state.js';
-import { __unsafeWriteAmountDirect } from './resource-state.js';
+import {
+  __unsafeWriteAmountDirect,
+  __unsafeWriteUnlockedDirect,
+  __unsafeWriteVisibleDirect,
+} from './resource-state.js';
 import { telemetry } from './telemetry.js';
 
 /**
@@ -21,6 +25,16 @@ export interface PrestigeRetentionTarget {
   readonly resourceId: string;
   /** Raw amount from formula - will be normalized to non-negative integer */
   readonly retainedAmount: number;
+}
+
+/**
+ * Specifies a resource flag reset during prestige.
+ * Used to re-lock/re-hide resources back to their content defaults.
+ */
+export interface PrestigeResourceFlagTarget {
+  readonly resourceId: string;
+  readonly unlocked: boolean;
+  readonly visible: boolean;
 }
 
 /**
@@ -54,6 +68,12 @@ export interface PrestigeResetContext {
    * The retainedAmount should be calculated using pre-reset resource values.
    */
   readonly retentionTargets: readonly PrestigeRetentionTarget[];
+
+  /**
+   * Optional resource flag resets (unlocked/visible).
+   * This supports "full wipe" prestige semantics for resources that were unlocked earlier.
+   */
+  readonly resetResourceFlags?: readonly PrestigeResourceFlagTarget[];
 }
 
 /**
@@ -71,7 +91,14 @@ export interface PrestigeResetContext {
  * @param context - The prestige reset context with pre-calculated values
  */
 export function applyPrestigeReset(context: PrestigeResetContext): void {
-  const { layerId, resourceState, reward, resetTargets, retentionTargets } = context;
+  const {
+    layerId,
+    resourceState,
+    reward,
+    resetTargets,
+    retentionTargets,
+    resetResourceFlags,
+  } = context;
 
   // 1. Grant reward (safe operation using addAmount)
   const rewardIndex = resourceState.getIndex(reward.resourceId);
@@ -111,6 +138,23 @@ export function applyPrestigeReset(context: PrestigeResetContext): void {
         resourceId: target.resourceId,
         targetType: 'retention',
       });
+    }
+  }
+
+  // 4. Reset resource flags (unlock/visibility) when requested
+  if (resetResourceFlags && resetResourceFlags.length > 0) {
+    for (const target of resetResourceFlags) {
+      const index = resourceState.getIndex(target.resourceId);
+      if (index !== undefined) {
+        __unsafeWriteUnlockedDirect(resourceState, index, target.unlocked);
+        __unsafeWriteVisibleDirect(resourceState, index, target.visible);
+      } else {
+        telemetry.recordWarning('PrestigeResetTargetSkipped', {
+          layerId,
+          resourceId: target.resourceId,
+          targetType: 'flags',
+        });
+      }
     }
   }
 
