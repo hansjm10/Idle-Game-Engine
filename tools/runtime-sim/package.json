@@ -1,0 +1,16 @@
+{
+  "name": "@idle-engine/runtime-sim-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sim": "tsx ./index.ts"
+  },
+  "dependencies": {
+    "@idle-engine/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "tsx": "^4.20.6"
+  }
+}
