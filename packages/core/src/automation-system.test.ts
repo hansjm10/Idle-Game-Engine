@@ -226,6 +226,208 @@ describe('AutomationSystem', () => {
       const stateAfterSecondTick = getAutomationState(system);
       expect(stateAfterSecondTick.get('auto:basic')?.unlocked).toBe(true);
     });
+
+    it('should evaluate unlockCondition using conditionContext (monotonic)', () => {
+      let gold = 0;
+      let clicksLevel = 0;
+      let autoUpgradePurchases = 0;
+      let blockerUpgradePurchases = 0;
+      let prestigeLayerUnlocked = false;
+
+      const conditionContext = {
+        getResourceAmount: (resourceId: string) => (resourceId === 'res:gold' ? gold : 0),
+        getGeneratorLevel: (generatorId: string) =>
+          generatorId === 'gen:clicks' ? clicksLevel : 0,
+        getUpgradePurchases: (upgradeId: string) => {
+          if (upgradeId === 'upg:auto') return autoUpgradePurchases;
+          if (upgradeId === 'upg:blocker') return blockerUpgradePurchases;
+          return 0;
+        },
+        hasPrestigeLayerUnlocked: (prestigeLayerId: string) =>
+          prestigeLayerId === 'prestige:layer-1' ? prestigeLayerUnlocked : false,
+      };
+
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:gold' as any,
+          name: { default: 'Auto Gold', variants: {} },
+          description: { default: 'Unlocked by resource threshold', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:gold' as any,
+            comparator: 'gte',
+            amount: { kind: 'constant', value: 100 },
+          },
+          enabledByDefault: false,
+          order: 0,
+        },
+        {
+          id: 'auto:gen' as any,
+          name: { default: 'Auto Gen', variants: {} },
+          description: { default: 'Unlocked by generator level', variants: {} },
+          targetType: 'generator',
+          targetId: 'gen:clicks' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: {
+            kind: 'generatorLevel',
+            generatorId: 'gen:clicks' as any,
+            comparator: 'gte',
+            level: { kind: 'constant', value: 10 },
+          },
+          enabledByDefault: false,
+          order: 0,
+        },
+        {
+          id: 'auto:upgrade' as any,
+          name: { default: 'Auto Upgrade', variants: {} },
+          description: { default: 'Unlocked by upgrade purchases', variants: {} },
+          targetType: 'upgrade',
+          targetId: 'upg:auto' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: {
+            kind: 'upgradeOwned',
+            upgradeId: 'upg:auto' as any,
+            requiredPurchases: 2,
+          },
+          enabledByDefault: false,
+          order: 0,
+        },
+        {
+          id: 'auto:prestige' as any,
+          name: { default: 'Auto Prestige', variants: {} },
+          description: { default: 'Unlocked by prestige', variants: {} },
+          targetType: 'system',
+          targetId: 'sys:noop' as any,
+          systemTargetId: 'sys:noop' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: {
+            kind: 'prestigeUnlocked',
+            prestigeLayerId: 'prestige:layer-1' as any,
+          },
+          enabledByDefault: false,
+          order: 0,
+        },
+        {
+          id: 'auto:nested' as any,
+          name: { default: 'Auto Nested', variants: {} },
+          description: { default: 'Unlocked by nested conditions', variants: {} },
+          targetType: 'system',
+          targetId: 'sys:noop' as any,
+          systemTargetId: 'sys:noop' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+          unlockCondition: {
+            kind: 'allOf',
+            conditions: [
+              {
+                kind: 'resourceThreshold',
+                resourceId: 'res:gold' as any,
+                comparator: 'gte',
+                amount: { kind: 'constant', value: 100 },
+              },
+              {
+                kind: 'anyOf',
+                conditions: [
+                  {
+                    kind: 'generatorLevel',
+                    generatorId: 'gen:clicks' as any,
+                    comparator: 'gte',
+                    level: { kind: 'constant', value: 10 },
+                  },
+                  {
+                    kind: 'prestigeUnlocked',
+                    prestigeLayerId: 'prestige:layer-1' as any,
+                  },
+                ],
+              },
+              {
+                kind: 'not',
+                condition: {
+                  kind: 'upgradeOwned',
+                  upgradeId: 'upg:blocker' as any,
+                  requiredPurchases: 1,
+                },
+              },
+            ],
+          },
+          enabledByDefault: false,
+          order: 0,
+        },
+      ];
+
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue: new CommandQueue(),
+        resourceState: { getAmount: () => 0 },
+        conditionContext,
+      });
+
+      system.tick({
+        step: 0,
+        deltaMs: 100,
+        events: {} as any,
+      });
+
+      expect(getAutomationState(system).get('auto:gold')?.unlocked).toBe(false);
+      expect(getAutomationState(system).get('auto:gen')?.unlocked).toBe(false);
+      expect(getAutomationState(system).get('auto:upgrade')?.unlocked).toBe(false);
+      expect(getAutomationState(system).get('auto:prestige')?.unlocked).toBe(false);
+      expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(false);
+
+      gold = 100;
+      system.tick({
+        step: 1,
+        deltaMs: 100,
+        events: {} as any,
+      });
+      expect(getAutomationState(system).get('auto:gold')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(false);
+
+      clicksLevel = 10;
+      system.tick({
+        step: 2,
+        deltaMs: 100,
+        events: {} as any,
+      });
+      expect(getAutomationState(system).get('auto:gen')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(true);
+
+      blockerUpgradePurchases = 1;
+      autoUpgradePurchases = 2;
+      system.tick({
+        step: 3,
+        deltaMs: 100,
+        events: {} as any,
+      });
+      expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:upgrade')?.unlocked).toBe(true);
+
+      prestigeLayerUnlocked = true;
+      system.tick({
+        step: 4,
+        deltaMs: 100,
+        events: {} as any,
+      });
+      expect(getAutomationState(system).get('auto:prestige')?.unlocked).toBe(true);
+
+      gold = 0;
+      clicksLevel = 0;
+      autoUpgradePurchases = 0;
+      prestigeLayerUnlocked = false;
+      system.tick({
+        step: 5,
+        deltaMs: 100,
+        events: {} as any,
+      });
+      expect(getAutomationState(system).get('auto:gold')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:gen')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:upgrade')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:prestige')?.unlocked).toBe(true);
+      expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(true);
+    });
   });
 
   describe('restoreState behavior', () => {
