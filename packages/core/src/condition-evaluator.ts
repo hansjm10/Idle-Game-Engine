@@ -168,6 +168,11 @@ export function evaluateCondition(
       const purchases = context.getUpgradePurchases(condition.upgradeId);
       return purchases >= condition.requiredPurchases;
     }
+    case 'prestigeCountThreshold': {
+      const prestigeCountId = `${condition.prestigeLayerId}-prestige-count`;
+      const count = context.getResourceAmount(prestigeCountId);
+      return compareWithComparator(count, condition.count, condition.comparator, context);
+    }
     case 'prestigeUnlocked': {
       if (!context.hasPrestigeLayerUnlocked) {
         reportMissingContextHook(
@@ -342,6 +347,12 @@ export function describeCondition(
     }
     case 'upgradeOwned':
       return `Requires owning ${condition.requiredPurchases}× ${condition.upgradeId}`;
+    case 'prestigeCountThreshold':
+      return `Requires prestige count for ${condition.prestigeLayerId} ${formatComparator(
+        condition.comparator,
+      )} ${formatNumber(condition.count)}`;
+    case 'prestigeUnlocked':
+      return `Requires prestige layer ${condition.prestigeLayerId} available`;
     case 'allOf': {
       const parts = condition.conditions
         .map(describeCondition)

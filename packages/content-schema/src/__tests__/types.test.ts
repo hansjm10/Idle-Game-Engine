@@ -249,6 +249,7 @@ describe('Type Assertions: Base Schema Primitives', () => {
       | { kind: 'resourceThreshold'; resourceId: string }
       | { kind: 'generatorLevel'; generatorId: string }
       | { kind: 'upgradeOwned'; upgradeId: string }
+      | { kind: 'prestigeCountThreshold'; prestigeLayerId: string }
       | { kind: 'prestigeUnlocked'; prestigeLayerId: string }
       | { kind: 'flag'; flagId: string }
       | { kind: 'script'; scriptId: string }

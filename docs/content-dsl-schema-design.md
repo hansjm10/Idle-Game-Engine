@@ -257,6 +257,12 @@ type Condition =
       upgradeId: ContentId;
       requiredPurchases?: number; // defaults to 1 during normalisation
     }
+  | {
+      kind: 'prestigeCountThreshold';
+      prestigeLayerId: ContentId;
+      comparator?: 'gte' | 'gt' | 'lte' | 'lt'; // defaults to 'gte' during normalisation
+      count?: number; // positive int, defaults to 1 during normalisation
+    }
   | { kind: 'prestigeUnlocked'; prestigeLayerId: ContentId }
   | { kind: 'flag'; flagId: FlagId }
   | { kind: 'script'; scriptId: ScriptId }
@@ -295,7 +301,7 @@ edges. https://en.wikipedia.org/wiki/Non-monotonic_logic
 
 #### 5.4.1 Condition Evaluation Semantics (Runtime Behavior)
 
-> **Note**: This subsection documents the **existing runtime implementation** of condition evaluation as shipped in PR #303 (`packages/shell-web/src/modules/condition-evaluator.ts`). This is retroactive documentation of production code.
+> **Note**: This subsection documents the **existing runtime implementation** of condition evaluation in `packages/core/src/condition-evaluator.ts`.
 
 **Evaluation Context**:
 
@@ -303,6 +309,9 @@ Conditions are evaluated against live game state via a `ConditionContext` interf
 - `getResourceAmount(resourceId: string): number` - Current resource amount
 - `getGeneratorLevel(generatorId: string): number` - Generator owned count
 - `getUpgradePurchases(upgradeId: string): number` - Upgrade purchase count
+- `hasPrestigeLayerUnlocked?(prestigeLayerId: string): boolean` - Whether a prestige layer is currently available/unlocked
+- `isFlagSet?(flagId: string): boolean` - Feature flag lookup
+- `evaluateScriptCondition?(scriptId: string): boolean` - Script-driven condition evaluation
 - `onError?: (error: Error) => void` - Optional error callback for telemetry
 
 **Static Threshold Evaluation**:
@@ -335,6 +344,18 @@ This differs from **dynamic cost curves** which evaluate with `level: purchaseIn
   - Retrieves upgrade purchase count via context
   - Checks if purchases ≥ `requiredPurchases` (defaults to 1)
   - Example: `{ kind: 'upgradeOwned', upgradeId: 'efficiency', requiredPurchases: 3 }` checks if upgrade purchased ≥3 times
+- **`prestigeUnlocked`**:
+  - Uses `context.hasPrestigeLayerUnlocked(prestigeLayerId)`
+  - Semantics: **prestige layer is currently available/unlocked**, not "player has prestiged at least once"
+  - Example: `{ kind: 'prestigeUnlocked', prestigeLayerId: 'sample-pack.ascension-alpha' }` checks if the layer is available now
+- **`prestigeCountThreshold`**:
+  - Reads the prestige counter resource using the convention `{prestigeLayerId}-prestige-count`
+  - Compares the current count against `count` (defaults to 1) using `comparator` (defaults to `gte`)
+  - Example: `{ kind: 'prestigeCountThreshold', prestigeLayerId: 'sample-pack.ascension-alpha' }` checks if player has prestiged at least once
+- **`flag`**:
+  - Uses `context.isFlagSet(flagId)` when supplied
+- **`script`**:
+  - Uses `context.evaluateScriptCondition(scriptId)` when supplied
 - **`allOf`**:
   - Evaluates all nested conditions recursively
   - Returns `true` only if **every** condition passes (logical AND)
@@ -360,7 +381,7 @@ Unknown condition kinds or comparators trigger fail-safe behavior:
 When conditions are used for `baseUnlock` on generators, the progression coordinator implements **persistent unlock** behavior:
 
 ```typescript
-// packages/shell-web/src/modules/progression-coordinator.ts:310-312
+// packages/core/src/progression-coordinator.ts
 if (!record.state.isUnlocked && baseUnlock) {
   record.state.isUnlocked = true;  // Never reverts!
 }
@@ -386,9 +407,9 @@ The runtime generates unlock hints for locked content using `describeCondition()
 These hints are displayed in progression UI when upgrades are locked, helping players understand unlock requirements.
 
 **Implementation Reference**:
-- Condition evaluator: `packages/shell-web/src/modules/condition-evaluator.ts:1-283`
-- Condition evaluation tests: `packages/shell-web/src/modules/condition-evaluator.test.ts:1-556`
-- Progression coordinator integration: `packages/shell-web/src/modules/progression-coordinator.ts:305-318, 331-349`
+- Condition evaluator: `packages/core/src/condition-evaluator.ts`
+- Condition evaluation tests: `packages/core/src/condition-evaluator.test.ts`
+- Progression coordinator integration: `packages/core/src/progression-coordinator.ts`
 - Persistent unlock behavior: Documented in `docs/progression-coordinator-design.md` §6.2.4
 
 **Content Authoring Guidelines**:

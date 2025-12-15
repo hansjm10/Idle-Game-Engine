@@ -82,6 +82,23 @@ Use it as a template when authoring or validating new packs:
   (`floor((energy + crystal + 2 * data-core) / 750)` capped to 1–5000). A
   minimum of 1 Prestige Flux is retained after each reset.
 
+### Prestige gating conditions
+
+`prestigeUnlocked` is easy to misread as "post-prestige". In the engine it means
+"the prestige layer is currently available/unlocked" (i.e., the reset action is
+available right now).
+
+For "post-prestige only" content ("the player has prestiged at least once"),
+use `prestigeCountThreshold`, which evaluates against the `{layerId}-prestige-count`
+resource internally (so you don't need magic-string resource IDs).
+
+```json
+{
+  "kind": "prestigeCountThreshold",
+  "prestigeLayerId": "sample-pack.ascension-alpha"
+}
+```
+
 ## Naming Conventions
 
 The schema enforces naming through `packSlugSchema`, `contentIdSchema`, and
