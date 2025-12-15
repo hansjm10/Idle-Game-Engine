@@ -47,6 +47,9 @@ describe('property: generator and upgrade formulas remain finite and non-negativ
         expect(r2).toBeGreaterThanOrEqual(0);
 
         // Cost multiplier should also be finite and non-negative
+        if (!('costCurve' in gen.purchase)) {
+          throw new Error('Expected single-currency generator purchase definition.');
+        }
         const multiplier = evaluateNumericFormula(gen.purchase.costCurve, levelContext);
         expect(Number.isFinite(multiplier)).toBe(true);
         expect(multiplier).toBeGreaterThanOrEqual(0);
@@ -86,6 +89,9 @@ describe('property: generator and upgrade formulas remain finite and non-negativ
           ...context,
           variables: { ...(context.variables ?? {}), level },
         };
+        if (!('costCurve' in upgrade.cost)) {
+          throw new Error('Expected single-currency upgrade cost definition.');
+        }
         const multiplier = evaluateNumericFormula(upgrade.cost.costCurve, levelContext);
         expect(Number.isFinite(multiplier)).toBe(true);
         expect(multiplier).toBeGreaterThanOrEqual(0);
@@ -94,4 +100,3 @@ describe('property: generator and upgrade formulas remain finite and non-negativ
     );
   });
 });
-

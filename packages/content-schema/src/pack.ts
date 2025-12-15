@@ -849,15 +849,29 @@ const validateCrossReferences = (
         ensureFormulaReference(reference, ['generators', index, 'consumes', consumeIndex, 'rate'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
       });
     });
-    ensureContentReference(
-      resourceIndex,
-      generator.purchase.currencyId,
-      ['generators', index, 'purchase', 'currencyId'],
-      `Generator "${generator.id}" references unknown currency "${generator.purchase.currencyId}".`,
-    );
-    collectFormulaEntityReferences(generator.purchase.costCurve, (reference) => {
-      ensureFormulaReference(reference, ['generators', index, 'purchase', 'costCurve'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
-    });
+    if ('costs' in generator.purchase) {
+      generator.purchase.costs.forEach((cost, costIndex) => {
+        ensureContentReference(
+          resourceIndex,
+          cost.resourceId,
+          ['generators', index, 'purchase', 'costs', costIndex, 'resourceId'],
+          `Generator "${generator.id}" references unknown cost resource "${cost.resourceId}".`,
+        );
+        collectFormulaEntityReferences(cost.costCurve, (reference) => {
+          ensureFormulaReference(reference, ['generators', index, 'purchase', 'costs', costIndex, 'costCurve'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
+        });
+      });
+    } else {
+      ensureContentReference(
+        resourceIndex,
+        generator.purchase.currencyId,
+        ['generators', index, 'purchase', 'currencyId'],
+        `Generator "${generator.id}" references unknown currency "${generator.purchase.currencyId}".`,
+      );
+      collectFormulaEntityReferences(generator.purchase.costCurve, (reference) => {
+        ensureFormulaReference(reference, ['generators', index, 'purchase', 'costCurve'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
+      });
+    }
     if (generator.automation) {
       ensureContentReference(
         automationIndex,
@@ -953,15 +967,29 @@ const validateCrossReferences = (
           break;
       }
     });
-    ensureContentReference(
-      resourceIndex,
-      upgrade.cost.currencyId,
-      ['upgrades', index, 'cost', 'currencyId'],
-      `Upgrade "${upgrade.id}" references unknown currency "${upgrade.cost.currencyId}".`,
-    );
-    collectFormulaEntityReferences(upgrade.cost.costCurve, (reference) => {
-      ensureFormulaReference(reference, ['upgrades', index, 'cost', 'costCurve'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
-    });
+    if ('costs' in upgrade.cost) {
+      upgrade.cost.costs.forEach((cost, costIndex) => {
+        ensureContentReference(
+          resourceIndex,
+          cost.resourceId,
+          ['upgrades', index, 'cost', 'costs', costIndex, 'resourceId'],
+          `Upgrade "${upgrade.id}" references unknown cost resource "${cost.resourceId}".`,
+        );
+        collectFormulaEntityReferences(cost.costCurve, (reference) => {
+          ensureFormulaReference(reference, ['upgrades', index, 'cost', 'costs', costIndex, 'costCurve'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
+        });
+      });
+    } else {
+      ensureContentReference(
+        resourceIndex,
+        upgrade.cost.currencyId,
+        ['upgrades', index, 'cost', 'currencyId'],
+        `Upgrade "${upgrade.id}" references unknown currency "${upgrade.cost.currencyId}".`,
+      );
+      collectFormulaEntityReferences(upgrade.cost.costCurve, (reference) => {
+        ensureFormulaReference(reference, ['upgrades', index, 'cost', 'costCurve'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
+      });
+    }
     upgrade.effects.forEach((effect, effectIndex) => {
       validateUpgradeEffect(
         effect,

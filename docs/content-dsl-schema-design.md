@@ -525,11 +525,16 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
   - `produces`: array of `{ resourceId, rate: NumericFormula }`.
   - `consumes`: optional array of `{ resourceId, rate: NumericFormula }` for
     upkeep costs.
-  - `purchase`: strict object with explicit scalar schemas:
-    - `currencyId`: `contentIdSchema` (lowercased during normalisation).
-    - `baseCost`: `nonNegativeNumberSchema` ensuring finite, ≥0 values.
-    - `costCurve`: `numericFormulaSchema` evaluated in the runtime against the
-      current purchase count.
+  - `purchase`: strict object describing purchase costs:
+    - Backwards-compatible single-currency form:
+      - `currencyId`: `contentIdSchema` (lowercased during normalisation).
+      - `baseCost`: `nonNegativeNumberSchema` ensuring finite, ≥0 values.
+      - `costCurve`: `numericFormulaSchema` evaluated in the runtime against the
+        current purchase count.
+    - Multi-resource form:
+      - `costs`: array of `{ resourceId, baseCost, costCurve }` entries, where
+        `resourceId` is a `contentIdSchema` reference. Entries must be unique by
+        `resourceId` and are normalised to a deterministic ordering.
     - `maxBulk`: optional `positiveIntSchema` constraining bulk-buy UI affordances.
   - `maxLevel`: optional positive integer.
   - `order`: optional float controlling list ordering (sorted before id during
@@ -557,8 +562,9 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
     `{ kind: 'guildPerk'; id: ContentId }`, or `{ kind: 'global' }`) so upgrade
     payloads stay strongly typed and avoid the stringly typed anti-pattern noted
     above.
-  - `cost`: same schema as generator `purchase`, reusing the scalar contracts for
-    `currencyId`, `baseCost`, `costCurve`, and `maxBulk`.
+  - `cost`: same schema as generator `purchase`, supporting either the
+    single-currency shorthand (`currencyId`/`baseCost`/`costCurve`) or a
+    multi-resource `costs[]` list, plus optional `maxBulk`.
   - `repeatable`: optional block describing stacking rules (`maxPurchases`,
     `costCurve`, `effectCurve`).
   - `prerequisites`: array of `conditionSchema` or upgrade ids (internally

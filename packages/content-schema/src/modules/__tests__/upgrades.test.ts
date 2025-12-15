@@ -55,6 +55,56 @@ describe('upgradeDefinitionSchema', () => {
       }),
     ).toThrowError(/repeatable upgrades must declare at least one progression parameter/i);
   });
+
+  it('accepts multi-resource upgrade costs', () => {
+    const result = upgradeDefinitionSchema.parse({
+      ...baseUpgrade,
+      cost: {
+        costs: [
+          {
+            resourceId: 'crystal',
+            baseCost: 25,
+            costCurve: { kind: 'constant', value: 1 },
+          },
+          {
+            resourceId: 'energy',
+            baseCost: 100,
+            costCurve: { kind: 'constant', value: 1 },
+          },
+        ],
+      },
+    });
+
+    expect('costs' in result.cost).toBe(true);
+    if ('costs' in result.cost) {
+      expect(result.cost.costs.map((cost) => cost.resourceId)).toEqual([
+        'crystal',
+        'energy',
+      ]);
+    }
+  });
+
+  it('rejects duplicate multi-resource upgrade costs', () => {
+    expect(() =>
+      upgradeDefinitionSchema.parse({
+        ...baseUpgrade,
+        cost: {
+          costs: [
+            {
+              resourceId: 'energy',
+              baseCost: 25,
+              costCurve: { kind: 'constant', value: 1 },
+            },
+            {
+              resourceId: 'energy',
+              baseCost: 50,
+              costCurve: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      }),
+    ).toThrowError(/duplicate cost resource/i);
+  });
 });
 
 describe('upgradeCollectionSchema', () => {

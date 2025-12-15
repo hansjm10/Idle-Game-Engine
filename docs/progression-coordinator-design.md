@@ -311,8 +311,8 @@ Implements `GeneratorPurchaseEvaluator` interface from `@idle-engine/core`.
 - Checks generator is unlocked and visible
 - Validates bulk purchase limit (`maxBulk`)
 - Validates not exceeding `maxLevel`
-- Computes total cost by summing individual purchase costs using `computeGeneratorCost()`
-- Returns `GeneratorPurchaseQuote` with `costs: [{ resourceId, amount }]`
+- Computes total costs by summing purchase costs per resource across the requested count
+- Returns `GeneratorPurchaseQuote` with `costs: [{ resourceId, amount }, ...]`
 - Returns `undefined` if any validation fails
 
 **`applyPurchase(generatorId, count)`** (lines 551-556):
@@ -339,18 +339,15 @@ Implements `UpgradePurchaseEvaluator` interface from `@idle-engine/core`.
 **Generator Costs** (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
-computeGeneratorCost(generatorId: string, purchaseIndex: number): number | undefined {
-  const baseCost = record.definition.purchase.baseCost;
-  const evaluatedCost = evaluateCostFormula(
-    record.definition.purchase.costCurve,
-    purchaseIndex,
-  );
-  const cost = evaluatedCost * baseCost;
-  return Number.isFinite(cost) && cost >= 0 ? cost : undefined;
-}
+computeGeneratorCosts(generatorId: string, purchaseIndex: number): readonly GeneratorResourceCost[] | undefined
 ```
 
-Formula: `cost = baseCost × evaluateCostFormula(costCurve, purchaseIndex)`
+**Formula (single-currency)**:
+`amount = baseCost × costCurve(purchaseIndex)`
+
+**Formula (multi-resource)**:
+For each cost entry `i`:
+`amountᵢ = baseCostᵢ × costCurveᵢ(purchaseIndex)`
 
 **Upgrade Costs** (`packages/core/src/progression-coordinator.ts`):
 
@@ -371,7 +368,7 @@ computeUpgradeCosts(record: UpgradeRecord): readonly UpgradeResourceCost[] | und
     amount *= repeatableAdjustment;
   }
 
-  return [{ resourceId: record.definition.cost.currencyId, amount }];
+  return [{ resourceId, amount }, ...];
 }
 ```
 

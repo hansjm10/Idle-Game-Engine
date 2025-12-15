@@ -43,6 +43,7 @@ type CostProgression = {
   readonly values: readonly number[];
   readonly path: readonly (string | number)[];
   readonly entityId: string;
+  readonly resourceId?: string;
   readonly kind: 'generator' | 'upgrade' | 'prestige';
 };
 
@@ -182,6 +183,7 @@ const checkCostProgression = (
     return;
   }
 
+  const label = progression.resourceId ? ` (${progression.resourceId})` : '';
   let previous = progression.values[0] ?? 0;
   progression.values.slice(1).forEach((value, offset) => {
     const level = offset + 1;
@@ -189,7 +191,7 @@ const checkCostProgression = (
       recordIssue(
         {
           code: 'balance.cost.nonMonotonic',
-          message: `Cost for ${progression.kind} "${progression.entityId}" decreases between purchases ${level - 1} and ${level}.`,
+          message: `Cost for ${progression.kind} "${progression.entityId}"${label} decreases between purchases ${level - 1} and ${level}.`,
           path: progression.path,
           severity: 'error',
         },
@@ -204,7 +206,7 @@ const checkCostProgression = (
       recordIssue(
         {
           code: 'balance.cost.exceedsGrowthCap',
-          message: `Cost growth for ${progression.kind} "${progression.entityId}" exceeds ${maxGrowth}x between purchases ${level - 1} and ${level}.`,
+          message: `Cost growth for ${progression.kind} "${progression.entityId}"${label} exceeds ${maxGrowth}x between purchases ${level - 1} and ${level}.`,
           path: progression.path,
           severity: 'error',
         },
@@ -226,142 +228,142 @@ const collectGeneratorCosts = (
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
 ) => {
-  const costs: number[] = [];
-  for (const level of sampleLevels) {
-    const evaluation = evaluateFormula(generator.purchase.costCurve, level);
-    if (!evaluation.ok) {
-      recordIssue(
-        {
-          code: 'balance.cost.evaluationFailed',
-          message: `Cost evaluation failed for generator "${generator.id}" at purchase ${level}.`,
-          path: ['generators', generatorIndex, 'purchase', 'costCurve'],
-          severity: 'error',
-        },
-        warnings,
-        errors,
-        sink,
-      );
-      break;
+  const collectCostProgressionForEntry = (
+    resourceId: string,
+    baseCost: number,
+    costCurve: NumericFormula,
+    pathPrefix: readonly (string | number)[],
+  ) => {
+    const label = ` (${resourceId})`;
+    const costs: number[] = [];
+    for (const level of sampleLevels) {
+      const evaluation = evaluateFormula(costCurve, level);
+      if (!evaluation.ok) {
+        recordIssue(
+          {
+            code: 'balance.cost.evaluationFailed',
+            message: `Cost evaluation failed for generator "${generator.id}"${label} at purchase ${level}.`,
+            path: [...pathPrefix, 'costCurve'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+      const multiplier = evaluation.value;
+      if (!Number.isFinite(multiplier)) {
+        recordIssue(
+          {
+            code: 'balance.cost.nonFinite',
+            message: `Cost multiplier for generator "${generator.id}"${label} is non-finite at purchase ${level}.`,
+            path: [...pathPrefix, 'costCurve'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+      if (multiplier < 0) {
+        recordIssue(
+          {
+            code: 'balance.cost.negative',
+            message: `Cost multiplier for generator "${generator.id}"${label} is negative at purchase ${level}.`,
+            path: [...pathPrefix, 'costCurve'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+      const cost = baseCost * multiplier;
+      if (!Number.isFinite(cost)) {
+        recordIssue(
+          {
+            code: 'balance.cost.nonFinite',
+            message: `Computed cost for generator "${generator.id}"${label} is non-finite at purchase ${level}.`,
+            path: [...pathPrefix, 'baseCost'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+      if (cost < 0) {
+        recordIssue(
+          {
+            code: 'balance.cost.negative',
+            message: `Computed cost for generator "${generator.id}"${label} is negative at purchase ${level}.`,
+            path: [...pathPrefix, 'baseCost'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+      costs.push(cost);
     }
-    const multiplier = evaluation.value;
-    if (!Number.isFinite(multiplier)) {
-      recordIssue(
-        {
-          code: 'balance.cost.nonFinite',
-          message: `Cost multiplier for generator "${generator.id}" is non-finite at purchase ${level}.`,
-          path: ['generators', generatorIndex, 'purchase', 'costCurve'],
-          severity: 'error',
-        },
-        warnings,
-        errors,
-        sink,
+
+    checkCostProgression(
+      {
+        values: costs,
+        path: [...pathPrefix, 'costCurve'],
+        entityId: generator.id,
+        resourceId,
+        kind: 'generator',
+      },
+      maxGrowth,
+      warnings,
+      errors,
+      sink,
+    );
+  };
+
+  if ('costs' in generator.purchase) {
+    generator.purchase.costs.forEach((entry, costIndex) => {
+      collectCostProgressionForEntry(
+        entry.resourceId,
+        entry.baseCost,
+        entry.costCurve,
+        ['generators', generatorIndex, 'purchase', 'costs', costIndex],
       );
-      break;
-    }
-    if (multiplier < 0) {
-      recordIssue(
-        {
-          code: 'balance.cost.negative',
-          message: `Cost multiplier for generator "${generator.id}" is negative at purchase ${level}.`,
-          path: ['generators', generatorIndex, 'purchase', 'costCurve'],
-          severity: 'error',
-        },
-        warnings,
-        errors,
-        sink,
-      );
-      break;
-    }
-    const cost = generator.purchase.baseCost * multiplier;
-    if (!Number.isFinite(cost)) {
-      recordIssue(
-        {
-          code: 'balance.cost.nonFinite',
-          message: `Computed cost for generator "${generator.id}" is non-finite at purchase ${level}.`,
-          path: ['generators', generatorIndex, 'purchase', 'baseCost'],
-          severity: 'error',
-        },
-        warnings,
-        errors,
-        sink,
-      );
-      break;
-    }
-    if (cost < 0) {
-      recordIssue(
-        {
-          code: 'balance.cost.negative',
-          message: `Computed cost for generator "${generator.id}" is negative at purchase ${level}.`,
-          path: ['generators', generatorIndex, 'purchase', 'baseCost'],
-          severity: 'error',
-        },
-        warnings,
-        errors,
-        sink,
-      );
-      break;
-    }
-    costs.push(cost);
+    });
+    return;
   }
 
-  checkCostProgression(
-    {
-      values: costs,
-      path: ['generators', generatorIndex, 'purchase', 'costCurve'],
-      entityId: generator.id,
-      kind: 'generator',
-    },
-    maxGrowth,
-    warnings,
-    errors,
-    sink,
+  collectCostProgressionForEntry(
+    generator.purchase.currencyId,
+    generator.purchase.baseCost,
+    generator.purchase.costCurve,
+    ['generators', generatorIndex, 'purchase'],
   );
 };
 
-const computeUpgradeCostAtLevel = (
+const collectUpgradeCosts = (
   upgrade: NormalizedUpgrade,
   upgradeIndex: number,
-  level: number,
+  sampleLevels: readonly number[],
+  maxGrowth: number,
   warnings: ContentSchemaWarning[],
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
-): number | undefined => {
-  const baseResult = evaluateFormula(upgrade.cost.costCurve, level);
-  if (!baseResult.ok) {
-    recordIssue(
-      {
-        code: 'balance.cost.evaluationFailed',
-        message: `Base cost evaluation failed for upgrade "${upgrade.id}" at purchase ${level}.`,
-        path: ['upgrades', upgradeIndex, 'cost', 'costCurve'],
-        severity: 'error',
-      },
-      warnings,
-      errors,
-      sink,
-    );
-    return undefined;
-  }
-  const baseMultiplier = baseResult.value;
-  if (!Number.isFinite(baseMultiplier) || baseMultiplier < 0) {
-    recordIssue(
-      {
-        code: !Number.isFinite(baseMultiplier)
-          ? 'balance.cost.nonFinite'
-          : 'balance.cost.negative',
-        message: `Base cost multiplier for upgrade "${upgrade.id}" is invalid at purchase ${level}.`,
-        path: ['upgrades', upgradeIndex, 'cost', 'costCurve'],
-        severity: 'error',
-      },
-      warnings,
-      errors,
-      sink,
-    );
-    return undefined;
-  }
+) => {
+  const repeatableCostCurve = upgrade.repeatable?.costCurve;
+  const repeatableMultipliers = sampleLevels.map((level) => {
+    if (!repeatableCostCurve) {
+      return 1;
+    }
 
-  let repeatableMultiplier = 1;
-  if (upgrade.repeatable?.costCurve) {
-    const repeatableResult = evaluateFormula(upgrade.repeatable.costCurve, level);
+    const repeatableResult = evaluateFormula(repeatableCostCurve, level);
     if (!repeatableResult.ok) {
       recordIssue(
         {
@@ -376,75 +378,130 @@ const computeUpgradeCostAtLevel = (
       );
       return undefined;
     }
-    repeatableMultiplier = repeatableResult.value;
+
+    const repeatableMultiplier = repeatableResult.value;
     if (!Number.isFinite(repeatableMultiplier) || repeatableMultiplier < 0) {
       recordIssue(
         {
-        code: !Number.isFinite(repeatableMultiplier)
-          ? 'balance.cost.nonFinite'
-          : 'balance.cost.negative',
-        message: `Repeatable cost multiplier for upgrade "${upgrade.id}" is invalid at purchase ${level}.`,
-        path: ['upgrades', upgradeIndex, 'repeatable', 'costCurve'],
-        severity: 'error',
-      },
-      warnings,
+          code: !Number.isFinite(repeatableMultiplier)
+            ? 'balance.cost.nonFinite'
+            : 'balance.cost.negative',
+          message: `Repeatable cost multiplier for upgrade "${upgrade.id}" is invalid at purchase ${level}.`,
+          path: ['upgrades', upgradeIndex, 'repeatable', 'costCurve'],
+          severity: 'error',
+        },
+        warnings,
         errors,
         sink,
       );
       return undefined;
     }
+
+    return repeatableMultiplier;
+  });
+
+  if (repeatableMultipliers.some((value) => value === undefined)) {
+    return;
   }
 
-  const cost = upgrade.cost.baseCost * baseMultiplier * repeatableMultiplier;
-  if (!Number.isFinite(cost) || cost < 0) {
-    recordIssue(
+  const collectCostProgressionForEntry = (
+    resourceId: string,
+    baseCost: number,
+    costCurve: NumericFormula,
+    pathPrefix: readonly (string | number)[],
+  ) => {
+    const label = ` (${resourceId})`;
+    const costs: number[] = [];
+    for (let index = 0; index < sampleLevels.length; index += 1) {
+      const level = sampleLevels[index] ?? 0;
+      const repeatableMultiplier = repeatableMultipliers[index] ?? 1;
+
+      const baseResult = evaluateFormula(costCurve, level);
+      if (!baseResult.ok) {
+        recordIssue(
+          {
+            code: 'balance.cost.evaluationFailed',
+            message: `Base cost evaluation failed for upgrade "${upgrade.id}"${label} at purchase ${level}.`,
+            path: [...pathPrefix, 'costCurve'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+      const baseMultiplier = baseResult.value;
+      if (!Number.isFinite(baseMultiplier) || baseMultiplier < 0) {
+        recordIssue(
+          {
+            code: !Number.isFinite(baseMultiplier)
+              ? 'balance.cost.nonFinite'
+              : 'balance.cost.negative',
+            message: `Base cost multiplier for upgrade "${upgrade.id}"${label} is invalid at purchase ${level}.`,
+            path: [...pathPrefix, 'costCurve'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+
+      const cost = baseCost * baseMultiplier * repeatableMultiplier;
+      if (!Number.isFinite(cost) || cost < 0) {
+        recordIssue(
+          {
+            code: !Number.isFinite(cost)
+              ? 'balance.cost.nonFinite'
+              : 'balance.cost.negative',
+            message: `Computed cost for upgrade "${upgrade.id}"${label} is invalid at purchase ${level}.`,
+            path: [...pathPrefix, 'baseCost'],
+            severity: 'error',
+          },
+          warnings,
+          errors,
+          sink,
+        );
+        break;
+      }
+
+      costs.push(cost);
+    }
+
+    checkCostProgression(
       {
-        code: !Number.isFinite(cost)
-          ? 'balance.cost.nonFinite'
-          : 'balance.cost.negative',
-        message: `Computed cost for upgrade "${upgrade.id}" is invalid at purchase ${level}.`,
-        path: ['upgrades', upgradeIndex, 'cost', 'baseCost'],
-        severity: 'error',
+        values: costs,
+        path: [...pathPrefix, 'costCurve'],
+        entityId: upgrade.id,
+        resourceId,
+        kind: 'upgrade',
       },
+      maxGrowth,
       warnings,
       errors,
       sink,
     );
-    return undefined;
+  };
+
+  if ('costs' in upgrade.cost) {
+    upgrade.cost.costs.forEach((entry, costIndex) => {
+      collectCostProgressionForEntry(
+        entry.resourceId,
+        entry.baseCost,
+        entry.costCurve,
+        ['upgrades', upgradeIndex, 'cost', 'costs', costIndex],
+      );
+    });
+    return;
   }
 
-  return cost;
-};
-
-const collectUpgradeCosts = (
-  upgrade: NormalizedUpgrade,
-  upgradeIndex: number,
-  sampleLevels: readonly number[],
-  maxGrowth: number,
-  warnings: ContentSchemaWarning[],
-  errors: ContentSchemaWarning[],
-  sink?: IssueSink,
-) => {
-  const costs: number[] = [];
-  for (const level of sampleLevels) {
-    const cost = computeUpgradeCostAtLevel(upgrade, upgradeIndex, level, warnings, errors, sink);
-    if (cost === undefined) {
-      break;
-    }
-    costs.push(cost);
-  }
-
-  checkCostProgression(
-    {
-      values: costs,
-      path: ['upgrades', upgradeIndex, 'cost', 'costCurve'],
-      entityId: upgrade.id,
-      kind: 'upgrade',
-    },
-    maxGrowth,
-    warnings,
-    errors,
-    sink,
+  collectCostProgressionForEntry(
+    upgrade.cost.currencyId,
+    upgrade.cost.baseCost,
+    upgrade.cost.costCurve,
+    ['upgrades', upgradeIndex, 'cost'],
   );
 };
 
@@ -713,16 +770,31 @@ const validateGenerators = (
   pack.generators.forEach((generator, index) => {
     checkNonNegativeRates(generator, index, sampleLevels, warnings, errors, sink);
     collectGeneratorCosts(generator, index, sampleLevels, maxGrowth, warnings, errors, sink);
-    checkResourceOrdering(
-      generator.purchase.currencyId,
-      generator.baseUnlock,
-      ['generators', index, 'purchase', 'currencyId'],
-      generator.id,
-      unlockOrderingLookup,
-      warnings,
-      errors,
-      sink,
-    );
+    if ('costs' in generator.purchase) {
+      generator.purchase.costs.forEach((cost, costIndex) => {
+        checkResourceOrdering(
+          cost.resourceId,
+          generator.baseUnlock,
+          ['generators', index, 'purchase', 'costs', costIndex, 'resourceId'],
+          generator.id,
+          unlockOrderingLookup,
+          warnings,
+          errors,
+          sink,
+        );
+      });
+    } else {
+      checkResourceOrdering(
+        generator.purchase.currencyId,
+        generator.baseUnlock,
+        ['generators', index, 'purchase', 'currencyId'],
+        generator.id,
+        unlockOrderingLookup,
+        warnings,
+        errors,
+        sink,
+      );
+    }
     generator.consumes.forEach((entry, consumeIndex) => {
       checkResourceOrdering(
         entry.resourceId,
@@ -753,16 +825,31 @@ const validateUpgrades = (
       : 0;
     const levels = createLevelSamples(sampleSize, maxPurchases);
     collectUpgradeCosts(upgrade, index, levels, maxGrowth, warnings, errors, sink);
-    checkResourceOrdering(
-      upgrade.cost.currencyId,
-      upgrade.unlockCondition,
-      ['upgrades', index, 'cost', 'currencyId'],
-      upgrade.id,
-      unlockOrderingLookup,
-      warnings,
-      errors,
-      sink,
-    );
+    if ('costs' in upgrade.cost) {
+      upgrade.cost.costs.forEach((cost, costIndex) => {
+        checkResourceOrdering(
+          cost.resourceId,
+          upgrade.unlockCondition,
+          ['upgrades', index, 'cost', 'costs', costIndex, 'resourceId'],
+          upgrade.id,
+          unlockOrderingLookup,
+          warnings,
+          errors,
+          sink,
+        );
+      });
+    } else {
+      checkResourceOrdering(
+        upgrade.cost.currencyId,
+        upgrade.unlockCondition,
+        ['upgrades', index, 'cost', 'currencyId'],
+        upgrade.id,
+        unlockOrderingLookup,
+        warnings,
+        errors,
+        sink,
+      );
+    }
   });
 };
 
