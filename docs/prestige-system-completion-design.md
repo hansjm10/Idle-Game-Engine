@@ -458,7 +458,7 @@ describe('PrestigeModal', () => {
 - Cross-session prestige statistics and achievements
 - Prestige automation rules (if authorization policy changes)
 - Multi-currency prestige rewards (beyond single resource)
-- Explicit `resetGenerators` and `resetUpgrades` schema arrays (if use cases emerge)
+- Prestige UI: surface generator/upgrade reset + retention targets in the reset summary
 - Multiplier curve support for scaling rewards based on prestige count
 
 ## 14. References
