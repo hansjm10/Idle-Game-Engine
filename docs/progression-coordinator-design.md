@@ -11,7 +11,7 @@
 
 ## 1. Summary
 
-This document describes the **Progression Coordinator pattern** implemented in PR #303, which centralizes progression state management for resources, generators, and upgrades. The coordinator owns authoritative progression state, evaluates unlock/visibility conditions per game step, provides purchase cost evaluators to command handlers, and supports hydration from serialized saves. This is **retroactive documentation** of the existing implementation in `packages/shell-web/src/modules/progression-coordinator.ts`.
+This document describes the **Progression Coordinator pattern** implemented in PR #303, which centralizes progression state management for resources, generators, and upgrades. The coordinator owns authoritative progression state, evaluates unlock/visibility conditions per game step, provides purchase cost evaluators to command handlers, and supports hydration from serialized saves. This is **retroactive documentation** of the existing implementation in `packages/core/src/progression-coordinator.ts`.
 
 ## 2. Context & Problem Statement
 
@@ -45,12 +45,12 @@ This document describes the **Progression Coordinator pattern** implemented in P
 
 - **Primary Stakeholders**: Runtime Core maintainers; Shell UX team consuming snapshots
 - **Agent Roles**: N/A (existing implementation)
-- **Affected Packages/Services**: `packages/shell-web` (coordinator implementation); `packages/core` (interfaces, resource state, progression types); `packages/content-sample` (consumed by coordinator)
+- **Affected Packages/Services**: `packages/core` (coordinator implementation, interfaces, resource state, progression types); `packages/shell-web` (worker integration, UI consumption); `packages/content-sample` (consumed by coordinator)
 - **Compatibility Considerations**: Coordinator integrates with existing command handlers; saves from pre-PR#303 require migration handled by resource state reconciliation
 
 ## 5. Current State
 
-**As implemented in PR #303** (`packages/shell-web/src/modules/progression-coordinator.ts:1-818`):
+**As implemented in PR #303** (`packages/core/src/progression-coordinator.ts`):
 
 The coordinator is a facade that:
 - Owns a `ResourceState` instance for managing resource amounts/capacity/flags
@@ -115,7 +115,7 @@ The coordinator acts as a facade over:
 
 #### 6.2.1 Public API Contract
 
-**Interface** (`packages/shell-web/src/modules/progression-coordinator.ts:81-119`):
+**Interface** (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
 export interface ProgressionCoordinator {
@@ -129,7 +129,7 @@ export interface ProgressionCoordinator {
 }
 ```
 
-**Factory Function** (`packages/shell-web/src/modules/progression-coordinator.ts:167-171`):
+**Factory Function** (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
 export function createProgressionCoordinator(
@@ -146,7 +146,7 @@ export function createProgressionCoordinator(
 
 **Hybrid Mutability**:
 
-The coordinator uses **mutable internal records** for performance (`packages/shell-web/src/modules/progression-coordinator.ts:37-54`):
+The coordinator uses **mutable internal records** for performance (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
 type GeneratorRecord = {
@@ -167,7 +167,7 @@ type UpgradeRecord = {
 
 #### 6.2.3 Initialization Flow
 
-**Constructor** (`packages/shell-web/src/modules/progression-coordinator.ts:187-285`):
+**Constructor** (`packages/core/src/progression-coordinator.ts`):
 
 1. **Convert content resources to definitions** (lines 194-206):
    - Maps `NormalizedResource` → `ResourceDefinition`
@@ -205,7 +205,7 @@ type UpgradeRecord = {
 
 #### 6.2.4 Per-Tick Update Logic
 
-**`updateForStep(step)`** (`packages/shell-web/src/modules/progression-coordinator.ts:301-350`):
+**`updateForStep(step)`** (`packages/core/src/progression-coordinator.ts`):
 
 Called by runtime worker after step advances (`packages/shell-web/src/runtime.worker.ts:225`).
 
@@ -276,7 +276,7 @@ for (const record of this.upgradeList) {
 
 #### 6.2.5 Hydration from Saves
 
-**`hydrateResources(serialized)`** (`packages/shell-web/src/modules/progression-coordinator.ts:287-299`):
+**`hydrateResources(serialized)`** (`packages/core/src/progression-coordinator.ts`):
 
 Delegates to `hydrateResourceState()` utility (lines 741-788):
 
@@ -301,7 +301,7 @@ Delegates to `hydrateResourceState()` utility (lines 741-788):
 
 #### 6.2.6 Purchase Evaluators
 
-**Generator Evaluator** (`packages/shell-web/src/modules/progression-coordinator.ts:483-557`):
+**Generator Evaluator** (`packages/core/src/progression-coordinator.ts`):
 
 Implements `GeneratorPurchaseEvaluator` interface from `@idle-engine/core`.
 
@@ -318,7 +318,7 @@ Implements `GeneratorPurchaseEvaluator` interface from `@idle-engine/core`.
 - Increments generator owned count via `incrementGeneratorOwned()`
 - Clamps result to `maxLevel`
 
-**Upgrade Evaluator** (`packages/shell-web/src/modules/progression-coordinator.ts:559-604`):
+**Upgrade Evaluator** (`packages/core/src/progression-coordinator.ts`):
 
 Implements `UpgradePurchaseEvaluator` interface from `@idle-engine/core`.
 
@@ -335,7 +335,7 @@ Implements `UpgradePurchaseEvaluator` interface from `@idle-engine/core`.
 
 #### 6.2.7 Cost Calculation
 
-**Generator Costs** (`packages/shell-web/src/modules/progression-coordinator.ts:395-419`):
+**Generator Costs** (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
 computeGeneratorCost(generatorId: string, purchaseIndex: number): number | undefined {
@@ -351,7 +351,7 @@ computeGeneratorCost(generatorId: string, purchaseIndex: number): number | undef
 
 Formula: `cost = baseCost × evaluateCostFormula(costCurve, purchaseIndex)`
 
-**Upgrade Costs** (`packages/shell-web/src/modules/progression-coordinator.ts:421-456`):
+**Upgrade Costs** (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
 computeUpgradeCosts(record: UpgradeRecord): readonly UpgradeResourceCost[] | undefined {
@@ -386,7 +386,7 @@ amount = baseCost × costCurve(purchaseLevel) × repeatableCostCurve(purchaseLev
 
 #### 6.2.8 Upgrade Status Resolution
 
-**`resolveUpgradeStatus(record)`** (`packages/shell-web/src/modules/progression-coordinator.ts:458-480`):
+**`resolveUpgradeStatus(record)`** (`packages/core/src/progression-coordinator.ts`):
 
 Returns `'purchased' | 'available' | 'locked'` based on:
 
@@ -444,7 +444,7 @@ Create new state objects every tick instead of mutating records.
 
 ## 10. Testing & Validation Plan
 
-**Existing test coverage** (`packages/shell-web/src/modules/progression-coordinator.test.ts`):
+**Existing test coverage** (`packages/core/src/progression-coordinator.test.ts`):
 
 - **789 lines of integration tests** covering:
   - Repeatable upgrade behavior (lines 203-260)
@@ -453,7 +453,7 @@ Create new state objects every tick instead of mutating records.
   - Cost calculation for generators and upgrades
   - Full game loop simulations with resource accumulation
 
-**Condition evaluator tests** (`packages/shell-web/src/modules/condition-evaluator.test.ts`):
+**Condition evaluator tests** (`packages/core/src/condition-evaluator.test.ts`):
 
 - **556 lines of unit tests** covering all condition types, comparators, error handling
 
@@ -504,9 +504,9 @@ Create new state objects every tick instead of mutating records.
 ## 15. References
 
 ### Implementation Files
-- `packages/shell-web/src/modules/progression-coordinator.ts:1-818` - Coordinator implementation
-- `packages/shell-web/src/modules/condition-evaluator.ts:1-283` - Condition evaluation system
-- `packages/shell-web/src/modules/progression-coordinator.test.ts:1-789` - Integration tests
+- `packages/core/src/progression-coordinator.ts` - Coordinator implementation
+- `packages/core/src/condition-evaluator.ts` - Condition evaluation system
+- `packages/core/src/progression-coordinator.test.ts` - Integration tests
 - `packages/shell-web/src/runtime.worker.ts:134-160` - Worker integration
 - `packages/shell-web/src/runtime.worker.ts:225` - Per-tick update call
 - `packages/shell-web/src/runtime.worker.ts:652-798` - Session restore integration

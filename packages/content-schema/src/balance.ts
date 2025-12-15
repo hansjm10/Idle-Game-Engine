@@ -630,6 +630,10 @@ const conditionReferencesResource = (
               effect.kind === 'unlockResource' && effect.resourceId === resource.id,
           ) ?? false
       );
+    case 'prestigeCountThreshold':
+      return `${condition.prestigeLayerId}-prestige-count` === resource.id;
+    case 'prestigeCompleted':
+      return `${condition.prestigeLayerId}-prestige-count` === resource.id;
     case 'prestigeUnlocked':
     case 'flag':
     case 'script':

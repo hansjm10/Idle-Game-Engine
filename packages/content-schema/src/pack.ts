@@ -1759,6 +1759,24 @@ const validateConditionNode = (
           });
         }
         break;
+      case 'prestigeCountThreshold':
+        if (!prestigeLayers.has(node.prestigeLayerId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
+            message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
+          });
+        }
+        break;
+      case 'prestigeCompleted':
+        if (!prestigeLayers.has(node.prestigeLayerId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
+            message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
+          });
+        }
+        break;
       case 'prestigeUnlocked':
         if (!prestigeLayers.has(node.prestigeLayerId)) {
           ctx.addIssue({
@@ -2121,23 +2139,29 @@ const validateUnlockConditionCycles = (
       return refs;
     }
 
-    const visit = (node: Condition) => {
-      switch (node.kind) {
-        case 'resourceThreshold':
-          refs.add(node.resourceId);
-          break;
-        case 'generatorLevel':
-          refs.add(node.generatorId);
-          break;
-        case 'upgradeOwned':
-          refs.add(node.upgradeId);
-          break;
-        case 'prestigeUnlocked':
-          refs.add(node.prestigeLayerId);
-          break;
-        case 'allOf':
-        case 'anyOf':
-          node.conditions.forEach(visit);
+	    const visit = (node: Condition) => {
+	      switch (node.kind) {
+	        case 'resourceThreshold':
+	          refs.add(node.resourceId);
+	          break;
+	        case 'generatorLevel':
+	          refs.add(node.generatorId);
+	          break;
+	        case 'upgradeOwned':
+	          refs.add(node.upgradeId);
+	          break;
+	        case 'prestigeCountThreshold':
+	          refs.add(`${node.prestigeLayerId}-prestige-count`);
+	          break;
+	        case 'prestigeCompleted':
+	          refs.add(`${node.prestigeLayerId}-prestige-count`);
+	          break;
+	        case 'prestigeUnlocked':
+	          refs.add(node.prestigeLayerId);
+	          break;
+	        case 'allOf':
+	        case 'anyOf':
+	          node.conditions.forEach(visit);
           break;
         case 'not':
           visit(node.condition);

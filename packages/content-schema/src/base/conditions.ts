@@ -45,6 +45,16 @@ type ConditionNode =
       requiredPurchases: PositiveInt;
     }
   | {
+      kind: 'prestigeCountThreshold';
+      prestigeLayerId: ContentId;
+      comparator: ConditionComparatorValue;
+      count: PositiveInt;
+    }
+  | {
+      kind: 'prestigeCompleted';
+      prestigeLayerId: ContentId;
+    }
+  | {
       kind: 'prestigeUnlocked';
       prestigeLayerId: ContentId;
     }
@@ -88,6 +98,16 @@ type ConditionNodeInput =
       kind: 'upgradeOwned';
       upgradeId: ContentIdInput;
       requiredPurchases?: PositiveIntInput;
+    }
+  | {
+      kind: 'prestigeCountThreshold';
+      prestigeLayerId: ContentIdInput;
+      comparator?: ConditionComparatorValue;
+      count?: PositiveIntInput;
+    }
+  | {
+      kind: 'prestigeCompleted';
+      prestigeLayerId: ContentIdInput;
     }
   | {
       kind: 'prestigeUnlocked';
@@ -145,6 +165,20 @@ const createConditionSchema = (
         kind: z.literal('upgradeOwned'),
         upgradeId: contentIdSchema,
         requiredPurchases: positiveIntSchema.default(1),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('prestigeCountThreshold'),
+        prestigeLayerId: contentIdSchema,
+        comparator: comparatorSchema.default('gte'),
+        count: positiveIntSchema.default(1),
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal('prestigeCompleted'),
+        prestigeLayerId: contentIdSchema,
       })
       .strict(),
     z

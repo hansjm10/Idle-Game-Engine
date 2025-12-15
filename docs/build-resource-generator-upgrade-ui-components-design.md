@@ -205,7 +205,7 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 
 #### Cost Calculation Formulas (Existing Implementation)
 
-> **Note**: This subsection documents the **existing cost calculation implementation** as shipped in PR #303 (`packages/shell-web/src/modules/progression-coordinator.ts:395-456`). This is retroactive documentation of production code.
+> **Note**: This subsection documents the **existing cost calculation implementation** as shipped in PR #303 (`packages/core/src/progression-coordinator.ts`). This is retroactive documentation of production code.
 
 **Generator Costs**:
 
@@ -262,13 +262,13 @@ This composition allows both the base cost and the repeatable multiplier to scal
 
 Repeatable upgrades remain `status: 'available'` after purchase as long as `purchases < maxPurchases`. If `maxPurchases` is undefined or `Infinity`, the upgrade stays perpetually available. This allows upgrades to be purchased multiple times with escalating costs.
 
-Tested in `packages/shell-web/src/modules/progression-coordinator.test.ts:203-260`.
+Tested in `packages/core/src/progression-coordinator.test.ts`.
 
 **Implementation Reference**:
-- Generator cost calculation: `packages/shell-web/src/modules/progression-coordinator.ts:395-419`
-- Upgrade cost calculation: `packages/shell-web/src/modules/progression-coordinator.ts:421-456`
-- Bulk purchase accumulation: `packages/shell-web/src/modules/progression-coordinator.ts:520-536`
-- Repeatable upgrade test: `packages/shell-web/src/modules/progression-coordinator.test.ts:203-260`
+- Generator cost calculation: `packages/core/src/progression-coordinator.ts`
+- Upgrade cost calculation: `packages/core/src/progression-coordinator.ts`
+- Bulk purchase accumulation: `packages/core/src/progression-coordinator.ts`
+- Repeatable upgrade test: `packages/core/src/progression-coordinator.test.ts`
 
 #### Example Snapshot & Command Flow
 

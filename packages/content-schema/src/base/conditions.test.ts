@@ -62,6 +62,32 @@ describe('conditionSchema', () => {
     });
   });
 
+  it('defaults prestigeCountThreshold comparator/count', () => {
+    const condition = conditionSchema.parse({
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: 'prestige.alpha',
+    });
+
+    expect(condition).toEqual({
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: 'prestige.alpha',
+      comparator: 'gte',
+      count: 1,
+    });
+  });
+
+  it('parses prestigeCompleted condition', () => {
+    const condition = conditionSchema.parse({
+      kind: 'prestigeCompleted',
+      prestigeLayerId: 'prestige.alpha',
+    });
+
+    expect(condition).toEqual({
+      kind: 'prestigeCompleted',
+      prestigeLayerId: 'prestige.alpha',
+    });
+  });
+
   it('requires aggregations to contain at least one condition', () => {
     const result = conditionSchema.safeParse({
       kind: 'allOf',

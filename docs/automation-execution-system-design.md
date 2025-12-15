@@ -118,7 +118,7 @@ Without automation execution, the engine fails to deliver on the core promise of
 - System lifecycle: `setup(context)` for event subscriptions, `tick(context)` for per-step execution
 - Fixed-step tick loop with deterministic command dispatch
 
-**Progression Coordinator** (`packages/shell-web/src/modules/progression-coordinator.ts:1-100`):
+**Progression Coordinator** (`packages/core/src/progression-coordinator.ts`):
 - Manages resource, generator, upgrade state
 - Provides purchase evaluators for cost calculations
 - Hydrates state from serialized saves
@@ -616,7 +616,7 @@ runtime.addSystem(automationSystem);
 - This design document (all sections)
 - `packages/content-schema/src/modules/automations.ts` (schema reference)
 - `packages/core/src/index.ts` (system registration pattern)
-- `packages/shell-web/src/modules/progression-coordinator.ts` (state management pattern)
+- `packages/core/src/progression-coordinator.ts` (state management pattern)
 
 **Communication Cadence**:
 - Daily status updates in #319 (GitHub issue)
@@ -631,7 +631,7 @@ Agents must load before execution:
 - `packages/core/src/index.ts` (runtime architecture)
 - `packages/core/src/command.ts` (command priority definitions)
 - `packages/core/src/events/runtime-event-catalog.ts` (event definitions)
-- `packages/shell-web/src/modules/progression-coordinator.ts` (state management patterns)
+- `packages/core/src/progression-coordinator.ts` (state management patterns)
 - `docs/runtime-command-queue-design.md` (command queue design)
 
 ### Prompting & Constraints

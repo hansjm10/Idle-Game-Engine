@@ -159,10 +159,10 @@ describe('evaluateCondition', () => {
     expect(evaluateCondition(conditionNotMet, context)).toBe(false);
   });
 
-  it('evaluates upgradeOwned condition', () => {
-    const context = createContext({
-      getUpgradePurchases: (id) => (id === 'upgrade.test' ? 3 : 0),
-    });
+	  it('evaluates upgradeOwned condition', () => {
+	    const context = createContext({
+	      getUpgradePurchases: (id) => (id === 'upgrade.test' ? 3 : 0),
+	    });
 
     const conditionMet: Condition = {
       kind: 'upgradeOwned',
@@ -176,13 +176,69 @@ describe('evaluateCondition', () => {
       upgradeId: cid('upgrade.test'),
       requiredPurchases: 5,
     };
-    expect(evaluateCondition(conditionNotMet, context)).toBe(false);
-  });
+	    expect(evaluateCondition(conditionNotMet, context)).toBe(false);
+	  });
 
-  it('evaluates prestigeUnlocked condition via context hook', () => {
-    const context = createContext({
-      hasPrestigeLayerUnlocked: (id) => id === 'prestige.alpha',
-    });
+	  it('evaluates prestigeCountThreshold condition via {layerId}-prestige-count resource', () => {
+	    const context = createContext({
+	      getResourceAmount: (id) => (id === 'prestige.alpha-prestige-count' ? 1 : 0),
+	    });
+
+	    expect(
+	      evaluateCondition(
+	        {
+	          kind: 'prestigeCountThreshold',
+	          prestigeLayerId: cid('prestige.alpha'),
+	          comparator: 'gte',
+	          count: 1,
+	        },
+	        context,
+	      ),
+	    ).toBe(true);
+
+	    expect(
+	      evaluateCondition(
+	        {
+	          kind: 'prestigeCountThreshold',
+	          prestigeLayerId: cid('prestige.alpha'),
+	          comparator: 'gte',
+	          count: 2,
+	        },
+	        context,
+	      ),
+	    ).toBe(false);
+	  });
+
+	  it('evaluates prestigeCompleted condition via {layerId}-prestige-count resource', () => {
+	    const context = createContext({
+	      getResourceAmount: (id) => (id === 'prestige.alpha-prestige-count' ? 1 : 0),
+	    });
+
+	    expect(
+	      evaluateCondition(
+	        {
+	          kind: 'prestigeCompleted',
+	          prestigeLayerId: cid('prestige.alpha'),
+	        },
+	        context,
+	      ),
+	    ).toBe(true);
+
+	    expect(
+	      evaluateCondition(
+	        {
+	          kind: 'prestigeCompleted',
+	          prestigeLayerId: cid('prestige.beta'),
+	        },
+	        context,
+	      ),
+	    ).toBe(false);
+	  });
+
+	  it('evaluates prestigeUnlocked condition via context hook', () => {
+	    const context = createContext({
+	      hasPrestigeLayerUnlocked: (id) => id === 'prestige.alpha',
+	    });
 
     expect(
       evaluateCondition(
@@ -617,21 +673,53 @@ describe('describeCondition', () => {
     expect(describeCondition(condition)).toBe('Requires generator.test > 5');
   });
 
-  it('describes upgradeOwned condition', () => {
-    const condition: Condition = {
-      kind: 'upgradeOwned',
-      upgradeId: cid('upgrade.test'),
-      requiredPurchases: 3,
-    };
-    expect(describeCondition(condition)).toBe(
-      'Requires owning 3× upgrade.test',
-    );
-  });
+	  it('describes upgradeOwned condition', () => {
+	    const condition: Condition = {
+	      kind: 'upgradeOwned',
+	      upgradeId: cid('upgrade.test'),
+	      requiredPurchases: 3,
+	    };
+	    expect(describeCondition(condition)).toBe(
+	      'Requires owning 3× upgrade.test',
+	    );
+	  });
 
-  it('describes allOf condition with multiple parts', () => {
-    const condition: Condition = {
-      kind: 'allOf',
-      conditions: [
+	  it('describes prestigeCountThreshold condition', () => {
+	    const condition: Condition = {
+	      kind: 'prestigeCountThreshold',
+	      prestigeLayerId: cid('prestige.alpha'),
+	      comparator: 'gte',
+	      count: 1,
+	    };
+	    expect(describeCondition(condition)).toBe(
+	      'Requires prestige count for prestige.alpha >= 1',
+	    );
+	  });
+
+	  it('describes prestigeCompleted condition', () => {
+	    const condition: Condition = {
+	      kind: 'prestigeCompleted',
+	      prestigeLayerId: cid('prestige.alpha'),
+	    };
+	    expect(describeCondition(condition)).toBe(
+	      'Requires prestiged at least once in prestige.alpha',
+	    );
+	  });
+
+	  it('describes prestigeUnlocked condition', () => {
+	    const condition: Condition = {
+	      kind: 'prestigeUnlocked',
+	      prestigeLayerId: cid('prestige.alpha'),
+	    };
+	    expect(describeCondition(condition)).toBe(
+	      'Requires prestige layer prestige.alpha available',
+	    );
+	  });
+
+	  it('describes allOf condition with multiple parts', () => {
+	    const condition: Condition = {
+	      kind: 'allOf',
+	      conditions: [
         {
           kind: 'resourceThreshold',
           resourceId: cid('energy'),
