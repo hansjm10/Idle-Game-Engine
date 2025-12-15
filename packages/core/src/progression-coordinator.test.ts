@@ -2122,7 +2122,7 @@ describe('Integration: prestige system applyPrestige', () => {
       generatorEvaluator: { applyPurchase(id: string, count: number): void };
       upgradeEvaluator?: { applyPurchase(id: string): void };
       prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
-      getGeneratorRecord(id: string): { state: { owned: number; enabled: boolean } } | undefined;
+      getGeneratorRecord(id: string): { state: { owned: number; enabled: boolean; isUnlocked: boolean } } | undefined;
       getUpgradeRecord(id: string): { purchases: number } | undefined;
       setGeneratorEnabled(id: string, enabled: boolean): boolean;
     };
@@ -2134,12 +2134,27 @@ describe('Integration: prestige system applyPrestige', () => {
     coordinator.setGeneratorEnabled('generator.reset-me', false);
     coordinator.setGeneratorEnabled('generator.keep-me', false);
 
+    // Verify pre-prestige state
+    expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.owned).toBe(3);
+    expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.enabled).toBe(false);
+    expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.isUnlocked).toBe(true);
+    expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.owned).toBe(2);
+    expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.enabled).toBe(false);
+    expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.isUnlocked).toBe(true);
+    expect(coordinator.getUpgradeRecord('upgrade.reset-me')?.purchases).toBe(1);
+    expect(coordinator.getUpgradeRecord('upgrade.keep-me')?.purchases).toBe(1);
+
     coordinator.prestigeEvaluator?.applyPrestige('prestige.ascension', 'token-reset');
 
     expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.owned).toBe(0);
     expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.enabled).toBe(true);
+    // Generator is re-unlocked by updateForStep since it has no baseUnlock condition
+    // (re-locking behavior is tested in 're-locks gated reset resources...' test)
+    expect(coordinator.getGeneratorRecord('generator.reset-me')?.state.isUnlocked).toBe(true);
     expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.owned).toBe(2);
     expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.enabled).toBe(false);
+    // Retained generators skip the entire reset block, preserving isUnlocked
+    expect(coordinator.getGeneratorRecord('generator.keep-me')?.state.isUnlocked).toBe(true);
 
     expect(coordinator.getUpgradeRecord('upgrade.reset-me')?.purchases).toBe(0);
     expect(coordinator.getUpgradeRecord('upgrade.keep-me')?.purchases).toBe(1);
