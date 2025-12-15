@@ -1194,7 +1194,10 @@ const validateCrossReferences = (
   });
 
   pack.automations.forEach((automation, index) => {
-    if (automation.targetType === 'generator') {
+    if (
+      automation.targetType === 'generator' ||
+      automation.targetType === 'purchaseGenerator'
+    ) {
       if (automation.targetId) {
         ensureContentReference(
           generatorIndex,
@@ -1202,6 +1205,20 @@ const validateCrossReferences = (
           ['automations', index, 'targetId'],
           `Automation "${automation.id}" references unknown generator "${automation.targetId}".`,
         );
+      }
+      if (automation.targetType === 'purchaseGenerator' && automation.targetCount) {
+        collectFormulaEntityReferences(automation.targetCount, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['automations', index, 'targetCount'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
       }
     } else if (automation.targetType === 'upgrade') {
       if (automation.targetId) {
@@ -1211,6 +1228,29 @@ const validateCrossReferences = (
           ['automations', index, 'targetId'],
           `Automation "${automation.id}" references unknown upgrade "${automation.targetId}".`,
         );
+      }
+    } else if (automation.targetType === 'collectResource') {
+      if (automation.targetId) {
+        ensureContentReference(
+          resourceIndex,
+          automation.targetId,
+          ['automations', index, 'targetId'],
+          `Automation "${automation.id}" references unknown resource "${automation.targetId}".`,
+        );
+      }
+      if (automation.targetAmount) {
+        collectFormulaEntityReferences(automation.targetAmount, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['automations', index, 'targetAmount'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
       }
     } else if (automation.targetType === 'system') {
       if (automation.systemTargetId) {

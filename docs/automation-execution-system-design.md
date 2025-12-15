@@ -24,7 +24,7 @@ Automations are fully schematized in `@idle-engine/content-schema` but not execu
 The Idle Game Engine is a data-driven idle game framework where game mechanics are defined in content packs (JSON) and executed by a deterministic runtime. The content schema (`packages/content-schema/src/modules/automations.ts`) defines a complete automation DSL supporting:
 
 - **4 trigger types**: `interval`, `resourceThreshold`, `commandQueueEmpty`, `event`
-- **Target types**: `generator`, `upgrade`, `system`
+- **Target types**: `generator`, `upgrade`, `purchaseGenerator`, `collectResource`, `system`
 - **Optional features**: cooldowns, resource costs, unlock conditions, toggle state
 - **Supporting events**: `automation:toggled`, `resource:threshold-reached`
 
@@ -322,7 +322,13 @@ function enqueueAutomationCommand(
 
   if (targetType === 'generator') {
     commandType = RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR;
-    payload = { generatorId: targetId, enabled: true };
+    payload = { generatorId: targetId, enabled: automation.targetEnabled ?? true };
+  } else if (targetType === 'purchaseGenerator') {
+    commandType = RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR;
+    payload = { generatorId: targetId, count: /* evaluate + clamp targetCount */ 1 };
+  } else if (targetType === 'collectResource') {
+    commandType = RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE;
+    payload = { resourceId: targetId, amount: /* evaluate + clamp targetAmount */ 1 };
   } else if (targetType === 'upgrade') {
     commandType = RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE;
     payload = { upgradeId: targetId };

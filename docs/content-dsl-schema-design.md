@@ -705,9 +705,12 @@ https://raw.githubusercontent.com/open-telemetry/opentelemetry-specification/mai
   - `id`: `contentIdSchema`.
   - `name`: `localizedTextSchema`.
   - `description`: `localizedTextSchema`.
-  - `targetType`: enum (`generator`, `upgrade`, `system`).
-  - `targetId`: required when `targetType` is `generator` or `upgrade` and
-    validated against the relevant ids.
+  - `targetType`: enum (`generator`, `upgrade`, `purchaseGenerator`, `collectResource`, `system`).
+  - `targetId`: required when `targetType` is `generator`, `upgrade`, `purchaseGenerator`, or `collectResource` and
+    validated against the relevant ids (`generator`, `upgrade`, or `resource`).
+  - `targetEnabled`: optional boolean for `targetType === 'generator'` (defaults to `true` at runtime).
+  - `targetCount`: optional `NumericFormula` for `targetType === 'purchaseGenerator'` (defaults to `1` at runtime).
+  - `targetAmount`: optional `NumericFormula` for `targetType === 'collectResource'` (defaults to `1` at runtime).
   - `systemTargetId`: required when `targetType === 'system'`, validated using
     `systemAutomationTargetIdSchema` against the curated allowlist
     (`offline-catchup`, `research-daemon`, etc.).

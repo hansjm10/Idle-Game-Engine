@@ -14,7 +14,12 @@ type ContentId = z.infer<typeof contentIdSchema>;
 type ScriptId = z.infer<typeof scriptIdSchema>;
 type SystemAutomationTargetId = z.infer<typeof systemAutomationTargetIdSchema>;
 
-type AutomationTargetType = 'generator' | 'upgrade' | 'system';
+type AutomationTargetType =
+  | 'generator'
+  | 'upgrade'
+  | 'purchaseGenerator'
+  | 'collectResource'
+  | 'system';
 
 type AutomationTrigger =
   | {
@@ -76,6 +81,9 @@ type AutomationDefinitionInput = {
   readonly targetType: AutomationTargetType;
   readonly targetId?: z.input<typeof contentIdSchema>;
   readonly systemTargetId?: z.input<typeof systemAutomationTargetIdSchema>;
+  readonly targetEnabled?: boolean;
+  readonly targetCount?: z.input<typeof numericFormulaSchema>;
+  readonly targetAmount?: z.input<typeof numericFormulaSchema>;
   readonly trigger: AutomationTriggerInput;
   readonly cooldown?: z.input<typeof finiteNumberSchema>;
   readonly resourceCost?: z.input<typeof resourceCostSchema>;
@@ -92,6 +100,9 @@ type AutomationDefinitionModel = {
   readonly targetType: AutomationTargetType;
   readonly targetId?: ContentId;
   readonly systemTargetId?: SystemAutomationTargetId;
+  readonly targetEnabled?: boolean;
+  readonly targetCount?: NumericFormula;
+  readonly targetAmount?: NumericFormula;
   readonly trigger: AutomationTrigger;
   readonly cooldown?: number;
   readonly resourceCost?: z.infer<typeof resourceCostSchema>;
@@ -110,9 +121,14 @@ export const automationDefinitionSchema: z.ZodType<
     id: contentIdSchema,
     name: localizedTextSchema,
     description: localizedTextSchema,
-    targetType: z.enum(['generator', 'upgrade', 'system'] as const),
+    targetType: z.enum(
+      ['generator', 'upgrade', 'purchaseGenerator', 'collectResource', 'system'] as const,
+    ),
     targetId: contentIdSchema.optional(),
     systemTargetId: systemAutomationTargetIdSchema.optional(),
+    targetEnabled: z.boolean().optional(),
+    targetCount: numericFormulaSchema.optional(),
+    targetAmount: numericFormulaSchema.optional(),
     trigger: triggerSchema,
     cooldown: finiteNumberSchema.optional(),
     resourceCost: resourceCostSchema.optional(),
@@ -138,12 +154,33 @@ export const automationDefinitionSchema: z.ZodType<
           message: 'System automations must not declare a targetId.',
         });
       }
+      if (automation.targetEnabled !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['targetEnabled'],
+          message: 'System automations must not declare targetEnabled.',
+        });
+      }
+      if (automation.targetCount !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['targetCount'],
+          message: 'System automations must not declare targetCount.',
+        });
+      }
+      if (automation.targetAmount !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['targetAmount'],
+          message: 'System automations must not declare targetAmount.',
+        });
+      }
     } else {
       if (!automation.targetId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['targetId'],
-          message: `Automations targeting ${automation.targetType}s must provide a targetId.`,
+          message: `Automations targeting "${automation.targetType}" must provide a targetId.`,
         });
       }
 
@@ -152,6 +189,39 @@ export const automationDefinitionSchema: z.ZodType<
           code: z.ZodIssueCode.custom,
           path: ['systemTargetId'],
           message: 'Only system automations may declare a systemTargetId.',
+        });
+      }
+
+      if (
+        automation.targetType !== 'generator' &&
+        automation.targetEnabled !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['targetEnabled'],
+          message: 'Only generator automations may declare targetEnabled.',
+        });
+      }
+
+      if (
+        automation.targetType !== 'purchaseGenerator' &&
+        automation.targetCount !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['targetCount'],
+          message: 'Only purchaseGenerator automations may declare targetCount.',
+        });
+      }
+
+      if (
+        automation.targetType !== 'collectResource' &&
+        automation.targetAmount !== undefined
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['targetAmount'],
+          message: 'Only collectResource automations may declare targetAmount.',
         });
       }
     }

@@ -548,13 +548,23 @@ function enqueueAutomationCommand(
 
 | Target Type | Command Type | Payload |
 |-------------|--------------|---------|
-| `generator` | `TOGGLE_GENERATOR` | `{ generatorId: targetId, enabled: true }` |
+| `generator` | `TOGGLE_GENERATOR` | `{ generatorId: targetId, enabled: targetEnabled ?? true }` |
 | `upgrade` | `PURCHASE_UPGRADE` | `{ upgradeId: targetId }` |
+| `purchaseGenerator` | `PURCHASE_GENERATOR` | `{ generatorId: targetId, count: floor(targetCount ?? 1) (min 1) }` |
+| `collectResource` | `COLLECT_RESOURCE` | `{ resourceId: targetId, amount: max(targetAmount ?? 1, 0) }` |
 | `system` | System-specific | Mapped via `mapSystemTargetToCommandType()` |
 
 **Generator Behavior:**
 
-Generator automations always enable generators (`enabled: true`). Disabling generators requires manual player commands or system-initiated toggles.
+Generator automations default to enabling generators (`targetEnabled` omitted → `enabled: true`). To disable generators via automation, set `targetEnabled: false`.
+
+**PurchaseGenerator Behavior:**
+
+PurchaseGenerator automations enqueue `PURCHASE_GENERATOR` with a deterministic `count`. When `targetCount` is omitted the runtime defaults to `1`. Non-integer values are floored and counts are clamped to a minimum of `1` before enqueueing.
+
+**CollectResource Behavior:**
+
+CollectResource automations enqueue `COLLECT_RESOURCE` with a deterministic `amount`. When `targetAmount` is omitted the runtime defaults to `1`. Non-positive or non-finite amounts are treated as `0` before enqueueing.
 
 **Example:**
 ```typescript
