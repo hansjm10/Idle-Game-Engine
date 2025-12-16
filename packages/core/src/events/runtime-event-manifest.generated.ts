@@ -8,7 +8,7 @@ export interface ContentEventDefinition {
   readonly packSlug: string;
   readonly type: RuntimeEventType;
   readonly version: number;
-  readonly schema: string;
+  readonly schema?: string;
 }
 
 export interface GeneratedRuntimeEventDefinition {

@@ -18,7 +18,16 @@ const CONTENT_PACK_FILENAMES = ['content/pack.json', 'content/pack.json5'];
 export async function buildRuntimeEventManifest(options = {}) {
   const rootDirectory = options.rootDirectory ?? DEFAULT_REPO_ROOT;
   const baseMetadata = await loadBaseMetadata(rootDirectory);
-  const contentDefinitions = await loadContentEventDefinitions(rootDirectory);
+  const explicitDefinitions = await loadContentEventDefinitions(rootDirectory);
+  const achievementDefinitions = await loadAchievementEventDefinitions(rootDirectory);
+
+  // Merge definitions: explicit event-types.json takes precedence over achievement-extracted
+  const explicitTypes = new Set(explicitDefinitions.map((d) => d.type));
+  const contentDefinitions = [
+    ...explicitDefinitions,
+    ...achievementDefinitions.filter((d) => !explicitTypes.has(d.type)),
+  ];
+
   const manifestDefinitions = buildManifestDefinitions(
     baseMetadata,
     contentDefinitions,
@@ -187,6 +196,82 @@ async function loadContentEventDefinitions(rootDirectory) {
       seenEventTypes,
       rootDirectory,
     );
+  }
+
+  definitions.sort((left, right) => {
+    if (left.packSlug !== right.packSlug) {
+      return left.packSlug < right.packSlug ? -1 : 1;
+    }
+    return left.type < right.type ? -1 : left.type > right.type ? 1 : 0;
+  });
+
+  return definitions;
+}
+
+/**
+ * Extracts event IDs from achievement emitEvent rewards and onUnlockEvents arrays.
+ * These are registered as schema-less events with unknown payload type.
+ */
+async function loadAchievementEventDefinitions(rootDirectory) {
+  const packagesDir = path.join(rootDirectory, 'packages');
+  const directories = await fs.readdir(packagesDir, { withFileTypes: true });
+  const definitions = [];
+  const seenEventTypes = new Set();
+
+  for (const entry of directories) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const packageRoot = path.join(packagesDir, entry.name);
+    const packPath = await findContentPackPath(packageRoot);
+    if (!packPath) {
+      continue;
+    }
+
+    let document;
+    try {
+      document = await readContentPackDocument(packPath);
+    } catch {
+      // Skip invalid pack files - they'll be caught during validation
+      continue;
+    }
+
+    const packSlug = document?.metadata?.id;
+    if (typeof packSlug !== 'string' || packSlug.length === 0) {
+      continue;
+    }
+
+    const achievements = document?.achievements ?? [];
+    for (const achievement of achievements) {
+      // Extract emitEvent reward
+      if (achievement?.reward?.kind === 'emitEvent') {
+        const eventId = achievement.reward.eventId;
+        if (typeof eventId === 'string' && eventId.length > 0 && !seenEventTypes.has(eventId)) {
+          seenEventTypes.add(eventId);
+          definitions.push({
+            packSlug,
+            type: eventId,
+            version: 1,
+            schema: undefined,
+          });
+        }
+      }
+
+      // Extract onUnlockEvents
+      const onUnlockEvents = achievement?.onUnlockEvents ?? [];
+      for (const eventId of onUnlockEvents) {
+        if (typeof eventId === 'string' && eventId.length > 0 && !seenEventTypes.has(eventId)) {
+          seenEventTypes.add(eventId);
+          definitions.push({
+            packSlug,
+            type: eventId,
+            version: 1,
+            schema: undefined,
+          });
+        }
+      }
+    }
   }
 
   definitions.sort((left, right) => {
@@ -400,7 +485,7 @@ function renderModule({
     '  readonly packSlug: string;',
     '  readonly type: RuntimeEventType;',
     '  readonly version: number;',
-    '  readonly schema: string;',
+    '  readonly schema?: string;',
     '}',
     '',
     'export interface GeneratedRuntimeEventDefinition {',
@@ -438,16 +523,19 @@ function formatContentDefinitions(definitions) {
   }
 
   const entries = definitions
-    .map(
-      (definition) => [
+    .map((definition) => {
+      const lines = [
         '  {',
         `    packSlug: '${escapeString(definition.packSlug)}',`,
         `    type: '${escapeString(definition.type)}' as RuntimeEventType,`,
         `    version: ${definition.version},`,
-        `    schema: '${escapeString(definition.schema)}',`,
-        '  }',
-      ].join('\n'),
-    )
+      ];
+      if (definition.schema) {
+        lines.push(`    schema: '${escapeString(definition.schema)}',`);
+      }
+      lines.push('  }');
+      return lines.join('\n');
+    })
     .join(',\n');
 
   return `[\n${entries},\n]`;

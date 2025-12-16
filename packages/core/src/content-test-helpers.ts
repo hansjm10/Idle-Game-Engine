@@ -1,6 +1,7 @@
 import type {
   NormalizedContentPack,
   NormalizedAutomation,
+  NormalizedAchievement,
   NormalizedGenerator,
   NormalizedPrestigeLayer,
   NormalizedResource,
@@ -17,6 +18,10 @@ type GeneratorOverrides = Record<string, unknown> & {
 };
 type UpgradeOverrides = Record<string, unknown> & {
   readonly name?: string | NormalizedUpgrade['name'];
+};
+type AchievementOverrides = Record<string, unknown> & {
+  readonly name?: string | NormalizedAchievement['name'];
+  readonly description?: string | NormalizedAchievement['description'];
 };
 type PrestigeLayerOverrides = Record<string, unknown> & {
   readonly name?: string | NormalizedPrestigeLayer['name'];
@@ -81,6 +86,7 @@ export function createTestDigest(overrides?: Partial<NormalizedContentPack['dige
 export function createContentPack(config: {
   resources?: NormalizedResource[];
   automations?: NormalizedAutomation[];
+  achievements?: NormalizedAchievement[];
   generators?: NormalizedGenerator[];
   upgrades?: NormalizedUpgrade[];
   prestigeLayers?: NormalizedPrestigeLayer[];
@@ -90,6 +96,7 @@ export function createContentPack(config: {
   const {
     resources = [],
     automations = [],
+    achievements = [],
     generators = [],
     upgrades = [],
     prestigeLayers = [],
@@ -100,6 +107,7 @@ export function createContentPack(config: {
   // Build lookup maps
   const resourcesMap = new Map(resources.map((r) => [r.id, r]));
   const automationsMap = new Map(automations.map((a) => [a.id, a]));
+  const achievementsMap = new Map(achievements.map((a) => [a.id, a]));
   const generatorsMap = new Map(generators.map((g) => [g.id, g]));
   const upgradesMap = new Map(upgrades.map((u) => [u.id, u]));
   const prestigeLayersMap = new Map(prestigeLayers.map((p) => [p.id, p]));
@@ -107,6 +115,7 @@ export function createContentPack(config: {
   // Build serialized lookup objects
   const resourceById = Object.fromEntries(resources.map((r) => [r.id, r]));
   const automationById = Object.fromEntries(automations.map((a) => [a.id, a]));
+  const achievementById = Object.fromEntries(achievements.map((a) => [a.id, a]));
   const generatorById = Object.fromEntries(generators.map((g) => [g.id, g]));
   const upgradeById = Object.fromEntries(upgrades.map((u) => [u.id, u]));
   const prestigeLayerById = Object.fromEntries(prestigeLayers.map((p) => [p.id, p]));
@@ -119,7 +128,7 @@ export function createContentPack(config: {
     generators,
     upgrades,
     metrics: [],
-    achievements: [],
+    achievements,
     automations,
     transforms: [],
     prestigeLayers,
@@ -130,7 +139,7 @@ export function createContentPack(config: {
       generators: generatorsMap,
       upgrades: upgradesMap,
       metrics: new Map(),
-      achievements: new Map(),
+      achievements: achievementsMap,
       automations: automationsMap,
       transforms: new Map(),
       prestigeLayers: prestigeLayersMap,
@@ -142,7 +151,7 @@ export function createContentPack(config: {
       generatorById,
       upgradeById,
       metricById: {},
-      achievementById: {},
+      achievementById,
       automationById,
       transformById: {},
       prestigeLayerById,
@@ -255,6 +264,54 @@ export function createUpgradeDefinition(
     ...overrides,
     name: normalizedName,
   } as unknown as NormalizedUpgrade;
+}
+
+/**
+ * Creates a basic achievement definition for testing
+ */
+export function createAchievementDefinition(
+  id: string,
+  overrides?: AchievementOverrides,
+): NormalizedAchievement {
+  const defaultName = id.split('.').pop() || id;
+  const rawName = overrides?.name as
+    | string
+    | NormalizedAchievement['name']
+    | undefined;
+  const normalizedName = ensureLocalizedName<NormalizedAchievement['name']>(
+    rawName,
+    defaultName,
+  );
+  const rawDescription = overrides?.description as
+    | string
+    | NormalizedAchievement['description']
+    | undefined;
+  const normalizedDescription =
+    ensureLocalizedName<NormalizedAchievement['description']>(
+      rawDescription,
+      '',
+    );
+
+  return {
+    id,
+    name: normalizedName,
+    description: normalizedDescription,
+    category: 'progression' as const,
+    tier: 'bronze' as const,
+    tags: [],
+    track: {
+      kind: 'resource' as const,
+      resourceId: 'resource.energy',
+      threshold: literalOne,
+      comparator: 'gte' as const,
+    },
+    progress: {
+      mode: 'oneShot' as const,
+      target: literalOne,
+    },
+    onUnlockEvents: [],
+    ...overrides,
+  } as unknown as NormalizedAchievement;
 }
 
 /**

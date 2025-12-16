@@ -6,6 +6,7 @@ export function buildProgressionSnapshot(step, publishedAt, state) {
     const resources = createResourceViews(stepDurationMs, state?.resources);
     const generators = createGeneratorViews(step, state?.generators, state?.generatorPurchases);
     const upgrades = createUpgradeViews(state?.upgrades, state?.upgradePurchases);
+    const achievements = createAchievementViews(state?.achievements);
     const prestigeLayers = createPrestigeLayerViews(state?.prestigeLayers, state?.prestigeSystem);
     return Object.freeze({
         step,
@@ -13,6 +14,7 @@ export function buildProgressionSnapshot(step, publishedAt, state) {
         resources,
         generators,
         upgrades,
+        ...(achievements ? { achievements } : {}),
         prestigeLayers,
     });
 }
@@ -123,6 +125,42 @@ function createUpgradeViews(upgrades, evaluator) {
         views.push(view);
     }
     return Object.freeze(views);
+}
+function createAchievementViews(achievements) {
+    if (!achievements || achievements.length === 0) {
+        return undefined;
+    }
+    const views = [];
+    for (const achievement of achievements) {
+        const progress = Number(achievement.progress);
+        const target = Number(achievement.target);
+        const completions = Number(achievement.completions);
+        const nextRepeatableAtStep = Number(achievement.nextRepeatableAtStep);
+        const lastCompletedStep = Number(achievement.lastCompletedStep);
+        const view = Object.freeze({
+            id: achievement.id,
+            displayName: achievement.displayName ?? achievement.id,
+            description: achievement.description ?? '',
+            category: achievement.category,
+            tier: achievement.tier,
+            mode: achievement.mode,
+            isVisible: Boolean(achievement.isVisible),
+            isUnlocked: Number.isFinite(completions) && completions > 0,
+            completions: Number.isFinite(completions) && completions > 0
+                ? Math.floor(completions)
+                : 0,
+            progress: Number.isFinite(progress) ? progress : 0,
+            target: Number.isFinite(target) ? target : 0,
+            ...(Number.isFinite(nextRepeatableAtStep) && nextRepeatableAtStep >= 0
+                ? { nextRepeatableAtStep: Math.floor(nextRepeatableAtStep) }
+                : {}),
+            ...(Number.isFinite(lastCompletedStep) && lastCompletedStep >= 0
+                ? { lastCompletedStep: Math.floor(lastCompletedStep) }
+                : {}),
+        });
+        views.push(view);
+    }
+    return views.length > 0 ? Object.freeze(views) : undefined;
 }
 function normalizeRates(rates) {
     if (!rates || rates.length === 0) {

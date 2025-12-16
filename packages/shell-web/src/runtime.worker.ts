@@ -207,8 +207,8 @@ export function initializeRuntimeWorker(
 
   runtime.addSystem({
     id: 'progression-coordinator',
-    tick: ({ step }) => {
-      progressionCoordinator.updateForStep(step + 1);
+    tick: ({ step, events }) => {
+      progressionCoordinator.updateForStep(step + 1, { events });
     },
   });
 

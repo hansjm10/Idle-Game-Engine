@@ -1,6 +1,7 @@
 import type {
   Condition,
   NormalizedContentPack,
+  NormalizedAchievement,
   NormalizedGenerator,
   NormalizedPrestigeLayer,
   NormalizedResource,
@@ -35,6 +36,7 @@ import {
   type PrestigeRewardPreview,
   type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
+  type ProgressionAchievementState,
   type ProgressionGeneratorState,
   type ProgressionPrestigeLayerState,
   type ProgressionResourceState,
@@ -53,7 +55,9 @@ import {
   type ConditionContext,
   describeCondition,
   evaluateCondition,
+  compareWithComparator,
 } from './condition-evaluator.js';
+import type { EventPublisher } from './events/event-bus.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import {
   evaluateUpgradeEffects,
@@ -68,6 +72,11 @@ type Mutable<T> = {
 type GeneratorRecord = {
   readonly definition: NormalizedGenerator;
   readonly state: Mutable<ProgressionGeneratorState>;
+};
+
+type AchievementRecord = {
+  readonly definition: NormalizedAchievement;
+  readonly state: Mutable<ProgressionAchievementState>;
 };
 
 type ResourceConditionRecord = {
@@ -160,8 +169,9 @@ export interface ProgressionCoordinator {
    * all generator and upgrade state based on the current game state.
    *
    * @param step - The current game step number
+   * @param options - Optional context for publishing runtime events
    */
-  updateForStep(step: number): void;
+  updateForStep(step: number, options?: { readonly events?: EventPublisher }): void;
 
   /**
    * Returns the most recent step passed to {@link updateForStep}.
@@ -256,6 +266,16 @@ export interface ProgressionCoordinatorOptions {
    * Called when invalid costs are detected (non-finite or negative values).
    */
   readonly onError?: (error: Error) => void;
+
+  /**
+   * Optional hook for evaluating script-driven conditions and achievement tracks.
+   */
+  readonly evaluateScriptCondition?: (scriptId: string) => boolean;
+
+  /**
+   * Optional hook for reading custom metric values used by achievement tracks.
+   */
+  readonly getCustomMetricValue?: (metricId: string) => number;
 }
 
 /**
@@ -302,14 +322,20 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly generatorList: GeneratorRecord[];
   private readonly upgrades: Map<string, UpgradeRecord>;
   private readonly upgradeList: UpgradeRecord[];
+  private readonly achievements: Map<string, AchievementRecord>;
+  private readonly achievementList: AchievementRecord[];
   private readonly prestigeLayers: Map<string, PrestigeLayerRecord>;
   private readonly prestigeLayerList: PrestigeLayerRecord[];
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
+  private readonly getCustomMetricValue?: (metricId: string) => number;
   private readonly baseDirtyToleranceByIndex: Float64Array;
   private readonly dirtyToleranceOverrideIds = new Set<string>();
   private readonly flagState = new Map<string, boolean>();
   private readonly grantedAutomationIds = new Set<string>();
+  private readonly achievementFlagState = new Map<string, boolean>();
+  private readonly achievementGrantedAutomationIds = new Set<string>();
+  private readonly combinedGrantedAutomationIds = new Set<string>();
   private upgradePurchasesRevision = 0;
   private upgradeEffectsCache:
     | {
@@ -322,6 +348,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 
   constructor(options: ProgressionCoordinatorOptions) {
     this.onError = options.onError;
+    this.getCustomMetricValue = options.getCustomMetricValue;
 
     const initialState = options.initialState
       ? (options.initialState as Mutable<ProgressionAuthoritativeState>)
@@ -393,6 +420,22 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       return record;
     });
 
+    this.achievements = new Map();
+    const initialAchievements = new Map(
+      (initialState?.achievements ?? []).map((achievement) => [
+        achievement.id,
+        achievement,
+      ]),
+    );
+    this.achievementList = options.content.achievements.map((achievement) => {
+      const record = createAchievementRecord(
+        achievement,
+        initialAchievements.get(achievement.id),
+      );
+      this.achievements.set(achievement.id, record);
+      return record;
+    });
+
     const prestigeLayerDefinitions = options.content.prestigeLayers ?? [];
     this.prestigeLayers = new Map();
     const initialPrestigeLayers = new Map(
@@ -438,7 +481,11 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         const record = this.prestigeLayers.get(prestigeLayerId);
         return record?.state.isUnlocked ?? false;
       },
-      isFlagSet: (flagId) => this.flagState.get(flagId) ?? false,
+      isFlagSet: (flagId) =>
+        this.achievementFlagState.get(flagId) ??
+        this.flagState.get(flagId) ??
+        false,
+      evaluateScriptCondition: options.evaluateScriptCondition,
     };
 
     this.generatorEvaluator = new ContentGeneratorEvaluator(this);
@@ -460,6 +507,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     state.upgradePurchases =
       this.upgradeList.length > 0 ? this.upgradeEvaluator : undefined;
     state.upgrades = this.upgradeList.map((record) => record.state);
+    state.achievements =
+      this.achievementList.length > 0
+        ? this.achievementList.map((record) => record.state)
+        : undefined;
     state.prestigeSystem =
       this.prestigeLayerList.length > 0 ? this.prestigeEvaluator : undefined;
     state.prestigeLayers = this.prestigeLayerList.map((record) => record.state);
@@ -532,6 +583,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	    for (const automationId of effects.grantedAutomations) {
 	      this.grantedAutomationIds.add(automationId);
 	    }
+	    this.rebuildCombinedAutomationIds();
 
 	    for (const resourceId of effects.unlockedResources) {
 	      const index = this.resourceState.getIndex(resourceId);
@@ -583,119 +635,495 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	    }
 	  }
 
-	  public updateForStep(step: number): void {
-	    this.lastUpdatedStep = step;
-	    const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
-	    mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
+  public updateForStep(
+    step: number,
+    options?: { readonly events?: EventPublisher },
+  ): void {
+    this.lastUpdatedStep = step;
+    const mutableState = this.state as Mutable<ProgressionAuthoritativeState>;
+    mutableState.stepDurationMs = Math.max(0, mutableState.stepDurationMs);
 
-	    const upgradeEffects = this.getUpgradeEffects(step);
+    const maxIterations = Math.max(1, this.achievementList.length + 1);
 
-	    for (let index = 0; index < this.resourceConditions.length; index += 1) {
-	      const record = this.resourceConditions[index];
+    for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      this.rebuildAchievementDerivedRewards();
 
-      if (record.unlockCondition && !this.resourceState.isUnlocked(index)) {
-        if (evaluateCondition(record.unlockCondition, this.conditionContext)) {
-          this.resourceState.unlock(index);
+      const upgradeEffects = this.getUpgradeEffects(step);
+
+      for (let index = 0; index < this.resourceConditions.length; index += 1) {
+        const record = this.resourceConditions[index];
+
+        if (record.unlockCondition && !this.resourceState.isUnlocked(index)) {
+          if (evaluateCondition(record.unlockCondition, this.conditionContext)) {
+            this.resourceState.unlock(index);
+          }
+        }
+
+        if (record.visibilityCondition && !this.resourceState.isVisible(index)) {
+          if (evaluateCondition(record.visibilityCondition, this.conditionContext)) {
+            this.resourceState.grantVisibility(index);
+          }
         }
       }
 
-      if (record.visibilityCondition && !this.resourceState.isVisible(index)) {
-        if (evaluateCondition(record.visibilityCondition, this.conditionContext)) {
-          this.resourceState.grantVisibility(index);
+      for (const record of this.generatorList) {
+        const unlockedByUpgrade = upgradeEffects.unlockedGenerators.has(
+          record.definition.id,
+        );
+        const baseUnlock = evaluateCondition(
+          record.definition.baseUnlock,
+          this.conditionContext,
+        );
+        const wasUnlocked = record.state.isUnlocked;
+        if (!record.state.isUnlocked && (baseUnlock || unlockedByUpgrade)) {
+          record.state.isUnlocked = true;
         }
+
+        record.state.isVisible = unlockedByUpgrade
+          ? true
+          : this.evaluateVisibility(record.definition.visibilityCondition);
+
+        if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
+          record.state.nextPurchaseReadyAtStep = step + 1;
+        } else if (!wasUnlocked && record.state.isUnlocked) {
+          // Update nextPurchaseReadyAtStep when generator transitions to unlocked
+          record.state.nextPurchaseReadyAtStep = step + 1;
+        }
+        record.state.owned = clampOwned(
+          record.state.owned,
+          record.definition.maxLevel,
+        );
+      }
+
+      for (const record of this.upgradeList) {
+        const status = this.resolveUpgradeStatus(record);
+        record.state.status = status;
+        record.state.isVisible = this.evaluateVisibility(
+          record.definition.visibilityCondition,
+        );
+
+        record.state.unlockHint =
+          status === 'locked'
+            ? describeCondition(
+                record.definition.unlockCondition ??
+                  combineConditions(record.definition.prerequisites),
+              )
+            : undefined;
+
+        record.state.costs = this.computeUpgradeCosts(record);
+        record.state.purchases = record.purchases;
+      }
+
+      const generatorRateMultipliers = upgradeEffects.generatorRateMultipliers;
+      const resourceRateMultipliers = upgradeEffects.resourceRateMultipliers;
+      const baseRateContext = this.createFormulaEvaluationContext(1, step);
+      for (const record of this.generatorList) {
+        const baseProduces = buildGeneratorRates(
+          record.definition.produces,
+          baseRateContext,
+        );
+        const baseConsumes = buildGeneratorRates(
+          record.definition.consumes,
+          baseRateContext,
+        );
+        const generatorMultiplier =
+          generatorRateMultipliers.get(record.definition.id) ?? 1;
+        record.state.produces = baseProduces.map((rate) => {
+          const resourceMultiplier =
+            resourceRateMultipliers.get(rate.resourceId) ?? 1;
+          return {
+            ...rate,
+            rate: rate.rate * generatorMultiplier * resourceMultiplier,
+          };
+        });
+        record.state.consumes = baseConsumes.map((rate) => {
+          const resourceMultiplier =
+            resourceRateMultipliers.get(rate.resourceId) ?? 1;
+          return {
+            ...rate,
+            rate: rate.rate * generatorMultiplier * resourceMultiplier,
+          };
+        });
+      }
+
+      for (const record of this.prestigeLayerList) {
+        const isUnlocked = evaluateCondition(
+          record.definition.unlockCondition,
+          this.conditionContext,
+        );
+        record.state.isUnlocked = isUnlocked;
+        record.state.isVisible = isUnlocked; // Default: visible when unlocked
+        record.state.unlockHint = isUnlocked
+          ? undefined
+          : describeCondition(record.definition.unlockCondition);
+      }
+
+      const achievementsUnlocked = this.updateAchievementsForStep(step, options);
+      if (!achievementsUnlocked) {
+        break;
+      }
+    }
+  }
+
+  private rebuildCombinedAutomationIds(): void {
+    this.combinedGrantedAutomationIds.clear();
+    for (const automationId of this.grantedAutomationIds) {
+      this.combinedGrantedAutomationIds.add(automationId);
+    }
+    for (const automationId of this.achievementGrantedAutomationIds) {
+      this.combinedGrantedAutomationIds.add(automationId);
+    }
+  }
+
+  private rebuildAchievementDerivedRewards(): void {
+    this.achievementFlagState.clear();
+    this.achievementGrantedAutomationIds.clear();
+
+    if (this.achievementList.length === 0) {
+      this.rebuildCombinedAutomationIds();
+      return;
+    }
+
+    const completed: Array<{
+      readonly record: AchievementRecord;
+      readonly index: number;
+      readonly completedAtStep: number;
+    }> = [];
+
+    for (let index = 0; index < this.achievementList.length; index += 1) {
+      const record = this.achievementList[index];
+      const state = record.state;
+      const completions = normalizeNonNegativeInt(state.completions);
+      state.completions = completions;
+      if (completions <= 0) {
+        continue;
+      }
+      const reward = record.definition.reward;
+      if (!reward || (reward.kind !== 'grantFlag' && reward.kind !== 'unlockAutomation')) {
+        continue;
+      }
+
+      const completedAtStep = Number(state.lastCompletedStep);
+      completed.push({
+        record,
+        index,
+        completedAtStep:
+          Number.isFinite(completedAtStep) && completedAtStep >= 0
+            ? Math.floor(completedAtStep)
+            : -1,
+      });
+    }
+
+    completed.sort((left, right) => {
+      if (left.completedAtStep !== right.completedAtStep) {
+        return left.completedAtStep - right.completedAtStep;
+      }
+      return left.index - right.index;
+    });
+
+    for (const entry of completed) {
+      const reward = entry.record.definition.reward;
+      if (!reward) {
+        continue;
+      }
+      if (reward.kind === 'grantFlag') {
+        this.achievementFlagState.set(reward.flagId, reward.value);
+      } else if (reward.kind === 'unlockAutomation') {
+        this.achievementGrantedAutomationIds.add(reward.automationId);
       }
     }
 
-	    for (const record of this.generatorList) {
-	      const unlockedByUpgrade = upgradeEffects.unlockedGenerators.has(
-	        record.definition.id,
-	      );
-	      const baseUnlock = evaluateCondition(
-	        record.definition.baseUnlock,
-	        this.conditionContext,
-	      );
-	      const wasUnlocked = record.state.isUnlocked;
-	      if (!record.state.isUnlocked && (baseUnlock || unlockedByUpgrade)) {
-	        record.state.isUnlocked = true;
-	      }
+    this.rebuildCombinedAutomationIds();
+  }
 
-	      record.state.isVisible = unlockedByUpgrade
-	        ? true
-	        : this.evaluateVisibility(record.definition.visibilityCondition);
+  private updateAchievementsForStep(
+    step: number,
+    options?: { readonly events?: EventPublisher },
+  ): boolean {
+    if (this.achievementList.length === 0) {
+      return false;
+    }
 
-      if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
-        record.state.nextPurchaseReadyAtStep = step + 1;
-      } else if (!wasUnlocked && record.state.isUnlocked) {
-        // Update nextPurchaseReadyAtStep when generator transitions to unlocked
-        record.state.nextPurchaseReadyAtStep = step + 1;
+    let completedAny = false;
+
+    for (const record of this.achievementList) {
+      const definition = record.definition;
+      const state = record.state;
+
+      const completions = normalizeNonNegativeInt(state.completions);
+      state.completions = completions;
+
+      const nextCompletionIndex =
+        state.mode === 'repeatable' ? completions + 1 : 1;
+      const formulaContext = this.createFormulaEvaluationContext(
+        nextCompletionIndex,
+        step,
+      );
+
+      const targetValue =
+        evaluateFiniteNumericFormula(
+          definition.progress.target,
+          formulaContext,
+          this.onError,
+          `Achievement target evaluation for "${definition.id}"`,
+        ) ?? 0;
+      const target = targetValue > 0 ? targetValue : 1;
+      state.target = target;
+
+      const eligible = evaluateCondition(
+        definition.unlockCondition,
+        this.conditionContext,
+      );
+
+      const visible =
+        completions > 0 ||
+        (eligible &&
+          evaluateCondition(definition.visibilityCondition, this.conditionContext));
+      state.isVisible = visible;
+
+      if (state.mode === 'repeatable') {
+        const repeatable = definition.progress.repeatable;
+        const maxRepeats = normalizeOptionalNonNegativeInt(repeatable?.maxRepeats);
+        if (maxRepeats !== undefined && completions >= maxRepeats) {
+          state.progress = Math.max(
+            normalizeFiniteNonNegativeNumber(state.progress),
+            target,
+          );
+          state.nextRepeatableAtStep = undefined;
+          continue;
+        }
+
+        const nextRepeatableAtStep = normalizeOptionalNonNegativeInt(
+          state.nextRepeatableAtStep,
+        );
+
+        if (nextRepeatableAtStep !== undefined && step < nextRepeatableAtStep) {
+          state.nextRepeatableAtStep = nextRepeatableAtStep;
+          state.progress = Math.max(
+            normalizeFiniteNonNegativeNumber(state.progress),
+            target,
+          );
+          continue;
+        }
+
+        const measurement = this.getAchievementTrackValue(definition);
+        state.progress = normalizeFiniteNonNegativeNumber(measurement);
+
+        if (!eligible) {
+          continue;
+        }
+
+        const complete = this.isAchievementTrackComplete(
+          definition,
+          measurement,
+          target,
+        );
+        if (!complete) {
+          continue;
+        }
+
+        state.completions = completions + 1;
+        state.lastCompletedStep = step;
+        state.progress = target;
+
+        const resetWindowTicks =
+          repeatable?.resetWindow &&
+          evaluateFiniteNumericFormula(
+            repeatable.resetWindow,
+            formulaContext,
+            this.onError,
+            `Achievement resetWindow evaluation for "${definition.id}"`,
+          );
+        const resetWindow =
+          normalizeOptionalNonNegativeInt(resetWindowTicks) ?? 1;
+
+        const nextEligibleAt = step + Math.max(1, resetWindow);
+        state.nextRepeatableAtStep =
+          maxRepeats !== undefined && state.completions >= maxRepeats
+            ? undefined
+            : nextEligibleAt;
+
+        this.applyAchievementReward(definition, formulaContext, options);
+        completedAny = true;
+        continue;
       }
-      record.state.owned = clampOwned(
-        record.state.owned,
-        record.definition.maxLevel,
+
+      if (!eligible && completions === 0) {
+        state.progress = 0;
+        continue;
+      }
+
+      if (completions > 0) {
+        state.progress = Math.max(
+          normalizeFiniteNonNegativeNumber(state.progress),
+          target,
+        );
+        continue;
+      }
+
+      const measurement = this.getAchievementTrackValue(definition);
+      state.progress = Math.max(
+        normalizeFiniteNonNegativeNumber(state.progress),
+        normalizeFiniteNonNegativeNumber(measurement),
+      );
+
+      const complete = eligible && this.isAchievementTrackComplete(
+        definition,
+        measurement,
+        target,
+      );
+      if (!complete) {
+        continue;
+      }
+
+      state.completions = 1;
+      state.lastCompletedStep = step;
+      state.progress = target;
+      state.nextRepeatableAtStep = undefined;
+
+      this.applyAchievementReward(definition, formulaContext, options);
+      completedAny = true;
+    }
+
+    return completedAny;
+  }
+
+  private getAchievementTrackValue(
+    achievement: NormalizedAchievement,
+  ): number {
+    switch (achievement.track.kind) {
+      case 'resource':
+        return this.conditionContext.getResourceAmount(achievement.track.resourceId);
+      case 'generator-level':
+        return this.conditionContext.getGeneratorLevel(achievement.track.generatorId);
+      case 'upgrade-owned':
+        return this.conditionContext.getUpgradePurchases(achievement.track.upgradeId);
+      case 'flag':
+        return this.conditionContext.isFlagSet?.(achievement.track.flagId) ? 1 : 0;
+      case 'script':
+        return this.conditionContext.evaluateScriptCondition?.(achievement.track.scriptId)
+          ? 1
+          : 0;
+      case 'custom-metric': {
+        const value = this.getCustomMetricValue?.(achievement.track.metricId);
+        return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+      }
+      default:
+        return 0;
+    }
+  }
+
+  private isAchievementTrackComplete(
+    achievement: NormalizedAchievement,
+    measurement: number,
+    target: number,
+  ): boolean {
+    const left = Number.isFinite(measurement) ? measurement : 0;
+    const right = Number.isFinite(target) ? target : 0;
+
+    if (achievement.track.kind === 'resource') {
+      return compareWithComparator(left, right, achievement.track.comparator, this.conditionContext);
+    }
+
+    return compareWithComparator(left, right, 'gte', this.conditionContext);
+  }
+
+  private applyAchievementReward(
+    achievement: NormalizedAchievement,
+    context: FormulaEvaluationContext,
+    options?: { readonly events?: EventPublisher },
+  ): void {
+    const reward = achievement.reward;
+    let rewardScaling = 1;
+    if (achievement.progress.mode === 'repeatable') {
+      const scalingFormula = achievement.progress.repeatable?.rewardScaling;
+      if (scalingFormula) {
+        const scaling =
+          evaluateFiniteNumericFormula(
+            scalingFormula,
+            context,
+            this.onError,
+            `Achievement rewardScaling evaluation for "${achievement.id}"`,
+          ) ?? 1;
+        rewardScaling = Number.isFinite(scaling) ? scaling : 1;
+      }
+    }
+
+    if (reward?.kind === 'grantResource') {
+      const amount =
+        evaluateFiniteNumericFormula(
+          reward.amount,
+          context,
+          this.onError,
+          `Achievement reward evaluation for "${achievement.id}" (${reward.kind})`,
+        ) ?? 0;
+      this.grantAchievementResource(reward.resourceId, amount * rewardScaling);
+    } else if (reward?.kind === 'grantUpgrade') {
+      this.incrementUpgradePurchases(reward.upgradeId);
+    } else if (reward?.kind === 'unlockAutomation') {
+      this.achievementGrantedAutomationIds.add(reward.automationId);
+      this.rebuildCombinedAutomationIds();
+    } else if (reward?.kind === 'grantFlag') {
+      this.achievementFlagState.set(reward.flagId, reward.value);
+    } else if (reward?.kind === 'emitEvent') {
+      this.publishAchievementEvent(reward.eventId, options?.events);
+    } else if (reward?.kind === 'grantGuildPerk') {
+      this.onError?.(
+        new Error(
+          `Achievement reward "${achievement.id}" references guild perks, but guild perk runtime handling is not implemented.`,
+        ),
       );
     }
 
-	    for (const record of this.upgradeList) {
-	      const status = this.resolveUpgradeStatus(record);
-	      record.state.status = status;
-	      record.state.isVisible = this.evaluateVisibility(
-	        record.definition.visibilityCondition,
+    for (const eventId of achievement.onUnlockEvents) {
+      this.publishAchievementEvent(eventId, options?.events);
+    }
+  }
+
+  private grantAchievementResource(resourceId: string, amount: number): void {
+    const index = this.resourceState.getIndex(resourceId);
+    if (index === undefined) {
+      this.onError?.(
+        new Error(
+          `Achievement grantResource references unknown resource "${resourceId}".`,
+        ),
       );
+      return;
+    }
 
-      record.state.unlockHint =
-        status === 'locked'
-          ? describeCondition(
-              record.definition.unlockCondition ??
-                combineConditions(record.definition.prerequisites),
-            )
-          : undefined;
+    const normalizedAmount = Number.isFinite(amount) ? amount : 0;
+    if (normalizedAmount <= 0) {
+      return;
+    }
 
-	      record.state.costs = this.computeUpgradeCosts(record);
-	      record.state.purchases = record.purchases;
-	    }
+    if (!this.resourceState.isUnlocked(index)) {
+      this.resourceState.unlock(index);
+    }
+    if (!this.resourceState.isVisible(index)) {
+      this.resourceState.grantVisibility(index);
+    }
+    this.resourceState.addAmount(index, normalizedAmount);
+  }
 
-	    const generatorRateMultipliers = upgradeEffects.generatorRateMultipliers;
-	    const resourceRateMultipliers = upgradeEffects.resourceRateMultipliers;
-	    const baseRateContext = this.createFormulaEvaluationContext(1, step);
-	    for (const record of this.generatorList) {
-	      const baseProduces = buildGeneratorRates(
-	        record.definition.produces,
-	        baseRateContext,
-	      );
-	      const baseConsumes = buildGeneratorRates(
-	        record.definition.consumes,
-	        baseRateContext,
-	      );
-	      const generatorMultiplier =
-	        generatorRateMultipliers.get(record.definition.id) ?? 1;
-	      record.state.produces = baseProduces.map((rate) => {
-	        const resourceMultiplier =
-	          resourceRateMultipliers.get(rate.resourceId) ?? 1;
-	        return {
-	          ...rate,
-	          rate: rate.rate * generatorMultiplier * resourceMultiplier,
-	        };
-	      });
-	      record.state.consumes = baseConsumes.map((rate) => {
-	        const resourceMultiplier =
-	          resourceRateMultipliers.get(rate.resourceId) ?? 1;
-	        return {
-	          ...rate,
-	          rate: rate.rate * generatorMultiplier * resourceMultiplier,
-	        };
-	      });
-	    }
+  private publishAchievementEvent(
+    eventId: string,
+    publisher: EventPublisher | undefined,
+  ): void {
+    if (!publisher) {
+      return;
+    }
 
-	    for (const record of this.prestigeLayerList) {
-	      const isUnlocked = evaluateCondition(
-	        record.definition.unlockCondition,
-	        this.conditionContext,
+    try {
+      // Achievement events are registered in the generated manifest with unknown payload type.
+      // The cast is safe because achievement eventIds are extracted from content packs at build time.
+      publisher.publish(eventId as RuntimeEventType, {});
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.onError?.(
+        new Error(
+          `Achievement event publish failed for "${eventId}": ${message}`,
+        ),
       );
-      record.state.isUnlocked = isUnlocked;
-      record.state.isVisible = isUnlocked; // Default: visible when unlocked
-      record.state.unlockHint = isUnlocked
-        ? undefined
-        : describeCondition(record.definition.unlockCondition);
     }
   }
 
@@ -792,7 +1220,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 		  }
 
 	  getGrantedAutomationIds(): ReadonlySet<string> {
-	    return this.grantedAutomationIds;
+	    return this.combinedGrantedAutomationIds;
 	  }
 
 	  getConditionContext(): ConditionContext {
@@ -1361,6 +1789,66 @@ function createUpgradeRecord(
   };
 }
 
+function createAchievementRecord(
+  achievement: NormalizedAchievement,
+  initial?: ProgressionAchievementState,
+): AchievementRecord {
+  const resolveLocalizedText = (
+    value: unknown,
+    fallback: string,
+  ): string => {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value && typeof value === 'object') {
+      const record = value as { readonly default?: unknown };
+      if (typeof record.default === 'string') {
+        return record.default;
+      }
+    }
+    return fallback;
+  };
+
+  const state: Mutable<ProgressionAchievementState> = initial
+    ? (initial as Mutable<ProgressionAchievementState>)
+    : ({
+        id: achievement.id,
+        displayName: resolveLocalizedText(achievement.name, achievement.id),
+        description: resolveLocalizedText(achievement.description, ''),
+        category: achievement.category,
+        tier: achievement.tier,
+        mode: achievement.progress.mode,
+        isVisible: false,
+        completions: 0,
+        progress: 0,
+        target: 0,
+        nextRepeatableAtStep: undefined,
+        lastCompletedStep: undefined,
+      } as Mutable<ProgressionAchievementState>);
+
+  state.id = achievement.id;
+  state.displayName = resolveLocalizedText(achievement.name, achievement.id);
+  state.description = resolveLocalizedText(achievement.description, '');
+  state.category = achievement.category;
+  state.tier = achievement.tier;
+  state.mode = achievement.progress.mode;
+  state.isVisible = Boolean(state.isVisible);
+  state.completions = normalizeNonNegativeInt(state.completions);
+  state.progress = normalizeFiniteNonNegativeNumber(state.progress);
+  state.target = normalizeFiniteNonNegativeNumber(state.target);
+  state.nextRepeatableAtStep = normalizeOptionalNonNegativeInt(
+    state.nextRepeatableAtStep,
+  );
+  state.lastCompletedStep = normalizeOptionalNonNegativeInt(
+    state.lastCompletedStep,
+  );
+
+  return {
+    definition: achievement,
+    state,
+  };
+}
+
 function buildResourceMetadata(
   resources: readonly NormalizedResource[],
 ): ReadonlyMap<string, ResourceProgressionMetadata> {
@@ -1454,6 +1942,52 @@ function evaluateCostFormula(
   } catch {
     return undefined;
   }
+}
+
+function evaluateFiniteNumericFormula(
+  formula: NumericFormula,
+  context: FormulaEvaluationContext,
+  onError: ((error: Error) => void) | undefined,
+  errorPrefix: string,
+): number | undefined {
+  try {
+    const value = evaluateNumericFormula(formula, context);
+    if (!Number.isFinite(value)) {
+      onError?.(new Error(`${errorPrefix} returned invalid value: ${value}`));
+      return undefined;
+    }
+    return value;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    onError?.(new Error(`${errorPrefix} failed: ${message}`));
+    return undefined;
+  }
+}
+
+function normalizeFiniteNonNegativeNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return value;
+}
+
+function normalizeNonNegativeInt(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return Math.floor(value);
+}
+
+function normalizeOptionalNonNegativeInt(
+  value: unknown,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  return Math.floor(value);
 }
 
 function clampOwned(owned: number, maxLevel?: number): number {

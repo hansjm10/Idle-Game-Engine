@@ -63,6 +63,48 @@ export type UpgradeView = Readonly<{
   isVisible: boolean;
 }>;
 
+export type AchievementCategory =
+  | 'progression'
+  | 'prestige'
+  | 'automation'
+  | 'social'
+  | 'collection';
+
+export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
+
+export type AchievementProgressMode = 'oneShot' | 'incremental' | 'repeatable';
+
+export type AchievementView = Readonly<{
+  id: string;
+  displayName: string;
+  description: string;
+  category: AchievementCategory;
+  tier: AchievementTier;
+  mode: AchievementProgressMode;
+  isVisible: boolean;
+  isUnlocked: boolean;
+  completions: number;
+  progress: number;
+  target: number;
+  nextRepeatableAtStep?: number;
+  lastCompletedStep?: number;
+}>;
+
+export interface ProgressionAchievementState {
+  readonly id: string;
+  readonly displayName?: string;
+  readonly description?: string;
+  readonly category: AchievementCategory;
+  readonly tier: AchievementTier;
+  readonly mode: AchievementProgressMode;
+  readonly isVisible: boolean;
+  readonly completions: number;
+  readonly progress: number;
+  readonly target: number;
+  readonly nextRepeatableAtStep?: number;
+  readonly lastCompletedStep?: number;
+}
+
 export type PrestigeRewardContribution = Readonly<{
   sourceResourceId: string;
   sourceAmount: number;
@@ -131,6 +173,7 @@ export type ProgressionSnapshot = Readonly<{
   resources: readonly ResourceView[];
   generators: readonly GeneratorView[];
   upgrades: readonly UpgradeView[];
+  achievements?: readonly AchievementView[];
   prestigeLayers: readonly PrestigeLayerView[];
 }>;
 
@@ -181,6 +224,7 @@ export interface ProgressionAuthoritativeState {
   readonly generators?: readonly ProgressionGeneratorState[];
   readonly upgradePurchases?: UpgradePurchaseEvaluator;
   readonly upgrades?: readonly ProgressionUpgradeState[];
+  readonly achievements?: readonly ProgressionAchievementState[];
   readonly prestigeSystem?: PrestigeSystemEvaluator;
   readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
 }
@@ -201,6 +245,7 @@ export function buildProgressionSnapshot(
     state?.upgrades,
     state?.upgradePurchases,
   );
+  const achievements = createAchievementViews(state?.achievements);
   const prestigeLayers = createPrestigeLayerViews(
     state?.prestigeLayers,
     state?.prestigeSystem,
@@ -212,6 +257,7 @@ export function buildProgressionSnapshot(
     resources,
     generators,
     upgrades,
+    ...(achievements ? { achievements } : {}),
     prestigeLayers,
   });
 }
@@ -366,6 +412,54 @@ function createUpgradeViews(
   }
 
   return Object.freeze(views);
+}
+
+function createAchievementViews(
+  achievements: readonly ProgressionAchievementState[] | undefined,
+): readonly AchievementView[] | undefined {
+  if (!achievements || achievements.length === 0) {
+    return undefined;
+  }
+
+  const views: AchievementView[] = [];
+
+  for (const achievement of achievements) {
+    const progress = Number(achievement.progress);
+    const target = Number(achievement.target);
+    const completions = Number(achievement.completions);
+    const nextRepeatableAtStep = Number(achievement.nextRepeatableAtStep);
+    const lastCompletedStep = Number(achievement.lastCompletedStep);
+
+    const view: AchievementView = Object.freeze({
+      id: achievement.id,
+      displayName: achievement.displayName ?? achievement.id,
+      description: achievement.description ?? '',
+      category: achievement.category,
+      tier: achievement.tier,
+      mode: achievement.mode,
+      isVisible: Boolean(achievement.isVisible),
+      isUnlocked:
+        Number.isFinite(completions) && completions > 0,
+      completions:
+        Number.isFinite(completions) && completions > 0
+          ? Math.floor(completions)
+          : 0,
+      progress:
+        Number.isFinite(progress) ? progress : 0,
+      target:
+        Number.isFinite(target) ? target : 0,
+      ...(Number.isFinite(nextRepeatableAtStep) && nextRepeatableAtStep >= 0
+        ? { nextRepeatableAtStep: Math.floor(nextRepeatableAtStep) }
+        : {}),
+      ...(Number.isFinite(lastCompletedStep) && lastCompletedStep >= 0
+        ? { lastCompletedStep: Math.floor(lastCompletedStep) }
+        : {}),
+    });
+
+    views.push(view);
+  }
+
+  return views.length > 0 ? Object.freeze(views) : undefined;
 }
 
 function normalizeRates(
