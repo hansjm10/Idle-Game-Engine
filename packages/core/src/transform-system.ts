@@ -18,7 +18,7 @@
  * const system = createTransformSystem({
  *   transforms: contentPack.transforms,
  *   stepDurationMs: 100,
- *   resourceState: progressionCoordinator.resourceState,
+ *   resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
  *   conditionContext: progressionCoordinator.createConditionContext(),
  * });
  *
@@ -70,6 +70,7 @@ const STATIC_TRANSFORM_FORMULA_LEVEL = 0;
 export interface TransformState {
   readonly id: string;
   unlocked: boolean;
+  visible: boolean;
   cooldownExpiresStep: number;
   runsThisTick: number;
 }
@@ -325,6 +326,8 @@ function spendInputs(
     a[0].localeCompare(b[0]),
   );
 
+  const spent: Array<{ readonly idx: number; readonly amount: number }> = [];
+
   for (const [resourceId, amount] of sortedCosts) {
     if (amount === 0) continue;
 
@@ -339,40 +342,103 @@ function spendInputs(
     });
 
     if (!success) {
+      if (typeof resourceState.addAmount === 'function') {
+        for (let i = spent.length - 1; i >= 0; i--) {
+          const entry = spent[i];
+          resourceState.addAmount(entry.idx, entry.amount);
+        }
+      }
       return false;
     }
+
+    spent.push({ idx, amount });
   }
 
   return true;
+}
+
+type PreparedResourceDelta = {
+  readonly resourceId: string;
+  readonly resourceIndex: number;
+  readonly amount: number;
+};
+
+type PreparedOutputsResult =
+  | { readonly ok: true; readonly outputs: readonly PreparedResourceDelta[] }
+  | { readonly ok: false; readonly error: TransformExecutionResult['error'] };
+
+function prepareOutputs(
+  outputs: Map<string, number>,
+  resourceState: TransformResourceState,
+  transformId: string,
+): PreparedOutputsResult {
+  const sortedOutputs = [...outputs.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
+
+  const prepared: PreparedResourceDelta[] = [];
+  for (const [resourceId, amount] of sortedOutputs) {
+    if (amount === 0) continue;
+
+    if (!resourceState.getResourceIndex) {
+      return {
+        ok: false,
+        error: {
+          code: 'RESOURCE_STATE_MISSING_INDEXER',
+          message: 'Resource state does not support resource id lookups.',
+          details: { transformId },
+        },
+      };
+    }
+
+    const idx = resourceState.getResourceIndex(resourceId);
+    if (idx === -1) {
+      return {
+        ok: false,
+        error: {
+          code: 'OUTPUT_RESOURCE_NOT_FOUND',
+          message: `Output resource "${resourceId}" not found.`,
+          details: { transformId, resourceId },
+        },
+      };
+    }
+
+    if (typeof resourceState.addAmount !== 'function') {
+      return {
+        ok: false,
+        error: {
+          code: 'RESOURCE_STATE_MISSING_ADD_AMOUNT',
+          message: 'Resource state does not support applying transform outputs.',
+          details: { transformId },
+        },
+      };
+    }
+
+    prepared.push({ resourceId, resourceIndex: idx, amount });
+  }
+
+  return { ok: true, outputs: prepared };
 }
 
 /**
  * Applies all output amounts using addAmount pattern.
  */
 function applyOutputs(
-  outputs: Map<string, number>,
+  outputs: readonly PreparedResourceDelta[],
   resourceState: TransformResourceState,
 ): void {
-  // Sort by resourceId for deterministic order
-  const sortedOutputs = [...outputs.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
-  );
+  if (outputs.length === 0) {
+    return;
+  }
 
-  for (const [resourceId, amount] of sortedOutputs) {
-    if (amount === 0) continue;
+  if (typeof resourceState.addAmount !== 'function') {
+    telemetry.recordWarning('TransformOutputApplyUnsupported', {});
+    return;
+  }
 
-    const idx = resourceState.getResourceIndex?.(resourceId) ?? -1;
-    if (idx === -1) {
-      telemetry.recordWarning('TransformOutputResourceNotFound', {
-        resourceId,
-      });
-      continue;
-    }
-
-    // Use addAmount if available
-    if (typeof resourceState.addAmount === 'function') {
-      resourceState.addAmount(idx, amount);
-    }
+  for (const output of outputs) {
+    if (output.amount === 0) continue;
+    resourceState.addAmount(output.resourceIndex, output.amount);
   }
 }
 
@@ -434,7 +500,8 @@ export function createTransformSystem(
     transformById.set(transform.id, transform);
     transformStates.set(transform.id, {
       id: transform.id,
-      unlocked: false,
+      unlocked: !transform.unlockCondition,
+      visible: true,
       cooldownExpiresStep: 0,
       runsThisTick: 0,
     });
@@ -513,6 +580,11 @@ export function createTransformSystem(
       };
     }
 
+    const preparedOutputs = prepareOutputs(outputs, resourceState, transform.id);
+    if (!preparedOutputs.ok) {
+      return { success: false, error: preparedOutputs.error };
+    }
+
     // Atomically spend inputs
     const spendSuccess = spendInputs(costs, resourceState, transform.id);
     if (!spendSuccess) {
@@ -527,7 +599,7 @@ export function createTransformSystem(
     }
 
     // Apply outputs
-    applyOutputs(outputs, resourceState);
+    applyOutputs(preparedOutputs.outputs, resourceState);
 
     // Update cooldown
     updateTransformCooldown(transform, state, step, stepDurationMs, formulaContext);
@@ -584,6 +656,37 @@ export function createTransformSystem(
           details: { transformId },
         },
       };
+    }
+
+    // Validate runs parameter if provided (defensive; handler also validates)
+    if (execOptions?.runs !== undefined) {
+      const runs = execOptions.runs;
+      if (
+        typeof runs !== 'number' ||
+        !Number.isFinite(runs) ||
+        !Number.isInteger(runs) ||
+        runs < 1
+      ) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_RUNS',
+            message: 'Runs must be a positive integer.',
+            details: { transformId, runs },
+          },
+        };
+      }
+    }
+
+    // Update unlock status when executing manually (command phase may precede tick)
+    if (!state.unlocked) {
+      if (conditionContext) {
+        if (evaluateCondition(transform.unlockCondition, conditionContext)) {
+          state.unlocked = true;
+        }
+      } else if (!transform.unlockCondition) {
+        state.unlocked = true;
+      }
     }
 
     // Check unlock state
@@ -756,6 +859,11 @@ export function createTransformSystem(
       for (const transform of sortedTransforms) {
         const state = transformStates.get(transform.id);
         if (!state) continue;
+
+        // Update visibility each tick (default visible when no context is provided)
+        state.visible = conditionContext
+          ? evaluateCondition(transform.visibilityCondition, conditionContext)
+          : true;
 
         // Update unlock status (monotonic: once unlocked, stays unlocked)
         if (!state.unlocked && conditionContext) {

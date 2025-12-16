@@ -7,6 +7,7 @@ import type { ResourceStateAccessor } from './automation-system.js';
 export interface ResourceStateSource {
   getAmount(index: number): number;
   getIndex?(id: string): number | undefined;
+  addAmount?(index: number, amount: number): number;
   spendAmount?(
     index: number,
     amount: number,
@@ -58,6 +59,13 @@ export function createResourceStateAdapter(
       context?: { systemId?: string; commandId?: string },
     ): boolean => {
       return !!resourceState.spendAmount?.(index, amount, context);
+    };
+  }
+
+  // Pass through addAmount if available on the underlying state
+  if (resourceState.addAmount) {
+    adapter.addAmount = (index: number, amount: number): number => {
+      return resourceState.addAmount!(index, amount);
     };
   }
 

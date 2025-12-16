@@ -75,6 +75,7 @@ function createRunTransformHandler(
       if (
         typeof payload.runs !== 'number' ||
         !Number.isFinite(payload.runs) ||
+        !Number.isInteger(payload.runs) ||
         payload.runs < 1
       ) {
         telemetry.recordError('RunTransformInvalidRuns', {

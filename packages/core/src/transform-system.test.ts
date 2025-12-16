@@ -184,6 +184,76 @@ describe('TransformSystem', () => {
       expect(resourceState.getAmount(1)).toBe(1);  // 0 + 1 gem gained
     });
 
+    it('should execute without requiring a tick when no unlockCondition is defined', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:convert' as any,
+          name: { default: 'Convert', variants: {} },
+          description: { default: 'Convert gold to gems', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      const result = system.executeTransform('transform:convert', 0);
+
+      expect(result.success).toBe(true);
+      expect(resourceState.getAmount(0)).toBe(90); // 100 - 10 gold spent
+      expect(resourceState.getAmount(1)).toBe(1);  // 0 + 1 gem gained
+    });
+
+    it('should unlock and execute during command phase when unlockCondition passes', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:unlock-on-demand' as any,
+          name: { default: 'Unlocked', variants: {} },
+          description: { default: 'Unlocks immediately', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          unlockCondition: { kind: 'always' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        conditionContext: createMockConditionContext(new Map()),
+      });
+
+      const result = system.executeTransform('transform:unlock-on-demand', 0);
+
+      expect(result.success).toBe(true);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
+    });
+
     it('should fail when transform not found', () => {
       const system = createTransformSystem({
         transforms: [],
@@ -290,6 +360,128 @@ describe('TransformSystem', () => {
       expect(result.error?.code).toBe('INSUFFICIENT_RESOURCES');
       expect(resourceState.getAmount(0)).toBe(50); // Gold unchanged
     });
+
+    it('should reject non-integer runs parameter', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:convert' as any,
+          name: { default: 'Convert', variants: {} },
+          description: { default: 'Convert gold to gems', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:convert', 0, { runs: 1.5 as any });
+
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('INVALID_RUNS');
+      expect(resourceState.getAmount(0)).toBe(100); // No spend
+      expect(resourceState.getAmount(1)).toBe(0); // No outputs
+    });
+
+    it('should fail without spending when outputs cannot be applied', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:no-add' as any,
+          name: { default: 'No add', variants: {} },
+          description: { default: 'Missing addAmount', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const indexById = new Map([
+        ['res:gold', 0],
+        ['res:gems', 1],
+      ]);
+      const amounts = new Map<number, number>([
+        [0, 100],
+        [1, 0],
+      ]);
+
+      const resourceState: ResourceStateAccessor = {
+        getAmount: (index) => amounts.get(index) ?? 0,
+        getResourceIndex: (id) => indexById.get(id) ?? -1,
+        spendAmount: (index, amount) => {
+          const current = amounts.get(index) ?? 0;
+          if (current < amount) return false;
+          amounts.set(index, current - amount);
+          return true;
+        },
+      };
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState: resourceState as any,
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:no-add', 0);
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('RESOURCE_STATE_MISSING_ADD_AMOUNT');
+      expect(resourceState.getAmount(0)).toBe(100); // No spend
+      expect(resourceState.getAmount(1)).toBe(0); // No outputs
+    });
+
+    it('should fail without spending when an output resource is missing', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:missing-output' as any,
+          name: { default: 'Missing output', variants: {} },
+          description: { default: 'Output resource not defined', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [
+            { resourceId: 'res:missing' as any, amount: { kind: 'constant', value: 1 } },
+          ],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:missing-output', 0);
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('OUTPUT_RESOURCE_NOT_FOUND');
+      expect(resourceState.getAmount(0)).toBe(100); // No spend
+    });
   });
 
   describe('cooldown behavior', () => {
@@ -382,6 +574,7 @@ describe('TransformSystem', () => {
       const state: TransformState = {
         id: 'test',
         unlocked: true,
+        visible: true,
         cooldownExpiresStep: 10,
         runsThisTick: 0,
       };
@@ -390,6 +583,48 @@ describe('TransformSystem', () => {
       expect(isTransformCooldownActive(state, 9)).toBe(true);
       expect(isTransformCooldownActive(state, 10)).toBe(false);
       expect(isTransformCooldownActive(state, 15)).toBe(false);
+    });
+  });
+
+  describe('visibility conditions', () => {
+    it('should update visibility based on visibilityCondition without gating execution', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:invisible' as any,
+          name: { default: 'Invisible', variants: {} },
+          description: { default: 'Hidden but runnable', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          visibilityCondition: { kind: 'never' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        conditionContext: createMockConditionContext(new Map()),
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const state = getTransformState(system);
+      expect(state.get('transform:invisible')?.visible).toBe(false);
+
+      const result = system.executeTransform('transform:invisible', 0);
+      expect(result.success).toBe(true);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
     });
   });
 
