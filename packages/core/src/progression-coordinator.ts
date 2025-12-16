@@ -1114,10 +1114,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
 
     try {
-      (publisher.publish as (eventType: string, payload: unknown) => unknown)(
-        eventId,
-        {},
-      );
+      // Achievement events are registered in the generated manifest with unknown payload type.
+      // The cast is safe because achievement eventIds are extracted from content packs at build time.
+      publisher.publish(eventId as RuntimeEventType, {});
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.onError?.(
