@@ -416,6 +416,9 @@ export function createTransformSystem(
   const transformById = new Map<string, TransformDefinition>();
   const pendingEventTriggers = new Set<string>();
 
+  // Track which step we last reset counters for (ensures reset happens once per step)
+  let lastCounterResetStep = -1;
+
   // Sort transforms by (order ?? 0, id) for deterministic execution order
   const sortedTransforms = [...transforms].sort((a, b) => {
     const orderA = a.order ?? 0;
@@ -436,6 +439,20 @@ export function createTransformSystem(
       runsThisTick: 0,
     });
   }
+
+  /**
+   * Ensures runsThisTick counters are reset exactly once per step.
+   * Called at the start of both executeTransform() and tick() to handle
+   * the case where commands execute before tick() in the runtime loop.
+   */
+  const ensureCountersResetForStep = (step: number): void => {
+    if (step !== lastCounterResetStep) {
+      for (const state of transformStates.values()) {
+        state.runsThisTick = 0;
+      }
+      lastCounterResetStep = step;
+    }
+  };
 
   /**
    * Attempts to execute a single run of a transform.
@@ -530,6 +547,9 @@ export function createTransformSystem(
     step: number,
     execOptions?: { runs?: number },
   ): TransformExecutionResult => {
+    // Ensure counters are reset for this step (handles command-before-tick ordering)
+    ensureCountersResetForStep(step);
+
     const transform = transformById.get(transformId);
     if (!transform) {
       return {
@@ -696,6 +716,9 @@ export function createTransformSystem(
           runsThisTick: 0,
         });
       }
+
+      // Force fresh counter reset on next step after restore
+      lastCounterResetStep = -1;
     },
 
     executeTransform,
@@ -723,10 +746,8 @@ export function createTransformSystem(
         conditionContext,
       });
 
-      // Reset per-tick counters
-      for (const state of transformStates.values()) {
-        state.runsThisTick = 0;
-      }
+      // Ensure counters are reset for this step (may already be done by executeTransform)
+      ensureCountersResetForStep(step);
 
       // Collect event triggers to retain across ticks when blocked
       const retainedEventTriggers = new Set<string>();

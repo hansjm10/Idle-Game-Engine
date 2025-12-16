@@ -565,6 +565,60 @@ describe('TransformSystem', () => {
       // Can execute again
       expect(system.executeTransform('transform:limited', 1).success).toBe(true);
     });
+
+    it('should not reset counter mid-step when tick() is called after commands', () => {
+      // Regression test: runsThisTick should reset at step boundary, not inside tick()
+      // Bug: commands execute before tick() in runtime, so tick() was resetting counters
+      // mid-step, allowing more runs than maxRunsPerTick in a single step.
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:limited' as any,
+          name: { default: 'Limited', variants: {} },
+          description: { default: 'Limited transform', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 1 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          safety: { maxRunsPerTick: 2 },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      // Initialize/unlock transforms with a tick at step -1
+      // (In real runtime, transforms get unlocked during tick())
+      system.tick({ deltaMs: stepDurationMs, step: -1, events: { publish: vi.fn() } });
+
+      // Step 0: Execute twice (command phase - hits limit)
+      expect(system.executeTransform('transform:limited', 0).success).toBe(true);
+      expect(system.executeTransform('transform:limited', 0).success).toBe(true);
+
+      // Step 0: tick() (system phase) - counter should NOT reset mid-step
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      // Step 0: Third execution should still fail (same step, counter preserved)
+      const result = system.executeTransform('transform:limited', 0);
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('MAX_RUNS_EXCEEDED');
+
+      // Verify only 2 runs happened (not 3+)
+      expect(resourceState.getAmount(1)).toBe(2); // 2 gems produced
+
+      // Step 1: Counter resets at new step boundary, execution succeeds
+      expect(system.executeTransform('transform:limited', 1).success).toBe(true);
+    });
   });
 
   describe('event trigger path', () => {
