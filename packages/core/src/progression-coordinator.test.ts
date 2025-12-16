@@ -15,6 +15,7 @@ import {
 } from './index.js';
 import {
   createContentPack,
+  createAchievementDefinition,
   createGeneratorDefinition,
   createPrestigeLayerDefinition,
   createResourceDefinition,
@@ -4275,6 +4276,57 @@ describe('Integration: upgrade effects', () => {
       priority: CommandPriority.PLAYER,
       timestamp: 0,
       step: runtime.getNextExecutableStep(),
+    });
+
+    const manifest = runtime.getEventBus().getManifest();
+    const entry = manifest.entries.find(
+      (candidate) => candidate.type === 'sample:reactor-primed',
+    );
+    expect(entry).toBeDefined();
+
+    runtime.tick(100);
+
+    const buffer = runtime.getEventBus().getOutboundBuffer(entry!.channel);
+    expect(buffer.length).toBe(1);
+    expect(buffer.at(0).type).toBe('sample:reactor-primed');
+    expect(buffer.at(0).issuedAt).toBe(0);
+    expect(buffer.at(0).payload).toEqual({});
+  });
+
+  it('emits runtime events from achievement emitEvent rewards with deterministic issuedAt', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const achievement = createAchievementDefinition('achievement.emit-event', {
+      reward: {
+        kind: 'emitEvent',
+        eventId: 'sample:reactor-primed',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [achievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const runtime = new IdleEngineRuntime({ stepSizeMs: 100, initialStep: 0 });
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+
+    runtime.addSystem({
+      id: 'progression-coordinator',
+      tick: ({ step, events }) => {
+        if (step === 0) {
+          coordinator.resourceState.addAmount(energyIndex, 1);
+        }
+        coordinator.updateForStep(step, { events });
+      },
     });
 
     const manifest = runtime.getEventBus().getManifest();

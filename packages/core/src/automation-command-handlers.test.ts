@@ -4,14 +4,18 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES, type ToggleAutomationPayload } 
 import { registerAutomationCommandHandlers } from './automation-command-handlers.js';
 import { createAutomationSystem, type AutomationState } from './automation-system.js';
 import { CommandQueue } from './command-queue.js';
-import type { EventBus } from './events/event-bus.js';
+import type { EventBus, PublishMetadata } from './events/event-bus.js';
 
 describe('registerAutomationCommandHandlers', () => {
   let dispatcher: CommandDispatcher;
   let automationSystem: ReturnType<typeof createAutomationSystem>;
   let commandQueue: CommandQueue;
   let mockEventBus: EventBus;
-  let publishedEvents: Array<{ type: string; payload: unknown }>;
+  let publishedEvents: Array<{
+    type: string;
+    payload: unknown;
+    metadata?: PublishMetadata;
+  }>;
 
   beforeEach(() => {
     dispatcher = new CommandDispatcher();
@@ -19,8 +23,8 @@ describe('registerAutomationCommandHandlers', () => {
     publishedEvents = [];
 
     mockEventBus = {
-      publish: vi.fn((type: string, payload: unknown) => {
-        publishedEvents.push({ type, payload });
+      publish: vi.fn((type: string, payload: unknown, metadata?: PublishMetadata) => {
+        publishedEvents.push({ type, payload, metadata });
       }),
       on: vi.fn(),
       off: vi.fn(),
@@ -130,6 +134,9 @@ describe('registerAutomationCommandHandlers', () => {
         payload: {
           automationId: 'auto:test-collector',
           enabled: true,
+        },
+        metadata: {
+          issuedAt: 1000,
         },
       });
     });
