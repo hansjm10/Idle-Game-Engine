@@ -15,6 +15,7 @@
 
 import {
   EventBus,
+  type Clock,
   type EventBusOptions,
   type EventDispatchContext,
   type EventHandler,
@@ -104,6 +105,20 @@ interface RegisteredSystem {
   readonly subscriptions: EventSubscription[];
 }
 
+class DeterministicTickClock implements Clock {
+  private tick = 0;
+
+  constructor(private readonly stepSizeMs: number) {}
+
+  setTick(tick: number): void {
+    this.tick = tick;
+  }
+
+  now(): number {
+    return this.tick * this.stepSizeMs;
+  }
+}
+
 /**
  * Runtime implementation that integrates the command queue and dispatcher with
  * the deterministic fixed-step tick loop described in
@@ -117,6 +132,7 @@ export class IdleEngineRuntime {
   private readonly commandQueue: CommandQueue;
   private readonly commandDispatcher: CommandDispatcher;
   private readonly eventBus: EventBus;
+  private readonly eventBusClock: DeterministicTickClock | null;
   private readonly eventPublisher: EventPublisher;
   private readonly commandFailures: CommandFailure[] = [];
   private currentStep = 0;
@@ -131,7 +147,19 @@ export class IdleEngineRuntime {
       options.commandDispatcher ?? new CommandDispatcher();
 
     const eventBusOptions = options.eventBusOptions ?? DEFAULT_EVENT_BUS_OPTIONS;
-    this.eventBus = options.eventBus ?? new EventBus(eventBusOptions);
+    let resolvedEventBusOptions: EventBusOptions = eventBusOptions;
+    let eventBusClock: DeterministicTickClock | null = null;
+
+    if (!eventBusOptions.clock) {
+      eventBusClock = new DeterministicTickClock(this.stepSizeMs);
+      resolvedEventBusOptions = {
+        ...eventBusOptions,
+        clock: eventBusClock,
+      };
+    }
+
+    this.eventBusClock = eventBusClock;
+    this.eventBus = options.eventBus ?? new EventBus(resolvedEventBusOptions);
     this.eventPublisher = createEventPublisher(this.eventBus);
 
     this.commandDispatcher.setEventPublisher(this.eventPublisher);
@@ -291,6 +319,7 @@ export class IdleEngineRuntime {
         let skippedCommands = 0;
 
         try {
+          this.eventBusClock?.setTick(this.currentStep);
           this.eventBus.beginTick(this.currentStep, {
             resetOutbound,
           });

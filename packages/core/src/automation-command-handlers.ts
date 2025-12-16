@@ -112,9 +112,13 @@ function createToggleAutomationHandler(
     automationState.enabled = payload.enabled;
 
     // Publish event
-    context.events.publish('automation:toggled', {
-      automationId: payload.automationId,
-      enabled: payload.enabled,
-    });
+    context.events.publish(
+      'automation:toggled',
+      {
+        automationId: payload.automationId,
+        enabled: payload.enabled,
+      },
+      { issuedAt: context.timestamp },
+    );
   };
 }
