@@ -101,29 +101,43 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
     - Batch queue entries (e.g., `TransformBatchState`) for `mode === 'batch'`.
   - Transform execution order and determinism:
     - Transform evaluation/execution order in `tick()` is stable: sort by `(order ?? 0, id)` using the transform definitions from the normalized pack (`packages/content-schema/src/modules/transforms.ts:69`).
-    - Pending event triggers are coalesced per transform per tick by default (boolean pending), to avoid unbounded backlog; see Open Questions for “counted events” semantics.
+    - Pending event triggers are coalesced per transform per tick (boolean pending via `Set<transformId>`), matching the AutomationSystem pattern (see Section 13.2 for rationale).
   - Trigger semantics (issue-523):
     - `manual`: executed only via `RUN_TRANSFORM` command handler; validates that `trigger.kind === 'manual'`.
-    - `condition`: evaluated each tick; when true and transform is unlocked/visible and not in cooldown, attempt one run (subject to safety).
-    - `event`: when a subscribed event is received, mark transform as pending; `tick()` attempts one run per pending transform per tick (subject to safety), preserving pending state when the run is blocked (cooldown/insufficient inputs/safety).
-    - `automation`: TODO (Follow-Up Work) unless explicitly pulled into issue-523 scope; design keeps a clear extension point for mapping automation state to trigger activation.
+    - `condition`: evaluated each tick; when true and transform is unlocked and not in cooldown, attempt one run (subject to safety).
+    - `event`: when a subscribed event is received, mark transform as pending; `tick()` attempts one run per pending transform per tick (subject to safety), preserving pending state when the run is blocked (locked/cooldown/insufficient inputs/safety).
+    - `automation`: **Deferred to follow-up work** (see Section 13.3). Not in scope for issue-523; requires new `automation:fired` event infrastructure.
   - Mode semantics (issue-523 “schedule output application according to mode”):
     - `instant`:
-      - Evaluate inputs/outputs formulas (see “Formulas” below).
+      - Evaluate inputs/outputs formulas (see “Formulas & Evaluation Context” below).
       - Atomically spend all inputs; if any input is unaffordable, fail without applying cooldown.
       - Apply outputs immediately (same command execution for manual; same tick for system-triggered runs).
     - `batch`:
       - On trigger, atomically spend inputs, then schedule outputs for delivery at `completeAtStep = currentStep + ceil(durationMs / stepDurationMs)`.
       - Enforce `safety.maxOutstandingBatches` at scheduling time; reject/skip new batches when at cap.
       - On `tick()`, deliver outputs for due batches deterministically in FIFO order (ties broken by schedule time then id).
-    - `continuous`:
-      - TODO (Owner: Core Runtime Maintainers): confirm intended semantics for issue-523. Proposed baseline: treat continuous transforms as “attempt one instant-style run per tick while trigger is active,” optionally throttled by `cooldown`. If a richer per-second-rate model is desired, reuse production-style rate application patterns (see Alternatives Considered).
+    - `continuous` (see Section 13.1 for rationale):
+      - Amounts are **per-second rates**: `amountThisTick = formula * deltaSeconds`.
+      - Each tick while trigger is active: evaluate input/output formulas as rates, multiply by `deltaSeconds`, attempt spend/produce cycle.
+      - If `duration` is undefined: continuous transform remains active while trigger condition is true.
+      - If `duration` is specified: continuous transform remains active for `durationMs` after trigger activation, even if trigger becomes false.
+      - Fractional amounts accumulate across ticks using ProductionSystem-style accumulators to prevent integer truncation.
+      - Cooldown applies after each successful spend/produce cycle, not after duration expiration.
+      - Subject to `maxRunsPerTick` safety cap per tick.
+  - Formulas & evaluation context:
+    - Transform formulas (`inputs[].amount`, `outputs[].amount`, `duration`, `cooldown`) use a `FormulaEvaluationContext` consistent with existing runtime patterns:
+      - Prefer reusing `ProgressionCoordinator.createFormulaEvaluationContext` (`packages/core/src/progression-coordinator.ts:1459`) or `createAutomationFormulaEvaluationContext` (`packages/core/src/automation-system.ts:46`) as the baseline (level=0, time/deltaTime from `step`/`stepDurationMs`, entities backed by `ConditionContext`).
+    - Guardrails:
+      - Non-finite evaluations (`NaN`, `±Infinity`) invalidate the run (no spend, no outputs, no cooldown), with deterministic telemetry/error codes.
+      - Negative evaluations are clamped to `0` for costs/outputs/durations/cooldowns (consistent with automation resourceCost handling).
+      - Evaluate and normalize all input costs before spending; spend in a deterministic order to preserve atomicity and replay stability.
   - Unlock/visibility state:
     - `unlockCondition` (optional): evaluate via `evaluateCondition` (`packages/core/src/condition-evaluator.ts:122`) and apply **monotonically** (once unlocked, stay unlocked) to avoid regressions during replay and to match automation unlock persistence patterns.
     - `visibilityCondition` (optional): evaluate per tick to compute `isVisible` (default `true` when undefined, consistent with progression coordinator visibility semantics at `packages/core/src/progression-coordinator.ts:1455`).
-  - Safety enforcement:
-    - `maxRunsPerTick`: default to a conservative runtime constant when undefined; clamp authored values to a hard upper bound. TODO (Owner: Core Runtime Maintainers): set concrete defaults and caps.
-    - `maxOutstandingBatches`: default similarly; enforced only for `batch` mode.
+    - Execution gating: `unlockCondition` gates execution; `visibilityCondition` gates snapshot/UI only.
+  - Safety enforcement (see Section 13.4 for rationale):
+    - `maxRunsPerTick`: default `10`, hard cap `100`. When undefined, use `DEFAULT_MAX_RUNS_PER_TICK = 10`. When authored value exceeds cap, clamp and record telemetry warning.
+    - `maxOutstandingBatches`: default `50`, hard cap `1,000`. Enforced only for `batch` mode; reject new batches when at cap.
 
 - **Data & Schemas**:
   - Add a new serialized transform state payload and embed it additively into the save payload:
@@ -143,7 +157,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
   - Add command type and payload (issue-523 manual trigger):
     - `RUNTIME_COMMAND_TYPES.RUN_TRANSFORM = 'RUN_TRANSFORM'` in `packages/core/src/command.ts:107`.
     - `RunTransformPayload = { transformId: string; runs?: number }` (runs default 1; capped by safety).
-    - Authorization policy: allow `PLAYER` and `SYSTEM` by default; allow `AUTOMATION` only if/when automation-triggered transforms are executed via commands. TODO (Owner: Core Runtime Maintainers): confirm policy.
+    - Authorization policy (see Section 13.5 for rationale): restrict to `[PLAYER, SYSTEM]` priorities; block `AUTOMATION`. Manual transforms are player-initiated; automatic transforms (event/condition triggers) bypass the command system.
   - Add `registerTransformCommandHandlers({ dispatcher, transformSystem })` in `packages/core` mirroring `registerAutomationCommandHandlers` (`packages/core/src/automation-command-handlers.ts:27`).
   - Add a snapshot builder in `packages/core`:
     - `buildTransformSnapshot(step, publishedAt, { transforms, state, conditionContext, resourceState })` returning UI-ready transform views.
@@ -282,12 +296,103 @@ Populate the table as the canonical source for downstream GitHub issues.
   - Update issue-523 with phase completion notes and commands run.
   - Provide a short shell-web changelog entry when worker state envelope changes to ensure consumer alignment.
 
-## 13. Open Questions
-1. **Continuous mode semantics for issue-523**: Are `inputs/outputs[].amount` formulas for `continuous` intended as per-tick amounts or per-second rates? Should `duration` define an active window? (Owner: Core Runtime Maintainers)
-2. **Event trigger multiplicity**: Should multiple events in the same tick schedule multiple transform runs, or is coalescing acceptable? (Owner: Core Runtime Maintainers; Content Authors)
-3. **Automation trigger support**: Is `trigger.kind === 'automation'` in scope for issue-523, and if so, should it bind to `automation:toggled` state or to automation firing semantics? (Owner: Core Runtime Maintainers)
-4. **Safety defaults/caps**: What are the canonical defaults and hard limits for `maxRunsPerTick` and `maxOutstandingBatches` when undefined? (Owner: Core Runtime Maintainers)
-5. **Command authorization**: Should `RUN_TRANSFORM` be callable by `AUTOMATION` priority, or restricted to `PLAYER` + `SYSTEM`? (Owner: Core Runtime Maintainers)
+## 13. Resolved Design Decisions
+
+The following questions were researched against existing codebase patterns, schema definitions, and idle game best practices. Each resolution includes rationale and references.
+
+### 13.1 Continuous Mode Semantics ✓
+
+**Decision**: For `continuous` transforms, `inputs/outputs[].amount` formulas evaluate to **per-second rates** (not per-tick amounts). The `duration` field, when specified, defines an **active window** in milliseconds.
+
+**Rationale**:
+- The ProductionSystem establishes per-second rates as the engine standard (`packages/core/src/production-system.ts:83-92`): `production = rate * owned * multiplier * deltaSeconds * consumptionRatio`.
+- Formula evaluation context already provides `deltaTime` (seconds per step) for rate-to-amount conversion (`packages/core/src/automation-system.ts:46-99`).
+- Per-second rates enable consistent scaling across varying tick durations and support accumulator patterns for fractional amounts.
+
+**Implementation semantics**:
+- Each tick while trigger is active: `amountThisTick = formula * deltaSeconds`.
+- If `duration` is undefined: continuous transform remains active while trigger condition is true.
+- If `duration` is specified: continuous transform remains active for `durationMs` after trigger activation, even if trigger becomes false.
+- Cooldown applies after each successful run (spend + produce cycle), not after duration expiration.
+- Fractional amounts should accumulate across ticks (reuse ProductionSystem accumulator pattern) to prevent integer truncation.
+
+### 13.2 Event Trigger Multiplicity ✓
+
+**Decision**: Multiple events of the same type firing in one tick are **coalesced** to a single trigger activation per transform (boolean pending state, not counted).
+
+**Rationale**:
+- The AutomationSystem establishes coalescing as the engine pattern (`packages/core/src/automation-system.ts:220, 307`): pending triggers are tracked via `Set<string>` (idempotent adds), not counted.
+- Coalescing prevents unbounded transform runs if many events fire in a burst.
+- Pending state is retained across ticks when execution is blocked (cooldown, insufficient resources), preventing event loss without counting.
+
+**Implementation semantics**:
+- `TransformSystem` maintains `pendingEventTriggers: Set<transformId>`.
+- Event subscription: `events.on(eventId, () => pendingEventTriggers.add(transformId))`.
+- `tick()` attempts one run per pending transform per tick (subject to safety caps).
+- On successful run: remove from pending set.
+- On blocked run (cooldown, resources, safety): retain in pending set for next tick.
+
+### 13.3 Automation Trigger Support ✓
+
+**Decision**: `trigger.kind === 'automation'` is **out of scope for issue-523** and explicitly deferred to follow-up work.
+
+**Rationale**:
+- The design document already lists this as a non-goal (line 43): "Implementing transform-trigger integration with automation targets... is deferred unless explicitly pulled into scope."
+- Current infrastructure gap: no `automation:fired` event exists; only `automation:toggled` (which fires on enable/disable, not on automation execution).
+- Semantic ambiguity: content authors likely expect "automation trigger" to mean "when automation fires," not "when automation is toggled on."
+
+**Follow-up recommendation**:
+- Create new `automation:fired` event in event catalog (published from `AutomationSystem.tick()` when automation successfully executes).
+- Transform subscribes to `automation:fired` with payload filter for `automationId`.
+- This provides cleaner semantics than binding to toggle state.
+
+### 13.4 Safety Defaults and Caps ✓
+
+**Decision**: Canonical defaults and hard caps are established as follows:
+
+| Parameter | Default | Hard Cap | Rationale |
+|-----------|---------|----------|-----------|
+| `maxRunsPerTick` | **10** | **100** | Matches condition depth cap (100); prevents runaway loops while allowing controlled cascades. |
+| `maxOutstandingBatches` | **50** | **1,000** | Proportional to command queue cap (10,000); prevents memory exhaustion from queued batches. |
+
+**Rationale**:
+- `MAX_CONDITION_DEPTH = 100` (`packages/core/src/condition-evaluator.ts:34`) establishes 100 as a safe recursion/iteration bound.
+- `DEFAULT_MAX_QUEUE_SIZE = 10_000` (`packages/core/src/command-queue.ts:27`) establishes queue overflow semantics.
+- Most idle games process 5-20 actions per tick; 10 is conservative for defaults while 100 allows intentional high-throughput designs.
+- Each outstanding batch stores `{ completeAtStep, outputs[] }`; 1,000 batches ≈ 50-100KB (negligible memory).
+
+**Implementation semantics**:
+- When `safety.maxRunsPerTick` is undefined: use `DEFAULT_MAX_RUNS_PER_TICK = 10`.
+- When authored value exceeds hard cap: clamp to `HARD_CAP_MAX_RUNS_PER_TICK = 100` and record telemetry warning.
+- Apply same pattern for `maxOutstandingBatches` with defaults 50/1000.
+- Non-finite or non-positive authored values fall back to defaults.
+
+### 13.5 Command Authorization ✓
+
+**Decision**: `RUN_TRANSFORM` is restricted to **`[PLAYER, SYSTEM]`** priorities. `AUTOMATION` priority is blocked.
+
+**Rationale**:
+- Manual transforms (via `RUN_TRANSFORM`) are player-initiated or system-driven, matching the `PRESTIGE_RESET` pattern (`packages/core/src/command.ts:275-281`).
+- Automatic transforms (event/condition triggers) execute within `TransformSystem.tick()`, bypassing the command system entirely—no priority gating needed.
+- Future automation-triggered transforms (if implemented) would use a separate trigger path (not routed through `RUN_TRANSFORM`), keeping concerns separated.
+
+**Implementation semantics**:
+```typescript
+RUN_TRANSFORM: {
+  type: RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
+  allowedPriorities: Object.freeze([CommandPriority.SYSTEM, CommandPriority.PLAYER]),
+  rationale: 'Manual transforms are player-initiated or system-driven; automation trigger path is implemented separately.',
+  unauthorizedEvent: 'UnauthorizedTransformCommand',
+}
+```
+
+### 13.6 Remaining Follow-Up Items
+
+No unresolved questions remain for issue-523 MVP scope. The following items are tracked as explicit follow-up work:
+
+1. **Automation trigger implementation**: Create `automation:fired` event and wire transform subscription (see Section 13.3).
+2. **Continuous mode accumulator pattern**: Confirm whether to reuse ProductionSystem's accumulator or implement transform-specific fractional handling.
+3. **Transform execution events**: Consider publishing `transform:executed` events for observability (requires event manifest update).
 
 ## 14. Follow-Up Work
 - Implement `trigger.kind === 'automation'` support once semantics are confirmed (new issue derived from issue-523).
@@ -316,3 +421,4 @@ Populate the table as the canonical source for downstream GitHub issues.
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-12-16 | Idle Engine Design-Authoring Agent (AI) | Initial draft for issue-523: TransformSystem, commands, triggers, persistence, snapshot plan. |
+| 2025-12-16 | Claude Code (AI) | Resolved all 5 open questions with codebase research: continuous mode semantics (per-second rates), event coalescing (Set-based), automation triggers (deferred), safety caps (10/100, 50/1000), command auth (PLAYER+SYSTEM only). Updated Section 13 with rationale and implementation semantics. |
