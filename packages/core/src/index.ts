@@ -826,6 +826,7 @@ export {
   type OfflineCatchupPayload,
   type MigrationStep,
   type ApplyMigrationPayload,
+  type RunTransformPayload,
   type RuntimeCommandPayloads,
   type RuntimeCommand,
   type CommandAuthorizationPolicy,
@@ -1081,6 +1082,20 @@ export {
   registerAutomationCommandHandlers,
   type AutomationCommandHandlerOptions,
 } from './automation-command-handlers.js';
+export {
+  createTransformSystem,
+  getTransformState,
+  isTransformCooldownActive,
+  type TransformSystemOptions,
+  type TransformState,
+  type SerializedTransformState,
+  type TransformExecutionResult,
+  type TransformResourceState,
+} from './transform-system.js';
+export {
+  registerTransformCommandHandlers,
+  type TransformCommandHandlerOptions,
+} from './transform-command-handlers.js';
 export {
   applyPrestigeReset,
   type PrestigeResetContext,
