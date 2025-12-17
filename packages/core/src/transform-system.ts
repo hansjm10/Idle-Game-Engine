@@ -2,10 +2,11 @@
  * @fileoverview Transform System
  *
  * The TransformSystem executes content-authored transforms deterministically.
- * It supports 3 trigger types:
+ * It supports 4 trigger types:
  * - manual: Executed only via RUN_TRANSFORM command
  * - condition: Evaluated each tick; fires when true and not in cooldown
  * - event: Fires when a subscribed event is received
+ * - automation: Fires when a referenced automation executes
  *
  * The system manages transform state (unlock/visibility, cooldowns, run counts)
  * and integrates with the IdleEngineRuntime tick loop.
@@ -869,6 +870,15 @@ export function createTransformSystem(
             pendingEventTriggers.add(transform.id);
           });
         }
+
+        if (transform.trigger.kind === 'automation') {
+          const automationId = transform.trigger.automationId;
+          events.on('automation:fired', (event) => {
+            if (event.payload.automationId === automationId) {
+              pendingEventTriggers.add(transform.id);
+            }
+          });
+        }
       }
     },
 
@@ -907,7 +917,8 @@ export function createTransformSystem(
         }
 
         const isEventPending =
-          transform.trigger.kind === 'event' &&
+          (transform.trigger.kind === 'event' ||
+            transform.trigger.kind === 'automation') &&
           pendingEventTriggers.has(transform.id);
 
         // Skip if not unlocked
@@ -921,11 +932,6 @@ export function createTransformSystem(
 
         // Skip manual transforms (handled by command)
         if (transform.trigger.kind === 'manual') {
-          continue;
-        }
-
-        // Skip automation triggers (deferred per design doc Section 13.3)
-        if (transform.trigger.kind === 'automation') {
           continue;
         }
 
@@ -946,6 +952,10 @@ export function createTransformSystem(
             triggered = pendingEventTriggers.has(transform.id);
             break;
           }
+          case 'automation': {
+            triggered = pendingEventTriggers.has(transform.id);
+            break;
+          }
         }
 
         if (!triggered) {
@@ -955,7 +965,10 @@ export function createTransformSystem(
         // Check cooldown
         if (isTransformCooldownActive(state, step)) {
           // Retain event trigger for next tick
-          if (transform.trigger.kind === 'event') {
+          if (
+            transform.trigger.kind === 'event' ||
+            transform.trigger.kind === 'automation'
+          ) {
             retainedEventTriggers.add(transform.id);
           }
           continue;
@@ -965,7 +978,10 @@ export function createTransformSystem(
         const maxRuns = getEffectiveMaxRunsPerTick(transform);
         if (state.runsThisTick >= maxRuns) {
           // Retain event trigger for next tick
-          if (transform.trigger.kind === 'event') {
+          if (
+            transform.trigger.kind === 'event' ||
+            transform.trigger.kind === 'automation'
+          ) {
             retainedEventTriggers.add(transform.id);
           }
           continue;
@@ -976,7 +992,10 @@ export function createTransformSystem(
 
         if (!result.success) {
           // Retain event trigger when blocked
-          if (transform.trigger.kind === 'event') {
+          if (
+            transform.trigger.kind === 'event' ||
+            transform.trigger.kind === 'automation'
+          ) {
             retainedEventTriggers.add(transform.id);
           }
         }
