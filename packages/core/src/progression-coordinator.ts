@@ -679,29 +679,30 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
           record.state.isUnlocked = true;
         }
 
-	        record.state.isVisible = unlockedByUpgrade
-	          ? true
-	          : this.evaluateVisibility(record.definition.visibilityCondition);
+        record.state.isVisible = unlockedByUpgrade
+          ? true
+          : this.evaluateVisibility(record.definition.visibilityCondition);
 
-	        record.state.unlockHint = record.state.isUnlocked
-	          ? undefined
-	          : describeCondition(
-	              combineConditions(
-	                record.definition.visibilityCondition && !record.state.isVisible
-	                  ? [
-	                      record.definition.baseUnlock,
-	                      record.definition.visibilityCondition,
-	                    ]
-	                  : [record.definition.baseUnlock],
-	              ),
-	            );
+        const visibilityCondition = record.definition.visibilityCondition;
+        const conditionsToDescribe =
+          visibilityCondition &&
+          !record.state.isVisible &&
+          visibilityCondition !== record.definition.baseUnlock
+            ? [record.definition.baseUnlock, visibilityCondition]
+            : [record.definition.baseUnlock];
+        record.state.unlockHint = record.state.isUnlocked
+          ? undefined
+          : describeCondition(
+              combineConditions(conditionsToDescribe),
+              this.conditionContext,
+            );
 
-	        if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
-	          record.state.nextPurchaseReadyAtStep = step + 1;
-	        } else if (!wasUnlocked && record.state.isUnlocked) {
-	          // Update nextPurchaseReadyAtStep when generator transitions to unlocked
-	          record.state.nextPurchaseReadyAtStep = step + 1;
-	        }
+        if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
+          record.state.nextPurchaseReadyAtStep = step + 1;
+        } else if (!wasUnlocked && record.state.isUnlocked) {
+          // Update nextPurchaseReadyAtStep when generator transitions to unlocked
+          record.state.nextPurchaseReadyAtStep = step + 1;
+        }
         record.state.owned = clampOwned(
           record.state.owned,
           record.definition.maxLevel,
@@ -720,6 +721,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
             ? describeCondition(
                 record.definition.unlockCondition ??
                   combineConditions(record.definition.prerequisites),
+                this.conditionContext,
               )
             : undefined;
 
@@ -768,7 +770,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         record.state.isVisible = isUnlocked; // Default: visible when unlocked
         record.state.unlockHint = isUnlocked
           ? undefined
-          : describeCondition(record.definition.unlockCondition);
+          : describeCondition(record.definition.unlockCondition, this.conditionContext);
       }
 
       const achievementsUnlocked = this.updateAchievementsForStep(step, options);
@@ -1709,29 +1711,29 @@ function createGeneratorRecord(
 
   const state: Mutable<ProgressionGeneratorState> = initial
     ? (initial as Mutable<ProgressionGeneratorState>)
-	    : ({
-	        id: generator.id,
-	        displayName: getDisplayName(generator.name, generator.id),
-	        owned: 0,
-	        enabled: true,
-	        isUnlocked: false,
-	        isVisible: true,
-	        unlockHint: undefined,
-	        produces,
-	        consumes,
-	        nextPurchaseReadyAtStep: 1,
-	      } as Mutable<ProgressionGeneratorState>);
+    : ({
+        id: generator.id,
+        displayName: getDisplayName(generator.name, generator.id),
+        owned: 0,
+        enabled: true,
+        isUnlocked: false,
+        isVisible: true,
+        unlockHint: undefined,
+        produces,
+        consumes,
+        nextPurchaseReadyAtStep: 1,
+      } as Mutable<ProgressionGeneratorState>);
 
   state.id = generator.id;
   state.displayName = getDisplayName(generator.name, generator.id);
-	  state.owned = Number.isFinite(state.owned) ? state.owned : 0;
-	  state.enabled = typeof state.enabled === 'boolean' ? state.enabled : true;
-	  state.isUnlocked = Boolean(state.isUnlocked);
-	  state.isVisible = state.isVisible ?? true;
-	  state.unlockHint =
-	    typeof state.unlockHint === 'string' ? state.unlockHint : undefined;
-	  state.produces = produces;
-	  state.consumes = consumes;
+  state.owned = Number.isFinite(state.owned) ? state.owned : 0;
+  state.enabled = typeof state.enabled === 'boolean' ? state.enabled : true;
+  state.isUnlocked = Boolean(state.isUnlocked);
+  state.isVisible = state.isVisible ?? true;
+  state.unlockHint =
+    typeof state.unlockHint === 'string' ? state.unlockHint : undefined;
+  state.produces = produces;
+  state.consumes = consumes;
   state.nextPurchaseReadyAtStep = Number.isFinite(
     state.nextPurchaseReadyAtStep,
   )

@@ -89,6 +89,35 @@ const DEFAULT_DESCRIPTION_FORMULA_CONTEXT: FormulaEvaluationContext = {
   },
 };
 
+const createDescriptionFormulaEvaluationContext = (
+  context: ConditionContext | undefined,
+): FormulaEvaluationContext => {
+  if (!context) {
+    return DEFAULT_DESCRIPTION_FORMULA_CONTEXT;
+  }
+
+  return {
+    variables: DEFAULT_DESCRIPTION_FORMULA_CONTEXT.variables,
+    entities: {
+      ...DEFAULT_DESCRIPTION_FORMULA_CONTEXT.entities,
+      resource: (resourceId) => context.getResourceAmount(resourceId),
+      generator: (generatorId) => context.getGeneratorLevel(generatorId),
+      upgrade: (upgradeId) => context.getUpgradePurchases(upgradeId),
+    },
+  };
+};
+
+const isConditionSatisfied = (
+  condition: Condition,
+  context: ConditionContext,
+): boolean => {
+  try {
+    return evaluateCondition(condition, context);
+  } catch {
+    return false;
+  }
+};
+
 function reportMissingContextHook(
   context: ConditionContext,
   hook: keyof ConditionContext,
@@ -339,6 +368,7 @@ export function combineConditions(
  */
 export function describeCondition(
   condition: Condition | undefined,
+  context?: ConditionContext,
 ): string | undefined {
   if (!condition) {
     return undefined;
@@ -350,16 +380,18 @@ export function describeCondition(
     case 'never':
       return 'Unavailable in this build';
     case 'resourceThreshold': {
+      const formulaContext = createDescriptionFormulaEvaluationContext(context);
       const amount = evaluateNumericFormula(condition.amount, {
-        ...DEFAULT_DESCRIPTION_FORMULA_CONTEXT,
+        ...formulaContext,
       });
       return `Requires ${condition.resourceId} ${formatComparator(
         condition.comparator,
       )} ${formatNumber(amount)}`;
     }
     case 'generatorLevel': {
+      const formulaContext = createDescriptionFormulaEvaluationContext(context);
       const level = evaluateNumericFormula(condition.level, {
-        ...DEFAULT_DESCRIPTION_FORMULA_CONTEXT,
+        ...formulaContext,
       });
       return `Requires ${condition.generatorId} ${formatComparator(
         condition.comparator,
@@ -376,21 +408,38 @@ export function describeCondition(
     case 'prestigeUnlocked':
       return `Requires prestige layer ${condition.prestigeLayerId} available`;
     case 'allOf': {
-      const parts = condition.conditions
-        .map(describeCondition)
+      const pendingConditions =
+        context
+          ? condition.conditions.filter(
+              (nested) => !isConditionSatisfied(nested, context),
+            )
+          : condition.conditions;
+      if (pendingConditions.length === 0) {
+        return undefined;
+      }
+
+      const parts = pendingConditions
+        .map((nested) => describeCondition(nested, context))
         .filter((value): value is string => Boolean(value));
       return parts.length > 0 ? parts.join(', ') : undefined;
     }
     case 'anyOf': {
+      if (
+        context &&
+        condition.conditions.some((nested) => isConditionSatisfied(nested, context))
+      ) {
+        return undefined;
+      }
+
       const parts = condition.conditions
-        .map(describeCondition)
+        .map((nested) => describeCondition(nested, context))
         .filter((value): value is string => Boolean(value));
       return parts.length > 0
         ? `Requires any of: ${parts.join(' or ')}`
         : undefined;
     }
     case 'not': {
-      const inner = describeCondition(condition.condition);
+      const inner = describeCondition(condition.condition, context);
       return inner ? `Not (${inner})` : undefined;
     }
     default:

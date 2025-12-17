@@ -405,13 +405,17 @@ function createUpgradeViews(
       (EMPTY_ARRAY as readonly UpgradeResourceCost[]);
     const normalizedCosts = normalizeUpgradeCosts(costs);
     const status = quote?.status ?? upgrade.status ?? 'locked';
+    const unlockHint =
+      typeof upgrade.unlockHint === 'string' && upgrade.unlockHint.trim().length > 0
+        ? upgrade.unlockHint
+        : undefined;
 
     const view: UpgradeView = Object.freeze({
       id: upgrade.id,
       displayName: upgrade.displayName ?? upgrade.id,
       status,
       costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
-      unlockHint: upgrade.unlockHint,
+      ...(unlockHint ? { unlockHint } : {}),
       isVisible: Boolean(upgrade.isVisible),
     });
 
@@ -595,13 +599,17 @@ function createPrestigeLayerViews(
 
   for (const layer of prestigeLayers) {
     const quote = evaluatePrestigeQuote(evaluator, layer.id);
+    const unlockHint =
+      typeof layer.unlockHint === 'string' && layer.unlockHint.trim().length > 0
+        ? layer.unlockHint
+        : undefined;
 
     const view: PrestigeLayerView = Object.freeze({
       id: layer.id,
       displayName: layer.displayName ?? layer.id,
       summary: layer.summary,
       status: quote?.status ?? 'locked',
-      unlockHint: layer.unlockHint,
+      ...(unlockHint ? { unlockHint } : {}),
       isVisible: Boolean(layer.isVisible),
       rewardPreview: quote?.reward,
       resetTargets: quote?.resetTargets ?? (EMPTY_ARRAY as readonly string[]),
