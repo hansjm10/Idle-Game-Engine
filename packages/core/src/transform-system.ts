@@ -64,6 +64,9 @@ const HARD_CAP_MAX_RUNS_PER_TICK = 100;
  */
 const STATIC_TRANSFORM_FORMULA_LEVEL = 0;
 
+const compareStableStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 /**
  * Internal state for a single transform.
  */
@@ -73,18 +76,6 @@ export interface TransformState {
   visible: boolean;
   cooldownExpiresStep: number;
   runsThisTick: number;
-}
-
-/**
- * Serialized representation of transform state for save files and persistence.
- *
- * @see TransformState - Runtime transform state type
- * @see restoreState - Method that accepts this type for state restoration
- */
-export interface SerializedTransformState {
-  readonly id: string;
-  readonly unlocked: boolean;
-  readonly cooldownExpiresStep: number;
 }
 
 /**
@@ -323,7 +314,7 @@ function spendInputs(
 ): boolean {
   // Sort by resourceId for deterministic order
   const sortedCosts = [...costs.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
+    compareStableStrings(a[0], b[0]),
   );
 
   const spent: Array<{ readonly idx: number; readonly amount: number }> = [];
@@ -373,7 +364,7 @@ function prepareOutputs(
   transformId: string,
 ): PreparedOutputsResult {
   const sortedOutputs = [...outputs.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
+    compareStableStrings(a[0], b[0]),
   );
 
   const prepared: PreparedResourceDelta[] = [];
@@ -454,16 +445,12 @@ function applyOutputs(
  *
  * @param options - Configuration options including transforms, step duration,
  *                  resource state, and optional condition context.
- * @returns A System object with additional getState()/restoreState()/executeTransform() methods.
+ * @returns A System object with additional getState()/executeTransform() methods.
  */
 export function createTransformSystem(
   options: TransformSystemOptions,
 ): System & {
   getState: () => ReadonlyMap<string, TransformState>;
-  restoreState: (
-    state: readonly SerializedTransformState[],
-    options?: { savedWorkerStep?: number; currentStep?: number },
-  ) => void;
   executeTransform: (
     transformId: string,
     step: number,
@@ -492,7 +479,7 @@ export function createTransformSystem(
     if (orderA !== orderB) {
       return orderA - orderB;
     }
-    return a.id.localeCompare(b.id);
+    return compareStableStrings(a.id, b.id);
   });
 
   // Initialize transform states
@@ -784,46 +771,6 @@ export function createTransformSystem(
       return new Map(transformStates);
     },
 
-    restoreState(
-      stateArray: readonly SerializedTransformState[],
-      restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
-    ) {
-      if (!stateArray || stateArray.length === 0) {
-        return;
-      }
-
-      for (const restored of stateArray) {
-        const existing = transformStates.get(restored.id);
-        if (!existing) {
-          continue;
-        }
-
-        // Compute optional step rebase
-        const savedWorkerStep = restoreOptions?.savedWorkerStep;
-        const targetCurrentStep = restoreOptions?.currentStep ?? 0;
-        const hasValidSavedStep =
-          typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
-
-        const rebaseDelta = hasValidSavedStep
-          ? targetCurrentStep - savedWorkerStep
-          : 0;
-
-        const rebasedCooldownExpires = hasValidSavedStep
-          ? restored.cooldownExpiresStep + rebaseDelta
-          : restored.cooldownExpiresStep;
-
-        transformStates.set(restored.id, {
-          ...existing,
-          unlocked: restored.unlocked,
-          cooldownExpiresStep: rebasedCooldownExpires,
-          runsThisTick: 0,
-        });
-      }
-
-      // Force fresh counter reset on next step after restore
-      lastCounterResetStep = -1;
-    },
-
     executeTransform,
 
     getTransformDefinition(transformId: string) {
@@ -875,8 +822,16 @@ export function createTransformSystem(
           state.unlocked = true;
         }
 
+        const isEventPending =
+          transform.trigger.kind === 'event' &&
+          pendingEventTriggers.has(transform.id);
+
         // Skip if not unlocked
         if (!state.unlocked) {
+          // Retain pending event triggers when blocked by unlock state
+          if (isEventPending) {
+            retainedEventTriggers.add(transform.id);
+          }
           continue;
         }
 

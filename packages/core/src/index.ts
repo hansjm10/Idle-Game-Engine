@@ -1088,7 +1088,6 @@ export {
   isTransformCooldownActive,
   type TransformSystemOptions,
   type TransformState,
-  type SerializedTransformState,
   type TransformExecutionResult,
   type TransformResourceState,
 } from './transform-system.js';

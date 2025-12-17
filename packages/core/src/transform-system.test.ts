@@ -5,7 +5,7 @@ import {
   isTransformCooldownActive,
 } from './transform-system.js';
 import type { TransformDefinition } from '@idle-engine/content-schema';
-import type { TransformState, SerializedTransformState } from './transform-system.js';
+import type { TransformState } from './transform-system.js';
 import type { ResourceStateAccessor } from './automation-system.js';
 import type { ConditionContext } from './condition-evaluator.js';
 
@@ -359,6 +359,118 @@ describe('TransformSystem', () => {
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('INSUFFICIENT_RESOURCES');
       expect(resourceState.getAmount(0)).toBe(50); // Gold unchanged
+    });
+
+    it('should not partially spend inputs when any input is insufficient', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:multi-input' as any,
+          name: { default: 'Multi Input', variants: {} },
+          description: { default: 'Consumes multiple resources atomically', variants: {} },
+          mode: 'instant',
+          inputs: [
+            { resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } },
+            { resourceId: 'res:silver' as any, amount: { kind: 'constant', value: 5 } },
+          ],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:silver', { amount: 0 }], // Insufficient
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:multi-input', 0);
+
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('INSUFFICIENT_RESOURCES');
+      expect(resourceState.getAmount(0)).toBe(100); // Gold unchanged
+      expect(resourceState.getAmount(1)).toBe(0); // Silver unchanged
+      expect(resourceState.getAmount(2)).toBe(0); // No outputs
+    });
+
+    it('should rollback spent inputs if spendAmount fails mid-run', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:rollback' as any,
+          name: { default: 'Rollback', variants: {} },
+          description: { default: 'Validates atomic spend rollback', variants: {} },
+          mode: 'instant',
+          inputs: [
+            { resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } },
+            { resourceId: 'res:silver' as any, amount: { kind: 'constant', value: 5 } },
+          ],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const indexById = new Map([
+        ['res:gold', 0],
+        ['res:silver', 1],
+        ['res:gems', 2],
+      ]);
+      const amounts = new Map<number, number>([
+        [0, 100],
+        [1, 100],
+        [2, 0],
+      ]);
+
+      let spendCalls = 0;
+
+      const resourceState: ResourceStateAccessor & {
+        addAmount: (idx: number, amount: number) => number;
+      } = {
+        getAmount: (index) => amounts.get(index) ?? 0,
+        getResourceIndex: (id) => indexById.get(id) ?? -1,
+        spendAmount: (index, amount) => {
+          spendCalls += 1;
+          if (index === 1) {
+            return false;
+          }
+          const current = amounts.get(index) ?? 0;
+          if (current < amount) return false;
+          amounts.set(index, current - amount);
+          return true;
+        },
+        addAmount: (index, amount) => {
+          const current = amounts.get(index) ?? 0;
+          amounts.set(index, current + amount);
+          return amount;
+        },
+      };
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState: resourceState as any,
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:rollback', 0);
+
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('SPEND_FAILED');
+      expect(resourceState.getAmount(0)).toBe(100); // Gold rolled back
+      expect(resourceState.getAmount(1)).toBe(100); // Silver unchanged (never spent)
+      expect(resourceState.getAmount(2)).toBe(0); // No outputs
+      expect(spendCalls).toBe(2);
     });
 
     it('should reject non-integer runs parameter', () => {
@@ -1086,6 +1198,135 @@ describe('TransformSystem', () => {
       expect(resourceState.getAmount(1)).toBe(10); // Now has gems
       expect(resourceState.getAmount(0)).toBe(50); // 150 - 100 gold
     });
+
+    it('should retain event trigger when blocked by locked state', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:event-locked' as any,
+          name: { default: 'Event Locked', variants: {} },
+          description: { default: 'Event retained while locked', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'event', eventId: 'evt:test' as any },
+          unlockCondition: {
+            kind: 'resourceThreshold',
+            resourceId: 'res:prestige' as any,
+            comparator: 'gte',
+            amount: { kind: 'constant', value: 1 },
+          },
+          tags: [],
+        },
+      ];
+
+      const resources = new Map([
+        ['res:prestige', 0],
+      ]);
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const conditionContext = createMockConditionContext(resources);
+
+      let eventHandler: (() => void) | undefined;
+      const mockEvents = {
+        on: (eventId: string, handler: () => void) => {
+          if (eventId === 'evt:test') {
+            eventHandler = handler;
+          }
+          return { unsubscribe: () => {} };
+        },
+      };
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        conditionContext,
+      });
+
+      system.setup?.({ events: mockEvents as any });
+
+      // Tick 0: evaluate unlock state (still locked)
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      // Fire event while locked; it should be retained
+      eventHandler?.();
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(0)).toBe(100);
+      expect(resourceState.getAmount(1)).toBe(0);
+
+      // Unlock in a later tick without firing the event again
+      resources.set('res:prestige', 1);
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
+    });
+
+    it('should retain event trigger when blocked by maxRunsPerTick', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:event-capped' as any,
+          name: { default: 'Event Capped', variants: {} },
+          description: { default: 'Event retained when run budget exhausted', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'event', eventId: 'evt:test' as any },
+          safety: { maxRunsPerTick: 1 },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      let eventHandler: (() => void) | undefined;
+      const mockEvents = {
+        on: (eventId: string, handler: () => void) => {
+          if (eventId === 'evt:test') {
+            eventHandler = handler;
+          }
+          return { unsubscribe: () => {} };
+        },
+      };
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      system.setup?.({ events: mockEvents as any });
+
+      // Tick once to initialize
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      // Fire and process an event in step 0 (executes)
+      eventHandler?.();
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
+
+      // Fire another event in the same step; should be retained due to maxRunsPerTick
+      eventHandler?.();
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
+
+      // Next step consumes the retained event without firing again
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(0)).toBe(80);
+      expect(resourceState.getAmount(1)).toBe(2);
+    });
   });
 
   describe('condition trigger path', () => {
@@ -1296,124 +1537,6 @@ describe('TransformSystem', () => {
 
       const state2 = getTransformState(system);
       expect(state2.get('transform:unlockable')?.unlocked).toBe(true);
-    });
-  });
-
-  describe('state restore', () => {
-    it('should restore state correctly', () => {
-      const transforms: TransformDefinition[] = [
-        {
-          id: 'transform:restore-test' as any,
-          name: { default: 'Restore Test', variants: {} },
-          description: { default: 'For testing restore', variants: {} },
-          mode: 'instant',
-          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
-          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
-          trigger: { kind: 'manual' },
-          tags: [],
-        },
-      ];
-
-      const system = createTransformSystem({
-        transforms,
-        stepDurationMs,
-        resourceState: { getAmount: () => 0 },
-      });
-
-      const savedState: SerializedTransformState[] = [
-        {
-          id: 'transform:restore-test',
-          unlocked: true,
-          cooldownExpiresStep: 15,
-        },
-      ];
-
-      system.restoreState(savedState);
-
-      const state = getTransformState(system);
-      const transformState = state.get('transform:restore-test');
-
-      expect(transformState?.unlocked).toBe(true);
-      expect(transformState?.cooldownExpiresStep).toBe(15);
-    });
-
-    it('should rebase cooldown steps on restore', () => {
-      const transforms: TransformDefinition[] = [
-        {
-          id: 'transform:rebase-test' as any,
-          name: { default: 'Rebase Test', variants: {} },
-          description: { default: 'For testing rebase', variants: {} },
-          mode: 'instant',
-          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
-          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
-          trigger: { kind: 'manual' },
-          tags: [],
-        },
-      ];
-
-      const system = createTransformSystem({
-        transforms,
-        stepDurationMs,
-        resourceState: { getAmount: () => 0 },
-      });
-
-      const savedState: SerializedTransformState[] = [
-        {
-          id: 'transform:rebase-test',
-          unlocked: true,
-          cooldownExpiresStep: 100, // Saved at step 50, cooldown expires at step 100
-        },
-      ];
-
-      // Restore with rebasing: saved at step 50, current step is 80
-      system.restoreState(savedState, { savedWorkerStep: 50, currentStep: 80 });
-
-      const state = getTransformState(system);
-      const transformState = state.get('transform:rebase-test');
-
-      // Cooldown should be rebased: 100 + (80 - 50) = 130
-      expect(transformState?.cooldownExpiresStep).toBe(130);
-    });
-
-    it('should ignore unknown transform ids during restore', () => {
-      const transforms: TransformDefinition[] = [
-        {
-          id: 'transform:known' as any,
-          name: { default: 'Known', variants: {} },
-          description: { default: 'Known transform', variants: {} },
-          mode: 'instant',
-          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
-          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
-          trigger: { kind: 'manual' },
-          tags: [],
-        },
-      ];
-
-      const system = createTransformSystem({
-        transforms,
-        stepDurationMs,
-        resourceState: { getAmount: () => 0 },
-      });
-
-      const savedState: SerializedTransformState[] = [
-        {
-          id: 'transform:known',
-          unlocked: true,
-          cooldownExpiresStep: 10,
-        },
-        {
-          id: 'transform:unknown', // This doesn't exist
-          unlocked: true,
-          cooldownExpiresStep: 20,
-        },
-      ];
-
-      // Should not throw
-      expect(() => system.restoreState(savedState)).not.toThrow();
-
-      const state = getTransformState(system);
-      expect(state.size).toBe(1);
-      expect(state.get('transform:known')?.cooldownExpiresStep).toBe(10);
     });
   });
 
