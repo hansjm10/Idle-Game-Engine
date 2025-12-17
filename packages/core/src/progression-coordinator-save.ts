@@ -214,6 +214,7 @@ export function hydrateProgressionCoordinatorState(
   serialized: SerializedProgressionCoordinatorState | undefined,
   coordinator: ProgressionCoordinator,
   productionSystem?: { restoreAccumulators: (state: SerializedProductionAccumulators) => void },
+  options: { skipResources?: boolean } = {},
 ): void {
   if (!serialized) {
     return;
@@ -226,7 +227,9 @@ export function hydrateProgressionCoordinatorState(
     );
   }
 
-  coordinator.hydrateResources(serialized.resources);
+  if (!options.skipResources) {
+    coordinator.hydrateResources(serialized.resources);
+  }
 
   const generatorById = new Map<string, Mutable<ProgressionGeneratorState>>();
   for (const generator of coordinator.state.generators ?? []) {

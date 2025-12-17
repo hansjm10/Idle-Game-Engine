@@ -1064,6 +1064,7 @@ export {
   evaluateEventTrigger,
   evaluateResourceThresholdTrigger,
   enqueueAutomationCommand,
+  serializeAutomationState,
   type AutomationSystemOptions,
   type AutomationState,
   type SerializedAutomationState,
@@ -1086,8 +1087,10 @@ export {
   createTransformSystem,
   getTransformState,
   isTransformCooldownActive,
+  serializeTransformState,
   type TransformSystemOptions,
   type TransformState,
+  type SerializedTransformState,
   type TransformExecutionResult,
   type TransformResourceState,
 } from './transform-system.js';
@@ -1146,5 +1149,19 @@ export {
   formatNumber,
   type ConditionContext,
 } from './condition-evaluator.js';
+export {
+  GAME_STATE_SAVE_SCHEMA_VERSION,
+  DEFAULT_GAME_STATE_SAVE_MIGRATIONS,
+  decodeGameStateSave,
+  encodeGameStateSave,
+  hydrateGameStateSaveFormat,
+  loadGameStateSaveFormat,
+  serializeGameStateSaveFormat,
+  type GameStateSaveCompression,
+  type GameStateSaveFormat,
+  type GameStateSaveFormatV1,
+  type GameStateSaveRuntime,
+  type SchemaMigration,
+} from './game-state-save.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';

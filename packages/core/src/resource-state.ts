@@ -3,7 +3,11 @@ import {
   type ImmutableMapSnapshot,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
-import type { AutomationState, SerializedAutomationState } from './automation-system.js';
+import {
+  serializeAutomationState,
+  type AutomationState,
+  type SerializedAutomationState,
+} from './automation-system.js';
 
 const DIRTY_EPSILON_ABSOLUTE = 1e-9;
 const DIRTY_EPSILON_RELATIVE = 1e-9;
@@ -1300,16 +1304,7 @@ function exportForSave(
   };
 
   if (automationState && automationState.size > 0) {
-    // Explicitly encode sentinel values for JSON compatibility.
-    // - lastFiredStep: -Infinity => null (never fired)
-    const automationArray = Array.from(automationState.values()).map((s) => ({
-      id: s.id,
-      enabled: s.enabled,
-      lastFiredStep: Number.isFinite(s.lastFiredStep) ? s.lastFiredStep : null,
-      cooldownExpiresStep: s.cooldownExpiresStep,
-      unlocked: s.unlocked,
-      lastThresholdSatisfied: s.lastThresholdSatisfied,
-    }));
+    const automationArray = serializeAutomationState(automationState);
     return {
       ...baseState,
       automationState: automationArray,

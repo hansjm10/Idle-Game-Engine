@@ -140,6 +140,31 @@ export interface SerializedAutomationState {
   readonly lastThresholdSatisfied?: boolean;
 }
 
+const compareStableStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+export function serializeAutomationState(
+  state: ReadonlyMap<string, AutomationState>,
+): readonly SerializedAutomationState[] {
+  if (!state || state.size === 0) {
+    return [];
+  }
+
+  const values = Array.from(state.values());
+  values.sort((left, right) => compareStableStrings(left.id, right.id));
+
+  return values.map((entry) => ({
+    id: entry.id,
+    enabled: entry.enabled,
+    lastFiredStep: Number.isFinite(entry.lastFiredStep)
+      ? entry.lastFiredStep
+      : null,
+    cooldownExpiresStep: entry.cooldownExpiresStep,
+    unlocked: entry.unlocked,
+    lastThresholdSatisfied: entry.lastThresholdSatisfied,
+  }));
+}
+
 /**
  * Options for creating an AutomationSystem.
  */
