@@ -1,3 +1,4 @@
+import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type {
   EventBusOptions,
   EventChannelConfiguration,
@@ -14,9 +15,11 @@ export interface AutomationToggledEventPayload {
   readonly enabled: boolean;
 }
 
+export type AutomationFiredTriggerKind = AutomationDefinition['trigger']['kind'];
+
 export interface AutomationFiredEventPayload {
   readonly automationId: string;
-  readonly triggerKind: string;
+  readonly triggerKind: AutomationFiredTriggerKind;
   readonly step: number;
 }
 
