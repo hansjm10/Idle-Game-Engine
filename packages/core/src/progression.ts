@@ -43,6 +43,7 @@ export type GeneratorView = Readonly<{
   enabled: boolean;
   isUnlocked: boolean;
   isVisible: boolean;
+  unlockHint?: string;
   costs: readonly GeneratorCostView[];
   produces: readonly GeneratorRateView[];
   consumes: readonly GeneratorRateView[];
@@ -194,6 +195,7 @@ export interface ProgressionGeneratorState {
   readonly enabled: boolean;
   readonly isUnlocked: boolean;
   readonly isVisible: boolean;
+  readonly unlockHint?: string;
   readonly produces?: readonly GeneratorRateView[];
   readonly consumes?: readonly GeneratorRateView[];
   readonly nextPurchaseReadyAtStep?: number;
@@ -360,6 +362,10 @@ function createGeneratorViews(
     const consumes = normalizeRates(generator.consumes);
     const nextPurchaseReadyAtStep =
       generator.nextPurchaseReadyAtStep ?? step + 1;
+    const unlockHint =
+      typeof generator.unlockHint === 'string' && generator.unlockHint.trim().length > 0
+        ? generator.unlockHint
+        : undefined;
 
     const view: GeneratorView = Object.freeze({
       id: generator.id,
@@ -368,6 +374,7 @@ function createGeneratorViews(
       enabled: generator.enabled ?? true,
       isUnlocked: Boolean(generator.isUnlocked),
       isVisible: Boolean(generator.isVisible),
+      ...(unlockHint ? { unlockHint } : {}),
       costs: quote,
       produces,
       consumes,

@@ -86,6 +86,9 @@ function createGeneratorViews(step, generators, evaluator) {
         const produces = normalizeRates(generator.produces);
         const consumes = normalizeRates(generator.consumes);
         const nextPurchaseReadyAtStep = generator.nextPurchaseReadyAtStep ?? step + 1;
+        const unlockHint = typeof generator.unlockHint === 'string' && generator.unlockHint.trim().length > 0
+            ? generator.unlockHint
+            : undefined;
         const view = Object.freeze({
             id: generator.id,
             displayName: generator.displayName ?? generator.id,
@@ -93,6 +96,7 @@ function createGeneratorViews(step, generators, evaluator) {
             enabled: generator.enabled ?? true,
             isUnlocked: Boolean(generator.isUnlocked),
             isVisible: Boolean(generator.isVisible),
+            ...(unlockHint ? { unlockHint } : {}),
             costs: quote,
             produces,
             consumes,

@@ -23,6 +23,7 @@ import {
   createUpgradeDefinition,
   literalOne,
 } from './content-test-helpers.js';
+import { buildProgressionSnapshot } from './progression.js';
 
 function createRepeatableContentPack(): NormalizedContentPack {
   const resource = createResourceDefinition('resource.test', {
@@ -96,6 +97,45 @@ function createGeneratorUnlockContentPack(): NormalizedContentPack {
     metadata: {
       id: 'pack.unlockable',
       title: 'Unlockable Pack',
+    },
+  });
+}
+
+function createGeneratorLevelUnlockContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const basicGenerator = createGeneratorDefinition('generator.basic', {
+    name: 'Basic Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 10,
+      costCurve: literalOne,
+    },
+  });
+
+  const gatedGenerator = createGeneratorDefinition('generator.gated', {
+    name: 'Gated Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: {
+      kind: 'generatorLevel',
+      generatorId: basicGenerator.id,
+      comparator: 'gte',
+      level: { kind: 'constant', value: 5 },
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [basicGenerator, gatedGenerator],
+    metadata: {
+      id: 'pack.gated-generators',
+      title: 'Gated Generators Pack',
     },
   });
 }
@@ -555,6 +595,34 @@ describe('progression-coordinator', () => {
     };
     const record = internalCoordinator.getGeneratorRecord('generator.unlockable');
     expect(record?.state.isUnlocked).toBe(false);
+  });
+
+  it('includes unlockHint for generators locked by resource threshold', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createGeneratorUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.unlockable');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires resource.energy >= 15');
+  });
+
+  it('includes unlockHint for generators locked by generator level', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createGeneratorLevelUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.gated');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
   });
 
   it('does not quote purchases for invisible generators', () => {

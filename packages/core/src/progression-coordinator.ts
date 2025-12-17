@@ -679,13 +679,26 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
           record.state.isUnlocked = true;
         }
 
-        record.state.isVisible = unlockedByUpgrade
-          ? true
-          : this.evaluateVisibility(record.definition.visibilityCondition);
+	        record.state.isVisible = unlockedByUpgrade
+	          ? true
+	          : this.evaluateVisibility(record.definition.visibilityCondition);
 
-        if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
-          record.state.nextPurchaseReadyAtStep = step + 1;
-        } else if (!wasUnlocked && record.state.isUnlocked) {
+	        record.state.unlockHint = record.state.isUnlocked
+	          ? undefined
+	          : describeCondition(
+	              combineConditions(
+	                record.definition.visibilityCondition && !record.state.isVisible
+	                  ? [
+	                      record.definition.baseUnlock,
+	                      record.definition.visibilityCondition,
+	                    ]
+	                  : [record.definition.baseUnlock],
+	              ),
+	            );
+
+	        if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
+	          record.state.nextPurchaseReadyAtStep = step + 1;
+	        } else if (!wasUnlocked && record.state.isUnlocked) {
           // Update nextPurchaseReadyAtStep when generator transitions to unlocked
           record.state.nextPurchaseReadyAtStep = step + 1;
         }
@@ -1696,26 +1709,29 @@ function createGeneratorRecord(
 
   const state: Mutable<ProgressionGeneratorState> = initial
     ? (initial as Mutable<ProgressionGeneratorState>)
-    : ({
-        id: generator.id,
-        displayName: getDisplayName(generator.name, generator.id),
-        owned: 0,
-        enabled: true,
-        isUnlocked: false,
-        isVisible: true,
-        produces,
-        consumes,
-        nextPurchaseReadyAtStep: 1,
-      } as Mutable<ProgressionGeneratorState>);
+	    : ({
+	        id: generator.id,
+	        displayName: getDisplayName(generator.name, generator.id),
+	        owned: 0,
+	        enabled: true,
+	        isUnlocked: false,
+	        isVisible: true,
+	        unlockHint: undefined,
+	        produces,
+	        consumes,
+	        nextPurchaseReadyAtStep: 1,
+	      } as Mutable<ProgressionGeneratorState>);
 
   state.id = generator.id;
   state.displayName = getDisplayName(generator.name, generator.id);
-  state.owned = Number.isFinite(state.owned) ? state.owned : 0;
-  state.enabled = typeof state.enabled === 'boolean' ? state.enabled : true;
-  state.isUnlocked = Boolean(state.isUnlocked);
-  state.isVisible = state.isVisible ?? true;
-  state.produces = produces;
-  state.consumes = consumes;
+	  state.owned = Number.isFinite(state.owned) ? state.owned : 0;
+	  state.enabled = typeof state.enabled === 'boolean' ? state.enabled : true;
+	  state.isUnlocked = Boolean(state.isUnlocked);
+	  state.isVisible = state.isVisible ?? true;
+	  state.unlockHint =
+	    typeof state.unlockHint === 'string' ? state.unlockHint : undefined;
+	  state.produces = produces;
+	  state.consumes = consumes;
   state.nextPurchaseReadyAtStep = Number.isFinite(
     state.nextPurchaseReadyAtStep,
   )

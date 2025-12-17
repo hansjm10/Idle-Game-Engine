@@ -74,6 +74,21 @@ const createStaticFormulaEvaluationContext = (
   },
 });
 
+const DEFAULT_DESCRIPTION_FORMULA_CONTEXT: FormulaEvaluationContext = {
+  variables: {
+    level: STATIC_THRESHOLD_LEVEL,
+    time: 0,
+    deltaTime: 0,
+  },
+  entities: {
+    resource: () => 0,
+    generator: () => 0,
+    upgrade: () => 0,
+    automation: () => 0,
+    prestigeLayer: () => 0,
+  },
+};
+
 function reportMissingContextHook(
   context: ConditionContext,
   hook: keyof ConditionContext,
@@ -336,7 +351,7 @@ export function describeCondition(
       return 'Unavailable in this build';
     case 'resourceThreshold': {
       const amount = evaluateNumericFormula(condition.amount, {
-        variables: { level: STATIC_THRESHOLD_LEVEL },
+        ...DEFAULT_DESCRIPTION_FORMULA_CONTEXT,
       });
       return `Requires ${condition.resourceId} ${formatComparator(
         condition.comparator,
@@ -344,7 +359,7 @@ export function describeCondition(
     }
     case 'generatorLevel': {
       const level = evaluateNumericFormula(condition.level, {
-        variables: { level: STATIC_THRESHOLD_LEVEL },
+        ...DEFAULT_DESCRIPTION_FORMULA_CONTEXT,
       });
       return `Requires ${condition.generatorId} ${formatComparator(
         condition.comparator,
