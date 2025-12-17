@@ -1013,6 +1013,18 @@ export {
   type PrestigeSystemEvaluator,
 } from './progression.js';
 export {
+  selectAvailableUpgrades,
+  selectLockedUpgradesWithHints,
+  selectPurchasableGenerators,
+  selectPurchasableUpgrades,
+  selectTopNActionables,
+  selectUnlockedGenerators,
+  selectVisibleGenerators,
+  selectVisibleUpgrades,
+  type ProgressionActionableItem,
+  type ProgressionSelectorOptions,
+} from './progression-selectors.js';
+export {
   TransportBufferPool,
   type LeaseReleaseContext,
   type TransportBufferLease,
