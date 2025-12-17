@@ -78,6 +78,36 @@ export interface TransformState {
   runsThisTick: number;
 }
 
+export interface SerializedTransformState {
+  readonly id: string;
+  readonly unlocked: boolean;
+  readonly cooldownExpiresStep: number;
+}
+
+function normalizeNonNegativeInt(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return Math.floor(value);
+}
+
+export function serializeTransformState(
+  state: ReadonlyMap<string, TransformState>,
+): readonly SerializedTransformState[] {
+  if (!state || state.size === 0) {
+    return [];
+  }
+
+  const values = Array.from(state.values());
+  values.sort((left, right) => compareStableStrings(left.id, right.id));
+
+  return values.map((entry) => ({
+    id: entry.id,
+    unlocked: entry.unlocked,
+    cooldownExpiresStep: normalizeNonNegativeInt(entry.cooldownExpiresStep),
+  }));
+}
+
 /**
  * Options for creating a TransformSystem.
  */
@@ -451,6 +481,10 @@ export function createTransformSystem(
   options: TransformSystemOptions,
 ): System & {
   getState: () => ReadonlyMap<string, TransformState>;
+  restoreState: (
+    state: readonly SerializedTransformState[],
+    options?: { savedWorkerStep?: number; currentStep?: number },
+  ) => void;
   executeTransform: (
     transformId: string,
     step: number,
@@ -769,6 +803,56 @@ export function createTransformSystem(
 
     getState() {
       return new Map(transformStates);
+    },
+
+    restoreState(
+      stateArray: readonly SerializedTransformState[],
+      restoreOptions?: { savedWorkerStep?: number; currentStep?: number },
+    ) {
+      if (!stateArray || stateArray.length === 0) {
+        return;
+      }
+
+      const savedWorkerStep = restoreOptions?.savedWorkerStep;
+      const targetCurrentStep = restoreOptions?.currentStep ?? 0;
+      const hasValidSavedStep =
+        typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
+
+      const rebaseDelta = hasValidSavedStep
+        ? targetCurrentStep - savedWorkerStep
+        : 0;
+
+      for (const entry of stateArray) {
+        if (!entry || typeof entry !== 'object') {
+          continue;
+        }
+
+        const record = entry as unknown as Record<string, unknown>;
+        const id = record.id;
+        if (typeof id !== 'string' || id.trim().length === 0) {
+          continue;
+        }
+
+        const existing = transformStates.get(id);
+        if (!existing) {
+          continue;
+        }
+
+        const unlockedValue = record.unlocked;
+        const unlocked =
+          typeof unlockedValue === 'boolean' ? unlockedValue : false;
+
+        const normalizedCooldown = normalizeNonNegativeInt(
+          record.cooldownExpiresStep,
+        );
+        const rebasedCooldown = hasValidSavedStep
+          ? Math.max(0, normalizedCooldown + rebaseDelta)
+          : normalizedCooldown;
+
+        existing.unlocked = existing.unlocked || unlocked;
+        existing.cooldownExpiresStep = rebasedCooldown;
+        existing.runsThisTick = 0;
+      }
     },
 
     executeTransform,
