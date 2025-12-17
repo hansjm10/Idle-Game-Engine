@@ -86,6 +86,9 @@ function createGeneratorViews(step, generators, evaluator) {
         const produces = normalizeRates(generator.produces);
         const consumes = normalizeRates(generator.consumes);
         const nextPurchaseReadyAtStep = generator.nextPurchaseReadyAtStep ?? step + 1;
+        const unlockHint = typeof generator.unlockHint === 'string' && generator.unlockHint.trim().length > 0
+            ? generator.unlockHint
+            : undefined;
         const view = Object.freeze({
             id: generator.id,
             displayName: generator.displayName ?? generator.id,
@@ -93,6 +96,7 @@ function createGeneratorViews(step, generators, evaluator) {
             enabled: generator.enabled ?? true,
             isUnlocked: Boolean(generator.isUnlocked),
             isVisible: Boolean(generator.isVisible),
+            ...(unlockHint ? { unlockHint } : {}),
             costs: quote,
             produces,
             consumes,
@@ -114,12 +118,15 @@ function createUpgradeViews(upgrades, evaluator) {
             EMPTY_ARRAY;
         const normalizedCosts = normalizeUpgradeCosts(costs);
         const status = quote?.status ?? upgrade.status ?? 'locked';
+        const unlockHint = typeof upgrade.unlockHint === 'string' && upgrade.unlockHint.trim().length > 0
+            ? upgrade.unlockHint
+            : undefined;
         const view = Object.freeze({
             id: upgrade.id,
             displayName: upgrade.displayName ?? upgrade.id,
             status,
             costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
-            unlockHint: upgrade.unlockHint,
+            ...(unlockHint ? { unlockHint } : {}),
             isVisible: Boolean(upgrade.isVisible),
         });
         views.push(view);
@@ -249,12 +256,15 @@ function createPrestigeLayerViews(prestigeLayers, evaluator) {
     const views = [];
     for (const layer of prestigeLayers) {
         const quote = evaluatePrestigeQuote(evaluator, layer.id);
+        const unlockHint = typeof layer.unlockHint === 'string' && layer.unlockHint.trim().length > 0
+            ? layer.unlockHint
+            : undefined;
         const view = Object.freeze({
             id: layer.id,
             displayName: layer.displayName ?? layer.id,
             summary: layer.summary,
             status: quote?.status ?? 'locked',
-            unlockHint: layer.unlockHint,
+            ...(unlockHint ? { unlockHint } : {}),
             isVisible: Boolean(layer.isVisible),
             rewardPreview: quote?.reward,
             resetTargets: quote?.resetTargets ?? EMPTY_ARRAY,

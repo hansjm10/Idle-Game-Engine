@@ -683,6 +683,20 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
           ? true
           : this.evaluateVisibility(record.definition.visibilityCondition);
 
+        const visibilityCondition = record.definition.visibilityCondition;
+        const conditionsToDescribe =
+          visibilityCondition &&
+          !record.state.isVisible &&
+          visibilityCondition !== record.definition.baseUnlock
+            ? [record.definition.baseUnlock, visibilityCondition]
+            : [record.definition.baseUnlock];
+        record.state.unlockHint = record.state.isUnlocked
+          ? undefined
+          : describeCondition(
+              combineConditions(conditionsToDescribe),
+              this.conditionContext,
+            );
+
         if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
           record.state.nextPurchaseReadyAtStep = step + 1;
         } else if (!wasUnlocked && record.state.isUnlocked) {
@@ -707,6 +721,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
             ? describeCondition(
                 record.definition.unlockCondition ??
                   combineConditions(record.definition.prerequisites),
+                this.conditionContext,
               )
             : undefined;
 
@@ -755,7 +770,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         record.state.isVisible = isUnlocked; // Default: visible when unlocked
         record.state.unlockHint = isUnlocked
           ? undefined
-          : describeCondition(record.definition.unlockCondition);
+          : describeCondition(record.definition.unlockCondition, this.conditionContext);
       }
 
       const achievementsUnlocked = this.updateAchievementsForStep(step, options);
@@ -1703,6 +1718,7 @@ function createGeneratorRecord(
         enabled: true,
         isUnlocked: false,
         isVisible: true,
+        unlockHint: undefined,
         produces,
         consumes,
         nextPurchaseReadyAtStep: 1,
@@ -1714,6 +1730,8 @@ function createGeneratorRecord(
   state.enabled = typeof state.enabled === 'boolean' ? state.enabled : true;
   state.isUnlocked = Boolean(state.isUnlocked);
   state.isVisible = state.isVisible ?? true;
+  state.unlockHint =
+    typeof state.unlockHint === 'string' ? state.unlockHint : undefined;
   state.produces = produces;
   state.consumes = consumes;
   state.nextPurchaseReadyAtStep = Number.isFinite(

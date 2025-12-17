@@ -229,6 +229,17 @@ for (const record of this.generatorList) {
     ? evaluateCondition(visibleCondition, this.conditionContext)
     : true;
 
+  // Generate unlock hint for locked generators
+  record.state.unlockHint = record.state.isUnlocked
+    ? undefined
+    : describeCondition(
+        combineConditions(
+          visibleCondition && !record.state.isVisible
+            ? [record.definition.baseUnlock, visibleCondition]
+            : [record.definition.baseUnlock]
+        )
+      );
+
   // Initialize or update nextPurchaseReadyAtStep
   if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
     record.state.nextPurchaseReadyAtStep = step + 1;

@@ -43,6 +43,7 @@ export type GeneratorView = Readonly<{
   enabled: boolean;
   isUnlocked: boolean;
   isVisible: boolean;
+  unlockHint?: string;
   costs: readonly GeneratorCostView[];
   produces: readonly GeneratorRateView[];
   consumes: readonly GeneratorRateView[];
@@ -194,6 +195,7 @@ export interface ProgressionGeneratorState {
   readonly enabled: boolean;
   readonly isUnlocked: boolean;
   readonly isVisible: boolean;
+  readonly unlockHint?: string;
   readonly produces?: readonly GeneratorRateView[];
   readonly consumes?: readonly GeneratorRateView[];
   readonly nextPurchaseReadyAtStep?: number;
@@ -360,6 +362,10 @@ function createGeneratorViews(
     const consumes = normalizeRates(generator.consumes);
     const nextPurchaseReadyAtStep =
       generator.nextPurchaseReadyAtStep ?? step + 1;
+    const unlockHint =
+      typeof generator.unlockHint === 'string' && generator.unlockHint.trim().length > 0
+        ? generator.unlockHint
+        : undefined;
 
     const view: GeneratorView = Object.freeze({
       id: generator.id,
@@ -368,6 +374,7 @@ function createGeneratorViews(
       enabled: generator.enabled ?? true,
       isUnlocked: Boolean(generator.isUnlocked),
       isVisible: Boolean(generator.isVisible),
+      ...(unlockHint ? { unlockHint } : {}),
       costs: quote,
       produces,
       consumes,
@@ -398,13 +405,17 @@ function createUpgradeViews(
       (EMPTY_ARRAY as readonly UpgradeResourceCost[]);
     const normalizedCosts = normalizeUpgradeCosts(costs);
     const status = quote?.status ?? upgrade.status ?? 'locked';
+    const unlockHint =
+      typeof upgrade.unlockHint === 'string' && upgrade.unlockHint.trim().length > 0
+        ? upgrade.unlockHint
+        : undefined;
 
     const view: UpgradeView = Object.freeze({
       id: upgrade.id,
       displayName: upgrade.displayName ?? upgrade.id,
       status,
       costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
-      unlockHint: upgrade.unlockHint,
+      ...(unlockHint ? { unlockHint } : {}),
       isVisible: Boolean(upgrade.isVisible),
     });
 
@@ -588,13 +599,17 @@ function createPrestigeLayerViews(
 
   for (const layer of prestigeLayers) {
     const quote = evaluatePrestigeQuote(evaluator, layer.id);
+    const unlockHint =
+      typeof layer.unlockHint === 'string' && layer.unlockHint.trim().length > 0
+        ? layer.unlockHint
+        : undefined;
 
     const view: PrestigeLayerView = Object.freeze({
       id: layer.id,
       displayName: layer.displayName ?? layer.id,
       summary: layer.summary,
       status: quote?.status ?? 'locked',
-      unlockHint: layer.unlockHint,
+      ...(unlockHint ? { unlockHint } : {}),
       isVisible: Boolean(layer.isVisible),
       rewardPreview: quote?.reward,
       resetTargets: quote?.resetTargets ?? (EMPTY_ARRAY as readonly string[]),

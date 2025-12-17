@@ -23,6 +23,7 @@ import {
   createUpgradeDefinition,
   literalOne,
 } from './content-test-helpers.js';
+import { buildProgressionSnapshot } from './progression.js';
 
 function createRepeatableContentPack(): NormalizedContentPack {
   const resource = createResourceDefinition('resource.test', {
@@ -96,6 +97,235 @@ function createGeneratorUnlockContentPack(): NormalizedContentPack {
     metadata: {
       id: 'pack.unlockable',
       title: 'Unlockable Pack',
+    },
+  });
+}
+
+function createGeneratorLevelUnlockContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const basicGenerator = createGeneratorDefinition('generator.basic', {
+    name: 'Basic Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 10,
+      costCurve: literalOne,
+    },
+  });
+
+  const gatedGenerator = createGeneratorDefinition('generator.gated', {
+    name: 'Gated Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: {
+      kind: 'generatorLevel',
+      generatorId: basicGenerator.id,
+      comparator: 'gte',
+      level: { kind: 'constant', value: 5 },
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [basicGenerator, gatedGenerator],
+    metadata: {
+      id: 'pack.gated-generators',
+      title: 'Gated Generators Pack',
+    },
+  });
+}
+
+function createDuplicateVisibilityConditionContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const thresholdCondition = {
+    kind: 'resourceThreshold',
+    resourceId: energy.id,
+    comparator: 'gte',
+    amount: { kind: 'constant', value: 10 },
+  } as any;
+
+  const generator = createGeneratorDefinition('generator.duplicate-visibility', {
+    name: 'Duplicate Visibility Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: thresholdCondition,
+    visibilityCondition: thresholdCondition,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [generator],
+    metadata: {
+      id: 'pack.duplicate-visibility',
+      title: 'Duplicate Visibility Pack',
+    },
+  });
+}
+
+function createCompoundGeneratorUnlockContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const basicGenerator = createGeneratorDefinition('generator.basic', {
+    name: 'Basic Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 10,
+      costCurve: literalOne,
+    },
+  });
+
+  const compoundGenerator = createGeneratorDefinition('generator.compound', {
+    name: 'Compound Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: {
+      kind: 'allOf',
+      conditions: [
+        {
+          kind: 'resourceThreshold',
+          resourceId: energy.id,
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 10 },
+        },
+        {
+          kind: 'generatorLevel',
+          generatorId: basicGenerator.id,
+          comparator: 'gte',
+          level: { kind: 'constant', value: 5 },
+        },
+      ],
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [basicGenerator, compoundGenerator],
+    metadata: {
+      id: 'pack.compound-generator-unlock',
+      title: 'Compound Generator Unlock Pack',
+    },
+  });
+}
+
+function createOrGeneratorUnlockContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const basicGenerator = createGeneratorDefinition('generator.basic', {
+    name: 'Basic Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 10,
+      costCurve: literalOne,
+    },
+  });
+
+  const orGenerator = createGeneratorDefinition('generator.or', {
+    name: 'Or Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: {
+      kind: 'anyOf',
+      conditions: [
+        {
+          kind: 'resourceThreshold',
+          resourceId: energy.id,
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 10 },
+        },
+        {
+          kind: 'generatorLevel',
+          generatorId: basicGenerator.id,
+          comparator: 'gte',
+          level: { kind: 'constant', value: 5 },
+        },
+      ],
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [basicGenerator, orGenerator],
+    metadata: {
+      id: 'pack.or-generator-unlock',
+      title: 'Or Generator Unlock Pack',
+    },
+  });
+}
+
+function createDynamicFormulaUnlockContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const basicGenerator = createGeneratorDefinition('generator.basic', {
+    name: 'Basic Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 10,
+      costCurve: literalOne,
+    },
+  });
+
+  const dynamicThreshold: NumericFormula = {
+    kind: 'expression',
+    expression: {
+      kind: 'binary',
+      op: 'mul',
+      left: {
+        kind: 'binary',
+        op: 'max',
+        left: {
+          kind: 'ref',
+          target: { type: 'generator', id: basicGenerator.id },
+        },
+        right: { kind: 'literal', value: 1 },
+      },
+      right: { kind: 'literal', value: 10 },
+    },
+  };
+
+  const dynamicGenerator = createGeneratorDefinition('generator.dynamic', {
+    name: 'Dynamic Generator',
+    purchase: {
+      currencyId: energy.id,
+      baseCost: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: {
+      kind: 'resourceThreshold',
+      resourceId: energy.id,
+      comparator: 'gte',
+      amount: dynamicThreshold,
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    generators: [basicGenerator, dynamicGenerator],
+    metadata: {
+      id: 'pack.dynamic-formula-unlock',
+      title: 'Dynamic Formula Unlock Pack',
     },
   });
 }
@@ -555,6 +785,126 @@ describe('progression-coordinator', () => {
     };
     const record = internalCoordinator.getGeneratorRecord('generator.unlockable');
     expect(record?.state.isUnlocked).toBe(false);
+  });
+
+  it('includes unlockHint for generators locked by resource threshold', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createGeneratorUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.unlockable');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires resource.energy >= 15');
+  });
+
+  it('includes unlockHint for generators locked by generator level', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createGeneratorLevelUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.gated');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
+  });
+
+  it('does not duplicate hint when visibilityCondition equals baseUnlock', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createDuplicateVisibilityConditionContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find(
+      (g) => g.id === 'generator.duplicate-visibility',
+    );
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires resource.energy >= 10');
+  });
+
+  it('includes unlockHint for generators locked by compound and condition', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createCompoundGeneratorUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.compound');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toContain('resource.energy');
+    expect(generator?.unlockHint).toContain('generator.basic');
+  });
+
+  it('omits satisfied subconditions from compound unlock hints', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createCompoundGeneratorUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 15);
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.compound');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
+  });
+
+  it('includes unlockHint for generators locked by or condition', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createOrGeneratorUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.or');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toContain('Requires any of:');
+    expect(generator?.unlockHint).toContain('resource.energy');
+    expect(generator?.unlockHint).toContain('generator.basic');
+  });
+
+  it('describes dynamic formula thresholds using current game state', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createDynamicFormulaUnlockContentPack(),
+      stepDurationMs: 100,
+    });
+
+    const internalCoordinator = coordinator as unknown as {
+      getGeneratorRecord(
+        id: string,
+      ): { state: { owned: number } } | undefined;
+    };
+    const basicRecord = internalCoordinator.getGeneratorRecord('generator.basic');
+    if (!basicRecord) {
+      throw new Error('Missing test generator.basic record');
+    }
+    basicRecord.state.owned = 2;
+
+    const energyIndex = coordinator.resourceState.requireIndex('resource.energy');
+    coordinator.resourceState.addAmount(energyIndex, 15);
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.dynamic');
+    expect(generator?.isUnlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires resource.energy >= 20');
   });
 
   it('does not quote purchases for invisible generators', () => {

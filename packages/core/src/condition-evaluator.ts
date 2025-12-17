@@ -74,6 +74,50 @@ const createStaticFormulaEvaluationContext = (
   },
 });
 
+const DEFAULT_DESCRIPTION_FORMULA_CONTEXT: FormulaEvaluationContext = {
+  variables: {
+    level: STATIC_THRESHOLD_LEVEL,
+    time: 0,
+    deltaTime: 0,
+  },
+  entities: {
+    resource: () => 0,
+    generator: () => 0,
+    upgrade: () => 0,
+    automation: () => 0,
+    prestigeLayer: () => 0,
+  },
+};
+
+const createDescriptionFormulaEvaluationContext = (
+  context: ConditionContext | undefined,
+): FormulaEvaluationContext => {
+  if (!context) {
+    return DEFAULT_DESCRIPTION_FORMULA_CONTEXT;
+  }
+
+  return {
+    variables: DEFAULT_DESCRIPTION_FORMULA_CONTEXT.variables,
+    entities: {
+      ...DEFAULT_DESCRIPTION_FORMULA_CONTEXT.entities,
+      resource: (resourceId) => context.getResourceAmount(resourceId),
+      generator: (generatorId) => context.getGeneratorLevel(generatorId),
+      upgrade: (upgradeId) => context.getUpgradePurchases(upgradeId),
+    },
+  };
+};
+
+const isConditionSatisfied = (
+  condition: Condition,
+  context: ConditionContext,
+): boolean => {
+  try {
+    return evaluateCondition(condition, context);
+  } catch {
+    return false;
+  }
+};
+
 function reportMissingContextHook(
   context: ConditionContext,
   hook: keyof ConditionContext,
@@ -324,6 +368,7 @@ export function combineConditions(
  */
 export function describeCondition(
   condition: Condition | undefined,
+  context?: ConditionContext,
 ): string | undefined {
   if (!condition) {
     return undefined;
@@ -335,16 +380,18 @@ export function describeCondition(
     case 'never':
       return 'Unavailable in this build';
     case 'resourceThreshold': {
+      const formulaContext = createDescriptionFormulaEvaluationContext(context);
       const amount = evaluateNumericFormula(condition.amount, {
-        variables: { level: STATIC_THRESHOLD_LEVEL },
+        ...formulaContext,
       });
       return `Requires ${condition.resourceId} ${formatComparator(
         condition.comparator,
       )} ${formatNumber(amount)}`;
     }
     case 'generatorLevel': {
+      const formulaContext = createDescriptionFormulaEvaluationContext(context);
       const level = evaluateNumericFormula(condition.level, {
-        variables: { level: STATIC_THRESHOLD_LEVEL },
+        ...formulaContext,
       });
       return `Requires ${condition.generatorId} ${formatComparator(
         condition.comparator,
@@ -361,21 +408,38 @@ export function describeCondition(
     case 'prestigeUnlocked':
       return `Requires prestige layer ${condition.prestigeLayerId} available`;
     case 'allOf': {
-      const parts = condition.conditions
-        .map(describeCondition)
+      const pendingConditions =
+        context
+          ? condition.conditions.filter(
+              (nested) => !isConditionSatisfied(nested, context),
+            )
+          : condition.conditions;
+      if (pendingConditions.length === 0) {
+        return undefined;
+      }
+
+      const parts = pendingConditions
+        .map((nested) => describeCondition(nested, context))
         .filter((value): value is string => Boolean(value));
       return parts.length > 0 ? parts.join(', ') : undefined;
     }
     case 'anyOf': {
+      if (
+        context &&
+        condition.conditions.some((nested) => isConditionSatisfied(nested, context))
+      ) {
+        return undefined;
+      }
+
       const parts = condition.conditions
-        .map(describeCondition)
+        .map((nested) => describeCondition(nested, context))
         .filter((value): value is string => Boolean(value));
       return parts.length > 0
         ? `Requires any of: ${parts.join(' or ')}`
         : undefined;
     }
     case 'not': {
-      const inner = describeCondition(condition.condition);
+      const inner = describeCondition(condition.condition, context);
       return inner ? `Not (${inner})` : undefined;
     }
     default:

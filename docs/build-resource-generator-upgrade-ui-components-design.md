@@ -94,8 +94,10 @@ type GeneratorView = Readonly<{
   id: string;
   displayName: string;
   owned: number;
+  enabled: boolean;
   isUnlocked: boolean;
   isVisible: boolean;
+  unlockHint?: string;
   costs: readonly GeneratorCostView[];
   produces: readonly { resourceId: string; rate: number }[];
   consumes: readonly { resourceId: string; rate: number }[];

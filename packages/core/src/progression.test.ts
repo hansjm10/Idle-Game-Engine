@@ -379,7 +379,6 @@ describe('buildProgressionSnapshot', () => {
           displayName: 'Ascension Alpha',
           summary: undefined,
           status: 'locked',
-          unlockHint: undefined,
           isVisible: true,
           rewardPreview: undefined,
           resetTargets: [],
