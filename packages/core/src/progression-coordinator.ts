@@ -699,9 +699,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	        if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
 	          record.state.nextPurchaseReadyAtStep = step + 1;
 	        } else if (!wasUnlocked && record.state.isUnlocked) {
-          // Update nextPurchaseReadyAtStep when generator transitions to unlocked
-          record.state.nextPurchaseReadyAtStep = step + 1;
-        }
+	          // Update nextPurchaseReadyAtStep when generator transitions to unlocked
+	          record.state.nextPurchaseReadyAtStep = step + 1;
+	        }
         record.state.owned = clampOwned(
           record.state.owned,
           record.definition.maxLevel,
