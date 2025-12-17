@@ -1,3 +1,4 @@
+import type { AutomationDefinition } from '@idle-engine/content-schema';
 import type {
   EventBusOptions,
   EventChannelConfiguration,
@@ -14,10 +15,19 @@ export interface AutomationToggledEventPayload {
   readonly enabled: boolean;
 }
 
+export type AutomationFiredTriggerKind = AutomationDefinition['trigger']['kind'];
+
+export interface AutomationFiredEventPayload {
+  readonly automationId: string;
+  readonly triggerKind: AutomationFiredTriggerKind;
+  readonly step: number;
+}
+
 declare module './runtime-event.js' {
   interface RuntimeEventPayloadMap {
     'resource:threshold-reached': ResourceThresholdReachedEventPayload;
     'automation:toggled': AutomationToggledEventPayload;
+    'automation:fired': AutomationFiredEventPayload;
   }
 }
 
@@ -41,6 +51,18 @@ function validateAutomationToggled(payload: AutomationToggledEventPayload): void
   }
 }
 
+function validateAutomationFired(payload: AutomationFiredEventPayload): void {
+  if (typeof payload.automationId !== 'string' || payload.automationId.length === 0) {
+    throw new Error('automationId must be a non-empty string.');
+  }
+  if (typeof payload.triggerKind !== 'string' || payload.triggerKind.length === 0) {
+    throw new Error('triggerKind must be a non-empty string.');
+  }
+  if (!Number.isInteger(payload.step) || payload.step < 0) {
+    throw new Error('step must be a non-negative integer.');
+  }
+}
+
 const CORE_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [
   {
     definition: {
@@ -54,6 +76,13 @@ const CORE_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [
       type: 'automation:toggled',
       version: 1,
       validator: validateAutomationToggled,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'automation:fired',
+      version: 1,
+      validator: validateAutomationFired,
     },
   } as EventChannelConfiguration,
 ];

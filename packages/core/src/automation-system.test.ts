@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createAutomationSystem,
   getAutomationState,
@@ -25,6 +25,9 @@ import { createResourceStateAdapter } from './automation-resource-state-adapter.
 
 describe('AutomationSystem', () => {
   const stepDurationMs = 100;
+  const noopEventPublisher = {
+    publish: () => ({ accepted: true } as any),
+  } as any;
 
   describe('initialization', () => {
     it('should create system with correct id', () => {
@@ -164,7 +167,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 0,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
 
       // Check that unlocked state is preserved despite resource being below threshold
@@ -211,7 +214,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 0,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
 
       const stateAfterTick = getAutomationState(system);
@@ -221,7 +224,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 1,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
       const stateAfterSecondTick = getAutomationState(system);
       expect(stateAfterSecondTick.get('auto:basic')?.unlocked).toBe(true);
@@ -368,7 +371,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 0,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
 
       expect(getAutomationState(system).get('auto:gold')?.unlocked).toBe(false);
@@ -381,7 +384,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 1,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
       expect(getAutomationState(system).get('auto:gold')?.unlocked).toBe(true);
       expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(false);
@@ -390,7 +393,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 2,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
       expect(getAutomationState(system).get('auto:gen')?.unlocked).toBe(true);
       expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(true);
@@ -400,7 +403,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 3,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
       expect(getAutomationState(system).get('auto:nested')?.unlocked).toBe(true);
       expect(getAutomationState(system).get('auto:upgrade')?.unlocked).toBe(true);
@@ -409,7 +412,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 4,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
       expect(getAutomationState(system).get('auto:prestige')?.unlocked).toBe(true);
 
@@ -420,7 +423,7 @@ describe('AutomationSystem', () => {
       system.tick({
         step: 5,
         deltaMs: 100,
-        events: {} as any,
+        events: noopEventPublisher,
       });
       expect(getAutomationState(system).get('auto:gold')?.unlocked).toBe(true);
       expect(getAutomationState(system).get('auto:gen')?.unlocked).toBe(true);
@@ -1090,6 +1093,7 @@ describe('AutomationSystem', () => {
         on: (() => {}) as any,
         off: () => {},
         emit: () => {},
+        publish: noopEventPublisher.publish,
       } as any,
     };
 
@@ -1162,7 +1166,12 @@ describe('AutomationSystem', () => {
       const context = {
         step: 0,
         deltaMs: 100,
-        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+          publish: noopEventPublisher.publish,
+        } as any,
       };
 
       system.setup?.(context);
@@ -1234,7 +1243,12 @@ describe('AutomationSystem', () => {
       const context = {
         step: 0,
         deltaMs: 100,
-        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+          publish: noopEventPublisher.publish,
+        } as any,
       };
 
       system.setup?.(context);
@@ -1305,7 +1319,12 @@ describe('AutomationSystem', () => {
       const context = {
         step: 0,
         deltaMs: 100,
-        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+          publish: noopEventPublisher.publish,
+        } as any,
       };
 
       system.setup?.(context);
@@ -1354,7 +1373,12 @@ describe('AutomationSystem', () => {
       const context = {
         step: 0,
         deltaMs: 100,
-        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+          publish: noopEventPublisher.publish,
+        } as any,
       };
 
       system.setup?.(context);
@@ -1462,7 +1486,12 @@ describe('AutomationSystem', () => {
       const context = {
         step: 0,
         deltaMs: 100,
-        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+          publish: noopEventPublisher.publish,
+        } as any,
       };
 
       system.setup?.(context);
@@ -1554,7 +1583,12 @@ describe('AutomationSystem', () => {
       const context = {
         step: 0,
         deltaMs: 100,
-        events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any,
+        events: {
+          on: (() => {}) as any,
+          off: () => {},
+          emit: () => {},
+          publish: noopEventPublisher.publish,
+        } as any,
       };
 
       system.setup?.(context);
@@ -1659,13 +1693,51 @@ describe('AutomationSystem', () => {
       handler?.();
 
       // Tick: should enqueue exactly once
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(1);
       commandQueue.dequeueUpToStep(1);
 
       // Without re-emitting the event, a subsequent tick should NOT fire again
-      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      system.tick({ step: 1, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
+    });
+  });
+
+  describe('automation:fired event', () => {
+    it('publishes triggerKind and step for successful automation fires', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      const publish = vi.fn(() => ({ accepted: true } as any));
+      const events = { publish } as any;
+
+      system.tick({ step: 42, deltaMs: stepDurationMs, events });
+
+      expect(publish).toHaveBeenCalledTimes(1);
+      expect(publish).toHaveBeenCalledWith('automation:fired', {
+        automationId: 'auto:collector',
+        triggerKind: 'interval',
+        step: 42,
+      });
     });
   });
 
@@ -2294,6 +2366,7 @@ describe('AutomationSystem', () => {
           on: (() => {}) as any,
           off: () => {},
           emit: () => {},
+          publish: noopEventPublisher.publish,
         } as any,
       };
 
@@ -2351,6 +2424,7 @@ describe('AutomationSystem', () => {
           on: (() => {}) as any,
           off: () => {},
           emit: () => {},
+          publish: noopEventPublisher.publish,
         } as any,
       };
 
@@ -2528,7 +2602,7 @@ describe('AutomationSystem', () => {
       });
 
       system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
 
       // No command enqueued; no cooldown/lastFired updates
       expect(commandQueue.size).toBe(0);
@@ -2580,7 +2654,7 @@ describe('AutomationSystem', () => {
       });
 
       system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
 
       expect(commandQueue.size).toBe(1);
       const st = getAutomationState(system).get('auto:cost-int2');
@@ -2644,17 +2718,17 @@ describe('AutomationSystem', () => {
       eventHandler?.();
 
       // Step 0: insufficient funds, event should be retained
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
 
       // Step 1: add funds; event should fire without re-emitting
       coins = 10;
-      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      system.tick({ step: 1, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(1);
       commandQueue.dequeueUpToStep(2);
 
       // Step 2: no new event, should not refire
-      system.tick({ step: 2, deltaMs: 100, events: {} as any });
+      system.tick({ step: 2, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
     });
 
@@ -2708,17 +2782,17 @@ describe('AutomationSystem', () => {
       system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
 
       // Step 0: below threshold
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
 
       // Step 1: cross threshold, but cannot pay cost → no enqueue, crossing not consumed
       gold = 150;
-      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      system.tick({ step: 1, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
 
       // Step 2: still above threshold; now can pay → should fire
       coins = 20;
-      system.tick({ step: 2, deltaMs: 100, events: {} as any });
+      system.tick({ step: 2, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(1);
     });
 
@@ -2779,7 +2853,7 @@ describe('AutomationSystem', () => {
       eventHandler?.();
 
       // Step 0: insufficient funds → no enqueue, no cooldown/lastFired
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
       const s0 = getAutomationState(system).get('auto:event-cost-cd');
       expect(s0?.lastFiredStep).toBe(-Infinity);
@@ -2787,7 +2861,7 @@ describe('AutomationSystem', () => {
 
       // Step 1: add funds and process without re-emitting event → should fire
       coins = 10;
-      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      system.tick({ step: 1, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(1);
       const s1 = getAutomationState(system).get('auto:event-cost-cd');
       expect(s1?.lastFiredStep).toBe(1);
@@ -2846,14 +2920,14 @@ describe('AutomationSystem', () => {
       system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
 
       // Step 0: below threshold
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
       let s = getAutomationState(system).get('auto:threshold-cost-cd');
       expect(s?.cooldownExpiresStep).toBe(0);
       expect(s?.lastFiredStep).toBe(-Infinity);
 
       // Step 1: cross threshold, but cost fails → no cooldown, crossing not consumed
       gold = 150;
-      system.tick({ step: 1, deltaMs: 100, events: {} as any });
+      system.tick({ step: 1, deltaMs: 100, events: noopEventPublisher });
       s = getAutomationState(system).get('auto:threshold-cost-cd');
       expect(commandQueue.size).toBe(0);
       expect(s?.cooldownExpiresStep).toBe(0);
@@ -2863,7 +2937,7 @@ describe('AutomationSystem', () => {
 
       // Step 2: still above threshold; now funds available → should fire and set cooldown
       coins = 20;
-      system.tick({ step: 2, deltaMs: 100, events: {} as any });
+      system.tick({ step: 2, deltaMs: 100, events: noopEventPublisher });
       s = getAutomationState(system).get('auto:threshold-cost-cd');
       expect(commandQueue.size).toBe(1);
       expect(s?.lastFiredStep).toBe(2);
@@ -2910,7 +2984,7 @@ describe('AutomationSystem', () => {
       });
 
       system.setup?.({ events: { on: (() => {}) as any, off: () => {}, emit: () => {} } as any });
-      system.tick({ step: 0, deltaMs: 100, events: {} as any });
+      system.tick({ step: 0, deltaMs: 100, events: noopEventPublisher });
 
       // One command enqueued: PURCHASE_UPGRADE
       expect(commandQueue.size).toBe(1);
@@ -3092,6 +3166,7 @@ describe('AutomationSystem', () => {
           on: (() => {}) as any,
           off: () => {},
           emit: () => {},
+          publish: noopEventPublisher.publish,
         } as any,
       };
 
@@ -3138,7 +3213,7 @@ describe('AutomationSystem', () => {
       system.setup?.({ events: { on: () => ({ unsubscribe: () => {} }) } });
 
       // Tick at step 10 (should be 1000ms simulation time)
-      system.tick({ step: 10, deltaMs: 100, events: {} as any });
+      system.tick({ step: 10, deltaMs: 100, events: noopEventPublisher });
 
       // Dequeue the command and check timestamp
       const commands = commandQueue.dequeueUpToStep(11);
@@ -3176,7 +3251,7 @@ describe('AutomationSystem', () => {
         system.setup?.({ events: { on: () => ({ unsubscribe: () => {} }) } });
 
         // Tick at step 5
-        system.tick({ step: 5, deltaMs: 100, events: {} as any });
+        system.tick({ step: 5, deltaMs: 100, events: noopEventPublisher });
 
         const commands = commandQueue.dequeueUpToStep(6);
         timestamps.push(commands[0]?.timestamp ?? -1);

@@ -8,5 +8,10 @@
     "type": "automation:toggled",
     "version": 1,
     "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "automation:fired",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
   }
 ]

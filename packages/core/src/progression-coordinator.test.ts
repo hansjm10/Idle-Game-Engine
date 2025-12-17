@@ -7,6 +7,7 @@ import {
   IdleEngineRuntime,
   RUNTIME_COMMAND_TYPES,
   createAutomationSystem,
+  createMockEventPublisher,
   createProgressionCoordinator,
   createResourceStateAdapter,
   registerResourceCommandHandlers,
@@ -4221,12 +4222,14 @@ describe('Integration: upgrade effects', () => {
         coordinator.getGrantedAutomationIds().has(automationId),
     });
 
-    automationSystem.tick({ step: 0, deltaMs: 100, events: {} as any });
+    const events = createMockEventPublisher();
+
+    automationSystem.tick({ step: 0, deltaMs: 100, events });
     expect(automationSystem.getState().get(automation.id)?.unlocked).toBe(false);
 
     coordinator.incrementUpgradePurchases(upgrade.id);
 
-    automationSystem.tick({ step: 1, deltaMs: 100, events: {} as any });
+    automationSystem.tick({ step: 1, deltaMs: 100, events });
     expect(automationSystem.getState().get(automation.id)?.unlocked).toBe(true);
   });
 

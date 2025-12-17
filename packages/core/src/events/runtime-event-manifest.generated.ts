@@ -52,6 +52,12 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
   },
   {
     channel: 2,
+    type: 'automation:fired' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 3,
     type: 'sample:reactor-primed' as RuntimeEventType,
     version: 2,
     packSlug: '@idle-engine/sample-pack',
@@ -73,11 +79,16 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
     },
     {
       channel: 2,
+      type: 'automation:fired' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 3,
       type: 'sample:reactor-primed' as RuntimeEventType,
       version: 2,
     },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: 'eff81983' as RuntimeEventManifestHash,
+  hash: '3c3a64da' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =

@@ -6,8 +6,9 @@ import {
 } from './transform-system.js';
 import type { TransformDefinition } from '@idle-engine/content-schema';
 import type { TransformState } from './transform-system.js';
-import type { ResourceStateAccessor } from './automation-system.js';
+import { createAutomationSystem, type ResourceStateAccessor } from './automation-system.js';
 import type { ConditionContext } from './condition-evaluator.js';
+import { IdleEngineRuntime } from './index.js';
 
 describe('TransformSystem', () => {
   const stepDurationMs = 100;
@@ -1326,6 +1327,195 @@ describe('TransformSystem', () => {
       system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
       expect(resourceState.getAmount(0)).toBe(80);
       expect(resourceState.getAmount(1)).toBe(2);
+    });
+  });
+
+  describe('automation trigger path', () => {
+    it('should execute transform when referenced automation fires', () => {
+      const automations = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+        },
+      ] as const;
+
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:auto-fired' as any,
+          name: { default: 'Automation Fired Transform', variants: {} },
+          description: { default: 'Triggered by automation firing', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'automation', automationId: 'auto:collector' as any },
+          automation: { automationId: 'auto:collector' as any },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+
+      runtime.addSystem(
+        createAutomationSystem({
+          automations: automations as any,
+          stepDurationMs,
+          commandQueue: runtime.getCommandQueue(),
+          resourceState,
+        }),
+      );
+      runtime.addSystem(
+        createTransformSystem({
+          transforms,
+          stepDurationMs,
+          resourceState,
+        }),
+      );
+
+      runtime.tick(stepDurationMs);
+
+      // Transform should have executed once during the same tick the automation fired
+      expect(resourceState.getAmount(0)).toBe(90); // 100 - 10 gold
+      expect(resourceState.getAmount(1)).toBe(1);  // 0 + 1 gem
+    });
+
+    it('should execute transform on the next tick when TransformSystem runs before AutomationSystem', () => {
+      const automations = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+        },
+      ] as const;
+
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:auto-fired' as any,
+          name: { default: 'Automation Fired Transform', variants: {} },
+          description: { default: 'Triggered by automation firing', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'automation', automationId: 'auto:collector' as any },
+          automation: { automationId: 'auto:collector' as any },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+
+      runtime.addSystem(
+        createTransformSystem({
+          transforms,
+          stepDurationMs,
+          resourceState,
+        }),
+      );
+      runtime.addSystem(
+        createAutomationSystem({
+          automations: automations as any,
+          stepDurationMs,
+          commandQueue: runtime.getCommandQueue(),
+          resourceState,
+        }),
+      );
+
+      runtime.tick(stepDurationMs);
+      expect(resourceState.getAmount(0)).toBe(100);
+      expect(resourceState.getAmount(1)).toBe(0);
+
+      runtime.tick(stepDurationMs);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
+    });
+
+    it('should not execute transform when automation fire is blocked by resource cost', () => {
+      const automations = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          resourceCost: {
+            resourceId: 'res:tokens' as any,
+            rate: { kind: 'constant', value: 1 },
+          },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+        },
+      ] as const;
+
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:auto-fired' as any,
+          name: { default: 'Automation Fired Transform', variants: {} },
+          description: { default: 'Triggered by automation firing', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'automation', automationId: 'auto:collector' as any },
+          automation: { automationId: 'auto:collector' as any },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+          ['res:tokens', { amount: 0 }],
+        ]),
+      );
+
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+
+      runtime.addSystem(
+        createAutomationSystem({
+          automations: automations as any,
+          stepDurationMs,
+          commandQueue: runtime.getCommandQueue(),
+          resourceState,
+        }),
+      );
+      runtime.addSystem(
+        createTransformSystem({
+          transforms,
+          stepDurationMs,
+          resourceState,
+        }),
+      );
+
+      runtime.tick(stepDurationMs);
+
+      // Automation should not publish automation:fired when spend fails, so transform does not run
+      expect(resourceState.getAmount(0)).toBe(100);
+      expect(resourceState.getAmount(1)).toBe(0);
     });
   });
 

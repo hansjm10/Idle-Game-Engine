@@ -344,7 +344,7 @@ export function createAutomationSystem(
       });
     },
 
-    tick({ step }) {
+    tick({ step, events }) {
       const formulaContext = createAutomationFormulaEvaluationContext({
         currentStep: step,
         stepDurationMs,
@@ -483,6 +483,12 @@ export function createAutomationSystem(
             continue; // Skip enqueue and cooldown
           }
         }
+
+        events.publish('automation:fired', {
+          automationId: automation.id,
+          triggerKind: automation.trigger.kind,
+          step,
+        });
 
         // Enqueue command
         enqueueAutomationCommand(
