@@ -113,6 +113,7 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   PRESTIGE_RESET: 'PRESTIGE_RESET',
   OFFLINE_CATCHUP: 'OFFLINE_CATCHUP',
   APPLY_MIGRATION: 'APPLY_MIGRATION',
+  RUN_TRANSFORM: 'RUN_TRANSFORM',
 } as const);
 
 export type RuntimeCommandType =
@@ -190,6 +191,14 @@ export interface ApplyMigrationPayload {
 }
 
 /**
+ * Manual transform execution payload (docs/runtime-transform-system-design-issue-523.md §6.2).
+ */
+export interface RunTransformPayload {
+  readonly transformId: string;
+  readonly runs?: number;
+}
+
+/**
  * Mapping between runtime command identifiers and their strongly typed payloads.
  */
 export interface RuntimeCommandPayloads {
@@ -201,6 +210,7 @@ export interface RuntimeCommandPayloads {
   readonly PRESTIGE_RESET: PrestigeResetPayload;
   readonly OFFLINE_CATCHUP: OfflineCatchupPayload;
   readonly APPLY_MIGRATION: ApplyMigrationPayload;
+  readonly RUN_TRANSFORM: RunTransformPayload;
 }
 
 /**
@@ -287,5 +297,15 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     rationale:
       'Schema migrations run exclusively under system authority for integrity.',
     unauthorizedEvent: 'UnauthorizedSystemCommand',
+  },
+  RUN_TRANSFORM: {
+    type: RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
+    allowedPriorities: Object.freeze([
+      CommandPriority.SYSTEM,
+      CommandPriority.PLAYER,
+    ]),
+    rationale:
+      'Manual transforms are player-initiated or system-driven; automation trigger path is implemented separately.',
+    unauthorizedEvent: 'UnauthorizedTransformCommand',
   },
 });

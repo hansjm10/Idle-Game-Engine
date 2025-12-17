@@ -685,6 +685,7 @@ export interface ResourceStateAccessor {
     amount: number,
     context?: { systemId?: string; commandId?: string },
   ): boolean;
+  addAmount?(resourceIndex: number, amount: number): number;
 }
 
 // Backwards-compat alias (deprecated): use ResourceStateAccessor instead.
