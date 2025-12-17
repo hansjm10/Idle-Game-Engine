@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createAutomationSystem,
   getAutomationState,
@@ -1700,6 +1700,44 @@ describe('AutomationSystem', () => {
       // Without re-emitting the event, a subsequent tick should NOT fire again
       system.tick({ step: 1, deltaMs: 100, events: noopEventPublisher });
       expect(commandQueue.size).toBe(0);
+    });
+  });
+
+  describe('automation:fired event', () => {
+    it('publishes triggerKind and step for successful automation fires', () => {
+      const automations: AutomationDefinition[] = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+          order: 0,
+        },
+      ];
+
+      const commandQueue = new CommandQueue();
+      const system = createAutomationSystem({
+        automations,
+        stepDurationMs,
+        commandQueue,
+        resourceState: { getAmount: () => 0 },
+      });
+
+      const publish = vi.fn(() => ({ accepted: true } as any));
+      const events = { publish } as any;
+
+      system.tick({ step: 42, deltaMs: stepDurationMs, events });
+
+      expect(publish).toHaveBeenCalledTimes(1);
+      expect(publish).toHaveBeenCalledWith('automation:fired', {
+        automationId: 'auto:collector',
+        triggerKind: 'interval',
+        step: 42,
+      });
     });
   });
 

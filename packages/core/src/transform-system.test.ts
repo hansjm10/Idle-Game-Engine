@@ -1391,6 +1391,68 @@ describe('TransformSystem', () => {
       expect(resourceState.getAmount(1)).toBe(1);  // 0 + 1 gem
     });
 
+    it('should execute transform on the next tick when TransformSystem runs before AutomationSystem', () => {
+      const automations = [
+        {
+          id: 'auto:collector' as any,
+          name: { default: 'Auto Collector', variants: {} },
+          description: { default: 'Collects automatically', variants: {} },
+          targetType: 'collectResource',
+          targetId: 'res:gold' as any,
+          trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
+          unlockCondition: { kind: 'always' },
+          enabledByDefault: true,
+        },
+      ] as const;
+
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:auto-fired' as any,
+          name: { default: 'Automation Fired Transform', variants: {} },
+          description: { default: 'Triggered by automation firing', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'automation', automationId: 'auto:collector' as any },
+          automation: { automationId: 'auto:collector' as any },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const runtime = new IdleEngineRuntime({ stepSizeMs: stepDurationMs });
+
+      runtime.addSystem(
+        createTransformSystem({
+          transforms,
+          stepDurationMs,
+          resourceState,
+        }),
+      );
+      runtime.addSystem(
+        createAutomationSystem({
+          automations: automations as any,
+          stepDurationMs,
+          commandQueue: runtime.getCommandQueue(),
+          resourceState,
+        }),
+      );
+
+      runtime.tick(stepDurationMs);
+      expect(resourceState.getAmount(0)).toBe(100);
+      expect(resourceState.getAmount(1)).toBe(0);
+
+      runtime.tick(stepDurationMs);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(1);
+    });
+
     it('should not execute transform when automation fire is blocked by resource cost', () => {
       const automations = [
         {
