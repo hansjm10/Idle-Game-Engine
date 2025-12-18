@@ -527,6 +527,16 @@ async function ensureCoreDistRuntimeEventManifest({
   }
 
   if (check) {
+    if (existingDistSource === undefined) {
+      return {
+        action: 'skipped',
+        path: relativePath,
+        expectedHash,
+        actualHash: undefined,
+        reason: 'missing core dist runtime event manifest',
+      };
+    }
+
     return {
       action: 'would-build',
       path: relativePath,

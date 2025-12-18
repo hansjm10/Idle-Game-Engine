@@ -321,6 +321,43 @@ describe('content schema CLI compile command', () => {
     }
   });
 
+  it('does not treat a missing @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'core-dist-pack' },
+    ]);
+
+    try {
+      const initial = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(initial.code).toBe(0);
+
+      await writeJson(
+        path.join(workspace.root, 'packages/core/package.json'),
+        { name: '@idle-engine/core' },
+      );
+
+      const checkResult = await runCli(
+        ['--cwd', workspace.root, '--check'],
+        { cwd: workspace.root },
+      );
+      expect(checkResult.code).toBe(0);
+
+      const events = parseEvents(checkResult.stdout, checkResult.stderr);
+      const coreDistSkipEvent = events.find(
+        (entry) => entry.event === 'runtime_manifest.core_dist.skipped',
+      );
+      expect(coreDistSkipEvent).toBeDefined();
+      expect(coreDistSkipEvent?.reason).toBe('missing core dist runtime event manifest');
+
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent?.success).toBe(true);
+      expect(summaryEvent?.drift).toBe(false);
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
   it('treats a stale @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
     const workspace = await createWorkspace([
       { slug: 'core-dist-pack' },
