@@ -45,6 +45,7 @@ This design document addresses **“issue 525 on github enhancement(core): provi
   - Replacing or rewriting `IdleEngineRuntime`’s tick loop semantics (out of scope for issue-525; only a helper/reference implementation is required).
   - Refactoring ProductionSystem to a command-only model (documented in older notes; not required to satisfy issue-525).
   - Building new shell-web UI panels or changing worker-bridge message schemas; only wiring simplification is in scope.
+  - Standardizing tick scheduling, snapshot publication, or transport buffering; shells/harnesses remain responsible for publishing state (e.g., via `buildProgressionSnapshot`) and choosing a publish cadence.
   - Enforcing a single “one true” game loop for all shells; advanced shells may keep manual wiring (issue-525).
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
@@ -102,8 +103,20 @@ This design document addresses **“issue 525 on github enhancement(core): provi
 
 ### 6.2 Detailed Design
 - **New Core API surface (issue-525)**:
-  - Add `createGameRuntime(options)` (name per issue body; final naming is a TODO if reviewers prefer `createStandardGameRuntime`).
+  - Add `createGameRuntime(options)` as the primary API for standard runtime integration (issue-525).
   - Add `wireGameRuntime(options)` as a lower-level primitive for shells that already constructed a runtime/coordinator but want canonical system wiring.
+  - `createGameRuntime` constructs `CommandQueue`, `CommandDispatcher`, `IdleEngineRuntime`, and `ProgressionCoordinator`, then delegates to `wireGameRuntime` for system wiring + handler registration.
+  - `wireGameRuntime` only wires systems + handlers; it does not own tick scheduling, worker messaging, or save/restore flows.
+  - Step size alignment (determinism): `createGameRuntime` MUST use a single `stepSizeMs` value for both `IdleEngineRuntime` and `ProgressionCoordinator` (`stepDurationMs`). `wireGameRuntime` MUST validate alignment (or require the caller to pass the shared step size explicitly).
+  - Provisional options (enough to satisfy issue-525 without over-scoping):
+    - `content: NormalizedContentPack` (required)
+    - `stepSizeMs?: number` (default: `100`)
+    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; relevant when constraining multi-step processing)
+    - `initialProgressionState?: ProgressionAuthoritativeState` (optional; passed to `createProgressionCoordinator`)
+    - `enableProduction?: boolean` (default: `content.generators.length > 0`)
+    - `enableAutomation?: boolean` (default: `content.automations.length > 0`)
+    - `production?: { applyViaFinalizeTick?: boolean }` (default: `false`; see finalize/apply notes below)
+    - `registerOfflineCatchup?: boolean` (default: `true`; see Section 13)
   - Return a `GameRuntimeWiring` object that includes:
     - `runtime: IdleEngineRuntime`
     - `coordinator: ProgressionCoordinator`
@@ -117,18 +130,27 @@ This design document addresses **“issue 525 on github enhancement(core): provi
     2. Resource finalize (only when production is configured with `applyViaFinalizeTick: true`)
     3. Automation (if content has automations, and automation is enabled)
     4. Progression coordinator update system (always; provides step alignment)
+  - Canonical system IDs (defaults; used by tests and diagnostics):
+    - Production: `production` (default id from `createProductionSystem`)
+    - Resource finalize: `resource-finalize` (new system owned by the helper)
+    - Automation: `automation-system` (id from `createAutomationSystem`)
+    - Coordinator update: `progression-coordinator` (matches `packages/shell-web/src/runtime.worker.ts:209`)
   - The coordinator update system MUST call `coordinator.updateForStep(context.step + 1, { events: context.events })` to keep coordinator state aligned with the runtime’s `currentStep` after the tick completes (existing pattern: `packages/shell-web/src/runtime.worker.ts:208`).
+- **Standard system wiring details**:
+  - Production: wire `createProductionSystem` against coordinator generator state (`generators: () => coordinator.state.generators`) and `coordinator.resourceState`.
+  - Automation: wire `createAutomationSystem` using `commandQueue: runtime.getCommandQueue()`, `resourceState: createResourceStateAdapter(coordinator.resourceState)`, `conditionContext: coordinator.getConditionContext()`, and `isAutomationUnlocked: (id) => coordinator.getGrantedAutomationIds().has(id)`.
 - **Finalize/apply semantics wiring**:
   - When `applyViaFinalizeTick: true`, insert a `ResourceFinalizeSystem` immediately after production and before automation so that:
     - production can queue per-second rates (`applyIncome/applyExpense`)
     - `resourceState.finalizeTick(context.deltaMs)` applies balances before automation evaluates resource thresholds
   - When `applyViaFinalizeTick: false`, do not add finalize system (avoid per-step O(resourceCount) finalize loops).
+  - Multi-step tick constraint: per-second rate fields are additive and must be cleared once per tick after a `snapshot({ mode: 'publish' })` + `resetPerTickAccumulators()` boundary (`docs/resource-state-storage-design.md:455`). When `applyViaFinalizeTick: true`, the integration MUST ensure that boundary occurs once per processed step; the simplest safe default is to keep `maxStepsPerFrame: 1` (or otherwise ensure only one step runs between resource publish/resets). Offline/backlog fast-forward can still run by looping ticks and publishing/resetting per step, forwarding only the final snapshot to the UI.
   - Documentation MUST explicitly state that per-second rate accumulators are additive and require a publish/reset per tick (`packages/core/src/resource-state.ts:951`), and link to `docs/resource-state-storage-design.md:455`.
 - **Standard command handler registration**:
   - The helper MUST register:
-    - `registerResourceCommandHandlers` with generator/upgrade/prestige evaluators derived from the coordinator (`packages/shell-web/src/runtime.worker.ts:170`).
+    - `registerResourceCommandHandlers` with coordinator-derived evaluators (generator purchases + toggles, plus optional upgrade/prestige evaluators when present) (`packages/shell-web/src/runtime.worker.ts:170`).
     - `registerAutomationCommandHandlers` when automation is enabled (`packages/shell-web/src/runtime.worker.ts:215`).
-  - The helper SHOULD optionally register `registerOfflineCatchupCommandHandler` (currently used by shell-web) behind an option flag; default behavior is a TODO pending reviewer preference (`packages/shell-web/src/runtime.worker.ts:188`).
+  - The helper SHOULD register `registerOfflineCatchupCommandHandler` by default (`registerOfflineCatchup: true`) and allow opting out for shells that manage offline reconciliation externally (`packages/shell-web/src/runtime.worker.ts:188`).
 - **Documentation deliverable (issue-525)**:
   - Add a docs page that includes:
     - A “use the helper” snippet
@@ -153,7 +175,6 @@ This design document addresses **“issue 525 on github enhancement(core): provi
 | `test(core): assert runtime wiring helper order + step semantics (issue-525)` | Add unit test(s) verifying `systems` order and `updateForStep(step+1)` alignment with `runtime.getCurrentStep()`. | Test & Determinism Agent | Helper implementation | Tests pass under multi-step `runtime.tick` backlog; no flaky wall-clock dependence. |
 | `docs: add runtime wiring helper reference + manual snippet (issue-525)` | New docs page with diagram/snippets; update cross-links from lifecycle docs if needed. | Docs Agent | Helper API shape finalized | Docs include helper snippet + manual wiring reference + ordering diagram; links to core code paths. |
 | `chore(shell-web): adopt core wiring helper in runtime.worker (issue-525)` | Replace manual worker wiring with helper (optional but recommended). | Shell Integration Agent | Helper + docs | Worker compiles; behavior parity for automation and coordinator updates; no change to bridge schema. |
-| `chore(core): decide defaults for offline catchup registration (issue-525)` | Resolve whether helper registers offline catchup command handler by default. | Core Runtime Maintainers (with AI support) | Review feedback | Decision recorded; helper behavior matches decision; docs updated. |
 
 ### 7.2 Milestones
 - **Phase 1 (Core API + tests)**:
@@ -238,11 +259,11 @@ This design document addresses **“issue 525 on github enhancement(core): provi
   - Announce the helper in `docs/automation-authoring-guide.md` or a runtime integration guide as follow-up (see Section 14).
 
 ## 13. Open Questions
-1. **API naming**: Should the public API be `createGameRuntime` (as in issue-525) or `createStandardGameRuntime`/`createRuntimeWiring` to avoid implying a single canonical “game” shape? **Owner**: Core Runtime Maintainers.
-2. **Automation ordering semantics**: Should automation tick before or after coordinator update for `step + 1`? The proposal keeps coordinator update last (matching `packages/shell-web/src/runtime.worker.ts:208`), which implies upgrade-granted automation unlocks may take effect on the next tick. **Owner**: Core Runtime Maintainers.
-3. **Offline catchup default**: Should `registerOfflineCatchupCommandHandler` be included by default in the helper? **Owner**: Core Runtime Maintainers; Shell-Web Maintainers.
-4. **Production default mode**: Should the helper default to direct-apply production (no finalize/apply) or encourage `applyViaFinalizeTick` for rate observability? **Owner**: Core Runtime Maintainers.
-5. **Transforms**: Should the helper optionally wire `TransformSystem` + handlers (out of scope for issue-525) as a follow-up? **Owner**: Core Runtime Maintainers.
+1. **API naming** (resolved): Use `createGameRuntime` + `wireGameRuntime` as the primary API names. This matches issue-525 wording and the existing `createVerificationRuntime` naming pattern in core. **Owner**: Core Runtime Maintainers.
+2. **Automation ordering semantics** (resolved): Keep automation before the coordinator update system, and keep the coordinator update system last. Rationale: automations evaluate against coordinator state aligned with the current runtime step; unlocks computed during `updateForStep(step + 1)` (notably achievement-derived grants) become visible starting next tick, avoiding “unlock-and-fire” chains in the same step while preserving immediate upgrade-derived effects (upgrade purchase applies effects during command execution). **Owner**: Core Runtime Maintainers.
+3. **Offline catchup default** (resolved): Register `registerOfflineCatchupCommandHandler` by default in `createGameRuntime` (`registerOfflineCatchup: true`), with an opt-out flag for shells that manage offline reconciliation externally. Rationale: it is a no-op unless `OFFLINE_CATCHUP` is enqueued and is already priority-gated by `authorizeCommand`. **Owner**: Core Runtime Maintainers; Shell-Web Maintainers.
+4. **Production default mode** (resolved): Default production to direct-apply mode (`applyViaFinalizeTick: false`). Rationale: it is correct under multi-step processing and does not require a per-step publish/reset boundary; finalize/apply remains an explicit opt-in for integrations that can guarantee publish/reset per step and want rate-driven balance application. **Owner**: Core Runtime Maintainers.
+5. **Transforms** (resolved for issue-525): Do not include `TransformSystem` wiring in the initial helper. Rationale: issue-525 scope is progression/production/automation/handlers; transform wiring can be added as a follow-up once shells have a consistent transform snapshot + command UX story. **Owner**: Core Runtime Maintainers.
 
 ## 14. Follow-Up Work
 - Add an “integration guide” page that consolidates runtime wiring helper usage, state publication patterns, and common pitfalls (Owner: Docs Agent).
@@ -272,3 +293,4 @@ This design document addresses **“issue 525 on github enhancement(core): provi
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-12-17 | Idle Engine Design-Authoring Agent (AI) | Initial draft for issue-525: standard runtime wiring helper proposal, canonical ordering, tests, docs, and AI-led work plan. |
+| 2025-12-17 | Codex CLI (AI) | Resolve issue-525 open questions (API naming, system ordering, offline catchup + production defaults, transform scope) and align helper options/issue map with the decisions. |
