@@ -8,12 +8,12 @@ sidebar_position: 4
 - **Authors**: Idle Engine Design-Authoring Agent (AI)
 - **Reviewers**: Core Runtime Maintainers; Shell-Web Maintainers
 - **Status**: Draft
-- **Last Updated**: 2025-12-17
+- **Last Updated**: 2025-12-18
 - **Related Issues**: https://github.com/hansjm10/Idle-Game-Engine/issues/525, https://github.com/hansjm10/Idle-Game-Engine/issues/560
 - **Execution Mode**: AI-led
 
 ## 1. Summary
-This design document addresses **“issue 525 on github enhancement(core): provide standard runtime wiring helper #525”** by introducing a first-class helper in `@idle-engine/core` that wires `IdleEngineRuntime` to `ProgressionCoordinator`, `ProductionSystem`, `AutomationSystem`, and standard command handlers in a deterministic, tested, and documented order. The helper reduces shell-specific glue code and prevents order-sensitive integration bugs by providing a canonical system sequence (including optional finalize/apply semantics) plus a reference manual wiring snippet for advanced shells that opt out.
+This design document addresses GitHub issue **#525** by introducing a first-class helper in `@idle-engine/core` that wires `IdleEngineRuntime` to `ProgressionCoordinator`, `ProductionSystem`, `AutomationSystem`, and standard command handlers in a deterministic, tested, and documented order. The helper reduces shell-specific glue code and prevents order-sensitive integration bugs by providing a canonical system sequence (including optional finalize/apply semantics) plus a reference manual wiring snippet for advanced shells that opt out.
 
 ## 2. Context & Problem Statement
 - **Background**:
@@ -111,7 +111,7 @@ This design document addresses **“issue 525 on github enhancement(core): provi
   - Provisional options (enough to satisfy issue-525 without over-scoping):
     - `content: NormalizedContentPack` (required)
     - `stepSizeMs?: number` (default: `100`)
-    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; relevant when constraining multi-step processing)
+    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; when `applyViaFinalizeTick: true`, default SHOULD become `1` unless explicitly set)
     - `initialProgressionState?: ProgressionAuthoritativeState` (optional; passed to `createProgressionCoordinator`)
     - `enableProduction?: boolean` (default: `content.generators.length > 0`)
     - `enableAutomation?: boolean` (default: `content.automations.length > 0`)
@@ -130,6 +130,10 @@ This design document addresses **“issue 525 on github enhancement(core): provi
     2. Resource finalize (only when production is configured with `applyViaFinalizeTick: true`)
     3. Automation (if content has automations, and automation is enabled)
     4. Progression coordinator update system (always; provides step alignment)
+  - Ordering rationale:
+    - Production runs before automation so resource mutations (or queued rates) are visible when automation evaluates thresholds.
+    - When enabled, `resourceState.finalizeTick(deltaMs)` runs immediately after production so balances are applied before automation reads amounts.
+    - The coordinator update system runs last and uses `updateForStep(step + 1)` so coordinator-derived unlocks (notably achievement-derived grants) become visible starting the next tick, avoiding “unlock-and-fire” chains within the same step while preserving immediate command-side effects.
   - Canonical system IDs (defaults; used by tests and diagnostics):
     - Production: `production` (default id from `createProductionSystem`)
     - Resource finalize: `resource-finalize` (new system owned by the helper)
@@ -137,13 +141,14 @@ This design document addresses **“issue 525 on github enhancement(core): provi
     - Coordinator update: `progression-coordinator` (matches `packages/shell-web/src/runtime.worker.ts:209`)
   - The coordinator update system MUST call `coordinator.updateForStep(context.step + 1, { events: context.events })` to keep coordinator state aligned with the runtime’s `currentStep` after the tick completes (existing pattern: `packages/shell-web/src/runtime.worker.ts:208`).
 - **Standard system wiring details**:
-  - Production: wire `createProductionSystem` against coordinator generator state (`generators: () => coordinator.state.generators`) and `coordinator.resourceState`.
+  - Production: wire `createProductionSystem` against coordinator generator state by mapping coordinator generators into `GeneratorProductionState` (notably: ensure `produces`/`consumes` are always arrays; see snippet below) and `coordinator.resourceState`.
   - Automation: wire `createAutomationSystem` using `commandQueue: runtime.getCommandQueue()`, `resourceState: createResourceStateAdapter(coordinator.resourceState)`, `conditionContext: coordinator.getConditionContext()`, and `isAutomationUnlocked: (id) => coordinator.getGrantedAutomationIds().has(id)`.
 - **Finalize/apply semantics wiring**:
   - When `applyViaFinalizeTick: true`, insert a `ResourceFinalizeSystem` immediately after production and before automation so that:
     - production can queue per-second rates (`applyIncome/applyExpense`)
     - `resourceState.finalizeTick(context.deltaMs)` applies balances before automation evaluates resource thresholds
   - When `applyViaFinalizeTick: false`, do not add finalize system (avoid per-step O(resourceCount) finalize loops).
+  - UI rate display note: when using the core `ResourceState` (supports `finalizeTick`), direct-apply production updates balances but does not populate `incomePerSecond` / `expensePerSecond` / `netPerSecond`, so `buildProgressionSnapshot(...).resources[].perTick` will remain `0` unless finalize/apply semantics (or alternative rate tracking) are used.
   - Multi-step tick constraint: per-second rate fields are additive and must be cleared once per tick after a `snapshot({ mode: 'publish' })` + `resetPerTickAccumulators()` boundary (`docs/resource-state-storage-design.md:455`). When `applyViaFinalizeTick: true`, the integration MUST ensure that boundary occurs once per processed step; the simplest safe default is to keep `maxStepsPerFrame: 1` (or otherwise ensure only one step runs between resource publish/resets). Offline/backlog fast-forward can still run by looping ticks and publishing/resetting per step, forwarding only the final snapshot to the UI.
   - Documentation MUST explicitly state that per-second rate accumulators are additive and require a publish/reset per tick (`packages/core/src/resource-state.ts:951`), and link to `docs/resource-state-storage-design.md:455`.
 - **Standard command handler registration**:
@@ -157,6 +162,146 @@ This design document addresses **“issue 525 on github enhancement(core): provi
     - A “manual wiring reference” snippet showing the same ordering and required calls
     - A diagram of tick ordering and the `updateForStep(step + 1)` rationale
   - The docs page MUST cross-link to existing lifecycle notes (`docs/runtime-step-lifecycle.md:1`) and the worker as a concrete example (`packages/shell-web/src/runtime.worker.ts:127`).
+
+#### Example snippets (for review)
+
+##### Use the helper
+```ts
+import { buildProgressionSnapshot, createGameRuntime } from '@idle-engine/core';
+import type { NormalizedContentPack } from '@idle-engine/content-schema';
+
+export function createWorkerRuntime(content: NormalizedContentPack) {
+  const wiring = createGameRuntime({
+    content,
+    stepSizeMs: 100,
+    registerOfflineCatchup: true,
+    // production: { applyViaFinalizeTick: true },
+    // maxStepsPerFrame: 1, // recommended when applyViaFinalizeTick is enabled
+  });
+
+  const { runtime, coordinator } = wiring;
+
+  return {
+    runtime,
+    coordinator,
+    tick(deltaMs: number, publishedAt: number) {
+      const processedSteps = runtime.tick(deltaMs);
+      if (processedSteps === 0) {
+        return undefined;
+      }
+
+      // Coordinator state is already step-aligned by the update system.
+      return buildProgressionSnapshot(
+        runtime.getCurrentStep(),
+        publishedAt,
+        coordinator.state,
+      );
+    },
+  };
+}
+```
+
+##### Manual wiring reference
+```ts
+import {
+  CommandDispatcher,
+  CommandQueue,
+  IdleEngineRuntime,
+  createAutomationSystem,
+  createProductionSystem,
+  createProgressionCoordinator,
+  createResourceStateAdapter,
+  registerAutomationCommandHandlers,
+  registerOfflineCatchupCommandHandler,
+  registerResourceCommandHandlers,
+} from '@idle-engine/core';
+import type { NormalizedContentPack } from '@idle-engine/content-schema';
+
+const STEP_SIZE_MS = 100;
+
+export function wireRuntimeManually(content: NormalizedContentPack) {
+  const applyViaFinalizeTick = false;
+
+  const commandQueue = new CommandQueue();
+  const commandDispatcher = new CommandDispatcher();
+  const runtime = new IdleEngineRuntime({
+    commandQueue,
+    commandDispatcher,
+    stepSizeMs: STEP_SIZE_MS,
+    ...(applyViaFinalizeTick ? { maxStepsPerFrame: 1 } : {}),
+  });
+
+  const coordinator = createProgressionCoordinator({
+    content,
+    stepDurationMs: STEP_SIZE_MS,
+  });
+
+  registerResourceCommandHandlers({
+    dispatcher: runtime.getCommandDispatcher(),
+    resources: coordinator.resourceState,
+    generatorPurchases: coordinator.generatorEvaluator,
+    generatorToggles: coordinator,
+    ...(coordinator.upgradeEvaluator
+      ? { upgradePurchases: coordinator.upgradeEvaluator }
+      : {}),
+    ...(coordinator.prestigeEvaluator
+      ? { prestigeSystem: coordinator.prestigeEvaluator }
+      : {}),
+  });
+
+  registerOfflineCatchupCommandHandler({
+    dispatcher: runtime.getCommandDispatcher(),
+    coordinator,
+    runtime,
+  });
+
+  const productionSystem = createProductionSystem({
+    applyViaFinalizeTick,
+    generators: () =>
+      (coordinator.state.generators ?? []).map((generator) => ({
+        id: generator.id,
+        owned: generator.owned,
+        enabled: generator.enabled,
+        produces: generator.produces ?? [],
+        consumes: generator.consumes ?? [],
+      })),
+    resourceState: coordinator.resourceState,
+  });
+  runtime.addSystem(productionSystem);
+
+  if (applyViaFinalizeTick) {
+    runtime.addSystem({
+      id: 'resource-finalize',
+      tick: ({ deltaMs }) => coordinator.resourceState.finalizeTick(deltaMs),
+    });
+  }
+
+  const automationSystem = createAutomationSystem({
+    automations: content.automations,
+    commandQueue: runtime.getCommandQueue(),
+    resourceState: createResourceStateAdapter(coordinator.resourceState),
+    stepDurationMs: STEP_SIZE_MS,
+    conditionContext: coordinator.getConditionContext(),
+    isAutomationUnlocked: (automationId) =>
+      coordinator.getGrantedAutomationIds().has(automationId),
+  });
+  runtime.addSystem(automationSystem);
+
+  runtime.addSystem({
+    id: 'progression-coordinator',
+    tick: ({ step, events }) => {
+      coordinator.updateForStep(step + 1, { events });
+    },
+  });
+
+  registerAutomationCommandHandlers({
+    dispatcher: runtime.getCommandDispatcher(),
+    automationSystem,
+  });
+
+  return { runtime, coordinator };
+}
+```
 
 ### 6.3 Operational Considerations
 - **Deployment**: No runtime deployment changes; this is a library-level additive helper in `packages/core`.
@@ -259,11 +404,12 @@ This design document addresses **“issue 525 on github enhancement(core): provi
   - Announce the helper in `docs/automation-authoring-guide.md` or a runtime integration guide as follow-up (see Section 14).
 
 ## 13. Open Questions
-1. **API naming** (resolved): Use `createGameRuntime` + `wireGameRuntime` as the primary API names. This matches issue-525 wording and the existing `createVerificationRuntime` naming pattern in core. **Owner**: Core Runtime Maintainers.
-2. **Automation ordering semantics** (resolved): Keep automation before the coordinator update system, and keep the coordinator update system last. Rationale: automations evaluate against coordinator state aligned with the current runtime step; unlocks computed during `updateForStep(step + 1)` (notably achievement-derived grants) become visible starting next tick, avoiding “unlock-and-fire” chains in the same step while preserving immediate upgrade-derived effects (upgrade purchase applies effects during command execution). **Owner**: Core Runtime Maintainers.
-3. **Offline catchup default** (resolved): Register `registerOfflineCatchupCommandHandler` by default in `createGameRuntime` (`registerOfflineCatchup: true`), with an opt-out flag for shells that manage offline reconciliation externally. Rationale: it is a no-op unless `OFFLINE_CATCHUP` is enqueued and is already priority-gated by `authorizeCommand`. **Owner**: Core Runtime Maintainers; Shell-Web Maintainers.
-4. **Production default mode** (resolved): Default production to direct-apply mode (`applyViaFinalizeTick: false`). Rationale: it is correct under multi-step processing and does not require a per-step publish/reset boundary; finalize/apply remains an explicit opt-in for integrations that can guarantee publish/reset per step and want rate-driven balance application. **Owner**: Core Runtime Maintainers.
-5. **Transforms** (resolved for issue-525): Do not include `TransformSystem` wiring in the initial helper. Rationale: issue-525 scope is progression/production/automation/handlers; transform wiring can be added as a follow-up once shells have a consistent transform snapshot + command UX story. **Owner**: Core Runtime Maintainers.
+1. **API naming**: Confirm `createGameRuntime` + `wireGameRuntime` as the public API names (matches issue-525 wording and the existing `createVerificationRuntime` precedent).
+2. **Automation ordering semantics**: Confirm automation runs before the coordinator update system, and the coordinator update system remains last (rationale in Section 6.2).
+3. **Offline catchup default**: Confirm `registerOfflineCatchup: true` default with an opt-out for shells that manage offline reconciliation externally.
+4. **Production default mode**: Confirm `applyViaFinalizeTick: false` default (safe under backlog), acknowledging the `perTick` UI rate trade-off described in Section 6.2.
+5. **Finalize/apply safety default**: Should `createGameRuntime` automatically default `maxStepsPerFrame` to `1` when `applyViaFinalizeTick: true`? (Proposed: yes unless explicitly set.)
+6. **Transforms**: Confirm `TransformSystem` wiring remains out of scope for issue-525 v1.
 
 ## 14. Follow-Up Work
 - Add an “integration guide” page that consolidates runtime wiring helper usage, state publication patterns, and common pitfalls (Owner: Docs Agent).
@@ -293,4 +439,4 @@ This design document addresses **“issue 525 on github enhancement(core): provi
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-12-17 | Idle Engine Design-Authoring Agent (AI) | Initial draft for issue-525: standard runtime wiring helper proposal, canonical ordering, tests, docs, and AI-led work plan. |
-| 2025-12-17 | Codex CLI (AI) | Resolve issue-525 open questions (API naming, system ordering, offline catchup + production defaults, transform scope) and align helper options/issue map with the decisions. |
+| 2025-12-18 | Codex CLI (AI) | Clarify production generator mapping + finalize/apply rate implications; add reference snippets; reframe “resolved” items as open questions pending maintainer confirmation. |
