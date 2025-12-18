@@ -111,7 +111,7 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
   - Provisional options (enough to satisfy issue-525 without over-scoping):
     - `content: NormalizedContentPack` (required)
     - `stepSizeMs?: number` (default: `100`)
-    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; when `applyViaFinalizeTick: true`, default SHOULD become `1` unless explicitly set)
+    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; when `applyViaFinalizeTick: true`, default becomes `1` unless explicitly set; see Section 13)
     - `initialProgressionState?: ProgressionAuthoritativeState` (optional; passed to `createProgressionCoordinator`)
     - `enableProduction?: boolean` (default: `content.generators.length > 0`)
     - `enableAutomation?: boolean` (default: `content.automations.length > 0`)
@@ -133,7 +133,7 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
   - Ordering rationale:
     - Production runs before automation so resource mutations (or queued rates) are visible when automation evaluates thresholds.
     - When enabled, `resourceState.finalizeTick(deltaMs)` runs immediately after production so balances are applied before automation reads amounts.
-    - The coordinator update system runs last and uses `updateForStep(step + 1)` so coordinator-derived unlocks (notably achievement-derived grants) become visible starting the next tick, avoiding “unlock-and-fire” chains within the same step while preserving immediate command-side effects.
+    - The coordinator update system runs last and uses `updateForStep(step + 1)` so achievement-derived unlocks/rewards (which are evaluated inside `updateForStep`) become visible starting the next tick, avoiding “unlock-and-fire” chains within the same step while preserving immediate command-side effects.
   - Canonical system IDs (defaults; used by tests and diagnostics):
     - Production: `production` (default id from `createProductionSystem`)
     - Resource finalize: `resource-finalize` (new system owned by the helper)
@@ -157,11 +157,11 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
     - `registerAutomationCommandHandlers` when automation is enabled (`packages/shell-web/src/runtime.worker.ts:215`).
   - The helper SHOULD register `registerOfflineCatchupCommandHandler` by default (`registerOfflineCatchup: true`) and allow opting out for shells that manage offline reconciliation externally (`packages/shell-web/src/runtime.worker.ts:188`).
 - **Documentation deliverable (issue-525)**:
-  - Add a docs page that includes:
+  - This design doc MUST include:
     - A “use the helper” snippet
     - A “manual wiring reference” snippet showing the same ordering and required calls
     - A diagram of tick ordering and the `updateForStep(step + 1)` rationale
-  - The docs page MUST cross-link to existing lifecycle notes (`docs/runtime-step-lifecycle.md:1`) and the worker as a concrete example (`packages/shell-web/src/runtime.worker.ts:127`).
+  - This page MUST cross-link to existing lifecycle notes (`docs/runtime-step-lifecycle.md:1`) and the worker as a concrete example (`packages/shell-web/src/runtime.worker.ts:127`).
 
 #### Example snippets (for review)
 
@@ -338,7 +338,7 @@ export function wireRuntimeManually(content: NormalizedContentPack) {
   - Publish/reset requirement: `packages/core/src/resource-state.ts:951`
 - **Communication Cadence**:
   - Daily async updates in PR thread; request review once tests + docs are included.
-  - Escalate naming/semantics decisions in Section 13 before merging.
+  - Escalate any proposed changes to the defaults in Section 13 before merging.
 
 ## 8. Agent Guidance & Guardrails
 - **Context Packets**:
@@ -404,12 +404,20 @@ export function wireRuntimeManually(content: NormalizedContentPack) {
   - Announce the helper in `docs/automation-authoring-guide.md` or a runtime integration guide as follow-up (see Section 14).
 
 ## 13. Open Questions
-1. **API naming**: Confirm `createGameRuntime` + `wireGameRuntime` as the public API names (matches issue-525 wording and the existing `createVerificationRuntime` precedent).
-2. **Automation ordering semantics**: Confirm automation runs before the coordinator update system, and the coordinator update system remains last (rationale in Section 6.2).
-3. **Offline catchup default**: Confirm `registerOfflineCatchup: true` default with an opt-out for shells that manage offline reconciliation externally.
-4. **Production default mode**: Confirm `applyViaFinalizeTick: false` default (safe under backlog), acknowledging the `perTick` UI rate trade-off described in Section 6.2.
-5. **Finalize/apply safety default**: Should `createGameRuntime` automatically default `maxStepsPerFrame` to `1` when `applyViaFinalizeTick: true`? (Proposed: yes unless explicitly set.)
-6. **Transforms**: Confirm `TransformSystem` wiring remains out of scope for issue-525 v1.
+The following items are treated as **resolved decisions** for the issue-525 implementation.
+
+1. **API naming**: Use `createGameRuntime` + `wireGameRuntime`.
+   - Rationale: Matches issue-525 wording (“helper like `createGameRuntime`”), aligns with existing `create*` factory naming (`createVerificationRuntime`), and keeps one high-level entrypoint plus one composition-friendly primitive.
+2. **Automation ordering semantics**: Keep `AutomationSystem` **before** the coordinator update system, and keep the coordinator update system **last**.
+   - Rationale: Matches existing shell-web wiring, keeps step alignment invariant (`coordinator.getLastUpdatedStep() === runtime.getCurrentStep()` after a tick), and avoids same-step “achievement unlock → automation fires” chains.
+3. **Offline catchup default**: Default `registerOfflineCatchup: true`, with an opt-out.
+   - Rationale: Matches shell-web, and command authorization already blocks `OFFLINE_CATCHUP` from `PLAYER` priority, keeping the handler safe-by-default.
+4. **Production default mode**: Default `production.applyViaFinalizeTick: false`.
+   - Rationale: Safe under backlog/multi-step `runtime.tick(deltaMs)` processing and avoids correctness hazards tied to additive per-second accumulators. The rate-display trade-off (`perTick` remaining `0`) is acceptable as a default; shells that want live rates can opt into finalize/apply mode with the constraints below.
+5. **Finalize/apply safety default**: When `production.applyViaFinalizeTick: true` and `maxStepsPerFrame` is not provided, set `maxStepsPerFrame = 1`.
+   - Rationale: Prevents a subtle but severe drift bug when `runtime.tick()` processes multiple steps per call while per-second rate buffers are additive and only reset on publish/reset boundaries.
+6. **Transforms**: Keep `TransformSystem` wiring out of scope for issue-525 v1.
+   - Rationale: Issue-525 does not require transforms, and transform wiring has its own design/rollout concerns (see issue-523); it remains a follow-up.
 
 ## 14. Follow-Up Work
 - Add an “integration guide” page that consolidates runtime wiring helper usage, state publication patterns, and common pitfalls (Owner: Docs Agent).
@@ -439,4 +447,4 @@ export function wireRuntimeManually(content: NormalizedContentPack) {
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-12-17 | Idle Engine Design-Authoring Agent (AI) | Initial draft for issue-525: standard runtime wiring helper proposal, canonical ordering, tests, docs, and AI-led work plan. |
-| 2025-12-18 | Codex CLI (AI) | Clarify production generator mapping + finalize/apply rate implications; add reference snippets; reframe “resolved” items as open questions pending maintainer confirmation. |
+| 2025-12-18 | Codex CLI (AI) | Resolve issue-525 defaults (API naming, ordering, offline catchup, production mode, finalize safety, transforms scope) and align the doc wording with existing runtime/worker behavior. |
