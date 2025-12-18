@@ -51,6 +51,15 @@ import {
   type SerializedResourceState,
 } from './resource-state.js';
 import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
+import type { NormalizedContentPack } from '@idle-engine/content-schema';
+import { createAutomationSystem } from './automation-system.js';
+import { registerAutomationCommandHandlers } from './automation-command-handlers.js';
+import { createResourceStateAdapter } from './automation-resource-state-adapter.js';
+import { registerOfflineCatchupCommandHandler } from './offline-catchup-command-handlers.js';
+import { createProductionSystem, type ProductionSystem } from './production-system.js';
+import { createProgressionCoordinator, type ProgressionCoordinator } from './progression-coordinator.js';
+import { type ProgressionAuthoritativeState } from './progression.js';
+import { registerResourceCommandHandlers } from './resource-command-handlers.js';
 
 // ---------------------------------------------------------------------------
 // Runtime class and related interfaces
@@ -742,6 +751,210 @@ function calculateResourceDeltas(
       delta: resource.amount - startAmount,
     };
   });
+}
+
+export type GameRuntimeWiring = Readonly<{
+  readonly runtime: IdleEngineRuntime;
+  readonly coordinator: ProgressionCoordinator;
+  readonly commandQueue: CommandQueue;
+  readonly commandDispatcher: CommandDispatcher;
+  readonly productionSystem?: ProductionSystem;
+  readonly automationSystem?: ReturnType<typeof createAutomationSystem>;
+  readonly systems: readonly System[];
+}>;
+
+export type CreateGameRuntimeOptions = Readonly<{
+  readonly content: NormalizedContentPack;
+  readonly stepSizeMs?: number;
+  readonly maxStepsPerFrame?: number;
+  readonly initialStep?: number;
+  readonly initialProgressionState?: ProgressionAuthoritativeState;
+  readonly enableProduction?: boolean;
+  readonly enableAutomation?: boolean;
+  readonly production?: {
+    readonly applyViaFinalizeTick?: boolean;
+  };
+  readonly registerOfflineCatchup?: boolean;
+}>;
+
+export function createGameRuntime(
+  options: CreateGameRuntimeOptions,
+): GameRuntimeWiring {
+  const stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
+  const applyViaFinalizeTick = options.production?.applyViaFinalizeTick ?? false;
+  const maxStepsPerFrame =
+    options.maxStepsPerFrame ??
+    (applyViaFinalizeTick ? 1 : undefined);
+
+  const commandQueue = new CommandQueue();
+  const commandDispatcher = new CommandDispatcher();
+  const runtime = new IdleEngineRuntime({
+    stepSizeMs,
+    ...(maxStepsPerFrame === undefined ? {} : { maxStepsPerFrame }),
+    ...(options.initialStep === undefined ? {} : { initialStep: options.initialStep }),
+    commandQueue,
+    commandDispatcher,
+  });
+
+  const coordinator = createProgressionCoordinator({
+    content: options.content,
+    stepDurationMs: stepSizeMs,
+    ...(options.initialProgressionState
+      ? { initialState: options.initialProgressionState }
+      : {}),
+  });
+
+  return wireGameRuntime({
+    content: options.content,
+    runtime,
+    coordinator,
+    enableProduction: options.enableProduction,
+    enableAutomation: options.enableAutomation,
+    production: options.production,
+    registerOfflineCatchup: options.registerOfflineCatchup,
+  });
+}
+
+export type WireGameRuntimeOptions = Readonly<{
+  readonly content: NormalizedContentPack;
+  readonly runtime: IdleEngineRuntime;
+  readonly coordinator: ProgressionCoordinator;
+  readonly enableProduction?: boolean;
+  readonly enableAutomation?: boolean;
+  readonly production?: {
+    readonly applyViaFinalizeTick?: boolean;
+  };
+  readonly registerOfflineCatchup?: boolean;
+}>;
+
+export function wireGameRuntime(
+  options: WireGameRuntimeOptions,
+): GameRuntimeWiring {
+  const { content, runtime, coordinator } = options;
+  const runtimeStepSizeMs = runtime.getStepSizeMs();
+  const coordinatorStepDurationMs = coordinator.state.stepDurationMs;
+
+  if (
+    typeof coordinatorStepDurationMs !== 'number' ||
+    !Number.isFinite(coordinatorStepDurationMs) ||
+    coordinatorStepDurationMs <= 0
+  ) {
+    throw new Error(
+      'Progression coordinator step duration must be a positive, finite number.',
+    );
+  }
+
+  if (coordinatorStepDurationMs !== runtimeStepSizeMs) {
+    throw new Error(
+      `Runtime stepSizeMs (${runtimeStepSizeMs}) must match coordinator stepDurationMs (${coordinatorStepDurationMs}).`,
+    );
+  }
+
+  coordinator.updateForStep(runtime.getCurrentStep());
+
+  const applyViaFinalizeTick = options.production?.applyViaFinalizeTick ?? false;
+  const enableProduction =
+    options.enableProduction ?? content.generators.length > 0;
+  const enableAutomation =
+    options.enableAutomation ?? content.automations.length > 0;
+  const registerOfflineCatchup = options.registerOfflineCatchup ?? true;
+
+  const systems: System[] = [];
+
+  const automationSystem =
+    enableAutomation && content.automations.length > 0
+      ? createAutomationSystem({
+          automations: content.automations,
+          commandQueue: runtime.getCommandQueue(),
+          resourceState: createResourceStateAdapter(coordinator.resourceState),
+          stepDurationMs: runtimeStepSizeMs,
+          conditionContext: coordinator.getConditionContext(),
+          isAutomationUnlocked: (automationId) =>
+            coordinator.getGrantedAutomationIds().has(automationId),
+        })
+      : undefined;
+
+  registerResourceCommandHandlers({
+    dispatcher: runtime.getCommandDispatcher(),
+    resources: coordinator.resourceState,
+    generatorPurchases: coordinator.generatorEvaluator,
+    generatorToggles: coordinator,
+    automationSystemId: automationSystem?.id ?? 'automation-system',
+    ...(coordinator.upgradeEvaluator
+      ? { upgradePurchases: coordinator.upgradeEvaluator }
+      : {}),
+    ...(coordinator.prestigeEvaluator
+      ? { prestigeSystem: coordinator.prestigeEvaluator }
+      : {}),
+  });
+
+  if (registerOfflineCatchup) {
+    registerOfflineCatchupCommandHandler({
+      dispatcher: runtime.getCommandDispatcher(),
+      coordinator,
+      runtime,
+    });
+  }
+
+  let productionSystem: ProductionSystem | undefined;
+  if (enableProduction && content.generators.length > 0) {
+    productionSystem = createProductionSystem({
+      applyViaFinalizeTick,
+      generators: () =>
+        (coordinator.state.generators ?? []).map((generator) => ({
+          id: generator.id,
+          owned: generator.owned,
+          enabled: generator.enabled,
+          produces: generator.produces ?? [],
+          consumes: generator.consumes ?? [],
+        })),
+      resourceState: coordinator.resourceState,
+    });
+
+    runtime.addSystem(productionSystem);
+    systems.push(productionSystem);
+
+    if (applyViaFinalizeTick) {
+      const resourceFinalizeSystem: System = {
+        id: 'resource-finalize',
+        tick: ({ deltaMs }) => coordinator.resourceState.finalizeTick(deltaMs),
+      };
+      runtime.addSystem(resourceFinalizeSystem);
+      systems.push(resourceFinalizeSystem);
+    }
+  }
+
+  if (automationSystem) {
+    runtime.addSystem(automationSystem);
+    systems.push(automationSystem);
+  }
+
+  const coordinatorUpdateSystem: System = {
+    id: 'progression-coordinator',
+    tick: ({ step, events }) => {
+      coordinator.updateForStep(step + 1, { events });
+    },
+  };
+
+  runtime.addSystem(coordinatorUpdateSystem);
+  systems.push(coordinatorUpdateSystem);
+
+  if (automationSystem) {
+    registerAutomationCommandHandlers({
+      dispatcher: runtime.getCommandDispatcher(),
+      automationSystem,
+    });
+  }
+
+  return {
+    runtime,
+    coordinator,
+    commandQueue: runtime.getCommandQueue(),
+    commandDispatcher: runtime.getCommandDispatcher(),
+    productionSystem,
+    automationSystem,
+    systems,
+  };
 }
 
 /**
