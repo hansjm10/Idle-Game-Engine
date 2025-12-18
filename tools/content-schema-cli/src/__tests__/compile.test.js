@@ -8,6 +8,8 @@ import readline from 'node:readline';
 import JSON5 from 'json5';
 import { describe, expect, it } from 'vitest';
 
+import { buildRuntimeEventManifest } from '../generate.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, '../compile.js');
 
@@ -314,6 +316,68 @@ describe('content schema CLI compile command', () => {
       expect(
         summaryEvent?.summary?.artifactActions?.byAction?.['would-write'] ?? 0,
       ).toBeGreaterThan(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  it('treats a stale @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'core-dist-pack' },
+    ]);
+
+    try {
+      await writeJson(
+        path.join(workspace.root, 'packages/core/package.json'),
+        { name: '@idle-engine/core' },
+      );
+
+      const manifest = await buildRuntimeEventManifest({
+        rootDirectory: workspace.root,
+      });
+
+      await fs.mkdir(
+        path.join(workspace.root, 'packages/core/dist/events'),
+        { recursive: true },
+      );
+      await fs.writeFile(
+        path.join(
+          workspace.root,
+          'packages/core/dist/events/runtime-event-manifest.generated.js',
+        ),
+        `export const GENERATED_RUNTIME_EVENT_MANIFEST = { hash: '${manifest.manifestHash}' };\n`,
+        'utf8',
+      );
+
+      const initial = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(initial.code).toBe(0);
+
+      await fs.writeFile(
+        path.join(
+          workspace.root,
+          'packages/core/dist/events/runtime-event-manifest.generated.js',
+        ),
+        `export const GENERATED_RUNTIME_EVENT_MANIFEST = { hash: 'deadbeef' };\n`,
+        'utf8',
+      );
+
+      const checkResult = await runCli(
+        ['--cwd', workspace.root, '--check'],
+        { cwd: workspace.root },
+      );
+      expect(checkResult.code).toBe(1);
+
+      const events = parseEvents(checkResult.stdout, checkResult.stderr);
+      const coreDistDriftEvent = events.find(
+        (entry) => entry.event === 'runtime_manifest.core_dist.drift',
+      );
+      expect(coreDistDriftEvent?.action).toBe('would-build');
+
+      const summaryEvent = events.find(
+        (entry) => entry.event === 'cli.run_summary',
+      );
+      expect(summaryEvent?.success).toBe(false);
+      expect(summaryEvent?.drift).toBe(true);
     } finally {
       await workspace.cleanup();
     }

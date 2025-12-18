@@ -48,6 +48,7 @@ If `event-types.json` is accidentally deleted, restore it and re-run `pnpm gener
 2. Run `pnpm generate` from the repository root.
 3. Commit the regenerated outputs:
    - `packages/core/src/events/runtime-event-manifest.generated.ts`
+   - (Generated) `packages/core/dist/` updates produced by the core build step so workspace consumers load the fresh manifest
    - any updated schema files or manifests inside the content package
 4. (Optional) Filtered sample exports such as `sampleEventDefinitions` can keep demos aligned with the generated catalogue.
 

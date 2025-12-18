@@ -29,6 +29,23 @@ describe('EventBus', () => {
     });
   }
 
+  it('throws an actionable error for unknown runtime event types', () => {
+    const bus = createBus();
+    const type = 'unknown:event';
+
+    expect(() => {
+      bus.on(type as any, () => {});
+    }).toThrow(`Unknown runtime event type: ${type}.`);
+
+    expect(() => {
+      bus.on(type as any, () => {});
+    }).toThrow(/pnpm generate/);
+
+    expect(() => {
+      bus.on(type as any, () => {});
+    }).toThrow(/@idle-engine\/core/);
+  });
+
   it('dispatches events to subscribers in FIFO order and allows nested publishes', () => {
     const bus = createBus();
     bus.beginTick(1);
