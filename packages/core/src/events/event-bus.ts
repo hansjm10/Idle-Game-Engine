@@ -354,7 +354,13 @@ class EventRegistry {
   getDescriptor(type: RuntimeEventType): EventChannelDescriptor {
     const descriptor = this.byType.get(type);
     if (!descriptor) {
-      throw new Error(`Unknown runtime event type: ${type}`);
+      throw new Error(
+        [
+          `Unknown runtime event type: ${type}.`,
+          'If this event type comes from a content pack, ensure the pack defines `content/event-types.json`.',
+          'Then run `pnpm generate` and rebuild `@idle-engine/core` to refresh the runtime event manifest.',
+        ].join('\n'),
+      );
     }
     return descriptor;
   }

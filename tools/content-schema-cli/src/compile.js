@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 
 import chokidar from 'chokidar';
 
@@ -17,6 +18,11 @@ import { loadContentCompiler } from './content-compiler.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
+
+const CORE_PACKAGE_NAME = '@idle-engine/core';
+const CORE_PACKAGE_JSON_RELATIVE_PATH = 'packages/core/package.json';
+const CORE_DIST_MANIFEST_RELATIVE_PATH =
+  'packages/core/dist/events/runtime-event-manifest.generated.js';
 
 const WATCH_GLOBS = [
   'packages/**/content/**/*.{json,json5}',
@@ -155,6 +161,16 @@ async function executePipeline(
       check: options.check,
     });
 
+    const coreDistManifestResult = await ensureCoreDistRuntimeEventManifest({
+      rootDirectory: workspaceRoot,
+      expectedHash: manifest.manifestHash,
+      check: options.check === true,
+    });
+    logCoreDistRuntimeManifestResult(coreDistManifestResult, {
+      pretty: options.pretty,
+      check: options.check,
+    });
+
     const compileResult = await compileWorkspacePacks(
       { rootDirectory: workspaceRoot },
       {
@@ -176,7 +192,9 @@ async function executePipeline(
     );
     const hasDrift =
       options.check === true &&
-      (compileResult.hasDrift || manifestResult.action === 'would-write');
+      (compileResult.hasDrift ||
+        manifestResult.action === 'would-write' ||
+        coreDistManifestResult.action === 'would-build');
 
     return {
       success: !hasFailures && !hasDrift,
@@ -441,6 +459,184 @@ function logManifestResult(result, options) {
     options.pretty ? 2 : undefined,
   );
   console.log(serialized);
+}
+
+function logCoreDistRuntimeManifestResult(result, options) {
+  const eventSuffix =
+    result.action === 'would-build' ? 'drift' : result.action;
+  const payload = {
+    event: `runtime_manifest.core_dist.${eventSuffix}`,
+    path: result.path,
+    action: result.action,
+    check: options.check === true,
+    timestamp: new Date().toISOString(),
+    expectedHash: result.expectedHash,
+    ...(result.actualHash ? { actualHash: result.actualHash } : {}),
+    ...(result.reason ? { reason: result.reason } : {}),
+  };
+  const serialized = JSON.stringify(
+    payload,
+    undefined,
+    options.pretty ? 2 : undefined,
+  );
+  console.log(serialized);
+}
+
+async function ensureCoreDistRuntimeEventManifest({
+  rootDirectory,
+  expectedHash,
+  check,
+}) {
+  const corePackageJsonPath = path.join(
+    rootDirectory,
+    CORE_PACKAGE_JSON_RELATIVE_PATH,
+  );
+  try {
+    await fs.access(corePackageJsonPath);
+  } catch {
+    return {
+      action: 'skipped',
+      path: CORE_DIST_MANIFEST_RELATIVE_PATH,
+      expectedHash,
+      actualHash: undefined,
+      reason: 'missing core package.json',
+    };
+  }
+
+  const distManifestPath = path.join(
+    rootDirectory,
+    CORE_DIST_MANIFEST_RELATIVE_PATH,
+  );
+  const relativePath = toPosixPath(
+    path.relative(rootDirectory, distManifestPath),
+  );
+
+  const existingDistSource = await readFileIfExists(distManifestPath);
+  const existingHash =
+    typeof existingDistSource === 'string'
+      ? extractRuntimeEventManifestHash(existingDistSource)
+      : undefined;
+
+  if (existingHash === expectedHash) {
+    return {
+      action: 'unchanged',
+      path: relativePath,
+      expectedHash,
+      actualHash: existingHash,
+    };
+  }
+
+  if (check) {
+    if (existingDistSource === undefined) {
+      return {
+        action: 'skipped',
+        path: relativePath,
+        expectedHash,
+        actualHash: undefined,
+        reason: 'missing core dist runtime event manifest',
+      };
+    }
+
+    return {
+      action: 'would-build',
+      path: relativePath,
+      expectedHash,
+      actualHash: existingHash,
+    };
+  }
+
+  const buildResult = await spawnProcess('pnpm', [
+    '--filter',
+    CORE_PACKAGE_NAME,
+    'run',
+    'build',
+  ], {
+    cwd: rootDirectory,
+    env: process.env,
+  });
+
+  if (buildResult.code !== 0) {
+    const output = formatProcessOutput(buildResult);
+    throw new Error(
+      [
+        `Failed to rebuild ${CORE_PACKAGE_NAME} after regenerating the runtime event manifest (exit code ${buildResult.code}).`,
+        'Re-run `pnpm generate` or build core manually to update `packages/core/dist/`.',
+        output ? `\n\n${output}` : undefined,
+      ]
+        .filter((line) => line !== undefined)
+        .join('\n'),
+    );
+  }
+
+  const updatedDistSource = await readFileIfExists(distManifestPath);
+  const updatedHash =
+    typeof updatedDistSource === 'string'
+      ? extractRuntimeEventManifestHash(updatedDistSource)
+      : undefined;
+
+  if (updatedHash !== expectedHash) {
+    throw new Error(
+      [
+        `Rebuilt ${CORE_PACKAGE_NAME} but its dist runtime event manifest hash did not update as expected.`,
+        `Expected: ${expectedHash}`,
+        `Actual: ${updatedHash ?? 'missing'}`,
+      ].join('\n'),
+    );
+  }
+
+  return {
+    action: 'built',
+    path: relativePath,
+    expectedHash,
+    actualHash: updatedHash,
+  };
+}
+
+function extractRuntimeEventManifestHash(source) {
+  const match = source.match(/hash\s*:\s*['"]([0-9a-f]{8})['"]/i);
+  return typeof match?.[1] === 'string' ? match[1].toLowerCase() : undefined;
+}
+
+async function spawnProcess(command, args, options) {
+  const spawnOptions = {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  };
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, spawnOptions);
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      resolve({ code, stdout, stderr });
+    });
+  });
+}
+
+function formatProcessOutput(result) {
+  const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+  if (combined.length === 0) {
+    return '';
+  }
+
+  const maxLength = 4000;
+  const clipped =
+    combined.length > maxLength
+      ? combined.slice(combined.length - maxLength)
+      : combined;
+
+  return clipped.trim();
 }
 
 async function persistValidationFailureSummary({
