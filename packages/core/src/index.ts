@@ -808,6 +808,24 @@ export function wireGameRuntime(
   options: WireGameRuntimeOptions,
 ): GameRuntimeWiring {
   const { content, runtime, coordinator } = options;
+  const runtimeStepSizeMs = runtime.getStepSizeMs();
+  const coordinatorStepDurationMs = coordinator.state.stepDurationMs;
+
+  if (
+    typeof coordinatorStepDurationMs !== 'number' ||
+    !Number.isFinite(coordinatorStepDurationMs) ||
+    coordinatorStepDurationMs <= 0
+  ) {
+    throw new Error(
+      'Progression coordinator step duration must be a positive, finite number.',
+    );
+  }
+
+  if (coordinatorStepDurationMs !== runtimeStepSizeMs) {
+    throw new Error(
+      `Runtime stepSizeMs (${runtimeStepSizeMs}) must match coordinator stepDurationMs (${coordinatorStepDurationMs}).`,
+    );
+  }
 
   coordinator.updateForStep(runtime.getCurrentStep());
 
@@ -826,7 +844,7 @@ export function wireGameRuntime(
           automations: content.automations,
           commandQueue: runtime.getCommandQueue(),
           resourceState: createResourceStateAdapter(coordinator.resourceState),
-          stepDurationMs: runtime.getStepSizeMs(),
+          stepDurationMs: runtimeStepSizeMs,
           conditionContext: coordinator.getConditionContext(),
           isAutomationUnlocked: (automationId) =>
             coordinator.getGrantedAutomationIds().has(automationId),
