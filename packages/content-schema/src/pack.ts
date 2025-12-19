@@ -1725,6 +1725,7 @@ const validateUpgradeEffect = (
 
   switch (effect.kind) {
     case 'modifyResourceRate':
+    case 'modifyResourceCapacity':
     case 'unlockResource':
     case 'alterDirtyTolerance':
       ensureReference(

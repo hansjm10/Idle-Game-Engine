@@ -4364,6 +4364,95 @@ describe('Integration: upgrade effects', () => {
     expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
   });
 
+  it('applies modifyResourceCapacity add effects to resource capacity and clamping', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      capacity: 10,
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.capacity-add', {
+      name: 'Capacity Boost',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyResourceCapacity',
+          resourceId: energy.id,
+          operation: 'add',
+          value: { kind: 'constant', value: 5 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 20);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(10);
+
+    coordinator.incrementUpgradePurchases(upgrade.id);
+
+    expect(coordinator.resourceState.getCapacity(energyIndex)).toBeCloseTo(15);
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(15);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const view = snapshot.resources.find((resource) => resource.id === energy.id);
+    expect(view?.capacity).toBeCloseTo(15);
+  });
+
+  it('applies modifyResourceCapacity multiply effects to resource capacity', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      capacity: 12,
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.capacity-multiply', {
+      name: 'Capacity Multiplier',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 0,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyResourceCapacity',
+          resourceId: energy.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.incrementUpgradePurchases(upgrade.id);
+
+    expect(coordinator.resourceState.getCapacity(energyIndex)).toBeCloseTo(24);
+    coordinator.resourceState.addAmount(energyIndex, 30);
+    expect(coordinator.resourceState.getAmount(energyIndex)).toBe(24);
+  });
+
   it('applies grantFlag so flag conditions can gate upgrades', () => {
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',

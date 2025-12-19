@@ -329,6 +329,8 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
   private readonly getCustomMetricValue?: (metricId: string) => number;
+  private readonly baseCapacityByIndex: Float64Array;
+  private readonly capacityOverrideIds = new Set<string>();
   private readonly baseDirtyToleranceByIndex: Float64Array;
   private readonly dirtyToleranceOverrideIds = new Set<string>();
   private readonly flagState = new Map<string, boolean>();
@@ -380,6 +382,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     this.resourceState =
       initialResourceState ?? createResourceState(resourceDefinitions);
     this.hydrateResources(initialState?.resources?.serialized);
+    this.baseCapacityByIndex = new Float64Array(resourceDefinitions.length);
+    for (let index = 0; index < resourceDefinitions.length; index += 1) {
+      const capacity = resourceDefinitions[index]?.capacity;
+      this.baseCapacityByIndex[index] =
+        capacity ?? Number.POSITIVE_INFINITY;
+    }
     this.baseDirtyToleranceByIndex = new Float64Array(resourceDefinitions.length);
     for (let index = 0; index < resourceDefinitions.length; index += 1) {
       this.baseDirtyToleranceByIndex[index] = this.resourceState.getDirtyTolerance(
@@ -548,12 +556,19 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	      this.upgradeList as readonly UpgradeEffectSource[],
 	      {
 	        step,
-	        createFormulaEvaluationContext: (level, stepValue) =>
-	          this.createFormulaEvaluationContext(level, stepValue),
-	        getBaseDirtyTolerance: (resourceId) => {
-	          const index = this.resourceState.getIndex(resourceId);
-	          if (index === undefined) {
-	            return 0;
+        createFormulaEvaluationContext: (level, stepValue) =>
+          this.createFormulaEvaluationContext(level, stepValue),
+        getBaseCapacity: (resourceId) => {
+          const index = this.resourceState.getIndex(resourceId);
+          if (index === undefined) {
+            return Number.POSITIVE_INFINITY;
+          }
+          return this.baseCapacityByIndex[index] ?? Number.POSITIVE_INFINITY;
+        },
+        getBaseDirtyTolerance: (resourceId) => {
+          const index = this.resourceState.getIndex(resourceId);
+          if (index === undefined) {
+            return 0;
 	          }
 	          return this.baseDirtyToleranceByIndex[index] ?? 0;
 	        },
@@ -607,16 +622,39 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	      if (!record.state.isUnlocked) {
 	        record.state.isUnlocked = true;
 	      }
-	      record.state.isVisible = true;
-	      if (!wasUnlocked) {
-	        record.state.nextPurchaseReadyAtStep = step + 1;
-	      }
-	    }
+      record.state.isVisible = true;
+      if (!wasUnlocked) {
+        record.state.nextPurchaseReadyAtStep = step + 1;
+      }
+    }
 
-	    for (const resourceId of this.dirtyToleranceOverrideIds) {
-	      const index = this.resourceState.getIndex(resourceId);
-	      if (index === undefined) {
-	        continue;
+    for (const resourceId of this.capacityOverrideIds) {
+      if (effects.resourceCapacityOverrides.has(resourceId)) {
+        continue;
+      }
+      const index = this.resourceState.getIndex(resourceId);
+      if (index === undefined) {
+        continue;
+      }
+      const baseCapacity =
+        this.baseCapacityByIndex[index] ?? Number.POSITIVE_INFINITY;
+      this.resourceState.setCapacity(index, baseCapacity);
+    }
+    this.capacityOverrideIds.clear();
+
+    for (const [resourceId, capacity] of effects.resourceCapacityOverrides) {
+      const index = this.resourceState.getIndex(resourceId);
+      if (index === undefined) {
+        continue;
+      }
+      this.resourceState.setCapacity(index, capacity);
+      this.capacityOverrideIds.add(resourceId);
+    }
+
+    for (const resourceId of this.dirtyToleranceOverrideIds) {
+      const index = this.resourceState.getIndex(resourceId);
+      if (index === undefined) {
+        continue;
 	      }
 	      this.resourceState.setDirtyTolerance(
 	        index,
