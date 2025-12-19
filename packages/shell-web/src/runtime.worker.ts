@@ -15,15 +15,19 @@ import {
   registerAutomationCommandHandlers,
   registerOfflineCatchupCommandHandler,
   createAutomationSystem,
+  createTransformSystem,
   createResourceStateAdapter,
   createProgressionCoordinator,
   telemetry,
+  buildTransformSnapshot,
+  registerTransformCommandHandlers,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
   type EventBus,
   type ResourceCommandHandlerOptions,
 } from '@idle-engine/core';
+import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import { sampleContent } from '@idle-engine/content-sample';
 
 declare global {
@@ -77,6 +81,7 @@ export interface RuntimeWorkerOptions {
   readonly handshakeId?: string;
   readonly fetch?: typeof fetch;
   readonly stepSizeMs?: number;
+  readonly content?: NormalizedContentPack;
 }
 
 interface WorkerGameState {
@@ -94,6 +99,7 @@ export interface RuntimeWorkerHarness {
   readonly tick: () => void;
   readonly dispose: () => void;
   readonly getAutomationSystem: () => ReturnType<typeof createAutomationSystem>;
+  readonly getTransformSystem: () => ReturnType<typeof createTransformSystem>;
 }
 
 export function isDedicatedWorkerScope(
@@ -150,8 +156,10 @@ export function initializeRuntimeWorker(
     initialProgression = undefined;
   }
 
+  const content = options.content ?? sampleContent;
+
   const progressionCoordinator = createProgressionCoordinator({
-    content: sampleContent,
+    content,
     stepDurationMs,
     initialState: initialProgression,
   });
@@ -191,19 +199,30 @@ export function initializeRuntimeWorker(
     runtime,
   });
 
-  // Create and register AutomationSystem
-  // Wrap resourceState with adapter to map getIndex -> getResourceIndex
+  // Create and register AutomationSystem + TransformSystem.
+  // Wrap resourceState with adapter to map getIndex -> getResourceIndex.
+  const resourceStateAdapter = createResourceStateAdapter(
+    progressionCoordinator.resourceState,
+  );
   const automationSystem = createAutomationSystem({
-    automations: sampleContent.automations,
+    automations: content.automations,
     commandQueue: runtime.getCommandQueue(),
-    resourceState: createResourceStateAdapter(progressionCoordinator.resourceState),
+    resourceState: resourceStateAdapter,
     stepDurationMs,
     conditionContext: progressionCoordinator.getConditionContext(),
     isAutomationUnlocked: (automationId) =>
       progressionCoordinator.getGrantedAutomationIds().has(automationId),
   });
 
+  const transformSystem = createTransformSystem({
+    transforms: content.transforms,
+    stepDurationMs,
+    resourceState: resourceStateAdapter,
+    conditionContext: progressionCoordinator.getConditionContext(),
+  });
+
   runtime.addSystem(automationSystem);
+  runtime.addSystem(transformSystem);
 
   runtime.addSystem({
     id: 'progression-coordinator',
@@ -216,6 +235,11 @@ export function initializeRuntimeWorker(
   registerAutomationCommandHandlers({
     dispatcher: runtime.getCommandDispatcher(),
     automationSystem,
+  });
+
+  registerTransformCommandHandlers({
+    dispatcher: runtime.getCommandDispatcher(),
+    transformSystem,
   });
 
   let diagnosticsEnabled = false;
@@ -313,6 +337,13 @@ export function initializeRuntimeWorker(
         publishedAt,
         progressionCoordinator.state,
       );
+      const transforms = buildTransformSnapshot(currentStep, publishedAt, {
+        transforms: content.transforms,
+        state: transformSystem.getState(),
+        stepDurationMs,
+        resourceState: resourceStateAdapter,
+        conditionContext: progressionCoordinator.getConditionContext(),
+      });
 
       const message: RuntimeWorkerStateUpdate = {
         type: 'STATE_UPDATE',
@@ -322,6 +353,7 @@ export function initializeRuntimeWorker(
           events,
           backPressure,
           progression,
+          transforms,
         },
       };
       context.postMessage(message);
@@ -840,6 +872,13 @@ export function initializeRuntimeWorker(
           });
         }
 
+        if (message.state.transformState) {
+          transformSystem.restoreState(message.state.transformState, {
+            savedWorkerStep: message.savedWorkerStep,
+            currentStep: runtime.getCurrentStep(),
+          });
+        }
+
         setGameState(gameState);
       }
 
@@ -938,7 +977,11 @@ export function initializeRuntimeWorker(
 
     try {
       const automationStateMap = automationSystem.getState();
-      const state = progressionCoordinator.resourceState.exportForSave(automationStateMap);
+      const transformStateMap = transformSystem.getState();
+      const state = progressionCoordinator.resourceState.exportForSave(
+        automationStateMap,
+        transformStateMap,
+      );
       const commandQueueSnapshot = commandQueue.exportForSave();
       const currentStep = runtime.getCurrentStep();
       const monotonicMs = monotonicClock.now();
@@ -1229,6 +1272,7 @@ export function initializeRuntimeWorker(
     tick,
     dispose,
     getAutomationSystem: () => automationSystem,
+    getTransformSystem: () => transformSystem,
   };
 }
 

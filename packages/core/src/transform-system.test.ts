@@ -3,6 +3,7 @@ import {
   createTransformSystem,
   getTransformState,
   isTransformCooldownActive,
+  serializeTransformState,
 } from './transform-system.js';
 import type { TransformDefinition } from '@idle-engine/content-schema';
 import type { TransformState } from './transform-system.js';
@@ -1730,8 +1731,8 @@ describe('TransformSystem', () => {
     });
   });
 
-  describe('unsupported modes', () => {
-    it('should reject batch mode transforms', () => {
+  describe('batch mode', () => {
+    it('should schedule outputs and deliver them at the completion step', () => {
       const transforms: TransformDefinition[] = [
         {
           id: 'transform:batch' as any,
@@ -1741,7 +1742,7 @@ describe('TransformSystem', () => {
           inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
           outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
           trigger: { kind: 'manual' },
-          duration: { kind: 'constant', value: 1000 },
+          duration: { kind: 'constant', value: 250 },
           tags: [],
         },
       ];
@@ -1759,15 +1760,201 @@ describe('TransformSystem', () => {
         resourceState,
       });
 
-      // Tick to initialize
-      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
-
       const result = system.executeTransform('transform:batch', 0);
+      expect(result.success).toBe(true);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(resourceState.getAmount(1)).toBe(0);
 
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('UNSUPPORTED_MODE');
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(1)).toBe(0);
+
+      system.tick({ deltaMs: stepDurationMs, step: 3, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(1)).toBe(1);
     });
 
+    it('should deliver same-step batches in FIFO order', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:batch' as any,
+          name: { default: 'Batch', variants: {} },
+          description: { default: 'Batch transform', variants: {} },
+          mode: 'batch',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 1 } }],
+          outputs: [
+            { resourceId: 'res:alpha' as any, amount: { kind: 'constant', value: 1 } },
+            { resourceId: 'res:beta' as any, amount: { kind: 'constant', value: 1 } },
+          ],
+          trigger: { kind: 'manual' },
+          duration: { kind: 'constant', value: 100 },
+          tags: [],
+        },
+      ];
+
+      const addOrder: string[] = [];
+      const indexById = new Map([
+        ['res:gold', 0],
+        ['res:alpha', 1],
+        ['res:beta', 2],
+      ]);
+      const idByIndex = new Map([
+        [0, 'res:gold'],
+        [1, 'res:alpha'],
+        [2, 'res:beta'],
+      ]);
+      const amounts = new Map([
+        [0, 10],
+        [1, 0],
+        [2, 0],
+      ]);
+
+      const resourceState = {
+        getAmount: (index: number) => amounts.get(index) ?? 0,
+        getResourceIndex: (id: string) => indexById.get(id) ?? -1,
+        spendAmount: (index: number, amount: number) => {
+          const current = amounts.get(index) ?? 0;
+          if (current < amount) return false;
+          amounts.set(index, current - amount);
+          return true;
+        },
+        addAmount: (index: number, amount: number) => {
+          const current = amounts.get(index) ?? 0;
+          amounts.set(index, current + amount);
+          const id = idByIndex.get(index);
+          if (id) {
+            addOrder.push(id);
+          }
+          return amount;
+        },
+      };
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      const result = system.executeTransform('transform:batch', 0, { runs: 2 });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+
+      expect(addOrder).toEqual([
+        'res:alpha',
+        'res:beta',
+        'res:alpha',
+        'res:beta',
+      ]);
+    });
+
+    it('should enforce maxOutstandingBatches at scheduling time', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:batch' as any,
+          name: { default: 'Batch', variants: {} },
+          description: { default: 'Batch transform', variants: {} },
+          mode: 'batch',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          duration: { kind: 'constant', value: 1000 },
+          safety: { maxOutstandingBatches: 1 },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      const first = system.executeTransform('transform:batch', 0);
+      const second = system.executeTransform('transform:batch', 0);
+
+      expect(first.success).toBe(true);
+      expect(second.success).toBe(false);
+      expect(second.error?.code).toBe('MAX_OUTSTANDING_BATCHES');
+      expect(resourceState.getAmount(0)).toBe(90);
+
+      const state = getTransformState(system).get('transform:batch');
+      expect(state?.batches?.length).toBe(1);
+    });
+
+    it('should rebase batch completion steps on restore', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:batch' as any,
+          name: { default: 'Batch', variants: {} },
+          description: { default: 'Batch transform', variants: {} },
+          mode: 'batch',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          duration: { kind: 'constant', value: 200 },
+          cooldown: { kind: 'constant', value: 500 },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      const result = system.executeTransform('transform:batch', 5);
+      expect(result.success).toBe(true);
+
+      const serialized = serializeTransformState(system.getState());
+
+      const restoredResourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 0 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const restored = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState: restoredResourceState,
+      });
+
+      restored.restoreState(serialized, {
+        savedWorkerStep: 5,
+        currentStep: 10,
+      });
+
+      const restoredState = getTransformState(restored).get('transform:batch');
+      expect(restoredState?.cooldownExpiresStep).toBe(16);
+      expect(restoredState?.batches?.[0].completeAtStep).toBe(12);
+
+      restored.tick({ deltaMs: stepDurationMs, step: 11, events: { publish: vi.fn() } });
+      expect(restoredResourceState.getAmount(1)).toBe(0);
+
+      restored.tick({ deltaMs: stepDurationMs, step: 12, events: { publish: vi.fn() } });
+      expect(restoredResourceState.getAmount(1)).toBe(1);
+    });
+  });
+
+  describe('unsupported modes', () => {
     it('should reject continuous mode transforms', () => {
       const transforms: TransformDefinition[] = [
         {

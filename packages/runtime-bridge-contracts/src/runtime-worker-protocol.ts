@@ -4,6 +4,7 @@ import type {
   SerializedCommandQueue,
   SerializedResourceState,
   ProgressionSnapshot,
+  TransformSnapshot,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
 
@@ -29,6 +30,7 @@ export interface RuntimeStatePayload {
   readonly events: readonly RuntimeEventSnapshot[];
   readonly backPressure: BackPressureSnapshot;
   readonly progression: ProgressionSnapshot;
+  readonly transforms?: TransformSnapshot;
 }
 
 export interface RuntimeWorkerCommand<TPayload = unknown> {

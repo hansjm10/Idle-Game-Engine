@@ -8,6 +8,11 @@ import {
   type AutomationState,
   type SerializedAutomationState,
 } from './automation-system.js';
+import {
+  serializeTransformState,
+  type SerializedTransformState,
+  type TransformState,
+} from './transform-system.js';
 
 const DIRTY_EPSILON_ABSOLUTE = 1e-9;
 const DIRTY_EPSILON_RELATIVE = 1e-9;
@@ -134,6 +139,7 @@ export interface SerializedResourceState {
   readonly flags: readonly number[];
   readonly definitionDigest?: ResourceDefinitionDigest;
   readonly automationState?: readonly SerializedAutomationState[];
+  readonly transformState?: readonly SerializedTransformState[];
 }
 
 export interface ResourceSpendAttemptContext {
@@ -167,7 +173,10 @@ export interface ResourceState {
   forceClearDirtyState(): void;
   clearDirtyScratch(): void;
   snapshot(options?: { mode?: 'publish' | 'recorder' }): ResourceStateSnapshot;
-  exportForSave(automationState?: ReadonlyMap<string, AutomationState>): SerializedResourceState;
+  exportForSave(
+    automationState?: ReadonlyMap<string, AutomationState>,
+    transformState?: ReadonlyMap<string, TransformState>,
+  ): SerializedResourceState;
   getDefinitionDigest(): ResourceDefinitionDigest;
 }
 
@@ -579,8 +588,10 @@ function createResourceStateFacade(
     clearDirtyScratch: () => clearDirtyScratch(internal),
     snapshot: (options?: PublishSnapshotOptions) =>
       snapshot(internal, options ?? {}),
-    exportForSave: (automationState?: ReadonlyMap<string, AutomationState>) =>
-      exportForSave(internal, automationState),
+    exportForSave: (
+      automationState?: ReadonlyMap<string, AutomationState>,
+      transformState?: ReadonlyMap<string, TransformState>,
+    ) => exportForSave(internal, automationState, transformState),
     getDefinitionDigest: () => internal.definitionDigest,
   };
 }
@@ -1272,6 +1283,7 @@ function clearDirtyBits(flags: Uint8Array, indices: readonly number[]): void {
 function exportForSave(
   internal: ResourceStateInternal,
   automationState?: ReadonlyMap<string, AutomationState>,
+  transformState?: ReadonlyMap<string, TransformState>,
 ): SerializedResourceState {
   const { buffers } = internal;
   const resourceCount = buffers.ids.length;
@@ -1303,15 +1315,29 @@ function exportForSave(
     definitionDigest: internal.definitionDigest,
   };
 
+  let enrichedState = baseState;
+
   if (automationState && automationState.size > 0) {
     const automationArray = serializeAutomationState(automationState);
-    return {
-      ...baseState,
-      automationState: automationArray,
-    };
+    if (automationArray.length > 0) {
+      enrichedState = {
+        ...enrichedState,
+        automationState: automationArray,
+      };
+    }
   }
 
-  return baseState;
+  if (transformState && transformState.size > 0) {
+    const transformArray = serializeTransformState(transformState);
+    if (transformArray.length > 0) {
+      enrichedState = {
+        ...enrichedState,
+        transformState: transformArray,
+      };
+    }
+  }
+
+  return enrichedState;
 }
 
 export function reconcileSaveAgainstDefinitions(

@@ -60,6 +60,18 @@ const DEFAULT_MAX_RUNS_PER_TICK = 10;
 const HARD_CAP_MAX_RUNS_PER_TICK = 100;
 
 /**
+ * Default maximum outstanding batches when not specified in content.
+ * Matches design doc Section 13.4.
+ */
+const DEFAULT_MAX_OUTSTANDING_BATCHES = 50;
+
+/**
+ * Hard cap for maxOutstandingBatches to prevent queue blowups.
+ * Matches design doc Section 13.4.
+ */
+const HARD_CAP_MAX_OUTSTANDING_BATCHES = 1000;
+
+/**
  * Level value used for evaluating transform formulas.
  * Consistent with automation system pattern.
  */
@@ -77,12 +89,31 @@ export interface TransformState {
   visible: boolean;
   cooldownExpiresStep: number;
   runsThisTick: number;
+  batches?: TransformBatchState[];
 }
+
+export interface TransformBatchOutput {
+  readonly resourceId: string;
+  readonly amount: number;
+}
+
+export interface TransformBatchState {
+  readonly completeAtStep: number;
+  readonly outputs: readonly TransformBatchOutput[];
+}
+
+type TransformBatchQueueEntry = TransformBatchState & {
+  readonly sequence: number;
+};
 
 export interface SerializedTransformState {
   readonly id: string;
   readonly unlocked: boolean;
   readonly cooldownExpiresStep: number;
+  readonly batches?: readonly {
+    readonly completeAtStep: number;
+    readonly outputs: readonly TransformBatchOutput[];
+  }[];
 }
 
 function normalizeNonNegativeInt(value: unknown): number {
@@ -102,11 +133,29 @@ export function serializeTransformState(
   const values = Array.from(state.values());
   values.sort((left, right) => compareStableStrings(left.id, right.id));
 
-  return values.map((entry) => ({
-    id: entry.id,
-    unlocked: entry.unlocked,
-    cooldownExpiresStep: normalizeNonNegativeInt(entry.cooldownExpiresStep),
-  }));
+  return values.map((entry) => {
+    const batches = entry.batches ?? [];
+    const serializedBatches =
+      batches.length > 0
+        ? batches.map((batch) => ({
+            completeAtStep: normalizeNonNegativeInt(batch.completeAtStep),
+            outputs: batch.outputs.map((output) => ({
+              resourceId: output.resourceId,
+              amount:
+                typeof output.amount === 'number' && Number.isFinite(output.amount)
+                  ? Math.max(0, output.amount)
+                  : 0,
+            })),
+          }))
+        : undefined;
+
+    return {
+      id: entry.id,
+      unlocked: entry.unlocked,
+      cooldownExpiresStep: normalizeNonNegativeInt(entry.cooldownExpiresStep),
+      ...(serializedBatches ? { batches: serializedBatches } : {}),
+    };
+  });
 }
 
 /**
@@ -130,6 +179,31 @@ export interface TransformExecutionResult {
     readonly details?: Record<string, unknown>;
   };
 }
+
+export type TransformEndpointView = Readonly<{
+  resourceId: string;
+  amount: number;
+}>;
+
+export type TransformView = Readonly<{
+  id: string;
+  displayName: string;
+  description: string;
+  mode: TransformDefinition['mode'];
+  isUnlocked: boolean;
+  isVisible: boolean;
+  cooldownRemainingMs: number;
+  inputs: readonly TransformEndpointView[];
+  outputs: readonly TransformEndpointView[];
+  outstandingBatches?: number;
+  nextBatchReadyAtStep?: number;
+}>;
+
+export type TransformSnapshot = Readonly<{
+  step: number;
+  publishedAt: number;
+  transforms: readonly TransformView[];
+}>;
 
 /**
  * Creates a formula evaluation context for transform formulas.
@@ -213,6 +287,29 @@ function getEffectiveMaxRunsPerTick(transform: TransformDefinition): number {
 }
 
 /**
+ * Gets the effective maxOutstandingBatches for a transform.
+ * Applies default and hard cap per design doc Section 13.4.
+ */
+function getEffectiveMaxOutstandingBatches(transform: TransformDefinition): number {
+  const authored = transform.safety?.maxOutstandingBatches;
+
+  if (authored === undefined || !Number.isFinite(authored) || authored <= 0) {
+    return DEFAULT_MAX_OUTSTANDING_BATCHES;
+  }
+
+  if (authored > HARD_CAP_MAX_OUTSTANDING_BATCHES) {
+    telemetry.recordWarning('TransformMaxOutstandingBatchesClamped', {
+      transformId: transform.id,
+      authored,
+      clamped: HARD_CAP_MAX_OUTSTANDING_BATCHES,
+    });
+    return HARD_CAP_MAX_OUTSTANDING_BATCHES;
+  }
+
+  return authored;
+}
+
+/**
  * Checks if a transform is currently in cooldown.
  */
 export function isTransformCooldownActive(
@@ -246,6 +343,35 @@ function updateTransformCooldown(
 
   const cooldownSteps = Math.ceil(cooldownMs / stepDurationMs);
   state.cooldownExpiresStep = currentStep + cooldownSteps + 1;
+}
+
+/**
+ * Evaluates and normalizes batch duration into steps.
+ */
+function evaluateBatchDurationSteps(
+  transform: TransformDefinition,
+  stepDurationMs: number,
+  formulaContext: FormulaEvaluationContext,
+): number | null {
+  if (!transform.duration) {
+    return null;
+  }
+
+  const durationMs = evaluateNumericFormula(transform.duration, formulaContext);
+  if (!Number.isFinite(durationMs)) {
+    telemetry.recordWarning('TransformDurationNonFinite', {
+      transformId: transform.id,
+      value: durationMs,
+    });
+    return null;
+  }
+
+  const normalized = Math.max(0, durationMs);
+  if (stepDurationMs <= 0 || !Number.isFinite(stepDurationMs)) {
+    return 0;
+  }
+
+  return Math.ceil(normalized / stepDurationMs);
 }
 
 /**
@@ -465,6 +591,96 @@ function applyOutputs(
 }
 
 /**
+ * Applies batch outputs by resolving resource ids to indices at delivery time.
+ */
+function applyBatchOutputs(
+  outputs: readonly TransformBatchOutput[],
+  resourceState: TransformResourceState,
+  transformId: string,
+): void {
+  if (outputs.length === 0) {
+    return;
+  }
+
+  if (
+    typeof resourceState.addAmount !== 'function' ||
+    typeof resourceState.getResourceIndex !== 'function'
+  ) {
+    telemetry.recordWarning('TransformBatchOutputApplyUnsupported', {
+      transformId,
+    });
+    return;
+  }
+
+  for (const output of outputs) {
+    if (output.amount === 0) continue;
+    const idx = resourceState.getResourceIndex(output.resourceId);
+    if (idx === -1) {
+      telemetry.recordWarning('TransformBatchOutputMissingResource', {
+        transformId,
+        resourceId: output.resourceId,
+      });
+      continue;
+    }
+    resourceState.addAmount(idx, output.amount);
+  }
+}
+
+function insertBatch(
+  batches: TransformBatchQueueEntry[],
+  entry: TransformBatchQueueEntry,
+): void {
+  let low = 0;
+  let high = batches.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const other = batches[mid];
+    if (
+      other.completeAtStep < entry.completeAtStep ||
+      (other.completeAtStep === entry.completeAtStep &&
+        other.sequence < entry.sequence)
+    ) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  batches.splice(low, 0, entry);
+}
+
+function deliverDueBatches(
+  batches: TransformBatchQueueEntry[],
+  resourceState: TransformResourceState,
+  transformId: string,
+  step: number,
+): void {
+  if (batches.length === 0) {
+    return;
+  }
+
+  let writeIndex = 0;
+  for (let readIndex = 0; readIndex < batches.length; readIndex += 1) {
+    const entry = batches[readIndex];
+    if (entry.completeAtStep <= step) {
+      applyBatchOutputs(entry.outputs, resourceState, transformId);
+      continue;
+    }
+
+    if (writeIndex !== readIndex) {
+      batches[writeIndex] = entry;
+    }
+    writeIndex += 1;
+  }
+
+  if (writeIndex === 0) {
+    batches.length = 0;
+  } else if (writeIndex < batches.length) {
+    batches.length = writeIndex;
+  }
+}
+
+/**
  * Creates a TransformSystem that evaluates triggers and executes transforms.
  *
  * The system initializes transform states from the provided definitions,
@@ -503,6 +719,7 @@ export function createTransformSystem(
   const transformStates = new Map<string, TransformState>();
   const transformById = new Map<string, TransformDefinition>();
   const pendingEventTriggers = new Set<string>();
+  const batchSequences = new Map<string, number>();
 
   // Track which step we last reset counters for (ensures reset happens once per step)
   let lastCounterResetStep = -1;
@@ -526,7 +743,9 @@ export function createTransformSystem(
       visible: true,
       cooldownExpiresStep: 0,
       runsThisTick: 0,
+      ...(transform.mode === 'batch' ? { batches: [] } : {}),
     });
+    batchSequences.set(transform.id, 0);
   }
 
   /**
@@ -552,8 +771,7 @@ export function createTransformSystem(
     step: number,
     formulaContext: FormulaEvaluationContext,
   ): TransformExecutionResult => {
-    // Only support instant mode for Phase 1
-    if (transform.mode !== 'instant') {
+    if (transform.mode === 'continuous') {
       return {
         success: false,
         error: {
@@ -607,7 +825,74 @@ export function createTransformSystem(
       return { success: false, error: preparedOutputs.error };
     }
 
-    // Atomically spend inputs
+    if (transform.mode === 'batch') {
+      const durationSteps = evaluateBatchDurationSteps(
+        transform,
+        stepDurationMs,
+        formulaContext,
+      );
+      if (durationSteps === null) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_DURATION_FORMULA',
+            message: 'Transform duration formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const batchQueue = (state.batches ??= []) as TransformBatchQueueEntry[];
+      const maxOutstanding = getEffectiveMaxOutstandingBatches(transform);
+      if (batchQueue.length >= maxOutstanding) {
+        return {
+          success: false,
+          error: {
+            code: 'MAX_OUTSTANDING_BATCHES',
+            message: 'Transform has reached the outstanding batch cap.',
+            details: {
+              transformId: transform.id,
+              maxOutstandingBatches: maxOutstanding,
+              outstandingBatches: batchQueue.length,
+            },
+          },
+        };
+      }
+
+      // Atomically spend inputs
+      const spendSuccess = spendInputs(costs, resourceState, transform.id);
+      if (!spendSuccess) {
+        return {
+          success: false,
+          error: {
+            code: 'SPEND_FAILED',
+            message: 'Failed to spend transform inputs.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const completeAtStep = step + durationSteps;
+      const sequence = batchSequences.get(transform.id) ?? 0;
+      batchSequences.set(transform.id, sequence + 1);
+
+      const batchEntry: TransformBatchQueueEntry = {
+        completeAtStep,
+        sequence,
+        outputs: preparedOutputs.outputs.map((output) => ({
+          resourceId: output.resourceId,
+          amount: output.amount,
+        })),
+      };
+
+      insertBatch(batchQueue, batchEntry);
+
+      updateTransformCooldown(transform, state, step, stepDurationMs, formulaContext);
+      state.runsThisTick += 1;
+      return { success: true };
+    }
+
+    // Instant mode
     const spendSuccess = spendInputs(costs, resourceState, transform.id);
     if (!spendSuccess) {
       return {
@@ -620,15 +905,9 @@ export function createTransformSystem(
       };
     }
 
-    // Apply outputs
     applyOutputs(preparedOutputs.outputs, resourceState);
-
-    // Update cooldown
     updateTransformCooldown(transform, state, step, stepDurationMs, formulaContext);
-
-    // Increment run counter
     state.runsThisTick += 1;
-
     return { success: true };
   };
 
@@ -853,6 +1132,63 @@ export function createTransformSystem(
         existing.unlocked = existing.unlocked || unlocked;
         existing.cooldownExpiresStep = rebasedCooldown;
         existing.runsThisTick = 0;
+
+        const batchesValue = (record as { batches?: unknown }).batches;
+        if (Array.isArray(batchesValue) && existing.batches) {
+          const restoredBatches: TransformBatchQueueEntry[] = [];
+          let sequence = 0;
+
+          for (const batchEntry of batchesValue) {
+            if (!batchEntry || typeof batchEntry !== 'object') {
+              continue;
+            }
+
+            const batchRecord = batchEntry as Record<string, unknown>;
+            const normalizedCompleteAtStep = normalizeNonNegativeInt(
+              batchRecord.completeAtStep,
+            );
+            const rebasedCompleteAtStep = hasValidSavedStep
+              ? Math.max(0, normalizedCompleteAtStep + rebaseDelta)
+              : normalizedCompleteAtStep;
+
+            const outputsValue = batchRecord.outputs;
+            const outputsArray = Array.isArray(outputsValue) ? outputsValue : [];
+            const outputs: TransformBatchOutput[] = [];
+
+            for (const outputEntry of outputsArray) {
+              if (!outputEntry || typeof outputEntry !== 'object') {
+                continue;
+              }
+
+              const outputRecord = outputEntry as Record<string, unknown>;
+              const resourceId = outputRecord.resourceId;
+              const amountValue = outputRecord.amount;
+
+              if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
+                continue;
+              }
+
+              if (typeof amountValue !== 'number' || !Number.isFinite(amountValue)) {
+                continue;
+              }
+
+              outputs.push({
+                resourceId,
+                amount: Math.max(0, amountValue),
+              });
+            }
+
+            restoredBatches.push({
+              completeAtStep: rebasedCompleteAtStep,
+              outputs,
+              sequence,
+            });
+            sequence += 1;
+          }
+
+          existing.batches = restoredBatches as TransformBatchState[];
+          batchSequences.set(id, restoredBatches.length);
+        }
       }
     },
 
@@ -892,6 +1228,14 @@ export function createTransformSystem(
 
       // Ensure counters are reset for this step (may already be done by executeTransform)
       ensureCountersResetForStep(step);
+
+      // Deliver any batches that are due before evaluating triggers.
+      for (const transform of sortedTransforms) {
+        const state = transformStates.get(transform.id);
+        const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
+        if (batches.length === 0) continue;
+        deliverDueBatches(batches, resourceState, transform.id, step);
+      }
 
       // Collect event triggers to retain across ticks when blocked
       const retainedEventTriggers = new Set<string>();
@@ -1001,6 +1345,14 @@ export function createTransformSystem(
         }
       }
 
+      // Deliver any same-step batches scheduled during trigger evaluation.
+      for (const transform of sortedTransforms) {
+        const state = transformStates.get(transform.id);
+        const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
+        if (batches.length === 0) continue;
+        deliverDueBatches(batches, resourceState, transform.id, step);
+      }
+
       // Clear and repopulate pending event triggers with retained items only
       pendingEventTriggers.clear();
       for (const id of retainedEventTriggers) {
@@ -1020,4 +1372,100 @@ export function getTransformState(
   system: ReturnType<typeof createTransformSystem>,
 ): ReadonlyMap<string, TransformState> {
   return system.getState();
+}
+
+export function buildTransformSnapshot(
+  step: number,
+  publishedAt: number,
+  options: {
+    readonly transforms: readonly TransformDefinition[];
+    readonly state: ReadonlyMap<string, TransformState>;
+    readonly stepDurationMs: number;
+    readonly resourceState: TransformResourceState;
+    readonly conditionContext?: ConditionContext;
+  },
+): TransformSnapshot {
+  const formulaContext = createTransformFormulaEvaluationContext({
+    currentStep: step,
+    stepDurationMs: options.stepDurationMs,
+    resourceState: options.resourceState,
+    conditionContext: options.conditionContext,
+  });
+
+  const sortedTransforms = [...options.transforms].sort((left, right) => {
+    const orderA = left.order ?? 0;
+    const orderB = right.order ?? 0;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return compareStableStrings(left.id, right.id);
+  });
+
+  const toEndpointViews = (
+    values: Map<string, number> | null,
+  ): TransformEndpointView[] => {
+    if (!values || values.size === 0) {
+      return [];
+    }
+
+    const entries = [...values.entries()].sort((a, b) =>
+      compareStableStrings(a[0], b[0]),
+    );
+    return entries.map(([resourceId, amount]) => ({
+      resourceId,
+      amount,
+    }));
+  };
+
+  const views: TransformView[] = [];
+  for (const transform of sortedTransforms) {
+    const state = options.state.get(transform.id);
+    const isUnlocked = state?.unlocked ?? false;
+    const isVisible = state?.visible ?? true;
+    const cooldownExpiresStep = state?.cooldownExpiresStep ?? 0;
+    const cooldownRemainingMs = Math.max(
+      0,
+      (cooldownExpiresStep - step) * options.stepDurationMs,
+    );
+    const inputs = toEndpointViews(
+      evaluateInputCosts(transform, formulaContext),
+    );
+    const outputs = toEndpointViews(
+      evaluateOutputAmounts(transform, formulaContext),
+    );
+
+    const batches = state?.batches ?? [];
+    const nextBatchReadyAtStep =
+      transform.mode === 'batch' && batches.length > 0
+        ? batches[0].completeAtStep
+        : undefined;
+
+    views.push(
+      Object.freeze({
+        id: transform.id,
+        displayName: transform.name.default,
+        description: transform.description.default,
+        mode: transform.mode,
+        isUnlocked,
+        isVisible,
+        cooldownRemainingMs,
+        inputs,
+        outputs,
+        ...(transform.mode === 'batch'
+          ? {
+              outstandingBatches: batches.length,
+              ...(nextBatchReadyAtStep !== undefined
+                ? { nextBatchReadyAtStep }
+                : {}),
+            }
+          : {}),
+      }),
+    );
+  }
+
+  return Object.freeze({
+    step,
+    publishedAt,
+    transforms: Object.freeze(views),
+  });
 }

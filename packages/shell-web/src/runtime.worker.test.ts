@@ -20,6 +20,11 @@ import {
   flushAsync,
   createTestTimeController,
 } from './test-utils.js';
+import {
+  createContentPack,
+  createResourceDefinition,
+} from './modules/test-helpers.js';
+import type { NormalizedTransform } from '@idle-engine/content-schema';
 
 describe('runtime.worker integration', () => {
   let timeController = createTestTimeController();
@@ -1717,6 +1722,52 @@ describe('session snapshot protocol', () => {
     harness = null;
   });
 
+  const createTransformContent = () => {
+    const resources = [
+      createResourceDefinition('resource.energy', {
+        startAmount: 25,
+        capacity: null,
+        unlocked: true,
+        visible: true,
+      }),
+      createResourceDefinition('resource.gems', {
+        startAmount: 0,
+        capacity: null,
+        unlocked: true,
+        visible: true,
+      }),
+    ];
+
+    const transforms: NormalizedTransform[] = [
+      {
+        id: 'transform:batch-test' as NormalizedTransform['id'],
+        name: { default: 'Batch Test', variants: {} },
+        description: { default: 'Batch test transform', variants: {} },
+        mode: 'batch',
+        inputs: [
+          {
+            resourceId: 'resource.energy' as any,
+            amount: { kind: 'constant', value: 5 },
+          },
+        ],
+        outputs: [
+          {
+            resourceId: 'resource.gems' as any,
+            amount: { kind: 'constant', value: 1 },
+          },
+        ],
+        duration: { kind: 'constant', value: 1000 },
+        trigger: { kind: 'manual' },
+        tags: [],
+      },
+    ];
+
+    return createContentPack({
+      resources,
+      transforms,
+    });
+  };
+
   it('captures and emits a session snapshot when requested', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -2152,6 +2203,134 @@ describe('session snapshot protocol', () => {
         unlocked: true,
       })
     );
+  });
+
+  it('includes transform state in session snapshots', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    const content = createTransformContent();
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      stepSizeMs: 100,
+      content,
+    });
+
+    context.dispatch({
+      type: 'COMMAND',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      source: CommandSource.PLAYER,
+      requestId: 'run-transform-1',
+      command: {
+        type: core.RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
+        payload: { transformId: 'transform:batch-test' },
+        issuedAt: 1,
+      },
+    });
+
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-transform-1',
+    });
+
+    const snapshotCall = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'SESSION_SNAPSHOT',
+    );
+    expect(snapshotCall).toBeDefined();
+
+    const snapshotEnvelope = snapshotCall![0] as {
+      snapshot: {
+        state: {
+          transformState?: readonly {
+            readonly id: string;
+            readonly batches?: readonly {
+              readonly completeAtStep: number;
+              readonly outputs: readonly { resourceId: string; amount: number }[];
+            }[];
+          }[];
+        };
+      };
+    };
+
+    const transformState = snapshotEnvelope.snapshot.state.transformState?.find(
+      (entry) => entry.id === 'transform:batch-test',
+    );
+    expect(transformState).toBeDefined();
+    expect(transformState?.batches?.length).toBe(1);
+    expect(transformState?.batches?.[0]?.outputs).toContainEqual({
+      resourceId: 'resource.gems',
+      amount: 1,
+    });
+  });
+
+  it('rebases transform step fields on restore when savedWorkerStep is provided', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    const content = createTransformContent();
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      stepSizeMs: 100,
+      content,
+    });
+
+    context.postMessage.mockClear();
+
+    const transformState = [
+      {
+        id: 'transform:batch-test',
+        unlocked: true,
+        cooldownExpiresStep: 25,
+        batches: [
+          {
+            completeAtStep: 30,
+            outputs: [
+              { resourceId: 'resource.gems', amount: 2 },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const state: core.SerializedResourceState = {
+      ids: ['resource.energy', 'resource.gems'],
+      amounts: [10, 0],
+      capacities: [null, null],
+      flags: [0, 0],
+      unlocked: [true, true],
+      visible: [true, true],
+      transformState,
+    };
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      state,
+      savedWorkerStep: 10,
+    });
+
+    await flushAsync();
+
+    const transformSystem = harness.getTransformSystem();
+    const liveTransformState = core.getTransformState(transformSystem);
+    const restored = liveTransformState.get('transform:batch-test');
+    expect(restored?.cooldownExpiresStep).toBe(15);
+    expect(restored?.batches?.[0].completeAtStep).toBe(20);
   });
 
   it('rebases automation step fields on restore when savedWorkerStep is provided', async () => {
