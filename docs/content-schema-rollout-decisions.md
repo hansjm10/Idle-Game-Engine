@@ -95,6 +95,7 @@ Current cost schema uses generic `ContentId` references, which works for player 
 ### Current State
 Upgrade effects are discriminated unions with these variants (upgrades.ts:79-124):
 - `modifyResourceRate`: Formula-based resource adjustments
+- `modifyResourceCapacity`: Formula-based resource capacity adjustments
 - `modifyGeneratorRate`: Formula-based generator production
 - `modifyGeneratorCost`: Formula-based cost scaling
 - `grantAutomation`: Enable automation toggles

@@ -13,6 +13,7 @@ export type UpgradeEffectEvaluatorContext = Readonly<{
     level: number,
     step: number,
   ) => FormulaEvaluationContext;
+  readonly getBaseCapacity: (resourceId: string) => number;
   readonly getBaseDirtyTolerance: (resourceId: string) => number;
   readonly onError?: (error: Error) => void;
 }>;
@@ -26,6 +27,7 @@ export type EvaluatedUpgradeEffects = Readonly<{
   readonly generatorRateMultipliers: ReadonlyMap<string, number>;
   readonly generatorCostMultipliers: ReadonlyMap<string, number>;
   readonly resourceRateMultipliers: ReadonlyMap<string, number>;
+  readonly resourceCapacityOverrides: ReadonlyMap<string, number>;
   readonly dirtyToleranceOverrides: ReadonlyMap<string, number>;
   readonly unlockedResources: ReadonlySet<string>;
   readonly unlockedGenerators: ReadonlySet<string>;
@@ -119,6 +121,70 @@ function applyDirtyToleranceOverride(
   overrides.set(resourceId, next);
 }
 
+function applyCapacityOperation(
+  current: number,
+  operation: AdjustmentOperation,
+  effectiveValue: number,
+): number | undefined {
+  if (current === Number.POSITIVE_INFINITY) {
+    switch (operation) {
+      case 'add':
+      case 'multiply':
+        return Number.POSITIVE_INFINITY;
+      case 'set':
+        return effectiveValue;
+      default: {
+        const _exhaustive: never = operation;
+        return _exhaustive;
+      }
+    }
+  }
+  return applyOperation(current, operation, effectiveValue);
+}
+
+function applyCapacityOverride(
+  overrides: Map<string, number>,
+  getBase: (resourceId: string) => number,
+  resourceId: string,
+  operation: AdjustmentOperation,
+  effectiveValue: number,
+  onError: ((error: Error) => void) | undefined,
+  errorPrefix: string,
+): void {
+  if (operation === 'multiply' && effectiveValue < 0) {
+    onError?.(
+      new Error(`${errorPrefix} cannot use a negative multiplier.`),
+    );
+    return;
+  }
+
+  const current = overrides.has(resourceId)
+    ? (overrides.get(resourceId) ?? getBase(resourceId))
+    : getBase(resourceId);
+  const next = applyCapacityOperation(current, operation, effectiveValue);
+  if (next === undefined) {
+    onError?.(
+      new Error(
+        `${errorPrefix} encountered unknown operation "${String(operation)}".`,
+      ),
+    );
+    return;
+  }
+  if (!Number.isFinite(next) && next !== Number.POSITIVE_INFINITY) {
+    onError?.(
+      new Error(`${errorPrefix} returned invalid capacity: ${next}`),
+    );
+    return;
+  }
+  if (next < 0) {
+    onError?.(
+      new Error(`${errorPrefix} cannot resolve to a negative capacity.`),
+    );
+    return;
+  }
+  overrides.set(resourceId, next);
+}
+
 export function evaluateUpgradeEffects(
   upgrades: readonly UpgradeEffectSource[],
   context: UpgradeEffectEvaluatorContext,
@@ -126,6 +192,7 @@ export function evaluateUpgradeEffects(
   const generatorRateMultipliers = new Map<string, number>();
   const generatorCostMultipliers = new Map<string, number>();
   const resourceRateMultipliers = new Map<string, number>();
+  const resourceCapacityOverrides = new Map<string, number>();
   const dirtyToleranceOverrides = new Map<string, number>();
   const unlockedResources = new Set<string>();
   const unlockedGenerators = new Set<string>();
@@ -276,6 +343,36 @@ export function evaluateUpgradeEffects(
             );
             break;
           }
+          case 'modifyResourceCapacity': {
+            const raw = evaluateFiniteNumericFormula(
+              effect.value,
+              formulaContext,
+              context.onError,
+              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
+            );
+            if (raw === undefined) {
+              continue;
+            }
+            const effective = raw * effectCurveMultiplier;
+            if (!Number.isFinite(effective)) {
+              context.onError?.(
+                new Error(
+                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
+                ),
+              );
+              continue;
+            }
+            applyCapacityOverride(
+              resourceCapacityOverrides,
+              context.getBaseCapacity,
+              effect.resourceId,
+              effect.operation,
+              effective,
+              context.onError,
+              `Resource capacity modifier for "${record.definition.id}"`,
+            );
+            break;
+          }
           case 'alterDirtyTolerance': {
             const raw = evaluateFiniteNumericFormula(
               effect.value,
@@ -317,6 +414,7 @@ export function evaluateUpgradeEffects(
     generatorRateMultipliers,
     generatorCostMultipliers,
     resourceRateMultipliers,
+    resourceCapacityOverrides,
     dirtyToleranceOverrides,
     unlockedResources,
     unlockedGenerators,
@@ -324,4 +422,3 @@ export function evaluateUpgradeEffects(
     grantedFlags,
   });
 }
-

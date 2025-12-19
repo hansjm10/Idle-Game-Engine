@@ -573,6 +573,7 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
     resource lists.
   - `effects`: array of discriminated union entries:
     - `modifyResourceRate` (`resourceId`, `operation`, `value: NumericFormula`).
+    - `modifyResourceCapacity` (`resourceId`, `operation`, `value: NumericFormula`).
     - `modifyGeneratorRate`.
     - `modifyGeneratorCost`.
     - `grantAutomation`.
@@ -596,6 +597,9 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
     - `add`: `modifier += effective`.
     - `multiply`: `modifier *= effective`.
     - `set`: `modifier = effective`.
+  - `modifyResourceCapacity` starts from the resource's base capacity rather than
+    `1`. If the base capacity is unlimited (`capacity: null`), `add`/`multiply`
+    keep it unlimited and only `set` can make it finite.
   - Authoring note: if `effects[].value` also references `level`, scaling
     composes multiplicatively with `effectCurve`; avoid double-scaling unless
     intentional.
