@@ -1310,6 +1310,7 @@ export {
 } from './automation-command-handlers.js';
 export {
   createTransformSystem,
+  buildTransformSnapshot,
   getTransformState,
   isTransformCooldownActive,
   serializeTransformState,
@@ -1318,6 +1319,9 @@ export {
   type SerializedTransformState,
   type TransformExecutionResult,
   type TransformResourceState,
+  type TransformEndpointView,
+  type TransformView,
+  type TransformSnapshot,
 } from './transform-system.js';
 export {
   registerTransformCommandHandlers,

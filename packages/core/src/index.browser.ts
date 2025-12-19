@@ -1332,6 +1332,25 @@ export {
   type AutomationCommandHandlerOptions,
 } from './automation-command-handlers.js';
 export {
+  createTransformSystem,
+  buildTransformSnapshot,
+  getTransformState,
+  isTransformCooldownActive,
+  serializeTransformState,
+  type TransformSystemOptions,
+  type TransformState,
+  type SerializedTransformState,
+  type TransformExecutionResult,
+  type TransformResourceState,
+  type TransformEndpointView,
+  type TransformView,
+  type TransformSnapshot,
+} from './transform-system.js';
+export {
+  registerTransformCommandHandlers,
+  type TransformCommandHandlerOptions,
+} from './transform-command-handlers.js';
+export {
   applyPrestigeReset,
   type PrestigeResetContext,
   type PrestigeResetTarget,
