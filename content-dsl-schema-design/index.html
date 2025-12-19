@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content DSL Schema Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content DSL Schema Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #11"><meta data-rh="true" property="og:description" content="Issue: #11"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content DSL Schema Design","item":"https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.9614a748.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.251edb67.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f5ea6725.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -546,6 +546,7 @@ resource lists.</li>
 <li class=""><code>effects</code>: array of discriminated union entries:<!-- -->
 <ul>
 <li class=""><code>modifyResourceRate</code> (<code>resourceId</code>, <code>operation</code>, <code>value: NumericFormula</code>).</li>
+<li class=""><code>modifyResourceCapacity</code> (<code>resourceId</code>, <code>operation</code>, <code>value: NumericFormula</code>).</li>
 <li class=""><code>modifyGeneratorRate</code>.</li>
 <li class=""><code>modifyGeneratorCost</code>.</li>
 <li class=""><code>grantAutomation</code>.</li>
@@ -580,6 +581,9 @@ that starts at <code>1</code>:<!-- -->
 <li class=""><code>set</code>: <code>modifier = effective</code>.</li>
 </ul>
 </li>
+<li class=""><code>modifyResourceCapacity</code> starts from the resource&#x27;s base capacity rather than
+<code>1</code>. If the base capacity is unlimited (<code>capacity: null</code>), <code>add</code>/<code>multiply</code>
+keep it unlimited and only <code>set</code> can make it finite.</li>
 <li class="">Authoring note: if <code>effects[].value</code> also references <code>level</code>, scaling
 composes multiplicatively with <code>effectCurve</code>; avoid double-scaling unless
 intentional.</li>
