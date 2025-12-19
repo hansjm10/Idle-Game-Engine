@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { NumericFormula } from '@idle-engine/content-schema';
 
@@ -118,6 +118,18 @@ function applyFrameDeltas(
   }
 }
 
+function registerProgressionCoordinatorSystem(
+  runtime: IdleEngineRuntime,
+  coordinator: ReturnType<typeof createProgressionCoordinator>,
+) {
+  runtime.addSystem({
+    id: 'progression-coordinator',
+    tick: ({ step }) => {
+      coordinator.updateForStep(step + 1);
+    },
+  });
+}
+
 describe('applyOfflineProgress', () => {
   it('matches online fixed-step outcomes after save/load', () => {
     const harness = createHarness(0);
@@ -193,5 +205,64 @@ describe('applyOfflineProgress', () => {
 
     expect(state.getAmount(goldIndex)).toBe(5);
     expect(state.getAmount(energyIndex)).toBe(0);
+  });
+
+  it('batches ticks when the runtime advances the coordinator', () => {
+    const baseline = createHarness(0);
+    registerProgressionCoordinatorSystem(baseline.runtime, baseline.coordinator);
+    baseline.coordinator.incrementGeneratorOwned('generator.mine', 1);
+    baseline.coordinator.setUpgradePurchases('upgrade.double-mine', 1);
+    baseline.coordinator.updateForStep(baseline.runtime.getCurrentStep());
+
+    baseline.runtime.tick(STEP_SIZE_MS);
+    baseline.runtime.tick(STEP_SIZE_MS);
+    baseline.runtime.tick(STEP_SIZE_MS);
+
+    const saved = serializeProgressionCoordinatorState(
+      baseline.coordinator,
+      baseline.productionSystem,
+    );
+
+    const offlineElapsedMs = STEP_SIZE_MS * 200 + 34;
+    const fullSteps = Math.floor(offlineElapsedMs / STEP_SIZE_MS);
+
+    const stepByStep = createHarness(saved.step);
+    registerProgressionCoordinatorSystem(stepByStep.runtime, stepByStep.coordinator);
+    hydrateProgressionCoordinatorState(
+      saved,
+      stepByStep.coordinator,
+      stepByStep.productionSystem,
+    );
+    stepByStep.coordinator.updateForStep(stepByStep.runtime.getCurrentStep());
+
+    for (let step = 0; step < fullSteps; step += 1) {
+      stepByStep.runtime.tick(STEP_SIZE_MS);
+    }
+    stepByStep.runtime.tick(offlineElapsedMs - fullSteps * STEP_SIZE_MS);
+
+    const batched = createHarness(saved.step);
+    registerProgressionCoordinatorSystem(batched.runtime, batched.coordinator);
+    hydrateProgressionCoordinatorState(
+      saved,
+      batched.coordinator,
+      batched.productionSystem,
+    );
+
+    const tickSpy = vi.spyOn(batched.runtime, 'tick');
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: batched.coordinator,
+      runtime: batched.runtime,
+    });
+
+    expect(batched.runtime.getCurrentStep()).toBe(stepByStep.runtime.getCurrentStep());
+    expect(batched.coordinator.resourceState.exportForSave()).toEqual(
+      stepByStep.coordinator.resourceState.exportForSave(),
+    );
+    expect(batched.productionSystem.exportAccumulators()).toEqual(
+      stepByStep.productionSystem.exportAccumulators(),
+    );
+    expect(tickSpy.mock.calls.length).toBeLessThan(fullSteps);
   });
 });
