@@ -11,7 +11,7 @@ export interface GameStateSnapshot {
   /** Schema version for forward compatibility. */
   readonly version: 1;
 
-  /** Capture timestamp (wall clock, for diagnostics only). */
+  /** Capture timestamp (wall clock, for diagnostics only; excluded from checksums). */
   readonly capturedAt: number;
 
   /** Runtime metadata. */
@@ -22,7 +22,7 @@ export interface GameStateSnapshot {
     /** Step duration in milliseconds. */
     readonly stepSizeMs: number;
 
-    /** RNG seed captured from runtime, if any. */
+    /** Original RNG seed captured from runtime, not the current RNG position. */
     readonly rngSeed: number | undefined;
   };
 

@@ -310,12 +310,26 @@ export function fnv1a32(data: Uint8Array): string {
 /**
  * Compute a deterministic checksum for a game state snapshot.
  *
- * The snapshot is serialized to a canonical JSON string (sorted keys),
- * encoded to UTF-8, and hashed with FNV-1a.
+ * The checksum excludes capturedAt, since it is diagnostic only. The remaining
+ * fields are serialized to a canonical JSON string (sorted keys), encoded to
+ * UTF-8, and hashed with FNV-1a.
  */
 export function computeStateChecksum(snapshot: GameStateSnapshot): string {
+  const checksumSnapshot = {
+    version: snapshot.version,
+    runtime: snapshot.runtime,
+    resources: snapshot.resources,
+    progression: snapshot.progression,
+    automation: snapshot.automation,
+    transforms: snapshot.transforms,
+    commandQueue: snapshot.commandQueue,
+  };
+
   // Use deterministic JSON serialization (sorted keys)
-  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
+  const json = JSON.stringify(
+    checksumSnapshot,
+    Object.keys(checksumSnapshot).sort(),
+  );
   const encoder = new TextEncoder();
   const bytes = encoder.encode(json);
   return fnv1a32(bytes);
@@ -722,6 +736,7 @@ Commands agents must run:
 2. **Partial restore granularity**: Which subsets of state are useful for bandwidth optimization (resources only, commands only, etc.)?
 3. **Snapshot compression**: Should the protocol define optional compression, or leave that to transport?
 4. **Floating-point precision**: Should we quantize floats before hashing to avoid IEEE 754 edge cases?
+5. **RNG state restoration**: Should we expose and serialize RNG position for restore-and-continue workflows, or rely on replay from the seed?
 
 ## 14. Follow-Up Work
 
