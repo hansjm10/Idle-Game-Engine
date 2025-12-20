@@ -266,17 +266,19 @@ export function captureGameStateSnapshot(
       stepSizeMs: runtime.getStepSizeMs(),
       rngSeed: getCurrentRNGSeed(),
     },
-    resources: resources.exportForSave(automationState, transformState),
+    resources: resources.exportForSave(),
     progression: serializeProgressionCoordinatorState(
       progressionCoordinator,
       productionSystem,
     ),
-    automation: serializeAutomationStates(automationState),
-    transforms: serializeTransformStates(transformState),
+    automation: serializeAutomationState(automationState),
+    transforms: serializeTransformState(transformState),
     commandQueue: commandQueue.exportForSave(),
   };
 }
 ```
+
+Note: automation/transforms are captured as top-level fields; `resources.exportForSave()` intentionally omits embedded automation/transform state to match the existing save format and avoid duplication.
 
 #### 6.2.3 Checksum Computation
 
