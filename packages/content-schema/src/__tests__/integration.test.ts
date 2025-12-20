@@ -17,6 +17,7 @@ import type { NumericFormula } from '../base/formulas.js';
 import type { ContentSchemaOptions } from '../pack.js';
 import { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import {
+  anyOfUnlockBreaksCycleFixture,
   convergentTransformTreeFixture,
   cyclicTransformDirectFixture,
   cyclicTransformIndirectFixture,
@@ -189,6 +190,13 @@ describe('Integration: Cyclic Dependencies', () => {
   it('allows self-threshold unlock conditions for resources', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(selfThresholdUnlockConditionsFixture);
+
+    expect(result.success).toBe(true);
+  });
+
+  it('allows anyOf unlock branches to break dependency cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(anyOfUnlockBreaksCycleFixture);
 
     expect(result.success).toBe(true);
   });
