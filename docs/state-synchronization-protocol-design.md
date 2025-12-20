@@ -296,6 +296,30 @@ For larger states (>10KB), xxHash32 provides better throughput.
 
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5;
 const FNV_PRIME_32 = 0x01000193;
+const utf8Encoder = new TextEncoder();
+
+function normalizeForDeterministicJson(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeForDeterministicJson(entry));
+  }
+
+  const result: Record<string, unknown> = {};
+  const keys = Object.keys(value).sort();
+  for (const key of keys) {
+    result[key] = normalizeForDeterministicJson(
+      (value as Record<string, unknown>)[key],
+    );
+  }
+  return result;
+}
+
+function stringifyDeterministic(value: unknown): string {
+  return JSON.stringify(normalizeForDeterministicJson(value));
+}
 
 /**
  * Compute FNV-1a hash of a Uint8Array.
@@ -314,8 +338,8 @@ export function fnv1a32(data: Uint8Array): string {
  * Compute a deterministic checksum for a game state snapshot.
  *
  * The checksum excludes capturedAt, since it is diagnostic only. The remaining
- * fields are serialized to a canonical JSON string (sorted keys), encoded to
- * UTF-8, and hashed with FNV-1a.
+ * fields are recursively normalized with sorted keys, serialized to canonical
+ * JSON, encoded to UTF-8, and hashed with FNV-1a.
  */
 export function computeStateChecksum(snapshot: GameStateSnapshot): string {
   const checksumSnapshot = {
@@ -328,14 +352,8 @@ export function computeStateChecksum(snapshot: GameStateSnapshot): string {
     commandQueue: snapshot.commandQueue,
   };
 
-  // Use deterministic JSON serialization (sorted keys)
-  const json = JSON.stringify(
-    checksumSnapshot,
-    Object.keys(checksumSnapshot).sort(),
-  );
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(json);
-  return fnv1a32(bytes);
+  const json = stringifyDeterministic(checksumSnapshot);
+  return fnv1a32(utf8Encoder.encode(json));
 }
 
 /**
@@ -349,10 +367,8 @@ export function computePartialChecksum<K extends keyof GameStateSnapshot>(
   for (const key of keys) {
     partial[key] = snapshot[key];
   }
-  const json = JSON.stringify(partial, [...keys].sort());
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(json);
-  return fnv1a32(bytes);
+  const json = stringifyDeterministic(partial);
+  return fnv1a32(utf8Encoder.encode(json));
 }
 ```
 
@@ -624,7 +640,7 @@ Files agents must load before execution:
 
 - NEVER reset git history or force push to main
 - DO NOT introduce non-deterministic behavior (e.g., `Date.now()` in checksums)
-- ALWAYS use deterministic JSON serialization (sorted keys)
+- ALWAYS use deterministic JSON serialization (recursive key sorting)
 - NEVER modify existing `exportForSave()` signatures
 
 ### Validation Hooks
