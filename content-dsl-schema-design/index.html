@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content DSL Schema Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content DSL Schema Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #11"><meta data-rh="true" property="og:description" content="Issue: #11"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content DSL Schema Design","item":"https://hansjm10.github.io/Idle-Game-Engine/content-dsl-schema-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.126489fb.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.ec0d2609.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.f5ea6725.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -229,6 +229,9 @@ checks, but they do not register graph edges; instead they are captured as
 advisory constraints so authors can express absence-based gating without
 creating non-monotonic cycles that would otherwise surface as false positives
 during validation.<sup><a href="#user-content-fn-non-monotonic" id="user-content-fnref-non-monotonic" data-footnote-ref="true" aria-describedby="footnote-label" class="anchorTargetStickyNavbar_EdDC">2</a></sup></li>
+<li class=""><code>resourceThreshold</code> is permitted to reference the current resource in its own
+unlock condition (to model “unlock after first production”); this self-edge
+does not register as a cycle dependency.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_EdDC" id="541-condition-evaluation-semantics-runtime-behavior">5.4.1 Condition Evaluation Semantics (Runtime Behavior)<a href="#541-condition-evaluation-semantics-runtime-behavior" class="hash-link" aria-label="Direct link to 5.4.1 Condition Evaluation Semantics (Runtime Behavior)" title="Direct link to 5.4.1 Condition Evaluation Semantics (Runtime Behavior)" translate="no">​</a></h4>
 <blockquote>
