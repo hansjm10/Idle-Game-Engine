@@ -382,6 +382,34 @@ Multiple resource streams converge but never loop back to their sources.
 
 Design unlock conditions that form directed acyclic graphs (DAGs):
 
+#### ✅ Self-threshold (unlock after first production)
+
+```json
+{
+  "resources": [
+    {
+      "id": "ore",
+      "visible": false,
+      "unlocked": false,
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "ore",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 1 }
+      },
+      "visibilityCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "ore",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 1 }
+      }
+    }
+  ]
+}
+```
+
+This pattern is supported for resources and does not introduce an unlock-cycle edge. Ensure the resource can still be produced (for example by a generator or transform) while hidden/locked.
+
 #### ✅ Progressive unlocks
 
 ```json

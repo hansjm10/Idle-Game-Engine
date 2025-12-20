@@ -339,6 +339,45 @@ export const cyclicUnlockCrossEntityFixture = {
 };
 
 /**
+ * SELF-THRESHOLD UNLOCK CONDITIONS: Resource unlocks itself after first production.
+ * This should not be treated as an unlock dependency cycle.
+ */
+export const selfThresholdUnlockConditionsFixture = {
+  metadata: {
+    id: 'self-threshold-unlock-pack',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'hidden-ore',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+      visible: false,
+      unlocked: false,
+      unlockCondition: {
+        kind: 'resourceThreshold' as const,
+        resourceId: 'hidden-ore',
+        comparator: 'gte' as const,
+        amount: { kind: 'constant', value: 1 },
+      },
+      visibilityCondition: {
+        kind: 'resourceThreshold' as const,
+        resourceId: 'hidden-ore',
+        comparator: 'gte' as const,
+        amount: { kind: 'constant', value: 1 },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
  * LOCALIZATION GAPS: Missing translations for declared supported locales
  */
 export const localizationGapsFixture = {

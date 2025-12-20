@@ -294,6 +294,9 @@ type Condition =
   advisory constraints so authors can express absence-based gating without
   creating non-monotonic cycles that would otherwise surface as false positives
   during validation.[^non-monotonic]
+- `resourceThreshold` is permitted to reference the current resource in its own
+  unlock condition (to model “unlock after first production”); this self-edge
+  does not register as a cycle dependency.
 
 [^non-monotonic]: "Non-monotonic logic" — Wikipedia. Notes that adding new
 information can invalidate prior inferences, so negative knowledge behaves
