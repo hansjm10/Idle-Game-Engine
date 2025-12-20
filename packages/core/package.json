@@ -30,8 +30,9 @@
     "test:ci": "vitest run --passWithNoTests",
     "coverage": "vitest run --coverage --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
-    "benchmark": "pnpm run build && node benchmarks/event-frame-format.bench.mjs && node benchmarks/diagnostic-timeline-overhead.bench.mjs",
-    "benchmark:diagnostics": "pnpm run build && node benchmarks/diagnostic-timeline-overhead.bench.mjs"
+    "benchmark": "pnpm run build && node benchmarks/event-frame-format.bench.mjs && node benchmarks/diagnostic-timeline-overhead.bench.mjs && node benchmarks/state-sync-checksum.bench.mjs",
+    "benchmark:diagnostics": "pnpm run build && node benchmarks/diagnostic-timeline-overhead.bench.mjs",
+    "benchmark:checksum": "pnpm run build && node benchmarks/state-sync-checksum.bench.mjs"
   },
   "dependencies": {
     "@idle-engine/content-schema": "workspace:*",

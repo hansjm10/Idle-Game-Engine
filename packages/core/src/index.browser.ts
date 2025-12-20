@@ -1419,6 +1419,11 @@ export {
   captureGameStateSnapshot,
   type CaptureSnapshotOptions,
 } from './state-sync/capture.js';
+export {
+  computePartialChecksum,
+  computeStateChecksum,
+  fnv1a32,
+} from './state-sync/checksum.js';
 export type { GameStateSnapshot } from './state-sync/types.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';
