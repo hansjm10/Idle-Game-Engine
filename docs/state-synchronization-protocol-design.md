@@ -53,7 +53,7 @@ Without a unified state synchronization protocol:
 ### Goals
 
 1. **Unified Snapshot API**: Single `captureGameStateSnapshot()` function that aggregates all runtime state components
-2. **Fast Checksums**: `computeStateChecksum()` producing deterministic hashes in <100μs for typical game states
+2. **Fast Checksums**: `computeStateChecksum()` producing deterministic hashes in &lt;100μs for typical game states
 3. **Complete Restore**: `restoreFromSnapshot()` that fully hydrates a runtime to an identical state
 4. **Round-Trip Invariant**: `capture → serialize → deserialize → restore` produces bit-identical state
 5. **Divergence Debugging**: `compareStates()` API that identifies specific field differences
@@ -281,7 +281,7 @@ export function captureGameStateSnapshot(
 #### 6.2.3 Checksum Computation
 
 Based on research, FNV-1a is optimal for game state hashing due to:
-- Excellent performance on small-to-medium data (<1KB typical game state)
+- Excellent performance on small-to-medium data (&lt;1KB typical game state)
 - Simple implementation (no dependencies)
 - Good distribution properties
 - Deterministic across platforms
@@ -310,12 +310,26 @@ export function fnv1a32(data: Uint8Array): string {
 /**
  * Compute a deterministic checksum for a game state snapshot.
  *
- * The snapshot is serialized to a canonical JSON string (sorted keys),
- * encoded to UTF-8, and hashed with FNV-1a.
+ * The checksum excludes capturedAt, since it is diagnostic only. The remaining
+ * fields are serialized to a canonical JSON string (sorted keys), encoded to
+ * UTF-8, and hashed with FNV-1a.
  */
 export function computeStateChecksum(snapshot: GameStateSnapshot): string {
+  const checksumSnapshot = {
+    version: snapshot.version,
+    runtime: snapshot.runtime,
+    resources: snapshot.resources,
+    progression: snapshot.progression,
+    automation: snapshot.automation,
+    transforms: snapshot.transforms,
+    commandQueue: snapshot.commandQueue,
+  };
+
   // Use deterministic JSON serialization (sorted keys)
-  const json = JSON.stringify(snapshot, Object.keys(snapshot).sort());
+  const json = JSON.stringify(
+    checksumSnapshot,
+    Object.keys(checksumSnapshot).sort(),
+  );
   const encoder = new TextEncoder();
   const bytes = encoder.encode(json);
   return fnv1a32(bytes);
@@ -567,7 +581,7 @@ export function hasStateDiverged(
 |-------------|---------------|-------------------------|--------------|---------------------|
 | feat(core): define GameStateSnapshot type | Type definitions for unified snapshot | Runtime Implementation Agent | None | Types exported; JSDoc complete |
 | feat(core): implement captureGameStateSnapshot | Aggregate all state into snapshot | Runtime Implementation Agent | Type definitions | Unit tests; captures all components |
-| feat(core): implement computeStateChecksum | FNV-1a checksum for snapshots | Runtime Implementation Agent | Capture API | Determinism test; <100μs benchmark |
+| feat(core): implement computeStateChecksum | FNV-1a checksum for snapshots | Runtime Implementation Agent | Capture API | Determinism test; &lt;100μs benchmark |
 | feat(core): implement restoreFromSnapshot | Hydrate runtime from snapshot | Runtime Implementation Agent | Capture API | Round-trip test passes |
 | feat(core): implement compareStates | Field-by-field diff for debugging | Runtime Implementation Agent | Type definitions | Diff reports all differences |
 | test(core): property-based sync tests | Generate random states; verify invariants | Testing Agent | All APIs | 1000+ cases pass |
@@ -649,7 +663,7 @@ Commands agents must run:
 **Trade-offs**:
 - Pro: Faster for large data (>1KB)
 - Con: Requires WASM/native dependency or pure JS implementation
-- Con: FNV-1a is faster for typical game state sizes (<1KB)
+- Con: FNV-1a is faster for typical game state sizes (&lt;1KB)
 
 **Decision**: Start with FNV-1a (zero dependencies); add xxHash option if profiling shows need.
 
@@ -676,9 +690,9 @@ Commands agents must run:
 
 ### Performance
 
-- **Checksum benchmark**: <100μs for typical game state (~100 resources, 50 generators)
-- **Capture benchmark**: <1ms for full snapshot
-- **Restore benchmark**: <5ms for full hydration
+- **Checksum benchmark**: &lt;100μs for typical game state (~100 resources, 50 generators)
+- **Capture benchmark**: &lt;1ms for full snapshot
+- **Restore benchmark**: &lt;5ms for full hydration
 
 ### Property-Based Tests
 
@@ -722,6 +736,7 @@ Commands agents must run:
 2. **Partial restore granularity**: Which subsets of state are useful for bandwidth optimization (resources only, commands only, etc.)?
 3. **Snapshot compression**: Should the protocol define optional compression, or leave that to transport?
 4. **Floating-point precision**: Should we quantize floats before hashing to avoid IEEE 754 edge cases?
+5. **RNG state restoration**: Should we expose and serialize RNG position for restore-and-continue workflows, or rely on replay from the seed?
 
 ## 14. Follow-Up Work
 
