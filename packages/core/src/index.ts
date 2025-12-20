@@ -1392,5 +1392,6 @@ export {
   type GameStateSaveRuntime,
   type SchemaMigration,
 } from './game-state-save.js';
+export type { GameStateSnapshot } from './state-sync/types.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';
