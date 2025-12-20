@@ -25,6 +25,7 @@ import { createTransformSystem, serializeTransformState } from '../transform-sys
 const STEP_SIZE_MS = 100;
 const INITIAL_STEP = 12;
 const FIXED_NOW = 1_700_000_000;
+const OVERRIDE_NOW = 1_700_000_123;
 
 const literal = (value: number): NumericFormula => ({
   kind: 'constant',
@@ -127,7 +128,7 @@ describe('captureGameStateSnapshot', () => {
     resetRNG();
   });
 
-  it('captures all state components into a unified snapshot', () => {
+  it('captures all state components into a unified snapshot with capturedAt override', () => {
     vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
     setRNGSeed(4242);
 
@@ -190,8 +191,8 @@ describe('captureGameStateSnapshot', () => {
 
     const snapshot = captureGameStateSnapshot({
       runtime,
-      resources: coordinator.resourceState,
       progressionCoordinator: coordinator,
+      capturedAt: OVERRIDE_NOW,
       getAutomationState: () => automationState,
       getTransformState: () => transformState,
       commandQueue,
@@ -209,7 +210,7 @@ describe('captureGameStateSnapshot', () => {
 
     expect(snapshot).toEqual({
       version: 1,
-      capturedAt: FIXED_NOW,
+      capturedAt: OVERRIDE_NOW,
       runtime: {
         step: INITIAL_STEP,
         stepSizeMs: STEP_SIZE_MS,

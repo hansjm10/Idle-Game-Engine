@@ -223,11 +223,11 @@ export interface CaptureSnapshotOptions {
   /** Runtime instance to capture */
   readonly runtime: IdleEngineRuntime;
 
-  /** Resource state to capture */
-  readonly resources: ResourceState;
-
   /** Progression coordinator to capture */
   readonly progressionCoordinator: ProgressionCoordinator;
+
+  /** Optional timestamp override (wall clock, diagnostic only) */
+  readonly capturedAt?: number;
 
   /** Automation system state extractor */
   readonly getAutomationState: () => ReadonlyMap<string, AutomationState>;
@@ -247,8 +247,8 @@ export function captureGameStateSnapshot(
 ): GameStateSnapshot {
   const {
     runtime,
-    resources,
     progressionCoordinator,
+    capturedAt,
     getAutomationState,
     getTransformState,
     commandQueue,
@@ -260,13 +260,13 @@ export function captureGameStateSnapshot(
 
   return {
     version: 1,
-    capturedAt: Date.now(),
+    capturedAt: capturedAt ?? Date.now(),
     runtime: {
       step: runtime.getCurrentStep(),
       stepSizeMs: runtime.getStepSizeMs(),
       rngSeed: getCurrentRNGSeed(),
     },
-    resources: resources.exportForSave(),
+    resources: progressionCoordinator.resourceState.exportForSave(),
     progression: serializeProgressionCoordinatorState(
       progressionCoordinator,
       productionSystem,
@@ -278,7 +278,8 @@ export function captureGameStateSnapshot(
 }
 ```
 
-Note: automation/transforms are captured as top-level fields; `resources.exportForSave()` intentionally omits embedded automation/transform state to match the existing save format and avoid duplication.
+Note: automation/transforms are captured as top-level fields; `resources.exportForSave()` intentionally omits embedded automation/transform state to match the existing save format and avoid duplication. Resources are exported from the progression coordinator to keep the snapshot internally consistent.
+Captured timestamps are diagnostic only; use `capturedAt` in `CaptureSnapshotOptions` when you need a deterministic value (e.g., tests or snapshot diffing).
 
 #### 6.2.3 Checksum Computation
 
