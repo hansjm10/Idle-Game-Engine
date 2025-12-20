@@ -1442,6 +1442,23 @@ export {
   computeStateChecksum,
   fnv1a32,
 } from './state-sync/checksum.js';
+export { compareStates, hasStateDiverged } from './state-sync/compare.js';
+export type {
+  AchievementDiff,
+  AutomationDiff,
+  CommandQueueDiff,
+  CommandQueueEntryDiff,
+  GeneratorDiff,
+  ProductionAccumulatorDiff,
+  ProgressionDiff,
+  ResourceDiff,
+  RuntimeDiff,
+  StateDiff,
+  TransformBatchDiff,
+  TransformBatchOutputDiff,
+  TransformDiff,
+  UpgradeDiff,
+} from './state-sync/compare.js';
 export {
   restorePartial,
   type RestoreMode,
