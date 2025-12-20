@@ -56,6 +56,7 @@ import {
   restorePartial,
   setRestoreRuntimeFactory,
   type RestoreMode,
+  type RestorePartialOptions,
   type RestoreSnapshotOptions,
   type RestoredRuntime as BaseRestoredRuntime,
 } from './state-sync/restore.js';
@@ -1441,7 +1442,12 @@ export {
   computeStateChecksum,
   fnv1a32,
 } from './state-sync/checksum.js';
-export { restorePartial, type RestoreMode, type RestoreSnapshotOptions };
+export {
+  restorePartial,
+  type RestoreMode,
+  type RestorePartialOptions,
+  type RestoreSnapshotOptions,
+};
 export type { GameStateSnapshot } from './state-sync/types.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';

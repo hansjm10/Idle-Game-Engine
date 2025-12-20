@@ -177,6 +177,14 @@ export function restoreFromSnapshot(
  */
 export type RestoreMode = 'full' | 'resources' | 'commands';
 
+export interface RestorePartialOptions {
+  /** Optional command step rebasing for restores into a different timeline. */
+  readonly rebaseCommands?: Readonly<{
+    readonly savedStep: number;
+    readonly currentStep: number;
+  }>;
+}
+
 export function restorePartial(
   snapshot: GameStateSnapshot,
   mode: RestoreMode,
@@ -184,6 +192,7 @@ export function restorePartial(
     resources?: ResourceState;
     commandQueue?: CommandQueue;
   },
+  options: RestorePartialOptions = {},
 ): void {
   const applyResources = () => {
     if (!target.resources) {
@@ -204,7 +213,11 @@ export function restorePartial(
     if (!target.commandQueue) {
       return;
     }
-    target.commandQueue.restoreFromSave(snapshot.commandQueue);
+    const rebaseStep = options.rebaseCommands;
+    target.commandQueue.restoreFromSave(
+      snapshot.commandQueue,
+      rebaseStep ? { rebaseStep } : undefined,
+    );
   };
 
   switch (mode) {

@@ -499,4 +499,61 @@ describe('restorePartial', () => {
     expect(resourceState.isVisible(index)).toBe(true);
     expect(commandQueueInstance.exportForSave()).toEqual(commandQueue);
   });
+
+  it('rebases command steps when configured', () => {
+    const resources = {
+      ids: ['resource.energy'],
+      amounts: [0],
+      capacities: [null],
+      flags: [0],
+    };
+
+    const commandQueue: SerializedCommandQueueV1 = {
+      schemaVersion: 1,
+      entries: [
+        {
+          type: 'command.test',
+          priority: CommandPriority.PLAYER,
+          timestamp: 55,
+          step: 10,
+          payload: { amount: 2 },
+        },
+      ],
+    };
+
+    const snapshot: GameStateSnapshot = {
+      version: 1,
+      capturedAt: 0,
+      runtime: {
+        step: 10,
+        stepSizeMs: STEP_SIZE_MS,
+        rngSeed: undefined,
+      },
+      resources,
+      progression: {
+        schemaVersion: 2,
+        step: 10,
+        resources,
+        generators: [],
+        upgrades: [],
+        achievements: [],
+      },
+      automation: [],
+      transforms: [],
+      commandQueue,
+    };
+
+    const commandQueueInstance = new CommandQueue();
+
+    restorePartial(
+      snapshot,
+      'commands',
+      { commandQueue: commandQueueInstance },
+      { rebaseCommands: { savedStep: 10, currentStep: 4 } },
+    );
+
+    const restored = commandQueueInstance.exportForSave();
+    expect(restored.entries).toHaveLength(1);
+    expect(restored.entries[0]?.step).toBe(4);
+  });
 });
