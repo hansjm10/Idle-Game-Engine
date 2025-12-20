@@ -5,7 +5,6 @@ import type { IdleEngineRuntime } from '../index.js';
 import type { SerializedProductionAccumulators } from '../production-system.js';
 import type { ProgressionCoordinator } from '../progression-coordinator.js';
 import { serializeProgressionCoordinatorState } from '../progression-coordinator-save.js';
-import type { ResourceState } from '../resource-state.js';
 import { getCurrentRNGSeed } from '../rng.js';
 import type { TransformState } from '../transform-system.js';
 import { serializeTransformState } from '../transform-system.js';
@@ -14,10 +13,10 @@ import type { GameStateSnapshot } from './types.js';
 export interface CaptureSnapshotOptions {
   /** Runtime instance to capture. */
   readonly runtime: IdleEngineRuntime;
-  /** Resource state to capture. */
-  readonly resources: ResourceState;
   /** Progression coordinator to capture. */
   readonly progressionCoordinator: ProgressionCoordinator;
+  /** Optional timestamp override (wall clock, diagnostic only). */
+  readonly capturedAt?: number;
   /** Automation system state extractor. */
   readonly getAutomationState: () => ReadonlyMap<string, AutomationState>;
   /** Transform system state extractor. */
@@ -35,8 +34,8 @@ export function captureGameStateSnapshot(
 ): GameStateSnapshot {
   const {
     runtime,
-    resources,
     progressionCoordinator,
+    capturedAt,
     getAutomationState,
     getTransformState,
     commandQueue,
@@ -48,13 +47,13 @@ export function captureGameStateSnapshot(
 
   return {
     version: 1,
-    capturedAt: Date.now(),
+    capturedAt: capturedAt ?? Date.now(),
     runtime: {
       step: runtime.getCurrentStep(),
       stepSizeMs: runtime.getStepSizeMs(),
       rngSeed: getCurrentRNGSeed(),
     },
-    resources: resources.exportForSave(),
+    resources: progressionCoordinator.resourceState.exportForSave(),
     progression: serializeProgressionCoordinatorState(
       progressionCoordinator,
       productionSystem,

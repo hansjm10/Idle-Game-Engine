@@ -42,6 +42,9 @@ output/
 # Claude Code
 CLAUDE.md
 
+# Codex
+.codex/
+
 # Plans
 docs/plans/
 
