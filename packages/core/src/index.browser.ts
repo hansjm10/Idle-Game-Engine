@@ -51,6 +51,14 @@ import {
   type SerializedResourceState,
 } from './resource-state.js';
 import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
+import {
+  restoreFromSnapshot as restoreFromSnapshotInternal,
+  restorePartial,
+  setRestoreRuntimeFactory,
+  type RestoreMode,
+  type RestoreSnapshotOptions,
+  type RestoredRuntime as BaseRestoredRuntime,
+} from './state-sync/restore.js';
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import { createAutomationSystem } from './automation-system.js';
 import { registerAutomationCommandHandlers } from './automation-command-handlers.js';
@@ -455,6 +463,8 @@ export class IdleEngineRuntime {
     return processedSteps;
   }
 }
+
+setRestoreRuntimeFactory((options) => new IdleEngineRuntime(options));
 
 function createEventPublisher(bus: EventBus): EventPublisher {
   return {
@@ -1043,6 +1053,13 @@ export function runVerificationTicks(
   };
 }
 
+export type RestoredRuntime = BaseRestoredRuntime<IdleEngineRuntime>;
+
+export const restoreFromSnapshot = (
+  options: RestoreSnapshotOptions,
+): RestoredRuntime =>
+  restoreFromSnapshotInternal(options) as RestoredRuntime;
+
 // ---------------------------------------------------------------------------
 // Re-exports from individual modules (excluding telemetry-prometheus)
 // ---------------------------------------------------------------------------
@@ -1424,6 +1441,7 @@ export {
   computeStateChecksum,
   fnv1a32,
 } from './state-sync/checksum.js';
+export { restorePartial, type RestoreMode, type RestoreSnapshotOptions };
 export type { GameStateSnapshot } from './state-sync/types.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';
