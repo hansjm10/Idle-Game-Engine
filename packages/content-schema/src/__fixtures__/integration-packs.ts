@@ -378,6 +378,54 @@ export const selfThresholdUnlockConditionsFixture = {
 };
 
 /**
+ * ANYOF UNLOCK CONDITIONS: Alternative branch should not register dependency edges.
+ */
+export const anyOfUnlockBreaksCycleFixture = {
+  metadata: {
+    id: 'anyof-unlock-breaks-cycle-pack',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-a',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+      unlockCondition: {
+        kind: 'anyOf' as const,
+        conditions: [
+          { kind: 'flag' as const, flagId: 'debug' },
+          {
+            kind: 'resourceThreshold' as const,
+            resourceId: 'resource-b',
+            comparator: 'gte' as const,
+            amount: { kind: 'constant', value: 1 },
+          },
+        ],
+      },
+    },
+    {
+      id: 'resource-b',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+      unlockCondition: {
+        kind: 'resourceThreshold' as const,
+        resourceId: 'resource-a',
+        comparator: 'gte' as const,
+        amount: { kind: 'constant', value: 1 },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
  * LOCALIZATION GAPS: Missing translations for declared supported locales
  */
 export const localizationGapsFixture = {

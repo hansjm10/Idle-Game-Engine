@@ -2264,11 +2264,11 @@ const validateUnlockConditionCycles = (
           refs.add(node.prestigeLayerId);
           break;
         case 'allOf':
-        case 'anyOf':
           node.conditions.forEach(visit);
           break;
+        case 'anyOf':
         case 'not':
-          visit(node.condition);
+          // Non-monotonic predicates are excluded from unlock dependency edges.
           break;
         case 'always':
         case 'never':
