@@ -35,6 +35,7 @@ import {
   missingPrestigeCountResourceFixture,
   missingResourceReferenceFixture,
   resourceSinkTransformFixture,
+  selfThresholdUnlockConditionsFixture,
   selfReferencingDependencyFixture,
   selfReferencingTransformFixture,
   validComprehensivePackFixture,
@@ -183,6 +184,13 @@ describe('Integration: Cyclic Dependencies', () => {
         }),
       ]),
     );
+  });
+
+  it('allows self-threshold unlock conditions for resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(selfThresholdUnlockConditionsFixture);
+
+    expect(result.success).toBe(true);
   });
 
   it('detects unlock condition cycles across entity types (resource-generator)', () => {

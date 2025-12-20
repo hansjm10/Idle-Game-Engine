@@ -2224,36 +2224,48 @@ const validateUnlockConditionCycles = (
   const entityMap = new Map<string, EntityInfo>();
 
   // Helper to extract entity references from conditions
-  const extractConditionReferences = (condition: Condition | undefined): Set<string> => {
+  type ConditionReferenceContext = {
+    readonly entityId: string;
+    readonly entityType: EntityInfo['type'];
+  };
+
+  const extractConditionReferences = (
+    condition: Condition | undefined,
+    context?: ConditionReferenceContext,
+  ): Set<string> => {
     const refs = new Set<string>();
 
     if (!condition) {
       return refs;
     }
 
-	    const visit = (node: Condition) => {
-	      switch (node.kind) {
-	        case 'resourceThreshold':
-	          refs.add(node.resourceId);
-	          break;
-	        case 'generatorLevel':
-	          refs.add(node.generatorId);
-	          break;
-	        case 'upgradeOwned':
-	          refs.add(node.upgradeId);
-	          break;
-	        case 'prestigeCountThreshold':
-	          refs.add(`${node.prestigeLayerId}-prestige-count`);
-	          break;
-	        case 'prestigeCompleted':
-	          refs.add(`${node.prestigeLayerId}-prestige-count`);
-	          break;
-	        case 'prestigeUnlocked':
-	          refs.add(node.prestigeLayerId);
-	          break;
-	        case 'allOf':
-	        case 'anyOf':
-	          node.conditions.forEach(visit);
+    const visit = (node: Condition) => {
+      switch (node.kind) {
+        case 'resourceThreshold': {
+          if (context?.entityType === 'resource' && context.entityId === node.resourceId) {
+            break;
+          }
+          refs.add(node.resourceId);
+          break;
+        }
+        case 'generatorLevel':
+          refs.add(node.generatorId);
+          break;
+        case 'upgradeOwned':
+          refs.add(node.upgradeId);
+          break;
+        case 'prestigeCountThreshold':
+          refs.add(`${node.prestigeLayerId}-prestige-count`);
+          break;
+        case 'prestigeCompleted':
+          refs.add(`${node.prestigeLayerId}-prestige-count`);
+          break;
+        case 'prestigeUnlocked':
+          refs.add(node.prestigeLayerId);
+          break;
+        case 'allOf':
+        case 'anyOf':
+          node.conditions.forEach(visit);
           break;
         case 'not':
           visit(node.condition);
@@ -2299,7 +2311,10 @@ const validateUnlockConditionCycles = (
   // Build adjacency graph for resources
   pack.resources.forEach((resource) => {
     if (resource.unlockCondition) {
-      const refs = extractConditionReferences(resource.unlockCondition);
+      const refs = extractConditionReferences(resource.unlockCondition, {
+        entityId: resource.id,
+        entityType: 'resource',
+      });
       refs.forEach((ref) => {
         if (!adjacency.has(ref)) {
           adjacency.set(ref, new Set());
