@@ -54,7 +54,7 @@ export function captureGameStateSnapshot(
       stepSizeMs: runtime.getStepSizeMs(),
       rngSeed: getCurrentRNGSeed(),
     },
-    resources: resources.exportForSave(automationState, transformState),
+    resources: resources.exportForSave(),
     progression: serializeProgressionCoordinatorState(
       progressionCoordinator,
       productionSystem,

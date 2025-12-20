@@ -198,10 +198,7 @@ describe('captureGameStateSnapshot', () => {
       productionSystem,
     });
 
-    const expectedResources = coordinator.resourceState.exportForSave(
-      automationState,
-      transformState,
-    );
+    const expectedResources = coordinator.resourceState.exportForSave();
     const expectedProgression = serializeProgressionCoordinatorState(
       coordinator,
       productionSystem,
@@ -227,7 +224,7 @@ describe('captureGameStateSnapshot', () => {
 
     expect(expectedAutomation.length).toBeGreaterThan(0);
     expect(expectedTransforms.length).toBeGreaterThan(0);
-    expect(snapshot.resources.automationState).toEqual(expectedAutomation);
-    expect(snapshot.resources.transformState).toEqual(expectedTransforms);
+    expect(snapshot.resources.automationState).toBeUndefined();
+    expect(snapshot.resources.transformState).toBeUndefined();
   });
 });
