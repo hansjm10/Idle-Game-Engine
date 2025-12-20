@@ -427,6 +427,72 @@ describe('restoreFromSnapshot', () => {
     expect(restored.reconciliation.addedIds).toEqual(['resource.gold']);
     expect(restored.reconciliation.removedIds).toEqual([]);
   });
+
+  it('rebases command steps when runtime step differs', () => {
+    const resources = {
+      ids: ['resource.energy'],
+      amounts: [10],
+      capacities: [null],
+      unlocked: [true],
+      visible: [true],
+      flags: [0],
+    };
+
+    const commandQueue: SerializedCommandQueueV1 = {
+      schemaVersion: 1,
+      entries: [
+        {
+          type: 'command.test',
+          priority: CommandPriority.PLAYER,
+          timestamp: 55,
+          step: 10,
+          payload: { amount: 2 },
+        },
+      ],
+    };
+
+    const snapshot: GameStateSnapshot = {
+      version: 1,
+      capturedAt: 0,
+      runtime: {
+        step: 10,
+        stepSizeMs: STEP_SIZE_MS,
+        rngSeed: undefined,
+      },
+      resources,
+      progression: {
+        schemaVersion: 2,
+        step: 10,
+        resources,
+        generators: [],
+        upgrades: [],
+        achievements: [],
+      },
+      automation: [],
+      transforms: [],
+      commandQueue,
+    };
+
+    const resourceDefinitions: ResourceDefinition[] = [
+      {
+        id: 'resource.energy',
+        startAmount: 0,
+        capacity: null,
+        unlocked: false,
+        visible: false,
+      },
+    ];
+
+    const restored = restoreFromSnapshot({
+      snapshot,
+      resourceDefinitions,
+      runtimeOptions: { initialStep: 4 },
+    });
+
+    const restoredQueue = restored.commandQueue.exportForSave();
+    expect(restoredQueue.entries[0]?.step).toBe(4);
+    expect(restored.runtime.getCurrentStep()).toBe(4);
+  });
 });
 
 describe('restorePartial', () => {
@@ -555,5 +621,57 @@ describe('restorePartial', () => {
     const restored = commandQueueInstance.exportForSave();
     expect(restored.entries).toHaveLength(1);
     expect(restored.entries[0]?.step).toBe(4);
+  });
+
+  it('throws when resource arrays are malformed', () => {
+    const resources = {
+      ids: ['resource.energy'],
+      amounts: [],
+      capacities: [null],
+      unlocked: [true],
+      visible: [true],
+      flags: [0],
+    };
+
+    const snapshot: GameStateSnapshot = {
+      version: 1,
+      capturedAt: 0,
+      runtime: {
+        step: 0,
+        stepSizeMs: STEP_SIZE_MS,
+        rngSeed: undefined,
+      },
+      resources,
+      progression: {
+        schemaVersion: 2,
+        step: 0,
+        resources,
+        generators: [],
+        upgrades: [],
+        achievements: [],
+      },
+      automation: [],
+      transforms: [],
+      commandQueue: {
+        schemaVersion: 1,
+        entries: [],
+      },
+    };
+
+    const resourceDefinitions: ResourceDefinition[] = [
+      {
+        id: 'resource.energy',
+        startAmount: 0,
+        capacity: null,
+        unlocked: false,
+        visible: false,
+      },
+    ];
+
+    const resourceState = createResourceState(resourceDefinitions);
+
+    expect(() =>
+      restorePartial(snapshot, 'resources', { resources: resourceState }),
+    ).toThrow('amounts');
   });
 });

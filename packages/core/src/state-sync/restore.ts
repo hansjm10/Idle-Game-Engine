@@ -60,6 +60,60 @@ export interface RestoredRuntime<TRuntime extends RuntimeLike = RuntimeLike> {
   readonly commandQueue: CommandQueue;
 }
 
+const assertSerializedArrayLength = (
+  field: string,
+  values: readonly unknown[] | undefined,
+  expected: number,
+): void => {
+  if (!Array.isArray(values) || values.length !== expected) {
+    const actual = Array.isArray(values) ? values.length : -1;
+    throw new Error(
+      `Serialized resource state field "${field}" length (${actual}) does not match ids length (${expected}).`,
+    );
+  }
+};
+
+const assertSerializedResourceState = (
+  serialized: SerializedResourceState,
+): void => {
+  const expectedLength = serialized.ids.length;
+
+  assertSerializedArrayLength('amounts', serialized.amounts, expectedLength);
+  assertSerializedArrayLength(
+    'capacities',
+    serialized.capacities,
+    expectedLength,
+  );
+  assertSerializedArrayLength('flags', serialized.flags, expectedLength);
+
+  if (serialized.unlocked !== undefined) {
+    assertSerializedArrayLength(
+      'unlocked',
+      serialized.unlocked,
+      expectedLength,
+    );
+  }
+
+  if (serialized.visible !== undefined) {
+    assertSerializedArrayLength(
+      'visible',
+      serialized.visible,
+      expectedLength,
+    );
+  }
+
+  const seenIds = new Set<string>();
+  for (const id of serialized.ids) {
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error('Serialized resource ids must be non-empty strings.');
+    }
+    if (seenIds.has(id)) {
+      throw new Error(`Serialized resource id "${id}" appears multiple times.`);
+    }
+    seenIds.add(id);
+  }
+};
+
 const buildRemapFromResources = (
   resources: ResourceState,
   serialized: SerializedResourceState,
@@ -198,6 +252,7 @@ export function restorePartial(
     if (!target.resources) {
       return;
     }
+    assertSerializedResourceState(snapshot.resources);
     const remap = buildRemapFromResources(
       target.resources,
       snapshot.resources,
