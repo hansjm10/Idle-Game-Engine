@@ -50,6 +50,8 @@ import { createAutomationSystem } from './automation-system.js';
 import { registerAutomationCommandHandlers } from './automation-command-handlers.js';
 import { createResourceStateAdapter } from './automation-resource-state-adapter.js';
 import { registerOfflineCatchupCommandHandler } from './offline-catchup-command-handlers.js';
+import { registerTransformCommandHandlers } from './transform-command-handlers.js';
+import { createTransformSystem } from './transform-system.js';
 import { createProductionSystem, type ProductionSystem } from './production-system.js';
 import { createProgressionCoordinator, type ProgressionCoordinator } from './progression-coordinator.js';
 import { type ProgressionAuthoritativeState } from './progression.js';
@@ -748,6 +750,7 @@ export type GameRuntimeWiring = Readonly<{
   readonly commandDispatcher: CommandDispatcher;
   readonly productionSystem?: ProductionSystem;
   readonly automationSystem?: ReturnType<typeof createAutomationSystem>;
+  readonly transformSystem?: ReturnType<typeof createTransformSystem>;
   readonly systems: readonly System[];
 }>;
 
@@ -759,6 +762,7 @@ export type CreateGameRuntimeOptions = Readonly<{
   readonly initialProgressionState?: ProgressionAuthoritativeState;
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
+  readonly enableTransforms?: boolean;
   readonly production?: {
     readonly applyViaFinalizeTick?: boolean;
   };
@@ -798,6 +802,7 @@ export function createGameRuntime(
     coordinator,
     enableProduction: options.enableProduction,
     enableAutomation: options.enableAutomation,
+    enableTransforms: options.enableTransforms,
     production: options.production,
     registerOfflineCatchup: options.registerOfflineCatchup,
   });
@@ -809,6 +814,7 @@ export type WireGameRuntimeOptions = Readonly<{
   readonly coordinator: ProgressionCoordinator;
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
+  readonly enableTransforms?: boolean;
   readonly production?: {
     readonly applyViaFinalizeTick?: boolean;
   };
@@ -845,20 +851,36 @@ export function wireGameRuntime(
     options.enableProduction ?? content.generators.length > 0;
   const enableAutomation =
     options.enableAutomation ?? content.automations.length > 0;
+  const enableTransforms =
+    options.enableTransforms ?? content.transforms.length > 0;
   const registerOfflineCatchup = options.registerOfflineCatchup ?? true;
 
   const systems: System[] = [];
+
+  const resourceStateAdapter = createResourceStateAdapter(
+    coordinator.resourceState,
+  );
 
   const automationSystem =
     enableAutomation && content.automations.length > 0
       ? createAutomationSystem({
           automations: content.automations,
           commandQueue: runtime.getCommandQueue(),
-          resourceState: createResourceStateAdapter(coordinator.resourceState),
+          resourceState: resourceStateAdapter,
           stepDurationMs: runtimeStepSizeMs,
           conditionContext: coordinator.getConditionContext(),
           isAutomationUnlocked: (automationId) =>
             coordinator.getGrantedAutomationIds().has(automationId),
+        })
+      : undefined;
+
+  const transformSystem =
+    enableTransforms && content.transforms.length > 0
+      ? createTransformSystem({
+          transforms: content.transforms,
+          stepDurationMs: runtimeStepSizeMs,
+          resourceState: resourceStateAdapter,
+          conditionContext: coordinator.getConditionContext(),
         })
       : undefined;
 
@@ -917,6 +939,11 @@ export function wireGameRuntime(
     systems.push(automationSystem);
   }
 
+  if (transformSystem) {
+    runtime.addSystem(transformSystem);
+    systems.push(transformSystem);
+  }
+
   const coordinatorUpdateSystem: System = {
     id: 'progression-coordinator',
     tick: ({ step, events }) => {
@@ -934,6 +961,13 @@ export function wireGameRuntime(
     });
   }
 
+  if (transformSystem) {
+    registerTransformCommandHandlers({
+      dispatcher: runtime.getCommandDispatcher(),
+      transformSystem,
+    });
+  }
+
   return {
     runtime,
     coordinator,
@@ -941,6 +975,7 @@ export function wireGameRuntime(
     commandDispatcher: runtime.getCommandDispatcher(),
     productionSystem,
     automationSystem,
+    transformSystem,
     systems,
   };
 }
