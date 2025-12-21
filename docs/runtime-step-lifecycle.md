@@ -1,6 +1,5 @@
 ---
 title: Runtime Step Lifecycle Alignment
-sidebar_position: TBD
 ---
 
 # Runtime Step Lifecycle Alignment
