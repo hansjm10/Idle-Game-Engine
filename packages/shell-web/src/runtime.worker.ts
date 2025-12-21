@@ -342,6 +342,7 @@ export function initializeRuntimeWorker(
           automations: {
             definitions: content.automations,
             state: automationState,
+            conditionContext,
           },
           transforms: {
             definitions: content.transforms,

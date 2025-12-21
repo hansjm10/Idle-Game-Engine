@@ -88,6 +88,7 @@ type AutomationDefinitionInput = {
   readonly cooldown?: z.input<typeof finiteNumberSchema>;
   readonly resourceCost?: z.input<typeof resourceCostSchema>;
   readonly unlockCondition: z.input<typeof conditionSchema>;
+  readonly visibilityCondition?: z.input<typeof conditionSchema>;
   readonly enabledByDefault?: boolean;
   readonly order?: z.input<typeof finiteNumberSchema>;
   readonly scriptId?: z.input<typeof scriptIdSchema>;
@@ -107,6 +108,7 @@ type AutomationDefinitionModel = {
   readonly cooldown?: number;
   readonly resourceCost?: z.infer<typeof resourceCostSchema>;
   readonly unlockCondition: z.infer<typeof conditionSchema>;
+  readonly visibilityCondition?: z.infer<typeof conditionSchema>;
   readonly enabledByDefault: boolean;
   readonly order?: number;
   readonly scriptId?: ScriptId;
@@ -133,6 +135,7 @@ export const automationDefinitionSchema: z.ZodType<
     cooldown: finiteNumberSchema.optional(),
     resourceCost: resourceCostSchema.optional(),
     unlockCondition: conditionSchema,
+    visibilityCondition: conditionSchema.optional(),
     enabledByDefault: z.boolean().default(false),
     order: finiteNumberSchema.optional(),
     scriptId: scriptIdSchema.optional(),

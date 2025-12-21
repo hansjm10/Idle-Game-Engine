@@ -1,3 +1,4 @@
+import { evaluateCondition } from './condition-evaluator.js';
 import { buildTransformSnapshot } from './transform-system.js';
 const EMPTY_ARRAY = Object.freeze([]);
 const FLAG_VISIBLE = 1 << 0;
@@ -189,9 +190,13 @@ function createAutomationViews(step, publishedAt, stepDurationMs, source) {
         return compareStableStrings(left.id, right.id);
     });
     const views = [];
+    const conditionContext = source.conditionContext;
     for (const automation of sorted) {
         const state = source.state.get(automation.id);
         const isUnlocked = state?.unlocked ?? false;
+        const isVisible = automation.visibilityCondition && conditionContext
+            ? evaluateCondition(automation.visibilityCondition, conditionContext)
+            : isUnlocked;
         const rawCooldownExpiresStep = state?.cooldownExpiresStep;
         const cooldownExpiresStep = Number.isFinite(rawCooldownExpiresStep)
             ? Number(rawCooldownExpiresStep)
@@ -209,7 +214,7 @@ function createAutomationViews(step, publishedAt, stepDurationMs, source) {
             displayName: automation.name.default,
             description: automation.description.default,
             isUnlocked,
-            isVisible: isUnlocked,
+            isVisible,
             isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
             lastTriggeredAt,
             cooldownRemainingMs,

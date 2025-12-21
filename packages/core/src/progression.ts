@@ -12,6 +12,7 @@ import type {
   TransformDefinition,
 } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
+import { evaluateCondition } from './condition-evaluator.js';
 import type { ConditionContext } from './condition-evaluator.js';
 import type {
   ResourceState,
@@ -135,6 +136,7 @@ export interface ProgressionAchievementState {
 export interface ProgressionAutomationState {
   readonly definitions: readonly AutomationDefinition[];
   readonly state: ReadonlyMap<string, AutomationState>;
+  readonly conditionContext?: ConditionContext;
 }
 
 export interface ProgressionTransformState {
@@ -551,10 +553,15 @@ function createAutomationViews(
   });
 
   const views: AutomationView[] = [];
+  const conditionContext = source.conditionContext;
 
   for (const automation of sorted) {
     const state = source.state.get(automation.id);
     const isUnlocked = state?.unlocked ?? false;
+    const isVisible =
+      automation.visibilityCondition && conditionContext
+        ? evaluateCondition(automation.visibilityCondition, conditionContext)
+        : isUnlocked;
     const rawCooldownExpiresStep = state?.cooldownExpiresStep;
     const cooldownExpiresStep = Number.isFinite(rawCooldownExpiresStep)
       ? Number(rawCooldownExpiresStep)
@@ -578,7 +585,7 @@ function createAutomationViews(
         displayName: automation.name.default,
         description: automation.description.default,
         isUnlocked,
-        isVisible: isUnlocked,
+        isVisible,
         isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
         lastTriggeredAt,
         cooldownRemainingMs,

@@ -92,6 +92,7 @@ export interface ProgressionAchievementState {
 export interface ProgressionAutomationState {
     readonly definitions: readonly AutomationDefinition[];
     readonly state: ReadonlyMap<string, AutomationState>;
+    readonly conditionContext?: ConditionContext;
 }
 export interface ProgressionTransformState {
     readonly definitions: readonly TransformDefinition[];

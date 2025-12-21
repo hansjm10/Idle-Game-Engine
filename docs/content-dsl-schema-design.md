@@ -732,6 +732,7 @@ https://raw.githubusercontent.com/open-telemetry/opentelemetry-specification/mai
   - `cooldown`: optional number (`ms`).
   - `resourceCost`: optional upkeep cost schema reused from generators.
   - `unlockCondition`: `conditionSchema`.
+  - `visibilityCondition`: optional `conditionSchema` controlling UI visibility.
   - `enabledByDefault`: boolean default `false`.
   - `order`: optional float guiding UI grouping.
 - Automations can reference script hooks; validation ensures script ids adhere to

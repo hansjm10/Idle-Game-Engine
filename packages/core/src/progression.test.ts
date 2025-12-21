@@ -20,6 +20,7 @@ import {
   createResourceStateAdapter,
 } from './automation-resource-state-adapter.js';
 import type { AutomationState } from './automation-system.js';
+import type { ConditionContext } from './condition-evaluator.js';
 import type {
   GeneratorPurchaseEvaluator,
   GeneratorPurchaseQuote,
@@ -217,6 +218,13 @@ describe('buildProgressionSnapshot', () => {
       },
     ]);
     const resourceStateAdapter = createResourceStateAdapter(resourceState);
+    const energyIndex = resourceState.getIndex('energy') ?? 0;
+    const conditionContext: ConditionContext = {
+      getResourceAmount: (resourceId) =>
+        resourceId === 'energy' ? resourceState.getAmount(energyIndex) : 0,
+      getGeneratorLevel: () => 0,
+      getUpgradePurchases: () => 0,
+    };
 
     const automations: AutomationDefinition[] = [
       {
@@ -228,6 +236,12 @@ describe('buildProgressionSnapshot', () => {
         trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
         cooldown: 500,
         unlockCondition: { kind: 'always' },
+        visibilityCondition: {
+          kind: 'resourceThreshold',
+          resourceId: 'energy' as any,
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 20 },
+        },
         enabledByDefault: true,
         order: 1,
       },
@@ -275,6 +289,7 @@ describe('buildProgressionSnapshot', () => {
       automations: {
         definitions: automations,
         state: new Map([[automationState.id, automationState]]),
+        conditionContext,
       },
       transforms: {
         definitions: transforms,
@@ -291,7 +306,7 @@ describe('buildProgressionSnapshot', () => {
         displayName: 'Auto Test',
         description: 'Does the thing',
         isUnlocked: true,
-        isVisible: true,
+        isVisible: false,
         isEnabled: true,
         lastTriggeredAt: 4700,
         cooldownRemainingMs: 300,
