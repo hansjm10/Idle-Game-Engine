@@ -579,6 +579,7 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
     - `modifyResourceCapacity` (`resourceId`, `operation`, `value: NumericFormula`).
     - `modifyGeneratorRate`.
     - `modifyGeneratorCost`.
+    - `modifyGeneratorConsumption` (`generatorId`, `operation`, `value: NumericFormula`, optional `resourceId`).
     - `grantAutomation`.
     - `grantFlag` (`{ kind: 'grantFlag'; flagId: FlagId; value?: boolean }`)
       declaring deterministic flag mutations; `value` defaults to `true` during

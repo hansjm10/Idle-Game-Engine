@@ -768,6 +768,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       }
 
       const generatorRateMultipliers = upgradeEffects.generatorRateMultipliers;
+      const generatorConsumptionMultipliers =
+        upgradeEffects.generatorConsumptionMultipliers;
+      const generatorResourceConsumptionMultipliers =
+        upgradeEffects.generatorResourceConsumptionMultipliers;
       const resourceRateMultipliers = upgradeEffects.resourceRateMultipliers;
       const baseRateContext = this.createFormulaEvaluationContext(1, step);
       for (const record of this.generatorList) {
@@ -781,6 +785,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         );
         const generatorMultiplier =
           generatorRateMultipliers.get(record.definition.id) ?? 1;
+        const generatorConsumptionMultiplier =
+          generatorConsumptionMultipliers.get(record.definition.id) ?? 1;
+        const resourceConsumptionMultipliers =
+          generatorResourceConsumptionMultipliers.get(record.definition.id);
         record.state.produces = baseProduces.map((rate) => {
           const resourceMultiplier =
             resourceRateMultipliers.get(rate.resourceId) ?? 1;
@@ -790,11 +798,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
           };
         });
         record.state.consumes = baseConsumes.map((rate) => {
+          const resourceConsumptionMultiplier =
+            resourceConsumptionMultipliers?.get(rate.resourceId) ?? 1;
           const resourceMultiplier =
             resourceRateMultipliers.get(rate.resourceId) ?? 1;
           return {
             ...rate,
-            rate: rate.rate * generatorMultiplier * resourceMultiplier,
+            rate:
+              rate.rate *
+              generatorMultiplier *
+              resourceMultiplier *
+              generatorConsumptionMultiplier *
+              resourceConsumptionMultiplier,
           };
         });
       }

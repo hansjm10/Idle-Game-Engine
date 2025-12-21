@@ -165,6 +165,13 @@ type UpgradeEffect =
       readonly value: NumericFormula;
     }
   | {
+      readonly kind: 'modifyGeneratorConsumption';
+      readonly generatorId: ContentId;
+      readonly resourceId?: ContentId;
+      readonly operation: AdjustmentOperation;
+      readonly value: NumericFormula;
+    }
+  | {
       readonly kind: 'grantAutomation';
       readonly automationId: ContentId;
     }
@@ -214,6 +221,13 @@ type UpgradeEffectInput =
   | {
       readonly kind: 'modifyGeneratorCost';
       readonly generatorId: ContentIdInput;
+      readonly operation: AdjustmentOperation;
+      readonly value: NumericFormulaInput;
+    }
+  | {
+      readonly kind: 'modifyGeneratorConsumption';
+      readonly generatorId: ContentIdInput;
+      readonly resourceId?: ContentIdInput;
       readonly operation: AdjustmentOperation;
       readonly value: NumericFormulaInput;
     }
@@ -274,6 +288,15 @@ const effectSchema: z.ZodType<UpgradeEffect, z.ZodTypeDef, UpgradeEffectInput> =
     .object({
       kind: z.literal('modifyGeneratorCost'),
       generatorId: contentIdSchema,
+      operation: adjustmentOperationSchema,
+      value: numericFormulaSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('modifyGeneratorConsumption'),
+      generatorId: contentIdSchema,
+      resourceId: contentIdSchema.optional(),
       operation: adjustmentOperationSchema,
       value: numericFormulaSchema,
     })
