@@ -462,6 +462,16 @@ function canAffordInputs(
   return true;
 }
 
+function isZeroInputCost(costs: Map<string, number>): boolean {
+  for (const amount of costs.values()) {
+    if (amount !== 0) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /**
  * Atomically spends all input costs.
  * Assumes canAffordInputs has already returned true.
@@ -1383,7 +1393,7 @@ export function buildTransformSnapshot(
     readonly transforms: readonly TransformDefinition[];
     readonly state: ReadonlyMap<string, TransformState>;
     readonly stepDurationMs: number;
-    readonly resourceState: TransformResourceState;
+    readonly resourceState?: TransformResourceState;
     readonly conditionContext?: ConditionContext;
   },
 ): TransformSnapshot {
@@ -1435,7 +1445,9 @@ export function buildTransformSnapshot(
       evaluateOutputAmounts(transform, formulaContext),
     );
     const canAfford = inputCosts
-      ? canAffordInputs(inputCosts, options.resourceState)
+      ? options.resourceState
+        ? canAffordInputs(inputCosts, options.resourceState)
+        : isZeroInputCost(inputCosts)
       : false;
     const isOnCooldown = cooldownRemainingMs > 0;
 
