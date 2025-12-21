@@ -1,6 +1,5 @@
 ---
 title: Resource State Storage Design
-sidebar_position: N/A
 ---
 
 # Resource State Storage Design
