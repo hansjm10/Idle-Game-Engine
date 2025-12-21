@@ -27,7 +27,13 @@ import {
 import { createProductionSystem } from '../production-system.js';
 import { createProgressionCoordinator } from '../progression-coordinator.js';
 import { hydrateProgressionCoordinatorState } from '../progression-coordinator-save.js';
-import { getCurrentRNGSeed, resetRNG, setRNGSeed } from '../rng.js';
+import {
+  getCurrentRNGSeed,
+  getRNGState,
+  resetRNG,
+  seededRandom,
+  setRNGSeed,
+} from '../rng.js';
 import type { ResourceDefinition } from '../resource-state.js';
 import { createTransformSystem } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
@@ -161,6 +167,9 @@ describe('restoreFromSnapshot', () => {
 
   it('restores a snapshot so capture round-trips with matching data', () => {
     setRNGSeed(4242);
+    seededRandom();
+    seededRandom();
+    const expectedRngState = getRNGState();
 
     const content = createTestContent();
     const resourceDefinitions = createResourceDefinitions(content.resources);
@@ -229,6 +238,8 @@ describe('restoreFromSnapshot', () => {
       commandQueue,
       productionSystem,
     });
+
+    expect(snapshot.runtime.rngState).toBe(expectedRngState);
 
     setRNGSeed(7);
 
@@ -310,6 +321,7 @@ describe('restoreFromSnapshot', () => {
 
     expect(roundTrip).toEqual(snapshot);
     expect(getCurrentRNGSeed()).toBe(snapshot.runtime.rngSeed);
+    expect(getRNGState()).toBe(snapshot.runtime.rngState);
   });
 
   it('skips RNG restoration when applyRngSeed is false', () => {
@@ -329,6 +341,7 @@ describe('restoreFromSnapshot', () => {
         step: 0,
         stepSizeMs: STEP_SIZE_MS,
         rngSeed: 1337,
+        rngState: 42,
       },
       resources,
       progression: {
@@ -366,6 +379,7 @@ describe('restoreFromSnapshot', () => {
     });
 
     expect(getCurrentRNGSeed()).toBe(9001);
+    expect(getRNGState()).toBe(9001);
   });
 
   it('reports added resource ids during reconciliation', () => {

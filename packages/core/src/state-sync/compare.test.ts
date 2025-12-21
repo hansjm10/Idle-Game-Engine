@@ -126,6 +126,7 @@ const createSnapshot = (): GameStateSnapshot => {
       step: 5,
       stepSizeMs: 100,
       rngSeed: 42,
+      rngState: 1337,
     },
     resources,
     progression,
@@ -169,7 +170,11 @@ describe('compareStates', () => {
     };
     const remote: GameStateSnapshot = {
       ...local,
-      runtime: { ...local.runtime, step: local.runtime.step + 1 },
+      runtime: {
+        ...local.runtime,
+        step: local.runtime.step + 1,
+        rngState: (local.runtime.rngState ?? 0) + 1,
+      },
       resources: updatedResources,
       progression: remoteProgression,
     };
@@ -178,6 +183,7 @@ describe('compareStates', () => {
 
     expect(diff.identical).toBe(false);
     expect(diff.runtime?.step).toEqual({ local: 5, remote: 6 });
+    expect(diff.runtime?.rngState).toEqual({ local: 1337, remote: 1338 });
     expect(diff.resources?.get('resource.energy')?.amount).toEqual({
       local: 10,
       remote: 20,

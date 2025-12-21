@@ -215,6 +215,7 @@ describe('captureGameStateSnapshot', () => {
         step: INITIAL_STEP,
         stepSizeMs: STEP_SIZE_MS,
         rngSeed: 4242,
+        rngState: 4242,
       },
       resources: expectedResources,
       progression: expectedProgression,

@@ -128,6 +128,8 @@ Returns `step`, `resources`, `generators`, `upgrades`, `achievements`, `producti
 **RNG State** (`packages/core/src/rng.ts`):
 - `getCurrentRNGSeed(): number | undefined`
 - `setRNGSeed(seed: number): void`
+- `getRNGState(): number | undefined`
+- `setRNGState(state: number): void`
 
 **Verification Runtime** (`packages/core/src/index.ts:940-979`):
 ```typescript
@@ -157,7 +159,7 @@ Hydrates a runtime from `EconomyStateSummary` for replay verification.
 │  ├── AutomationSystem state                                 │
 │  ├── TransformSystem state                                  │
 │  ├── CommandQueue.exportForSave()                           │
-│  └── Runtime metadata (step, rngSeed, stepSizeMs)           │
+│  └── Runtime metadata (step, stepSizeMs, rngSeed, rngState) │
 │                    │                                        │
 │                    ▼                                        │
 │  ┌─────────────────────────────────────────┐               │
@@ -195,6 +197,7 @@ export interface GameStateSnapshot {
     readonly step: number;
     readonly stepSizeMs: number;
     readonly rngSeed: number | undefined;
+    readonly rngState?: number;
   };
 
   /** Serialized resource state */
@@ -265,6 +268,7 @@ export function captureGameStateSnapshot(
       step: runtime.getCurrentStep(),
       stepSizeMs: runtime.getStepSizeMs(),
       rngSeed: getCurrentRNGSeed(),
+      rngState: getRNGState(),
     },
     resources: progressionCoordinator.resourceState.exportForSave(),
     progression: serializeProgressionCoordinatorState(
@@ -431,6 +435,9 @@ export function restoreFromSnapshot(
   if (applyRngSeed && snapshot.runtime.rngSeed !== undefined) {
     setRNGSeed(snapshot.runtime.rngSeed);
   }
+  if (applyRngSeed && snapshot.runtime.rngState !== undefined) {
+    setRNGState(snapshot.runtime.rngState);
+  }
 
   const currentStep = runtime.getCurrentStep();
   const rebaseStep =
@@ -528,6 +535,7 @@ export interface StateDiff {
     step?: { local: number; remote: number };
     stepSizeMs?: { local: number; remote: number };
     rngSeed?: { local: number | undefined; remote: number | undefined };
+    rngState?: { local: number | undefined; remote: number | undefined };
   };
 
   /** Resource differences (by resource ID) */
@@ -870,7 +878,9 @@ Commands agents must run:
 2. **Partial restore granularity**: Which subsets of state are useful for bandwidth optimization (resources only, commands only, etc.)?
 3. **Snapshot compression**: Should the protocol define optional compression, or leave that to transport?
 4. **Floating-point precision**: Should we quantize floats before hashing to avoid IEEE 754 edge cases?
-5. **RNG state restoration**: Should we expose and serialize RNG position for restore-and-continue workflows, or rely on replay from the seed?
+
+Decision: capture `runtime.rngState` in snapshots and restore it when present to
+support restore-and-continue determinism without changing the v1 schema.
 
 ## 14. Follow-Up Work
 

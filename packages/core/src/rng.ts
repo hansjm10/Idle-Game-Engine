@@ -7,10 +7,27 @@ export function getCurrentRNGSeed(): number | undefined {
   return currentSeed;
 }
 
+/**
+ * Returns the current internal RNG state (position) if seeded.
+ */
+export function getRNGState(): number | undefined {
+  return rngState;
+}
+
 export function setRNGSeed(seed: number): void {
   const normalized = seed >>> 0;
   currentSeed = normalized;
   rngState = normalized || 0x1;
+}
+
+/**
+ * Sets the internal RNG state for restore-and-continue workflows.
+ */
+export function setRNGState(state: number): void {
+  if (!Number.isFinite(state)) {
+    throw new Error('RNG state must be a finite number.');
+  }
+  rngState = state | 0;
 }
 
 export function resetRNG(): void {

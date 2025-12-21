@@ -67,6 +67,7 @@ export interface RuntimeDiff {
   readonly step?: ValueDiff<number>;
   readonly stepSizeMs?: ValueDiff<number>;
   readonly rngSeed?: ValueDiff<number | undefined>;
+  readonly rngState?: ValueDiff<number | undefined>;
 }
 
 export interface ResourceDiff {
@@ -292,6 +293,9 @@ const compareRuntime = (
     hasDiff;
   hasDiff =
     recordValueDiff(diff, 'rngSeed', local.rngSeed, remote.rngSeed) || hasDiff;
+  hasDiff =
+    recordValueDiff(diff, 'rngState', local.rngState, remote.rngState) ||
+    hasDiff;
 
   return hasDiff ? diff : undefined;
 };

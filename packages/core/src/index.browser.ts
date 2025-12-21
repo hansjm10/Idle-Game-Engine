@@ -1183,7 +1183,9 @@ export type {
 } from './immutable-snapshots.js';
 export {
   getCurrentRNGSeed,
+  getRNGState,
   setRNGSeed,
+  setRNGState,
   seededRandom,
   resetRNG,
 } from './rng.js';
