@@ -1,6 +1,5 @@
 ---
 title: Content Schema Rollout Decisions
-sidebar_position: TBD
 ---
 
 # Content Schema Rollout Decisions
