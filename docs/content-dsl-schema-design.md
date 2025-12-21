@@ -535,10 +535,12 @@ These hints are displayed in progression UI when upgrades are locked, helping pl
       - `costCurve`: `numericFormulaSchema` evaluated in the runtime against the
         current purchase count.
     - Multi-resource form:
-      - `costs`: array of `{ resourceId, baseCost, costCurve }` entries, where
-        `resourceId` is a `contentIdSchema` reference. Entries must be unique by
-        `resourceId` and are normalised to a deterministic ordering.
+    - `costs`: array of `{ resourceId, baseCost, costCurve }` entries, where
+      `resourceId` is a `contentIdSchema` reference. Entries must be unique by
+      `resourceId` and are normalised to a deterministic ordering.
     - `maxBulk`: optional `positiveIntSchema` constraining bulk-buy UI affordances.
+  - `initialLevel`: optional non-negative integer defaulting to `0`, applied as
+    the starting owned count when initializing a new game state.
   - `maxLevel`: optional positive integer.
   - `order`: optional float controlling list ordering (sorted before id during
     normalisation).

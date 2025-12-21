@@ -1761,15 +1761,16 @@ function createGeneratorRecord(
 ): GeneratorRecord {
   const produces = buildGeneratorRates(generator.produces);
   const consumes = buildGeneratorRates(generator.consumes);
+  const initialLevel = generator.initialLevel ?? 0;
 
   const state: Mutable<ProgressionGeneratorState> = initial
     ? (initial as Mutable<ProgressionGeneratorState>)
     : ({
         id: generator.id,
         displayName: getDisplayName(generator.name, generator.id),
-        owned: 0,
+        owned: initialLevel,
         enabled: true,
-        isUnlocked: false,
+        isUnlocked: initialLevel > 0,
         isVisible: true,
         unlockHint: undefined,
         produces,

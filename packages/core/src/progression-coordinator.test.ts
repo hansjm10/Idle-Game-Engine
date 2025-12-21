@@ -1009,6 +1009,41 @@ describe('progression-coordinator', () => {
     expect(record.state.isUnlocked).toBe(true);
   });
 
+  it('seeds generators with initialLevel on fresh state without reapplying on save', () => {
+    const generator = createGeneratorDefinition('generator.seeded', {
+      initialLevel: 2,
+      baseUnlock: { kind: 'always' },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({ generators: [generator] }),
+      stepDurationMs: 100,
+    }) as unknown as {
+      getGeneratorRecord(
+        id: string,
+      ): { state: { owned: number; isUnlocked: boolean } } | undefined;
+      incrementGeneratorOwned(id: string, count: number): void;
+      state: ReturnType<typeof createProgressionCoordinator>['state'];
+    };
+
+    const record = coordinator.getGeneratorRecord('generator.seeded');
+    expect(record?.state.owned).toBe(2);
+    expect(record?.state.isUnlocked).toBe(true);
+
+    coordinator.incrementGeneratorOwned('generator.seeded', 3);
+
+    const restored = createProgressionCoordinator({
+      content: createContentPack({ generators: [generator] }),
+      stepDurationMs: 100,
+      initialState: coordinator.state,
+    }) as unknown as {
+      getGeneratorRecord(id: string): { state: { owned: number } } | undefined;
+    };
+
+    const restoredRecord = restored.getGeneratorRecord('generator.seeded');
+    expect(restoredRecord?.state.owned).toBe(5);
+  });
+
   it('quotes generator purchases using baseCost multipliers', () => {
     const coordinator = createProgressionCoordinator({
       content: createBaseCostGeneratorContentPack(),

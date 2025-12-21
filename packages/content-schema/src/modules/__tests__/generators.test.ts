@@ -34,6 +34,38 @@ describe('generatorDefinitionSchema', () => {
     expect(definition.effects).toHaveLength(1);
   });
 
+  it('defaults initialLevel to 0', () => {
+    const definition = generatorDefinitionSchema.parse(baseGenerator);
+
+    expect(definition.initialLevel).toBe(0);
+  });
+
+  it('rejects invalid initialLevel values', () => {
+    expect(() =>
+      generatorDefinitionSchema.parse({
+        ...baseGenerator,
+        initialLevel: -1,
+      }),
+    ).toThrowError(/greater than or equal to 0/i);
+
+    expect(() =>
+      generatorDefinitionSchema.parse({
+        ...baseGenerator,
+        initialLevel: 1.5,
+      }),
+    ).toThrowError(/integer/i);
+  });
+
+  it('rejects initialLevel above maxLevel', () => {
+    expect(() =>
+      generatorDefinitionSchema.parse({
+        ...baseGenerator,
+        maxLevel: 2,
+        initialLevel: 3,
+      }),
+    ).toThrowError(/initial level cannot exceed generator max level/i);
+  });
+
   it('rejects duplicate resource references in production', () => {
     expect(() =>
       generatorDefinitionSchema.parse({

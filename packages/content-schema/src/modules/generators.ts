@@ -11,6 +11,7 @@ import { localizedTextSchema } from '../base/localization.js';
 import { numericFormulaSchema } from '../base/formulas.js';
 import {
   finiteNumberSchema,
+  integerSchema,
   nonNegativeNumberSchema,
   positiveIntSchema,
 } from '../base/numbers.js';
@@ -26,6 +27,10 @@ const tagSchema = z
       'Tags must start with an alphanumeric character and may include "-", "_", ":", or "/" thereafter.',
   })
   .transform((value) => value.toLowerCase());
+
+const nonNegativeIntSchema = integerSchema.refine((value) => value >= 0, {
+  message: 'Value must be greater than or equal to 0.',
+});
 
 type ContentId = z.infer<typeof contentIdSchema>;
 type CostEntry = z.infer<typeof costEntrySchema>;
@@ -108,6 +113,7 @@ type GeneratorDefinitionInput = {
   readonly produces: readonly z.input<typeof productionEntrySchema>[];
   readonly consumes?: readonly z.input<typeof consumptionEntrySchema>[];
   readonly purchase: PurchaseInput;
+  readonly initialLevel?: z.input<typeof nonNegativeIntSchema>;
   readonly maxLevel?: z.input<typeof positiveIntSchema>;
   readonly order?: z.input<typeof finiteNumberSchema>;
   readonly baseUnlock: z.input<typeof conditionSchema>;
@@ -124,6 +130,7 @@ type GeneratorDefinition = {
   readonly produces: readonly z.infer<typeof productionEntrySchema>[];
   readonly consumes: readonly z.infer<typeof consumptionEntrySchema>[];
   readonly purchase: PurchaseDefinition;
+  readonly initialLevel: number;
   readonly maxLevel?: number;
   readonly order?: number;
   readonly baseUnlock: z.infer<typeof conditionSchema>;
@@ -199,6 +206,7 @@ export const generatorDefinitionSchema: z.ZodType<
     }),
     consumes: z.array(consumptionEntrySchema).default([]),
     purchase: purchaseSchema,
+    initialLevel: nonNegativeIntSchema.default(0),
     maxLevel: positiveIntSchema.optional(),
     order: finiteNumberSchema.optional(),
     baseUnlock: conditionSchema,
@@ -215,7 +223,7 @@ export const generatorDefinitionSchema: z.ZodType<
   .superRefine((generator, ctx) => {
     ensureUniqueResourceHandles(generator.produces, ctx, ['produces']);
     ensureUniqueResourceHandles(generator.consumes, ctx, ['consumes']);
-    const { maxLevel, purchase } = generator;
+    const { initialLevel, maxLevel, purchase } = generator;
     if (purchase.maxBulk !== undefined && maxLevel !== undefined) {
       if (purchase.maxBulk > maxLevel) {
         ctx.addIssue({
@@ -224,6 +232,13 @@ export const generatorDefinitionSchema: z.ZodType<
           message: 'Bulk purchase limit cannot exceed generator max level.',
         });
       }
+    }
+    if (maxLevel !== undefined && initialLevel > maxLevel) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['initialLevel'],
+        message: 'Initial level cannot exceed generator max level.',
+      });
     }
   })
   .transform((generator) => ({

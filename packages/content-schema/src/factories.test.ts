@@ -112,6 +112,7 @@ describe('createGenerator', () => {
     expect(result.produces[0].resourceId).toBe('test.energy');
     // Verify defaults
     expect(result.consumes).toEqual([]);
+    expect(result.initialLevel).toBe(0);
     expect(result.tags).toEqual([]);
   });
 
