@@ -42,6 +42,16 @@ export function fnv1a32(data: Uint8Array): string {
 
 /**
  * Compute a deterministic checksum for a game state snapshot.
+ *
+ * The checksum excludes `capturedAt` because it is diagnostic only.
+ *
+ * @example
+ * ```typescript
+ * const checksum = computeStateChecksum(snapshot);
+ * if (checksum !== expected) {
+ *   console.warn('Snapshot mismatch detected.');
+ * }
+ * ```
  */
 export function computeStateChecksum(snapshot: GameStateSnapshot): string {
   const checksumSnapshot = {
@@ -59,6 +69,12 @@ export function computeStateChecksum(snapshot: GameStateSnapshot): string {
 
 /**
  * Compute checksum for a partial snapshot (e.g., resources only).
+ *
+ * @example
+ * ```typescript
+ * const resourcesChecksum = computePartialChecksum(snapshot, ['resources']);
+ * const commandsChecksum = computePartialChecksum(snapshot, ['commandQueue']);
+ * ```
  */
 export function computePartialChecksum<K extends keyof GameStateSnapshot>(
   snapshot: GameStateSnapshot,

@@ -415,29 +415,33 @@ export function restoreFromSnapshot(
     applyRngSeed = true,
   } = options;
 
-  // 1. Hydrate resource state
   const { resources, reconciliation } = hydrateResourceStateFromSerialized(
     snapshot.resources,
     resourceDefinitions,
   );
 
-  // 2. Create runtime at snapshot step
-  const runtime = new IdleEngineRuntime({
+  const commandQueue = runtimeOptions?.commandQueue ?? new CommandQueue();
+  const runtime = resolveRuntimeFactory()({
     ...runtimeOptions,
+    commandQueue,
     stepSizeMs: runtimeOptions?.stepSizeMs ?? snapshot.runtime.stepSizeMs,
     initialStep: runtimeOptions?.initialStep ?? snapshot.runtime.step,
   });
 
-  // 3. Apply RNG seed
   if (applyRngSeed && snapshot.runtime.rngSeed !== undefined) {
     setRNGSeed(snapshot.runtime.rngSeed);
   }
 
-  // 4. Restore command queue
-  const commandQueue = new CommandQueue();
-  commandQueue.restoreFromSave(snapshot.commandQueue, {
-    currentStep: snapshot.runtime.step,
-  });
+  const currentStep = runtime.getCurrentStep();
+  const rebaseStep =
+    currentStep !== snapshot.runtime.step
+      ? { savedStep: snapshot.runtime.step, currentStep }
+      : undefined;
+
+  commandQueue.restoreFromSave(
+    snapshot.commandQueue,
+    rebaseStep ? { rebaseStep } : undefined,
+  );
 
   return { runtime, resources, reconciliation, commandQueue };
 }
@@ -445,7 +449,15 @@ export function restoreFromSnapshot(
 /**
  * Restore only specific components for bandwidth optimization.
  */
-export type RestoreMode = 'full' | 'resources' | 'progression' | 'commands';
+export type RestoreMode = 'full' | 'resources' | 'commands';
+
+export interface RestorePartialOptions {
+  /** Optional command step rebasing for restores into a different timeline. */
+  readonly rebaseCommands?: Readonly<{
+    readonly savedStep: number;
+    readonly currentStep: number;
+  }>;
+}
 
 export function restorePartial(
   snapshot: GameStateSnapshot,
@@ -454,25 +466,53 @@ export function restorePartial(
     resources?: ResourceState;
     commandQueue?: CommandQueue;
   },
+  options: RestorePartialOptions = {},
 ): void {
+  const applyResources = () => {
+    if (!target.resources) {
+      return;
+    }
+    assertSerializedResourceState(snapshot.resources);
+    const remap = buildRemapFromResources(
+      target.resources,
+      snapshot.resources,
+    );
+    applySerializedResourceState(
+      target.resources,
+      snapshot.resources,
+      remap,
+    );
+  };
+
+  const restoreCommands = () => {
+    if (!target.commandQueue) {
+      return;
+    }
+    const rebaseStep = options.rebaseCommands;
+    target.commandQueue.restoreFromSave(
+      snapshot.commandQueue,
+      rebaseStep ? { rebaseStep } : undefined,
+    );
+  };
+
   switch (mode) {
+    case 'full':
+      applyResources();
+      restoreCommands();
+      break;
     case 'resources':
-      if (target.resources) {
-        // Apply resource amounts/capacities without full rehydration
-        applyResourceDelta(target.resources, snapshot.resources);
-      }
+      applyResources();
       break;
     case 'commands':
-      if (target.commandQueue) {
-        target.commandQueue.restoreFromSave(snapshot.commandQueue, {
-          currentStep: snapshot.runtime.step,
-        });
-      }
+      restoreCommands();
       break;
-    // Additional modes as needed
   }
 }
 ```
+
+Note: `restoreFromSnapshot()` depends on a runtime factory configured via
+`setRestoreRuntimeFactory()`. The public `@idle-engine/core` entrypoints set
+this to `IdleEngineRuntime` automatically.
 
 #### 6.2.5 Divergence Detection API
 
@@ -571,6 +611,81 @@ export function hasStateDiverged(
 ): boolean {
   return computeStateChecksum(local) !== computeStateChecksum(remote);
 }
+```
+
+#### 6.2.6 Usage Patterns
+
+**Snapshots vs checksums**
+- Use `computeStateChecksum()` or `hasStateDiverged()` for frequent sync checks.
+- Use full snapshots for state transfer, resync, or audit workflows.
+- `capturedAt` is excluded from checksums; set it explicitly for deterministic testing.
+
+**Round-trip verification**
+```typescript
+const snapshot = captureGameStateSnapshot({
+  runtime,
+  progressionCoordinator,
+  commandQueue: runtime.getCommandQueue(),
+  getAutomationState: () => getAutomationState(automationSystem),
+  getTransformState: () => getTransformState(transformSystem),
+  capturedAt: 0,
+});
+
+const restored = restoreFromSnapshot({
+  snapshot,
+  resourceDefinitions,
+});
+
+const restoredCoordinator = createProgressionCoordinator({
+  content,
+  stepDurationMs: snapshot.runtime.stepSizeMs,
+  initialState: {
+    stepDurationMs: snapshot.runtime.stepSizeMs,
+    resources: { state: restored.resources },
+  },
+});
+
+hydrateProgressionCoordinatorState(
+  snapshot.progression,
+  restoredCoordinator,
+  undefined,
+  { skipResources: true },
+);
+
+const roundTrip = captureGameStateSnapshot({
+  runtime: restored.runtime as IdleEngineRuntime,
+  progressionCoordinator: restoredCoordinator,
+  commandQueue: restored.commandQueue,
+  getAutomationState: () => getAutomationState(automationSystem),
+  getTransformState: () => getTransformState(transformSystem),
+  capturedAt: 0,
+});
+
+const diff = compareStates(snapshot, roundTrip);
+console.log('Round-trip identical:', diff.identical);
+```
+
+**Debugging desyncs**
+```typescript
+if (hasStateDiverged(localSnapshot, remoteSnapshot)) {
+  const diff = compareStates(localSnapshot, remoteSnapshot);
+  console.warn('Desync details:', diff);
+}
+```
+
+**Partial snapshot/restore for bandwidth**
+```typescript
+const resourcesChecksum = computePartialChecksum(snapshot, ['resources']);
+if (resourcesChecksum !== computePartialChecksum(remoteSnapshot, ['resources'])) {
+  restorePartial(snapshot, 'resources', { resources });
+}
+
+restorePartial(
+  snapshot,
+  'commands',
+  { commandQueue },
+  { rebaseCommands: { savedStep: snapshot.runtime.step, currentStep: runtime.getCurrentStep() } },
+);
 ```
 
 ### 6.3 Operational Considerations

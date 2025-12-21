@@ -961,6 +961,14 @@ const compareCommandQueue = (
 /**
  * Compare two snapshots and return detailed differences.
  * Useful for debugging desync issues.
+ *
+ * @example
+ * ```typescript
+ * const diff = compareStates(localSnapshot, remoteSnapshot);
+ * if (!diff.identical) {
+ *   console.log('Divergence detected:', diff);
+ * }
+ * ```
  */
 export function compareStates(
   local: GameStateSnapshot,
@@ -1023,6 +1031,14 @@ export function compareStates(
 /**
  * Quick divergence check using checksums only.
  * Use this for periodic sync checks; fall back to compareStates() for debugging.
+ *
+ * @example
+ * ```typescript
+ * if (hasStateDiverged(localSnapshot, remoteSnapshot)) {
+ *   const diff = compareStates(localSnapshot, remoteSnapshot);
+ *   console.warn('Desync details:', diff);
+ * }
+ * ```
  */
 export function hasStateDiverged(
   local: GameStateSnapshot,
