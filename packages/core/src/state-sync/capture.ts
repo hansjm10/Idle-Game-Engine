@@ -29,6 +29,25 @@ export interface CaptureSnapshotOptions {
   };
 }
 
+/**
+ * Capture a unified snapshot of runtime state for synchronization or persistence.
+ *
+ * The snapshot bundles runtime metadata, resources, progression, automation,
+ * transforms, and the command queue. Use `capturedAt` when you need a
+ * deterministic timestamp for tests or diffing; it is diagnostic only.
+ *
+ * @example
+ * ```typescript
+ * const snapshot = captureGameStateSnapshot({
+ *   runtime,
+ *   progressionCoordinator,
+ *   commandQueue: runtime.getCommandQueue(),
+ *   getAutomationState: () => getAutomationState(automationSystem),
+ *   getTransformState: () => getTransformState(transformSystem),
+ *   capturedAt: 0,
+ * });
+ * ```
+ */
 export function captureGameStateSnapshot(
   options: CaptureSnapshotOptions,
 ): GameStateSnapshot {

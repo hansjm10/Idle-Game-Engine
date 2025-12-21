@@ -185,6 +185,21 @@ const hydrateResourceStateFromSerialized = (
   return { resources, reconciliation };
 };
 
+/**
+ * Restore a runtime, resources, and command queue from a snapshot.
+ *
+ * Note: restoreFromSnapshot relies on a runtime factory configured via
+ * `setRestoreRuntimeFactory`. The `@idle-engine/core` entrypoint wires this
+ * for `IdleEngineRuntime`.
+ *
+ * @example
+ * ```typescript
+ * const { runtime, resources, commandQueue } = restoreFromSnapshot({
+ *   snapshot,
+ *   resourceDefinitions,
+ * });
+ * ```
+ */
 export function restoreFromSnapshot(
   options: RestoreSnapshotOptions,
 ): RestoredRuntime {
@@ -239,6 +254,20 @@ export interface RestorePartialOptions {
   }>;
 }
 
+/**
+ * Restore selected snapshot components into existing instances.
+ *
+ * @example
+ * ```typescript
+ * restorePartial(snapshot, 'resources', { resources });
+ * restorePartial(
+ *   snapshot,
+ *   'commands',
+ *   { commandQueue },
+ *   { rebaseCommands: { savedStep: snapshot.runtime.step, currentStep: runtime.getCurrentStep() } },
+ * );
+ * ```
+ */
 export function restorePartial(
   snapshot: GameStateSnapshot,
   mode: RestoreMode,
