@@ -10,6 +10,7 @@ import {
 } from './content-test-helpers.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import { createGameRuntime } from './index.js';
+import { resetRNG, setRNGSeed } from './rng.js';
 
 function createTestAutomation() {
   return createAutomation({
@@ -189,5 +190,71 @@ describe('createGameRuntime', () => {
     expect(firstOptions).toBeDefined();
     expect(firstOptions).toHaveProperty('events');
     expect(typeof firstOptions?.events?.publish).toBe('function');
+  });
+
+  it('serializes and hydrates wiring state with convenience methods', () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const wiring = createGameRuntime({
+      content: createContentWithGeneratorAutomationAndTransform(),
+      stepSizeMs: 100,
+    });
+
+    wiring.runtime.tick(wiring.runtime.getStepSizeMs() * 2);
+
+    const automationSystem = wiring.automationSystem;
+    const transformSystem = wiring.transformSystem;
+    if (!automationSystem || !transformSystem) {
+      throw new Error('Expected automation and transform systems to be wired.');
+    }
+
+    const runtimeStep = wiring.runtime.getCurrentStep();
+    automationSystem.restoreState(
+      [
+        {
+          id: 'automation.test',
+          enabled: true,
+          lastFiredStep: runtimeStep - 1,
+          cooldownExpiresStep: runtimeStep + 3,
+          unlocked: true,
+          lastThresholdSatisfied: false,
+        },
+      ],
+      { savedWorkerStep: runtimeStep, currentStep: runtimeStep },
+    );
+
+    transformSystem.restoreState(
+      [
+        {
+          id: 'transform.test',
+          unlocked: true,
+          cooldownExpiresStep: runtimeStep + 2,
+        },
+      ],
+      { savedWorkerStep: runtimeStep, currentStep: runtimeStep },
+    );
+
+    wiring.commandQueue.enqueue({
+      type: 'test:noop',
+      payload: { message: 'hello' },
+      priority: CommandPriority.PLAYER,
+      timestamp: 1000,
+      step: wiring.runtime.getNextExecutableStep(),
+    });
+
+    const savedAt = 1234;
+    const save = wiring.serialize({ savedAt });
+
+    const restored = createGameRuntime({
+      content: createContentWithGeneratorAutomationAndTransform(),
+      stepSizeMs: 100,
+      initialStep: save.runtime.step,
+    });
+
+    restored.hydrate(save);
+
+    const roundTrip = restored.serialize({ savedAt });
+    expect(roundTrip).toEqual(save);
   });
 });

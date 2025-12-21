@@ -52,6 +52,11 @@ import {
 } from './resource-state.js';
 import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
 import {
+  hydrateGameStateSaveFormat,
+  serializeGameStateSaveFormat,
+  type GameStateSaveFormat,
+} from './game-state-save.js';
+import {
   restoreFromSnapshot as restoreFromSnapshotInternal,
   restorePartial,
   setRestoreRuntimeFactory,
@@ -775,6 +780,22 @@ export type GameRuntimeWiring = Readonly<{
   readonly automationSystem?: ReturnType<typeof createAutomationSystem>;
   readonly transformSystem?: ReturnType<typeof createTransformSystem>;
   readonly systems: readonly System[];
+  readonly serialize: (options?: GameRuntimeSerializeOptions) => GameStateSaveFormat;
+  readonly hydrate: (
+    save: GameStateSaveFormat,
+    options?: GameRuntimeHydrateOptions,
+  ) => void;
+}>;
+
+export type GameRuntimeSerializeOptions = Readonly<{
+  readonly savedAt?: number;
+  readonly rngSeed?: number;
+  readonly runtimeStep?: number;
+}>;
+
+export type GameRuntimeHydrateOptions = Readonly<{
+  readonly currentStep?: number;
+  readonly applyRngSeed?: boolean;
 }>;
 
 export type CreateGameRuntimeOptions = Readonly<{
@@ -991,6 +1012,37 @@ export function wireGameRuntime(
     });
   }
 
+  const serialize = (
+    options?: GameRuntimeSerializeOptions,
+  ): GameStateSaveFormat =>
+    serializeGameStateSaveFormat({
+      runtimeStep: options?.runtimeStep ?? runtime.getCurrentStep(),
+      savedAt: options?.savedAt,
+      rngSeed: options?.rngSeed,
+      coordinator,
+      productionSystem,
+      automationState: automationSystem?.getState(),
+      transformState: transformSystem?.getState(),
+      commandQueue: runtime.getCommandQueue(),
+    });
+
+  const hydrate = (
+    save: GameStateSaveFormat,
+    options?: GameRuntimeHydrateOptions,
+  ): void => {
+    const currentStep = options?.currentStep ?? runtime.getCurrentStep();
+    hydrateGameStateSaveFormat({
+      save,
+      coordinator,
+      productionSystem,
+      automationSystem,
+      transformSystem,
+      commandQueue: runtime.getCommandQueue(),
+      currentStep,
+      applyRngSeed: options?.applyRngSeed,
+    });
+  };
+
   return {
     runtime,
     coordinator,
@@ -1000,6 +1052,8 @@ export function wireGameRuntime(
     automationSystem,
     transformSystem,
     systems,
+    serialize,
+    hydrate,
   };
 }
 

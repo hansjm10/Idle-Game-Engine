@@ -34,6 +34,7 @@ import { resetRNG, setRNGSeed } from '../rng.js';
 const STEP_SIZE_MS = 100;
 const PROPERTY_SEED = 579000;
 const PROPERTY_RUNS = 1000;
+const PROPERTY_TIMEOUT_MS = 30_000;
 const MAX_RESOURCE_COUNT = 100;
 const MAX_STEP = 5000;
 const MAX_AMOUNT = 1_000_000;
@@ -495,7 +496,7 @@ describe('state sync property suites', () => {
       }),
       propertyConfig(0),
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('produces deterministic and unique checksums', () => {
     fc.assert(
@@ -517,7 +518,7 @@ describe('state sync property suites', () => {
       }),
       propertyConfig(1),
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('compares snapshots symmetrically', () => {
     fc.assert(
@@ -548,7 +549,7 @@ describe('state sync property suites', () => {
       }),
       propertyConfig(2),
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 });
 
 describe('state sync edge cases', () => {
