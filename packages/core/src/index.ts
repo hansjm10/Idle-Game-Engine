@@ -35,7 +35,7 @@ import {
   type ResourceState,
   type SerializedResourceState,
 } from './resource-state.js';
-import { getCurrentRNGSeed, getRNGState, setRNGSeed, setRNGState } from './rng.js';
+import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
 import {
   restoreFromSnapshot as restoreFromSnapshotInternal,
   restorePartial,
