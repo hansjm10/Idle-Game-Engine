@@ -1,6 +1,6 @@
 import type { IdleEngineRuntimeOptions } from '../index.js';
 import { CommandQueue } from '../command-queue.js';
-import { setRNGSeed } from '../rng.js';
+import { setRNGSeed, setRNGState } from '../rng.js';
 import {
   createResourceState,
   reconcileSaveAgainstDefinitions,
@@ -42,7 +42,7 @@ export interface RestoreSnapshotOptions {
   /** Runtime options (overrides snapshot values if provided) */
   readonly runtimeOptions?: Partial<IdleEngineRuntimeOptions>;
 
-  /** Whether to apply RNG seed from snapshot (default: true) */
+  /** Whether to apply RNG seed/state from snapshot (default: true) */
   readonly applyRngSeed?: boolean;
 }
 
@@ -190,7 +190,8 @@ const hydrateResourceStateFromSerialized = (
  *
  * Note: restoreFromSnapshot relies on a runtime factory configured via
  * `setRestoreRuntimeFactory`. The `@idle-engine/core` entrypoint wires this
- * for `IdleEngineRuntime`.
+ * for `IdleEngineRuntime`. When present, `runtime.rngState` is also restored
+ * to preserve RNG position for restore-and-continue workflows.
  *
  * @example
  * ```typescript
@@ -225,6 +226,9 @@ export function restoreFromSnapshot(
 
   if (applyRngSeed && snapshot.runtime.rngSeed !== undefined) {
     setRNGSeed(snapshot.runtime.rngSeed);
+  }
+  if (applyRngSeed && snapshot.runtime.rngState !== undefined) {
+    setRNGState(snapshot.runtime.rngState);
   }
 
   const currentStep = runtime.getCurrentStep();

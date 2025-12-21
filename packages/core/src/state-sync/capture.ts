@@ -5,7 +5,7 @@ import type { IdleEngineRuntime } from '../index.js';
 import type { SerializedProductionAccumulators } from '../production-system.js';
 import type { ProgressionCoordinator } from '../progression-coordinator.js';
 import { serializeProgressionCoordinatorState } from '../progression-coordinator-save.js';
-import { getCurrentRNGSeed } from '../rng.js';
+import { getCurrentRNGSeed, getRNGState } from '../rng.js';
 import type { TransformState } from '../transform-system.js';
 import { serializeTransformState } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
@@ -32,9 +32,10 @@ export interface CaptureSnapshotOptions {
 /**
  * Capture a unified snapshot of runtime state for synchronization or persistence.
  *
- * The snapshot bundles runtime metadata, resources, progression, automation,
- * transforms, and the command queue. Use `capturedAt` when you need a
- * deterministic timestamp for tests or diffing; it is diagnostic only.
+ * The snapshot bundles runtime metadata (including RNG seed/state), resources,
+ * progression, automation, transforms, and the command queue. Use `capturedAt`
+ * when you need a deterministic timestamp for tests or diffing; it is
+ * diagnostic only.
  *
  * @example
  * ```typescript
@@ -71,6 +72,7 @@ export function captureGameStateSnapshot(
       step: runtime.getCurrentStep(),
       stepSizeMs: runtime.getStepSizeMs(),
       rngSeed: getCurrentRNGSeed(),
+      rngState: getRNGState(),
     },
     resources: progressionCoordinator.resourceState.exportForSave(),
     progression: serializeProgressionCoordinatorState(

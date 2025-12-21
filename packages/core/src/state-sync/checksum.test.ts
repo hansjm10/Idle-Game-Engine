@@ -57,6 +57,7 @@ const snapshotA: GameStateSnapshot = {
     step: 5,
     stepSizeMs: 100,
     rngSeed: 42,
+    rngState: 1337,
   },
   resources: resourcesA,
   progression: progressionA,
@@ -72,6 +73,7 @@ const snapshotB: GameStateSnapshot = {
     rngSeed: 42,
     stepSizeMs: 100,
     step: 5,
+    rngState: 1337,
   },
   resources: resourcesB,
   progression: progressionB,
@@ -98,6 +100,18 @@ describe('computeStateChecksum', () => {
       runtime: {
         ...snapshotA.runtime,
         step: snapshotA.runtime.step + 1,
+      },
+    };
+
+    expect(computeStateChecksum(snapshotA)).not.toBe(computeStateChecksum(changed));
+  });
+
+  it('changes when rngState changes', () => {
+    const changed: GameStateSnapshot = {
+      ...snapshotA,
+      runtime: {
+        ...snapshotA.runtime,
+        rngState: 1338,
       },
     };
 

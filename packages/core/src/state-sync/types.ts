@@ -24,6 +24,9 @@ export interface GameStateSnapshot {
 
     /** Original RNG seed captured from runtime, not the current RNG position. */
     readonly rngSeed: number | undefined;
+
+    /** RNG state for restore-and-continue workflows. */
+    readonly rngState?: number;
   };
 
   /** Serialized resource state. */

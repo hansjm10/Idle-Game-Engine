@@ -35,7 +35,7 @@ import {
   type ResourceState,
   type SerializedResourceState,
 } from './resource-state.js';
-import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
+import { getCurrentRNGSeed, getRNGState, setRNGSeed, setRNGState } from './rng.js';
 import {
   restoreFromSnapshot as restoreFromSnapshotInternal,
   restorePartial,
@@ -1157,7 +1157,9 @@ export type {
 } from './immutable-snapshots.js';
 export {
   getCurrentRNGSeed,
+  getRNGState,
   setRNGSeed,
+  setRNGState,
   seededRandom,
   resetRNG,
 } from './rng.js';
