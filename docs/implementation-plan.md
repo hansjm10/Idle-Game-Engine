@@ -1,6 +1,5 @@
 ---
 title: Idle Engine Implementation Plan
-sidebar_position: TBD
 ---
 
 # Idle Engine Implementation Plan
