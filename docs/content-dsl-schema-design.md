@@ -1,6 +1,5 @@
 ---
 title: Content DSL Schema Design
-sidebar_position: TBD
 ---
 
 # Content DSL Schema Design
