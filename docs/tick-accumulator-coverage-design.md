@@ -1,6 +1,5 @@
 ---
 title: Tick Accumulator Edge Case Coverage
-sidebar_position: TBD
 ---
 
 # Tick Accumulator Edge Case Coverage
