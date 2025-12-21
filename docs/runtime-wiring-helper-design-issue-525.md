@@ -115,6 +115,7 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
     - `initialProgressionState?: ProgressionAuthoritativeState` (optional; passed to `createProgressionCoordinator`)
     - `enableProduction?: boolean` (default: `content.generators.length > 0`)
     - `enableAutomation?: boolean` (default: `content.automations.length > 0`)
+    - `enableTransforms?: boolean` (default: `content.transforms.length > 0`)
     - `production?: { applyViaFinalizeTick?: boolean }` (default: `false`; see finalize/apply notes below)
     - `registerOfflineCatchup?: boolean` (default: `true`; see Section 13)
   - Return a `GameRuntimeWiring` object that includes:
@@ -122,6 +123,7 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
     - `coordinator: ProgressionCoordinator`
     - `productionSystem?: ProductionSystem`
     - `automationSystem?: ReturnType<typeof createAutomationSystem>`
+    - `transformSystem?: ReturnType<typeof createTransformSystem>`
     - `systems: readonly System[]` (the exact system instances in the order added; used by tests and diagnostics)
     - `commandQueue: CommandQueue` and `commandDispatcher: CommandDispatcher` (or references via runtime getters)
 - **Canonical system IDs and ordering**:
@@ -129,20 +131,24 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
     1. Production (if content has generators, and production is enabled)
     2. Resource finalize (only when production is configured with `applyViaFinalizeTick: true`)
     3. Automation (if content has automations, and automation is enabled)
-    4. Progression coordinator update system (always; provides step alignment)
+    4. Transforms (if content has transforms, and transforms are enabled)
+    5. Progression coordinator update system (always; provides step alignment)
   - Ordering rationale:
     - Production runs before automation so resource mutations (or queued rates) are visible when automation evaluates thresholds.
     - When enabled, `resourceState.finalizeTick(deltaMs)` runs immediately after production so balances are applied before automation reads amounts.
+    - Transform runs after automation to mirror shell-web wiring and ensure automation toggles/commands land before transform evaluation.
     - The coordinator update system runs last and uses `updateForStep(step + 1)` so achievement-derived unlocks/rewards (which are evaluated inside `updateForStep`) become visible starting the next tick, avoiding “unlock-and-fire” chains within the same step while preserving immediate command-side effects.
   - Canonical system IDs (defaults; used by tests and diagnostics):
     - Production: `production` (default id from `createProductionSystem`)
     - Resource finalize: `resource-finalize` (new system owned by the helper)
     - Automation: `automation-system` (id from `createAutomationSystem`)
+    - Transform: `transform-system` (id from `createTransformSystem`)
     - Coordinator update: `progression-coordinator` (matches `packages/shell-web/src/runtime.worker.ts:209`)
   - The coordinator update system MUST call `coordinator.updateForStep(context.step + 1, { events: context.events })` to keep coordinator state aligned with the runtime’s `currentStep` after the tick completes (existing pattern: `packages/shell-web/src/runtime.worker.ts:208`).
 - **Standard system wiring details**:
   - Production: wire `createProductionSystem` against coordinator generator state by mapping coordinator generators into `GeneratorProductionState` (notably: ensure `produces`/`consumes` are always arrays; see snippet below) and `coordinator.resourceState`.
   - Automation: wire `createAutomationSystem` using `commandQueue: runtime.getCommandQueue()`, `resourceState: createResourceStateAdapter(coordinator.resourceState)`, `conditionContext: coordinator.getConditionContext()`, and `isAutomationUnlocked: (id) => coordinator.getGrantedAutomationIds().has(id)`.
+  - Transforms: wire `createTransformSystem` using `transforms: content.transforms`, `resourceState: createResourceStateAdapter(coordinator.resourceState)`, `conditionContext: coordinator.getConditionContext()`, and `stepDurationMs`.
 - **Finalize/apply semantics wiring**:
   - When `applyViaFinalizeTick: true`, insert a `ResourceFinalizeSystem` immediately after production and before automation so that:
     - production can queue per-second rates (`applyIncome/applyExpense`)
@@ -155,6 +161,7 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
   - The helper MUST register:
     - `registerResourceCommandHandlers` with coordinator-derived evaluators (generator purchases + toggles, plus optional upgrade/prestige evaluators when present) (`packages/shell-web/src/runtime.worker.ts:170`).
     - `registerAutomationCommandHandlers` when automation is enabled (`packages/shell-web/src/runtime.worker.ts:215`).
+    - `registerTransformCommandHandlers` when transforms are enabled (`packages/shell-web/src/runtime.worker.ts:225`).
   - The helper SHOULD register `registerOfflineCatchupCommandHandler` by default (`registerOfflineCatchup: true`) and allow opting out for shells that manage offline reconciliation externally (`packages/shell-web/src/runtime.worker.ts:188`).
 - **Documentation deliverable (issue-525)**:
   - This design doc MUST include:
@@ -416,12 +423,11 @@ The following items are treated as **resolved decisions** for the issue-525 impl
    - Rationale: Safe under backlog/multi-step `runtime.tick(deltaMs)` processing and avoids correctness hazards tied to additive per-second accumulators. The rate-display trade-off (`perTick` remaining `0`) is acceptable as a default; shells that want live rates can opt into finalize/apply mode with the constraints below.
 5. **Finalize/apply safety default**: When `production.applyViaFinalizeTick: true` and `maxStepsPerFrame` is not provided, set `maxStepsPerFrame = 1`.
    - Rationale: Prevents a subtle but severe drift bug when `runtime.tick()` processes multiple steps per call while per-second rate buffers are additive and only reset on publish/reset boundaries.
-6. **Transforms**: Keep `TransformSystem` wiring out of scope for issue-525 v1.
-   - Rationale: Issue-525 does not require transforms, and transform wiring has its own design/rollout concerns (see issue-523); it remains a follow-up.
+6. **Transforms**: Wire `TransformSystem` in the helper when transforms are present (issue-598).
+   - Rationale: Matches shell-web wiring, keeps save/load access to transform state, and remains opt-in via `enableTransforms` or empty `content.transforms`.
 
 ## 14. Follow-Up Work
 - Add an “integration guide” page that consolidates runtime wiring helper usage, state publication patterns, and common pitfalls (Owner: Docs Agent).
-- Add optional transform wiring (if/when transforms are considered part of “standard” runtime composition) (Owner: Runtime Implementation Agent).
 - Provide a `wireGameRuntime` example in `tools/` or `packages/content-sample` for headless simulation harnesses (Owner: Runtime Implementation Agent).
 
 ## 15. References
@@ -448,3 +454,4 @@ The following items are treated as **resolved decisions** for the issue-525 impl
 |------------|--------|----------------|
 | 2025-12-17 | Idle Engine Design-Authoring Agent (AI) | Initial draft for issue-525: standard runtime wiring helper proposal, canonical ordering, tests, docs, and AI-led work plan. |
 | 2025-12-18 | Codex CLI (AI) | Resolve issue-525 defaults (API naming, ordering, offline catchup, production mode, finalize safety, transforms scope) and align the doc wording with existing runtime/worker behavior. |
+| 2025-12-21 | Codex CLI (AI) | Document transform wiring in the helper (issue-598) and update canonical ordering + handler registration notes. |
