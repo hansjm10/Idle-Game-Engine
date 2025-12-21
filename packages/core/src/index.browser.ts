@@ -1030,7 +1030,6 @@ export function wireGameRuntime(
     save: GameStateSaveFormat,
     options?: GameRuntimeHydrateOptions,
   ): void => {
-    const currentStep = options?.currentStep ?? runtime.getCurrentStep();
     hydrateGameStateSaveFormat({
       save,
       coordinator,
@@ -1038,7 +1037,7 @@ export function wireGameRuntime(
       automationSystem,
       transformSystem,
       commandQueue: runtime.getCommandQueue(),
-      currentStep,
+      currentStep: options?.currentStep,
       applyRngSeed: options?.applyRngSeed,
     });
   };
