@@ -8,6 +8,7 @@ import {
   createResourceDefinition,
   literalOne,
 } from './content-test-helpers.js';
+import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import { createGameRuntime } from './index.js';
 
 function createTestAutomation() {
@@ -33,6 +34,16 @@ function createTestTransform() {
     trigger: { kind: 'manual' },
     inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
     outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
+  });
+}
+
+function createContentWithTransform() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 1 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    transforms: [createTestTransform()],
   });
 }
 
@@ -108,6 +119,36 @@ describe('createGameRuntime', () => {
       'transform-system',
       'progression-coordinator',
     ]);
+  });
+
+  it('executes RUN_TRANSFORM from the command queue when transforms are wired', () => {
+    const wiring = createGameRuntime({
+      content: createContentWithTransform(),
+      stepSizeMs: 100,
+    });
+
+    const energyIndex = wiring.coordinator.resourceState.getIndex(
+      'resource.energy',
+    )!;
+    const goldIndex = wiring.coordinator.resourceState.getIndex(
+      'resource.gold',
+    )!;
+
+    expect(wiring.coordinator.resourceState.getAmount(energyIndex)).toBe(1);
+    expect(wiring.coordinator.resourceState.getAmount(goldIndex)).toBe(0);
+
+    wiring.commandQueue.enqueue({
+      type: RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
+      payload: { transformId: 'transform.test' },
+      priority: CommandPriority.PLAYER,
+      timestamp: 0,
+      step: wiring.runtime.getNextExecutableStep(),
+    });
+
+    wiring.runtime.tick(wiring.runtime.getStepSizeMs());
+
+    expect(wiring.coordinator.resourceState.getAmount(energyIndex)).toBe(0);
+    expect(wiring.coordinator.resourceState.getAmount(goldIndex)).toBe(1);
   });
 
   it('inserts resource finalize system when applyViaFinalizeTick is enabled', () => {
