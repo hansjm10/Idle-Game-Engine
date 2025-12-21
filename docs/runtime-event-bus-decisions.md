@@ -1,6 +1,5 @@
 ---
 title: Runtime Event Bus Follow-up Decisions
-sidebar_position: TBD
 ---
 
 # Runtime Event Bus Follow-up Decisions
