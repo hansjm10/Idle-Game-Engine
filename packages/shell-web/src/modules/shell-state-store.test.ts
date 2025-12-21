@@ -61,6 +61,8 @@ const progressionSnapshotStub: ProgressionSnapshot = {
       isVisible: true,
     },
   ],
+  automations: [],
+  transforms: [],
   prestigeLayers: [],
 };
 

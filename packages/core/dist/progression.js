@@ -1,11 +1,16 @@
+import { evaluateCondition } from './condition-evaluator.js';
+import { buildTransformSnapshot } from './transform-system.js';
 const EMPTY_ARRAY = Object.freeze([]);
 const FLAG_VISIBLE = 1 << 0;
 const FLAG_UNLOCKED = 1 << 1;
+const compareStableStrings = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 export function buildProgressionSnapshot(step, publishedAt, state) {
     const stepDurationMs = state?.stepDurationMs ?? 100;
     const resources = createResourceViews(stepDurationMs, state?.resources);
     const generators = createGeneratorViews(step, state?.generators, state?.generatorPurchases);
     const upgrades = createUpgradeViews(state?.upgrades, state?.upgradePurchases);
+    const automations = createAutomationViews(step, publishedAt, stepDurationMs, state?.automations);
+    const transforms = createTransformViews(step, publishedAt, stepDurationMs, state?.transforms);
     const achievements = createAchievementViews(state?.achievements);
     const prestigeLayers = createPrestigeLayerViews(state?.prestigeLayers, state?.prestigeSystem);
     return Object.freeze({
@@ -14,6 +19,8 @@ export function buildProgressionSnapshot(step, publishedAt, state) {
         resources,
         generators,
         upgrades,
+        automations,
+        transforms,
         ...(achievements ? { achievements } : {}),
         prestigeLayers,
     });
@@ -168,6 +175,66 @@ function createAchievementViews(achievements) {
         views.push(view);
     }
     return views.length > 0 ? Object.freeze(views) : undefined;
+}
+function createAutomationViews(step, publishedAt, stepDurationMs, source) {
+    if (!source || source.definitions.length === 0) {
+        return EMPTY_ARRAY;
+    }
+    const safeStepDurationMs = Number.isFinite(stepDurationMs) && stepDurationMs >= 0 ? stepDurationMs : 0;
+    const sorted = [...source.definitions].sort((left, right) => {
+        const orderA = left.order ?? 0;
+        const orderB = right.order ?? 0;
+        if (orderA !== orderB) {
+            return orderA - orderB;
+        }
+        return compareStableStrings(left.id, right.id);
+    });
+    const views = [];
+    const conditionContext = source.conditionContext;
+    for (const automation of sorted) {
+        const state = source.state.get(automation.id);
+        const isUnlocked = state?.unlocked ?? false;
+        const isVisible = automation.visibilityCondition && conditionContext
+            ? evaluateCondition(automation.visibilityCondition, conditionContext)
+            : isUnlocked;
+        const rawCooldownExpiresStep = state?.cooldownExpiresStep;
+        const cooldownExpiresStep = Number.isFinite(rawCooldownExpiresStep)
+            ? Number(rawCooldownExpiresStep)
+            : 0;
+        const cooldownRemainingMs = Math.max(0, (cooldownExpiresStep - step) * safeStepDurationMs);
+        const rawLastFiredStep = state?.lastFiredStep;
+        const lastFiredStep = Number.isFinite(rawLastFiredStep)
+            ? Number(rawLastFiredStep)
+            : null;
+        const lastTriggeredAt = lastFiredStep !== null && lastFiredStep >= 0
+            ? publishedAt - (step - lastFiredStep) * safeStepDurationMs
+            : null;
+        views.push(Object.freeze({
+            id: automation.id,
+            displayName: automation.name.default,
+            description: automation.description.default,
+            isUnlocked,
+            isVisible,
+            isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
+            lastTriggeredAt,
+            cooldownRemainingMs,
+            isOnCooldown: cooldownRemainingMs > 0,
+        }));
+    }
+    return Object.freeze(views);
+}
+function createTransformViews(step, publishedAt, stepDurationMs, source) {
+    if (!source || source.definitions.length === 0) {
+        return EMPTY_ARRAY;
+    }
+    const snapshot = buildTransformSnapshot(step, publishedAt, {
+        transforms: source.definitions,
+        state: source.state,
+        stepDurationMs,
+        resourceState: source.resourceState,
+        conditionContext: source.conditionContext,
+    });
+    return snapshot.transforms;
 }
 function normalizeRates(rates) {
     if (!rates || rates.length === 0) {

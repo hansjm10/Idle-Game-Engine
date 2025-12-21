@@ -14,7 +14,7 @@ Automations are defined in the `automations` array of your `pack.json` file. Eac
 
 1. **Trigger**: When the automation fires (interval, resource threshold, event, or queue empty)
 2. **Target**: What command to execute (generator, upgrade, purchaseGenerator, collectResource, or system)
-3. **Conditions**: When the automation is available (unlock conditions, enabled state)
+3. **Conditions**: When the automation is available (unlock and visibility conditions, enabled state)
 4. **Constraints**: Rate limiting and costs (cooldowns, resource costs)
 
 ## Automation Schema
@@ -45,6 +45,7 @@ Automations are defined in the `automations` array of your `pack.json` file. Eac
     "resourceId": "pack.resource",
     "rate": { "kind": "constant", "value": 10 }
   },
+  "visibilityCondition": { "kind": "always" }, // Optional visibility gate (UI only)
   "enabledByDefault": true,                  // Initial enabled state
   "order": 100,                              // Display order in UI
   "systemTargetId": "system:prestige"        // System command (for targetType: "system")
@@ -677,7 +678,42 @@ Combine conditions with `and`, `or`, `not`:
 - Once unlocked, automations remain unlocked (persistent unlock state)
 - Unlock state persists in save files
 
-**MVP Limitation:** Currently only `kind: "always"` conditions are evaluated. Full unlock condition evaluation requires integration with progression systems (deferred to future work).
+**Runtime Note:** Unlock conditions are evaluated when a condition context is provided (e.g., the standard runtime wiring). Without context, only `kind: "always"` is auto-unlocked.
+
+---
+
+## Visibility Conditions
+
+Visibility conditions control when an automation is shown in UI. They do **not**
+affect whether the automation can unlock or fire.
+
+**Schema:**
+```json
+{
+  "visibilityCondition": {
+    "kind": "always" | "resourceThreshold" | "and" | "or" | "not"
+  }
+}
+```
+
+**Behavior:**
+
+- If omitted, visibility follows unlock state (legacy default).
+- When provided, visibility can be true even while locked (useful for teasers).
+- Evaluated against the same condition context as unlock conditions.
+
+**Example: Show only after 20 energy**
+
+```json
+{
+  "visibilityCondition": {
+    "kind": "resourceThreshold",
+    "resourceId": "sample-pack.energy",
+    "comparator": "gte",
+    "amount": { "kind": "constant", "value": 20 }
+  }
+}
+```
 
 ---
 

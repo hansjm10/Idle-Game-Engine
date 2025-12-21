@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import type {
+  AutomationDefinition,
+  TransformDefinition,
+} from '@idle-engine/content-schema';
 import {
   buildProgressionSnapshot,
   type PrestigeQuote,
@@ -12,12 +16,18 @@ import {
 import {
   createResourceState,
 } from './resource-state.js';
+import {
+  createResourceStateAdapter,
+} from './automation-resource-state-adapter.js';
+import type { AutomationState } from './automation-system.js';
+import type { ConditionContext } from './condition-evaluator.js';
 import type {
   GeneratorPurchaseEvaluator,
   GeneratorPurchaseQuote,
   UpgradePurchaseEvaluator,
   UpgradePurchaseQuote,
 } from './resource-command-handlers.js';
+import type { TransformState } from './transform-system.js';
 
 class StubGeneratorEvaluator implements GeneratorPurchaseEvaluator {
   public readonly quotes = new Map<string, GeneratorPurchaseQuote>();
@@ -190,6 +200,133 @@ describe('buildProgressionSnapshot', () => {
         costs: [{ resourceId: 'energy', amount: 75 }],
         unlockHint: 'Collect more energy',
         isVisible: true,
+      },
+    ]);
+  });
+
+  it('builds automation and transform views from runtime state', () => {
+    const stepDurationMs = 100;
+    const step = 5;
+    const publishedAt = 5000;
+
+    const resourceState = createResourceState([
+      {
+        id: 'energy',
+        startAmount: 10,
+        unlocked: true,
+        visible: true,
+      },
+    ]);
+    const resourceStateAdapter = createResourceStateAdapter(resourceState);
+    const energyIndex = resourceState.getIndex('energy') ?? 0;
+    const conditionContext: ConditionContext = {
+      getResourceAmount: (resourceId) =>
+        resourceId === 'energy' ? resourceState.getAmount(energyIndex) : 0,
+      getGeneratorLevel: () => 0,
+      getUpgradePurchases: () => 0,
+    };
+
+    const automations: AutomationDefinition[] = [
+      {
+        id: 'auto:test' as any,
+        name: { default: 'Auto Test', variants: {} },
+        description: { default: 'Does the thing', variants: {} },
+        targetType: 'system',
+        systemTargetId: 'sys:noop' as any,
+        trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
+        cooldown: 500,
+        unlockCondition: { kind: 'always' },
+        visibilityCondition: {
+          kind: 'resourceThreshold',
+          resourceId: 'energy' as any,
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 20 },
+        },
+        enabledByDefault: true,
+        order: 1,
+      },
+    ];
+
+    const automationState: AutomationState = {
+      id: 'auto:test',
+      enabled: true,
+      lastFiredStep: 2,
+      cooldownExpiresStep: 8,
+      unlocked: true,
+      lastThresholdSatisfied: false,
+    };
+
+    const transforms: TransformDefinition[] = [
+      {
+        id: 'transform:test' as any,
+        name: { default: 'Transform Test', variants: {} },
+        description: { default: 'Make energy', variants: {} },
+        mode: 'instant',
+        inputs: [
+          { resourceId: 'energy' as any, amount: { kind: 'constant', value: 5 } },
+        ],
+        outputs: [
+          { resourceId: 'crystal' as any, amount: { kind: 'constant', value: 2 } },
+        ],
+        trigger: { kind: 'manual' },
+        tags: [],
+      },
+    ];
+
+    const transformState: TransformState = {
+      id: 'transform:test',
+      unlocked: true,
+      visible: true,
+      cooldownExpiresStep: 7,
+      runsThisTick: 0,
+    };
+
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs,
+      resources: {
+        state: resourceState,
+      },
+      automations: {
+        definitions: automations,
+        state: new Map([[automationState.id, automationState]]),
+        conditionContext,
+      },
+      transforms: {
+        definitions: transforms,
+        state: new Map([[transformState.id, transformState]]),
+        resourceState: resourceStateAdapter,
+      },
+    };
+
+    const snapshot = buildProgressionSnapshot(step, publishedAt, state);
+
+    expect(snapshot.automations).toEqual([
+      {
+        id: 'auto:test',
+        displayName: 'Auto Test',
+        description: 'Does the thing',
+        isUnlocked: true,
+        isVisible: false,
+        isEnabled: true,
+        lastTriggeredAt: 4700,
+        cooldownRemainingMs: 300,
+        isOnCooldown: true,
+      },
+    ]);
+
+    expect(snapshot.transforms).toEqual([
+      {
+        id: 'transform:test',
+        displayName: 'Transform Test',
+        description: 'Make energy',
+        mode: 'instant',
+        isUnlocked: true,
+        isVisible: true,
+        cooldownRemainingMs: 200,
+        isOnCooldown: true,
+        canAfford: true,
+        inputs: [{ resourceId: 'energy', amount: 5 }],
+        outputs: [{ resourceId: 'crystal', amount: 2 }],
       },
     ]);
   });

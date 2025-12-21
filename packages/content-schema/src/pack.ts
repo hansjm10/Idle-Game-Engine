@@ -1347,6 +1347,18 @@ const validateCrossReferences = (
       upgradeIndex,
       prestigeIndex,
     );
+    if (automation.visibilityCondition) {
+      validateConditionNode(
+        automation.visibilityCondition,
+        ['automations', index, 'visibilityCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
   });
 
   pack.transforms.forEach((transform, index) => {

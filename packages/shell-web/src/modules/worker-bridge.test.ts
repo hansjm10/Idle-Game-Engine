@@ -25,6 +25,8 @@ const progressionSnapshot: RuntimeStateSnapshot['progression'] = {
   resources: [],
   generators: [],
   upgrades: [],
+  automations: [],
+  transforms: [],
   prestigeLayers: [],
 };
 

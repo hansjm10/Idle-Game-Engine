@@ -193,6 +193,8 @@ export type TransformView = Readonly<{
   isUnlocked: boolean;
   isVisible: boolean;
   cooldownRemainingMs: number;
+  isOnCooldown: boolean;
+  canAfford: boolean;
   inputs: readonly TransformEndpointView[];
   outputs: readonly TransformEndpointView[];
   outstandingBatches?: number;
@@ -453,6 +455,16 @@ function canAffordInputs(
 
     const available = resourceState.getAmount(idx);
     if (available < amount) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isZeroInputCost(costs: Map<string, number>): boolean {
+  for (const amount of costs.values()) {
+    if (amount !== 0) {
       return false;
     }
   }
@@ -1381,7 +1393,7 @@ export function buildTransformSnapshot(
     readonly transforms: readonly TransformDefinition[];
     readonly state: ReadonlyMap<string, TransformState>;
     readonly stepDurationMs: number;
-    readonly resourceState: TransformResourceState;
+    readonly resourceState?: TransformResourceState;
     readonly conditionContext?: ConditionContext;
   },
 ): TransformSnapshot {
@@ -1427,12 +1439,17 @@ export function buildTransformSnapshot(
       0,
       (cooldownExpiresStep - step) * options.stepDurationMs,
     );
-    const inputs = toEndpointViews(
-      evaluateInputCosts(transform, formulaContext),
-    );
+    const inputCosts = evaluateInputCosts(transform, formulaContext);
+    const inputs = toEndpointViews(inputCosts);
     const outputs = toEndpointViews(
       evaluateOutputAmounts(transform, formulaContext),
     );
+    const canAfford = inputCosts
+      ? options.resourceState
+        ? canAffordInputs(inputCosts, options.resourceState)
+        : isZeroInputCost(inputCosts)
+      : false;
+    const isOnCooldown = cooldownRemainingMs > 0;
 
     const batches = state?.batches ?? [];
     const nextBatchReadyAtStep =
@@ -1449,6 +1466,8 @@ export function buildTransformSnapshot(
         isUnlocked,
         isVisible,
         cooldownRemainingMs,
+        isOnCooldown,
+        canAfford,
         inputs,
         outputs,
         ...(transform.mode === 'batch'

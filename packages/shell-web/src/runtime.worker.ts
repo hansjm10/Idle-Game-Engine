@@ -19,7 +19,6 @@ import {
   createResourceStateAdapter,
   createProgressionCoordinator,
   telemetry,
-  buildTransformSnapshot,
   registerTransformCommandHandlers,
   type ProgressionAuthoritativeState,
   type ProgressionResourceState,
@@ -332,17 +331,31 @@ export function initializeRuntimeWorker(
       const events = collectOutboundEvents(eventBus);
       const backPressure = eventBus.getBackPressureSnapshot();
       const publishedAt = monotonicClock.now();
+      const conditionContext = progressionCoordinator.getConditionContext();
+      const automationState = automationSystem.getState();
+      const transformState = transformSystem.getState();
       const progression = buildProgressionSnapshot(
         currentStep,
         publishedAt,
-        progressionCoordinator.state,
+        {
+          ...progressionCoordinator.state,
+          automations: {
+            definitions: content.automations,
+            state: automationState,
+            conditionContext,
+          },
+          transforms: {
+            definitions: content.transforms,
+            state: transformState,
+            resourceState: resourceStateAdapter,
+            conditionContext,
+          },
+        },
       );
-      const transforms = buildTransformSnapshot(currentStep, publishedAt, {
-        transforms: content.transforms,
-        state: transformSystem.getState(),
-        stepDurationMs,
-        resourceState: resourceStateAdapter,
-        conditionContext: progressionCoordinator.getConditionContext(),
+      const transforms = Object.freeze({
+        step: currentStep,
+        publishedAt,
+        transforms: progression.transforms,
       });
 
       const message: RuntimeWorkerStateUpdate = {

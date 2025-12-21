@@ -1,5 +1,9 @@
 import type { GeneratorPurchaseEvaluator, UpgradePurchaseEvaluator, UpgradeResourceCost, UpgradeStatus } from './resource-command-handlers.js';
+import type { AutomationDefinition, TransformDefinition } from '@idle-engine/content-schema';
+import type { AutomationState } from './automation-system.js';
+import type { ConditionContext } from './condition-evaluator.js';
 import type { ResourceState, SerializedResourceState } from './resource-state.js';
+import type { TransformResourceState, TransformState, TransformView } from './transform-system.js';
 export type GeneratorRateView = Readonly<{
     resourceId: string;
     rate: number;
@@ -60,6 +64,17 @@ export type AchievementView = Readonly<{
     nextRepeatableAtStep?: number;
     lastCompletedStep?: number;
 }>;
+export type AutomationView = Readonly<{
+    id: string;
+    displayName: string;
+    description: string;
+    isUnlocked: boolean;
+    isVisible: boolean;
+    isEnabled: boolean;
+    lastTriggeredAt: number | null;
+    cooldownRemainingMs: number;
+    isOnCooldown: boolean;
+}>;
 export interface ProgressionAchievementState {
     readonly id: string;
     readonly displayName?: string;
@@ -73,6 +88,17 @@ export interface ProgressionAchievementState {
     readonly target: number;
     readonly nextRepeatableAtStep?: number;
     readonly lastCompletedStep?: number;
+}
+export interface ProgressionAutomationState {
+    readonly definitions: readonly AutomationDefinition[];
+    readonly state: ReadonlyMap<string, AutomationState>;
+    readonly conditionContext?: ConditionContext;
+}
+export interface ProgressionTransformState {
+    readonly definitions: readonly TransformDefinition[];
+    readonly state: ReadonlyMap<string, TransformState>;
+    readonly resourceState: TransformResourceState;
+    readonly conditionContext?: ConditionContext;
 }
 export type PrestigeRewardContribution = Readonly<{
     sourceResourceId: string;
@@ -136,6 +162,8 @@ export type ProgressionSnapshot = Readonly<{
     resources: readonly ResourceView[];
     generators: readonly GeneratorView[];
     upgrades: readonly UpgradeView[];
+    automations: readonly AutomationView[];
+    transforms: readonly TransformView[];
     achievements?: readonly AchievementView[];
     prestigeLayers: readonly PrestigeLayerView[];
 }>;
@@ -182,6 +210,8 @@ export interface ProgressionAuthoritativeState {
     readonly generators?: readonly ProgressionGeneratorState[];
     readonly upgradePurchases?: UpgradePurchaseEvaluator;
     readonly upgrades?: readonly ProgressionUpgradeState[];
+    readonly automations?: ProgressionAutomationState;
+    readonly transforms?: ProgressionTransformState;
     readonly achievements?: readonly ProgressionAchievementState[];
     readonly prestigeSystem?: PrestigeSystemEvaluator;
     readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
