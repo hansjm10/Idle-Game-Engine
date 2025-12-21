@@ -1753,12 +1753,20 @@ const validateUpgradeEffect = (
       break;
     case 'modifyGeneratorRate':
     case 'modifyGeneratorCost':
+    case 'modifyGeneratorConsumption':
     case 'unlockGenerator':
       ensureReference(
         generators,
         effect.generatorId,
         `Effect references unknown generator "${effect.generatorId}".`,
       );
+      if ('resourceId' in effect && effect.resourceId !== undefined) {
+        ensureReference(
+          resources,
+          effect.resourceId,
+          `Effect references unknown resource "${effect.resourceId}".`,
+        );
+      }
       if ('value' in effect) {
         collectFormulaEntityReferences(effect.value, (reference) => {
           ensureFormulaReference(reference, path, ctx, resources, generators, upgrades, automations, prestigeLayers);

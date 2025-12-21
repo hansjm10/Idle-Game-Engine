@@ -4364,6 +4364,136 @@ describe('Integration: upgrade effects', () => {
     expect(coordinator.state.generators?.[0]?.produces?.[0]?.rate).toBeCloseTo(2);
   });
 
+  it('applies modifyGeneratorConsumption effects to generator consumption rates', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+    const fuel = createResourceDefinition('resource.fuel', {
+      name: 'Fuel',
+    });
+    const output = createResourceDefinition('resource.output', {
+      name: 'Output',
+    });
+
+    const generator = createGeneratorDefinition('generator.consumer', {
+      name: 'Consumer',
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      produces: [
+        {
+          resourceId: output.id,
+          rate: { kind: 'constant', value: 1 },
+        },
+      ],
+      consumes: [
+        {
+          resourceId: energy.id,
+          rate: { kind: 'constant', value: 4 },
+        },
+        {
+          resourceId: fuel.id,
+          rate: { kind: 'constant', value: 2 },
+        },
+      ],
+    });
+
+    const baseConsumptionUpgrade = createUpgradeDefinition('upgrade.consume-base', {
+      name: 'Consume Base',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorConsumption',
+          generatorId: generator.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 0.5 },
+        },
+      ],
+    });
+
+    const fuelConsumptionUpgrade = createUpgradeDefinition('upgrade.consume-fuel', {
+      name: 'Consume Fuel',
+      category: 'generator',
+      targets: [{ kind: 'generator', id: generator.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyGeneratorConsumption',
+          generatorId: generator.id,
+          resourceId: fuel.id,
+          operation: 'add',
+          value: { kind: 'constant', value: 0.5 },
+        },
+      ],
+    });
+
+    const energyRateUpgrade = createUpgradeDefinition('upgrade.energy-rate', {
+      name: 'Energy Rate',
+      category: 'resource',
+      targets: [{ kind: 'resource', id: energy.id }],
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'modifyResourceRate',
+          resourceId: energy.id,
+          operation: 'multiply',
+          value: { kind: 'constant', value: 3 },
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, fuel, output],
+      generators: [generator],
+      upgrades: [baseConsumptionUpgrade, fuelConsumptionUpgrade, energyRateUpgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    const initialGenerator = coordinator.state.generators?.[0];
+    expect(initialGenerator?.produces?.[0]?.rate).toBeCloseTo(1);
+    expect(
+      initialGenerator?.consumes?.find((rate) => rate.resourceId === energy.id)?.rate,
+    ).toBeCloseTo(4);
+    expect(
+      initialGenerator?.consumes?.find((rate) => rate.resourceId === fuel.id)?.rate,
+    ).toBeCloseTo(2);
+
+    coordinator.incrementUpgradePurchases(baseConsumptionUpgrade.id);
+    coordinator.incrementUpgradePurchases(fuelConsumptionUpgrade.id);
+    coordinator.incrementUpgradePurchases(energyRateUpgrade.id);
+    coordinator.updateForStep(1);
+
+    const updatedGenerator = coordinator.state.generators?.[0];
+    expect(updatedGenerator?.produces?.[0]?.rate).toBeCloseTo(1);
+    expect(
+      updatedGenerator?.consumes?.find((rate) => rate.resourceId === energy.id)?.rate,
+    ).toBeCloseTo(6);
+    expect(
+      updatedGenerator?.consumes?.find((rate) => rate.resourceId === fuel.id)?.rate,
+    ).toBeCloseTo(1.5);
+  });
+
   it('applies modifyResourceCapacity add effects to resource capacity and clamping', () => {
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',

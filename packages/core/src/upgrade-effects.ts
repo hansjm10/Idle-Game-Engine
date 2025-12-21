@@ -26,6 +26,11 @@ export type UpgradeEffectSource = Readonly<{
 export type EvaluatedUpgradeEffects = Readonly<{
   readonly generatorRateMultipliers: ReadonlyMap<string, number>;
   readonly generatorCostMultipliers: ReadonlyMap<string, number>;
+  readonly generatorConsumptionMultipliers: ReadonlyMap<string, number>;
+  readonly generatorResourceConsumptionMultipliers: ReadonlyMap<
+    string,
+    ReadonlyMap<string, number>
+  >;
   readonly resourceRateMultipliers: ReadonlyMap<string, number>;
   readonly resourceCapacityOverrides: ReadonlyMap<string, number>;
   readonly dirtyToleranceOverrides: ReadonlyMap<string, number>;
@@ -185,12 +190,30 @@ function applyCapacityOverride(
   overrides.set(resourceId, next);
 }
 
+function getGeneratorResourceConsumptionMultipliers(
+  multipliers: Map<string, Map<string, number>>,
+  generatorId: string,
+): Map<string, number> {
+  const existing = multipliers.get(generatorId);
+  if (existing) {
+    return existing;
+  }
+  const created = new Map<string, number>();
+  multipliers.set(generatorId, created);
+  return created;
+}
+
 export function evaluateUpgradeEffects(
   upgrades: readonly UpgradeEffectSource[],
   context: UpgradeEffectEvaluatorContext,
 ): EvaluatedUpgradeEffects {
   const generatorRateMultipliers = new Map<string, number>();
   const generatorCostMultipliers = new Map<string, number>();
+  const generatorConsumptionMultipliers = new Map<string, number>();
+  const generatorResourceConsumptionMultipliers = new Map<
+    string,
+    Map<string, number>
+  >();
   const resourceRateMultipliers = new Map<string, number>();
   const resourceCapacityOverrides = new Map<string, number>();
   const dirtyToleranceOverrides = new Map<string, number>();
@@ -314,6 +337,51 @@ export function evaluateUpgradeEffects(
             );
             break;
           }
+          case 'modifyGeneratorConsumption': {
+            const raw = evaluateFiniteNumericFormula(
+              effect.value,
+              formulaContext,
+              context.onError,
+              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
+            );
+            if (raw === undefined) {
+              continue;
+            }
+            const effective = raw * effectCurveMultiplier;
+            if (!Number.isFinite(effective)) {
+              context.onError?.(
+                new Error(
+                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
+                ),
+              );
+              continue;
+            }
+            if (effect.resourceId) {
+              const resourceMultipliers =
+                getGeneratorResourceConsumptionMultipliers(
+                  generatorResourceConsumptionMultipliers,
+                  effect.generatorId,
+                );
+              applyModifier(
+                resourceMultipliers,
+                effect.resourceId,
+                effect.operation,
+                effective,
+                context.onError,
+                `Generator consumption modifier for "${record.definition.id}"`,
+              );
+            } else {
+              applyModifier(
+                generatorConsumptionMultipliers,
+                effect.generatorId,
+                effect.operation,
+                effective,
+                context.onError,
+                `Generator consumption modifier for "${record.definition.id}"`,
+              );
+            }
+            break;
+          }
           case 'modifyResourceRate': {
             const raw = evaluateFiniteNumericFormula(
               effect.value,
@@ -413,6 +481,8 @@ export function evaluateUpgradeEffects(
   return Object.freeze({
     generatorRateMultipliers,
     generatorCostMultipliers,
+    generatorConsumptionMultipliers,
+    generatorResourceConsumptionMultipliers,
     resourceRateMultipliers,
     resourceCapacityOverrides,
     dirtyToleranceOverrides,

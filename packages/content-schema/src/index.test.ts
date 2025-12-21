@@ -127,6 +127,36 @@ describe('content pack validator', () => {
     expect(() => validator.parse(invalidPack)).toThrow(ZodError);
   });
 
+  it('rejects modifyGeneratorConsumption effects that reference unknown resources', () => {
+    const invalidPack = createMinimalPack();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (invalidPack.upgrades as any) = [
+      {
+        id: 'upgrade:invalid-consumption',
+        name: { default: 'Invalid Consumption' },
+        category: 'generator' as const,
+        targets: [{ kind: 'generator', id: 'generator:reactor' }],
+        cost: {
+          currencyId: 'resource:energy',
+          baseCost: 1,
+          costCurve: { kind: 'constant', value: 1 },
+        },
+        effects: [
+          {
+            kind: 'modifyGeneratorConsumption',
+            generatorId: 'generator:reactor',
+            resourceId: 'resource:missing',
+            operation: 'multiply',
+            value: { kind: 'constant', value: 0.5 },
+          },
+        ],
+      },
+    ];
+
+    const validator = createContentPackValidator();
+    expect(() => validator.parse(invalidPack)).toThrow(ZodError);
+  });
+
   it('rejects resource unlock conditions that reference unknown entities', () => {
     const invalidPack = createMinimalPack();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
