@@ -1,6 +1,5 @@
 ---
 title: Runtime Event Pub/Sub Design
-sidebar_position: TBD
 ---
 
 # Runtime Event Pub/Sub Design
