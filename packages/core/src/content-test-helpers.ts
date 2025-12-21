@@ -5,6 +5,7 @@ import type {
   NormalizedGenerator,
   NormalizedPrestigeLayer,
   NormalizedResource,
+  NormalizedTransform,
   NormalizedUpgrade,
   NumericFormula,
 } from '@idle-engine/content-schema';
@@ -87,6 +88,7 @@ export function createContentPack(config: {
   resources?: NormalizedResource[];
   automations?: NormalizedAutomation[];
   achievements?: NormalizedAchievement[];
+  transforms?: NormalizedTransform[];
   generators?: NormalizedGenerator[];
   upgrades?: NormalizedUpgrade[];
   prestigeLayers?: NormalizedPrestigeLayer[];
@@ -97,6 +99,7 @@ export function createContentPack(config: {
     resources = [],
     automations = [],
     achievements = [],
+    transforms = [],
     generators = [],
     upgrades = [],
     prestigeLayers = [],
@@ -108,6 +111,7 @@ export function createContentPack(config: {
   const resourcesMap = new Map(resources.map((r) => [r.id, r]));
   const automationsMap = new Map(automations.map((a) => [a.id, a]));
   const achievementsMap = new Map(achievements.map((a) => [a.id, a]));
+  const transformsMap = new Map(transforms.map((t) => [t.id, t]));
   const generatorsMap = new Map(generators.map((g) => [g.id, g]));
   const upgradesMap = new Map(upgrades.map((u) => [u.id, u]));
   const prestigeLayersMap = new Map(prestigeLayers.map((p) => [p.id, p]));
@@ -116,6 +120,7 @@ export function createContentPack(config: {
   const resourceById = Object.fromEntries(resources.map((r) => [r.id, r]));
   const automationById = Object.fromEntries(automations.map((a) => [a.id, a]));
   const achievementById = Object.fromEntries(achievements.map((a) => [a.id, a]));
+  const transformById = Object.fromEntries(transforms.map((t) => [t.id, t]));
   const generatorById = Object.fromEntries(generators.map((g) => [g.id, g]));
   const upgradeById = Object.fromEntries(upgrades.map((u) => [u.id, u]));
   const prestigeLayerById = Object.fromEntries(prestigeLayers.map((p) => [p.id, p]));
@@ -130,7 +135,7 @@ export function createContentPack(config: {
     metrics: [],
     achievements,
     automations,
-    transforms: [],
+    transforms,
     prestigeLayers,
     guildPerks: [],
     runtimeEvents: [],
@@ -141,7 +146,7 @@ export function createContentPack(config: {
       metrics: new Map(),
       achievements: achievementsMap,
       automations: automationsMap,
-      transforms: new Map(),
+      transforms: transformsMap,
       prestigeLayers: prestigeLayersMap,
       guildPerks: new Map(),
       runtimeEvents: new Map(),
@@ -153,7 +158,7 @@ export function createContentPack(config: {
       metricById: {},
       achievementById,
       automationById,
-      transformById: {},
+      transformById,
       prestigeLayerById,
       guildPerkById: {},
       runtimeEventById: {},

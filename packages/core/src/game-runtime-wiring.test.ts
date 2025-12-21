@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createAutomation } from '@idle-engine/content-schema';
+import { createAutomation, createTransform } from '@idle-engine/content-schema';
 
 import {
   createContentPack,
@@ -21,6 +21,18 @@ function createTestAutomation() {
     trigger: { kind: 'commandQueueEmpty' },
     unlockCondition: { kind: 'always' },
     enabledByDefault: false,
+  });
+}
+
+function createTestTransform() {
+  return createTransform({
+    id: 'transform.test',
+    name: { default: 'Test Transform' },
+    description: { default: 'Test Transform' },
+    mode: 'instant',
+    trigger: { kind: 'manual' },
+    inputs: [{ resourceId: 'resource.energy', amount: literalOne }],
+    outputs: [{ resourceId: 'resource.gold', amount: literalOne }],
   });
 }
 
@@ -46,6 +58,29 @@ function createContentWithGeneratorAndAutomation() {
   });
 }
 
+function createContentWithGeneratorAutomationAndTransform() {
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 1000 }),
+      createResourceDefinition('resource.gold', { startAmount: 0 }),
+    ],
+    generators: [
+      createGeneratorDefinition('generator.mine', {
+        purchase: {
+          currencyId: 'resource.energy',
+          baseCost: 10,
+          costCurve: literalOne,
+        },
+        produces: [{ resourceId: 'resource.gold', rate: literalOne }],
+        consumes: [],
+        baseUnlock: { kind: 'always' },
+      }),
+    ],
+    automations: [createTestAutomation()],
+    transforms: [createTestTransform()],
+  });
+}
+
 describe('createGameRuntime', () => {
   it('wires systems in canonical order', () => {
     const wiring = createGameRuntime({
@@ -56,6 +91,21 @@ describe('createGameRuntime', () => {
     expect(wiring.systems.map((system) => system.id)).toEqual([
       'production',
       'automation-system',
+      'progression-coordinator',
+    ]);
+  });
+
+  it('includes transform system when transforms are present', () => {
+    const wiring = createGameRuntime({
+      content: createContentWithGeneratorAutomationAndTransform(),
+      stepSizeMs: 100,
+    });
+
+    expect(wiring.transformSystem).toBeDefined();
+    expect(wiring.systems.map((system) => system.id)).toEqual([
+      'production',
+      'automation-system',
+      'transform-system',
       'progression-coordinator',
     ]);
   });
