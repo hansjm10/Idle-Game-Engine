@@ -1,6 +1,5 @@
 ---
 title: Content Validation CLI Design
-sidebar_position: TBD
 ---
 
 # Content Validation CLI Design
