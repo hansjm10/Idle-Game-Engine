@@ -193,6 +193,8 @@ export type TransformView = Readonly<{
   isUnlocked: boolean;
   isVisible: boolean;
   cooldownRemainingMs: number;
+  isOnCooldown: boolean;
+  canAfford: boolean;
   inputs: readonly TransformEndpointView[];
   outputs: readonly TransformEndpointView[];
   outstandingBatches?: number;
@@ -1427,12 +1429,15 @@ export function buildTransformSnapshot(
       0,
       (cooldownExpiresStep - step) * options.stepDurationMs,
     );
-    const inputs = toEndpointViews(
-      evaluateInputCosts(transform, formulaContext),
-    );
+    const inputCosts = evaluateInputCosts(transform, formulaContext);
+    const inputs = toEndpointViews(inputCosts);
     const outputs = toEndpointViews(
       evaluateOutputAmounts(transform, formulaContext),
     );
+    const canAfford = inputCosts
+      ? canAffordInputs(inputCosts, options.resourceState)
+      : false;
+    const isOnCooldown = cooldownRemainingMs > 0;
 
     const batches = state?.batches ?? [];
     const nextBatchReadyAtStep =
@@ -1449,6 +1454,8 @@ export function buildTransformSnapshot(
         isUnlocked,
         isVisible,
         cooldownRemainingMs,
+        isOnCooldown,
+        canAfford,
         inputs,
         outputs,
         ...(transform.mode === 'batch'

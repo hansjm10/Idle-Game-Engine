@@ -8,13 +8,27 @@ import type {
   UpgradeStatus,
 } from './resource-command-handlers.js';
 import type {
+  AutomationDefinition,
+  TransformDefinition,
+} from '@idle-engine/content-schema';
+import type { AutomationState } from './automation-system.js';
+import type { ConditionContext } from './condition-evaluator.js';
+import type {
   ResourceState,
   SerializedResourceState,
 } from './resource-state.js';
+import { buildTransformSnapshot } from './transform-system.js';
+import type {
+  TransformResourceState,
+  TransformState,
+  TransformView,
+} from './transform-system.js';
 
 const EMPTY_ARRAY: readonly never[] = Object.freeze([]);
 const FLAG_VISIBLE = 1 << 0;
 const FLAG_UNLOCKED = 1 << 1;
+const compareStableStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
 
 export type GeneratorRateView = Readonly<{
   resourceId: string;
@@ -91,6 +105,18 @@ export type AchievementView = Readonly<{
   lastCompletedStep?: number;
 }>;
 
+export type AutomationView = Readonly<{
+  id: string;
+  displayName: string;
+  description: string;
+  isUnlocked: boolean;
+  isVisible: boolean;
+  isEnabled: boolean;
+  lastTriggeredAt: number | null;
+  cooldownRemainingMs: number;
+  isOnCooldown: boolean;
+}>;
+
 export interface ProgressionAchievementState {
   readonly id: string;
   readonly displayName?: string;
@@ -104,6 +130,18 @@ export interface ProgressionAchievementState {
   readonly target: number;
   readonly nextRepeatableAtStep?: number;
   readonly lastCompletedStep?: number;
+}
+
+export interface ProgressionAutomationState {
+  readonly definitions: readonly AutomationDefinition[];
+  readonly state: ReadonlyMap<string, AutomationState>;
+}
+
+export interface ProgressionTransformState {
+  readonly definitions: readonly TransformDefinition[];
+  readonly state: ReadonlyMap<string, TransformState>;
+  readonly resourceState: TransformResourceState;
+  readonly conditionContext?: ConditionContext;
 }
 
 export type PrestigeRewardContribution = Readonly<{
@@ -174,6 +212,8 @@ export type ProgressionSnapshot = Readonly<{
   resources: readonly ResourceView[];
   generators: readonly GeneratorView[];
   upgrades: readonly UpgradeView[];
+  automations: readonly AutomationView[];
+  transforms: readonly TransformView[];
   achievements?: readonly AchievementView[];
   prestigeLayers: readonly PrestigeLayerView[];
 }>;
@@ -226,6 +266,8 @@ export interface ProgressionAuthoritativeState {
   readonly generators?: readonly ProgressionGeneratorState[];
   readonly upgradePurchases?: UpgradePurchaseEvaluator;
   readonly upgrades?: readonly ProgressionUpgradeState[];
+  readonly automations?: ProgressionAutomationState;
+  readonly transforms?: ProgressionTransformState;
   readonly achievements?: readonly ProgressionAchievementState[];
   readonly prestigeSystem?: PrestigeSystemEvaluator;
   readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
@@ -247,6 +289,18 @@ export function buildProgressionSnapshot(
     state?.upgrades,
     state?.upgradePurchases,
   );
+  const automations = createAutomationViews(
+    step,
+    publishedAt,
+    stepDurationMs,
+    state?.automations,
+  );
+  const transforms = createTransformViews(
+    step,
+    publishedAt,
+    stepDurationMs,
+    state?.transforms,
+  );
   const achievements = createAchievementViews(state?.achievements);
   const prestigeLayers = createPrestigeLayerViews(
     state?.prestigeLayers,
@@ -259,6 +313,8 @@ export function buildProgressionSnapshot(
     resources,
     generators,
     upgrades,
+    automations,
+    transforms,
     ...(achievements ? { achievements } : {}),
     prestigeLayers,
   });
@@ -471,6 +527,88 @@ function createAchievementViews(
   }
 
   return views.length > 0 ? Object.freeze(views) : undefined;
+}
+
+function createAutomationViews(
+  step: number,
+  publishedAt: number,
+  stepDurationMs: number,
+  source: ProgressionAutomationState | undefined,
+): readonly AutomationView[] {
+  if (!source || source.definitions.length === 0) {
+    return EMPTY_ARRAY as readonly AutomationView[];
+  }
+
+  const safeStepDurationMs =
+    Number.isFinite(stepDurationMs) && stepDurationMs >= 0 ? stepDurationMs : 0;
+  const sorted = [...source.definitions].sort((left, right) => {
+    const orderA = left.order ?? 0;
+    const orderB = right.order ?? 0;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return compareStableStrings(left.id, right.id);
+  });
+
+  const views: AutomationView[] = [];
+
+  for (const automation of sorted) {
+    const state = source.state.get(automation.id);
+    const isUnlocked = state?.unlocked ?? false;
+    const rawCooldownExpiresStep = state?.cooldownExpiresStep;
+    const cooldownExpiresStep = Number.isFinite(rawCooldownExpiresStep)
+      ? Number(rawCooldownExpiresStep)
+      : 0;
+    const cooldownRemainingMs = Math.max(
+      0,
+      (cooldownExpiresStep - step) * safeStepDurationMs,
+    );
+    const rawLastFiredStep = state?.lastFiredStep;
+    const lastFiredStep = Number.isFinite(rawLastFiredStep)
+      ? Number(rawLastFiredStep)
+      : null;
+    const lastTriggeredAt =
+      lastFiredStep !== null && lastFiredStep >= 0
+        ? publishedAt - (step - lastFiredStep) * safeStepDurationMs
+        : null;
+
+    views.push(
+      Object.freeze({
+        id: automation.id,
+        displayName: automation.name.default,
+        description: automation.description.default,
+        isUnlocked,
+        isVisible: isUnlocked,
+        isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
+        lastTriggeredAt,
+        cooldownRemainingMs,
+        isOnCooldown: cooldownRemainingMs > 0,
+      }),
+    );
+  }
+
+  return Object.freeze(views);
+}
+
+function createTransformViews(
+  step: number,
+  publishedAt: number,
+  stepDurationMs: number,
+  source: ProgressionTransformState | undefined,
+): readonly TransformView[] {
+  if (!source || source.definitions.length === 0) {
+    return EMPTY_ARRAY as readonly TransformView[];
+  }
+
+  const snapshot = buildTransformSnapshot(step, publishedAt, {
+    transforms: source.definitions,
+    state: source.state,
+    stepDurationMs,
+    resourceState: source.resourceState,
+    conditionContext: source.conditionContext,
+  });
+
+  return snapshot.transforms;
 }
 
 function normalizeRates(
