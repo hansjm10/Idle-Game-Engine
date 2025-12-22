@@ -159,14 +159,14 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
 | feat(core): implement event bus core | EventBus, EventRegistry, EventBuffer, SubscriberTable | Runtime Implementation Agent | Design approval | Unit tests pass; exports public API |
 | feat(core): add runtime event types | RuntimeEvent, RuntimeEventType unions, payload schemas | Runtime Implementation Agent | Event bus core | TypeScript compilation; types exported |
 | feat(core): integrate tick lifecycle | Wire event dispatch into scheduler phases | Runtime Implementation Agent | Event bus core, command queue #6 | Integration tests validate deterministic ordering |
-| feat(core): add buffer management | Back-pressure diagnostics, soft/hard limits, telemetry | Runtime Implementation Agent | Event bus core | Performance tests validate <100ms tick budget |
+| feat(core): add buffer management | Back-pressure diagnostics, soft/hard limits, telemetry | Runtime Implementation Agent | Event bus core | Performance tests validate `<100ms` tick budget |
 | feat(core): implement subscription API | EventSubscriptionHost, convenience helpers | Runtime Implementation Agent | Event bus core | Unit tests cover subscribe/unsubscribe lifecycle |
 | feat(core): integrate transport layer | RuntimeEventFrame serialization, resource-publish-transport updates | Runtime Implementation Agent | Event bus core | Shell receives event frames alongside resource deltas |
 | feat(core): add replay support | Command recorder integration, manifest hash validation | Runtime Implementation Agent | Event bus core, transport layer | Replay tests validate deterministic emission |
 | feat(content): add event manifest generation | Content pack event-types.json, pnpm generate integration | Tooling Agent | Event bus core | Generate produces deterministic manifest hash |
 | feat(shell): add event frame consumption | Parse and display events in web shell | UI Agent | Transport layer | Shell renders toast notifications from events |
 | docs(core): publish event catalog | API documentation, usage examples, event type tables | Docs Agent | All implementation complete | Docs published in runtime-step-lifecycle.md |
-| test(core): performance benchmarks | Validate 10k events/tick <100ms | Testing Agent | Event bus core | CI includes performance regression suite |
+| test(core): performance benchmarks | Validate 10k events/tick `<100ms` | Testing Agent | Event bus core | CI includes performance regression suite |
 
 ### 7.2 Milestones
 - **Phase 1 - Core Implementation**: Land event bus with unit tests and documentation stubs. Integrate resource threshold events and confirm shell transport round-trip.
@@ -194,7 +194,7 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
 - **Validation Hooks**:
   - Run `pnpm test` before marking tasks complete
   - Run `pnpm build` to validate TypeScript compilation
-  - Run performance benchmarks (`pnpm bench:events`) to validate <100ms tick budget
+  - Run performance benchmarks (`pnpm bench:events`) to validate `<100ms` tick budget
   - Validate replay determinism with `pnpm test:replay`
 
 ## 9. Alternatives Considered
