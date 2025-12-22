@@ -21,6 +21,8 @@ import {
   convergentTransformTreeFixture,
   cyclicTransformDirectFixture,
   cyclicTransformIndirectFixture,
+  disjointCyclesFixture,
+  disjointNetLossCyclesFixture,
   epsilonAboveThresholdCycleFixture,
   epsilonBelowThresholdCycleFixture,
   cyclicTransformMultiResourceFixture,
@@ -47,6 +49,7 @@ import {
   selfReferencingDependencyFixture,
   selfReferencingTransformFixture,
   validComprehensivePackFixture,
+  zeroAmountTransformCycleFixture,
 } from '../__fixtures__/integration-packs.js';
 
 const getZodIssues = (error: unknown) => {
@@ -382,6 +385,58 @@ describe('Integration: Cyclic Dependencies', () => {
         }),
       ]),
     );
+  });
+
+  it('rejects cycles containing zero-amount transforms', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(zeroAmountTransformCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should reject because cycle profitability cannot be evaluated for zero amounts
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+    // Error message should mention profitability and the specific transform
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/profitability.*transform-a/i),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects packs with disjoint cycles when one is net-positive', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(disjointCyclesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the net-positive cycle (X <-> Y)
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/net-positive/i),
+        }),
+      ]),
+    );
+  });
+
+  it('allows packs with multiple disjoint net-loss cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(disjointNetLossCyclesFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
   });
 
   it('allows linear transform chains without cycles', () => {

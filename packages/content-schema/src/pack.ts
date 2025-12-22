@@ -2295,10 +2295,18 @@ const findNetPositiveCycle = (
     return undefined;
   }
 
-  // Bellman-Ford with zero-initialized distances (not infinity) to detect any
-  // negative cycle in the graph, not just those reachable from a single source.
-  // Since edge weights are -log(ratio), a negative cycle corresponds to a
-  // transform loop where the product of ratios exceeds 1.0 (net-positive).
+  // Bellman-Ford algorithm for negative cycle detection.
+  //
+  // Key technique: Zero-initialized distances (not infinity). This is a standard
+  // approach for detecting negative cycles in any graph component without requiring
+  // a virtual source node connected to all vertices. When distances start at zero,
+  // any negative cycle will eventually reduce some distance below zero, triggering
+  // detection via the N-th relaxation iteration.
+  //
+  // Weight transformation: Edge weights are -log(ratio), so:
+  //   - net-positive cycles (product of ratios > 1) become negative-weight cycles
+  //   - net-loss cycles (product of ratios < 1) become positive-weight cycles
+  // This allows standard shortest-path algorithms to detect profitable cycles.
   const distances = new Array(transformIds.length).fill(0);
   const previous = new Array<number>(transformIds.length).fill(-1);
   let updatedIndex = -1;

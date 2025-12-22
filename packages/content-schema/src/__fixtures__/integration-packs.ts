@@ -1941,6 +1941,325 @@ export const selfReferencingTransformFixture = {
 };
 
 /**
+ * ZERO-AMOUNT TRANSFORM IN CYCLE: Transform with zero input amount.
+ * Should be treated as non-simple (profitability cannot be evaluated) and rejected if in a cycle.
+ */
+export const zeroAmountTransformCycleFixture = {
+  metadata: {
+    id: 'zero-amount-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          // Zero amount - should be treated as non-simple
+          amount: { kind: 'constant', value: 0 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DISJOINT CYCLES: Two independent cycles in the same pack.
+ * One net-positive (X<->Y) and one net-loss (A<->B).
+ * Should be rejected because of the net-positive cycle.
+ */
+export const disjointCyclesFixture = {
+  metadata: {
+    id: 'disjoint-cycles',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-a',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-b',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    // Net-positive cycle: X <-> Y (ratio = 1.2 * 1.1 = 1.32)
+    {
+      id: 'transform-x-to-y',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 120 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-y-to-x',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 110 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    // Net-loss cycle: A <-> B (ratio = 0.8 * 0.9 = 0.72)
+    {
+      id: 'transform-a-to-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b-to-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DISJOINT CYCLES - ALL NET LOSS: Two independent net-loss cycles.
+ * Both should be allowed since neither is net-positive.
+ */
+export const disjointNetLossCyclesFixture = {
+  metadata: {
+    id: 'disjoint-net-loss-cycles',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-a',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-b',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    // Net-loss cycle 1: X <-> Y (ratio = 0.8 * 0.9 = 0.72)
+    {
+      id: 'transform-x-to-y',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-y-to-x',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    // Net-loss cycle 2: A <-> B (ratio = 0.7 * 0.85 = 0.595)
+    {
+      id: 'transform-a-to-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 70 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b-to-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 85 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
  * PRESTIGE LAYER: Pack with prestige layer but missing the required prestige count resource.
  * Should fail validation with a clear error message.
  */
