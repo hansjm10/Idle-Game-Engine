@@ -2283,9 +2283,10 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
         continue;
       }
 
-      generatorRecord.state.owned = 0;
+      const initialLevel = generatorRecord.definition.initialLevel ?? 0;
+      generatorRecord.state.owned = initialLevel;
       generatorRecord.state.enabled = true;
-      generatorRecord.state.isUnlocked = false;
+      generatorRecord.state.isUnlocked = initialLevel > 0;
       generatorRecord.state.nextPurchaseReadyAtStep = resetStep + 1;
     }
 

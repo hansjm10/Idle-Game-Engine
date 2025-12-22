@@ -2644,6 +2644,217 @@ describe('Integration: prestige system applyPrestige', () => {
     expect(coordinator.getUpgradeRecord('upgrade.keep-me')?.purchases).toBe(1);
   });
 
+  it('re-seeds reset generators with initialLevel after prestige', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.seed-prestige-count', {
+      name: 'Seed Count',
+      startAmount: 0,
+    });
+
+    const seededGenerator = createGeneratorDefinition('generator.seeded', {
+      initialLevel: 2,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.seed', {
+      name: 'Seed',
+      resetTargets: [energy.id],
+      resetGenerators: [seededGenerator.id],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, prestigeFlux, prestigeCount],
+        generators: [seededGenerator],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+    }) as unknown as {
+      generatorEvaluator: { applyPurchase(id: string, count: number): void };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(id: string): { state: { owned: number } } | undefined;
+    };
+
+    coordinator.generatorEvaluator.applyPurchase(seededGenerator.id, 3);
+
+    expect(coordinator.getGeneratorRecord(seededGenerator.id)?.state.owned).toBe(5);
+
+    coordinator.prestigeEvaluator?.applyPrestige(prestigeLayer.id, 'token-seed');
+
+    expect(coordinator.getGeneratorRecord(seededGenerator.id)?.state.owned).toBe(2);
+  });
+
+  it('keeps reset generators at default initialLevel locked until base unlock is met', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.zero-prestige-count', {
+      name: 'Zero Count',
+      startAmount: 0,
+    });
+
+    const gatedGenerator = createGeneratorDefinition('generator.zero-gated', {
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      baseUnlock: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      } as any,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.zero', {
+      name: 'Zero',
+      resetTargets: [energy.id],
+      resetGenerators: [gatedGenerator.id],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, prestigeFlux, prestigeCount],
+        generators: [gatedGenerator],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+    }) as unknown as {
+      updateForStep(step: number): void;
+      resourceState: {
+        requireIndex(id: string): number;
+        addAmount(index: number, amount: number): number;
+      };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(
+        id: string,
+      ): { state: { owned: number; isUnlocked: boolean } } | undefined;
+    };
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(0);
+
+    expect(coordinator.getGeneratorRecord(gatedGenerator.id)?.state.isUnlocked).toBe(
+      true,
+    );
+
+    coordinator.prestigeEvaluator?.applyPrestige(prestigeLayer.id, 'token-zero');
+
+    const resetRecord = coordinator.getGeneratorRecord(gatedGenerator.id);
+    expect(resetRecord?.state.owned).toBe(0);
+    expect(resetRecord?.state.isUnlocked).toBe(false);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(1);
+
+    expect(coordinator.getGeneratorRecord(gatedGenerator.id)?.state.isUnlocked).toBe(
+      true,
+    );
+  });
+
+  it('does not re-apply initialLevel after prestige when restoring from save', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.save-prestige-count', {
+      name: 'Save Count',
+      startAmount: 0,
+    });
+
+    const seededGenerator = createGeneratorDefinition('generator.seeded-save', {
+      initialLevel: 2,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.save', {
+      name: 'Save',
+      resetTargets: [energy.id],
+      resetGenerators: [seededGenerator.id],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, prestigeFlux, prestigeCount],
+        generators: [seededGenerator],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+    }) as unknown as {
+      generatorEvaluator: { applyPurchase(id: string, count: number): void };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(id: string): { state: { owned: number } } | undefined;
+      state: ReturnType<typeof createProgressionCoordinator>['state'];
+    };
+
+    coordinator.generatorEvaluator.applyPurchase(seededGenerator.id, 3);
+    coordinator.prestigeEvaluator?.applyPrestige(prestigeLayer.id, 'token-save');
+
+    expect(coordinator.getGeneratorRecord(seededGenerator.id)?.state.owned).toBe(2);
+
+    const restored = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, prestigeFlux, prestigeCount],
+        generators: [seededGenerator],
+        prestigeLayers: [prestigeLayer],
+      }),
+      stepDurationMs: 100,
+      initialState: coordinator.state,
+    }) as unknown as {
+      getGeneratorRecord(id: string): { state: { owned: number } } | undefined;
+    };
+
+    expect(restored.getGeneratorRecord(seededGenerator.id)?.state.owned).toBe(2);
+  });
+
   it('re-locks gated reset resources and preserves default-unlocked resources after prestige', () => {
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
