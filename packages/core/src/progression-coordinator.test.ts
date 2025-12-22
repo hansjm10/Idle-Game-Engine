@@ -968,6 +968,159 @@ describe('progression-coordinator', () => {
     expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(true);
   });
 
+  it('defaults resource visibility to unlock when visibilityCondition is omitted', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const gems = createResourceDefinition('resource.gems', {
+      name: 'Gems',
+      unlocked: false,
+      visible: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      } as any,
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy, gems],
+        metadata: {
+          id: 'pack.resources.default-visibility',
+          title: 'Default Resource Visibility Pack',
+        },
+      }),
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const gemsIndex = coordinator.resourceState.requireIndex(gems.id);
+
+    coordinator.updateForStep(0);
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(false);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(false);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(1);
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(true);
+
+    coordinator.resourceState.spendAmount(energyIndex, 10);
+    coordinator.updateForStep(2);
+    expect(coordinator.resourceState.isUnlocked(gemsIndex)).toBe(true);
+    expect(coordinator.resourceState.isVisible(gemsIndex)).toBe(true);
+  });
+
+  it('defaults generator visibility to unlock when visibilityCondition is omitted', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const generator = createGeneratorDefinition('generator.reactor', {
+      name: {
+        default: 'Reactor',
+        variants: { 'en-US': 'Reactor' },
+      } as any,
+      purchase: {
+        currencyId: energy.id,
+        baseCost: 10,
+        costCurve: literalOne,
+      },
+      baseUnlock: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 10 },
+      } as any,
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy],
+        generators: [generator],
+        metadata: {
+          id: 'pack.generators.default-visibility',
+          title: 'Default Generator Visibility Pack',
+        },
+      }),
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const generatorRecord = coordinator.state.generators?.find(
+      (record) => record.id === generator.id,
+    );
+
+    coordinator.updateForStep(0);
+    expect(generatorRecord?.isUnlocked).toBe(false);
+    expect(generatorRecord?.isVisible).toBe(false);
+
+    coordinator.resourceState.addAmount(energyIndex, 10);
+    coordinator.updateForStep(1);
+    expect(generatorRecord?.isUnlocked).toBe(true);
+    expect(generatorRecord?.isVisible).toBe(true);
+
+    coordinator.resourceState.spendAmount(energyIndex, 10);
+    coordinator.updateForStep(2);
+    expect(generatorRecord?.isUnlocked).toBe(true);
+    expect(generatorRecord?.isVisible).toBe(true);
+  });
+
+  it('defaults upgrade visibility to unlock when visibilityCondition is omitted', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.energy-gate', {
+      name: 'Energy Gate',
+      cost: {
+        currencyId: energy.id,
+        baseCost: 1,
+        costCurve: literalOne,
+      },
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: energy.id,
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 5 },
+      } as any,
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: createContentPack({
+        resources: [energy],
+        upgrades: [upgrade],
+        metadata: {
+          id: 'pack.upgrades.default-visibility',
+          title: 'Default Upgrade Visibility Pack',
+        },
+      }),
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    const upgradeRecord = coordinator.state.upgrades?.find(
+      (record) => record.id === upgrade.id,
+    );
+
+    coordinator.updateForStep(0);
+    expect(upgradeRecord?.status).toBe('locked');
+    expect(upgradeRecord?.isVisible).toBe(false);
+
+    coordinator.resourceState.addAmount(energyIndex, 5);
+    coordinator.updateForStep(1);
+    expect(upgradeRecord?.status).toBe('available');
+    expect(upgradeRecord?.isVisible).toBe(true);
+
+    coordinator.resourceState.spendAmount(energyIndex, 5);
+    coordinator.updateForStep(2);
+    expect(upgradeRecord?.status).toBe('locked');
+    expect(upgradeRecord?.isVisible).toBe(false);
+  });
+
   it('keeps generators unlocked after initially satisfying the base unlock condition', () => {
     const coordinator = createProgressionCoordinator({
       content: createGeneratorUnlockContentPack(),

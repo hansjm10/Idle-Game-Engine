@@ -366,7 +366,7 @@ describe('runtime.worker integration', () => {
           id: 'sample-pack.harvester',
           owned: 0,
           isUnlocked: false,
-          isVisible: true,
+          isVisible: false,
           costs: [],
           nextPurchaseReadyAtStep: 1,
         }),

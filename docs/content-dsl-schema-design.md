@@ -290,6 +290,10 @@ When conditions are used for `baseUnlock` on generators, the progression coordin
 
 In contrast, `visibilityCondition` is re-evaluated every game step and can toggle between `true` and `false`.
 
+When `visibilityCondition` is omitted, the runtime treats visibility as following
+unlock by default: generators and upgrades stay hidden until unlocked, and
+resources that start hidden become visible once unlocked.
+
 **Human-Readable Descriptions**:
 
 The runtime generates unlock hints for locked content using `describeCondition()`:
