@@ -34,6 +34,15 @@ describe('transformDefinitionSchema', () => {
     ).toThrowError(/declare a duration/i);
   });
 
+  it('accepts numeric cooldown shorthand', () => {
+    const transform = transformDefinitionSchema.parse({
+      ...baseTransform,
+      cooldown: 2500,
+    });
+
+    expect(transform.cooldown).toEqual({ kind: 'constant', value: 2500 });
+  });
+
   it('normalizes tags', () => {
     const transform = transformDefinitionSchema.parse({
       ...baseTransform,

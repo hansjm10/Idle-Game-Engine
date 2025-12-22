@@ -490,7 +490,7 @@ const isExpired = isCooldownActive(state, 20); // false
 
 ---
 
-### updateCooldown(automation, state, currentStep, stepDurationMs)
+### updateCooldown(automation, state, currentStep, stepDurationMs, formulaContext?)
 
 Updates the cooldown expiration step after an automation fires.
 
@@ -500,20 +500,22 @@ function updateCooldown(
   automation: AutomationDefinition,
   state: AutomationState,
   currentStep: number,
-  stepDurationMs: number
+  stepDurationMs: number,
+  formulaContext?: FormulaEvaluationContext
 ): void
 ```
 
 **Behavior:**
 
+- Evaluates cooldown as a numeric formula using the provided context
 - Converts cooldown duration (ms) to steps: `Math.ceil(cooldown / stepDurationMs)`
 - Sets `cooldownExpiresStep = currentStep + cooldownSteps + 1`
 - The +1 accounts for command execution delay (commands execute at currentStep + 1)
-- If no cooldown defined, sets `cooldownExpiresStep = 0`
+- If no cooldown defined or evaluation is non-finite/≤0, sets `cooldownExpiresStep = 0`
 
 **Example:**
 ```typescript
-const automation = { cooldown: 500, ... }; // 500ms cooldown
+const automation = { cooldown: { kind: 'constant', value: 500 }, ... };
 const state = { cooldownExpiresStep: 0, ... };
 updateCooldown(automation, state, 10, 100); // stepDurationMs = 100ms
 // state.cooldownExpiresStep will be 16 (10 + ceil(500/100) + 1)

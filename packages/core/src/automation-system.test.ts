@@ -9,7 +9,7 @@ import {
   evaluateResourceThresholdTrigger,
   enqueueAutomationCommand,
 } from './automation-system.js';
-import type { AutomationDefinition } from '@idle-engine/content-schema';
+import type { AutomationDefinition, NumericFormula } from '@idle-engine/content-schema';
 import type { AutomationState, SerializedAutomationState } from './automation-system.js';
 import { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
@@ -28,6 +28,7 @@ describe('AutomationSystem', () => {
   const noopEventPublisher = {
     publish: () => ({ accepted: true } as any),
   } as any;
+  const literal = (value: number): NumericFormula => ({ kind: 'constant', value });
 
   describe('initialization', () => {
     it('should create system with correct id', () => {
@@ -1349,7 +1350,7 @@ describe('AutomationSystem', () => {
             comparator: 'gte',
             threshold: { kind: 'constant', value: 100 },
           },
-          cooldown: 300, // 3 steps
+          cooldown: literal(300), // 3 steps
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
           order: 0,
@@ -1453,7 +1454,7 @@ describe('AutomationSystem', () => {
         },
         targetType: 'generator',
         targetId: 'gen:collector' as any,
-        cooldown: 500, // 5 steps @ 100ms/step
+        cooldown: literal(500), // 5 steps @ 100ms/step
         enabledByDefault: true,
         unlockCondition: { kind: 'always' },
         order: 0,
@@ -1545,7 +1546,7 @@ describe('AutomationSystem', () => {
         },
         targetType: 'generator',
         targetId: 'gen:collector' as any,
-        cooldown: 800, // 8 steps @ 100ms/step
+        cooldown: literal(800), // 8 steps @ 100ms/step
         enabledByDefault: true,
         unlockCondition: { kind: 'always' },
         order: 0,
@@ -2294,7 +2295,7 @@ describe('AutomationSystem', () => {
           targetType: 'generator',
           targetId: 'gen:clicks' as any,
           trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
-          cooldown: 500, // 5 steps
+          cooldown: literal(500), // 5 steps
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
           order: 0,
@@ -2346,7 +2347,7 @@ describe('AutomationSystem', () => {
           trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
-          cooldown: 500, // 500ms cooldown with 100ms steps = 5 steps
+          cooldown: literal(500), // 500ms cooldown with 100ms steps = 5 steps
           order: 0,
         },
       ];
@@ -2404,7 +2405,7 @@ describe('AutomationSystem', () => {
           trigger: { kind: 'interval', interval: { kind: 'constant', value: 100 } },
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
-          cooldown: 500, // 500ms cooldown with 100ms steps = 5 steps AFTER command execution
+          cooldown: literal(500), // 500ms cooldown with 100ms steps = 5 steps AFTER command execution
           order: 0,
         },
       ];
@@ -2809,7 +2810,7 @@ describe('AutomationSystem', () => {
             resourceId: 'res:coins' as any,
             rate: { kind: 'constant', value: 5 },
           },
-          cooldown: 300, // 3 steps at 100ms step size, +1 step boundary
+          cooldown: literal(300), // 3 steps at 100ms step size, +1 step boundary
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
           order: 0,
@@ -2887,7 +2888,7 @@ describe('AutomationSystem', () => {
             resourceId: 'res:coins' as any,
             rate: { kind: 'constant', value: 10 },
           },
-          cooldown: 200,
+          cooldown: literal(200),
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
           order: 0,
@@ -2968,7 +2969,7 @@ describe('AutomationSystem', () => {
             resourceId: 'coins' as any,
             rate: { kind: 'constant', value: 10 },
           },
-          cooldown: 100,
+          cooldown: literal(100),
           unlockCondition: { kind: 'always' },
           enabledByDefault: true,
           order: 0,

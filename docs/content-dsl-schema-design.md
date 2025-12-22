@@ -442,7 +442,7 @@ Cross-validation ensures `progress.target` evaluates to a positive, finite numbe
 - `targetId`: required when `targetType` is specific entity types
 - `systemTargetId`: required when `targetType === 'system'`
 - `trigger`: union of deterministic triggers (`interval`, `resourceThreshold`, `commandQueueEmpty`, `event`)
-- `cooldown`: optional number (ms)
+- `cooldown`: optional `NumericFormula` (ms; numeric shorthand allowed)
 - `resourceCost`: optional upkeep cost schema
 - `unlockCondition`: `conditionSchema`
 - `visibilityCondition`: optional `conditionSchema`
@@ -461,7 +461,7 @@ System targets validate against a curated allowlist. Event-triggered automations
 - `inputs`: non-empty array of `{ resourceId: ContentId; amount: NumericFormula }`
 - `outputs`: non-empty array of `{ resourceId: ContentId; amount: NumericFormula }`
 - `duration`: optional `NumericFormula` (ms) for timed conversions
-- `cooldown`: optional `NumericFormula`
+- `cooldown`: optional `NumericFormula` (ms; numeric shorthand allowed)
 - `trigger`: discriminated union (manual, automation, condition, event)
 - `unlockCondition` / `visibilityCondition`
 - `automation`: optional `{ automationId: ContentId }`

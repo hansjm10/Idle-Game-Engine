@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "e08b20bb352cd427b80a5763c4d7816ef50f04d8944ea7bdc467783327a4b5df",
+  "artifactHash": "1fa75dc3153703fabeb44a1410888ac5c6a3d232693e89118457211f4bca6966",
   "digest": {
     "hash": "fnv1a-7f7e84f9",
     "version": 1
@@ -85,7 +85,10 @@ const serialized = {
     ],
     "automations": [
       {
-        "cooldown": 5000,
+        "cooldown": {
+          "kind": "constant",
+          "value": 5000
+        },
         "description": {
           "default": "Enables crystal harvester when you reach 50 energy",
           "variants": {
@@ -208,7 +211,10 @@ const serialized = {
         }
       },
       {
-        "cooldown": 0,
+        "cooldown": {
+          "kind": "constant",
+          "value": 0
+        },
         "description": {
           "default": "Attempts to buy Reactor Insulation every 8 seconds",
           "variants": {
@@ -245,7 +251,10 @@ const serialized = {
         }
       },
       {
-        "cooldown": 10000,
+        "cooldown": {
+          "kind": "constant",
+          "value": 10000
+        },
         "description": {
           "default": "Collects resources when no other actions are pending",
           "variants": {

@@ -28,6 +28,16 @@ const endpointSchema = z
   })
   .strict();
 
+const cooldownSchema: z.ZodType<
+  z.infer<typeof numericFormulaSchema>,
+  z.ZodTypeDef,
+  z.input<typeof finiteNumberSchema> | z.input<typeof numericFormulaSchema>
+> = z
+  .union([finiteNumberSchema, numericFormulaSchema])
+  .transform((value) =>
+    typeof value === 'number' ? { kind: 'constant', value } : value,
+  );
+
 
 type TransformSafetyInput = {
   readonly maxRunsPerTick?: z.input<typeof positiveIntSchema>;
@@ -59,7 +69,7 @@ type TransformDefinitionInput = {
   readonly inputs: readonly z.input<typeof endpointSchema>[];
   readonly outputs: readonly z.input<typeof endpointSchema>[];
   readonly duration?: z.input<typeof numericFormulaSchema>;
-  readonly cooldown?: z.input<typeof numericFormulaSchema>;
+  readonly cooldown?: z.input<typeof cooldownSchema>;
   readonly trigger: TransformTriggerInput;
   readonly unlockCondition?: z.input<typeof conditionSchema>;
   readonly visibilityCondition?: z.input<typeof conditionSchema>;
@@ -111,7 +121,7 @@ export const transformDefinitionSchema: z.ZodType<
       message: 'Transforms must produce at least one resource.',
     }),
     duration: numericFormulaSchema.optional(),
-    cooldown: numericFormulaSchema.optional(),
+    cooldown: cooldownSchema.optional(),
     trigger: z.union([
       z
         .object({

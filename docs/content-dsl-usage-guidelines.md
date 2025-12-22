@@ -652,7 +652,7 @@ Use a non-default `base` only when you need an additional scaling factor indepen
 
 Automation authoring guidance:
 - `resourceCost.rate` represents units per second; keep bounds realistic for your economy to avoid runaway drains.
-- `cooldown` must be finite (milliseconds). Prefer ≥ 0. Extremely small values can lead to noisy behavior during testing.
+- `cooldown` must be finite (milliseconds). Use a number or a `NumericFormula`; prefer ≥ 0. Extremely small values can lead to noisy behavior during testing.
 - Keep `generate --check` warning-free for shipping packs. The sample pack is treated as the reference baseline.
 
 ## Snapshot Determinism (Progression Views)
