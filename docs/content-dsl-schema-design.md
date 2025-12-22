@@ -785,7 +785,7 @@ CLI changes in `tools/content-schema-cli` (follow-up work):
 ### Performance
 - Benchmark validation performance on large content packs (1000+ resources/generators)
 - Profile normalisation overhead
-- Success threshold: Validation completes in <100ms for typical packs (<100 entities per module)
+- Success threshold: Validation completes in `<100ms` for typical packs (`<100 entities` per module)
 
 ### Tooling / A11y
 - CLI integration tests using `tools/content-schema-cli`
