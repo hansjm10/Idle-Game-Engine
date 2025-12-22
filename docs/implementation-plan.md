@@ -236,7 +236,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 |-------------|---------------|-------------------------|--------------|---------------------|
 | perf(core): performance profiling | Identify hotspots, confirm budgets | Runtime Implementation Agent | All phases complete | CPU/memory within targets |
 | security(social): auth flow review | Checklist for auth, rate limits, audit logs | Social Services Agent | Phase 5 | Security checklist passed |
-| docs: onboarding guide | Developer setup instructions | Tooling Automation Agent | All phases | New dev can start in <30min |
+| docs: onboarding guide | Developer setup instructions | Tooling Automation Agent | All phases | New dev can start in `<30min` |
 | docs: API references | Runtime, content, social APIs | Content Pipeline Agent | All phases | API docs complete |
 | docs: operational runbooks | Health checks, log inspection, restart | Ops & Infrastructure Agent | All phases | On-call runbook ready |
 | docs: partner briefing deck | Demo materials and overview | TBD | All phases | Stakeholder presentation ready |
@@ -413,12 +413,12 @@ Before marking task complete, agents must:
   - UI: Component rendering, Worker bridge messaging, state subscriptions
 
 ### Performance
-- **Benchmarks**: Tick processing time <16ms for 60 FPS target
+- **Benchmarks**: Tick processing time `<16ms` for 60 FPS target
 - **Profiling Methodology**: DiagnosticTimeline captures per-system timing; hotspot analysis via profiler
 - **Success Thresholds**:
-  - Memory: <100MB steady-state runtime
-  - CPU: <50% single core during active gameplay
-  - Offline catch-up: 12-hour simulation completes in <5 seconds
+  - Memory: `<100MB` steady-state runtime
+  - CPU: `<50%` single core during active gameplay
+  - Offline catch-up: 12-hour simulation completes in `<5 seconds`
 
 ### Tooling / A11y
 - **Playwright Coverage**: Smoke tests for core user flows (load, buy generator, observe progression, leaderboard interaction)
