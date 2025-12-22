@@ -3,6 +3,7 @@ import {
   createAutomationSystem,
   getAutomationState,
   isCooldownActive,
+  updateCooldown,
   evaluateIntervalTrigger,
   evaluateCommandQueueEmptyTrigger,
   evaluateEventTrigger,
@@ -3261,6 +3262,181 @@ describe('AutomationSystem', () => {
       // Both runs should produce the same timestamp
       expect(timestamps[0]).toBe(timestamps[1]);
       expect(timestamps[0]).toBe(500); // step 5 * 100ms
+    });
+  });
+
+  describe('updateCooldown formula evaluation', () => {
+    it('should evaluate dynamic cooldown formulas with FormulaContext', () => {
+      // Test that linear formulas are evaluated correctly at runtime
+      const automation: AutomationDefinition = {
+        id: 'auto:dynamic-cooldown' as any,
+        name: { default: 'Dynamic Cooldown', variants: {} },
+        description: { default: 'Test dynamic cooldown', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: literal(1000) },
+        cooldown: { kind: 'linear', base: 500, slope: 100 }, // base + slope * level
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:dynamic-cooldown',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      };
+
+      const stepDurationMs = 100;
+      const currentStep = 10;
+
+      // Create a FormulaContext with level=2, so cooldown = 500 + 100*2 = 700ms
+      const formulaContext = {
+        variables: { level: 2, time: 1, deltaTime: 0.1 },
+        entities: {
+          resource: () => 0,
+          generator: () => 0,
+          upgrade: () => 0,
+          automation: () => 0,
+          prestigeLayer: () => 0,
+        },
+      };
+
+      updateCooldown(automation, state, currentStep, stepDurationMs, formulaContext);
+
+      // 700ms / 100ms = 7 steps, plus 1 for command execution delay
+      // cooldownExpiresStep = 10 + 7 + 1 = 18
+      expect(state.cooldownExpiresStep).toBe(18);
+    });
+
+    it('should create minimal FormulaContext when none provided', () => {
+      // When formulaContext is undefined, updateCooldown creates one internally
+      const automation: AutomationDefinition = {
+        id: 'auto:no-context' as any,
+        name: { default: 'No Context', variants: {} },
+        description: { default: 'Test without context', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: literal(1000) },
+        cooldown: literal(500), // constant 500ms cooldown
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:no-context',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 0,
+        unlocked: true,
+      };
+
+      const stepDurationMs = 100;
+      const currentStep = 10;
+
+      // Call without formulaContext - should use internal context creation
+      updateCooldown(automation, state, currentStep, stepDurationMs, undefined);
+
+      // 500ms / 100ms = 5 steps, plus 1 for command execution delay
+      // cooldownExpiresStep = 10 + 5 + 1 = 16
+      expect(state.cooldownExpiresStep).toBe(16);
+    });
+
+    it('should set cooldownExpiresStep to 0 when formula evaluates to non-positive', () => {
+      // Edge case: formula evaluates to 0 or negative
+      const automation: AutomationDefinition = {
+        id: 'auto:zero-cooldown' as any,
+        name: { default: 'Zero Cooldown', variants: {} },
+        description: { default: 'Test zero cooldown', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: literal(1000) },
+        cooldown: literal(0), // zero cooldown
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:zero-cooldown',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 999, // Should be reset to 0
+        unlocked: true,
+      };
+
+      updateCooldown(automation, state, 10, 100);
+
+      expect(state.cooldownExpiresStep).toBe(0);
+    });
+
+    it('should set cooldownExpiresStep to 0 when formula evaluates to negative', () => {
+      // Edge case: formula evaluates to negative via linear with negative base
+      const automation: AutomationDefinition = {
+        id: 'auto:negative-cooldown' as any,
+        name: { default: 'Negative Cooldown', variants: {} },
+        description: { default: 'Test negative cooldown', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: literal(1000) },
+        cooldown: { kind: 'linear', base: -100, slope: 10 }, // -100 + 10*0 = -100 at level 0
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:negative-cooldown',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 999, // Should be reset to 0
+        unlocked: true,
+      };
+
+      const formulaContext = {
+        variables: { level: 0, time: 1, deltaTime: 0.1 },
+        entities: {
+          resource: () => 0,
+          generator: () => 0,
+          upgrade: () => 0,
+          automation: () => 0,
+          prestigeLayer: () => 0,
+        },
+      };
+
+      updateCooldown(automation, state, 10, 100, formulaContext);
+
+      expect(state.cooldownExpiresStep).toBe(0);
+    });
+
+    it('should set cooldownExpiresStep to 0 when cooldown is undefined', () => {
+      const automation: AutomationDefinition = {
+        id: 'auto:no-cooldown' as any,
+        name: { default: 'No Cooldown', variants: {} },
+        description: { default: 'Test no cooldown', variants: {} },
+        targetType: 'generator',
+        targetId: 'gen:test' as any,
+        trigger: { kind: 'interval', interval: literal(1000) },
+        // No cooldown defined
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+        order: 0,
+      };
+
+      const state: AutomationState = {
+        id: 'auto:no-cooldown',
+        enabled: true,
+        lastFiredStep: 10,
+        cooldownExpiresStep: 999, // Should be reset to 0
+        unlocked: true,
+      };
+
+      updateCooldown(automation, state, 10, 100);
+
+      expect(state.cooldownExpiresStep).toBe(0);
     });
   });
 });
