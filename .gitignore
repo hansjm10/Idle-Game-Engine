@@ -41,6 +41,7 @@ output/
 
 # Claude Code
 CLAUDE.md
+.claude/agents/
 
 # Codex
 .codex/

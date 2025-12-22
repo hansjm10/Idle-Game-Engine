@@ -22,10 +22,10 @@ const smallNumberFormatter = new Intl.NumberFormat('en-US', {
 });
 
 /**
- * Threshold for treating per-tick rates as neutral (±0).
- * Values with absolute value less than this are displayed as "±0/tick".
+ * Threshold for treating per-second rates as neutral (±0).
+ * Values with absolute value less than this are displayed as "±0/sec".
  */
-const RATE_NEUTRAL_THRESHOLD = 0.005;
+const RATE_NEUTRAL_THRESHOLD = 0.05;
 
 /**
  * View-model utility: format a resource amount for display.
@@ -66,28 +66,28 @@ export function formatResourceAmount(amount: number): string {
 }
 
 /**
- * View-model utility: format per-tick rate with sign indicator.
+ * View-model utility: format per-second rate with sign indicator.
  * Uses ±0 for values very close to zero (|x| < RATE_NEUTRAL_THRESHOLD) to maintain consistency.
  * Uses Intl.NumberFormat for consistent, performant number formatting.
  */
-export function formatPerTickRate(perTick: number): string {
+export function formatPerSecondRate(perSecond: number): string {
   // Guard against non-finite values (NaN, Infinity, -Infinity)
-  if (!Number.isFinite(perTick)) {
-    return '±0/tick';
+  if (!Number.isFinite(perSecond)) {
+    return '±0/sec';
   }
 
   // Treat values very close to zero as neutral
-  if (Math.abs(perTick) < RATE_NEUTRAL_THRESHOLD) {
-    return '±0/tick';
+  if (Math.abs(perSecond) < RATE_NEUTRAL_THRESHOLD) {
+    return '±0/sec';
   }
 
-  const sign = perTick > 0 ? '+' : '-';
-  const absValue = Math.abs(perTick);
+  const sign = perSecond > 0 ? '+' : '-';
+  const absValue = Math.abs(perSecond);
   const formatted = absValue >= 100
     ? mediumNumberFormatter.format(absValue)
     : smallNumberFormatter.format(absValue);
 
-  return `${sign}${formatted}/tick`;
+  return `${sign}${formatted}/sec`;
 }
 
 /**
@@ -127,14 +127,14 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
 
   const rateClassName = useMemo(() => {
     // Align class logic with display threshold to maintain visual consistency
-    if (Math.abs(resource.perTick) < RATE_NEUTRAL_THRESHOLD) {
+    if (Math.abs(resource.perSecond) < RATE_NEUTRAL_THRESHOLD) {
       return styles.rateNeutral;
     }
-    if (resource.perTick > 0) {
+    if (resource.perSecond > 0) {
       return styles.ratePositive;
     }
     return styles.rateNegative;
-  }, [resource.perTick]);
+  }, [resource.perSecond]);
 
   return (
     <div
@@ -169,7 +169,7 @@ function ResourceRow({ resource }: ResourceRowProps): JSX.Element {
         <div role="cell" aria-label="No capacity limit" />
       )}
       <div className={`${styles.resourceRate} ${rateClassName}`} role="cell">
-        {formatPerTickRate(resource.perTick)}
+        {formatPerSecondRate(resource.perSecond)}
       </div>
     </div>
   );
@@ -206,12 +206,12 @@ function LockedState(): JSX.Element {
 }
 
 /**
- * ResourceDashboard component displays resource amounts, capacities, and per-tick rates.
+ * ResourceDashboard component displays resource amounts, capacities, and per-second rates.
  *
  * Features:
  * - Displays unlocked and visible resources from progression snapshot
  * - Shows capacity bars for resources with limits
- * - Color-codes per-tick rates (positive/negative/neutral)
+ * - Color-codes per-second rates (positive/negative/neutral)
  * - Handles locked, empty, and populated states
  * - Fully accessible with ARIA attributes and keyboard navigation
  * - Uses memoized selectors for deterministic rendering

@@ -59,7 +59,7 @@ The progression UI initiative replaces the placeholder shell with production-rea
 - **Data & Schemas**: Introduce `ProgressionSnapshot` TypeScript types exported from `@idle-engine/core` for the progression UI; align generator cost curves with sample pack schema (`packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:114`) and reserve upgrade schema wiring as TODO (Content Systems owner).
 
 #### Field Sourcing
-- **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. Carry forward `unlocked`/`visible` flags so UI can respect gating, and compute `perTick` as `resourceState.getNetPerSecond(index) * (stepDurationMs / 1000)`, where `stepDurationMs` is the step size provided when constructing the worker runtime (the worker currently defaults this to 100 ms).
+- **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. Carry forward `unlocked`/`visible` flags so UI can respect gating, compute `perSecond` as `resourceState.getNetPerSecond(index)`, and compute `perTick` as `perSecond * (stepDurationMs / 1000)`, where `stepDurationMs` is the step size provided when constructing the worker runtime (the worker currently defaults this to 100 ms).
 - **Generators**: Hydrate generator rows from the authoritative progression systems (existing handlers in `packages/core/src/resource-command-handlers.ts:54`). Instead of collapsing pricing, surface the full `GeneratorPurchaseQuote.costs` array (resource ID + amount) so UI remains accurate for future multi-resource definitions. Expose `nextPurchaseReadyAtStep` as `currentStep + 1` when no cooldown applies, mirroring the command queue’s deterministic “next tick” execution window.
 - **Upgrades**: Surface upgrade visibility, availability, and multi-resource pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, keep snapshot entries aligned with `status: 'locked' | 'available' | 'purchased'`, attach `costs` arrays when pricing exists, carry a `visible` flag, and gate any `available` state behind real economics shipped from `packages/content-sample`.
 - **APIs & Contracts**: Add `PURCHASE_UPGRADE` command type (TODO owner: Runtime Protocol Agent) mirroring `PurchaseGeneratorPayload` (`packages/core/src/command.ts:121`); expose read-only view helpers on the shell bridge for the progression UI; guarantee schema version negotiation.
@@ -83,6 +83,7 @@ type ResourceView = Readonly<{
   unlocked: boolean;
   visible: boolean;
   capacity?: number;
+  perSecond: number;
   perTick: number;
 }>;
 
@@ -138,6 +139,7 @@ type UpgradeView = Readonly<{
       "unlocked": true,
       "visible": true,
       "capacity": 250,
+      "perSecond": 5.5,
       "perTick": 0.55
     },
     {
@@ -146,6 +148,7 @@ type UpgradeView = Readonly<{
       "amount": 4,
       "unlocked": true,
       "visible": true,
+      "perSecond": 0.25,
       "perTick": 0.025
     }
   ],

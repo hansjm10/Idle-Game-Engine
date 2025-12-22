@@ -305,6 +305,7 @@ const resourceView = {
   capacity: snapshot.capacities[index],
   isUnlocked: (snapshot.flags[index] & UNLOCKED_BIT) !== 0,
   isVisible: (snapshot.flags[index] & VISIBLE_BIT) !== 0,
+  perSecond: state.getNetPerSecond(index),
   perTick: state.getNetPerSecond(index) * (stepDurationMs / 1000), // Live rate data
 };
 ```
@@ -323,6 +324,7 @@ const resourceView = {
   capacity: serialized.capacities[index] ?? Infinity,
   isUnlocked: serialized.unlocked?.[index] ?? false,
   isVisible: serialized.visible?.[index] ?? false,
+  perSecond: 0, // No rate data in serialized state
   perTick: 0, // No rate data in serialized state
 };
 ```
@@ -332,7 +334,7 @@ const resourceView = {
 | Aspect | Live State Mode | Serialized State Mode |
 |--------|----------------|----------------------|
 | **Data Source** | `ResourceState.snapshot({ mode: 'publish' })` | `SerializedResourceState` from save file |
-| **Rate Data** | `perTick` calculated from `getNetPerSecond()` | `perTick = 0` (rates not persisted) |
+| **Rate Data** | `perSecond` from `getNetPerSecond()`, `perTick = perSecond * (stepDurationMs / 1000)` | `perSecond = 0`, `perTick = 0` (rates not persisted) |
 | **Flag Access** | Bit masks from `snapshot.flags` typed array | Boolean arrays `unlocked`/`visible` |
 | **Capacity** | Live typed array value | POJO number array with `null` → `Infinity` |
 | **Use Case** | Runtime worker snapshot publishing | Save file preview, session hydration |

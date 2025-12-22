@@ -28,6 +28,7 @@ const progressionSnapshotStub: ProgressionSnapshot = {
       amount: 100,
       unlocked: true,
       visible: true,
+      perSecond: 0,
       perTick: 0,
     },
     {
@@ -36,6 +37,7 @@ const progressionSnapshotStub: ProgressionSnapshot = {
       amount: 50,
       unlocked: true,
       visible: true,
+      perSecond: 0,
       perTick: 0,
     },
   ],

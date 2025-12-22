@@ -49,6 +49,7 @@ function createResourceViews(stepDurationMs, source) {
                 unlocked: source.state.isUnlocked(index),
                 visible: source.state.isVisible(index),
                 ...(capacity !== undefined ? { capacity } : {}),
+                perSecond,
                 perTick,
             });
             views.push(view);
@@ -76,6 +77,7 @@ function createResourceViews(stepDurationMs, source) {
                 unlocked: Boolean(unlocked),
                 visible: Boolean(visible),
                 ...(capacity !== undefined ? { capacity } : {}),
+                perSecond: 0,
                 perTick: 0,
             });
             views.push(view);

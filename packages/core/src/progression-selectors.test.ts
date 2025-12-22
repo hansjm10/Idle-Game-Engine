@@ -20,13 +20,16 @@ import type {
 function createResource(
   overrides: Partial<ResourceView> & Pick<ResourceView, 'id'>,
 ): ResourceView {
+  const perTick = overrides.perTick ?? 0;
+  const perSecond = overrides.perSecond ?? perTick;
   return Object.freeze({
     id: overrides.id,
     displayName: overrides.displayName ?? overrides.id,
     amount: overrides.amount ?? 0,
     unlocked: overrides.unlocked ?? true,
     visible: overrides.visible ?? true,
-    perTick: overrides.perTick ?? 0,
+    perSecond,
+    perTick,
     ...(overrides.capacity !== undefined ? { capacity: overrides.capacity } : {}),
   });
 }
