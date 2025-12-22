@@ -35,7 +35,10 @@ import {
   missingMetricReferenceFixture,
   missingPrestigeCountResourceFixture,
   missingResourceReferenceFixture,
+  netLossIndirectTransformCycleFixture,
   netLossTransformCycleFixture,
+  neutralTransformCycleFixture,
+  nonSimpleTransformCycleFixture,
   resourceSinkTransformFixture,
   selfThresholdUnlockConditionsFixture,
   selfReferencingDependencyFixture,
@@ -278,6 +281,51 @@ describe('Integration: Cyclic Dependencies', () => {
     if (!result.success) {
       console.error('Validation errors:', getZodIssues(result.error));
     }
+  });
+
+  it('allows transform cycles with neutral ratio (exactly 1.0)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(neutralTransformCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('allows indirect transform cycles (3+ transforms) with net loss', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(netLossIndirectTransformCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('rejects cycles containing non-simple transforms (multi-input)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(nonSimpleTransformCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should reject because cycle profitability cannot be evaluated
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+    // Error message should mention profitability evaluation
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/profitability/i),
+        }),
+      ]),
+    );
   });
 
   it('allows linear transform chains without cycles', () => {

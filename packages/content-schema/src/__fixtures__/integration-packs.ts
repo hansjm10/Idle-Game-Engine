@@ -947,6 +947,259 @@ export const netLossTransformCycleFixture = {
 };
 
 /**
+ * DIRECT TRANSFORM CHAIN - NEUTRAL: Transform A → Transform B → Transform A
+ * Overall cycle ratio = 1.0 (exactly neutral, should be allowed)
+ * Transform A: 100 X → 100 Y (ratio 1.0)
+ * Transform B: 100 Y → 100 X (ratio 1.0)
+ */
+export const neutralTransformCycleFixture = {
+  metadata: {
+    id: 'neutral-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * INDIRECT TRANSFORM CHAIN - NET LOSS: Transform A → Transform B → Transform C → Transform A
+ * Overall cycle ratio = 0.9 * 0.9 * 0.9 = 0.729 (net loss, should be allowed)
+ * Transform A: 100 X → 90 Y (ratio 0.9)
+ * Transform B: 100 Y → 90 Z (ratio 0.9)
+ * Transform C: 100 Z → 90 X (ratio 0.9)
+ */
+export const netLossIndirectTransformCycleFixture = {
+  metadata: {
+    id: 'net-loss-indirect-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-z',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-c',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * NON-SIMPLE TRANSFORM IN CYCLE: Transform with multiple inputs in a cycle
+ * Should be rejected because cycle profitability cannot be evaluated
+ */
+export const nonSimpleTransformCycleFixture = {
+  metadata: {
+    id: 'non-simple-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-catalyst',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+        {
+          resourceId: 'resource-catalyst',
+          amount: { kind: 'constant', value: 10 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
  * CYCLIC TRANSFORM CHAINS - INDIRECT: Transform A → Transform B → Transform C → Transform A
  * Transform A consumes X, produces Y
  * Transform B consumes Y, produces Z

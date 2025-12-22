@@ -2299,8 +2299,8 @@ const findNetPositiveCycle = (
   const previous = new Array<number>(transformIds.length).fill(-1);
   let updatedIndex = -1;
 
-  for (const transformId of transformIds) {
-    void transformId;
+  const n = transformIds.length;
+  for (let i = 0; i < n; i += 1) {
     updatedIndex = -1;
     for (const edge of edges) {
       if (distances[edge.to] > distances[edge.from] + edge.weight) {
@@ -2316,8 +2316,7 @@ const findNetPositiveCycle = (
   }
 
   let cycleIndex = updatedIndex;
-  for (const transformId of transformIds) {
-    void transformId;
+  for (let i = 0; i < n; i += 1) {
     const prevIndex = previous[cycleIndex];
     if (prevIndex === -1) {
       return undefined;
