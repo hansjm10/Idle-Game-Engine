@@ -35,7 +35,7 @@ export function UpgradeModal({ open, onClose }: UpgradeModalProps): JSX.Element 
 
   // Derive visible list unconditionally so Hooks order remains stable
   const visibleUpgrades = useMemo(
-    () => (upgrades ?? []).filter((u) => u.isVisible),
+    () => (upgrades ?? []).filter((u) => u.visible),
     [upgrades],
   );
 

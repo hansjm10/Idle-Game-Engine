@@ -47,8 +47,8 @@ export type ResourceView = Readonly<{
   id: string;
   displayName: string;
   amount: number;
-  isUnlocked: boolean;
-  isVisible: boolean;
+  unlocked: boolean;
+  visible: boolean;
   capacity?: number;
   perTick: number;
 }>;
@@ -58,8 +58,8 @@ export type GeneratorView = Readonly<{
   displayName: string;
   owned: number;
   enabled: boolean;
-  isUnlocked: boolean;
-  isVisible: boolean;
+  unlocked: boolean;
+  visible: boolean;
   unlockHint?: string;
   costs: readonly GeneratorCostView[];
   canAfford: boolean;
@@ -82,7 +82,7 @@ export type UpgradeView = Readonly<{
   canAfford: boolean;
   costs?: readonly UpgradeCostView[];
   unlockHint?: string;
-  isVisible: boolean;
+  visible: boolean;
 }>;
 
 export type AchievementCategory =
@@ -103,8 +103,8 @@ export type AchievementView = Readonly<{
   category: AchievementCategory;
   tier: AchievementTier;
   mode: AchievementProgressMode;
-  isVisible: boolean;
-  isUnlocked: boolean;
+  visible: boolean;
+  unlocked: boolean;
   completions: number;
   progress: number;
   target: number;
@@ -116,8 +116,8 @@ export type AutomationView = Readonly<{
   id: string;
   displayName: string;
   description: string;
-  isUnlocked: boolean;
-  isVisible: boolean;
+  unlocked: boolean;
+  visible: boolean;
   isEnabled: boolean;
   lastTriggeredAt: number | null;
   cooldownRemainingMs: number;
@@ -170,7 +170,7 @@ export type PrestigeLayerView = Readonly<{
   summary?: string;
   status: 'locked' | 'available' | 'completed';
   unlockHint?: string;
-  isVisible: boolean;
+  visible: boolean;
   rewardPreview?: PrestigeRewardPreview;
   resetTargets: readonly string[];
   resetGenerators?: readonly string[];
@@ -359,8 +359,8 @@ function createResourceViews(
         id,
         displayName,
         amount: snapshot.amounts[index] ?? 0,
-        isUnlocked: source.state.isUnlocked(index),
-        isVisible: source.state.isVisible(index),
+        unlocked: source.state.isUnlocked(index),
+        visible: source.state.isVisible(index),
         ...(capacity !== undefined ? { capacity } : {}),
         perTick,
       });
@@ -396,8 +396,8 @@ function createResourceViews(
         id,
         displayName,
         amount: serialized.amounts[index] ?? 0,
-        isUnlocked: Boolean(unlocked),
-        isVisible: Boolean(visible),
+        unlocked: Boolean(unlocked),
+        visible: Boolean(visible),
         ...(capacity !== undefined ? { capacity } : {}),
         perTick: 0,
       });
@@ -445,8 +445,8 @@ function createGeneratorViews(
       displayName: generator.displayName ?? generator.id,
       owned: Number.isFinite(generator.owned) ? generator.owned : 0,
       enabled: generator.enabled ?? true,
-      isUnlocked: Boolean(generator.isUnlocked),
-      isVisible: Boolean(generator.isVisible),
+      unlocked: Boolean(generator.isUnlocked),
+      visible: Boolean(generator.isVisible),
       ...(unlockHint ? { unlockHint } : {}),
       costs: quote,
       canAfford,
@@ -496,7 +496,7 @@ function createUpgradeViews(
       canAfford,
       costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
       ...(unlockHint ? { unlockHint } : {}),
-      isVisible: Boolean(upgrade.isVisible),
+      visible: Boolean(upgrade.isVisible),
     });
 
     views.push(view);
@@ -528,8 +528,8 @@ function createAchievementViews(
       category: achievement.category,
       tier: achievement.tier,
       mode: achievement.mode,
-      isVisible: Boolean(achievement.isVisible),
-      isUnlocked:
+      visible: Boolean(achievement.isVisible),
+      unlocked:
         Number.isFinite(completions) && completions > 0,
       completions:
         Number.isFinite(completions) && completions > 0
@@ -579,11 +579,11 @@ function createAutomationViews(
 
   for (const automation of sorted) {
     const state = source.state.get(automation.id);
-    const isUnlocked = state?.unlocked ?? false;
-    const isVisible =
+    const unlocked = state?.unlocked ?? false;
+    const visible =
       automation.visibilityCondition && conditionContext
         ? evaluateCondition(automation.visibilityCondition, conditionContext)
-        : isUnlocked;
+        : unlocked;
     const rawCooldownExpiresStep = state?.cooldownExpiresStep;
     const cooldownExpiresStep = Number.isFinite(rawCooldownExpiresStep)
       ? Number(rawCooldownExpiresStep)
@@ -606,8 +606,8 @@ function createAutomationViews(
         id: automation.id,
         displayName: automation.name.default,
         description: automation.description.default,
-        isUnlocked,
-        isVisible,
+        unlocked,
+        visible,
         isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
         lastTriggeredAt,
         cooldownRemainingMs,
@@ -863,7 +863,7 @@ function createPrestigeLayerViews(
       summary: layer.summary,
       status: quote?.status ?? 'locked',
       ...(unlockHint ? { unlockHint } : {}),
-      isVisible: Boolean(layer.isVisible),
+      visible: Boolean(layer.isVisible),
       rewardPreview: quote?.reward,
       resetTargets: quote?.resetTargets ?? (EMPTY_ARRAY as readonly string[]),
       resetGenerators: quote?.resetGenerators,

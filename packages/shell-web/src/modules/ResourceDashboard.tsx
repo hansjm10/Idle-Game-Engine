@@ -234,7 +234,7 @@ export function ResourceDashboard(): JSX.Element | null {
   // Filter to unlocked and visible resources (runs on every render to keep
   // hook order stable even before progression data is available).
   const visibleResources = useMemo(
-    () => (resources ?? []).filter((r) => r.isUnlocked && r.isVisible),
+    () => (resources ?? []).filter((r) => r.unlocked && r.visible),
     [resources],
   );
 

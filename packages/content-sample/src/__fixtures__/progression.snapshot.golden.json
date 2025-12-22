@@ -5,8 +5,8 @@
       "displayName": "Reactor",
       "owned": 0,
       "enabled": true,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 100, "canAfford": false, "currentAmount": 10 }
       ],
@@ -20,8 +20,8 @@
       "displayName": "Crystal Harvester",
       "owned": 0,
       "enabled": true,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 625, "canAfford": false, "currentAmount": 10 }
       ],
@@ -35,8 +35,8 @@
       "displayName": "Forge",
       "owned": 0,
       "enabled": true,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false, "currentAmount": 10 }
       ],
@@ -53,8 +53,8 @@
       "displayName": "Research Lab",
       "owned": 0,
       "enabled": true,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 120, "canAfford": false, "currentAmount": 10 }
       ],
@@ -71,8 +71,8 @@
       "displayName": "Gate Reactor",
       "owned": 0,
       "enabled": true,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         { "resourceId": "sample-pack.data-core", "amount": 500, "canAfford": false, "currentAmount": 0 }
       ],
@@ -91,7 +91,7 @@
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false, "currentAmount": 10 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.reactor-overclock",
@@ -101,7 +101,7 @@
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 150, "canAfford": false, "currentAmount": 10 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.reactor-phase-cooling",
@@ -111,7 +111,7 @@
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 400, "canAfford": false, "currentAmount": 10 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.harvester-efficiency",
@@ -121,7 +121,7 @@
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 125, "canAfford": false, "currentAmount": 10 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.harvester-deep-core",
@@ -131,7 +131,7 @@
       "costs": [
         { "resourceId": "sample-pack.crystal", "amount": 200, "canAfford": false, "currentAmount": 0 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.harvester-quantum-sieve",
@@ -141,7 +141,7 @@
       "costs": [
         { "resourceId": "sample-pack.crystal", "amount": 250, "canAfford": false, "currentAmount": 0 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.forge-heat-shield",
@@ -151,7 +151,7 @@
       "costs": [
         { "resourceId": "sample-pack.energy", "amount": 320, "canAfford": false, "currentAmount": 10 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.forge-auto-feed",
@@ -161,7 +161,7 @@
       "costs": [
         { "resourceId": "sample-pack.alloy", "amount": 180, "canAfford": false, "currentAmount": 0 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.lab-insight-boost",
@@ -171,7 +171,7 @@
       "costs": [
         { "resourceId": "sample-pack.alloy", "amount": 220, "canAfford": false, "currentAmount": 0 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.lab-simulation-stack",
@@ -181,7 +181,7 @@
       "costs": [
         { "resourceId": "sample-pack.prestige-flux", "amount": 1, "canAfford": false, "currentAmount": 0 }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.ascension-surge",
@@ -191,7 +191,7 @@
       "costs": [
         { "resourceId": "sample-pack.prestige-flux", "amount": 0, "canAfford": true, "currentAmount": 0 }
       ],
-      "isVisible": true
+      "visible": true
     }
   ]
 }

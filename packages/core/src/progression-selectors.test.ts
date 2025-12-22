@@ -24,8 +24,8 @@ function createResource(
     id: overrides.id,
     displayName: overrides.displayName ?? overrides.id,
     amount: overrides.amount ?? 0,
-    isUnlocked: overrides.isUnlocked ?? true,
-    isVisible: overrides.isVisible ?? true,
+    unlocked: overrides.unlocked ?? true,
+    visible: overrides.visible ?? true,
     perTick: overrides.perTick ?? 0,
     ...(overrides.capacity !== undefined ? { capacity: overrides.capacity } : {}),
   });
@@ -42,8 +42,8 @@ function createGenerator(
     displayName: overrides.displayName ?? overrides.id,
     owned: overrides.owned ?? 0,
     enabled: overrides.enabled ?? true,
-    isUnlocked: overrides.isUnlocked ?? true,
-    isVisible: overrides.isVisible ?? true,
+    unlocked: overrides.unlocked ?? true,
+    visible: overrides.visible ?? true,
     costs,
     canAfford,
     produces: overrides.produces ?? Object.freeze([]),
@@ -67,7 +67,7 @@ function createUpgrade(
     ...(overrides.unlockHint !== undefined
       ? { unlockHint: overrides.unlockHint }
       : {}),
-    isVisible: overrides.isVisible ?? true,
+    visible: overrides.visible ?? true,
   });
 }
 
@@ -91,9 +91,9 @@ describe('progression snapshot selectors', () => {
   it('filters visible and unlocked generators', () => {
     const snapshot = createSnapshot({
       generators: Object.freeze([
-        createGenerator({ id: 'gen.visible.unlocked', isVisible: true, isUnlocked: true }),
-        createGenerator({ id: 'gen.hidden', isVisible: false, isUnlocked: true }),
-        createGenerator({ id: 'gen.locked', isVisible: true, isUnlocked: false }),
+        createGenerator({ id: 'gen.visible.unlocked', visible: true, unlocked: true }),
+        createGenerator({ id: 'gen.hidden', visible: false, unlocked: true }),
+        createGenerator({ id: 'gen.locked', visible: true, unlocked: false }),
       ]),
     });
 
@@ -142,7 +142,7 @@ describe('progression snapshot selectors', () => {
             { resourceId: 'energy', amount: 1, canAfford: true },
           ]),
           nextPurchaseReadyAtStep: 11,
-          isVisible: false,
+          visible: false,
         }),
         createGenerator({
           id: 'gen.locked',
@@ -150,7 +150,7 @@ describe('progression snapshot selectors', () => {
             { resourceId: 'energy', amount: 1, canAfford: true },
           ]),
           nextPurchaseReadyAtStep: 11,
-          isUnlocked: false,
+          unlocked: false,
         }),
       ]),
     });
@@ -170,7 +170,7 @@ describe('progression snapshot selectors', () => {
           costs: Object.freeze([
             { resourceId: 'energy', amount: 10, canAfford: true },
           ]),
-          isVisible: true,
+          visible: true,
         }),
         createUpgrade({
           id: 'upgrade.available.expensive',
@@ -178,7 +178,7 @@ describe('progression snapshot selectors', () => {
           costs: Object.freeze([
             { resourceId: 'energy', amount: 50, canAfford: false },
           ]),
-          isVisible: true,
+          visible: true,
         }),
         createUpgrade({
           id: 'upgrade.locked.visible',
@@ -186,7 +186,7 @@ describe('progression snapshot selectors', () => {
           costs: Object.freeze([
             { resourceId: 'energy', amount: 1, canAfford: true },
           ]),
-          isVisible: true,
+          visible: true,
         }),
         createUpgrade({
           id: 'upgrade.locked.hidden',
@@ -194,7 +194,7 @@ describe('progression snapshot selectors', () => {
           costs: Object.freeze([
             { resourceId: 'energy', amount: 1, canAfford: true },
           ]),
-          isVisible: false,
+          visible: false,
         }),
       ]),
     });
@@ -222,25 +222,25 @@ describe('progression snapshot selectors', () => {
           id: 'upgrade.locked.hint',
           status: 'locked',
           unlockHint: 'Collect more energy',
-          isVisible: true,
+          visible: true,
         }),
         createUpgrade({
           id: 'upgrade.locked.empty',
           status: 'locked',
           unlockHint: '   ',
-          isVisible: true,
+          visible: true,
         }),
         createUpgrade({
           id: 'upgrade.locked.hidden',
           status: 'locked',
           unlockHint: 'Hidden',
-          isVisible: false,
+          visible: false,
         }),
         createUpgrade({
           id: 'upgrade.available.hint',
           status: 'available',
           unlockHint: 'Not locked',
-          isVisible: true,
+          visible: true,
         }),
       ]),
     });
@@ -270,7 +270,7 @@ describe('progression snapshot selectors', () => {
           costs: Object.freeze([
             { resourceId: 'energy', amount: 10, canAfford: true },
           ]),
-          isVisible: true,
+          visible: true,
         }),
       ]),
     });

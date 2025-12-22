@@ -105,7 +105,7 @@ export type PrestigeLayerView = Readonly<{
   summary?: string;
   status: 'locked' | 'available' | 'completed';
   unlockHint?: string;           // Teaser text for locked layers
-  isVisible: boolean;
+  visible: boolean;
   rewardPreview?: PrestigeRewardPreview;
   resetTargets: readonly string[]; // Resource IDs that will be reset
   retainedTargets: readonly string[]; // Resource IDs that survive

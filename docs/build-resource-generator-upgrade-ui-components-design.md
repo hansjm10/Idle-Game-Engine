@@ -59,11 +59,12 @@ The progression UI initiative replaces the placeholder shell with production-rea
 - **Data & Schemas**: Introduce `ProgressionSnapshot` TypeScript types exported from `@idle-engine/core` for the progression UI; align generator cost curves with sample pack schema (`packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts:114`) and reserve upgrade schema wiring as TODO (Content Systems owner).
 
 #### Field Sourcing
-- **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. Carry forward `isUnlocked`/`isVisible` flags so UI can respect gating, and compute `perTick` as `resourceState.getNetPerSecond(index) * (stepDurationMs / 1000)`, where `stepDurationMs` is the step size provided when constructing the worker runtime (the worker currently defaults this to 100 ms).
+- **Resources**: Publish `resources` by reshaping `SerializedResourceState` fields (`packages/core/src/resource-state.ts:119`) into presentation-friendly records. Carry forward `unlocked`/`visible` flags so UI can respect gating, and compute `perTick` as `resourceState.getNetPerSecond(index) * (stepDurationMs / 1000)`, where `stepDurationMs` is the step size provided when constructing the worker runtime (the worker currently defaults this to 100 ms).
 - **Generators**: Hydrate generator rows from the authoritative progression systems (existing handlers in `packages/core/src/resource-command-handlers.ts:54`). Instead of collapsing pricing, surface the full `GeneratorPurchaseQuote.costs` array (resource ID + amount) so UI remains accurate for future multi-resource definitions. Expose `nextPurchaseReadyAtStep` as `currentStep + 1` when no cooldown applies, mirroring the command queue’s deterministic “next tick” execution window.
-- **Upgrades**: Surface upgrade visibility, availability, and multi-resource pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, keep snapshot entries aligned with `status: 'locked' | 'available' | 'purchased'`, attach `costs` arrays when pricing exists, carry an `isVisible` flag, and gate any `available` state behind real economics shipped from `packages/content-sample`.
+- **Upgrades**: Surface upgrade visibility, availability, and multi-resource pricing from the upgrade progression system once the TODO scaffolding lands. While stubbing in the interim, keep snapshot entries aligned with `status: 'locked' | 'available' | 'purchased'`, attach `costs` arrays when pricing exists, carry a `visible` flag, and gate any `available` state behind real economics shipped from `packages/content-sample`.
 - **APIs & Contracts**: Add `PURCHASE_UPGRADE` command type (TODO owner: Runtime Protocol Agent) mirroring `PurchaseGeneratorPayload` (`packages/core/src/command.ts:121`); expose read-only view helpers on the shell bridge for the progression UI; guarantee schema version negotiation.
 - **Tooling & Automation**: Update Vitest suites for worker and shell modules (`packages/shell-web/src/runtime.worker.test.ts`) to assert new payloads and rejection flows; add component unit tests for the progression UI using React Testing Library; ensure `pnpm test --filter shell-web` remains primary validation (`docs/runtime-react-worker-bridge-design.md:164`).
+- **Migration**: Replace `isVisible`/`isUnlocked` with `visible`/`unlocked` in progression view consumers (resources, generators, upgrades, achievements, automations, transforms, prestige layers).
 
 #### Example Snapshot & Command Flow
 ```typescript
@@ -79,8 +80,8 @@ type ResourceView = Readonly<{
   id: string;
   displayName: string;
   amount: number;
-  isUnlocked: boolean;
-  isVisible: boolean;
+  unlocked: boolean;
+  visible: boolean;
   capacity?: number;
   perTick: number;
 }>;
@@ -97,8 +98,8 @@ type GeneratorView = Readonly<{
   displayName: string;
   owned: number;
   enabled: boolean;
-  isUnlocked: boolean;
-  isVisible: boolean;
+  unlocked: boolean;
+  visible: boolean;
   unlockHint?: string;
   costs: readonly GeneratorCostView[];
   canAfford: boolean;
@@ -121,7 +122,7 @@ type UpgradeView = Readonly<{
   canAfford: boolean;
   costs?: readonly UpgradeCostView[];
   unlockHint?: string;
-  isVisible: boolean;
+  visible: boolean;
 }>;
 ```
 
@@ -134,8 +135,8 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.energy",
       "displayName": "Energy",
       "amount": 125.5,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "capacity": 250,
       "perTick": 0.55
     },
@@ -143,8 +144,8 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.crystal",
       "displayName": "Crystal",
       "amount": 4,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "perTick": 0.025
     }
   ],
@@ -153,8 +154,8 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.reactor",
       "displayName": "Reactor",
       "owned": 6,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         {
           "resourceId": "sample-pack.energy",
@@ -174,8 +175,8 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.harvester",
       "displayName": "Crystal Harvester",
       "owned": 1,
-      "isUnlocked": true,
-      "isVisible": true,
+      "unlocked": true,
+      "visible": true,
       "costs": [
         {
           "resourceId": "sample-pack.energy",
@@ -201,7 +202,7 @@ type UpgradeView = Readonly<{
       "status": "locked",
       "canAfford": true,
       "unlockHint": "Accumulate 20 crystal to reveal this upgrade.",
-      "isVisible": false
+      "visible": false
     },
     {
       "id": "sample-pack.reactor-insulation",
@@ -216,14 +217,14 @@ type UpgradeView = Readonly<{
           "currentAmount": 125.5
         }
       ],
-      "isVisible": true
+      "visible": true
     },
     {
       "id": "sample-pack.reactor-overclock",
       "displayName": "Reactor Overclock",
       "status": "purchased",
       "canAfford": true,
-      "isVisible": true
+      "visible": true
     }
   ]
 }
