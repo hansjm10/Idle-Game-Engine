@@ -794,10 +794,16 @@ export function createGameRuntime(
   options: CreateGameRuntimeOptions,
 ): GameRuntimeWiring {
   const stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
-  const applyViaFinalizeTick = options.production?.applyViaFinalizeTick ?? false;
+  const hasGenerators = options.content.generators.length > 0;
+  const enableProduction = options.enableProduction ?? hasGenerators;
+  const applyViaFinalizeTick = options.production?.applyViaFinalizeTick ?? true;
   const maxStepsPerFrame =
     options.maxStepsPerFrame ??
-    (applyViaFinalizeTick ? 1 : undefined);
+    (applyViaFinalizeTick && enableProduction && hasGenerators ? 1 : undefined);
+  const productionOptions =
+    options.production === undefined
+      ? { applyViaFinalizeTick }
+      : { ...options.production, applyViaFinalizeTick };
 
   const commandQueue = new CommandQueue();
   const commandDispatcher = new CommandDispatcher();
@@ -821,10 +827,10 @@ export function createGameRuntime(
     content: options.content,
     runtime,
     coordinator,
-    enableProduction: options.enableProduction,
+    enableProduction,
     enableAutomation: options.enableAutomation,
     enableTransforms: options.enableTransforms,
-    production: options.production,
+    production: productionOptions,
     registerOfflineCatchup: options.registerOfflineCatchup,
   });
 }

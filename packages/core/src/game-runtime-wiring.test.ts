@@ -94,14 +94,16 @@ function createContentWithGeneratorAutomationAndTransform() {
 }
 
 describe('createGameRuntime', () => {
-  it('wires systems in canonical order', () => {
+  it('wires systems in canonical order with rate tracking enabled by default', () => {
     const wiring = createGameRuntime({
       content: createContentWithGeneratorAndAutomation(),
       stepSizeMs: 100,
     });
 
+    expect(wiring.runtime.getMaxStepsPerFrame()).toBe(1);
     expect(wiring.systems.map((system) => system.id)).toEqual([
       'production',
+      'resource-finalize',
       'automation-system',
       'progression-coordinator',
     ]);
@@ -116,6 +118,7 @@ describe('createGameRuntime', () => {
     expect(wiring.transformSystem).toBeDefined();
     expect(wiring.systems.map((system) => system.id)).toEqual([
       'production',
+      'resource-finalize',
       'automation-system',
       'transform-system',
       'progression-coordinator',
@@ -152,16 +155,15 @@ describe('createGameRuntime', () => {
     expect(wiring.coordinator.resourceState.getAmount(goldIndex)).toBe(1);
   });
 
-  it('inserts resource finalize system when applyViaFinalizeTick is enabled', () => {
+  it('skips resource finalize system when applyViaFinalizeTick is disabled', () => {
     const wiring = createGameRuntime({
       content: createContentWithGeneratorAndAutomation(),
-      production: { applyViaFinalizeTick: true },
+      production: { applyViaFinalizeTick: false },
     });
 
-    expect(wiring.runtime.getMaxStepsPerFrame()).toBe(1);
+    expect(wiring.runtime.getMaxStepsPerFrame()).toBeGreaterThan(1);
     expect(wiring.systems.map((system) => system.id)).toEqual([
       'production',
-      'resource-finalize',
       'automation-system',
       'progression-coordinator',
     ]);
@@ -173,6 +175,7 @@ describe('createGameRuntime', () => {
         resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],
       }),
       stepSizeMs: 100,
+      production: { applyViaFinalizeTick: false },
     });
 
     const updateSpy = vi.spyOn(wiring.coordinator, 'updateForStep');
