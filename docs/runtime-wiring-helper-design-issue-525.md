@@ -111,12 +111,12 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
   - Provisional options (enough to satisfy issue-525 without over-scoping):
     - `content: NormalizedContentPack` (required)
     - `stepSizeMs?: number` (default: `100`)
-    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; when `applyViaFinalizeTick: true`, default becomes `1` unless explicitly set; see Section 13)
+    - `maxStepsPerFrame?: number` (default: `IdleEngineRuntime` default; when `applyViaFinalizeTick: true` and production is enabled, default becomes `1` unless explicitly set; see Section 13)
     - `initialProgressionState?: ProgressionAuthoritativeState` (optional; passed to `createProgressionCoordinator`)
     - `enableProduction?: boolean` (default: `content.generators.length > 0`)
     - `enableAutomation?: boolean` (default: `content.automations.length > 0`)
     - `enableTransforms?: boolean` (default: `content.transforms.length > 0`)
-    - `production?: { applyViaFinalizeTick?: boolean }` (default: `false`; see finalize/apply notes below)
+    - `production?: { applyViaFinalizeTick?: boolean }` (default: `true` for `createGameRuntime`; `false` for `wireGameRuntime`; see finalize/apply notes below)
     - `registerOfflineCatchup?: boolean` (default: `true`; see Section 13)
   - Return a `GameRuntimeWiring` object that includes:
     - `runtime: IdleEngineRuntime`
@@ -154,7 +154,7 @@ This design document addresses GitHub issue **#525** by introducing a first-clas
     - production can queue per-second rates (`applyIncome/applyExpense`)
     - `resourceState.finalizeTick(context.deltaMs)` applies balances before automation evaluates resource thresholds
   - When `applyViaFinalizeTick: false`, do not add finalize system (avoid per-step O(resourceCount) finalize loops).
-  - UI rate display note: when using the core `ResourceState` (supports `finalizeTick`), direct-apply production updates balances but does not populate `incomePerSecond` / `expensePerSecond` / `netPerSecond`, so `buildProgressionSnapshot(...).resources[].perTick` will remain `0` unless finalize/apply semantics (or alternative rate tracking) are used.
+  - UI rate display note: when using the core `ResourceState` (supports `finalizeTick`), direct-apply production updates balances but does not populate `incomePerSecond` / `expensePerSecond` / `netPerSecond`, so `buildProgressionSnapshot(...).resources[].perTick` will remain `0` unless finalize/apply semantics (or alternative rate tracking) are used. `createGameRuntime` defaults `applyViaFinalizeTick` to `true` to avoid this; `wireGameRuntime` keeps explicit opt-in for advanced wiring.
   - Multi-step tick constraint: per-second rate fields are additive and must be cleared once per tick after a `snapshot({ mode: 'publish' })` + `resetPerTickAccumulators()` boundary (`docs/resource-state-storage-design.md:455`). When `applyViaFinalizeTick: true`, the integration MUST ensure that boundary occurs once per processed step; the simplest safe default is to keep `maxStepsPerFrame: 1` (or otherwise ensure only one step runs between resource publish/resets). Offline/backlog fast-forward can still run by looping ticks and publishing/resetting per step, forwarding only the final snapshot to the UI.
   - Documentation MUST explicitly state that per-second rate accumulators are additive and require a publish/reset per tick (`packages/core/src/resource-state.ts:951`), and link to `docs/resource-state-storage-design.md:455`.
 - **Standard command handler registration**:
@@ -182,8 +182,8 @@ export function createWorkerRuntime(content: NormalizedContentPack) {
     content,
     stepSizeMs: 100,
     registerOfflineCatchup: true,
-    // production: { applyViaFinalizeTick: true },
-    // maxStepsPerFrame: 1, // recommended when applyViaFinalizeTick is enabled
+    // production: { applyViaFinalizeTick: false }, // opt out of rate tracking
+    // maxStepsPerFrame: 1, // defaults to 1 when applyViaFinalizeTick is true
   });
 
   const { runtime, coordinator } = wiring;
@@ -227,7 +227,7 @@ import type { NormalizedContentPack } from '@idle-engine/content-schema';
 const STEP_SIZE_MS = 100;
 
 export function wireRuntimeManually(content: NormalizedContentPack) {
-  const applyViaFinalizeTick = false;
+  const applyViaFinalizeTick = true;
 
   const commandQueue = new CommandQueue();
   const commandDispatcher = new CommandDispatcher();
@@ -385,7 +385,7 @@ export function wireRuntimeManually(content: NormalizedContentPack) {
   - Add at least one test case that exercises `runtime.tick` processing >1 step per call (to catch ordering regressions under backlog).
 - **Performance**:
   - No new hot-loop allocations beyond existing wiring; avoid per-step O(N) work in helper itself.
-  - If `applyViaFinalizeTick` is enabled, document the cost and require explicit opt-in.
+  - If `applyViaFinalizeTick` is enabled (default in `createGameRuntime`), document the cost and make opt-out explicit; keep `wireGameRuntime` opt-in.
 - **Tooling / A11y**:
   - Not applicable to issue-525 unless `shell-web` UI flows change.
 
@@ -397,7 +397,7 @@ export function wireRuntimeManually(content: NormalizedContentPack) {
 - **Risk: Browser/Node entrypoint export drift** (`index.ts` vs `index.browser.ts`).
   - Mitigation: add export tests or a single source module imported by both entrypoints (implementation detail to be decided by Runtime Implementation Agent).
 - **Risk: Performance regressions in backlog/offline catchup**.
-  - Mitigation: keep finalize/apply and any per-step finalize loops behind explicit options; do not build progression snapshots per step inside the helper.
+  - Mitigation: keep finalize/apply opt-in for `wireGameRuntime`, clamp `maxStepsPerFrame` to `1` by default when rate tracking is enabled in `createGameRuntime`, and avoid per-step snapshot publication inside the helper.
 
 ## 12. Rollout Plan
 - **Milestones**:
@@ -419,9 +419,9 @@ The following items are treated as **resolved decisions** for the issue-525 impl
    - Rationale: Matches existing shell-web wiring, keeps step alignment invariant (`coordinator.getLastUpdatedStep() === runtime.getCurrentStep()` after a tick), and avoids same-step “achievement unlock → automation fires” chains.
 3. **Offline catchup default**: Default `registerOfflineCatchup: true`, with an opt-out.
    - Rationale: Matches shell-web, and command authorization already blocks `OFFLINE_CATCHUP` from `PLAYER` priority, keeping the handler safe-by-default.
-4. **Production default mode**: Default `production.applyViaFinalizeTick: false`.
-   - Rationale: Safe under backlog/multi-step `runtime.tick(deltaMs)` processing and avoids correctness hazards tied to additive per-second accumulators. The rate-display trade-off (`perTick` remaining `0`) is acceptable as a default; shells that want live rates can opt into finalize/apply mode with the constraints below.
-5. **Finalize/apply safety default**: When `production.applyViaFinalizeTick: true` and `maxStepsPerFrame` is not provided, set `maxStepsPerFrame = 1`.
+4. **Production default mode**: Default `production.applyViaFinalizeTick: true` in `createGameRuntime`; keep `wireGameRuntime` opt-in (`false`).
+   - Rationale: Most shells want live rate display, and enabling finalize/apply avoids the confusing `perTick = 0` default. The helper clamps `maxStepsPerFrame` to `1` when production is enabled to preserve accumulator safety; advanced shells can opt out via `wireGameRuntime` or by setting `applyViaFinalizeTick: false`.
+5. **Finalize/apply safety default**: When `production.applyViaFinalizeTick: true` and `maxStepsPerFrame` is not provided, set `maxStepsPerFrame = 1` (when production is enabled).
    - Rationale: Prevents a subtle but severe drift bug when `runtime.tick()` processes multiple steps per call while per-second rate buffers are additive and only reset on publish/reset boundaries.
 6. **Transforms**: Wire `TransformSystem` in the helper when transforms are present (issue-598).
    - Rationale: Matches shell-web wiring, keeps save/load access to transform state, and remains opt-in via `enableTransforms` or empty `content.transforms`.
