@@ -11,7 +11,7 @@ sidebar_position: 6
 - **Reviewers**: Hans Jensen (Content Pipeline Owner), Docs Maintainers
 - **Status**: Draft
 - **Last Updated**: 2025-10-27
-- **Related Issues**: [#15](https://github.com/hansjm10/Idle-Game-Engine/issues/15)
+- **Related Issues**: #15 (internal tracker)
 - **Execution Mode**: AI-led
 
 ## 1. Summary
