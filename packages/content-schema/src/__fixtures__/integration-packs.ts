@@ -840,13 +840,13 @@ export const cyclicTransformDirectFixture = {
       inputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 120 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -859,13 +859,559 @@ export const cyclicTransformDirectFixture = {
       inputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DIRECT TRANSFORM CHAIN - NET LOSS: Transform A → Transform B → Transform A
+ * Transform A consumes X, produces Y
+ * Transform B consumes Y, produces X
+ */
+export const netLossTransformCycleFixture = {
+  metadata: {
+    id: 'net-loss-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DIRECT TRANSFORM CHAIN - NEUTRAL: Transform A → Transform B → Transform A
+ * Overall cycle ratio = 1.0 (exactly neutral, should be allowed)
+ * Transform A: 100 X → 100 Y (ratio 1.0)
+ * Transform B: 100 Y → 100 X (ratio 1.0)
+ */
+export const neutralTransformCycleFixture = {
+  metadata: {
+    id: 'neutral-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * INDIRECT TRANSFORM CHAIN - NET LOSS: Transform A → Transform B → Transform C → Transform A
+ * Overall cycle ratio = 0.9 * 0.9 * 0.9 = 0.729 (net loss, should be allowed)
+ * Transform A: 100 X → 90 Y (ratio 0.9)
+ * Transform B: 100 Y → 90 Z (ratio 0.9)
+ * Transform C: 100 Z → 90 X (ratio 0.9)
+ */
+export const netLossIndirectTransformCycleFixture = {
+  metadata: {
+    id: 'net-loss-indirect-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-z',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-c',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-z',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * NON-SIMPLE TRANSFORM IN CYCLE: Transform with multiple inputs in a cycle
+ * Should be rejected because cycle profitability cannot be evaluated
+ */
+export const nonSimpleTransformCycleFixture = {
+  metadata: {
+    id: 'non-simple-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-catalyst',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+        {
+          resourceId: 'resource-catalyst',
+          amount: { kind: 'constant', value: 10 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * EPSILON BOUNDARY TEST - BELOW THRESHOLD: Cycle ratio just below PROFIT_EPSILON (1e-8).
+ * Ratio = 1.000000001 (1e-9 above 1.0) which is below the 1e-8 threshold.
+ * Should be ALLOWED.
+ */
+export const epsilonBelowThresholdCycleFixture = {
+  metadata: {
+    id: 'epsilon-below-threshold-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          // Using large numbers to achieve precise ratio
+          amount: { kind: 'constant', value: 1000000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          // Ratio = 1.000000001 (1e-9 above 1.0)
+          amount: { kind: 'constant', value: 1000000001 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 1000000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          // Ratio = 1.0
+          amount: { kind: 'constant', value: 1000000000 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * EPSILON BOUNDARY TEST - ABOVE THRESHOLD: Cycle ratio just above PROFIT_EPSILON (1e-8).
+ * Ratio = 1.00000002 (2e-8 above 1.0) which is above the 1e-8 threshold.
+ * Should be REJECTED.
+ */
+export const epsilonAboveThresholdCycleFixture = {
+  metadata: {
+    id: 'epsilon-above-threshold-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          // Ratio = 1.00000002 (2e-8 above 1.0)
+          amount: { kind: 'constant', value: 100000002 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          // Ratio = 1.0
+          amount: { kind: 'constant', value: 100000000 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * NON-CONSTANT FORMULA IN CYCLE: Transform with linear formula in a cycle.
+ * Should be rejected because cycle profitability cannot be evaluated for non-constant formulas.
+ */
+export const nonConstantFormulaCycleFixture = {
+  metadata: {
+    id: 'non-constant-formula-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          // Linear formula instead of constant - profitability cannot be evaluated
+          amount: { kind: 'linear', base: 80, slope: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -919,13 +1465,13 @@ export const cyclicTransformIndirectFixture = {
       inputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -938,13 +1484,13 @@ export const cyclicTransformIndirectFixture = {
       inputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -957,13 +1503,13 @@ export const cyclicTransformIndirectFixture = {
       inputs: [
         {
           resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -1385,7 +1931,326 @@ export const selfReferencingTransformFixture = {
       outputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 0.8 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * ZERO-AMOUNT TRANSFORM IN CYCLE: Transform with zero input amount.
+ * Should be treated as non-simple (profitability cannot be evaluated) and rejected if in a cycle.
+ */
+export const zeroAmountTransformCycleFixture = {
+  metadata: {
+    id: 'zero-amount-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          // Zero amount - should be treated as non-simple
+          amount: { kind: 'constant', value: 0 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DISJOINT CYCLES: Two independent cycles in the same pack.
+ * One net-positive (X<->Y) and one net-loss (A<->B).
+ * Should be rejected because of the net-positive cycle.
+ */
+export const disjointCyclesFixture = {
+  metadata: {
+    id: 'disjoint-cycles',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-a',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-b',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    // Net-positive cycle: X <-> Y (ratio = 1.2 * 1.1 = 1.32)
+    {
+      id: 'transform-x-to-y',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 120 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-y-to-x',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 110 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    // Net-loss cycle: A <-> B (ratio = 0.8 * 0.9 = 0.72)
+    {
+      id: 'transform-a-to-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b-to-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DISJOINT CYCLES - ALL NET LOSS: Two independent net-loss cycles.
+ * Both should be allowed since neither is net-positive.
+ */
+export const disjointNetLossCyclesFixture = {
+  metadata: {
+    id: 'disjoint-net-loss-cycles',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-a',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-b',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    // Net-loss cycle 1: X <-> Y (ratio = 0.8 * 0.9 = 0.72)
+    {
+      id: 'transform-x-to-y',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-y-to-x',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    // Net-loss cycle 2: A <-> B (ratio = 0.7 * 0.85 = 0.595)
+    {
+      id: 'transform-a-to-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 70 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b-to-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-b',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-a',
+          amount: { kind: 'constant', value: 85 },
         },
       ],
       trigger: { kind: 'manual' as const },

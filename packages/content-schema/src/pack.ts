@@ -2036,6 +2036,13 @@ const validateDependencies = (
  */
 type AdjacencyGraph = Map<string, Set<string>>;
 type CyclePath = string[];
+type TransformConversion = {
+  readonly inputResourceId: string;
+  readonly outputResourceId: string;
+  readonly ratio: number;
+};
+
+const PROFIT_EPSILON = 1e-8;
 
 /**
  * Normalizes a cycle path to its canonical form for deduplication.
@@ -2140,6 +2147,213 @@ const detectCycles = (
   return cycles;
 };
 
+const getConstantFormulaValue = (formula: NumericFormula): number | undefined => {
+  if (formula.kind !== 'constant') {
+    return undefined;
+  }
+  return formula.value;
+};
+
+const buildTransformConversion = (
+  transform: TransformDefinition,
+): TransformConversion | undefined => {
+  if (transform.inputs.length !== 1 || transform.outputs.length !== 1) {
+    return undefined;
+  }
+  const input = transform.inputs[0];
+  const output = transform.outputs[0];
+  const inputAmount = getConstantFormulaValue(input.amount);
+  const outputAmount = getConstantFormulaValue(output.amount);
+  if (inputAmount === undefined || outputAmount === undefined) {
+    return undefined;
+  }
+  if (inputAmount <= 0 || outputAmount <= 0) {
+    return undefined;
+  }
+  const ratio = outputAmount / inputAmount;
+  if (!Number.isFinite(ratio)) {
+    return undefined;
+  }
+  return {
+    inputResourceId: input.resourceId,
+    outputResourceId: output.resourceId,
+    ratio,
+  };
+};
+
+const getCycleRatio = (
+  cyclePath: CyclePath,
+  conversions: ReadonlyMap<string, TransformConversion>,
+): number | undefined => {
+  let ratio = 1;
+  for (let i = 0; i < cyclePath.length - 1; i += 1) {
+    const current = conversions.get(cyclePath[i]);
+    const next = conversions.get(cyclePath[i + 1]);
+    if (!current || !next) {
+      return undefined;
+    }
+    if (current.outputResourceId !== next.inputResourceId) {
+      return undefined;
+    }
+    ratio *= current.ratio;
+    if (!Number.isFinite(ratio)) {
+      return undefined;
+    }
+  }
+  return ratio;
+};
+
+const findCycleFromNode = (
+  startId: string,
+  adjacency: AdjacencyGraph,
+): CyclePath | undefined => {
+  const edges = adjacency.get(startId);
+  if (edges?.has(startId)) {
+    return [startId, startId];
+  }
+
+  const queue: string[] = [startId];
+  const visited = new Set<string>([startId]);
+  const previous = new Map<string, string>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    const targets = adjacency.get(current);
+    if (!targets) {
+      continue;
+    }
+    for (const next of targets) {
+      if (next === startId) {
+        const path: string[] = [];
+        let cursor = current;
+        path.push(cursor);
+        while (cursor !== startId) {
+          const parent = previous.get(cursor);
+          if (!parent) {
+            return undefined;
+          }
+          cursor = parent;
+          path.push(cursor);
+        }
+        path.reverse();
+        path.push(startId);
+        return path;
+      }
+      if (!visited.has(next)) {
+        visited.add(next);
+        previous.set(next, current);
+        queue.push(next);
+      }
+    }
+  }
+
+  return undefined;
+};
+
+const findNetPositiveCycle = (
+  transformIds: readonly string[],
+  adjacency: AdjacencyGraph,
+  conversions: ReadonlyMap<string, TransformConversion>,
+): CyclePath | undefined => {
+  if (transformIds.length === 0) {
+    return undefined;
+  }
+
+  const indexById = new Map<string, number>();
+  transformIds.forEach((id, index) => {
+    indexById.set(id, index);
+  });
+
+  const edges: { from: number; to: number; weight: number }[] = [];
+  transformIds.forEach((fromId) => {
+    const conversion = conversions.get(fromId);
+    if (!conversion) {
+      return;
+    }
+    const targets = adjacency.get(fromId);
+    if (!targets) {
+      return;
+    }
+    const fromIndex = indexById.get(fromId);
+    if (fromIndex === undefined) {
+      return;
+    }
+    const weight = -Math.log(conversion.ratio);
+    targets.forEach((toId) => {
+      const toIndex = indexById.get(toId);
+      if (toIndex === undefined) {
+        return;
+      }
+      edges.push({ from: fromIndex, to: toIndex, weight });
+    });
+  });
+
+  if (edges.length === 0) {
+    return undefined;
+  }
+
+  // Bellman-Ford algorithm for negative cycle detection.
+  //
+  // Key technique: Zero-initialized distances (not infinity). This is a standard
+  // approach for detecting negative cycles in any graph component without requiring
+  // a virtual source node connected to all vertices. When distances start at zero,
+  // any negative cycle will eventually reduce some distance below zero, triggering
+  // detection via the N-th relaxation iteration.
+  //
+  // Weight transformation: Edge weights are -log(ratio), so:
+  //   - net-positive cycles (product of ratios > 1) become negative-weight cycles
+  //   - net-loss cycles (product of ratios < 1) become positive-weight cycles
+  // This allows standard shortest-path algorithms to detect profitable cycles.
+  const distances = new Array(transformIds.length).fill(0);
+  const previous = new Array<number>(transformIds.length).fill(-1);
+  let updatedIndex = -1;
+
+  const n = transformIds.length;
+  for (let i = 0; i < n; i += 1) {
+    updatedIndex = -1;
+    for (const edge of edges) {
+      if (distances[edge.to] > distances[edge.from] + edge.weight) {
+        distances[edge.to] = distances[edge.from] + edge.weight;
+        previous[edge.to] = edge.from;
+        updatedIndex = edge.to;
+      }
+    }
+  }
+
+  if (updatedIndex === -1) {
+    return undefined;
+  }
+
+  let cycleIndex = updatedIndex;
+  for (let i = 0; i < n; i += 1) {
+    const prevIndex = previous[cycleIndex];
+    if (prevIndex === -1) {
+      return undefined;
+    }
+    cycleIndex = prevIndex;
+  }
+
+  const cycleIndices: number[] = [];
+  const seen = new Set<number>();
+  let current = cycleIndex;
+  while (!seen.has(current)) {
+    seen.add(current);
+    cycleIndices.push(current);
+    const prevIndex = previous[current];
+    if (prevIndex === -1) {
+      return undefined;
+    }
+    current = prevIndex;
+  }
+
+  cycleIndices.reverse();
+  cycleIndices.push(cycleIndices[0]);
+  return cycleIndices.map((index) => transformIds[index]);
+};
+
 const validateTransformCycles = (
   pack: ParsedContentPack,
   ctx: z.RefinementCtx,
@@ -2149,12 +2363,22 @@ const validateTransformCycles = (
   // A produces a resource that B consumes as input
   const adjacency = new Map<string, Set<string>>();
   const transformIndex = new Map<string, number>();
+  const transformById = new Map<string, TransformDefinition>();
+  const conversions = new Map<string, TransformConversion>();
+  const nonSimpleTransforms: string[] = [];
 
   // Index all transforms by their output resources
   const resourceProducers = new Map<string, Set<string>>();
 
   pack.transforms.forEach((transform, index) => {
     transformIndex.set(transform.id, index);
+    transformById.set(transform.id, transform);
+    const conversion = buildTransformConversion(transform);
+    if (conversion) {
+      conversions.set(transform.id, conversion);
+    } else {
+      nonSimpleTransforms.push(transform.id);
+    }
 
     transform.outputs.forEach((output) => {
       if (!resourceProducers.has(output.resourceId)) {
@@ -2180,15 +2404,7 @@ const validateTransformCycles = (
     });
   });
 
-  // Detect cycles using the generic helper
-  // Uses early termination (stopAtFirst=true by default) for performance
-  const cycles = detectCycles(
-    adjacency,
-    pack.transforms.map((t) => t.id),
-  );
-
-  // Report detected cycle (at most one due to early termination)
-  for (const cyclePath of cycles) {
+  const reportCycleIssue = (cyclePath: CyclePath, profitabilityNote: string) => {
     const cycleDescription = cyclePath.join(' → ');
     const firstNodeInCycle = cyclePath[0];
     const index = transformIndex.get(firstNodeInCycle);
@@ -2200,8 +2416,8 @@ const validateTransformCycles = (
       const nextTransformId = cyclePath[i + 1];
 
       // Find the transform objects
-      const currentTransform = pack.transforms.find((t) => t.id === currentTransformId);
-      const nextTransform = pack.transforms.find((t) => t.id === nextTransformId);
+      const currentTransform = transformById.get(currentTransformId);
+      const nextTransform = transformById.get(nextTransformId);
 
       if (currentTransform && nextTransform) {
         // Find resources produced by current that are consumed by next
@@ -2222,8 +2438,34 @@ const validateTransformCycles = (
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: toMutablePath(['transforms', index] as const),
-        message: `Transform cycle detected: ${cycleDescription}${resourceContext}. Consider breaking the cycle by: (1) introducing external resource sources via generators or initial grants, (2) converting to a linear transformation chain, or (3) adding intermediate resources to create a clear flow direction.`,
+        message: `Transform cycle detected: ${cycleDescription}${resourceContext}. ${profitabilityNote} Consider breaking the cycle by: (1) introducing external resource sources via generators or initial grants, (2) converting to a linear transformation chain, or (3) adjusting inputs/outputs to create a net-loss conversion.`,
       });
+    }
+  };
+
+  for (const transformId of nonSimpleTransforms) {
+    const cyclePath = findCycleFromNode(transformId, adjacency);
+    if (cyclePath) {
+      reportCycleIssue(
+        cyclePath,
+        `Cycle profitability cannot be evaluated because transform '${transformId}' does not have exactly one input and one output with constant positive amounts.`,
+      );
+      return;
+    }
+  }
+
+  const netPositiveCycle = findNetPositiveCycle(
+    Array.from(conversions.keys()),
+    adjacency,
+    conversions,
+  );
+  if (netPositiveCycle) {
+    const ratio = getCycleRatio(netPositiveCycle, conversions);
+    if (ratio === undefined || ratio > 1 + PROFIT_EPSILON) {
+      reportCycleIssue(
+        netPositiveCycle,
+        'Net-positive transform cycles are not allowed.',
+      );
     }
   }
 };

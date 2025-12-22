@@ -21,6 +21,10 @@ import {
   convergentTransformTreeFixture,
   cyclicTransformDirectFixture,
   cyclicTransformIndirectFixture,
+  disjointCyclesFixture,
+  disjointNetLossCyclesFixture,
+  epsilonAboveThresholdCycleFixture,
+  epsilonBelowThresholdCycleFixture,
   cyclicTransformMultiResourceFixture,
   cyclicUnlockConditionsFixture,
   cyclicUnlockCrossEntityFixture,
@@ -35,11 +39,17 @@ import {
   missingMetricReferenceFixture,
   missingPrestigeCountResourceFixture,
   missingResourceReferenceFixture,
+  netLossIndirectTransformCycleFixture,
+  netLossTransformCycleFixture,
+  neutralTransformCycleFixture,
+  nonConstantFormulaCycleFixture,
+  nonSimpleTransformCycleFixture,
   resourceSinkTransformFixture,
   selfThresholdUnlockConditionsFixture,
   selfReferencingDependencyFixture,
   selfReferencingTransformFixture,
   validComprehensivePackFixture,
+  zeroAmountTransformCycleFixture,
 } from '../__fixtures__/integration-packs.js';
 
 const getZodIssues = (error: unknown) => {
@@ -218,7 +228,7 @@ describe('Integration: Cyclic Dependencies', () => {
     );
   });
 
-  it('detects direct transform chain cycles (A → B → A)', () => {
+  it('detects net-positive direct transform chain cycles (A → B → A)', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(cyclicTransformDirectFixture);
 
@@ -235,7 +245,7 @@ describe('Integration: Cyclic Dependencies', () => {
     );
   });
 
-  it('detects indirect transform chain cycles (A → B → C → A)', () => {
+  it('detects net-positive indirect transform chain cycles (A → B → C → A)', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(cyclicTransformIndirectFixture);
 
@@ -269,6 +279,166 @@ describe('Integration: Cyclic Dependencies', () => {
     );
   });
 
+  it('allows direct transform cycles with net loss', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(netLossTransformCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('allows transform cycles with neutral ratio (exactly 1.0)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(neutralTransformCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('allows indirect transform cycles (3+ transforms) with net loss', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(netLossIndirectTransformCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('rejects cycles containing non-simple transforms (multi-input)', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(nonSimpleTransformCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should reject because cycle profitability cannot be evaluated
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+    // Error message should mention profitability and the specific transform
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/profitability.*transform-a/i),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects cycles containing non-constant formula amounts', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(nonConstantFormulaCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should reject because cycle profitability cannot be evaluated for non-constant formulas
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+    // Error message should mention profitability and the specific transform
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/profitability.*transform-a/i),
+        }),
+      ]),
+    );
+  });
+
+  it('allows cycles with ratio just below PROFIT_EPSILON threshold', () => {
+    const validator = createContentPackValidator();
+    // Cycle ratio = 1.000000001 (1e-9 above 1.0), below PROFIT_EPSILON (1e-8)
+    const result = validator.safeParse(epsilonBelowThresholdCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('rejects cycles with ratio just above PROFIT_EPSILON threshold', () => {
+    const validator = createContentPackValidator();
+    // Cycle ratio = 1.00000002 (2e-8 above 1.0), above PROFIT_EPSILON (1e-8)
+    const result = validator.safeParse(epsilonAboveThresholdCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/net-positive/i),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects cycles containing zero-amount transforms', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(zeroAmountTransformCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should reject because cycle profitability cannot be evaluated for zero amounts
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+    // Error message should mention profitability and the specific transform
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/profitability.*transform-a/i),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects packs with disjoint cycles when one is net-positive', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(disjointCyclesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should detect the net-positive cycle (X <-> Y)
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/net-positive/i),
+        }),
+      ]),
+    );
+  });
+
+  it('allows packs with multiple disjoint net-loss cycles', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(disjointNetLossCyclesFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
   it('allows linear transform chains without cycles', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(linearTransformChainFixture);
@@ -299,21 +469,14 @@ describe('Integration: Cyclic Dependencies', () => {
     }
   });
 
-  it('detects self-referencing transforms as cycles', () => {
+  it('allows self-referencing transforms with net loss', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(selfReferencingTransformFixture);
 
-    expect(result.success).toBe(false);
-    if (result.success) return;
-
-    // Should detect the self-loop
-    expect(getZodIssues(result.error)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: expect.stringMatching(/transform cycle/i),
-        }),
-      ]),
-    );
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
   });
 
   it('detects self-referencing pack dependencies', () => {
