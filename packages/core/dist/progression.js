@@ -46,8 +46,8 @@ function createResourceViews(stepDurationMs, source) {
                 id,
                 displayName,
                 amount: snapshot.amounts[index] ?? 0,
-                isUnlocked: source.state.isUnlocked(index),
-                isVisible: source.state.isVisible(index),
+                unlocked: source.state.isUnlocked(index),
+                visible: source.state.isVisible(index),
                 ...(capacity !== undefined ? { capacity } : {}),
                 perTick,
             });
@@ -73,8 +73,8 @@ function createResourceViews(stepDurationMs, source) {
                 id,
                 displayName,
                 amount: serialized.amounts[index] ?? 0,
-                isUnlocked: Boolean(unlocked),
-                isVisible: Boolean(visible),
+                unlocked: Boolean(unlocked),
+                visible: Boolean(visible),
                 ...(capacity !== undefined ? { capacity } : {}),
                 perTick: 0,
             });
@@ -103,8 +103,8 @@ function createGeneratorViews(step, generators, evaluator, resourceAmounts) {
             displayName: generator.displayName ?? generator.id,
             owned: Number.isFinite(generator.owned) ? generator.owned : 0,
             enabled: generator.enabled ?? true,
-            isUnlocked: Boolean(generator.isUnlocked),
-            isVisible: Boolean(generator.isVisible),
+            unlocked: Boolean(generator.isUnlocked),
+            visible: Boolean(generator.isVisible),
             ...(unlockHint ? { unlockHint } : {}),
             costs: quote,
             canAfford,
@@ -139,7 +139,7 @@ function createUpgradeViews(upgrades, evaluator, resourceAmounts) {
             canAfford,
             costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
             ...(unlockHint ? { unlockHint } : {}),
-            isVisible: Boolean(upgrade.isVisible),
+            visible: Boolean(upgrade.isVisible),
         });
         views.push(view);
     }
@@ -163,8 +163,8 @@ function createAchievementViews(achievements) {
             category: achievement.category,
             tier: achievement.tier,
             mode: achievement.mode,
-            isVisible: Boolean(achievement.isVisible),
-            isUnlocked: Number.isFinite(completions) && completions > 0,
+            visible: Boolean(achievement.isVisible),
+            unlocked: Number.isFinite(completions) && completions > 0,
             completions: Number.isFinite(completions) && completions > 0
                 ? Math.floor(completions)
                 : 0,
@@ -198,10 +198,10 @@ function createAutomationViews(step, publishedAt, stepDurationMs, source) {
     const conditionContext = source.conditionContext;
     for (const automation of sorted) {
         const state = source.state.get(automation.id);
-        const isUnlocked = state?.unlocked ?? false;
-        const isVisible = automation.visibilityCondition && conditionContext
+        const unlocked = state?.unlocked ?? false;
+        const visible = automation.visibilityCondition && conditionContext
             ? evaluateCondition(automation.visibilityCondition, conditionContext)
-            : isUnlocked;
+            : unlocked;
         const rawCooldownExpiresStep = state?.cooldownExpiresStep;
         const cooldownExpiresStep = Number.isFinite(rawCooldownExpiresStep)
             ? Number(rawCooldownExpiresStep)
@@ -218,8 +218,8 @@ function createAutomationViews(step, publishedAt, stepDurationMs, source) {
             id: automation.id,
             displayName: automation.name.default,
             description: automation.description.default,
-            isUnlocked,
-            isVisible,
+            unlocked,
+            visible,
             isEnabled: state?.enabled ?? automation.enabledByDefault ?? false,
             lastTriggeredAt,
             cooldownRemainingMs,
@@ -380,7 +380,7 @@ function createPrestigeLayerViews(prestigeLayers, evaluator) {
             summary: layer.summary,
             status: quote?.status ?? 'locked',
             ...(unlockHint ? { unlockHint } : {}),
-            isVisible: Boolean(layer.isVisible),
+            visible: Boolean(layer.isVisible),
             rewardPreview: quote?.reward,
             resetTargets: quote?.resetTargets ?? EMPTY_ARRAY,
             resetGenerators: quote?.resetGenerators,

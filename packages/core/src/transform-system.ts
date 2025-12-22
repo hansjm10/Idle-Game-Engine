@@ -190,8 +190,8 @@ export type TransformView = Readonly<{
   displayName: string;
   description: string;
   mode: TransformDefinition['mode'];
-  isUnlocked: boolean;
-  isVisible: boolean;
+  unlocked: boolean;
+  visible: boolean;
   cooldownRemainingMs: number;
   isOnCooldown: boolean;
   canAfford: boolean;
@@ -1432,8 +1432,8 @@ export function buildTransformSnapshot(
   const views: TransformView[] = [];
   for (const transform of sortedTransforms) {
     const state = options.state.get(transform.id);
-    const isUnlocked = state?.unlocked ?? false;
-    const isVisible = state?.visible ?? true;
+    const unlocked = state?.unlocked ?? false;
+    const visible = state?.visible ?? true;
     const cooldownExpiresStep = state?.cooldownExpiresStep ?? 0;
     const cooldownRemainingMs = Math.max(
       0,
@@ -1463,8 +1463,8 @@ export function buildTransformSnapshot(
         displayName: transform.name.default,
         description: transform.description.default,
         mode: transform.mode,
-        isUnlocked,
-        isVisible,
+        unlocked,
+        visible,
         cooldownRemainingMs,
         isOnCooldown,
         canAfford,

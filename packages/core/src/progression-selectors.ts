@@ -20,13 +20,13 @@ export interface ProgressionSelectorOptions {
 export function selectVisibleGenerators(
   snapshot: ProgressionSnapshot,
 ): readonly GeneratorView[] {
-  return filterValues(snapshot.generators, (generator) => generator.isVisible);
+  return filterValues(snapshot.generators, (generator) => generator.visible);
 }
 
 export function selectUnlockedGenerators(
   snapshot: ProgressionSnapshot,
 ): readonly GeneratorView[] {
-  return filterValues(snapshot.generators, (generator) => generator.isUnlocked);
+  return filterValues(snapshot.generators, (generator) => generator.unlocked);
 }
 
 export function selectPurchasableGenerators(
@@ -37,7 +37,7 @@ export function selectPurchasableGenerators(
   const resourceAmounts = createResourceAmountLookup(snapshot.resources);
 
   return filterValues(snapshot.generators, (generator) => {
-    if (!generator.isVisible || !generator.isUnlocked) {
+    if (!generator.visible || !generator.unlocked) {
       return false;
     }
 
@@ -52,7 +52,7 @@ export function selectPurchasableGenerators(
 export function selectVisibleUpgrades(
   snapshot: ProgressionSnapshot,
 ): readonly UpgradeView[] {
-  return filterValues(snapshot.upgrades, (upgrade) => upgrade.isVisible);
+  return filterValues(snapshot.upgrades, (upgrade) => upgrade.visible);
 }
 
 export function selectAvailableUpgrades(
@@ -60,7 +60,7 @@ export function selectAvailableUpgrades(
 ): readonly UpgradeView[] {
   return filterValues(
     snapshot.upgrades,
-    (upgrade) => upgrade.isVisible && upgrade.status === 'available',
+    (upgrade) => upgrade.visible && upgrade.status === 'available',
   );
 }
 
@@ -68,7 +68,7 @@ export function selectLockedUpgradesWithHints(
   snapshot: ProgressionSnapshot,
 ): readonly UpgradeView[] {
   return filterValues(snapshot.upgrades, (upgrade) => {
-    if (!upgrade.isVisible || upgrade.status !== 'locked') {
+    if (!upgrade.visible || upgrade.status !== 'locked') {
       return false;
     }
 
@@ -82,7 +82,7 @@ export function selectPurchasableUpgrades(
   const resourceAmounts = createResourceAmountLookup(snapshot.resources);
 
   return filterValues(snapshot.upgrades, (upgrade) => {
-    if (!upgrade.isVisible || upgrade.status !== 'available') {
+    if (!upgrade.visible || upgrade.status !== 'available') {
       return false;
     }
 
@@ -109,7 +109,7 @@ export function selectTopNActionables(
       break;
     }
 
-    if (!generator.isVisible || !generator.isUnlocked) {
+    if (!generator.visible || !generator.unlocked) {
       continue;
     }
 
@@ -131,7 +131,7 @@ export function selectTopNActionables(
       break;
     }
 
-    if (!upgrade.isVisible || upgrade.status !== 'available') {
+    if (!upgrade.visible || upgrade.status !== 'available') {
       continue;
     }
 

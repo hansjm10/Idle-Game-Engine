@@ -18,8 +18,8 @@ export type ResourceView = Readonly<{
     id: string;
     displayName: string;
     amount: number;
-    isUnlocked: boolean;
-    isVisible: boolean;
+    unlocked: boolean;
+    visible: boolean;
     capacity?: number;
     perTick: number;
 }>;
@@ -28,8 +28,8 @@ export type GeneratorView = Readonly<{
     displayName: string;
     owned: number;
     enabled: boolean;
-    isUnlocked: boolean;
-    isVisible: boolean;
+    unlocked: boolean;
+    visible: boolean;
     unlockHint?: string;
     costs: readonly GeneratorCostView[];
     canAfford: boolean;
@@ -50,7 +50,7 @@ export type UpgradeView = Readonly<{
     canAfford: boolean;
     costs?: readonly UpgradeCostView[];
     unlockHint?: string;
-    isVisible: boolean;
+    visible: boolean;
 }>;
 export type AchievementCategory = 'progression' | 'prestige' | 'automation' | 'social' | 'collection';
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
@@ -62,8 +62,8 @@ export type AchievementView = Readonly<{
     category: AchievementCategory;
     tier: AchievementTier;
     mode: AchievementProgressMode;
-    isVisible: boolean;
-    isUnlocked: boolean;
+    visible: boolean;
+    unlocked: boolean;
     completions: number;
     progress: number;
     target: number;
@@ -74,8 +74,8 @@ export type AutomationView = Readonly<{
     id: string;
     displayName: string;
     description: string;
-    isUnlocked: boolean;
-    isVisible: boolean;
+    unlocked: boolean;
+    visible: boolean;
     isEnabled: boolean;
     lastTriggeredAt: number | null;
     cooldownRemainingMs: number;
@@ -122,7 +122,7 @@ export type PrestigeLayerView = Readonly<{
     summary?: string;
     status: 'locked' | 'available' | 'completed';
     unlockHint?: string;
-    isVisible: boolean;
+    visible: boolean;
     rewardPreview?: PrestigeRewardPreview;
     resetTargets: readonly string[];
     resetGenerators?: readonly string[];

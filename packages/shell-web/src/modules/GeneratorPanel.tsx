@@ -62,7 +62,7 @@ interface GeneratorCardProps {
 
 function GeneratorCard({ generator, resources, currentStep, onPurchase }: GeneratorCardProps): JSX.Element {
   const canAfford = hasSufficientFunds(generator.costs, resources);
-  const isLocked = !generator.isUnlocked || !generator.isVisible;
+  const isLocked = !generator.unlocked || !generator.visible;
   const isCoolingDown = generator.nextPurchaseReadyAtStep > currentStep;
   const disabled = isLocked || !canAfford || isCoolingDown;
 
@@ -116,7 +116,7 @@ export function GeneratorPanel(): JSX.Element | null {
 
   // Derive view data unconditionally to preserve hook order
   const visibleGenerators = useMemo(
-    () => (generators ?? []).filter((g) => g.isVisible),
+    () => (generators ?? []).filter((g) => g.visible),
     [generators],
   );
   const resources = useMemo(() => resourcesOptimistic ?? [], [resourcesOptimistic]);

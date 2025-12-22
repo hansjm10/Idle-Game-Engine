@@ -322,8 +322,8 @@ describe('runtime.worker integration', () => {
             id: string;
             owned: number;
             costs: Array<{ resourceId: string; amount: number }>;
-            isUnlocked: boolean;
-            isVisible: boolean;
+            unlocked: boolean;
+            visible: boolean;
             nextPurchaseReadyAtStep: number;
           }>;
           upgrades: Array<{
@@ -342,8 +342,8 @@ describe('runtime.worker integration', () => {
           id: 'sample-pack.energy',
           displayName: 'Energy',
           amount: 10,
-          isUnlocked: true,
-          isVisible: true,
+          unlocked: true,
+          visible: true,
         }),
         expect.objectContaining({
           id: 'sample-pack.crystal',
@@ -357,8 +357,8 @@ describe('runtime.worker integration', () => {
         expect.objectContaining({
           id: 'sample-pack.reactor',
           owned: 0,
-          isUnlocked: true,
-          isVisible: true,
+          unlocked: true,
+          visible: true,
           costs: [
             {
               resourceId: 'sample-pack.energy',
@@ -373,8 +373,8 @@ describe('runtime.worker integration', () => {
         expect.objectContaining({
           id: 'sample-pack.harvester',
           owned: 0,
-          isUnlocked: false,
-          isVisible: false,
+          unlocked: false,
+          visible: false,
           costs: [],
           nextPurchaseReadyAtStep: 1,
         }),
@@ -405,7 +405,7 @@ describe('runtime.worker integration', () => {
         progression: {
           generators: Array<{
             id: string;
-            isUnlocked: boolean;
+            unlocked: boolean;
             nextPurchaseReadyAtStep: number;
           }>;
         };
@@ -418,7 +418,7 @@ describe('runtime.worker integration', () => {
       (generator) => generator.id === 'sample-pack.harvester',
     );
     expect(harvester).toBeDefined();
-    expect(harvester?.isUnlocked).toBe(true);
+    expect(harvester?.unlocked).toBe(true);
     expect(harvester?.nextPurchaseReadyAtStep).toBe(3);
   });
 

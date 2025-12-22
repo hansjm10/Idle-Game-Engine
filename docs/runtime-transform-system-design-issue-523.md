@@ -133,7 +133,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
       - Evaluate and normalize all input costs before spending; spend in a deterministic order to preserve atomicity and replay stability.
   - Unlock/visibility state:
     - `unlockCondition` (optional): evaluate via `evaluateCondition` (`packages/core/src/condition-evaluator.ts:122`) and apply **monotonically** (once unlocked, stay unlocked) to avoid regressions during replay and to match automation unlock persistence patterns.
-    - `visibilityCondition` (optional): evaluate per tick to compute `isVisible` (default `true` when undefined, consistent with progression coordinator visibility semantics at `packages/core/src/progression-coordinator.ts:1455`).
+    - `visibilityCondition` (optional): evaluate per tick to compute `visible` (default `true` when undefined, consistent with progression coordinator visibility semantics at `packages/core/src/progression-coordinator.ts:1455`).
     - Execution gating: `unlockCondition` gates execution; `visibilityCondition` gates snapshot/UI only.
   - Safety enforcement (see Section 13.4 for rationale):
     - `maxRunsPerTick`: default `10`, hard cap `100`. When undefined, use `DEFAULT_MAX_RUNS_PER_TICK = 10`. When authored value exceeds cap, clamp and record telemetry warning.
@@ -162,7 +162,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
   - Add a snapshot builder in `packages/core`:
     - `buildTransformSnapshot(step, publishedAt, { transforms, state, conditionContext, resourceState })` returning UI-ready transform views.
     - Transform view fields (proposed minimal contract):
-      - `id`, `displayName`, `description`, `mode`, `isUnlocked`, `isVisible`
+      - `id`, `displayName`, `description`, `mode`, `unlocked`, `visible`
       - `cooldownRemainingMs`, `inputs`, `outputs`
       - `outstandingBatches` and `nextBatchReadyAtStep` (batch mode)
   - Wire into shell-web worker state updates (issue-523 snapshot view):

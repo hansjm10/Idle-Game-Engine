@@ -85,8 +85,8 @@ describe('GeneratorPanel', () => {
         displayName: 'Reactor',
         owned: 0,
         enabled: true,
-        isUnlocked: true,
-        isVisible: true,
+        unlocked: true,
+        visible: true,
         costs: [{ resourceId: 'res.energy', amount: 10, canAfford: false }],
         canAfford: false,
         produces: [],
@@ -95,7 +95,7 @@ describe('GeneratorPanel', () => {
       },
     ];
     const resources: ResourceView[] = [
-      { id: 'res.energy', displayName: 'Energy', amount: 5, isUnlocked: true, isVisible: true, perTick: 0 },
+      { id: 'res.energy', displayName: 'Energy', amount: 5, unlocked: true, visible: true, perTick: 0 },
     ];
     mockProgressionApi.selectGenerators = vi.fn(() => generators);
     mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
@@ -112,8 +112,8 @@ describe('GeneratorPanel', () => {
         displayName: 'Reactor',
         owned: 0,
         enabled: true,
-        isUnlocked: true,
-        isVisible: true,
+        unlocked: true,
+        visible: true,
         costs: [{ resourceId: 'res.energy', amount: 10, canAfford: true }],
         canAfford: true,
         produces: [],
@@ -122,7 +122,7 @@ describe('GeneratorPanel', () => {
       },
     ];
     const resources: ResourceView[] = [
-      { id: 'res.energy', displayName: 'Energy', amount: 15, isUnlocked: true, isVisible: true, perTick: 0 },
+      { id: 'res.energy', displayName: 'Energy', amount: 15, unlocked: true, visible: true, perTick: 0 },
     ];
     mockProgressionApi.selectGenerators = vi.fn(() => generators);
     mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);

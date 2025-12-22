@@ -162,8 +162,8 @@ describe('buildProgressionSnapshot', () => {
         id: 'energy',
         displayName: 'Energy',
         amount: 120,
-        isUnlocked: true,
-        isVisible: true,
+        unlocked: true,
+        visible: true,
         capacity: 200,
         perTick: 0.5,
       },
@@ -171,8 +171,8 @@ describe('buildProgressionSnapshot', () => {
         id: 'crystal',
         displayName: 'Crystal',
         amount: 10,
-        isUnlocked: true,
-        isVisible: true,
+        unlocked: true,
+        visible: true,
         perTick: -0.1,
       },
     ]);
@@ -183,8 +183,8 @@ describe('buildProgressionSnapshot', () => {
         displayName: 'Reactor',
         owned: 2,
         enabled: true,
-        isUnlocked: true,
-        isVisible: true,
+        unlocked: true,
+        visible: true,
         costs: [
           {
             resourceId: 'energy',
@@ -215,7 +215,7 @@ describe('buildProgressionSnapshot', () => {
           },
         ],
         unlockHint: 'Collect more energy',
-        isVisible: true,
+        visible: true,
       },
     ]);
   });
@@ -321,8 +321,8 @@ describe('buildProgressionSnapshot', () => {
         id: 'auto:test',
         displayName: 'Auto Test',
         description: 'Does the thing',
-        isUnlocked: true,
-        isVisible: false,
+        unlocked: true,
+        visible: false,
         isEnabled: true,
         lastTriggeredAt: 4700,
         cooldownRemainingMs: 300,
@@ -336,8 +336,8 @@ describe('buildProgressionSnapshot', () => {
         displayName: 'Transform Test',
         description: 'Make energy',
         mode: 'instant',
-        isUnlocked: true,
-        isVisible: true,
+        unlocked: true,
+        visible: true,
         cooldownRemainingMs: 200,
         isOnCooldown: true,
         canAfford: true,
@@ -370,8 +370,8 @@ describe('buildProgressionSnapshot', () => {
         id: 'energy',
         displayName: 'energy',
         amount: 50,
-        isUnlocked: false,
-        isVisible: true,
+        unlocked: false,
+        visible: true,
         perTick: 0,
       },
     ]);
@@ -536,7 +536,7 @@ describe('buildProgressionSnapshot', () => {
           displayName: 'Ascension Alpha',
           summary: undefined,
           status: 'locked',
-          isVisible: true,
+          visible: true,
           rewardPreview: undefined,
           resetTargets: [],
           retainedTargets: [],
@@ -585,7 +585,7 @@ describe('buildProgressionSnapshot', () => {
           summary: 'Reset for prestige currency',
           status: 'available',
           unlockHint: 'Reach deeper into the machine...',
-          isVisible: true,
+          visible: true,
           rewardPreview: {
             resourceId: 'prestige-flux',
             amount: 100,
@@ -707,7 +707,7 @@ describe('buildProgressionSnapshot', () => {
       });
     });
 
-    it('includes non-visible layers with isVisible false', () => {
+    it('includes non-visible layers with visible false', () => {
       const prestigeEvaluator = new StubPrestigeEvaluator();
 
       const prestigeLayers: ProgressionPrestigeLayerState[] = [
@@ -735,11 +735,11 @@ describe('buildProgressionSnapshot', () => {
       expect(snapshot.prestigeLayers).toHaveLength(2);
       expect(snapshot.prestigeLayers[0]).toMatchObject({
         id: 'sample.ascension-alpha',
-        isVisible: true,
+        visible: true,
       });
       expect(snapshot.prestigeLayers[1]).toMatchObject({
         id: 'sample.ascension-beta',
-        isVisible: false,
+        visible: false,
       });
     });
 
