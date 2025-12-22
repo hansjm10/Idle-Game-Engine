@@ -861,9 +861,9 @@ Before marking implementation complete:
 ### Performance
 
 **Benchmarks**:
-- 10,000 queued commands process in <5ms
-- Command overhead <5% of 100ms tick budget
-- Memory footprint <3MB for typical queue depth
+- 10,000 queued commands process in `<5ms`
+- Command overhead `<5%` of 100ms tick budget
+- Memory footprint `<3MB` for typical queue depth
 
 **Profiling Methodology**:
 - Use Chrome DevTools performance profiling in Worker context
@@ -871,9 +871,9 @@ Before marking implementation complete:
 - Test with realistic command mix (70% automation, 20% player, 10% system)
 
 **Success Thresholds**:
-- Enqueue: <1µs per command
-- Dequeue: <5ms for full queue drain
-- Execute: <10µs per command (handler-dependent)
+- Enqueue: `<1µs` per command
+- Dequeue: `<5ms` for full queue drain
+- Execute: `<10µs` per command (handler-dependent)
 
 ### Tooling / A11y
 N/A - This is a runtime-only feature with no UI components.
