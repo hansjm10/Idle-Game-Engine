@@ -73,7 +73,7 @@ import {
   enqueueAutomationCommand,
   type AutomationState,
 } from '../automation-system.js';
-import type { AutomationDefinition } from '@idle-engine/content-schema';
+import type { AutomationDefinition, NumericFormula } from '@idle-engine/content-schema';
 import { CommandQueue } from '../command-queue.js';
 import { CommandPriority } from '../command.js';
 
@@ -88,6 +88,8 @@ const numericFormulaArb = fc.integer({ min: 0, max: 10000 }).map(value => ({
   kind: 'constant' as const,
   value,
 }));
+
+const literal = (value: number): NumericFormula => ({ kind: 'constant', value });
 
 /**
  * Generates resource IDs for testing.
@@ -190,7 +192,7 @@ const automationDefinitionArb: fc.Arbitrary<AutomationDefinition> = fc.record({
   targetId: fc.oneof(generatorIdArb, upgradeIdArb),
   unlockCondition: fc.constant({ kind: 'always' as const }),
   enabledByDefault: fc.boolean(),
-  cooldown: fc.option(fc.integer({ min: 0, max: 5000 }), { nil: undefined }),
+  cooldown: fc.option(fc.integer({ min: 0, max: 5000 }).map(literal), { nil: undefined }),
   order: fc.nat({ max: 100 }),
 });
 
@@ -509,7 +511,7 @@ describe('AutomationSystem - Property-Based Tests', () => {
               targetId: 'gen:test' as any,
               unlockCondition: { kind: 'always' },
               enabledByDefault: true,
-              cooldown: cooldownMs > 0 ? cooldownMs : undefined,
+              cooldown: cooldownMs > 0 ? literal(cooldownMs) : undefined,
               order: 0,
             };
 
@@ -525,9 +527,10 @@ describe('AutomationSystem - Property-Based Tests', () => {
             updateCooldown(automation, state, currentStep, stepDurationMs);
 
             // Calculate expected cooldown expiration
-            const expectedExpiresStep = automation.cooldown
-              ? currentStep + Math.ceil(automation.cooldown / stepDurationMs) + 1
-              : 0;
+            const expectedExpiresStep =
+              cooldownMs > 0
+                ? currentStep + Math.ceil(cooldownMs / stepDurationMs) + 1
+                : 0;
 
             // Verify the state matches expected calculation
             expect(state.cooldownExpiresStep).toBe(expectedExpiresStep);
@@ -1044,7 +1047,7 @@ describe('AutomationSystem - Property-Based Tests', () => {
               targetId: 'gen:test' as any,
               unlockCondition: { kind: 'always' },
               enabledByDefault: true,
-              cooldown: cooldownMs,
+              cooldown: literal(cooldownMs),
               order: 0,
             };
 

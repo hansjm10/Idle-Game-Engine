@@ -1304,6 +1304,20 @@ const validateCrossReferences = (
         ensureFormulaReference(reference, ['automations', index, 'resourceCost', 'rate'], ctx, resourceIndex, generatorIndex, upgradeIndex, automationIndex, prestigeIndex);
       });
     }
+    if (automation.cooldown) {
+      collectFormulaEntityReferences(automation.cooldown, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['automations', index, 'cooldown'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+    }
     switch (automation.trigger.kind) {
       case 'resourceThreshold':
         ensureContentReference(

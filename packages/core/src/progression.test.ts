@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   AutomationDefinition,
+  NumericFormula,
   TransformDefinition,
 } from '@idle-engine/content-schema';
 import {
@@ -28,6 +29,8 @@ import type {
   UpgradePurchaseQuote,
 } from './resource-command-handlers.js';
 import type { TransformState } from './transform-system.js';
+
+const literal = (value: number): NumericFormula => ({ kind: 'constant', value });
 
 class StubGeneratorEvaluator implements GeneratorPurchaseEvaluator {
   public readonly quotes = new Map<string, GeneratorPurchaseQuote>();
@@ -252,7 +255,7 @@ describe('buildProgressionSnapshot', () => {
         targetType: 'system',
         systemTargetId: 'sys:noop' as any,
         trigger: { kind: 'interval', interval: { kind: 'constant', value: 1000 } },
-        cooldown: 500,
+        cooldown: literal(500),
         unlockCondition: { kind: 'always' },
         visibilityCondition: {
           kind: 'resourceThreshold',

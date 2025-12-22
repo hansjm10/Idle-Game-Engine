@@ -72,6 +72,16 @@ const triggerSchema = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 
+const cooldownSchema: z.ZodType<
+  NumericFormula,
+  z.ZodTypeDef,
+  z.input<typeof finiteNumberSchema> | z.input<typeof numericFormulaSchema>
+> = z
+  .union([finiteNumberSchema, numericFormulaSchema])
+  .transform((value) =>
+    typeof value === 'number' ? { kind: 'constant', value } : value,
+  );
+
 type AutomationTriggerInput = z.input<typeof triggerSchema>;
 
 type AutomationDefinitionInput = {
@@ -85,7 +95,7 @@ type AutomationDefinitionInput = {
   readonly targetCount?: z.input<typeof numericFormulaSchema>;
   readonly targetAmount?: z.input<typeof numericFormulaSchema>;
   readonly trigger: AutomationTriggerInput;
-  readonly cooldown?: z.input<typeof finiteNumberSchema>;
+  readonly cooldown?: z.input<typeof cooldownSchema>;
   readonly resourceCost?: z.input<typeof resourceCostSchema>;
   readonly unlockCondition: z.input<typeof conditionSchema>;
   readonly visibilityCondition?: z.input<typeof conditionSchema>;
@@ -105,7 +115,7 @@ type AutomationDefinitionModel = {
   readonly targetCount?: NumericFormula;
   readonly targetAmount?: NumericFormula;
   readonly trigger: AutomationTrigger;
-  readonly cooldown?: number;
+  readonly cooldown?: NumericFormula;
   readonly resourceCost?: z.infer<typeof resourceCostSchema>;
   readonly unlockCondition: z.infer<typeof conditionSchema>;
   readonly visibilityCondition?: z.infer<typeof conditionSchema>;
@@ -132,7 +142,7 @@ export const automationDefinitionSchema: z.ZodType<
     targetCount: numericFormulaSchema.optional(),
     targetAmount: numericFormulaSchema.optional(),
     trigger: triggerSchema,
-    cooldown: finiteNumberSchema.optional(),
+    cooldown: cooldownSchema.optional(),
     resourceCost: resourceCostSchema.optional(),
     unlockCondition: conditionSchema,
     visibilityCondition: conditionSchema.optional(),

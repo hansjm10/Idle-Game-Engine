@@ -501,7 +501,7 @@ export function createAutomationSystem(
 
         // Update state
         state.lastFiredStep = step;
-        updateCooldown(automation, state, step, stepDurationMs);
+        updateCooldown(automation, state, step, stepDurationMs, formulaContext);
 
         // After successful fire: consume threshold crossing if applicable
         if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
@@ -569,16 +569,18 @@ export function isCooldownActive(
  *
  * Converts the cooldown duration (in milliseconds) from the automation
  * definition into steps and sets the cooldownExpiresStep in the state.
+ * Cooldowns are evaluated from numeric formulas using the current formula context.
  * If no cooldown is defined, sets cooldownExpiresStep to 0 (no cooldown).
  *
  * @param automation - The automation definition containing the cooldown duration.
  * @param state - The automation state to update.
  * @param currentStep - The current step when the automation fired.
  * @param stepDurationMs - The duration of each step in milliseconds.
+ * @param formulaContext - Optional formula evaluation context for cooldown formulas.
  *
  * @example
  * ```typescript
- * const automation = { ..., cooldown: 500 }; // 500ms cooldown
+ * const automation = { ..., cooldown: { kind: 'constant', value: 500 } }; // 500ms cooldown
  * const state = { ..., cooldownExpiresStep: 0 };
  * updateCooldown(automation, state, 10, 100); // stepDurationMs = 100ms
  * // state.cooldownExpiresStep will be 16 (10 + ceil(500/100) + 1)
@@ -589,13 +591,24 @@ export function updateCooldown(
   state: AutomationState,
   currentStep: number,
   stepDurationMs: number,
+  formulaContext?: FormulaEvaluationContext,
 ): void {
   if (!automation.cooldown) {
     state.cooldownExpiresStep = 0;
     return;
   }
 
-  const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
+  const cooldownMs = evaluateNumericFormula(
+    automation.cooldown,
+    formulaContext ??
+      createAutomationFormulaEvaluationContext({ currentStep, stepDurationMs }),
+  );
+  if (!Number.isFinite(cooldownMs) || cooldownMs <= 0) {
+    state.cooldownExpiresStep = 0;
+    return;
+  }
+
+  const cooldownSteps = Math.ceil(cooldownMs / stepDurationMs);
   state.cooldownExpiresStep = currentStep + cooldownSteps + 1;
 }
 

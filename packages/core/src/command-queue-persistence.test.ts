@@ -35,7 +35,7 @@ function createAutomation(options: {
       kind: 'interval',
       interval: literal(STEP_SIZE_MS),
     },
-    cooldown: options.cooldownMs,
+    cooldown: literal(options.cooldownMs),
     resourceCost: options.withResourceCost
       ? {
           resourceId: 'resource.coins',

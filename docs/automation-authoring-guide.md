@@ -37,7 +37,7 @@ Automations are defined in the `automations` array of your `pack.json` file. Eac
 
 ```typescript
 {
-  "cooldown": 5000,                          // Milliseconds between fires
+  "cooldown": 5000,                          // Milliseconds between fires (numeric shorthand; formulas allowed)
   "targetEnabled": false,                    // Generator enabled state (generator target only, default: true)
   "targetCount": { "kind": "constant", "value": 1 }, // Purchase count formula (purchaseGenerator target only)
   "targetAmount": { "kind": "constant", "value": 1 }, // Collect amount formula (collectResource target only)
@@ -49,6 +49,14 @@ Automations are defined in the `automations` array of your `pack.json` file. Eac
   "enabledByDefault": true,                  // Initial enabled state
   "order": 100,                              // Display order in UI
   "systemTargetId": "system:prestige"        // System command (for targetType: "system")
+}
+```
+
+Cooldown accepts either a number (milliseconds) or a numeric formula. Use a formula when cooldowns should scale with time or content state:
+
+```json
+{
+  "cooldown": { "kind": "linear", "base": 500, "slope": 25 }
 }
 ```
 

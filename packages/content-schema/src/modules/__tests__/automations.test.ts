@@ -27,6 +27,28 @@ describe('automationDefinitionSchema', () => {
     expect(automation.enabledByDefault).toBe(false);
   });
 
+  it('accepts numeric cooldown shorthand', () => {
+    const automation = automationDefinitionSchema.parse({
+      ...baseAutomation,
+      cooldown: 5000,
+    });
+
+    expect(automation.cooldown).toEqual({ kind: 'constant', value: 5000 });
+  });
+
+  it('accepts cooldown formulas', () => {
+    const automation = automationDefinitionSchema.parse({
+      ...baseAutomation,
+      cooldown: { kind: 'linear', base: 1000, slope: 50 },
+    });
+
+    expect(automation.cooldown).toEqual({
+      kind: 'linear',
+      base: 1000,
+      slope: 50,
+    });
+  });
+
   it('requires systemTargetId for system automations', () => {
     expect(() =>
       automationDefinitionSchema.parse({

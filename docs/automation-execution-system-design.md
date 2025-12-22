@@ -392,13 +392,20 @@ function updateCooldown(
   state: AutomationState,
   currentStep: number,
   stepDurationMs: number,
+  formulaContext: FormulaEvaluationContext,
 ): void {
   if (!automation.cooldown) {
     state.cooldownExpiresStep = 0;
     return;
   }
 
-  const cooldownSteps = Math.ceil(automation.cooldown / stepDurationMs);
+  const cooldownMs = evaluateNumericFormula(automation.cooldown, formulaContext);
+  if (!Number.isFinite(cooldownMs) || cooldownMs <= 0) {
+    state.cooldownExpiresStep = 0;
+    return;
+  }
+
+  const cooldownSteps = Math.ceil(cooldownMs / stepDurationMs);
   // +1 accounts for command execution delay: commands enqueued at currentStep
   // execute at currentStep + 1, so cooldown must be measured from that step.
   state.cooldownExpiresStep = currentStep + cooldownSteps + 1;
