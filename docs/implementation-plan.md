@@ -493,9 +493,9 @@ Items explicitly deferred out of prototype scope:
 
 ## 15. References
 - [Design Document Template](./design-document-template.md) - Template this plan follows
-- [Idle Engine Design Document](TBD) - Core architecture and design decisions
-- [Content DSL Specification](TBD) - Detailed content schema reference
-- [API Contract Documentation](TBD) - Published in Phase 1 Week 2
+- Idle Engine Design Document (TBD) - Core architecture and design decisions
+- Content DSL Specification (TBD) - Detailed content schema reference
+- API Contract Documentation (TBD) - Published in Phase 1 Week 2
 - [Conventional Commits](https://www.conventionalcommits.org/) - Commit message standard
 - [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/) - Accessibility standards
 - [Keycloak Documentation](https://www.keycloak.org/documentation) - Auth integration reference
