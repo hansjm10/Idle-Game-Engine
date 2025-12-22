@@ -89,6 +89,7 @@ type GeneratorCostView = Readonly<{
   resourceId: string;
   amount: number;
   canAfford: boolean;
+  currentAmount?: number;
 }>;
 
 type GeneratorView = Readonly<{
@@ -110,6 +111,7 @@ type UpgradeCostView = Readonly<{
   resourceId: string;
   amount: number;
   canAfford: boolean;
+  currentAmount?: number;
 }>;
 
 type UpgradeView = Readonly<{
@@ -154,7 +156,12 @@ type UpgradeView = Readonly<{
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 23.13, "canAfford": true }
+        {
+          "resourceId": "sample-pack.energy",
+          "amount": 23.13,
+          "canAfford": true,
+          "currentAmount": 125.5
+        }
       ],
       "canAfford": true,
       "produces": [
@@ -170,7 +177,12 @@ type UpgradeView = Readonly<{
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 30, "canAfford": true }
+        {
+          "resourceId": "sample-pack.energy",
+          "amount": 30,
+          "canAfford": true,
+          "currentAmount": 125.5
+        }
       ],
       "canAfford": true,
       "produces": [
@@ -197,7 +209,12 @@ type UpgradeView = Readonly<{
       "status": "available",
       "canAfford": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": true }
+        {
+          "resourceId": "sample-pack.energy",
+          "amount": 75,
+          "canAfford": true,
+          "currentAmount": 125.5
+        }
       ],
       "isVisible": true
     },

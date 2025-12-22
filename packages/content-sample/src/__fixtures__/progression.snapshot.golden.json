@@ -8,7 +8,7 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 100, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 100, "canAfford": false, "currentAmount": 10 }
       ],
       "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.energy", "rate": 1 }],
@@ -23,7 +23,7 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 625, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 625, "canAfford": false, "currentAmount": 10 }
       ],
       "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.crystal", "rate": 0.25 }],
@@ -38,7 +38,7 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false, "currentAmount": 10 }
       ],
       "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.alloy", "rate": 0.2 }],
@@ -56,7 +56,7 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 120, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 120, "canAfford": false, "currentAmount": 10 }
       ],
       "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.data-core", "rate": 0.08 }],
@@ -74,7 +74,7 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.data-core", "amount": 500, "canAfford": false }
+        { "resourceId": "sample-pack.data-core", "amount": 500, "canAfford": false, "currentAmount": 0 }
       ],
       "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.prestige-flux", "rate": 0.05 }],
@@ -89,7 +89,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -99,7 +99,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 150, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 150, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -109,7 +109,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 400, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 400, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -119,7 +119,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 125, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 125, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -129,7 +129,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.crystal", "amount": 200, "canAfford": false }
+        { "resourceId": "sample-pack.crystal", "amount": 200, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -139,7 +139,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.crystal", "amount": 250, "canAfford": false }
+        { "resourceId": "sample-pack.crystal", "amount": 250, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -149,7 +149,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 320, "canAfford": false }
+        { "resourceId": "sample-pack.energy", "amount": 320, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -159,7 +159,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.alloy", "amount": 180, "canAfford": false }
+        { "resourceId": "sample-pack.alloy", "amount": 180, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -169,7 +169,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.alloy", "amount": 220, "canAfford": false }
+        { "resourceId": "sample-pack.alloy", "amount": 220, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -179,7 +179,7 @@
       "status": "available",
       "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.prestige-flux", "amount": 1, "canAfford": false }
+        { "resourceId": "sample-pack.prestige-flux", "amount": 1, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -189,7 +189,7 @@
       "status": "available",
       "canAfford": true,
       "costs": [
-        { "resourceId": "sample-pack.prestige-flux", "amount": 0, "canAfford": true }
+        { "resourceId": "sample-pack.prestige-flux", "amount": 0, "canAfford": true, "currentAmount": 0 }
       ],
       "isVisible": true
     }

@@ -185,7 +185,14 @@ describe('buildProgressionSnapshot', () => {
         enabled: true,
         isUnlocked: true,
         isVisible: true,
-        costs: [{ resourceId: 'energy', amount: 42, canAfford: true }],
+        costs: [
+          {
+            resourceId: 'energy',
+            amount: 42,
+            canAfford: true,
+            currentAmount: 120,
+          },
+        ],
         canAfford: true,
         produces: [{ resourceId: 'energy', rate: 1 }],
         consumes: [{ resourceId: 'crystal', rate: 0.5 }],
@@ -199,7 +206,14 @@ describe('buildProgressionSnapshot', () => {
         displayName: 'Reactor Insulation',
         status: 'available',
         canAfford: true,
-        costs: [{ resourceId: 'energy', amount: 75, canAfford: true }],
+        costs: [
+          {
+            resourceId: 'energy',
+            amount: 75,
+            canAfford: true,
+            currentAmount: 120,
+          },
+        ],
         unlockHint: 'Collect more energy',
         isVisible: true,
       },

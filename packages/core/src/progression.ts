@@ -40,6 +40,7 @@ export type GeneratorCostView = Readonly<{
   resourceId: string;
   amount: number;
   canAfford: boolean;
+  currentAmount?: number;
 }>;
 
 export type ResourceView = Readonly<{
@@ -71,6 +72,7 @@ export type UpgradeCostView = Readonly<{
   resourceId: string;
   amount: number;
   canAfford: boolean;
+  currentAmount?: number;
 }>;
 
 export type UpgradeView = Readonly<{
@@ -715,6 +717,10 @@ function normalizeGeneratorCosts(
     if (!Number.isFinite(amount) || amount < 0) {
       continue;
     }
+    const currentAmount = resolveCurrentAmount(
+      resourceAmounts,
+      cost.resourceId,
+    );
     const canAfford = isCostAffordable(
       resourceAmounts,
       cost.resourceId,
@@ -725,6 +731,7 @@ function normalizeGeneratorCosts(
         resourceId: cost.resourceId,
         amount,
         canAfford,
+        ...(currentAmount !== undefined ? { currentAmount } : {}),
       }),
     );
   }
@@ -767,6 +774,10 @@ function normalizeUpgradeCosts(
     if (!Number.isFinite(amount) || amount < 0) {
       continue;
     }
+    const currentAmount = resolveCurrentAmount(
+      resourceAmounts,
+      cost.resourceId,
+    );
     const canAfford = isCostAffordable(
       resourceAmounts,
       cost.resourceId,
@@ -777,6 +788,7 @@ function normalizeUpgradeCosts(
         resourceId: cost.resourceId,
         amount,
         canAfford,
+        ...(currentAmount !== undefined ? { currentAmount } : {}),
       }),
     );
   }
@@ -801,6 +813,14 @@ function isCostAffordable(
   }
 
   return available >= amount;
+}
+
+function resolveCurrentAmount(
+  amountsByResourceId: ReadonlyMap<string, number>,
+  resourceId: string,
+): number | undefined {
+  const currentAmount = amountsByResourceId.get(resourceId);
+  return Number.isFinite(currentAmount) ? currentAmount : undefined;
 }
 
 function areCostsAffordable(

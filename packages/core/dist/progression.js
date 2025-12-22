@@ -289,11 +289,13 @@ function normalizeGeneratorCosts(costs, resourceAmounts) {
         if (!Number.isFinite(amount) || amount < 0) {
             continue;
         }
+        const currentAmount = resolveCurrentAmount(resourceAmounts, cost.resourceId);
         const canAfford = isCostAffordable(resourceAmounts, cost.resourceId, amount);
         views.push(Object.freeze({
             resourceId: cost.resourceId,
             amount,
             canAfford,
+            ...(currentAmount !== undefined ? { currentAmount } : {}),
         }));
     }
     return views.length > 0
@@ -324,11 +326,13 @@ function normalizeUpgradeCosts(costs, resourceAmounts) {
         if (!Number.isFinite(amount) || amount < 0) {
             continue;
         }
+        const currentAmount = resolveCurrentAmount(resourceAmounts, cost.resourceId);
         const canAfford = isCostAffordable(resourceAmounts, cost.resourceId, amount);
         views.push(Object.freeze({
             resourceId: cost.resourceId,
             amount,
             canAfford,
+            ...(currentAmount !== undefined ? { currentAmount } : {}),
         }));
     }
     return views.length > 0
@@ -344,6 +348,10 @@ function isCostAffordable(amountsByResourceId, resourceId, amount) {
         return false;
     }
     return available >= amount;
+}
+function resolveCurrentAmount(amountsByResourceId, resourceId) {
+    const currentAmount = amountsByResourceId.get(resourceId);
+    return Number.isFinite(currentAmount) ? currentAmount : undefined;
 }
 function areCostsAffordable(amountsByResourceId, costs) {
     if (!costs || costs.length === 0) {

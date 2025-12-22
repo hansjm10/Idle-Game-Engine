@@ -12,6 +12,7 @@ export type GeneratorCostView = Readonly<{
     resourceId: string;
     amount: number;
     canAfford: boolean;
+    currentAmount?: number;
 }>;
 export type ResourceView = Readonly<{
     id: string;
@@ -40,6 +41,7 @@ export type UpgradeCostView = Readonly<{
     resourceId: string;
     amount: number;
     canAfford: boolean;
+    currentAmount?: number;
 }>;
 export type UpgradeView = Readonly<{
     id: string;

@@ -360,7 +360,12 @@ describe('runtime.worker integration', () => {
           isUnlocked: true,
           isVisible: true,
           costs: [
-            { resourceId: 'sample-pack.energy', amount: 100, canAfford: false },
+            {
+              resourceId: 'sample-pack.energy',
+              amount: 100,
+              canAfford: false,
+              currentAmount: 10,
+            },
           ],
           canAfford: false,
           nextPurchaseReadyAtStep: 1,
