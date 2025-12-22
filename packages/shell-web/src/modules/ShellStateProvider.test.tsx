@@ -206,6 +206,7 @@ describe('ShellStateProvider', () => {
               amount: 100,
               unlocked: true,
               visible: true,
+              perSecond: 0,
               perTick: 0,
             },
           ],

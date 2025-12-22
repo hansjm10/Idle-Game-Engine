@@ -165,6 +165,7 @@ describe('buildProgressionSnapshot', () => {
         unlocked: true,
         visible: true,
         capacity: 200,
+        perSecond: 5,
         perTick: 0.5,
       },
       {
@@ -173,6 +174,7 @@ describe('buildProgressionSnapshot', () => {
         amount: 10,
         unlocked: true,
         visible: true,
+        perSecond: -1,
         perTick: -0.1,
       },
     ]);
@@ -372,6 +374,7 @@ describe('buildProgressionSnapshot', () => {
         amount: 50,
         unlocked: false,
         visible: true,
+        perSecond: 0,
         perTick: 0,
       },
     ]);

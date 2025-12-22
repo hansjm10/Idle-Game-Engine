@@ -21,6 +21,7 @@ export type ResourceView = Readonly<{
     unlocked: boolean;
     visible: boolean;
     capacity?: number;
+    perSecond: number;
     perTick: number;
 }>;
 export type GeneratorView = Readonly<{

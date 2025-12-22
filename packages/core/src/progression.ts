@@ -50,6 +50,7 @@ export type ResourceView = Readonly<{
   unlocked: boolean;
   visible: boolean;
   capacity?: number;
+  perSecond: number;
   perTick: number;
 }>;
 
@@ -362,6 +363,7 @@ function createResourceViews(
         unlocked: source.state.isUnlocked(index),
         visible: source.state.isVisible(index),
         ...(capacity !== undefined ? { capacity } : {}),
+        perSecond,
         perTick,
       });
 
@@ -399,6 +401,7 @@ function createResourceViews(
         unlocked: Boolean(unlocked),
         visible: Boolean(visible),
         ...(capacity !== undefined ? { capacity } : {}),
+        perSecond: 0,
         perTick: 0,
       });
 

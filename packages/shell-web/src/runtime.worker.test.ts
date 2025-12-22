@@ -316,6 +316,7 @@ describe('runtime.worker integration', () => {
         progression: {
           resources: Array<{
             id: string;
+            perSecond: number;
             perTick: number;
           }>;
           generators: Array<{

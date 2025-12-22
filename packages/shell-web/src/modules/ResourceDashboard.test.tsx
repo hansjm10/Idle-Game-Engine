@@ -5,7 +5,7 @@ import type { ResourceView } from '@idle-engine/core';
 import {
   ResourceDashboard,
   formatResourceAmount,
-  formatPerTickRate,
+  formatPerSecondRate,
   formatCapacity,
   computeCapacityFillPercentage,
 } from './ResourceDashboard.js';
@@ -91,61 +91,61 @@ describe('ResourceDashboard view-model utilities', () => {
     });
   });
 
-  describe('formatPerTickRate', () => {
+  describe('formatPerSecondRate', () => {
     it('formats zero rate', () => {
-      expect(formatPerTickRate(0)).toBe('±0/tick');
+      expect(formatPerSecondRate(0)).toBe('±0/sec');
     });
 
     it('formats positive rates with + sign', () => {
-      expect(formatPerTickRate(1.23)).toBe('+1.23/tick');
-      expect(formatPerTickRate(150)).toBe('+150/tick');
+      expect(formatPerSecondRate(1.23)).toBe('+1.23/sec');
+      expect(formatPerSecondRate(150)).toBe('+150/sec');
     });
 
     it('formats negative rates with - sign', () => {
-      expect(formatPerTickRate(-2.45)).toBe('-2.45/tick');
-      expect(formatPerTickRate(-200)).toBe('-200/tick');
+      expect(formatPerSecondRate(-2.45)).toBe('-2.45/sec');
+      expect(formatPerSecondRate(-200)).toBe('-200/sec');
     });
 
     it('applies precision based on magnitude', () => {
-      expect(formatPerTickRate(0.01)).toBe('+0.01/tick');
-      expect(formatPerTickRate(99.99)).toBe('+99.99/tick');
-      expect(formatPerTickRate(100.01)).toBe('+100/tick');
+      expect(formatPerSecondRate(0.06)).toBe('+0.06/sec');
+      expect(formatPerSecondRate(99.99)).toBe('+99.99/sec');
+      expect(formatPerSecondRate(100.01)).toBe('+100/sec');
     });
 
-    it('formats very large per-tick rates without decimals', () => {
-      expect(formatPerTickRate(150)).toBe('+150/tick');
-      expect(formatPerTickRate(1000)).toBe('+1000/tick');
-      expect(formatPerTickRate(5000.75)).toBe('+5001/tick');
-      expect(formatPerTickRate(-2500.25)).toBe('-2500/tick');
+    it('formats very large per-second rates without decimals', () => {
+      expect(formatPerSecondRate(150)).toBe('+150/sec');
+      expect(formatPerSecondRate(1000)).toBe('+1000/sec');
+      expect(formatPerSecondRate(5000.75)).toBe('+5001/sec');
+      expect(formatPerSecondRate(-2500.25)).toBe('-2500/sec');
     });
 
     it('handles negative zero and very small values that round to zero', () => {
-      expect(formatPerTickRate(-0)).toBe('±0/tick');
-      expect(formatPerTickRate(-0.001)).toBe('±0/tick');
-      expect(formatPerTickRate(0.001)).toBe('±0/tick');
-      expect(formatPerTickRate(-0.004)).toBe('±0/tick');
-      expect(formatPerTickRate(0.004)).toBe('±0/tick');
+      expect(formatPerSecondRate(-0)).toBe('±0/sec');
+      expect(formatPerSecondRate(-0.01)).toBe('±0/sec');
+      expect(formatPerSecondRate(0.01)).toBe('±0/sec');
+      expect(formatPerSecondRate(-0.04)).toBe('±0/sec');
+      expect(formatPerSecondRate(0.04)).toBe('±0/sec');
     });
 
-    it('handles boundary at RATE_NEUTRAL_THRESHOLD (0.005)', () => {
-      // Values with abs < 0.005 are neutral
-      expect(formatPerTickRate(0.004)).toBe('±0/tick');
-      expect(formatPerTickRate(-0.004)).toBe('±0/tick');
+    it('handles boundary at RATE_NEUTRAL_THRESHOLD (0.05)', () => {
+      // Values with abs < 0.05 are neutral
+      expect(formatPerSecondRate(0.04)).toBe('±0/sec');
+      expect(formatPerSecondRate(-0.04)).toBe('±0/sec');
 
-      // Values with abs >= 0.005 are signed (0.005 rounds to ±0.01)
-      expect(formatPerTickRate(0.005)).toBe('+0.01/tick');
-      expect(formatPerTickRate(-0.005)).toBe('-0.01/tick');
+      // Values with abs >= 0.05 are signed (0.05 rounds to ±0.05)
+      expect(formatPerSecondRate(0.05)).toBe('+0.05/sec');
+      expect(formatPerSecondRate(-0.05)).toBe('-0.05/sec');
 
       // Just above threshold
-      expect(formatPerTickRate(0.006)).toBe('+0.01/tick');
-      expect(formatPerTickRate(-0.006)).toBe('-0.01/tick');
+      expect(formatPerSecondRate(0.06)).toBe('+0.06/sec');
+      expect(formatPerSecondRate(-0.06)).toBe('-0.06/sec');
     });
 
     it('handles non-finite values', () => {
-      // NaN, Infinity, and -Infinity should all be formatted as "±0/tick" for safety
-      expect(formatPerTickRate(NaN)).toBe('±0/tick');
-      expect(formatPerTickRate(Infinity)).toBe('±0/tick');
-      expect(formatPerTickRate(-Infinity)).toBe('±0/tick');
+      // NaN, Infinity, and -Infinity should all be formatted as "±0/sec" for safety
+      expect(formatPerSecondRate(NaN)).toBe('±0/sec');
+      expect(formatPerSecondRate(Infinity)).toBe('±0/sec');
+      expect(formatPerSecondRate(-Infinity)).toBe('±0/sec');
     });
   });
 
@@ -276,6 +276,7 @@ describe('ResourceDashboard component', () => {
           amount: 0,
           unlocked: false,
           visible: false,
+          perSecond: 0,
           perTick: 0,
         },
       ];
@@ -293,6 +294,7 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: false,
+          perSecond: 1,
           perTick: 1,
         },
       ];
@@ -313,6 +315,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 250,
+          perSecond: 5.5,
           perTick: 0.55,
         },
         {
@@ -321,6 +324,7 @@ describe('ResourceDashboard component', () => {
           amount: 4,
           unlocked: true,
           visible: true,
+          perSecond: 0.25,
           perTick: 0.025,
         },
       ];
@@ -331,8 +335,8 @@ describe('ResourceDashboard component', () => {
       expect(screen.getByText('Crystal')).toBeInTheDocument();
       expect(screen.getByText('126 / 250')).toBeInTheDocument();
       expect(screen.getByText('4.00')).toBeInTheDocument();
-      expect(screen.getByText('+0.55/tick')).toBeInTheDocument();
-      expect(screen.getByText('+0.03/tick')).toBeInTheDocument();
+      expect(screen.getByText('+5.50/sec')).toBeInTheDocument();
+      expect(screen.getByText('+0.25/sec')).toBeInTheDocument();
     });
 
     it('filters out locked resources', () => {
@@ -343,6 +347,7 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 1,
           perTick: 1,
         },
         {
@@ -351,6 +356,7 @@ describe('ResourceDashboard component', () => {
           amount: 0,
           unlocked: false,
           visible: true,
+          perSecond: 0,
           perTick: 0,
         },
       ];
@@ -369,6 +375,7 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 1,
           perTick: 1,
         },
         {
@@ -377,6 +384,7 @@ describe('ResourceDashboard component', () => {
           amount: 50,
           unlocked: true,
           visible: false,
+          perSecond: 0.5,
           perTick: 0.5,
         },
       ];
@@ -398,6 +406,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 100,
+          perSecond: 0,
           perTick: 0,
         },
       ];
@@ -418,6 +427,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 100,
+          perSecond: 0,
           perTick: 0,
         },
       ];
@@ -444,6 +454,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 0,
+          perSecond: 0,
           perTick: 0,
         },
       ];
@@ -464,6 +475,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: -100,
+          perSecond: 1,
           perTick: 1,
         },
       ];
@@ -484,6 +496,7 @@ describe('ResourceDashboard component', () => {
           amount: 10,
           unlocked: true,
           visible: true,
+          perSecond: 0.1,
           perTick: 0.1,
         },
       ];
@@ -502,6 +515,7 @@ describe('ResourceDashboard component', () => {
           amount: 10,
           unlocked: true,
           visible: true,
+          perSecond: 0.1,
           perTick: 0.1,
         },
       ];
@@ -520,6 +534,7 @@ describe('ResourceDashboard component', () => {
           amount: 10,
           unlocked: true,
           visible: true,
+          perSecond: 0.1,
           perTick: 0.1,
         },
       ];
@@ -548,6 +563,7 @@ describe('ResourceDashboard component', () => {
           capacity: 100,
           unlocked: true,
           visible: true,
+          perSecond: 1,
           perTick: 1,
         },
         {
@@ -556,6 +572,7 @@ describe('ResourceDashboard component', () => {
           amount: 10,
           unlocked: true,
           visible: true,
+          perSecond: 0.1,
           perTick: 0.1,
         },
       ];
@@ -583,13 +600,14 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 55,
           perTick: 5.5,
         },
       ];
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
-      const rateElement = screen.getByText('+5.50/tick');
+      const rateElement = screen.getByText('+55.00/sec');
       expect(rateElement).toBeInTheDocument();
       expect(rateElement.classList.contains(styles.ratePositive)).toBe(true);
     });
@@ -602,13 +620,14 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: -25,
           perTick: -2.5,
         },
       ];
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
-      const rateElement = screen.getByText('-2.50/tick');
+      const rateElement = screen.getByText('-25.00/sec');
       expect(rateElement).toBeInTheDocument();
       expect(rateElement.classList.contains(styles.rateNegative)).toBe(true);
     });
@@ -621,13 +640,14 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 0,
           perTick: 0,
         },
       ];
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
-      const rateElement = screen.getByText('±0/tick');
+      const rateElement = screen.getByText('±0/sec');
       expect(rateElement).toBeInTheDocument();
       expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
     });
@@ -640,14 +660,15 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
-          perTick: 0.004, // Below RATE_NEUTRAL_THRESHOLD (0.005)
+          perSecond: 0.04, // Below RATE_NEUTRAL_THRESHOLD (0.05)
+          perTick: 0.004,
         },
       ];
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       // Should display as neutral and have neutral styling
-      const rateElement = screen.getByText('±0/tick');
+      const rateElement = screen.getByText('±0/sec');
       expect(rateElement).toBeInTheDocument();
       expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
       expect(rateElement.classList.contains(styles.ratePositive)).toBe(false);
@@ -661,14 +682,15 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
-          perTick: -0.004, // Below RATE_NEUTRAL_THRESHOLD (0.005)
+          perSecond: -0.04, // Below RATE_NEUTRAL_THRESHOLD (0.05)
+          perTick: -0.004,
         },
       ];
       mockProgressionApi.selectOptimisticResources = vi.fn(() => resources);
       render(<ResourceDashboard />);
 
       // Should display as neutral and have neutral styling
-      const rateElement = screen.getByText('±0/tick');
+      const rateElement = screen.getByText('±0/sec');
       expect(rateElement).toBeInTheDocument();
       expect(rateElement.classList.contains(styles.rateNeutral)).toBe(true);
       expect(rateElement.classList.contains(styles.rateNegative)).toBe(false);
@@ -684,6 +706,7 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 1,
           perTick: 1,
         },
       ];
@@ -705,6 +728,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 250,
+          perSecond: 0.55,
           perTick: 0.55,
         },
       ];
@@ -729,6 +753,7 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 1,
           perTick: 1,
         },
       ];
@@ -756,6 +781,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 150,
+          perSecond: 1,
           perTick: 1,
         },
       ];
@@ -780,6 +806,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 100,
+          perSecond: 1,
           perTick: 1,
         },
       ];
@@ -804,6 +831,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 100,
+          perSecond: -1,
           perTick: -1,
         },
       ];
@@ -829,6 +857,7 @@ describe('ResourceDashboard component', () => {
           amount: 100,
           unlocked: true,
           visible: true,
+          perSecond: 1,
           perTick: 1,
         },
         {
@@ -837,6 +866,7 @@ describe('ResourceDashboard component', () => {
           amount: 0,
           unlocked: false,
           visible: false,
+          perSecond: 0,
           perTick: 0,
         },
       ];
@@ -869,6 +899,7 @@ describe('ResourceDashboard component', () => {
           unlocked: true,
           visible: true,
           capacity: 250,
+          perSecond: 0.55,
           perTick: 0.55,
         },
         {
@@ -877,6 +908,7 @@ describe('ResourceDashboard component', () => {
           amount: 4,
           unlocked: true,
           visible: true,
+          perSecond: 0.025,
           perTick: 0.025,
         },
       ];
