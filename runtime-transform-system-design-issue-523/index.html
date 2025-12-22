@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Runtime Transform System — Core Support for Content Transforms (issue-523) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Runtime Transform System — Core Support for Content Transforms (issue-523) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.1f244e1b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.0f133af1.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.267f9d33.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -225,7 +225,7 @@
 <li class="">Unlock/visibility state:<!-- -->
 <ul>
 <li class=""><code>unlockCondition</code> (optional): evaluate via <code>evaluateCondition</code> (<code>packages/core/src/condition-evaluator.ts:122</code>) and apply <strong>monotonically</strong> (once unlocked, stay unlocked) to avoid regressions during replay and to match automation unlock persistence patterns.</li>
-<li class=""><code>visibilityCondition</code> (optional): evaluate per tick to compute <code>isVisible</code> (default <code>true</code> when undefined, consistent with progression coordinator visibility semantics at <code>packages/core/src/progression-coordinator.ts:1455</code>).</li>
+<li class=""><code>visibilityCondition</code> (optional): evaluate per tick to compute <code>visible</code> (default <code>true</code> when undefined, consistent with progression coordinator visibility semantics at <code>packages/core/src/progression-coordinator.ts:1455</code>).</li>
 <li class="">Execution gating: <code>unlockCondition</code> gates execution; <code>visibilityCondition</code> gates snapshot/UI only.</li>
 </ul>
 </li>
@@ -279,7 +279,7 @@
 <li class=""><code>buildTransformSnapshot(step, publishedAt, { transforms, state, conditionContext, resourceState })</code> returning UI-ready transform views.</li>
 <li class="">Transform view fields (proposed minimal contract):<!-- -->
 <ul>
-<li class=""><code>id</code>, <code>displayName</code>, <code>description</code>, <code>mode</code>, <code>isUnlocked</code>, <code>isVisible</code></li>
+<li class=""><code>id</code>, <code>displayName</code>, <code>description</code>, <code>mode</code>, <code>unlocked</code>, <code>visible</code></li>
 <li class=""><code>cooldownRemainingMs</code>, <code>inputs</code>, <code>outputs</code></li>
 <li class=""><code>outstandingBatches</code> and <code>nextBatchReadyAtStep</code> (batch mode)</li>
 </ul>
