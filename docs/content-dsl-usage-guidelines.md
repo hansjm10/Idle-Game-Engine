@@ -6,7 +6,7 @@ description: Prescriptive workflow for building, validating, and shipping Idle E
 This guide turns the Content DSL specification into a step-by-step workflow for
 authors and automation agents. It maps back to
 `docs/content-dsl-usage-guidelines-design.md` and the schema behaviour in
-`packages/content-schema/src/pack.ts`, so every directive stays tied to a
+`packages/content-schema/src/pack/index.ts`, so every directive stays tied to a
 contract.
 
 > Need deeper rationale? Read
@@ -114,13 +114,13 @@ If you need a higher threshold (for example "after 5 prestiges"), use
 ## Naming Conventions
 
 The schema enforces naming through `packSlugSchema`, `contentIdSchema`, and
-related validators (see `packages/content-schema/src/pack.ts`). Keep these rules
+related validators (see `packages/content-schema/src/pack/schema.ts`). Keep these rules
 in mind before you run validation:
 
 - `metadata.id`: lowercase slug (`a-z0-9-`), ≤32 chars, and stable after publish
   (`docs/content-dsl-schema-design.md` §5.5).
 - Content IDs: reuse the slug casing from `contentIdSchema` and prefix with the
-  pack slug to avoid collisions (`packages/content-schema/src/pack.ts`).
+  pack slug to avoid collisions (`packages/content-schema/src/base/ids.ts`).
 - `metadata.title` / `summary`: provide `default` copy and locale variants; keep
   `summary` ≤512 chars (`docs/content-dsl-schema-design.md` §5.5).
 - `metadata.tags`: slug list (≤24 chars) with no spaces or uppercase characters
@@ -130,7 +130,7 @@ in mind before you run validation:
 
 - [ ] Pick a pack slug that matches the directory name and stays unique across
   `packages/*` (collisions surface via `ContentSchemaOptions.knownPacks` in
-  `packages/content-schema/src/pack.ts`).
+  `packages/content-schema/src/pack/types.ts`).
 - [ ] Reserve a namespace prefix for content IDs before authoring modules and
   apply it consistently.
 - [ ] Populate localized titles and summaries while setting `defaultLocale` and
@@ -534,7 +534,7 @@ If `pnpm generate` fails with cycle detection errors after upgrading:
    verify all cycles are resolved.
 
 **Implementation details**: Cycle detection is implemented in
-`packages/content-schema/src/pack.ts` via `validateTransformCycles()` and
+`packages/content-schema/src/pack/validate-cycles.ts` via `validateTransformCycles()` and
 `validateUnlockConditionCycles()` functions, using depth-first search with path
 tracking to provide detailed error messages. Cycle profitability is only
 evaluated for single-input/single-output transforms with constant amounts; more

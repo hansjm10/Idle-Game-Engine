@@ -39,7 +39,7 @@ To fulfill issue #15 (Document DSL usage guidelines), this proposal directs AI-l
   - Schema Verification Agent — ensures narrative accuracy against schema contracts for issue #15.
   - Tooling Automation Agent — adds lint and link checks that guard the deliverables for issue #15.
 - **Affected Packages/Services**: `docs/`, `packages/content-schema`, `packages/content-sample`, and `tools/content-schema-cli` will be touched to land issue #15.
-- **Compatibility Considerations**: Documentation must reflect existing schema contracts (`packages/content-schema/src/pack.ts:70-315`) and runtime compatibility gates (`packages/content-schema/src/runtime-compat.ts:1-98`) so issue #15 does not introduce conflicting guidance.
+- **Compatibility Considerations**: Documentation must reflect existing schema contracts (`packages/content-schema/src/pack/schema.ts`) and runtime compatibility gates (`packages/content-schema/src/runtime-compat.ts:1-98`) so issue #15 does not introduce conflicting guidance.
 
 ## 5. Current State
 Issue #15 currently depends on deep technical docs without a user-facing guide: the schema design doc explains required fields and compatibility checks (`docs/content-dsl-schema-design.md:298-356`), the compiler design shows artifact expectations (`docs/content-compiler-design.md:32-170`), and the sample pack README outlines regeneration steps (`packages/content-sample/README.md:1-27`). The CLI validates packs and builds manifests (`tools/content-schema-cli/src/generate.js:17-99`), but there is no single entry point translating these facts into prescriptive authoring steps, leaving the gap documented by issue #15.
@@ -63,7 +63,7 @@ flowchart LR
 ### 6.2 Detailed Design
 - **Runtime Changes**: No runtime code changes are demanded by issue #15; documentation will instead reference existing import-time guards that enforce warning-free packs (`packages/content-sample/src/index.ts:23-45`) and describe how to interpret them.
 - **Data & Schemas**: The guide will summarize metadata, dependency, and feature gate expectations with tables derived from schema definitions (`docs/content-dsl-schema-design.md:298-356`) and compatibility gates (`packages/content-schema/src/runtime-compat.ts:1-98`), satisfying the naming/versioning matrices called out in issue #15.
-- **APIs & Contracts**: Guidance will cross-link to schema exports (`packages/content-schema/src/pack.ts:70-315`) and compiler outputs (`docs/content-compiler-design.md:161-173`) so every directive in issue #15 is tied to a stable contract.
+- **APIs & Contracts**: Guidance will cross-link to schema exports (`packages/content-schema/src/pack/index.ts`) and compiler outputs (`docs/content-compiler-design.md:161-173`) so every directive in issue #15 is tied to a stable contract.
 - **Tooling & Automation**: To close issue #15 we will add markdownlint/link-check configuration for the new doc (referencing `packages/config-eslint` presets where applicable) and update `pnpm lint` documentation to ensure agents execute checks before submission.
 
 ### 6.3 Operational Considerations

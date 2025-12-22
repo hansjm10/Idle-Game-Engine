@@ -214,7 +214,7 @@ All modification effects use `NumericFormula` (formulas.ts), which supports:
 
 **Current State**:
 
-Digest Implementation (pack.ts:381-404):
+Digest Implementation (`packages/content-schema/src/pack/normalize.ts`):
 - FNV-1a hash of pack metadata + module id lists
 - Format: `{ version: number; hash: string }` (e.g., `fnv1a-a3c2f1b8`)
 - Digest version: `CONTENT_PACK_DIGEST_VERSION = 1`
@@ -490,7 +490,7 @@ pnpm --filter @idle-engine/content-validation-cli test -- --run "validateContent
 
 **Mitigation Planned**:
 - Design recommends caching normalized results
-- Lookup maps included in NormalizedContentPack (pack.ts:142-173)
+- Lookup maps included in NormalizedContentPack (`packages/content-schema/src/pack/types.ts`)
 
 **Current Performance**:
 - No caching implemented yet
@@ -567,7 +567,7 @@ All Section 10 open questions from the content schema design document have been 
 - Formula definitions: `packages/content-schema/src/base/formulas.ts`
 - Formula arbitraries: `packages/content-schema/src/base/formulas.arbitraries.ts`
 - Runtime compatibility: `packages/content-schema/src/base/runtime-compat.ts`
-- Pack normalization: `packages/content-schema/src/base/pack.ts`
+- Pack normalization: `packages/content-schema/src/pack/normalize.ts`
 
 ### Test Suites
 - Property-based formula tests: `packages/content-schema/src/base/formulas.property.test.ts`
