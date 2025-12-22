@@ -35,6 +35,7 @@ import {
   missingMetricReferenceFixture,
   missingPrestigeCountResourceFixture,
   missingResourceReferenceFixture,
+  netLossTransformCycleFixture,
   resourceSinkTransformFixture,
   selfThresholdUnlockConditionsFixture,
   selfReferencingDependencyFixture,
@@ -218,7 +219,7 @@ describe('Integration: Cyclic Dependencies', () => {
     );
   });
 
-  it('detects direct transform chain cycles (A → B → A)', () => {
+  it('detects net-positive direct transform chain cycles (A → B → A)', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(cyclicTransformDirectFixture);
 
@@ -235,7 +236,7 @@ describe('Integration: Cyclic Dependencies', () => {
     );
   });
 
-  it('detects indirect transform chain cycles (A → B → C → A)', () => {
+  it('detects net-positive indirect transform chain cycles (A → B → C → A)', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(cyclicTransformIndirectFixture);
 
@@ -269,6 +270,16 @@ describe('Integration: Cyclic Dependencies', () => {
     );
   });
 
+  it('allows direct transform cycles with net loss', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(netLossTransformCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
   it('allows linear transform chains without cycles', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(linearTransformChainFixture);
@@ -299,21 +310,14 @@ describe('Integration: Cyclic Dependencies', () => {
     }
   });
 
-  it('detects self-referencing transforms as cycles', () => {
+  it('allows self-referencing transforms with net loss', () => {
     const validator = createContentPackValidator();
     const result = validator.safeParse(selfReferencingTransformFixture);
 
-    expect(result.success).toBe(false);
-    if (result.success) return;
-
-    // Should detect the self-loop
-    expect(getZodIssues(result.error)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: expect.stringMatching(/transform cycle/i),
-        }),
-      ]),
-    );
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
   });
 
   it('detects self-referencing pack dependencies', () => {

@@ -254,9 +254,11 @@ Understanding these validation rules helps authors design safe and functional
 transform networks.
 
 **Important**: Cycle detection is a **build-time safety check** that runs
-during content pack validation. Content packs containing cycles will be
-rejected before they can be loaded into the game engine, ensuring problematic
-configurations never reach runtime.
+during content pack validation. Transform cycles are allowed only when the
+overall conversion is net-loss or neutral **and** every transform in the cycle
+has exactly one input and one output with constant positive amounts. Net-positive
+cycles, or cycles that cannot be evaluated under those rules, are rejected
+before they can be loaded into the game engine.
 
 ### What Constitutes a Cycle
 
@@ -357,20 +359,41 @@ one-way flow.
 
 Multiple resource streams converge but never loop back to their sources.
 
-#### ❌ Circular transform chains
+#### ✅ Lossy exchange loops (allowed)
+
+```json
+{
+  "transforms": [
+    {
+      "id": "essence-to-gold",
+      "inputs": [{ "resourceId": "essence", "amount": { "kind": "constant", "value": 100 } }],
+      "outputs": [{ "resourceId": "gold", "amount": { "kind": "constant", "value": 80 } }]
+    },
+    {
+      "id": "gold-to-essence",
+      "inputs": [{ "resourceId": "gold", "amount": { "kind": "constant", "value": 100 } }],
+      "outputs": [{ "resourceId": "essence", "amount": { "kind": "constant", "value": 90 } }]
+    }
+  ]
+}
+```
+
+This bidirectional exchange is allowed because the overall conversion is net-loss.
+
+#### ❌ Net-positive transform cycles
 
 ```json
 {
   "transforms": [
     {
       "id": "water-to-steam",
-      "inputs": [{ "resourceId": "water", "amount": { "kind": "constant", "value": 1 } }],
-      "outputs": [{ "resourceId": "steam", "amount": { "kind": "constant", "value": 1 } }]
+      "inputs": [{ "resourceId": "water", "amount": { "kind": "constant", "value": 100 } }],
+      "outputs": [{ "resourceId": "steam", "amount": { "kind": "constant", "value": 120 } }]
     },
     {
       "id": "steam-to-water",
-      "inputs": [{ "resourceId": "steam", "amount": { "kind": "constant", "value": 1 } }],
-      "outputs": [{ "resourceId": "water", "amount": { "kind": "constant", "value": 1 } }]
+      "inputs": [{ "resourceId": "steam", "amount": { "kind": "constant", "value": 100 } }],
+      "outputs": [{ "resourceId": "water", "amount": { "kind": "constant", "value": 110 } }]
     }
   ]
 }
@@ -473,8 +496,8 @@ Clear one-way progression through tiers.
   transform networks
 - [ ] Ensure all transform chains have clear "source" resources (from generators
   or initial grants) and "sink" resources (consumed but not regenerated)
-- [ ] Avoid bidirectional transforms between the same pair of resources unless
-  mediated by additional resources or conditions
+- [ ] Ensure bidirectional transforms are net-loss or neutral and use constant
+  single-input/single-output amounts so cycle profitability can be evaluated
 - [ ] Run `pnpm generate` after adding transforms and address any cycle
   detection errors immediately
 - [ ] Test unlock progressions manually to confirm resources become available in
@@ -495,6 +518,8 @@ If `pnpm generate` fails with cycle detection errors after upgrading:
      resources from outside the cycle
    - **Convert to linear chain**: Redesign bidirectional transforms as one-way
      progression (A → B → C instead of A ⇄ B)
+   - **Make cycles net-loss**: Reduce outputs or increase inputs so the overall
+     conversion ratio is ≤ 1.0 for each loop
    - **Add intermediate resources**: Insert new resources in the chain to create
      a clear flow direction
    - **Remove problematic transforms**: If a transform creates an unwanted loop,
@@ -511,7 +536,9 @@ If `pnpm generate` fails with cycle detection errors after upgrading:
 **Implementation details**: Cycle detection is implemented in
 `packages/content-schema/src/pack.ts` via `validateTransformCycles()` and
 `validateUnlockConditionCycles()` functions, using depth-first search with path
-tracking to provide detailed error messages.
+tracking to provide detailed error messages. Cycle profitability is only
+evaluated for single-input/single-output transforms with constant amounts; more
+complex cycles are rejected as potentially profitable.
 
 ### Safety Guardrails
 

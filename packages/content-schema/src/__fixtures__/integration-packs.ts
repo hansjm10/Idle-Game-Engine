@@ -840,13 +840,13 @@ export const cyclicTransformDirectFixture = {
       inputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 120 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -859,13 +859,85 @@ export const cyclicTransformDirectFixture = {
       inputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * DIRECT TRANSFORM CHAIN - NET LOSS: Transform A → Transform B → Transform A
+ * Transform A consumes X, produces Y
+ * Transform B consumes Y, produces X
+ */
+export const netLossTransformCycleFixture = {
+  metadata: {
+    id: 'net-loss-transform-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 80 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -919,13 +991,13 @@ export const cyclicTransformIndirectFixture = {
       inputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -938,13 +1010,13 @@ export const cyclicTransformIndirectFixture = {
       inputs: [
         {
           resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -957,13 +1029,13 @@ export const cyclicTransformIndirectFixture = {
       inputs: [
         {
           resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 100 },
         },
       ],
       outputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 110 },
         },
       ],
       trigger: { kind: 'manual' as const },
@@ -1385,7 +1457,7 @@ export const selfReferencingTransformFixture = {
       outputs: [
         {
           resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
+          amount: { kind: 'constant', value: 0.8 },
         },
       ],
       trigger: { kind: 'manual' as const },
