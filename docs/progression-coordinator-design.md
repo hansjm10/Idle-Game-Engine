@@ -227,7 +227,7 @@ for (const record of this.generatorList) {
   const visibleCondition = record.definition.visibilityCondition;
   record.state.isVisible = visibleCondition
     ? evaluateCondition(visibleCondition, this.conditionContext)
-    : true;
+    : record.state.isUnlocked;
 
   // Generate unlock hint for locked generators
   record.state.unlockHint = record.state.isUnlocked
@@ -259,6 +259,11 @@ for (const record of this.generatorList) {
 - This ensures generators remain available after unlock conditions are met, even if conditions later fail (e.g., player spends resources below threshold)
 - **Prestige reset exception**: When a prestige layer resets a generator/resource, the prestige evaluator may re-lock unlock/visibility back to content defaults as part of the reset flow.
 
+**Resource update loop**:
+- Unlock conditions are evaluated each tick with persistent unlock semantics.
+- When `visibilityCondition` is omitted, an unlock transition grants visibility
+  for resources that start hidden.
+
 **Upgrade update loop** (lines 331-349):
 ```typescript
 for (const record of this.upgradeList) {
@@ -270,7 +275,7 @@ for (const record of this.upgradeList) {
   const visibilityCondition = record.definition.visibilityCondition;
   record.state.isVisible = visibilityCondition
     ? evaluateCondition(visibilityCondition, this.conditionContext)
-    : true;
+    : status !== 'locked';
 
   // Generate unlock hint for locked upgrades
   record.state.unlockHint = status === 'locked'

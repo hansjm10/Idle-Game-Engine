@@ -396,17 +396,15 @@ Design unlock conditions that form directed acyclic graphs (DAGs):
         "resourceId": "ore",
         "comparator": "gte",
         "amount": { "kind": "constant", "value": 1 }
-      },
-      "visibilityCondition": {
-        "kind": "resourceThreshold",
-        "resourceId": "ore",
-        "comparator": "gte",
-        "amount": { "kind": "constant", "value": 1 }
       }
     }
   ]
 }
 ```
+
+When `visibilityCondition` is omitted, visibility follows unlock by default. Provide a
+visibility condition only when you want a different reveal timing (for example,
+show-before-unlock teasers).
 
 This pattern is supported for resources and does not introduce an unlock-cycle edge. Ensure the resource can still be produced (for example by a generator or transform) while hidden/locked.
 

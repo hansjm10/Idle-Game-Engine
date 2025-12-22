@@ -701,6 +701,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
           if (evaluateCondition(record.visibilityCondition, this.conditionContext)) {
             this.resourceState.grantVisibility(index);
           }
+        } else if (
+          record.unlockCondition &&
+          this.resourceState.isUnlocked(index) &&
+          !this.resourceState.isVisible(index)
+        ) {
+          this.resourceState.grantVisibility(index);
         }
       }
 
@@ -717,11 +723,15 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
           record.state.isUnlocked = true;
         }
 
-        record.state.isVisible = unlockedByUpgrade
-          ? true
-          : this.evaluateVisibility(record.definition.visibilityCondition);
-
         const visibilityCondition = record.definition.visibilityCondition;
+        if (unlockedByUpgrade) {
+          record.state.isVisible = true;
+        } else if (visibilityCondition) {
+          record.state.isVisible = this.evaluateVisibility(visibilityCondition);
+        } else {
+          record.state.isVisible = record.state.isUnlocked;
+        }
+
         const conditionsToDescribe =
           visibilityCondition &&
           !record.state.isVisible &&
@@ -750,9 +760,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       for (const record of this.upgradeList) {
         const status = this.resolveUpgradeStatus(record);
         record.state.status = status;
-        record.state.isVisible = this.evaluateVisibility(
-          record.definition.visibilityCondition,
-        );
+        const visibilityCondition = record.definition.visibilityCondition;
+        record.state.isVisible = visibilityCondition
+          ? this.evaluateVisibility(visibilityCondition)
+          : status !== 'locked';
 
         record.state.unlockHint =
           status === 'locked'
