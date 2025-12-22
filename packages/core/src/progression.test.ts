@@ -185,7 +185,15 @@ describe('buildProgressionSnapshot', () => {
         enabled: true,
         isUnlocked: true,
         isVisible: true,
-        costs: [{ resourceId: 'energy', amount: 42 }],
+        costs: [
+          {
+            resourceId: 'energy',
+            amount: 42,
+            canAfford: true,
+            currentAmount: 120,
+          },
+        ],
+        canAfford: true,
         produces: [{ resourceId: 'energy', rate: 1 }],
         consumes: [{ resourceId: 'crystal', rate: 0.5 }],
         nextPurchaseReadyAtStep: 6,
@@ -197,7 +205,15 @@ describe('buildProgressionSnapshot', () => {
         id: 'sample.reactor-insulation',
         displayName: 'Reactor Insulation',
         status: 'available',
-        costs: [{ resourceId: 'energy', amount: 75 }],
+        canAfford: true,
+        costs: [
+          {
+            resourceId: 'energy',
+            amount: 75,
+            canAfford: true,
+            currentAmount: 120,
+          },
+        ],
         unlockHint: 'Collect more energy',
         isVisible: true,
       },
@@ -391,6 +407,7 @@ describe('buildProgressionSnapshot', () => {
     expect(snapshot.generators).toEqual([
       expect.objectContaining({
         id: 'sample.generator',
+        canAfford: false,
         nextPurchaseReadyAtStep: 8,
       }),
     ]);
@@ -425,6 +442,7 @@ describe('buildProgressionSnapshot', () => {
     expect(snapshot.generators).toEqual([
       expect.objectContaining({
         id: 'sample.generator',
+        canAfford: false,
         nextPurchaseReadyAtStep: 7,
       }),
     ]);
@@ -448,7 +466,8 @@ describe('buildProgressionSnapshot', () => {
     expect(snapshot.upgrades).toEqual([
       expect.objectContaining({
         id: 'sample-upgrade',
-        costs: [{ resourceId: 'energy', amount: 42 }],
+        canAfford: false,
+        costs: [{ resourceId: 'energy', amount: 42, canAfford: false }],
       }),
     ]);
   });
@@ -479,7 +498,8 @@ describe('buildProgressionSnapshot', () => {
     expect(snapshot.upgrades).toEqual([
       expect.objectContaining({
         id: 'sample-upgrade',
-        costs: [{ resourceId: 'crystal', amount: 100 }],
+        canAfford: false,
+        costs: [{ resourceId: 'crystal', amount: 100, canAfford: false }],
       }),
     ]);
   });

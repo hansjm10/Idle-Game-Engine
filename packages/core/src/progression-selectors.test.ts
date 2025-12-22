@@ -34,6 +34,9 @@ function createResource(
 function createGenerator(
   overrides: Partial<GeneratorView> & Pick<GeneratorView, 'id'>,
 ): GeneratorView {
+  const costs = overrides.costs ?? Object.freeze([]);
+  const canAfford =
+    overrides.canAfford ?? costs.every((cost) => cost.canAfford);
   return Object.freeze({
     id: overrides.id,
     displayName: overrides.displayName ?? overrides.id,
@@ -41,7 +44,8 @@ function createGenerator(
     enabled: overrides.enabled ?? true,
     isUnlocked: overrides.isUnlocked ?? true,
     isVisible: overrides.isVisible ?? true,
-    costs: overrides.costs ?? Object.freeze([]),
+    costs,
+    canAfford,
     produces: overrides.produces ?? Object.freeze([]),
     consumes: overrides.consumes ?? Object.freeze([]),
     nextPurchaseReadyAtStep: overrides.nextPurchaseReadyAtStep ?? 0,
@@ -51,10 +55,14 @@ function createGenerator(
 function createUpgrade(
   overrides: Partial<UpgradeView> & Pick<UpgradeView, 'id'>,
 ): UpgradeView {
+  const canAfford =
+    overrides.canAfford ??
+    (overrides.costs ? overrides.costs.every((cost) => cost.canAfford) : true);
   return Object.freeze({
     id: overrides.id,
     displayName: overrides.displayName ?? overrides.id,
     status: overrides.status ?? 'locked',
+    canAfford,
     ...(overrides.costs !== undefined ? { costs: overrides.costs } : {}),
     ...(overrides.unlockHint !== undefined
       ? { unlockHint: overrides.unlockHint }
@@ -109,28 +117,38 @@ describe('progression snapshot selectors', () => {
       generators: Object.freeze([
         createGenerator({
           id: 'gen.ready.affordable',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 50 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 50, canAfford: true },
+          ]),
           nextPurchaseReadyAtStep: 11,
         }),
         createGenerator({
           id: 'gen.cooldown',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 50 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 50, canAfford: true },
+          ]),
           nextPurchaseReadyAtStep: 12,
         }),
         createGenerator({
           id: 'gen.expensive',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 150 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 150, canAfford: false },
+          ]),
           nextPurchaseReadyAtStep: 11,
         }),
         createGenerator({
           id: 'gen.hidden',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 1 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 1, canAfford: true },
+          ]),
           nextPurchaseReadyAtStep: 11,
           isVisible: false,
         }),
         createGenerator({
           id: 'gen.locked',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 1 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 1, canAfford: true },
+          ]),
           nextPurchaseReadyAtStep: 11,
           isUnlocked: false,
         }),
@@ -149,25 +167,33 @@ describe('progression snapshot selectors', () => {
         createUpgrade({
           id: 'upgrade.available.affordable',
           status: 'available',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 10 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 10, canAfford: true },
+          ]),
           isVisible: true,
         }),
         createUpgrade({
           id: 'upgrade.available.expensive',
           status: 'available',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 50 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 50, canAfford: false },
+          ]),
           isVisible: true,
         }),
         createUpgrade({
           id: 'upgrade.locked.visible',
           status: 'locked',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 1 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 1, canAfford: true },
+          ]),
           isVisible: true,
         }),
         createUpgrade({
           id: 'upgrade.locked.hidden',
           status: 'locked',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 1 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 1, canAfford: true },
+          ]),
           isVisible: false,
         }),
       ]),
@@ -231,7 +257,9 @@ describe('progression snapshot selectors', () => {
       generators: Object.freeze([
         createGenerator({
           id: 'gen.actionable',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 10 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 10, canAfford: true },
+          ]),
           nextPurchaseReadyAtStep: 6,
         }),
       ]),
@@ -239,7 +267,9 @@ describe('progression snapshot selectors', () => {
         createUpgrade({
           id: 'upgrade.actionable',
           status: 'available',
-          costs: Object.freeze([{ resourceId: 'energy', amount: 10 }]),
+          costs: Object.freeze([
+            { resourceId: 'energy', amount: 10, canAfford: true },
+          ]),
           isVisible: true,
         }),
       ]),

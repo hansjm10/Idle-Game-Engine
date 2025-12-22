@@ -8,8 +8,9 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 100 }
+        { "resourceId": "sample-pack.energy", "amount": 100, "canAfford": false, "currentAmount": 10 }
       ],
+      "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.energy", "rate": 1 }],
       "consumes": [],
       "nextPurchaseReadyAtStep": 1
@@ -22,8 +23,9 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 625 }
+        { "resourceId": "sample-pack.energy", "amount": 625, "canAfford": false, "currentAmount": 10 }
       ],
+      "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.crystal", "rate": 0.25 }],
       "consumes": [{ "resourceId": "sample-pack.energy", "rate": 0.5 }],
       "nextPurchaseReadyAtStep": 1
@@ -36,8 +38,9 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 75 }
+        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false, "currentAmount": 10 }
       ],
+      "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.alloy", "rate": 0.2 }],
       "consumes": [
         { "resourceId": "sample-pack.energy", "rate": 1.5 },
@@ -53,8 +56,9 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 120 }
+        { "resourceId": "sample-pack.energy", "amount": 120, "canAfford": false, "currentAmount": 10 }
       ],
+      "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.data-core", "rate": 0.08 }],
       "consumes": [
         { "resourceId": "sample-pack.energy", "rate": 2.5 },
@@ -70,8 +74,9 @@
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.data-core", "amount": 500 }
+        { "resourceId": "sample-pack.data-core", "amount": 500, "canAfford": false, "currentAmount": 0 }
       ],
+      "canAfford": false,
       "produces": [{ "resourceId": "sample-pack.prestige-flux", "rate": 0.05 }],
       "consumes": [{ "resourceId": "sample-pack.data-core", "rate": 2 }],
       "nextPurchaseReadyAtStep": 1
@@ -82,8 +87,9 @@
       "id": "sample-pack.reactor-insulation",
       "displayName": "Reactor Insulation",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 75 }
+        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -91,8 +97,9 @@
       "id": "sample-pack.reactor-overclock",
       "displayName": "Reactor Overclock",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 150 }
+        { "resourceId": "sample-pack.energy", "amount": 150, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -100,8 +107,9 @@
       "id": "sample-pack.reactor-phase-cooling",
       "displayName": "Reactor Phase Cooling",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 400 }
+        { "resourceId": "sample-pack.energy", "amount": 400, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -109,8 +117,9 @@
       "id": "sample-pack.harvester-efficiency",
       "displayName": "Harvester Efficiency",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 125 }
+        { "resourceId": "sample-pack.energy", "amount": 125, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -118,8 +127,9 @@
       "id": "sample-pack.harvester-deep-core",
       "displayName": "Harvester Deep Core",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.crystal", "amount": 200 }
+        { "resourceId": "sample-pack.crystal", "amount": 200, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -127,8 +137,9 @@
       "id": "sample-pack.harvester-quantum-sieve",
       "displayName": "Harvester Quantum Sieve",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.crystal", "amount": 250 }
+        { "resourceId": "sample-pack.crystal", "amount": 250, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -136,8 +147,9 @@
       "id": "sample-pack.forge-heat-shield",
       "displayName": "Forge Heat Shield",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 320 }
+        { "resourceId": "sample-pack.energy", "amount": 320, "canAfford": false, "currentAmount": 10 }
       ],
       "isVisible": true
     },
@@ -145,8 +157,9 @@
       "id": "sample-pack.forge-auto-feed",
       "displayName": "Forge Auto-Feed",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.alloy", "amount": 180 }
+        { "resourceId": "sample-pack.alloy", "amount": 180, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -154,8 +167,9 @@
       "id": "sample-pack.lab-insight-boost",
       "displayName": "Lab Insight Boost",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.alloy", "amount": 220 }
+        { "resourceId": "sample-pack.alloy", "amount": 220, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -163,8 +177,9 @@
       "id": "sample-pack.lab-simulation-stack",
       "displayName": "Lab Simulation Stack",
       "status": "available",
+      "canAfford": false,
       "costs": [
-        { "resourceId": "sample-pack.prestige-flux", "amount": 1 }
+        { "resourceId": "sample-pack.prestige-flux", "amount": 1, "canAfford": false, "currentAmount": 0 }
       ],
       "isVisible": true
     },
@@ -172,8 +187,9 @@
       "id": "sample-pack.ascension-surge",
       "displayName": "Ascension Surge",
       "status": "available",
+      "canAfford": true,
       "costs": [
-        { "resourceId": "sample-pack.prestige-flux", "amount": 0 }
+        { "resourceId": "sample-pack.prestige-flux", "amount": 0, "canAfford": true, "currentAmount": 0 }
       ],
       "isVisible": true
     }

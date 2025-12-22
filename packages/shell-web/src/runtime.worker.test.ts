@@ -359,7 +359,15 @@ describe('runtime.worker integration', () => {
           owned: 0,
           isUnlocked: true,
           isVisible: true,
-          costs: [{ resourceId: 'sample-pack.energy', amount: 100 }],
+          costs: [
+            {
+              resourceId: 'sample-pack.energy',
+              amount: 100,
+              canAfford: false,
+              currentAmount: 10,
+            },
+          ],
+          canAfford: false,
           nextPurchaseReadyAtStep: 1,
         }),
         expect.objectContaining({
