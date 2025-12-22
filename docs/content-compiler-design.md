@@ -128,8 +128,8 @@ The content compiler transforms validated content packs into deterministic, runt
   - Rehydration tests verify digest verification and lookup map reconstruction.
   - Coverage expectation: 90% for compiler core, 80% for CLI integration.
 - **Performance**:
-  - Benchmark compilation time for sample pack (target: <100ms on warm runs).
-  - Benchmark rehydration time for sample pack (target: <10ms).
+  - Benchmark compilation time for sample pack (target: `<100ms` on warm runs).
+  - Benchmark rehydration time for sample pack (target: `<10ms`).
   - Verify consecutive runs skip rewrites when inputs unchanged.
 - **Tooling / A11y**: N/A (no UI components)
 
