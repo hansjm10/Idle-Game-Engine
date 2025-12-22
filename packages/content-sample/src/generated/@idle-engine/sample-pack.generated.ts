@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "f2a45ef0cc984125557377a22393cbbc979dde1726c2f7e2b06e7ec29a30ae3c",
+  "artifactHash": "e08b20bb352cd427b80a5763c4d7816ef50f04d8944ea7bdc467783327a4b5df",
   "digest": {
     "hash": "fnv1a-7f7e84f9",
     "version": 1
@@ -279,6 +279,7 @@ const serialized = {
         "consumes": [],
         "effects": [],
         "id": "sample-pack.reactor",
+        "initialLevel": 0,
         "maxLevel": 50,
         "name": {
           "default": "Reactor",
@@ -330,6 +331,7 @@ const serialized = {
         ],
         "effects": [],
         "id": "sample-pack.harvester",
+        "initialLevel": 0,
         "maxLevel": 40,
         "name": {
           "default": "Crystal Harvester",
@@ -387,6 +389,7 @@ const serialized = {
         ],
         "effects": [],
         "id": "sample-pack.forge",
+        "initialLevel": 0,
         "maxLevel": 35,
         "name": {
           "default": "Forge",
@@ -444,6 +447,7 @@ const serialized = {
         ],
         "effects": [],
         "id": "sample-pack.lab",
+        "initialLevel": 0,
         "maxLevel": 25,
         "name": {
           "default": "Research Lab",
@@ -503,6 +507,7 @@ const serialized = {
         ],
         "effects": [],
         "id": "sample-pack.gate-reactor",
+        "initialLevel": 0,
         "maxLevel": 15,
         "name": {
           "default": "Gate Reactor",

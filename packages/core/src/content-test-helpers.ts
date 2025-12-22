@@ -229,6 +229,7 @@ export function createGeneratorDefinition(
     produces: [],
     consumes: [],
     baseUnlock: { kind: 'always' },
+    initialLevel: 0,
     order: 1,
     effects: [],
     ...overrides,

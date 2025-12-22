@@ -285,6 +285,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "consumes": [],
       "effects": [],
       "id": "solar-panel",
+      "initialLevel": 0,
       "name": {
         "default": "Solar Panel",
         "variants": {
@@ -367,6 +368,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "consumes": [],
         "effects": [],
         "id": "solar-panel",
+        "initialLevel": 0,
         "name": {
           "default": "Solar Panel",
           "variants": {
@@ -704,6 +706,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "consumes": [],
         "effects": [],
         "id": "solar-panel",
+        "initialLevel": 0,
         "name": {
           "default": "Solar Panel",
           "variants": {

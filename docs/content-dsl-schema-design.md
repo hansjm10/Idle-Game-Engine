@@ -369,6 +369,7 @@ When authors pass `ContentSchemaOptions.runtimeVersion`, `validateCrossReference
 - `produces`: array of `{ resourceId, rate: NumericFormula }`
 - `consumes`: optional array of `{ resourceId, rate: NumericFormula }`
 - `purchase`: strict object describing purchase costs (supports both single-currency and multi-resource forms)
+- `initialLevel`: optional non-negative integer defaulting to `0`, applied as the starting owned count when initializing a new game state
 - `maxLevel`: optional positive integer
 - `order`: optional float controlling list ordering
 - `baseUnlock`: `conditionSchema` gating initial availability
