@@ -7,8 +7,9 @@ const compareStableStrings = (left, right) => left < right ? -1 : left > right ?
 export function buildProgressionSnapshot(step, publishedAt, state) {
     const stepDurationMs = state?.stepDurationMs ?? 100;
     const resources = createResourceViews(stepDurationMs, state?.resources);
-    const generators = createGeneratorViews(step, state?.generators, state?.generatorPurchases);
-    const upgrades = createUpgradeViews(state?.upgrades, state?.upgradePurchases);
+    const resourceAmounts = createResourceAmountLookup(resources);
+    const generators = createGeneratorViews(step, state?.generators, state?.generatorPurchases, resourceAmounts);
+    const upgrades = createUpgradeViews(state?.upgrades, state?.upgradePurchases, resourceAmounts);
     const automations = createAutomationViews(step, publishedAt, stepDurationMs, state?.automations);
     const transforms = createTransformViews(step, publishedAt, stepDurationMs, state?.transforms);
     const achievements = createAchievementViews(state?.achievements);
@@ -83,19 +84,20 @@ function createResourceViews(stepDurationMs, source) {
     }
     return EMPTY_ARRAY;
 }
-function createGeneratorViews(step, generators, evaluator) {
+function createGeneratorViews(step, generators, evaluator, resourceAmounts) {
     if (!generators || generators.length === 0) {
         return EMPTY_ARRAY;
     }
     const views = [];
     for (const generator of generators) {
-        const quote = evaluateGeneratorCosts(evaluator, generator.id);
+        const quote = evaluateGeneratorCosts(evaluator, generator.id, resourceAmounts);
         const produces = normalizeRates(generator.produces);
         const consumes = normalizeRates(generator.consumes);
         const nextPurchaseReadyAtStep = generator.nextPurchaseReadyAtStep ?? step + 1;
         const unlockHint = typeof generator.unlockHint === 'string' && generator.unlockHint.trim().length > 0
             ? generator.unlockHint
             : undefined;
+        const canAfford = areCostsAffordable(resourceAmounts, quote);
         const view = Object.freeze({
             id: generator.id,
             displayName: generator.displayName ?? generator.id,
@@ -105,6 +107,7 @@ function createGeneratorViews(step, generators, evaluator) {
             isVisible: Boolean(generator.isVisible),
             ...(unlockHint ? { unlockHint } : {}),
             costs: quote,
+            canAfford,
             produces,
             consumes,
             nextPurchaseReadyAtStep,
@@ -113,7 +116,7 @@ function createGeneratorViews(step, generators, evaluator) {
     }
     return Object.freeze(views);
 }
-function createUpgradeViews(upgrades, evaluator) {
+function createUpgradeViews(upgrades, evaluator, resourceAmounts) {
     if (!upgrades || upgrades.length === 0) {
         return EMPTY_ARRAY;
     }
@@ -123,15 +126,17 @@ function createUpgradeViews(upgrades, evaluator) {
         const costs = quote?.costs ??
             upgrade.costs ??
             EMPTY_ARRAY;
-        const normalizedCosts = normalizeUpgradeCosts(costs);
+        const normalizedCosts = normalizeUpgradeCosts(costs, resourceAmounts);
         const status = quote?.status ?? upgrade.status ?? 'locked';
         const unlockHint = typeof upgrade.unlockHint === 'string' && upgrade.unlockHint.trim().length > 0
             ? upgrade.unlockHint
             : undefined;
+        const canAfford = areCostsAffordable(resourceAmounts, normalizedCosts);
         const view = Object.freeze({
             id: upgrade.id,
             displayName: upgrade.displayName ?? upgrade.id,
             status,
+            canAfford,
             costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
             ...(unlockHint ? { unlockHint } : {}),
             isVisible: Boolean(upgrade.isVisible),
@@ -236,6 +241,16 @@ function createTransformViews(step, publishedAt, stepDurationMs, source) {
     });
     return snapshot.transforms;
 }
+function createResourceAmountLookup(resources) {
+    if (!resources || resources.length === 0) {
+        return new Map();
+    }
+    const lookup = new Map();
+    for (const resource of resources) {
+        lookup.set(resource.id, Number.isFinite(resource.amount) ? resource.amount : 0);
+    }
+    return lookup;
+}
 function normalizeRates(rates) {
     if (!rates || rates.length === 0) {
         return EMPTY_ARRAY;
@@ -245,7 +260,7 @@ function normalizeRates(rates) {
         rate: Number.isFinite(rate.rate) ? rate.rate : 0,
     })));
 }
-function evaluateGeneratorCosts(evaluator, generatorId) {
+function evaluateGeneratorCosts(evaluator, generatorId, resourceAmounts) {
     if (!evaluator) {
         return EMPTY_ARRAY;
     }
@@ -259,9 +274,9 @@ function evaluateGeneratorCosts(evaluator, generatorId) {
     if (!quote || !Array.isArray(quote.costs)) {
         return EMPTY_ARRAY;
     }
-    return normalizeGeneratorCosts(quote.costs);
+    return normalizeGeneratorCosts(quote.costs, resourceAmounts);
 }
-function normalizeGeneratorCosts(costs) {
+function normalizeGeneratorCosts(costs, resourceAmounts) {
     if (!costs || costs.length === 0) {
         return EMPTY_ARRAY;
     }
@@ -274,9 +289,11 @@ function normalizeGeneratorCosts(costs) {
         if (!Number.isFinite(amount) || amount < 0) {
             continue;
         }
+        const canAfford = isCostAffordable(resourceAmounts, cost.resourceId, amount);
         views.push(Object.freeze({
             resourceId: cost.resourceId,
             amount,
+            canAfford,
         }));
     }
     return views.length > 0
@@ -294,7 +311,7 @@ function evaluateUpgradeQuote(evaluator, upgradeId) {
         return undefined;
     }
 }
-function normalizeUpgradeCosts(costs) {
+function normalizeUpgradeCosts(costs, resourceAmounts) {
     if (!costs || costs.length === 0) {
         return EMPTY_ARRAY;
     }
@@ -307,14 +324,37 @@ function normalizeUpgradeCosts(costs) {
         if (!Number.isFinite(amount) || amount < 0) {
             continue;
         }
+        const canAfford = isCostAffordable(resourceAmounts, cost.resourceId, amount);
         views.push(Object.freeze({
             resourceId: cost.resourceId,
             amount,
+            canAfford,
         }));
     }
     return views.length > 0
         ? Object.freeze(views)
         : EMPTY_ARRAY;
+}
+function isCostAffordable(amountsByResourceId, resourceId, amount) {
+    const available = amountsByResourceId.get(resourceId);
+    if (available === undefined || !Number.isFinite(available)) {
+        return false;
+    }
+    if (!Number.isFinite(amount) || amount < 0) {
+        return false;
+    }
+    return available >= amount;
+}
+function areCostsAffordable(amountsByResourceId, costs) {
+    if (!costs || costs.length === 0) {
+        return true;
+    }
+    for (const cost of costs) {
+        if (!isCostAffordable(amountsByResourceId, cost.resourceId, cost.amount)) {
+            return false;
+        }
+    }
+    return true;
 }
 function createPrestigeLayerViews(prestigeLayers, evaluator) {
     if (!prestigeLayers || prestigeLayers.length === 0) {

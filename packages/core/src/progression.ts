@@ -39,6 +39,7 @@ export type GeneratorRateView = Readonly<{
 export type GeneratorCostView = Readonly<{
   resourceId: string;
   amount: number;
+  canAfford: boolean;
 }>;
 
 export type ResourceView = Readonly<{
@@ -60,6 +61,7 @@ export type GeneratorView = Readonly<{
   isVisible: boolean;
   unlockHint?: string;
   costs: readonly GeneratorCostView[];
+  canAfford: boolean;
   produces: readonly GeneratorRateView[];
   consumes: readonly GeneratorRateView[];
   nextPurchaseReadyAtStep: number;
@@ -68,12 +70,14 @@ export type GeneratorView = Readonly<{
 export type UpgradeCostView = Readonly<{
   resourceId: string;
   amount: number;
+  canAfford: boolean;
 }>;
 
 export type UpgradeView = Readonly<{
   id: string;
   displayName: string;
   status: UpgradeStatus;
+  canAfford: boolean;
   costs?: readonly UpgradeCostView[];
   unlockHint?: string;
   isVisible: boolean;
@@ -282,14 +286,17 @@ export function buildProgressionSnapshot(
 ): ProgressionSnapshot {
   const stepDurationMs = state?.stepDurationMs ?? 100;
   const resources = createResourceViews(stepDurationMs, state?.resources);
+  const resourceAmounts = createResourceAmountLookup(resources);
   const generators = createGeneratorViews(
     step,
     state?.generators,
     state?.generatorPurchases,
+    resourceAmounts,
   );
   const upgrades = createUpgradeViews(
     state?.upgrades,
     state?.upgradePurchases,
+    resourceAmounts,
   );
   const automations = createAutomationViews(
     step,
@@ -406,6 +413,7 @@ function createGeneratorViews(
   step: number,
   generators: readonly ProgressionGeneratorState[] | undefined,
   evaluator: GeneratorPurchaseEvaluator | undefined,
+  resourceAmounts: ReadonlyMap<string, number>,
 ): readonly GeneratorView[] {
   if (!generators || generators.length === 0) {
     return EMPTY_ARRAY as readonly GeneratorView[];
@@ -414,7 +422,11 @@ function createGeneratorViews(
   const views: GeneratorView[] = [];
 
   for (const generator of generators) {
-    const quote = evaluateGeneratorCosts(evaluator, generator.id);
+    const quote = evaluateGeneratorCosts(
+      evaluator,
+      generator.id,
+      resourceAmounts,
+    );
 
     const produces = normalizeRates(generator.produces);
     const consumes = normalizeRates(generator.consumes);
@@ -424,6 +436,7 @@ function createGeneratorViews(
       typeof generator.unlockHint === 'string' && generator.unlockHint.trim().length > 0
         ? generator.unlockHint
         : undefined;
+    const canAfford = areCostsAffordable(resourceAmounts, quote);
 
     const view: GeneratorView = Object.freeze({
       id: generator.id,
@@ -434,6 +447,7 @@ function createGeneratorViews(
       isVisible: Boolean(generator.isVisible),
       ...(unlockHint ? { unlockHint } : {}),
       costs: quote,
+      canAfford,
       produces,
       consumes,
       nextPurchaseReadyAtStep,
@@ -448,6 +462,7 @@ function createGeneratorViews(
 function createUpgradeViews(
   upgrades: readonly ProgressionUpgradeState[] | undefined,
   evaluator: UpgradePurchaseEvaluator | undefined,
+  resourceAmounts: ReadonlyMap<string, number>,
 ): readonly UpgradeView[] {
   if (!upgrades || upgrades.length === 0) {
     return EMPTY_ARRAY as readonly UpgradeView[];
@@ -461,17 +476,22 @@ function createUpgradeViews(
       quote?.costs ??
       upgrade.costs ??
       (EMPTY_ARRAY as readonly UpgradeResourceCost[]);
-    const normalizedCosts = normalizeUpgradeCosts(costs);
+    const normalizedCosts = normalizeUpgradeCosts(
+      costs,
+      resourceAmounts,
+    );
     const status = quote?.status ?? upgrade.status ?? 'locked';
     const unlockHint =
       typeof upgrade.unlockHint === 'string' && upgrade.unlockHint.trim().length > 0
         ? upgrade.unlockHint
         : undefined;
+    const canAfford = areCostsAffordable(resourceAmounts, normalizedCosts);
 
     const view: UpgradeView = Object.freeze({
       id: upgrade.id,
       displayName: upgrade.displayName ?? upgrade.id,
       status,
+      canAfford,
       costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,
       ...(unlockHint ? { unlockHint } : {}),
       isVisible: Boolean(upgrade.isVisible),
@@ -618,6 +638,25 @@ function createTransformViews(
   return snapshot.transforms;
 }
 
+function createResourceAmountLookup(
+  resources: readonly ResourceView[],
+): ReadonlyMap<string, number> {
+  if (!resources || resources.length === 0) {
+    return new Map();
+  }
+
+  const lookup = new Map<string, number>();
+
+  for (const resource of resources) {
+    lookup.set(
+      resource.id,
+      Number.isFinite(resource.amount) ? resource.amount : 0,
+    );
+  }
+
+  return lookup;
+}
+
 function normalizeRates(
   rates: readonly GeneratorRateView[] | undefined,
 ): readonly GeneratorRateView[] {
@@ -638,6 +677,7 @@ function normalizeRates(
 function evaluateGeneratorCosts(
   evaluator: GeneratorPurchaseEvaluator | undefined,
   generatorId: string,
+  resourceAmounts: ReadonlyMap<string, number>,
 ): readonly GeneratorCostView[] {
   if (!evaluator) {
     return EMPTY_ARRAY as readonly GeneratorCostView[];
@@ -654,11 +694,12 @@ function evaluateGeneratorCosts(
     return EMPTY_ARRAY as readonly GeneratorCostView[];
   }
 
-  return normalizeGeneratorCosts(quote.costs);
+  return normalizeGeneratorCosts(quote.costs, resourceAmounts);
 }
 
 function normalizeGeneratorCosts(
   costs: readonly GeneratorResourceCost[],
+  resourceAmounts: ReadonlyMap<string, number>,
 ): readonly GeneratorCostView[] {
   if (!costs || costs.length === 0) {
     return EMPTY_ARRAY as readonly GeneratorCostView[];
@@ -674,10 +715,16 @@ function normalizeGeneratorCosts(
     if (!Number.isFinite(amount) || amount < 0) {
       continue;
     }
+    const canAfford = isCostAffordable(
+      resourceAmounts,
+      cost.resourceId,
+      amount,
+    );
     views.push(
       Object.freeze({
         resourceId: cost.resourceId,
         amount,
+        canAfford,
       }),
     );
   }
@@ -704,6 +751,7 @@ function evaluateUpgradeQuote(
 
 function normalizeUpgradeCosts(
   costs: readonly UpgradeResourceCost[],
+  resourceAmounts: ReadonlyMap<string, number>,
 ): readonly UpgradeCostView[] {
   if (!costs || costs.length === 0) {
     return EMPTY_ARRAY as readonly UpgradeCostView[];
@@ -719,10 +767,16 @@ function normalizeUpgradeCosts(
     if (!Number.isFinite(amount) || amount < 0) {
       continue;
     }
+    const canAfford = isCostAffordable(
+      resourceAmounts,
+      cost.resourceId,
+      amount,
+    );
     views.push(
       Object.freeze({
         resourceId: cost.resourceId,
         amount,
+        canAfford,
       }),
     );
   }
@@ -730,6 +784,40 @@ function normalizeUpgradeCosts(
   return views.length > 0
     ? Object.freeze(views)
     : (EMPTY_ARRAY as readonly UpgradeCostView[]);
+}
+
+function isCostAffordable(
+  amountsByResourceId: ReadonlyMap<string, number>,
+  resourceId: string,
+  amount: number,
+): boolean {
+  const available = amountsByResourceId.get(resourceId);
+  if (available === undefined || !Number.isFinite(available)) {
+    return false;
+  }
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    return false;
+  }
+
+  return available >= amount;
+}
+
+function areCostsAffordable(
+  amountsByResourceId: ReadonlyMap<string, number>,
+  costs: readonly GeneratorCostView[] | readonly UpgradeCostView[] | undefined,
+): boolean {
+  if (!costs || costs.length === 0) {
+    return true;
+  }
+
+  for (const cost of costs) {
+    if (!isCostAffordable(amountsByResourceId, cost.resourceId, cost.amount)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function createPrestigeLayerViews(

@@ -88,6 +88,7 @@ type ResourceView = Readonly<{
 type GeneratorCostView = Readonly<{
   resourceId: string;
   amount: number;
+  canAfford: boolean;
 }>;
 
 type GeneratorView = Readonly<{
@@ -99,6 +100,7 @@ type GeneratorView = Readonly<{
   isVisible: boolean;
   unlockHint?: string;
   costs: readonly GeneratorCostView[];
+  canAfford: boolean;
   produces: readonly { resourceId: string; rate: number }[];
   consumes: readonly { resourceId: string; rate: number }[];
   nextPurchaseReadyAtStep: number;
@@ -107,12 +109,14 @@ type GeneratorView = Readonly<{
 type UpgradeCostView = Readonly<{
   resourceId: string;
   amount: number;
+  canAfford: boolean;
 }>;
 
 type UpgradeView = Readonly<{
   id: string;
   displayName: string;
   status: 'locked' | 'available' | 'purchased';
+  canAfford: boolean;
   costs?: readonly UpgradeCostView[];
   unlockHint?: string;
   isVisible: boolean;
@@ -150,8 +154,9 @@ type UpgradeView = Readonly<{
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 23.13 }
+        { "resourceId": "sample-pack.energy", "amount": 23.13, "canAfford": true }
       ],
+      "canAfford": true,
       "produces": [
         { "resourceId": "sample-pack.energy", "rate": 1 }
       ],
@@ -165,8 +170,9 @@ type UpgradeView = Readonly<{
       "isUnlocked": true,
       "isVisible": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 30 }
+        { "resourceId": "sample-pack.energy", "amount": 30, "canAfford": true }
       ],
+      "canAfford": true,
       "produces": [
         { "resourceId": "sample-pack.crystal", "rate": 0.25 }
       ],
@@ -181,6 +187,7 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.harvester-efficiency",
       "displayName": "Harvester Efficiency",
       "status": "locked",
+      "canAfford": true,
       "unlockHint": "Accumulate 20 crystal to reveal this upgrade.",
       "isVisible": false
     },
@@ -188,8 +195,9 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.reactor-insulation",
       "displayName": "Reactor Insulation",
       "status": "available",
+      "canAfford": true,
       "costs": [
-        { "resourceId": "sample-pack.energy", "amount": 75 }
+        { "resourceId": "sample-pack.energy", "amount": 75, "canAfford": true }
       ],
       "isVisible": true
     },
@@ -197,6 +205,7 @@ type UpgradeView = Readonly<{
       "id": "sample-pack.reactor-overclock",
       "displayName": "Reactor Overclock",
       "status": "purchased",
+      "canAfford": true,
       "isVisible": true
     }
   ]

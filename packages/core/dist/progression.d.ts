@@ -11,6 +11,7 @@ export type GeneratorRateView = Readonly<{
 export type GeneratorCostView = Readonly<{
     resourceId: string;
     amount: number;
+    canAfford: boolean;
 }>;
 export type ResourceView = Readonly<{
     id: string;
@@ -30,6 +31,7 @@ export type GeneratorView = Readonly<{
     isVisible: boolean;
     unlockHint?: string;
     costs: readonly GeneratorCostView[];
+    canAfford: boolean;
     produces: readonly GeneratorRateView[];
     consumes: readonly GeneratorRateView[];
     nextPurchaseReadyAtStep: number;
@@ -37,11 +39,13 @@ export type GeneratorView = Readonly<{
 export type UpgradeCostView = Readonly<{
     resourceId: string;
     amount: number;
+    canAfford: boolean;
 }>;
 export type UpgradeView = Readonly<{
     id: string;
     displayName: string;
     status: UpgradeStatus;
+    canAfford: boolean;
     costs?: readonly UpgradeCostView[];
     unlockHint?: string;
     isVisible: boolean;
