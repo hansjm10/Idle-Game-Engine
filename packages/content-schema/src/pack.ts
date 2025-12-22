@@ -2295,6 +2295,10 @@ const findNetPositiveCycle = (
     return undefined;
   }
 
+  // Bellman-Ford with zero-initialized distances (not infinity) to detect any
+  // negative cycle in the graph, not just those reachable from a single source.
+  // Since edge weights are -log(ratio), a negative cycle corresponds to a
+  // transform loop where the product of ratios exceeds 1.0 (net-positive).
   const distances = new Array(transformIds.length).fill(0);
   const previous = new Array<number>(transformIds.length).fill(-1);
   let updatedIndex = -1;
@@ -2436,7 +2440,7 @@ const validateTransformCycles = (
     if (cyclePath) {
       reportCycleIssue(
         cyclePath,
-        'Cycle profitability can only be evaluated when each transform has exactly one input and one output with constant positive amounts.',
+        `Cycle profitability cannot be evaluated because transform '${transformId}' does not have exactly one input and one output with constant positive amounts.`,
       );
       return;
     }

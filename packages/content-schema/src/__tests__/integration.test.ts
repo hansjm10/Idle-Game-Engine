@@ -21,6 +21,8 @@ import {
   convergentTransformTreeFixture,
   cyclicTransformDirectFixture,
   cyclicTransformIndirectFixture,
+  epsilonAboveThresholdCycleFixture,
+  epsilonBelowThresholdCycleFixture,
   cyclicTransformMultiResourceFixture,
   cyclicUnlockConditionsFixture,
   cyclicUnlockCrossEntityFixture,
@@ -38,6 +40,7 @@ import {
   netLossIndirectTransformCycleFixture,
   netLossTransformCycleFixture,
   neutralTransformCycleFixture,
+  nonConstantFormulaCycleFixture,
   nonSimpleTransformCycleFixture,
   resourceSinkTransformFixture,
   selfThresholdUnlockConditionsFixture,
@@ -318,11 +321,64 @@ describe('Integration: Cyclic Dependencies', () => {
         }),
       ]),
     );
-    // Error message should mention profitability evaluation
+    // Error message should mention profitability and the specific transform
     expect(getZodIssues(result.error)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          message: expect.stringMatching(/profitability/i),
+          message: expect.stringMatching(/profitability.*transform-a/i),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects cycles containing non-constant formula amounts', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(nonConstantFormulaCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    // Should reject because cycle profitability cannot be evaluated for non-constant formulas
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/transform cycle/i),
+        }),
+      ]),
+    );
+    // Error message should mention profitability and the specific transform
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/profitability.*transform-a/i),
+        }),
+      ]),
+    );
+  });
+
+  it('allows cycles with ratio just below PROFIT_EPSILON threshold', () => {
+    const validator = createContentPackValidator();
+    // Cycle ratio = 1.000000001 (1e-9 above 1.0), below PROFIT_EPSILON (1e-8)
+    const result = validator.safeParse(epsilonBelowThresholdCycleFixture);
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      console.error('Validation errors:', getZodIssues(result.error));
+    }
+  });
+
+  it('rejects cycles with ratio just above PROFIT_EPSILON threshold', () => {
+    const validator = createContentPackValidator();
+    // Cycle ratio = 1.00000002 (2e-8 above 1.0), above PROFIT_EPSILON (1e-8)
+    const result = validator.safeParse(epsilonAboveThresholdCycleFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringMatching(/net-positive/i),
         }),
       ]),
     );

@@ -1200,6 +1200,227 @@ export const nonSimpleTransformCycleFixture = {
 };
 
 /**
+ * EPSILON BOUNDARY TEST - BELOW THRESHOLD: Cycle ratio just below PROFIT_EPSILON (1e-8).
+ * Ratio = 1.000000001 (1e-9 above 1.0) which is below the 1e-8 threshold.
+ * Should be ALLOWED.
+ */
+export const epsilonBelowThresholdCycleFixture = {
+  metadata: {
+    id: 'epsilon-below-threshold-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          // Using large numbers to achieve precise ratio
+          amount: { kind: 'constant', value: 1000000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          // Ratio = 1.000000001 (1e-9 above 1.0)
+          amount: { kind: 'constant', value: 1000000001 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 1000000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          // Ratio = 1.0
+          amount: { kind: 'constant', value: 1000000000 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * EPSILON BOUNDARY TEST - ABOVE THRESHOLD: Cycle ratio just above PROFIT_EPSILON (1e-8).
+ * Ratio = 1.00000002 (2e-8 above 1.0) which is above the 1e-8 threshold.
+ * Should be REJECTED.
+ */
+export const epsilonAboveThresholdCycleFixture = {
+  metadata: {
+    id: 'epsilon-above-threshold-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          // Ratio = 1.00000002 (2e-8 above 1.0)
+          amount: { kind: 'constant', value: 100000002 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100000000 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          // Ratio = 1.0
+          amount: { kind: 'constant', value: 100000000 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
+ * NON-CONSTANT FORMULA IN CYCLE: Transform with linear formula in a cycle.
+ * Should be rejected because cycle profitability cannot be evaluated for non-constant formulas.
+ */
+export const nonConstantFormulaCycleFixture = {
+  metadata: {
+    id: 'non-constant-formula-cycle',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'resource-x',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+    {
+      id: 'resource-y',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  generators: [],
+  upgrades: [],
+  transforms: [
+    {
+      id: 'transform-a',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-y',
+          // Linear formula instead of constant - profitability cannot be evaluated
+          amount: { kind: 'linear', base: 80, slope: 1 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+    {
+      id: 'transform-b',
+      name: baseTitle,
+      description: baseTitle,
+      inputs: [
+        {
+          resourceId: 'resource-y',
+          amount: { kind: 'constant', value: 100 },
+        },
+      ],
+      outputs: [
+        {
+          resourceId: 'resource-x',
+          amount: { kind: 'constant', value: 90 },
+        },
+      ],
+      trigger: { kind: 'manual' as const },
+      mode: 'instant' as const,
+    },
+  ],
+};
+
+/**
  * CYCLIC TRANSFORM CHAINS - INDIRECT: Transform A → Transform B → Transform C → Transform A
  * Transform A consumes X, produces Y
  * Transform B consumes Y, produces Z
