@@ -43,6 +43,23 @@ type BenchmarkStats = {
 - `env.commitSha` is `null` when no SHA is available in the environment or repository.
 - The payload is validated with `tools/scripts/assert-json-tail.mjs`.
 
+## Per-benchmark results
+
+### event-frame-format
+- `results.scenarios[]` includes `label`, `eventsPerTick`, `formats`, and `ratios`.
+- `formats` includes `struct-of-arrays` and `object-array` `BenchmarkStats`.
+- `ratios` includes `objectOverStructMean` and `objectOverStructMedian` (`number | null`).
+
+### diagnostic-timeline-overhead
+- `results.tasks[]` includes `name`, `diagnosticsEnabled`, and `stats`.
+- `stats` extends `BenchmarkStats` with `rmePercent` (`number | null`) and a tinybench-reported `hz` value.
+- `results.ratios` includes `enabledOverDisabledMean` and `enabledOverDisabledMedian` (`number | null`).
+
+### state-sync-checksum
+- `results.scenarios[]` includes `label`, `shape`, `stats`, `meanOverTarget`, `status`, `targetUs`, and `enforceTarget`.
+- `shape` includes `resources`, `generators`, `upgrades`, `achievements`, `automations`, `transforms`, and `commands`.
+- `meanOverTarget` is the ratio of mean checksum time to `targetUs` (`number | null`); `status` is `OK`, `ABOVE_TARGET`, or `INFO`.
+
 ## Example
 ```
 {

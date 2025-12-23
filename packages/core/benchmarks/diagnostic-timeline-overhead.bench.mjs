@@ -1,6 +1,11 @@
-import { execSync } from 'node:child_process';
-
 import { Bench } from 'tinybench';
+import {
+  assertBenchmarkPayload,
+  computeStats,
+  getEnvMetadata,
+  ratio,
+  roundNumber,
+} from './benchmark-json-helpers.mjs';
 import {
   IdleEngineRuntime,
   CommandPriority,
@@ -30,92 +35,6 @@ const silentTelemetry = {
 
 function commitToSink(value) {
   benchSink.value = (benchSink.value ^ (value | 0)) >>> 0;
-}
-
-function roundNumber(value, decimals = 6) {
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
-function computeStats(samples) {
-  if (samples.length === 0) {
-    return {
-      meanMs: null,
-      medianMs: null,
-      stdDevMs: null,
-      minMs: null,
-      maxMs: null,
-      samples: 0,
-      unit: 'ms',
-    };
-  }
-
-  const total = samples.reduce((sum, value) => sum + value, 0);
-  const mean = total / samples.length;
-  const sorted = [...samples].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const median =
-    sorted.length % 2 === 0
-      ? (sorted[middle - 1] + sorted[middle]) / 2
-      : sorted[middle];
-  const variance =
-    samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-    samples.length;
-  const stdDev = Math.sqrt(Math.max(variance, 0));
-  const min = sorted[0];
-  const max = sorted[sorted.length - 1];
-
-  return {
-    meanMs: roundNumber(mean),
-    medianMs: roundNumber(median),
-    stdDevMs: roundNumber(stdDev),
-    minMs: roundNumber(min),
-    maxMs: roundNumber(max),
-    samples: samples.length,
-    unit: 'ms',
-  };
-}
-
-function resolveCommitSha() {
-  const envSha =
-    process.env.GITHUB_SHA ??
-    process.env.CI_COMMIT_SHA ??
-    process.env.COMMIT_SHA ??
-    process.env.BUILD_VCS_NUMBER;
-  if (envSha) {
-    return envSha;
-  }
-  try {
-    return execSync('git rev-parse HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-  } catch {
-    return null;
-  }
-}
-
-function getEnvMetadata() {
-  return {
-    nodeVersion: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    commitSha: resolveCommitSha(),
-  };
-}
-
-function ratio(numerator, denominator, decimals = 4) {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) {
-    return null;
-  }
-  if (denominator === 0) {
-    return null;
-  }
-  return roundNumber(numerator / denominator, decimals);
 }
 
 function createRuntimeScenario({ diagnosticsEnabled, clock }) {
@@ -432,6 +351,7 @@ async function main() {
   }
 
   if (payload) {
+    assertBenchmarkPayload(payload);
     console.log(JSON.stringify(payload));
   }
 }

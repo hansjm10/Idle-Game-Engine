@@ -1,7 +1,12 @@
-import { execSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 
 import { CommandPriority, computeStateChecksum } from '../dist/index.js';
+import {
+  assertBenchmarkPayload,
+  computeStats,
+  getEnvMetadata,
+  roundNumber,
+} from './benchmark-json-helpers.mjs';
 
 const WARMUP_ITERATIONS = 2_000;
 const MEASURE_ITERATIONS = 20_000;
@@ -14,84 +19,6 @@ const COMMAND_PRIORITIES = [
   CommandPriority.AUTOMATION,
   CommandPriority.SYSTEM,
 ];
-
-function roundNumber(value, decimals = 6) {
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
-function computeStats(samples) {
-  if (samples.length === 0) {
-    return {
-      meanMs: null,
-      medianMs: null,
-      stdDevMs: null,
-      minMs: null,
-      maxMs: null,
-      samples: 0,
-      unit: 'ms',
-    };
-  }
-
-  const total = samples.reduce((sum, value) => sum + value, 0);
-  const mean = total / samples.length;
-  const sorted = [...samples].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const median =
-    sorted.length % 2 === 0
-      ? (sorted[middle - 1] + sorted[middle]) / 2
-      : sorted[middle];
-  const variance =
-    samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
-    samples.length;
-  const stdDev = Math.sqrt(Math.max(variance, 0));
-  const min = sorted[0];
-  const max = sorted[sorted.length - 1];
-  const hz = mean > 0 ? 1000 / mean : null;
-
-  return {
-    meanMs: roundNumber(mean),
-    medianMs: roundNumber(median),
-    stdDevMs: roundNumber(stdDev),
-    minMs: roundNumber(min),
-    maxMs: roundNumber(max),
-    hz: roundNumber(hz, 3),
-    samples: samples.length,
-    unit: 'ms',
-  };
-}
-
-function resolveCommitSha() {
-  const envSha =
-    process.env.GITHUB_SHA ??
-    process.env.CI_COMMIT_SHA ??
-    process.env.COMMIT_SHA ??
-    process.env.BUILD_VCS_NUMBER;
-  if (envSha) {
-    return envSha;
-  }
-  try {
-    return execSync('git rev-parse HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-  } catch {
-    return null;
-  }
-}
-
-function getEnvMetadata() {
-  return {
-    nodeVersion: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    commitSha: resolveCommitSha(),
-  };
-}
 
 function createResources(count) {
   const ids = new Array(count);
@@ -424,4 +351,5 @@ const payload = {
   env: getEnvMetadata(),
 };
 
+assertBenchmarkPayload(payload);
 console.log(JSON.stringify(payload));
