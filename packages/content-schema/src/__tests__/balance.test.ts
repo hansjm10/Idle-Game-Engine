@@ -268,4 +268,115 @@ describe('balance validation', () => {
       result.balanceWarnings.some((warning) => warning.code === 'balance.unlock.ordering'),
     ).toBe(false);
   });
+
+  it('treats flag gating from upgrade-granted flags as satisfying unlock ordering', () => {
+    const pack = createBasePack();
+    pack.resources.push({
+      id: 'resource:fuel',
+      name: { default: 'Fuel' },
+      category: 'primary' as const,
+      tier: 1,
+      unlocked: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource:primary',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 1 },
+      },
+    });
+
+    pack.upgrades.push({
+      id: 'upgrade:fuel-milestone',
+      name: { default: 'Fuel Milestone' },
+      category: 'global' as const,
+      targets: [{ kind: 'global' as const }],
+      cost: {
+        currencyId: 'resource:fuel',
+        baseCost: 1,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      effects: [{ kind: 'grantFlag', flagId: 'fuel-milestone', value: true }],
+      unlockCondition: { kind: 'always' as const },
+    });
+
+    pack.generators.push({
+      id: 'generator:fuel-consumer',
+      name: { default: 'Fuel Consumer' },
+      produces: [
+        { resourceId: 'resource:primary', rate: { kind: 'constant', value: 1 } },
+      ],
+      consumes: [{ resourceId: 'resource:fuel', rate: { kind: 'constant', value: 1 } }],
+      purchase: {
+        currencyId: 'resource:currency',
+        baseCost: 1,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      baseUnlock: { kind: 'flag', flagId: 'fuel-milestone' },
+    });
+
+    const validator = createValidator();
+    const result = validator.parse(pack);
+    const orderingWarnings = result.balanceWarnings.filter(
+      (warning) => warning.code === 'balance.unlock.ordering',
+    );
+
+    expect(
+      orderingWarnings.some(
+        (warning) => warning.path?.join('.') === 'generators.0.consumes.0.resourceId',
+      ),
+    ).toBe(false);
+  });
+
+  it('treats achievement-granted flags as satisfying unlock ordering', () => {
+    const pack = createBasePack();
+    pack.resources.push({
+      id: 'resource:fuel',
+      name: { default: 'Fuel' },
+      category: 'primary' as const,
+      tier: 1,
+      unlocked: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource:primary',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 1 },
+      },
+    });
+
+    pack.achievements.push({
+      id: 'achievement:fuel-milestone',
+      name: { default: 'Fuel Milestone' },
+      description: { default: 'Unlock fuel' },
+      category: 'progression' as const,
+      tier: 'bronze' as const,
+      track: {
+        kind: 'resource',
+        resourceId: 'resource:fuel',
+        threshold: { kind: 'constant', value: 1 },
+        comparator: 'gte',
+      },
+      reward: { kind: 'grantFlag', flagId: 'fuel-milestone', value: true },
+    });
+
+    pack.generators.push({
+      id: 'generator:fuel-consumer',
+      name: { default: 'Fuel Consumer' },
+      produces: [
+        { resourceId: 'resource:primary', rate: { kind: 'constant', value: 1 } },
+      ],
+      consumes: [{ resourceId: 'resource:fuel', rate: { kind: 'constant', value: 1 } }],
+      purchase: {
+        currencyId: 'resource:currency',
+        baseCost: 1,
+        costCurve: { kind: 'constant', value: 1 },
+      },
+      baseUnlock: { kind: 'flag', flagId: 'fuel-milestone' },
+    });
+
+    const validator = createValidator();
+    const result = validator.parse(pack);
+    expect(
+      result.balanceWarnings.some((warning) => warning.code === 'balance.unlock.ordering'),
+    ).toBe(false);
+  });
 });
