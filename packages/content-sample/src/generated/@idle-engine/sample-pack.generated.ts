@@ -4,9 +4,9 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "161a69ef9b6cdb48ea3e6d43f7baeef0f046469ce1d34ff83cd2d2fb7ec9afba",
+  "artifactHash": "603443649fce11c37f2908a47332d36bfacdc45e1fc1cc4503f6aef37aa254b2",
   "digest": {
-    "hash": "fnv1a-7f7e84f9",
+    "hash": "fnv1a-1dafab35",
     "version": 1
   },
   "formatVersion": 1,
@@ -850,7 +850,182 @@ const serialized = {
       }
     ],
     "runtimeEvents": [],
-    "transforms": [],
+    "transforms": [
+      {
+        "description": {
+          "default": "Smelt alloy into data cores over time.",
+          "variants": {
+            "en-US": "Smelt alloy into data cores over time."
+          }
+        },
+        "duration": {
+          "kind": "constant",
+          "value": 30000
+        },
+        "id": "sample-pack.batch-data-core",
+        "inputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 2
+            },
+            "resourceId": "sample-pack.alloy"
+          },
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 40
+            },
+            "resourceId": "sample-pack.energy"
+          }
+        ],
+        "mode": "batch",
+        "name": {
+          "default": "Batch Data Core",
+          "variants": {
+            "en-US": "Batch Data Core"
+          }
+        },
+        "order": 3,
+        "outputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "resourceId": "sample-pack.data-core"
+          }
+        ],
+        "safety": {
+          "maxOutstandingBatches": 5
+        },
+        "tags": [],
+        "trigger": {
+          "kind": "manual"
+        },
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 40
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.alloy"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 10000
+        },
+        "description": {
+          "default": "Fuse energy and crystals into alloy when the reactor primes.",
+          "variants": {
+            "en-US": "Fuse energy and crystals into alloy when the reactor primes."
+          }
+        },
+        "id": "sample-pack.primed-alloy",
+        "inputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 15
+            },
+            "resourceId": "sample-pack.energy"
+          },
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 5
+            },
+            "resourceId": "sample-pack.crystal"
+          }
+        ],
+        "mode": "instant",
+        "name": {
+          "default": "Primed Alloy",
+          "variants": {
+            "en-US": "Primed Alloy"
+          }
+        },
+        "order": 2,
+        "outputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "resourceId": "sample-pack.alloy"
+          }
+        ],
+        "tags": [],
+        "trigger": {
+          "eventId": "sample:reactor-primed",
+          "kind": "event"
+        },
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 50
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.crystal"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 5000
+        },
+        "description": {
+          "default": "Condense energy into crystallized shards.",
+          "variants": {
+            "en-US": "Condense energy into crystallized shards."
+          }
+        },
+        "id": "sample-pack.refine-crystal",
+        "inputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 20
+            },
+            "resourceId": "sample-pack.energy"
+          }
+        ],
+        "mode": "instant",
+        "name": {
+          "default": "Refine Crystal",
+          "variants": {
+            "en-US": "Refine Crystal"
+          }
+        },
+        "order": 1,
+        "outputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "resourceId": "sample-pack.crystal"
+          }
+        ],
+        "tags": [],
+        "trigger": {
+          "kind": "manual"
+        },
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 25
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "sample-pack.energy"
+        }
+      }
+    ],
     "upgrades": [
       {
         "category": "generator",
@@ -871,6 +1046,10 @@ const serialized = {
               "kind": "constant",
               "value": 1.25
             }
+          },
+          {
+            "eventId": "sample:reactor-primed",
+            "kind": "emitEvent"
           }
         ],
         "id": "sample-pack.reactor-insulation",

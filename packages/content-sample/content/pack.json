@@ -376,6 +376,10 @@
           "generatorId": "sample-pack.reactor",
           "operation": "multiply",
           "value": { "kind": "constant", "value": 1.25 }
+        },
+        {
+          "kind": "emitEvent",
+          "eventId": "sample:reactor-primed"
         }
       ],
       "unlockCondition": {
@@ -999,7 +1003,110 @@
       "order": 8
     }
   ],
-  "transforms": [],
+  "transforms": [
+    {
+      "id": "sample-pack.refine-crystal",
+      "name": { "default": "Refine Crystal", "variants": {} },
+      "description": {
+        "default": "Condense energy into crystallized shards.",
+        "variants": {}
+      },
+      "mode": "instant",
+      "inputs": [
+        {
+          "resourceId": "sample-pack.energy",
+          "amount": { "kind": "constant", "value": 20 }
+        }
+      ],
+      "outputs": [
+        {
+          "resourceId": "sample-pack.crystal",
+          "amount": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "cooldown": { "kind": "constant", "value": 5000 },
+      "trigger": { "kind": "manual" },
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.energy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 25 }
+      },
+      "order": 1
+    },
+    {
+      "id": "sample-pack.primed-alloy",
+      "name": { "default": "Primed Alloy", "variants": {} },
+      "description": {
+        "default": "Fuse energy and crystals into alloy when the reactor primes.",
+        "variants": {}
+      },
+      "mode": "instant",
+      "inputs": [
+        {
+          "resourceId": "sample-pack.energy",
+          "amount": { "kind": "constant", "value": 15 }
+        },
+        {
+          "resourceId": "sample-pack.crystal",
+          "amount": { "kind": "constant", "value": 5 }
+        }
+      ],
+      "outputs": [
+        {
+          "resourceId": "sample-pack.alloy",
+          "amount": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "cooldown": { "kind": "constant", "value": 10000 },
+      "trigger": {
+        "kind": "event",
+        "eventId": "sample:reactor-primed"
+      },
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.crystal",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 50 }
+      },
+      "order": 2
+    },
+    {
+      "id": "sample-pack.batch-data-core",
+      "name": { "default": "Batch Data Core", "variants": {} },
+      "description": {
+        "default": "Smelt alloy into data cores over time.",
+        "variants": {}
+      },
+      "mode": "batch",
+      "duration": { "kind": "constant", "value": 30000 },
+      "inputs": [
+        {
+          "resourceId": "sample-pack.alloy",
+          "amount": { "kind": "constant", "value": 2 }
+        },
+        {
+          "resourceId": "sample-pack.energy",
+          "amount": { "kind": "constant", "value": 40 }
+        }
+      ],
+      "outputs": [
+        {
+          "resourceId": "sample-pack.data-core",
+          "amount": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "trigger": { "kind": "manual" },
+      "safety": { "maxOutstandingBatches": 5 },
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "sample-pack.alloy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 40 }
+      },
+      "order": 3
+    }
+  ],
   "prestigeLayers": [
     {
       "id": "sample-pack.ascension-alpha",
