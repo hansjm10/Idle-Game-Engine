@@ -97,7 +97,7 @@ describe('createGenerator', () => {
     produces: [{ resourceId: 'test.energy', rate: { kind: 'constant', value: 1 } }],
     purchase: {
       currencyId: 'test.gold',
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: { kind: 'constant', value: 1 },
     },
     baseUnlock: { kind: 'always' },
@@ -160,7 +160,7 @@ describe('createUpgrade', () => {
     targets: [{ kind: 'generator', id: 'test.solar-panel' }],
     cost: {
       currencyId: 'test.gold',
-      baseCost: 100,
+      costMultiplier: 100,
       costCurve: { kind: 'constant', value: 1 },
     },
     effects: [

@@ -202,7 +202,7 @@ describe('Normalization Snapshots', () => {
           consumes: [],
           purchase: {
             currencyId: 'energy',
-            baseCost: 10,
+            costMultiplier: 10,
             costCurve: { kind: 'constant' as const, value: 10 },
           },
           baseUnlock: { kind: 'always' as const },

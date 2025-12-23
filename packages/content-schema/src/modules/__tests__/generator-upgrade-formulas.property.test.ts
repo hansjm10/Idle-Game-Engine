@@ -26,7 +26,7 @@ describe('property: generator and upgrade formulas remain finite and non-negativ
           consumes: [{ resourceId: 'pack.resource/b', rate: consumeRate }],
           purchase: {
             currencyId: 'pack.resource/a',
-            baseCost: 1,
+            costMultiplier: 1,
             costCurve,
           },
           baseUnlock: { kind: 'always' },
@@ -71,7 +71,7 @@ describe('property: generator and upgrade formulas remain finite and non-negativ
           targets: [{ kind: 'generator', id: 'pack.generator/example' }],
           cost: {
             currencyId: 'pack.resource/a',
-            baseCost: 10,
+            costMultiplier: 10,
             costCurve: curve,
           },
           effects: [

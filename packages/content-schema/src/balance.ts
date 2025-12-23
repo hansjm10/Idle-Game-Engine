@@ -235,7 +235,7 @@ const collectGeneratorCosts = (
 ) => {
   const collectCostProgressionForEntry = (
     resourceId: string,
-    baseCost: number,
+    costMultiplier: number,
     costCurve: NumericFormula,
     pathPrefix: readonly (string | number)[],
   ) => {
@@ -286,13 +286,13 @@ const collectGeneratorCosts = (
         );
         break;
       }
-      const cost = baseCost * multiplier;
+      const cost = costMultiplier * multiplier;
       if (!Number.isFinite(cost)) {
         recordIssue(
           {
             code: 'balance.cost.nonFinite',
             message: `Computed cost for generator "${generator.id}"${label} is non-finite at purchase ${level}.`,
-            path: [...pathPrefix, 'baseCost'],
+            path: [...pathPrefix, 'costMultiplier'],
             severity: 'error',
           },
           warnings,
@@ -306,7 +306,7 @@ const collectGeneratorCosts = (
           {
             code: 'balance.cost.negative',
             message: `Computed cost for generator "${generator.id}"${label} is negative at purchase ${level}.`,
-            path: [...pathPrefix, 'baseCost'],
+            path: [...pathPrefix, 'costMultiplier'],
             severity: 'error',
           },
           warnings,
@@ -337,7 +337,7 @@ const collectGeneratorCosts = (
     generator.purchase.costs.forEach((entry, costIndex) => {
       collectCostProgressionForEntry(
         entry.resourceId,
-        entry.baseCost,
+        entry.costMultiplier,
         entry.costCurve,
         ['generators', generatorIndex, 'purchase', 'costs', costIndex],
       );
@@ -347,7 +347,7 @@ const collectGeneratorCosts = (
 
   collectCostProgressionForEntry(
     generator.purchase.currencyId,
-    generator.purchase.baseCost,
+    generator.purchase.costMultiplier,
     generator.purchase.costCurve,
     ['generators', generatorIndex, 'purchase'],
   );
@@ -411,7 +411,7 @@ const collectUpgradeCosts = (
 
   const collectCostProgressionForEntry = (
     resourceId: string,
-    baseCost: number,
+    costMultiplier: number,
     costCurve: NumericFormula,
     pathPrefix: readonly (string | number)[],
   ) => {
@@ -426,7 +426,7 @@ const collectUpgradeCosts = (
         recordIssue(
           {
             code: 'balance.cost.evaluationFailed',
-            message: `Base cost evaluation failed for upgrade "${upgrade.id}"${label} at purchase ${level}.`,
+          message: `Cost multiplier evaluation failed for upgrade "${upgrade.id}"${label} at purchase ${level}.`,
             path: [...pathPrefix, 'costCurve'],
             severity: 'error',
           },
@@ -443,7 +443,7 @@ const collectUpgradeCosts = (
             code: !Number.isFinite(baseMultiplier)
               ? 'balance.cost.nonFinite'
               : 'balance.cost.negative',
-            message: `Base cost multiplier for upgrade "${upgrade.id}"${label} is invalid at purchase ${level}.`,
+          message: `Cost multiplier for upgrade "${upgrade.id}"${label} is invalid at purchase ${level}.`,
             path: [...pathPrefix, 'costCurve'],
             severity: 'error',
           },
@@ -454,7 +454,7 @@ const collectUpgradeCosts = (
         break;
       }
 
-      const cost = baseCost * baseMultiplier * repeatableMultiplier;
+      const cost = costMultiplier * baseMultiplier * repeatableMultiplier;
       if (!Number.isFinite(cost) || cost < 0) {
         recordIssue(
           {
@@ -462,7 +462,7 @@ const collectUpgradeCosts = (
               ? 'balance.cost.nonFinite'
               : 'balance.cost.negative',
             message: `Computed cost for upgrade "${upgrade.id}"${label} is invalid at purchase ${level}.`,
-            path: [...pathPrefix, 'baseCost'],
+            path: [...pathPrefix, 'costMultiplier'],
             severity: 'error',
           },
           warnings,
@@ -494,7 +494,7 @@ const collectUpgradeCosts = (
     upgrade.cost.costs.forEach((entry, costIndex) => {
       collectCostProgressionForEntry(
         entry.resourceId,
-        entry.baseCost,
+        entry.costMultiplier,
         entry.costCurve,
         ['upgrades', upgradeIndex, 'cost', 'costs', costIndex],
       );
@@ -504,7 +504,7 @@ const collectUpgradeCosts = (
 
   collectCostProgressionForEntry(
     upgrade.cost.currencyId,
-    upgrade.cost.baseCost,
+    upgrade.cost.costMultiplier,
     upgrade.cost.costCurve,
     ['upgrades', upgradeIndex, 'cost'],
   );

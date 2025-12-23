@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "1fa75dc3153703fabeb44a1410888ac5c6a3d232693e89118457211f4bca6966",
+  "artifactHash": "161a69ef9b6cdb48ea3e6d43f7baeef0f046469ce1d34ff83cd2d2fb7ec9afba",
   "digest": {
     "hash": "fnv1a-7f7e84f9",
     "version": 1
@@ -307,13 +307,13 @@ const serialized = {
           }
         ],
         "purchase": {
-          "baseCost": 10,
           "costCurve": {
             "base": 10,
             "growth": 1.15,
             "kind": "exponential",
             "offset": 0
           },
+          "costMultiplier": 10,
           "currencyId": "sample-pack.energy",
           "maxBulk": 10
         },
@@ -359,12 +359,12 @@ const serialized = {
           }
         ],
         "purchase": {
-          "baseCost": 25,
           "costCurve": {
             "base": 25,
             "kind": "linear",
             "slope": 5
           },
+          "costMultiplier": 25,
           "currencyId": "sample-pack.energy",
           "maxBulk": 5
         },
@@ -417,12 +417,12 @@ const serialized = {
           }
         ],
         "purchase": {
-          "baseCost": 1,
           "costCurve": {
             "base": 75,
             "kind": "linear",
             "slope": 12
           },
+          "costMultiplier": 1,
           "currencyId": "sample-pack.energy",
           "maxBulk": 5
         },
@@ -475,12 +475,12 @@ const serialized = {
           }
         ],
         "purchase": {
-          "baseCost": 120,
           "costCurve": {
             "base": 1,
             "growth": 1.12,
             "kind": "exponential"
           },
+          "costMultiplier": 120,
           "currencyId": "sample-pack.energy",
           "maxBulk": 3
         },
@@ -535,12 +535,12 @@ const serialized = {
           }
         ],
         "purchase": {
-          "baseCost": 500,
           "costCurve": {
             "base": 1,
             "growth": 1.08,
             "kind": "exponential"
           },
+          "costMultiplier": 500,
           "currencyId": "sample-pack.data-core",
           "maxBulk": 2
         },
@@ -855,11 +855,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 75,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 75,
           "currencyId": "sample-pack.energy"
         },
         "effects": [
@@ -905,11 +905,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 150,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 150,
           "currencyId": "sample-pack.energy"
         },
         "effects": [
@@ -961,11 +961,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 400,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 400,
           "currencyId": "sample-pack.energy"
         },
         "effects": [
@@ -1017,11 +1017,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 125,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 125,
           "currencyId": "sample-pack.energy"
         },
         "effects": [
@@ -1073,11 +1073,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 200,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 200,
           "currencyId": "sample-pack.crystal"
         },
         "effects": [
@@ -1129,11 +1129,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 250,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 250,
           "currencyId": "sample-pack.crystal",
           "maxBulk": 2
         },
@@ -1205,11 +1205,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 320,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 320,
           "currencyId": "sample-pack.energy"
         },
         "effects": [
@@ -1252,12 +1252,12 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 180,
           "costCurve": {
             "base": 1,
             "kind": "linear",
             "slope": 0.15
           },
+          "costMultiplier": 180,
           "currencyId": "sample-pack.alloy"
         },
         "effects": [
@@ -1306,11 +1306,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 220,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 220,
           "currencyId": "sample-pack.alloy"
         },
         "effects": [
@@ -1353,11 +1353,11 @@ const serialized = {
       {
         "category": "generator",
         "cost": {
-          "baseCost": 1,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 1,
           "currencyId": "sample-pack.prestige-flux"
         },
         "effects": [
@@ -1436,11 +1436,11 @@ const serialized = {
       {
         "category": "prestige",
         "cost": {
-          "baseCost": 0,
           "costCurve": {
             "kind": "constant",
             "value": 1
           },
+          "costMultiplier": 0,
           "currencyId": "sample-pack.prestige-flux"
         },
         "effects": [

@@ -1331,10 +1331,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       return undefined;
     }
 
-    const baseCost = purchase.baseCost;
-    if (!Number.isFinite(baseCost) || baseCost < 0) {
+    const costMultiplier = purchase.costMultiplier;
+    if (!Number.isFinite(costMultiplier) || costMultiplier < 0) {
       const error = new Error(
-        `Generator cost calculation failed for "${generatorId}": baseCost is invalid (${baseCost})`,
+        `Generator cost calculation failed for "${generatorId}": costMultiplier is invalid (${costMultiplier})`,
       );
       this.onError?.(error);
       return undefined;
@@ -1352,14 +1352,14 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       this.onError?.(error);
       return undefined;
     }
-	    const upgradeEffects = this.getUpgradeEffects(this.lastUpdatedStep);
-	    const multiplier =
-	      upgradeEffects.generatorCostMultipliers.get(generatorId) ?? 1;
-	    const cost = evaluatedCost * baseCost * multiplier;
-	    if (!Number.isFinite(cost) || cost < 0) {
-	      const error = new Error(
-	        `Generator cost calculation failed for "${generatorId}" at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
-	      );
+    const upgradeEffects = this.getUpgradeEffects(this.lastUpdatedStep);
+    const multiplier =
+      upgradeEffects.generatorCostMultipliers.get(generatorId) ?? 1;
+    const cost = evaluatedCost * costMultiplier * multiplier;
+    if (!Number.isFinite(cost) || cost < 0) {
+      const error = new Error(
+        `Generator cost calculation failed for "${generatorId}" at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
+      );
       this.onError?.(error);
       return undefined;
     }
@@ -1398,10 +1398,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 
     const costs: GeneratorResourceCost[] = [];
     for (const entry of purchase.costs) {
-      const baseCost = entry.baseCost;
-      if (!Number.isFinite(baseCost) || baseCost < 0) {
+      const costMultiplier = entry.costMultiplier;
+      if (!Number.isFinite(costMultiplier) || costMultiplier < 0) {
         const error = new Error(
-          `Generator cost calculation failed for "${generatorId}" (${entry.resourceId}): baseCost is invalid (${baseCost})`,
+          `Generator cost calculation failed for "${generatorId}" (${entry.resourceId}): costMultiplier is invalid (${costMultiplier})`,
         );
         this.onError?.(error);
         return undefined;
@@ -1421,7 +1421,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         return undefined;
       }
 
-      const cost = evaluatedCost * baseCost * multiplier;
+      const cost = evaluatedCost * costMultiplier * multiplier;
       if (!Number.isFinite(cost) || cost < 0) {
         const error = new Error(
           `Generator cost calculation failed for "${generatorId}" (${entry.resourceId}) at purchase index ${purchaseIndex}: final cost is invalid (${cost})`,
@@ -1463,12 +1463,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 
     const evaluateCostEntry = (
       resourceId: string,
-      baseCost: number,
+      costMultiplier: number,
       costCurve: NumericFormula,
     ) => {
-      if (!Number.isFinite(baseCost) || baseCost < 0) {
+      if (!Number.isFinite(costMultiplier) || costMultiplier < 0) {
         const error = new Error(
-          `Upgrade cost calculation failed for "${upgradeId}" (${resourceId}): baseCost is invalid (${baseCost})`,
+          `Upgrade cost calculation failed for "${upgradeId}" (${resourceId}): costMultiplier is invalid (${costMultiplier})`,
         );
         this.onError?.(error);
         return false;
@@ -1486,7 +1486,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         return false;
       }
 
-      const amount = evaluatedCost * baseCost * repeatableAdjustment;
+      const amount = evaluatedCost * costMultiplier * repeatableAdjustment;
       if (!Number.isFinite(amount) || amount < 0) {
         const error = new Error(
           `Upgrade cost calculation failed for "${upgradeId}" (${resourceId}) at purchase level ${purchaseLevel}: final amount is invalid (${amount})`,
@@ -1506,7 +1506,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     const cost = record.definition.cost;
     if ('costs' in cost) {
       for (const entry of cost.costs) {
-        if (!evaluateCostEntry(entry.resourceId, entry.baseCost, entry.costCurve)) {
+        if (!evaluateCostEntry(entry.resourceId, entry.costMultiplier, entry.costCurve)) {
           return undefined;
         }
       }
@@ -1514,7 +1514,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       if (
         !evaluateCostEntry(
           cost.currencyId,
-          cost.baseCost,
+          cost.costMultiplier,
           cost.costCurve,
         )
       ) {

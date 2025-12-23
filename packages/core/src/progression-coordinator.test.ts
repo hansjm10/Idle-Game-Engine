@@ -34,7 +34,7 @@ function createRepeatableContentPack(): NormalizedContentPack {
     name: 'Repeatable Upgrade',
     cost: {
       currencyId: resource.id,
-      baseCost: 1,
+      costMultiplier: 1,
       costCurve: literalOne,
     },
     repeatable: {
@@ -67,7 +67,7 @@ function createGeneratorUnlockContentPack(): NormalizedContentPack {
     } as any,
     purchase: {
       currencyId: energy.id,
-      baseCost: 25,
+      costMultiplier: 25,
       costCurve: {
         kind: 'linear',
         base: 25,
@@ -110,7 +110,7 @@ function createGeneratorLevelUnlockContentPack(): NormalizedContentPack {
     name: 'Basic Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: literalOne,
     },
   });
@@ -119,7 +119,7 @@ function createGeneratorLevelUnlockContentPack(): NormalizedContentPack {
     name: 'Gated Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 25,
+      costMultiplier: 25,
       costCurve: literalOne,
     },
     baseUnlock: {
@@ -156,7 +156,7 @@ function createDuplicateVisibilityConditionContentPack(): NormalizedContentPack 
     name: 'Duplicate Visibility Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 25,
+      costMultiplier: 25,
       costCurve: literalOne,
     },
     baseUnlock: thresholdCondition,
@@ -182,7 +182,7 @@ function createCompoundGeneratorUnlockContentPack(): NormalizedContentPack {
     name: 'Basic Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: literalOne,
     },
   });
@@ -191,7 +191,7 @@ function createCompoundGeneratorUnlockContentPack(): NormalizedContentPack {
     name: 'Compound Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 25,
+      costMultiplier: 25,
       costCurve: literalOne,
     },
     baseUnlock: {
@@ -232,7 +232,7 @@ function createOrGeneratorUnlockContentPack(): NormalizedContentPack {
     name: 'Basic Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: literalOne,
     },
   });
@@ -241,7 +241,7 @@ function createOrGeneratorUnlockContentPack(): NormalizedContentPack {
     name: 'Or Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 25,
+      costMultiplier: 25,
       costCurve: literalOne,
     },
     baseUnlock: {
@@ -282,7 +282,7 @@ function createDynamicFormulaUnlockContentPack(): NormalizedContentPack {
     name: 'Basic Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: literalOne,
     },
   });
@@ -309,7 +309,7 @@ function createDynamicFormulaUnlockContentPack(): NormalizedContentPack {
     name: 'Dynamic Generator',
     purchase: {
       currencyId: energy.id,
-      baseCost: 25,
+      costMultiplier: 25,
       costCurve: literalOne,
     },
     baseUnlock: {
@@ -342,7 +342,7 @@ function createInvisibleGeneratorContentPack(): NormalizedContentPack {
     } as any,
     purchase: {
       currencyId: energy.id,
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: {
         kind: 'linear',
         base: 10,
@@ -411,7 +411,7 @@ function createResourceConditionContentPack(): NormalizedContentPack {
   });
 }
 
-function createBaseCostGeneratorContentPack(): NormalizedContentPack {
+function createCostMultiplierGeneratorContentPack(): NormalizedContentPack {
   const currency = createResourceDefinition('resource.currency', {
     name: 'Currency',
   });
@@ -423,7 +423,7 @@ function createBaseCostGeneratorContentPack(): NormalizedContentPack {
     } as any,
     purchase: {
       currencyId: currency.id,
-      baseCost: 100,
+      costMultiplier: 100,
       costCurve: literalOne,
     },
     produces: [
@@ -444,7 +444,7 @@ function createBaseCostGeneratorContentPack(): NormalizedContentPack {
   });
 }
 
-function createBaseCostUpgradeContentPack(): NormalizedContentPack {
+function createCostMultiplierUpgradeContentPack(): NormalizedContentPack {
   const currency = createResourceDefinition('resource.currency', {
     name: 'Currency',
   });
@@ -453,7 +453,7 @@ function createBaseCostUpgradeContentPack(): NormalizedContentPack {
     name: 'Base Cost Upgrade',
     cost: {
       currencyId: currency.id,
-      baseCost: 250,
+      costMultiplier: 250,
       costCurve: literalOne,
     },
     effects: [
@@ -487,8 +487,8 @@ function createMultiCostGeneratorContentPack(): NormalizedContentPack {
     name: 'Multi Cost Generator',
     purchase: {
       costs: [
-        { resourceId: energy.id, baseCost: 10, costCurve: literalOne },
-        { resourceId: parts.id, baseCost: 25, costCurve: literalOne },
+        { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+        { resourceId: parts.id, costMultiplier: 25, costCurve: literalOne },
       ],
     },
     produces: [{ resourceId: energy.id, rate: literalOne }],
@@ -516,8 +516,8 @@ function createMultiCostUpgradeContentPack(): NormalizedContentPack {
     name: 'Multi Cost Upgrade',
     cost: {
       costs: [
-        { resourceId: energy.id, baseCost: 10, costCurve: literalOne },
-        { resourceId: parts.id, baseCost: 25, costCurve: literalOne },
+        { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+        { resourceId: parts.id, costMultiplier: 25, costCurve: literalOne },
       ],
     },
     effects: [
@@ -551,7 +551,7 @@ describe('progression-coordinator', () => {
     const generator = createGeneratorDefinition(generatorId, {
       purchase: {
         currencyId: currency.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -581,7 +581,7 @@ describe('progression-coordinator', () => {
       name: 'Scaling Upgrade',
       cost: {
         currencyId: currency.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve,
       },
       repeatable: {
@@ -638,7 +638,7 @@ describe('progression-coordinator', () => {
     const generator = createGeneratorDefinition(generatorId, {
       purchase: {
         currencyId: currency.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve,
       },
     });
@@ -717,9 +717,9 @@ describe('progression-coordinator', () => {
     expect(subsequentQuote?.status).toBe('available');
   });
 
-  it('includes upgrade baseCost when quoting costs', () => {
+  it('includes upgrade costMultiplier when quoting costs', () => {
     const coordinator = createProgressionCoordinator({
-      content: createBaseCostUpgradeContentPack(),
+      content: createCostMultiplierUpgradeContentPack(),
       stepDurationMs: 100,
     });
 
@@ -1026,7 +1026,7 @@ describe('progression-coordinator', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: literalOne,
       },
       baseUnlock: {
@@ -1078,7 +1078,7 @@ describe('progression-coordinator', () => {
       name: 'Energy Gate',
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       unlockCondition: {
@@ -1197,9 +1197,9 @@ describe('progression-coordinator', () => {
     expect(restoredRecord?.state.owned).toBe(5);
   });
 
-  it('quotes generator purchases using baseCost multipliers', () => {
+  it('quotes generator purchases using costMultiplier multipliers', () => {
     const coordinator = createProgressionCoordinator({
-      content: createBaseCostGeneratorContentPack(),
+      content: createCostMultiplierGeneratorContentPack(),
       stepDurationMs: 100,
     });
 
@@ -1234,7 +1234,7 @@ describe('progression-coordinator', () => {
     const generator = createGeneratorDefinition(generatorId, {
       purchase: {
         currencyId: currency.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -1243,7 +1243,7 @@ describe('progression-coordinator', () => {
       name: 'Scaling Upgrade',
       cost: {
         currencyId: currency.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       repeatable: {
@@ -1313,7 +1313,7 @@ describe('progression-coordinator', () => {
       name: 'Gate Upgrade',
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [
@@ -1384,7 +1384,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: literalOne,
       },
       produces: [
@@ -1466,7 +1466,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       name: 'Efficiency Boost',
       cost: {
         currencyId: energy.id,
-        baseCost: 20,
+        costMultiplier: 20,
         costCurve: literalOne,
       },
       effects: [
@@ -1487,7 +1487,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
         } as any,
         purchase: {
           currencyId: energy.id,
-          baseCost: 50,
+          costMultiplier: 50,
           costCurve: literalOne,
         },
         produces: [
@@ -1568,7 +1568,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: {
           kind: 'linear',
           base: 10,
@@ -1657,7 +1657,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       name: 'Basic Upgrade',
       cost: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: literalOne,
       },
       effects: [
@@ -1676,7 +1676,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 15,
+        costMultiplier: 15,
         costCurve: literalOne,
       },
       produces: [
@@ -1697,7 +1697,7 @@ describe('Integration: coordinator + condition evaluation game loop', () => {
         } as any,
         purchase: {
           currencyId: crystal.id,
-          baseCost: 25,
+          costMultiplier: 25,
           costCurve: literalOne,
         },
         produces: [
@@ -1791,7 +1791,7 @@ describe('Integration: bulk purchase edge cases', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: {
           kind: 'exponential',
           base: 1,
@@ -1864,7 +1864,7 @@ describe('Integration: bulk purchase edge cases', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1e15, // Very large base cost
+        costMultiplier: 1e15, // Very large cost multiplier
         costCurve: {
           kind: 'exponential',
           base: 1,
@@ -1916,7 +1916,7 @@ describe('Integration: bulk purchase edge cases', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: literalOne,
         maxBulk: 100,
       },
@@ -1997,7 +1997,7 @@ describe('Integration: bulk purchase edge cases', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: {
           kind: 'exponential',
           base: 1,
@@ -2069,7 +2069,7 @@ describe('Integration: bulk purchase edge cases', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: {
           kind: 'exponential',
           base: 1,
@@ -2327,7 +2327,7 @@ describe('Integration: hydration error scenarios', () => {
       } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: {
           kind: 'exponential',
           base: 1,
@@ -2422,14 +2422,14 @@ describe('Integration: enhanced error messages', () => {
     expect(errors[0].message).toContain('not found');
   });
 
-  it('reports detailed error when generator baseCost is invalid', () => {
+  it('reports detailed error when generator costMultiplier is invalid', () => {
     const errors: Error[] = [];
     const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
     const generator = createGeneratorDefinition('generator.test-gen', {
       name: { default: 'Test Generator', variants: {} } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: NaN, // Invalid baseCost
+        costMultiplier: NaN, // Invalid costMultiplier
         costCurve: { kind: 'constant', value: 1 },
       },
       produces: [{
@@ -2453,7 +2453,7 @@ describe('Integration: enhanced error messages', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toContain('Generator cost calculation failed');
     expect(errors[0].message).toContain('generator.test-gen');
-    expect(errors[0].message).toContain('baseCost is invalid');
+    expect(errors[0].message).toContain('costMultiplier is invalid');
   });
 
   it('reports detailed error when generator cost curve evaluation fails', () => {
@@ -2463,7 +2463,7 @@ describe('Integration: enhanced error messages', () => {
       name: { default: 'Test Generator', variants: {} } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: { kind: 'exponential', base: 1, growth: -1 }, // Negative growth causes issues
       },
       produces: [{
@@ -2492,14 +2492,14 @@ describe('Integration: enhanced error messages', () => {
     }
   });
 
-  it('reports detailed error when upgrade baseCost is invalid', () => {
+  it('reports detailed error when upgrade costMultiplier is invalid', () => {
     const errors: Error[] = [];
     const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
     const upgrade = createUpgradeDefinition('upgrade.test-upgrade', {
       name: 'Test Upgrade',
       cost: {
         currencyId: energy.id,
-        baseCost: Infinity, // Invalid baseCost
+        costMultiplier: Infinity, // Invalid costMultiplier
         costCurve: { kind: 'constant', value: 1 },
       },
       effects: [],
@@ -2524,7 +2524,7 @@ describe('Integration: enhanced error messages', () => {
     expect(errors.length).toBeGreaterThan(0);
     expect(errors[0].message).toContain('Upgrade cost calculation failed');
     expect(errors[0].message).toContain('upgrade.test-upgrade');
-    expect(errors[0].message).toContain('baseCost is invalid');
+    expect(errors[0].message).toContain('costMultiplier is invalid');
   });
 
   it('reports detailed error when repeatable upgrade cost curve fails', () => {
@@ -2534,7 +2534,7 @@ describe('Integration: enhanced error messages', () => {
       name: 'Test Upgrade',
       cost: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: { kind: 'constant', value: 1 },
       },
       repeatable: {
@@ -2576,7 +2576,7 @@ describe('Integration: enhanced error messages', () => {
       name: { default: 'Test Generator', variants: {} } as any,
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: { kind: 'constant', value: 1 },
       },
       produces: [{
@@ -2700,7 +2700,7 @@ describe('Integration: prestige system applyPrestige', () => {
     const generatorReset = createGeneratorDefinition('generator.reset-me', {
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -2708,7 +2708,7 @@ describe('Integration: prestige system applyPrestige', () => {
     const generatorRetained = createGeneratorDefinition('generator.keep-me', {
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -2716,7 +2716,7 @@ describe('Integration: prestige system applyPrestige', () => {
     const upgradeReset = createUpgradeDefinition('upgrade.reset-me', {
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [],
@@ -2725,7 +2725,7 @@ describe('Integration: prestige system applyPrestige', () => {
     const upgradeRetained = createUpgradeDefinition('upgrade.keep-me', {
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [],
@@ -2817,7 +2817,7 @@ describe('Integration: prestige system applyPrestige', () => {
       initialLevel: 2,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -2874,7 +2874,7 @@ describe('Integration: prestige system applyPrestige', () => {
     const gatedGenerator = createGeneratorDefinition('generator.zero-gated', {
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       baseUnlock: {
@@ -2961,7 +2961,7 @@ describe('Integration: prestige system applyPrestige', () => {
       initialLevel: 2,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       baseUnlock: {
@@ -3050,7 +3050,7 @@ describe('Integration: prestige system applyPrestige', () => {
       initialLevel: 2,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -3123,7 +3123,7 @@ describe('Integration: prestige system applyPrestige', () => {
       initialLevel: 2,
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     });
@@ -3211,7 +3211,7 @@ describe('Integration: prestige system applyPrestige', () => {
     const gatedGenerator = createGeneratorDefinition('generator.gated', {
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       baseUnlock: {
@@ -4432,7 +4432,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Boosted Generator',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4449,7 +4449,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [
@@ -4493,7 +4493,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Scaling Generator',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4510,7 +4510,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       repeatable: {
@@ -4558,7 +4558,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Constant Repeatable Generator',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4575,7 +4575,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       repeatable: {
@@ -4623,7 +4623,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Effect Curve (Multiply)',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4640,7 +4640,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       repeatable: {
@@ -4689,7 +4689,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Effect Curve (Add)',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4706,7 +4706,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       repeatable: {
@@ -4755,7 +4755,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Effect Curve (Set)',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4772,7 +4772,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       repeatable: {
@@ -4821,7 +4821,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Discounted Generator',
       purchase: {
         currencyId: energy.id,
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: literalOne,
       },
       produces: [],
@@ -4834,7 +4834,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -4879,7 +4879,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Gold Mine',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4896,7 +4896,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'resource', id: gold.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [
@@ -4943,7 +4943,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Consumer',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       produces: [
@@ -4970,7 +4970,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [
@@ -4989,7 +4989,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'generator', id: generator.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [
@@ -5009,7 +5009,7 @@ describe('Integration: upgrade effects', () => {
       targets: [{ kind: 'resource', id: energy.id }],
       cost: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       effects: [
@@ -5068,7 +5068,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Capacity Boost',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -5116,7 +5116,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Capacity Multiplier',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -5156,7 +5156,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Grant Flag',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -5172,7 +5172,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Gated Upgrade',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       unlockCondition: {
@@ -5219,7 +5219,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Hidden Generator',
       purchase: {
         currencyId: energy.id,
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
       baseUnlock: { kind: 'never' },
@@ -5230,7 +5230,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Unlock Stuff',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -5272,7 +5272,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Dirty Tolerance Override',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -5323,7 +5323,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Grant Automation',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [
@@ -5375,7 +5375,7 @@ describe('Integration: upgrade effects', () => {
       name: 'Emit Event',
       cost: {
         currencyId: energy.id,
-        baseCost: 0,
+        costMultiplier: 0,
         costCurve: literalOne,
       },
       effects: [

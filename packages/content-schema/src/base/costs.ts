@@ -7,7 +7,7 @@ import { nonNegativeNumberSchema } from './numbers.js';
 export const costEntrySchema = z
   .object({
     resourceId: contentIdSchema,
-    baseCost: nonNegativeNumberSchema,
+    costMultiplier: nonNegativeNumberSchema,
     costCurve: numericFormulaSchema,
   })
   .strict();

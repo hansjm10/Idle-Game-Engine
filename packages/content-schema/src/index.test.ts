@@ -30,7 +30,7 @@ const createMinimalPack = () => ({
       consumes: [],
       purchase: {
         currencyId: 'resource:energy',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' },
@@ -75,12 +75,12 @@ describe('content pack validator', () => {
       costs: [
         {
           resourceId: 'resource:energy',
-          baseCost: 1,
+          costMultiplier: 1,
           costCurve: { kind: 'constant', value: 1 },
         },
         {
           resourceId: 'resource:missing',
-          baseCost: 1,
+          costMultiplier: 1,
           costCurve: { kind: 'constant', value: 1 },
         },
       ],
@@ -102,12 +102,12 @@ describe('content pack validator', () => {
           costs: [
             {
               resourceId: 'resource:energy',
-              baseCost: 1,
+              costMultiplier: 1,
               costCurve: { kind: 'constant', value: 1 },
             },
             {
               resourceId: 'resource:missing',
-              baseCost: 1,
+              costMultiplier: 1,
               costCurve: { kind: 'constant', value: 1 },
             },
           ],
@@ -138,7 +138,7 @@ describe('content pack validator', () => {
         targets: [{ kind: 'generator', id: 'generator:reactor' }],
         cost: {
           currencyId: 'resource:energy',
-          baseCost: 1,
+          costMultiplier: 1,
           costCurve: { kind: 'constant', value: 1 },
         },
         effects: [

@@ -10,7 +10,7 @@ describe('upgradeDefinitionSchema', () => {
     targets: [{ kind: 'global' }],
     cost: {
       currencyId: 'energy',
-      baseCost: 100,
+      costMultiplier: 100,
       costCurve: { kind: 'constant', value: 1 },
     },
     effects: [
@@ -63,12 +63,12 @@ describe('upgradeDefinitionSchema', () => {
         costs: [
           {
             resourceId: 'crystal',
-            baseCost: 25,
+            costMultiplier: 25,
             costCurve: { kind: 'constant', value: 1 },
           },
           {
             resourceId: 'energy',
-            baseCost: 100,
+            costMultiplier: 100,
             costCurve: { kind: 'constant', value: 1 },
           },
         ],
@@ -92,12 +92,12 @@ describe('upgradeDefinitionSchema', () => {
           costs: [
             {
               resourceId: 'energy',
-              baseCost: 25,
+              costMultiplier: 25,
               costCurve: { kind: 'constant', value: 1 },
             },
             {
               resourceId: 'energy',
-              baseCost: 50,
+              costMultiplier: 50,
               costCurve: { kind: 'constant', value: 1 },
             },
           ],
@@ -118,7 +118,7 @@ describe('upgradeCollectionSchema', () => {
           targets: [{ kind: 'global' }],
           cost: {
             currencyId: 'energy',
-            baseCost: 100,
+            costMultiplier: 100,
             costCurve: { kind: 'constant', value: 1 },
           },
           effects: [
@@ -137,7 +137,7 @@ describe('upgradeCollectionSchema', () => {
           targets: [{ kind: 'global' }],
           cost: {
             currencyId: 'energy',
-            baseCost: 50,
+            costMultiplier: 50,
             costCurve: { kind: 'constant', value: 1 },
           },
           effects: [

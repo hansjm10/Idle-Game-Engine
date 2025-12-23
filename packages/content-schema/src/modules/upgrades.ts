@@ -76,7 +76,7 @@ const upgradeTargetSchema = z.discriminatedUnion('kind', [
 
 type SingleCurrencyCost = {
   readonly currencyId: ContentId;
-  readonly baseCost: number;
+  readonly costMultiplier: number;
   readonly costCurve: NumericFormula;
   readonly maxBulk?: number;
 };
@@ -88,7 +88,7 @@ type MultiCurrencyCost = {
 
 type SingleCurrencyCostInput = {
   readonly currencyId: ContentIdInput;
-  readonly baseCost: z.input<typeof nonNegativeNumberSchema>;
+  readonly costMultiplier: z.input<typeof nonNegativeNumberSchema>;
   readonly costCurve: NumericFormulaInput;
   readonly maxBulk?: z.input<typeof positiveIntSchema>;
 };
@@ -107,7 +107,7 @@ const singleCurrencyCostSchema: z.ZodType<
 > = z
   .object({
     currencyId: contentIdSchema,
-    baseCost: nonNegativeNumberSchema,
+    costMultiplier: nonNegativeNumberSchema,
     costCurve: numericFormulaSchema,
     maxBulk: positiveIntSchema.optional(),
   })

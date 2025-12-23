@@ -10,7 +10,7 @@ describe('generatorDefinitionSchema', () => {
     consumes: [],
     purchase: {
       currencyId: 'energy',
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: { kind: 'constant', value: 1 },
     },
     baseUnlock: { kind: 'always' },
@@ -98,12 +98,12 @@ describe('generatorDefinitionSchema', () => {
         costs: [
           {
             resourceId: 'crystal',
-            baseCost: 5,
+            costMultiplier: 5,
             costCurve: { kind: 'constant', value: 1 },
           },
           {
             resourceId: 'energy',
-            baseCost: 10,
+            costMultiplier: 10,
             costCurve: { kind: 'constant', value: 1 },
           },
         ],
@@ -127,12 +127,12 @@ describe('generatorDefinitionSchema', () => {
           costs: [
             {
               resourceId: 'energy',
-              baseCost: 5,
+              costMultiplier: 5,
               costCurve: { kind: 'constant', value: 1 },
             },
             {
               resourceId: 'energy',
-              baseCost: 10,
+              costMultiplier: 10,
               costCurve: { kind: 'constant', value: 1 },
             },
           ],
@@ -153,7 +153,7 @@ describe('generatorCollectionSchema', () => {
           consumes: [],
           purchase: {
             currencyId: 'energy',
-            baseCost: 10,
+            costMultiplier: 10,
             costCurve: { kind: 'constant', value: 1 },
           },
           baseUnlock: { kind: 'always' },
@@ -165,7 +165,7 @@ describe('generatorCollectionSchema', () => {
           consumes: [],
           purchase: {
             currencyId: 'energy',
-            baseCost: 5,
+            costMultiplier: 5,
             costCurve: { kind: 'constant', value: 1 },
           },
           baseUnlock: { kind: 'always' },
