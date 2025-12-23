@@ -17,7 +17,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
 
 ## 2. Context & Problem Statement
 - **Background**:
-  - Content schema already defines transforms (triggers, modes, formulas, safety guards) in `packages/content-schema/src/modules/transforms.ts:42` and validates references/cycles in `packages/content-schema/src/pack.ts:1633`.
+  - Content schema already defines transforms (triggers, modes, formulas, safety guards) in `packages/content-schema/src/modules/transforms.ts:42` and validates references in `packages/content-schema/src/pack/validate-cross-references.ts` plus cycles in `packages/content-schema/src/pack/validate-cycles.ts`.
   - The runtime tick loop executes commands, dispatches events, then ticks systems deterministically (`packages/core/src/index.ts:309`), and already supports similar “definition + system + persistence + snapshot” patterns for automations (`packages/core/src/automation-system.ts:178`) and progression snapshots (`packages/core/src/progression.ts:232`).
   - Shell-web’s worker currently wires progression + automation only and emits `STATE_UPDATE` without any transform state (`packages/shell-web/src/runtime.worker.ts:194`, `packages/shell-web/src/runtime.worker.ts:317`).
 - **Problem** (issue-523):
@@ -71,7 +71,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
 ## 5. Current State
 - Transform definitions exist, but are inert at runtime:
   - Schema: `packages/content-schema/src/modules/transforms.ts:97` defines `mode`, `trigger`, `duration`, `cooldown`, and `safety`.
-  - Validation: pack cross-reference checks include transforms (`packages/content-schema/src/pack.ts:1352`) and cycles (`packages/content-schema/src/pack.ts:1633`).
+  - Validation: pack cross-reference checks include transforms (`packages/content-schema/src/pack/validate-cross-references.ts`) and cycles (`packages/content-schema/src/pack/validate-cycles.ts`).
   - Compiler: transforms are carried through into the normalized pack (`packages/content-compiler/src/runtime.ts:57`).
 - Runtime execution infrastructure exists but does not include transforms:
   - Commands: no transform-related command identifiers exist (`packages/core/src/command.ts:107`).
@@ -403,7 +403,7 @@ No unresolved questions remain for issue-523 MVP scope. The following items are 
 ## 15. References
 - GitHub issue #523: https://github.com/hansjm10/Idle-Game-Engine/issues/523
 - Transform schema: `packages/content-schema/src/modules/transforms.ts:97`
-- Transform validation + cycles: `packages/content-schema/src/pack.ts:1633`
+- Transform validation + cycles: `packages/content-schema/src/pack/validate-cycles.ts`
 - Runtime tick ordering: `packages/core/src/index.ts:309`
 - Condition evaluation context: `packages/core/src/condition-evaluator.ts:39`
 - Event catalogue / channels: `packages/core/src/events/runtime-event-catalog.ts:61`

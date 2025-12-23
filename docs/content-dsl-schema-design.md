@@ -120,11 +120,19 @@ packages/content-schema/
       prestige.ts
       guild-perks.ts
       transforms.ts
-      runtime-events.ts
-      dependencies.ts
-    runtime-compat.ts
-    pack.ts
-    errors.ts
+    runtime-events.ts
+    dependencies.ts
+  runtime-compat.ts
+  pack/
+    index.ts
+    schema.ts
+    normalize.ts
+    validate-cross-references.ts
+    validate-dependencies.ts
+    validate-cycles.ts
+    types.ts
+    utils.ts
+  errors.ts
   vitest.config.ts
 ```
 
