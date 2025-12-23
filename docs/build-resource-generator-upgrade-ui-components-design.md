@@ -244,11 +244,11 @@ Upgrades in the snapshot illustration use placeholder IDs; update them once `pac
 Generator purchase costs scale with the number already owned. The cost for purchasing a generator at a specific level is calculated as:
 
 ```
-cost = baseCost × evaluateCostFormula(costCurve, purchaseIndex)
+cost = costMultiplier × evaluateCostFormula(costCurve, purchaseIndex)
 ```
 
 Where:
-- `baseCost` is the base cost defined in the generator's `purchase.baseCost`
+- `costMultiplier` is the scalar defined in the generator's `purchase.costMultiplier`
 - `costCurve` is the numeric formula from `purchase.costCurve`
 - `purchaseIndex` is the current owned count (the level being purchased)
 
@@ -257,35 +257,35 @@ For bulk purchases, costs are summed individually:
 ```typescript
 for (let offset = 0; offset < count; offset++) {
   const purchaseLevel = owned + offset;
-  totalCost += baseCost × evaluateCostFormula(costCurve, purchaseLevel);
+  totalCost += costMultiplier × evaluateCostFormula(costCurve, purchaseLevel);
 }
 ```
 
-**Example**: If a generator has `baseCost: 10` and `costCurve: { kind: 'exponential', base: 1, growth: 1.15 }`, the 5th purchase (when owned=5) costs `10 × 1.15^5 = 20.11`.
+**Example**: If a generator has `costMultiplier: 10` and `costCurve: { kind: 'exponential', base: 1, growth: 1.15 }`, the 5th purchase (when owned=5) costs `10 × 1.15^5 = 20.11`.
 
 **Upgrade Costs**:
 
 Upgrade costs are calculated based on the current purchase count. For **non-repeatable upgrades** (one-time purchases):
 
 ```
-cost = baseCost × evaluateCostFormula(costCurve, purchaseLevel)
+cost = costMultiplier × evaluateCostFormula(costCurve, purchaseLevel)
 ```
 
 For **repeatable upgrades** (upgrades with `repeatable` configuration), an additional cost multiplier applies:
 
 ```
-amount = baseCost × evaluateCostFormula(costCurve, purchaseLevel) × evaluateCostFormula(repeatableCostCurve, purchaseLevel)
+amount = costMultiplier × evaluateCostFormula(costCurve, purchaseLevel) × evaluateCostFormula(repeatableCostCurve, purchaseLevel)
 ```
 
 Where:
-- `baseCost` is from `cost.baseCost`
+- `costMultiplier` is from `cost.costMultiplier`
 - `costCurve` is from `cost.costCurve`
 - `purchaseLevel` is the current `purchases` count
 - `repeatableCostCurve` is from `repeatable.costCurve` (if upgrade is repeatable)
 
-This composition allows both the base cost and the repeatable multiplier to scale independently with purchase count.
+This composition allows both the cost multiplier and the repeatable multiplier to scale independently with purchase count.
 
-**Example**: A repeatable upgrade with `baseCost: 100`, `costCurve: { kind: 'linear', base: 1, slope: 0.1 }`, and `repeatable.costCurve: { kind: 'exponential', base: 1, growth: 1.2 }` would cost at purchase level 3:
+**Example**: A repeatable upgrade with `costMultiplier: 100`, `costCurve: { kind: 'linear', base: 1, slope: 0.1 }`, and `repeatable.costCurve: { kind: 'exponential', base: 1, growth: 1.2 }` would cost at purchase level 3:
 ```
 100 × (1 + 0.1×3) × 1.2^3 = 100 × 1.3 × 1.728 = 224.64
 ```

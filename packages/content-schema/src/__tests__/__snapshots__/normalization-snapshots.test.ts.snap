@@ -305,13 +305,13 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         },
       ],
       "purchase": {
-        "baseCost": 10,
         "costCurve": {
           "base": 10,
           "growth": 1.15,
           "kind": "exponential",
           "offset": 0,
         },
+        "costMultiplier": 10,
         "currencyId": "energy",
       },
       "tags": [],
@@ -388,13 +388,13 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
           },
         ],
         "purchase": {
-          "baseCost": 10,
           "costCurve": {
             "base": 10,
             "growth": 1.15,
             "kind": "exponential",
             "offset": 0,
           },
+          "costMultiplier": 10,
           "currencyId": "energy",
         },
         "tags": [],
@@ -483,11 +483,11 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "efficiency-boost" => {
         "category": "global",
         "cost": {
-          "baseCost": 50,
           "costCurve": {
             "kind": "constant",
             "value": 50,
           },
+          "costMultiplier": 50,
           "currencyId": "energy",
         },
         "effects": [
@@ -726,13 +726,13 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
           },
         ],
         "purchase": {
-          "baseCost": 10,
           "costCurve": {
             "base": 10,
             "growth": 1.15,
             "kind": "exponential",
             "offset": 0,
           },
+          "costMultiplier": 10,
           "currencyId": "energy",
         },
         "tags": [],
@@ -821,11 +821,11 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "efficiency-boost": {
         "category": "global",
         "cost": {
-          "baseCost": 50,
           "costCurve": {
             "kind": "constant",
             "value": 50,
           },
+          "costMultiplier": 50,
           "currencyId": "energy",
         },
         "effects": [
@@ -871,11 +871,11 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
     {
       "category": "global",
       "cost": {
-        "baseCost": 50,
         "costCurve": {
           "kind": "constant",
           "value": 50,
         },
+        "costMultiplier": 50,
         "currencyId": "energy",
       },
       "effects": [

@@ -613,55 +613,57 @@ checklist with the relevant test suites (for example `pnpm test --filter core`).
 Content formulas must evaluate to finite, non-negative numbers across deterministic contexts. The schema and CLI suites enforce this via property-based tests (see `packages/content-schema/src/base/formulas.property.test.ts` and `tools/content-schema-cli/src/__tests__/validation.property.test.ts`). Authors should follow these rules when declaring rates and costs:
 
 - Generator rates and consumption values: use `NumericFormula` that remain ≥ 0. Prefer clamping via `max(0, …)` or the `abs`/`sqrt` helpers when composing expressions.
-- Purchase cost calculation: cost = `baseCost × evaluate(costCurve, level)` where `level` is the current purchase index (owned count). For upgrades, if `repeatable.costCurve` is present, multiply that in as well. See `docs/progression-coordinator-design.md` §6.2.7.
+- Purchase cost calculation: cost = `costMultiplier × evaluate(costCurve, level)` where `level` is the current purchase index (owned count). For upgrades, if `repeatable.costCurve` is present, multiply that in as well. See `docs/progression-coordinator-design.md` §6.2.7.
 - Avoid NaN/Infinity: inputs are validated (`finiteNumberSchema`), and formulas with impossible evaluations are rejected.
 - Piecewise: ensure strictly increasing `untilLevel` thresholds and a final catch-all segment.
 
-Note: `baseCost` is a multiplier applied to the cost curve result. If you want `costCurve.base` to be the starting cost, set `baseCost` to `1`.
+Note: `costMultiplier` is a multiplier applied to the cost curve result. If you want `costCurve.base` to be the starting cost, set `costMultiplier` to `1`.
+
+Breaking change (next major release): `baseCost` has been removed. Update generator `purchase` and upgrade `cost` blocks to use `costMultiplier`, then rerun `pnpm generate` to refresh compiled artifacts before upgrading.
 
 ### Exponential Cost Curve Formula
 
 The exponential formula evaluates as: `base × growth^level + offset`
 
-When used as a `costCurve`, this combines with `baseCost` to produce:
+When used as a `costCurve`, this combines with `costMultiplier` to produce:
 
 ```
-totalCost = baseCost × (base × growth^level + offset)
+totalCost = costMultiplier × (base × growth^level + offset)
 ```
 
-**Important**: The `base` parameter defaults to `1`. For the standard idle game cost curve where `baseCost` alone represents the level-0 cost, simply omit `base`:
+**Important**: The `base` parameter defaults to `1`. For the standard idle game cost curve where `costMultiplier` alone represents the level-0 cost, simply omit `base`:
 
 ```json
 {
-  "baseCost": 120,
+  "costMultiplier": 120,
   "costCurve": { "kind": "exponential", "growth": 1.15 }
 }
 // At level 0: 120 × 1 × 1.15^0 = 120
 // At level 1: 120 × 1 × 1.15^1 = 138
 ```
 
-**Alternate pattern**: If you want `costCurve.base` to define the starting cost, use `baseCost: 1`:
+**Alternate pattern**: If you want `costCurve.base` to define the starting cost, use `costMultiplier: 1`:
 
 ```json
 {
-  "baseCost": 1,
+  "costMultiplier": 1,
   "costCurve": { "kind": "exponential", "base": 120, "growth": 1.15 }
 }
 // At level 0: 1 × 120 × 1.15^0 = 120
 // At level 1: 1 × 120 × 1.15^1 = 138
 ```
 
-**Common mistake**: Setting `base` equal to `baseCost` multiplies twice:
+**Common mistake**: Setting `base` equal to `costMultiplier` multiplies twice:
 
 ```json
 {
-  "baseCost": 10,
+  "costMultiplier": 10,
   "costCurve": { "kind": "exponential", "base": 10, "growth": 1.15 }
 }
 // At level 0: 10 × 10 × 1.15^0 = 100 (not 10!)
 ```
 
-Use a non-default `base` only when you need an additional scaling factor independent of `baseCost`.
+Use a non-default `base` only when you need an additional scaling factor independent of `costMultiplier`.
 
 Automation authoring guidance:
 - `resourceCost.rate` represents units per second; keep bounds realistic for your economy to avoid runaway drains.

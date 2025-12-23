@@ -74,7 +74,7 @@ export const invalidCrossReferenceFixture = {
       consumes: [],
       purchase: {
         currencyId: 'energy',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' },
@@ -88,7 +88,7 @@ export const invalidCrossReferenceFixture = {
       targets: [{ kind: 'global' }],
       cost: {
         currencyId: 'energy',
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: { kind: 'constant', value: 1 },
       },
       effects: [

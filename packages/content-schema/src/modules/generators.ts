@@ -77,7 +77,7 @@ const normalizeTags = (tags: readonly string[]): readonly string[] =>
 
 type SingleCurrencyPurchaseDefinition = {
   readonly currencyId: ContentId;
-  readonly baseCost: number;
+  readonly costMultiplier: number;
   readonly costCurve: z.infer<typeof numericFormulaSchema>;
   readonly maxBulk?: number;
 };
@@ -93,7 +93,7 @@ type PurchaseDefinition =
 
 type SingleCurrencyPurchaseInput = {
   readonly currencyId: z.input<typeof contentIdSchema>;
-  readonly baseCost: z.input<typeof nonNegativeNumberSchema>;
+  readonly costMultiplier: z.input<typeof nonNegativeNumberSchema>;
   readonly costCurve: z.input<typeof numericFormulaSchema>;
   readonly maxBulk?: z.input<typeof positiveIntSchema>;
 };
@@ -146,7 +146,7 @@ const singleCurrencyPurchaseSchema: z.ZodType<
 > = z
   .object({
     currencyId: contentIdSchema,
-    baseCost: nonNegativeNumberSchema,
+    costMultiplier: nonNegativeNumberSchema,
     costCurve: numericFormulaSchema,
     maxBulk: positiveIntSchema.optional(),
   })

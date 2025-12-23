@@ -326,7 +326,7 @@ const buildPackDocument = (
         consumes: [],
         purchase: {
           currencyId: BASE_RESOURCES[0],
-          baseCost: 1,
+          costMultiplier: 1,
           costCurve: {
             kind: 'constant',
             value: 1,
@@ -399,7 +399,7 @@ const buildBalanceWarningPackDocument = () => ({
       consumes: [],
       purchase: {
         currencyId: 'resource/balance/locked',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' },
@@ -451,7 +451,7 @@ const buildBalanceErrorPackDocument = () => ({
       consumes: [],
       purchase: {
         currencyId: 'resource/balance/error-base',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'linear', base: 1, slope: -2 },
       },
       baseUnlock: { kind: 'always' },

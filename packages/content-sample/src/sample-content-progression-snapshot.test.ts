@@ -34,14 +34,14 @@ const toDisplayName = (name: { readonly default: string }) => name.default;
 const evaluateCost = (
   curve: unknown,
   level: number,
-  baseCost: number,
+  costMultiplier: number,
   entities: FormulaEvaluationEntities,
 ): number => {
   const multiplier = evaluateNumericFormula(curve as any, {
     variables: { level, time: 0, deltaTime: 1 },
     entities,
   });
-  const amount = baseCost * multiplier;
+  const amount = costMultiplier * multiplier;
   return Number.isFinite(amount) && amount >= 0 ? amount : 0;
 };
 
@@ -59,7 +59,7 @@ const createGeneratorEvaluator = (
       if ('costs' in gen.purchase) {
         const costs = gen.purchase.costs.map((cost) => ({
           resourceId: cost.resourceId,
-          amount: evaluateCost(cost.costCurve, 0, cost.baseCost, entities),
+          amount: evaluateCost(cost.costCurve, 0, cost.costMultiplier, entities),
         }));
         return {
           generatorId,
@@ -67,7 +67,7 @@ const createGeneratorEvaluator = (
         };
       }
 
-      const amount = evaluateCost(gen.purchase.costCurve, 0, gen.purchase.baseCost, entities);
+      const amount = evaluateCost(gen.purchase.costCurve, 0, gen.purchase.costMultiplier, entities);
       return {
         generatorId,
         costs: [{ resourceId: gen.purchase.currencyId, amount }],
@@ -92,7 +92,7 @@ const createUpgradeEvaluator = (
       if ('costs' in up.cost) {
         const costs = up.cost.costs.map((cost) => ({
           resourceId: cost.resourceId,
-          amount: evaluateCost(cost.costCurve, 0, cost.baseCost, entities),
+          amount: evaluateCost(cost.costCurve, 0, cost.costMultiplier, entities),
         }));
         return {
           upgradeId,
@@ -101,7 +101,7 @@ const createUpgradeEvaluator = (
         };
       }
 
-      const amount = evaluateCost(up.cost.costCurve, 0, up.cost.baseCost, entities);
+      const amount = evaluateCost(up.cost.costCurve, 0, up.cost.costMultiplier, entities);
       return {
         upgradeId,
         status: 'available',

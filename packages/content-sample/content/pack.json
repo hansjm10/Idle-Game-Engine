@@ -162,7 +162,7 @@
       "consumes": [],
       "purchase": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 10,
+        "costMultiplier": 10,
         "costCurve": {
           "kind": "exponential",
           "base": 10,
@@ -203,7 +203,7 @@
       ],
       "purchase": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 25,
+        "costMultiplier": 25,
         "costCurve": {
           "kind": "linear",
           "base": 25,
@@ -247,7 +247,7 @@
       ],
       "purchase": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 1,
+        "costMultiplier": 1,
         "costCurve": {
           "kind": "linear",
           "base": 75,
@@ -288,7 +288,7 @@
       ],
       "purchase": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 120,
+        "costMultiplier": 120,
         "costCurve": {
           "kind": "exponential",
           "base": 1,
@@ -325,7 +325,7 @@
       ],
       "purchase": {
         "currencyId": "sample-pack.data-core",
-        "baseCost": 500,
+        "costMultiplier": 500,
         "costCurve": {
           "kind": "exponential",
           "base": 1,
@@ -366,7 +366,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 75,
+        "costMultiplier": 75,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 1,
@@ -395,7 +395,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 150,
+        "costMultiplier": 150,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 2,
@@ -425,7 +425,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 400,
+        "costMultiplier": 400,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 3,
@@ -455,7 +455,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 125,
+        "costMultiplier": 125,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 4,
@@ -489,7 +489,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.crystal",
-        "baseCost": 200,
+        "costMultiplier": 200,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 5,
@@ -519,7 +519,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.crystal",
-        "baseCost": 250,
+        "costMultiplier": 250,
         "costCurve": { "kind": "constant", "value": 1 },
         "maxBulk": 2
       },
@@ -564,7 +564,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.energy",
-        "baseCost": 320,
+        "costMultiplier": 320,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 7,
@@ -592,7 +592,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.alloy",
-        "baseCost": 180,
+        "costMultiplier": 180,
         "costCurve": { "kind": "linear", "base": 1, "slope": 0.15 }
       },
       "order": 8,
@@ -621,7 +621,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.alloy",
-        "baseCost": 220,
+        "costMultiplier": 220,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 9,
@@ -649,7 +649,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.prestige-flux",
-        "baseCost": 1,
+        "costMultiplier": 1,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "repeatable": {
@@ -698,7 +698,7 @@
       ],
       "cost": {
         "currencyId": "sample-pack.prestige-flux",
-        "baseCost": 0,
+        "costMultiplier": 0,
         "costCurve": { "kind": "constant", "value": 1 }
       },
       "order": 11,

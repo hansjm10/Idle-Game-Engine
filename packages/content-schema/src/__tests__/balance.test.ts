@@ -79,7 +79,7 @@ describe('balance validation', () => {
       consumes: [],
       purchase: {
         currencyId: 'resource:currency',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' as const },
@@ -100,7 +100,7 @@ describe('balance validation', () => {
       consumes: [],
       purchase: {
         currencyId: 'resource:currency',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' as const },
@@ -116,7 +116,7 @@ describe('balance validation', () => {
       fc.property(
         fc.double({ min: 1, max: 25, noNaN: true }),
         fc.double({ min: 0, max: 2, noNaN: true }),
-        (baseCost, slope) => {
+        (costMultiplier, slope) => {
           const pack = createBasePack();
           pack.generators.push({
             id: 'generator:monotone',
@@ -127,7 +127,7 @@ describe('balance validation', () => {
             consumes: [],
             purchase: {
               currencyId: 'resource:currency',
-              baseCost,
+              costMultiplier,
               costCurve: { kind: 'linear', base: 1, slope },
             },
             baseUnlock: { kind: 'always' as const },
@@ -163,12 +163,12 @@ describe('balance validation', () => {
         costs: [
           {
             resourceId: 'resource:currency',
-            baseCost: 1,
+            costMultiplier: 1,
             costCurve: { kind: 'constant', value: 1 },
           },
           {
             resourceId: 'resource:crystal',
-            baseCost: 2,
+            costMultiplier: 2,
             costCurve: { kind: 'constant', value: 1 },
           },
         ],
@@ -186,7 +186,7 @@ describe('balance validation', () => {
       fc.property(
         fc.double({ min: 1, max: 10, noNaN: true }),
         fc.double({ min: 0.1, max: 3, noNaN: true }),
-        (baseCost, slopeMagnitude) => {
+        (costMultiplier, slopeMagnitude) => {
         const pack = createBasePack();
         pack.generators.push({
           id: 'generator:decreasing-cost',
@@ -197,7 +197,7 @@ describe('balance validation', () => {
           consumes: [],
           purchase: {
             currencyId: 'resource:currency',
-            baseCost,
+            costMultiplier,
             costCurve: { kind: 'linear', base: 1, slope: -slopeMagnitude },
           },
           baseUnlock: { kind: 'always' as const },
@@ -236,7 +236,7 @@ describe('balance validation', () => {
       consumes: [],
       purchase: {
         currencyId: 'resource:currency',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' as const },
@@ -251,7 +251,7 @@ describe('balance validation', () => {
       consumes: [],
       purchase: {
         currencyId: 'resource:fuel',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: {
@@ -292,7 +292,7 @@ describe('balance validation', () => {
       targets: [{ kind: 'global' as const }],
       cost: {
         currencyId: 'resource:fuel',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       effects: [{ kind: 'grantFlag', flagId: 'fuel-milestone', value: true }],
@@ -308,7 +308,7 @@ describe('balance validation', () => {
       consumes: [{ resourceId: 'resource:fuel', rate: { kind: 'constant', value: 1 } }],
       purchase: {
         currencyId: 'resource:currency',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'flag', flagId: 'fuel-milestone' },
@@ -367,7 +367,7 @@ describe('balance validation', () => {
       consumes: [{ resourceId: 'resource:fuel', rate: { kind: 'constant', value: 1 } }],
       purchase: {
         currencyId: 'resource:currency',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'flag', flagId: 'fuel-milestone' },

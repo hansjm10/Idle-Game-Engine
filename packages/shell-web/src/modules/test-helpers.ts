@@ -209,7 +209,7 @@ export function createGeneratorDefinition(
     tags: [],
     purchase: {
       currencyId: 'resource.energy',
-      baseCost: 10,
+      costMultiplier: 10,
       costCurve: literalOne,
     },
     produces: [],
@@ -247,7 +247,7 @@ export function createUpgradeDefinition(
     targets: [{ kind: 'global' }],
     cost: {
       currencyId: 'resource.energy',
-      baseCost: 100,
+      costMultiplier: 100,
       costCurve: literalOne,
     },
     repeatable: undefined,

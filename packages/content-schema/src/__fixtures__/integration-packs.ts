@@ -99,7 +99,7 @@ export const validComprehensivePackFixture = {
       consumes: [],
       purchase: {
         currencyId: 'energy',
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: {
           kind: 'exponential' as const,
           base: 10,
@@ -124,7 +124,7 @@ export const validComprehensivePackFixture = {
       targets: [{ kind: 'global' as const }],
       cost: {
         currencyId: 'energy',
-        baseCost: 50,
+        costMultiplier: 50,
         costCurve: { kind: 'constant', value: 50 },
       },
       effects: [
@@ -229,7 +229,7 @@ export const missingResourceReferenceFixture = {
       consumes: [],
       purchase: {
         currencyId: 'energy',
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: { kind: 'constant', value: 10 },
       },
       baseUnlock: { kind: 'always' as const },
@@ -319,7 +319,7 @@ export const cyclicUnlockCrossEntityFixture = {
       ],
       purchase: {
         currencyId: 'energy',
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: {
           kind: 'exponential' as const,
           base: 10,
@@ -624,7 +624,7 @@ export const invalidFormulaReferencesFixture = {
       consumes: [],
       purchase: {
         currencyId: 'energy',
-        baseCost: 10,
+        costMultiplier: 10,
         costCurve: { kind: 'constant', value: 10 },
       },
       baseUnlock: { kind: 'always' as const },

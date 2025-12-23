@@ -276,7 +276,7 @@ const buildSnapshotFromSeed = (
     createGeneratorDefinition(`generator.test.${index}`, {
       purchase: {
         currencyId: resourceIds[0] ?? 'resource.energy',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     }),
@@ -286,7 +286,7 @@ const buildSnapshotFromSeed = (
     createUpgradeDefinition(`upgrade.test.${index}`, {
       cost: {
         currencyId: resourceIds[0] ?? 'resource.energy',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: literalOne,
       },
     }),

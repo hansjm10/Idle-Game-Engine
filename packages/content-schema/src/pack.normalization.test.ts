@@ -62,7 +62,7 @@ const createNormalizationFixture = () => ({
       consumes: [],
       purchase: {
         currencyId: 'resource:alpha',
-        baseCost: 1,
+        costMultiplier: 1,
         costCurve: { kind: 'constant', value: 1 },
       },
       baseUnlock: { kind: 'always' },

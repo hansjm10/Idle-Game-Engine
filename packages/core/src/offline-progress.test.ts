@@ -44,7 +44,7 @@ function createTestContent() {
       createGeneratorDefinition('generator.mine', {
         purchase: {
           currencyId: 'resource.energy',
-          baseCost: 10,
+          costMultiplier: 10,
           costCurve: literal(1),
         },
         produces: [{ resourceId: 'resource.gold', rate: literal(4) }],
@@ -56,7 +56,7 @@ function createTestContent() {
       createUpgradeDefinition('upgrade.double-mine', {
         cost: {
           currencyId: 'resource.energy',
-          baseCost: 100,
+          costMultiplier: 100,
           costCurve: literal(1),
         },
         effects: [

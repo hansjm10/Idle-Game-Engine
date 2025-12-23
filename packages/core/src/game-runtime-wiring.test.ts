@@ -58,7 +58,7 @@ function createContentWithGeneratorAndAutomation() {
       createGeneratorDefinition('generator.mine', {
         purchase: {
           currencyId: 'resource.energy',
-          baseCost: 10,
+          costMultiplier: 10,
           costCurve: literalOne,
         },
         produces: [{ resourceId: 'resource.gold', rate: literalOne }],
@@ -80,7 +80,7 @@ function createContentWithGeneratorAutomationAndTransform() {
       createGeneratorDefinition('generator.mine', {
         purchase: {
           currencyId: 'resource.energy',
-          baseCost: 10,
+          costMultiplier: 10,
           costCurve: literalOne,
         },
         produces: [{ resourceId: 'resource.gold', rate: literalOne }],

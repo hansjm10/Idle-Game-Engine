@@ -359,23 +359,23 @@ computeGeneratorCosts(generatorId: string, purchaseIndex: number): readonly Gene
 ```
 
 **Formula (single-currency)**:
-`amount = baseCost × costCurve(purchaseIndex)`
+`amount = costMultiplier × costCurve(purchaseIndex)`
 
 **Formula (multi-resource)**:
 For each cost entry `i`:
-`amountᵢ = baseCostᵢ × costCurveᵢ(purchaseIndex)`
+`amountᵢ = costMultiplierᵢ × costCurveᵢ(purchaseIndex)`
 
 **Upgrade Costs** (`packages/core/src/progression-coordinator.ts`):
 
 ```typescript
 computeUpgradeCosts(record: UpgradeRecord): readonly UpgradeResourceCost[] | undefined {
   const purchaseLevel = record.purchases;
-  const baseCost = record.definition.cost.baseCost;
+  const costMultiplier = record.definition.cost.costMultiplier;
   const evaluatedCost = evaluateCostFormula(
     record.definition.cost.costCurve,
     purchaseLevel,
   );
-  let amount = evaluatedCost * baseCost;
+  let amount = evaluatedCost * costMultiplier;
 
   // Apply repeatable cost curve if upgrade is repeatable
   const repeatableCostCurve = record.definition.repeatable?.costCurve;
@@ -390,7 +390,7 @@ computeUpgradeCosts(record: UpgradeRecord): readonly UpgradeResourceCost[] | und
 
 **Formula for repeatable upgrades**:
 ```
-amount = baseCost × costCurve(purchaseLevel) × repeatableCostCurve(purchaseLevel)
+amount = costMultiplier × costCurve(purchaseLevel) × repeatableCostCurve(purchaseLevel)
 ```
 
 **Cost formula evaluation** (lines 790-798):
