@@ -4,8 +4,8 @@
 - **Title**: Add State Synchronization Protocol for Client/Server Architecture
 - **Authors**: Idle Engine Docs Agent
 - **Reviewers**: Runtime Core maintainers
-- **Status**: Draft
-- **Last Updated**: 2025-12-19
+- **Status**: Implemented (Phase 1-2)
+- **Last Updated**: 2025-12-22
 - **Related Issues**: #544
 - **Execution Mode**: AI-led
 
@@ -920,3 +920,4 @@ support restore-and-continue determinism without changing the v1 schema.
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-12-19 | Idle Engine Docs Agent | Initial draft for #544 |
+| 2025-12-22 | Codex | Mark Phase 1-2 implementation status for #544 |
