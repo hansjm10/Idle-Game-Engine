@@ -4,6 +4,7 @@ import { evaluateNumericFormula } from './base/formula-evaluator.js';
 import type { ContentSchemaWarning } from './errors.js';
 import type {
   NormalizedContentPack,
+  NormalizedAchievement,
   NormalizedGenerator,
   NormalizedPrestigeLayer,
   NormalizedResource,
@@ -52,6 +53,10 @@ type UnlockOrderingLookup = Readonly<{
   readonly generators: ReadonlyMap<string, NormalizedGenerator>;
   readonly upgrades: ReadonlyMap<string, NormalizedUpgrade>;
 }>;
+
+type ConditionResourceLookup = Pick<UnlockOrderingLookup, 'generators' | 'upgrades'>;
+
+type FlagResourceLookup = ReadonlyMap<string, ReadonlySet<string>>;
 
 const createLevelSamples = (
   sampleSize: number,
@@ -660,10 +665,190 @@ const collectPrestigeRewards = (
   });
 };
 
+const collectConditionResourceReferences = (
+  condition: Condition | undefined,
+  lookup: ConditionResourceLookup,
+): Set<string> => {
+  if (!condition) {
+    return new Set();
+  }
+
+  switch (condition.kind) {
+    case 'resourceThreshold':
+      return new Set([condition.resourceId]);
+    case 'generatorLevel': {
+      const resources = new Set<string>();
+      const generator = lookup.generators.get(condition.generatorId);
+      generator?.produces.forEach((entry) => resources.add(entry.resourceId));
+      return resources;
+    }
+    case 'upgradeOwned': {
+      const resources = new Set<string>();
+      const upgrade = lookup.upgrades.get(condition.upgradeId);
+      upgrade?.effects.forEach((effect) => {
+        if (effect.kind === 'unlockResource') {
+          resources.add(effect.resourceId);
+        }
+      });
+      return resources;
+    }
+    case 'prestigeCountThreshold':
+    case 'prestigeCompleted':
+      return new Set([`${condition.prestigeLayerId}-prestige-count`]);
+    case 'prestigeUnlocked':
+    case 'flag':
+    case 'script':
+    case 'always':
+    case 'never':
+      return new Set();
+    case 'allOf':
+    case 'anyOf': {
+      const resources = new Set<string>();
+      condition.conditions.forEach((nested) => {
+        const nestedResources = collectConditionResourceReferences(nested, lookup);
+        nestedResources.forEach((resourceId) => resources.add(resourceId));
+      });
+      return resources;
+    }
+    case 'not':
+      return collectConditionResourceReferences(condition.condition, lookup);
+    default:
+      return new Set();
+  }
+};
+
+const collectUpgradeCostResources = (upgrade: NormalizedUpgrade): Set<string> => {
+  const resources = new Set<string>();
+  if ('costs' in upgrade.cost) {
+    upgrade.cost.costs.forEach((cost) => resources.add(cost.resourceId));
+  } else {
+    resources.add(upgrade.cost.currencyId);
+  }
+  return resources;
+};
+
+const collectUpgradeResourceReferences = (
+  upgrade: NormalizedUpgrade,
+  lookup: ConditionResourceLookup,
+): Set<string> => {
+  const resources = collectUpgradeCostResources(upgrade);
+  collectConditionResourceReferences(upgrade.unlockCondition, lookup).forEach(
+    (resourceId) => resources.add(resourceId),
+  );
+  upgrade.prerequisites.forEach((prerequisite) => {
+    collectConditionResourceReferences(prerequisite, lookup).forEach((resourceId) =>
+      resources.add(resourceId),
+    );
+  });
+  upgrade.effects.forEach((effect) => {
+    if (effect.kind === 'unlockResource') {
+      resources.add(effect.resourceId);
+    }
+  });
+  return resources;
+};
+
+const collectAchievementTrackResourceReferences = (
+  track: NormalizedAchievement['track'],
+  lookup: ConditionResourceLookup,
+): Set<string> => {
+  switch (track.kind) {
+    case 'resource':
+      return new Set([track.resourceId]);
+    case 'generator-level': {
+      const resources = new Set<string>();
+      const generator = lookup.generators.get(track.generatorId);
+      generator?.produces.forEach((entry) => resources.add(entry.resourceId));
+      return resources;
+    }
+    case 'upgrade-owned': {
+      const upgrade = lookup.upgrades.get(track.upgradeId);
+      return upgrade ? collectUpgradeResourceReferences(upgrade, lookup) : new Set();
+    }
+    case 'flag':
+    case 'script':
+    case 'custom-metric':
+      return new Set();
+    default:
+      return new Set();
+  }
+};
+
+const collectAchievementResourceReferences = (
+  achievement: NormalizedAchievement,
+  lookup: ConditionResourceLookup,
+): Set<string> => {
+  const resources = collectConditionResourceReferences(
+    achievement.unlockCondition,
+    lookup,
+  );
+  collectAchievementTrackResourceReferences(achievement.track, lookup).forEach(
+    (resourceId) => resources.add(resourceId),
+  );
+  return resources;
+};
+
+const buildFlagResourceLookup = (
+  pack: NormalizedContentPack,
+  lookup: ConditionResourceLookup,
+): FlagResourceLookup => {
+  const flagResources = new Map<string, Set<string>>();
+
+  const mergeFlagResources = (flagId: string, resources: Set<string>) => {
+    const existing = flagResources.get(flagId);
+    if (!existing) {
+      flagResources.set(flagId, new Set(resources));
+      return;
+    }
+    for (const resourceId of existing) {
+      if (!resources.has(resourceId)) {
+        existing.delete(resourceId);
+      }
+    }
+  };
+
+  pack.upgrades.forEach((upgrade) => {
+    let hasGrantFlag = false;
+    upgrade.effects.forEach((effect) => {
+      if (effect.kind === 'grantFlag' && effect.value !== false) {
+        hasGrantFlag = true;
+      }
+    });
+    if (!hasGrantFlag) {
+      return;
+    }
+    const resources = collectUpgradeResourceReferences(upgrade, lookup);
+    upgrade.effects.forEach((effect) => {
+      if (effect.kind !== 'grantFlag') {
+        return;
+      }
+      if (effect.value === false) {
+        return;
+      }
+      mergeFlagResources(effect.flagId, resources);
+    });
+  });
+
+  pack.achievements.forEach((achievement) => {
+    const reward = achievement.reward;
+    if (!reward || reward.kind !== 'grantFlag') {
+      return;
+    }
+    if (reward.value === false) {
+      return;
+    }
+    const resources = collectAchievementResourceReferences(achievement, lookup);
+    mergeFlagResources(reward.flagId, resources);
+  });
+
+  return flagResources;
+};
+
 const conditionReferencesResource = (
   condition: Condition | undefined,
   resource: NormalizedResource,
   lookup: UnlockOrderingLookup,
+  flagResources: FlagResourceLookup,
 ): boolean => {
   if (!condition) {
     return false;
@@ -691,8 +876,9 @@ const conditionReferencesResource = (
       return `${condition.prestigeLayerId}-prestige-count` === resource.id;
     case 'prestigeCompleted':
       return `${condition.prestigeLayerId}-prestige-count` === resource.id;
-    case 'prestigeUnlocked':
     case 'flag':
+      return flagResources.get(condition.flagId)?.has(resource.id) ?? false;
+    case 'prestigeUnlocked':
     case 'script':
     case 'always':
     case 'never':
@@ -700,10 +886,10 @@ const conditionReferencesResource = (
     case 'allOf':
     case 'anyOf':
       return condition.conditions.some((nested) =>
-        conditionReferencesResource(nested, resource, lookup),
+        conditionReferencesResource(nested, resource, lookup, flagResources),
       );
     case 'not':
-      return conditionReferencesResource(condition.condition, resource, lookup);
+      return conditionReferencesResource(condition.condition, resource, lookup, flagResources);
     default:
       return false;
   }
@@ -728,6 +914,7 @@ const checkResourceOrdering = (
   dependentPath: readonly (string | number)[],
   dependentId: string,
   lookup: UnlockOrderingLookup,
+  flagResources: FlagResourceLookup,
   warnings: ContentSchemaWarning[],
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
@@ -741,7 +928,7 @@ const checkResourceOrdering = (
     return;
   }
 
-  if (conditionReferencesResource(unlockCondition, resource, lookup)) {
+  if (conditionReferencesResource(unlockCondition, resource, lookup, flagResources)) {
     return;
   }
 
@@ -762,6 +949,7 @@ const validateGenerators = (
   pack: NormalizedContentPack,
   sampleLevels: readonly number[],
   maxGrowth: number,
+  flagResources: FlagResourceLookup,
   warnings: ContentSchemaWarning[],
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
@@ -778,6 +966,7 @@ const validateGenerators = (
           ['generators', index, 'purchase', 'costs', costIndex, 'resourceId'],
           generator.id,
           unlockOrderingLookup,
+          flagResources,
           warnings,
           errors,
           sink,
@@ -790,6 +979,7 @@ const validateGenerators = (
         ['generators', index, 'purchase', 'currencyId'],
         generator.id,
         unlockOrderingLookup,
+        flagResources,
         warnings,
         errors,
         sink,
@@ -802,6 +992,7 @@ const validateGenerators = (
         ['generators', index, 'consumes', consumeIndex, 'resourceId'],
         generator.id,
         unlockOrderingLookup,
+        flagResources,
         warnings,
         errors,
         sink,
@@ -814,6 +1005,7 @@ const validateUpgrades = (
   pack: NormalizedContentPack,
   sampleSize: number,
   maxGrowth: number,
+  flagResources: FlagResourceLookup,
   warnings: ContentSchemaWarning[],
   errors: ContentSchemaWarning[],
   sink?: IssueSink,
@@ -833,6 +1025,7 @@ const validateUpgrades = (
           ['upgrades', index, 'cost', 'costs', costIndex, 'resourceId'],
           upgrade.id,
           unlockOrderingLookup,
+          flagResources,
           warnings,
           errors,
           sink,
@@ -845,6 +1038,7 @@ const validateUpgrades = (
         ['upgrades', index, 'cost', 'currencyId'],
         upgrade.id,
         unlockOrderingLookup,
+        flagResources,
         warnings,
         errors,
         sink,
@@ -877,10 +1071,28 @@ export const validateContentPackBalance = (
   const warnings: ContentSchemaWarning[] = [];
   const errors: ContentSchemaWarning[] = [];
 
+  const unlockOrderingLookup: UnlockOrderingLookup = pack.lookup;
+  const flagResources = buildFlagResourceLookup(pack, unlockOrderingLookup);
   const purchaseLevels = createLevelSamples(sampleSize, sampleSize);
 
-  validateGenerators(pack, purchaseLevels, maxGrowth, warnings, errors, sink);
-  validateUpgrades(pack, sampleSize, maxGrowth, warnings, errors, sink);
+  validateGenerators(
+    pack,
+    purchaseLevels,
+    maxGrowth,
+    flagResources,
+    warnings,
+    errors,
+    sink,
+  );
+  validateUpgrades(
+    pack,
+    sampleSize,
+    maxGrowth,
+    flagResources,
+    warnings,
+    errors,
+    sink,
+  );
   validatePrestigeLayers(pack, sampleSize, maxGrowth, warnings, errors, sink);
 
   return {
