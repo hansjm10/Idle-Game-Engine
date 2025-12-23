@@ -8,7 +8,7 @@ sidebar_position: 4
 - **Authors**: Idle Engine Design-Authoring Agent (AI)
 - **Reviewers**: Core Runtime Maintainers; Content Pipeline Maintainers; Shell-Web Maintainers
 - **Status**: Draft
-- **Last Updated**: 2025-12-16
+- **Last Updated**: 2025-12-22
 - **Related Issues**: https://github.com/hansjm10/Idle-Game-Engine/issues/523
 - **Execution Mode**: AI-led
 
@@ -40,7 +40,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
   6. Provide a snapshot view of transforms suitable for shell rendering and manual command issuance, and wire it into the worker `STATE_UPDATE` envelope.
 - **Non-Goals**:
   - Delivering a complete shell-web UI for transforms (panels, layouts, animations) beyond exposing snapshot data and command wiring.
-  - Implementing transform-trigger integration with automation targets (schema has `trigger.kind === 'automation'`, but runtime support is deferred unless explicitly pulled into scope).
+  - Implementing runtime execution for `continuous` transforms beyond documenting semantics (requires follow-up work).
   - Introducing generalized transactional resource operations beyond the transform system’s atomic multi-spend logic.
   - Expanding content DSL/schema (issue-523 assumes schema is authoritative and stable).
 
@@ -106,7 +106,7 @@ GitHub issue #523 (“feat(core): implement runtime support for transforms”) i
     - `manual`: executed only via `RUN_TRANSFORM` command handler; validates that `trigger.kind === 'manual'`.
     - `condition`: evaluated each tick; when true and transform is unlocked and not in cooldown, attempt one run (subject to safety).
     - `event`: when a subscribed event is received, mark transform as pending; `tick()` attempts one run per pending transform per tick (subject to safety), preserving pending state when the run is blocked (locked/cooldown/insufficient inputs/safety).
-    - `automation`: **Deferred to follow-up work** (see Section 13.3). Not in scope for issue-523; requires new `automation:fired` event infrastructure.
+    - `automation`: supported via `automation:fired` events; when a referenced automation fires, mark the transform as pending and execute one run per pending transform per tick (subject to safety), retaining pending state when blocked.
   - Mode semantics (issue-523 “schedule output application according to mode”):
     - `instant`:
       - Evaluate inputs/outputs formulas (see “Formulas & Evaluation Context” below).
@@ -212,8 +212,8 @@ Populate the table as the canonical source for downstream GitHub issues.
 - **Phase 2**: Batch mode and persistence/snapshot completeness
   - Deliver batch scheduling, `maxOutstandingBatches`, save/load of transform state, and shell worker snapshot wiring.
   - Gate: session snapshot/restore integration test green; no regressions in worker bridge.
-- **Phase 3**: Continuous mode and automation-trigger support (if required to fully close issue-523)
-  - Resolve semantics, implement continuous execution, and add automation trigger integration or explicitly split into a follow-up issue.
+- **Phase 3**: Continuous mode support (automation triggers landed in #539)
+  - Resolve semantics, implement continuous execution, and add determinism/performance tests.
   - Gate: performance budget verified; additional tests for continuous determinism.
 
 ### 7.3 Coordination Notes
@@ -272,7 +272,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 
 ## 11. Risks & Mitigations
 - **Issue-523 scope drift (modes/triggers)**:
-  - Mitigation: gate implementation by Phase 1 acceptance criteria; split `continuous` and `automation` triggers into explicit follow-up issues if semantics are not confirmed.
+  - Mitigation: gate implementation by Phase 1 acceptance criteria; split `continuous` mode into an explicit follow-up issue if semantics are not confirmed.
 - **Ambiguous continuous semantics**:
   - Mitigation: explicitly confirm continuous semantics before implementation (Open Questions); stage continuous as Phase 3 if needed.
 - **Event-trigger backlog growth**:
@@ -288,7 +288,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 - **Milestones**:
   - Phase 1: land core scaffolding + manual instant + one extra trigger path + tests.
   - Phase 2: land batch + persistence + snapshot wiring to shell-web worker.
-  - Phase 3: land continuous + automation trigger integration (or split as follow-up if not required to close issue-523).
+  - Phase 3: land continuous mode support (automation triggers landed in #539).
 - **Migration Strategy**:
   - Additive save field `transformState` only; restore tolerates absence; no migration required for existing saves.
   - If later changes require non-additive updates, bump `PERSISTENCE_SCHEMA_VERSION` and add migration transforms per `docs/persistence-migration-guide.md`.
@@ -334,17 +334,17 @@ The following questions were researched against existing codebase patterns, sche
 
 ### 13.3 Automation Trigger Support ✓
 
-**Decision**: `trigger.kind === 'automation'` is **out of scope for issue-523** and explicitly deferred to follow-up work.
+**Decision**: `trigger.kind === 'automation'` is **supported** via the `automation:fired` runtime event.
 
 **Rationale**:
-- The design document already lists this as a non-goal (line 43): "Implementing transform-trigger integration with automation targets... is deferred unless explicitly pulled into scope."
-- Current infrastructure gap: no `automation:fired` event exists; only `automation:toggled` (which fires on enable/disable, not on automation execution).
-- Semantic ambiguity: content authors likely expect "automation trigger" to mean "when automation fires," not "when automation is toggled on."
+- `automation:fired` is published when an automation successfully executes, matching author expectations.
+- The event-driven path preserves determinism and reuses the existing coalescing model.
+- Content schema already requires an `automation` reference that matches the trigger automation id.
 
-**Follow-up recommendation**:
-- Create new `automation:fired` event in event catalog (published from `AutomationSystem.tick()` when automation successfully executes).
-- Transform subscribes to `automation:fired` with payload filter for `automationId`.
-- This provides cleaner semantics than binding to toggle state.
+**Implementation semantics**:
+- `AutomationSystem` publishes `automation:fired` with `{ automationId, triggerKind, step }`.
+- `TransformSystem.setup()` subscribes to `automation:fired` and marks matching transforms as pending by `automationId`.
+- Execution follows the same pending/coalescing rules as `event` triggers.
 
 ### 13.4 Safety Defaults and Caps ✓
 
@@ -374,7 +374,7 @@ The following questions were researched against existing codebase patterns, sche
 **Rationale**:
 - Manual transforms (via `RUN_TRANSFORM`) are player-initiated or system-driven, matching the `PRESTIGE_RESET` pattern (`packages/core/src/command.ts:275-281`).
 - Automatic transforms (event/condition triggers) execute within `TransformSystem.tick()`, bypassing the command system entirely—no priority gating needed.
-- Future automation-triggered transforms (if implemented) would use a separate trigger path (not routed through `RUN_TRANSFORM`), keeping concerns separated.
+- Automation-triggered transforms use the event trigger path (not routed through `RUN_TRANSFORM`), keeping concerns separated.
 
 **Implementation semantics**:
 ```typescript
@@ -390,12 +390,10 @@ RUN_TRANSFORM: {
 
 No unresolved questions remain for issue-523 MVP scope. The following items are tracked as explicit follow-up work:
 
-1. **Automation trigger implementation**: Create `automation:fired` event and wire transform subscription (see Section 13.3).
-2. **Continuous mode accumulator pattern**: Confirm whether to reuse ProductionSystem's accumulator or implement transform-specific fractional handling.
-3. **Transform execution events**: Consider publishing `transform:executed` events for observability (requires event manifest update).
+1. **Continuous mode accumulator pattern**: Confirm whether to reuse ProductionSystem's accumulator or implement transform-specific fractional handling.
+2. **Transform execution events**: Consider publishing `transform:executed` events for observability (requires event manifest update).
 
 ## 14. Follow-Up Work
-- Implement `trigger.kind === 'automation'` support once semantics are confirmed (new issue derived from issue-523).
 - Implement/confirm `continuous` mode behavior and add dedicated tests/benchmarks (new issue if split).
 - Add optional runtime events for transform execution and wire into event manifest tooling (requires manifest regeneration and schema updates).
 - Build shell-web UI surfaces for transforms (panel, affordance/disabled states, cooldown timers).
@@ -408,11 +406,11 @@ No unresolved questions remain for issue-523 MVP scope. The following items are 
 - Condition evaluation context: `packages/core/src/condition-evaluator.ts:39`
 - Event catalogue / channels: `packages/core/src/events/runtime-event-catalog.ts:61`
 - Worker runtime wiring + state update: `packages/shell-web/src/runtime.worker.ts:194`
-- Worker snapshot capture (automation only today): `packages/shell-web/src/runtime.worker.ts:939`
+- Worker snapshot capture: `packages/shell-web/src/runtime.worker.ts:939`
 
 ## Appendix A — Glossary
 - **Transform (issue-523)**: A content-authored conversion that spends input resources and produces output resources under a trigger and mode (`packages/content-schema/src/modules/transforms.ts:97`).
-- **Mode**: Execution style of a transform: `instant` (immediate), `batch` (delayed completion), `continuous` (repeating per tick or rate-based; semantics TBD).
+- **Mode**: Execution style of a transform: `instant` (immediate), `batch` (delayed completion), `continuous` (per-second rate semantics documented; runtime support pending).
 - **Trigger**: Activation mechanism for a transform: `manual`, `condition`, `event`, `automation` (`packages/content-schema/src/modules/transforms.ts:115`).
 - **Cooldown**: Minimum time between successful transform starts; computed deterministically in steps from a `NumericFormula`.
 - **Outstanding batch**: A queued batch transform instance waiting to deliver outputs at a scheduled future step.
@@ -422,3 +420,4 @@ No unresolved questions remain for issue-523 MVP scope. The following items are 
 |------------|--------|----------------|
 | 2025-12-16 | Idle Engine Design-Authoring Agent (AI) | Initial draft for issue-523: TransformSystem, commands, triggers, persistence, snapshot plan. |
 | 2025-12-16 | Claude Code (AI) | Resolved all 5 open questions with codebase research: continuous mode semantics (per-second rates), event coalescing (Set-based), automation triggers (deferred), safety caps (10/100, 50/1000), command auth (PLAYER+SYSTEM only). Updated Section 13 with rationale and implementation semantics. |
+| 2025-12-22 | Codex (AI) | Updated automation-trigger support status after issue #539 landed. |

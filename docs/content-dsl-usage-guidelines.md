@@ -245,6 +245,54 @@ the compiler and runtime guardrails described in the design docs.
 
 <!-- markdownlint-restore -->
 
+## Transform Runtime Semantics
+
+Transforms execute deterministically in the core runtime. The following notes
+summarize runtime behavior (see `docs/runtime-transform-system-design-issue-523.md`
+§6.2, §13 for the full contract).
+
+### Trigger kinds
+
+- `manual`: executed only via `RUN_TRANSFORM` commands (player/system only).
+- `condition`: evaluated each tick against `ConditionContext`.
+- `event`: fires when the runtime event bus publishes the matching `eventId`.
+- `automation`: fires when the referenced automation publishes `automation:fired`
+  (requires a matching `automation` block on the transform).
+
+Event and automation triggers are coalesced per transform per tick: multiple
+events in the same tick create a single pending activation that is retained
+until the transform succeeds (blocked by cooldown, inputs, or safety limits).
+
+### Mode semantics
+
+- `instant`: spend inputs atomically and apply outputs immediately in the same tick.
+- `batch`: spend inputs immediately, then deliver outputs after `duration`
+  (step-based). Outstanding batches are capped by `safety.maxOutstandingBatches`.
+- `continuous`: formulas evaluate to per-second rates with accumulator semantics;
+  runtime execution is not yet supported (see Limitations).
+
+### Cooldowns and safety limits
+
+- Cooldowns apply only after a successful run; failed attempts do not advance cooldown.
+- `safety.maxRunsPerTick`: default 10, hard cap 100.
+- `safety.maxOutstandingBatches`: default 50, hard cap 1000.
+
+### Unlock and visibility
+
+- `unlockCondition` is monotonic (once unlocked, stays unlocked) and gates execution.
+- `visibilityCondition` is evaluated each tick and affects UI/snapshot visibility only.
+
+### Formula evaluation guardrails
+
+- `inputs[].amount`, `outputs[].amount`, `duration`, and `cooldown` accept numeric formulas.
+- Non-finite evaluations invalidate the run; negative values are clamped to `0`.
+- Inputs are evaluated and validated before any spend to preserve atomicity.
+
+### Limitations and follow-ups
+
+- `continuous` mode is defined in schema but not yet supported by the runtime.
+- `RUN_TRANSFORM` is restricted to `PLAYER` and `SYSTEM` priorities.
+
 ## Transform Patterns & Cycle Detection
 
 The content schema validates transform chains and unlock conditions for cycles
