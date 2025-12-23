@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 
 import { CommandPriority, computeStateChecksum } from '../dist/index.js';
@@ -13,6 +14,84 @@ const COMMAND_PRIORITIES = [
   CommandPriority.AUTOMATION,
   CommandPriority.SYSTEM,
 ];
+
+function roundNumber(value, decimals = 6) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function computeStats(samples) {
+  if (samples.length === 0) {
+    return {
+      meanMs: null,
+      medianMs: null,
+      stdDevMs: null,
+      minMs: null,
+      maxMs: null,
+      samples: 0,
+      unit: 'ms',
+    };
+  }
+
+  const total = samples.reduce((sum, value) => sum + value, 0);
+  const mean = total / samples.length;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[middle - 1] + sorted[middle]) / 2
+      : sorted[middle];
+  const variance =
+    samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+    samples.length;
+  const stdDev = Math.sqrt(Math.max(variance, 0));
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  const hz = mean > 0 ? 1000 / mean : null;
+
+  return {
+    meanMs: roundNumber(mean),
+    medianMs: roundNumber(median),
+    stdDevMs: roundNumber(stdDev),
+    minMs: roundNumber(min),
+    maxMs: roundNumber(max),
+    hz: roundNumber(hz, 3),
+    samples: samples.length,
+    unit: 'ms',
+  };
+}
+
+function resolveCommitSha() {
+  const envSha =
+    process.env.GITHUB_SHA ??
+    process.env.CI_COMMIT_SHA ??
+    process.env.COMMIT_SHA ??
+    process.env.BUILD_VCS_NUMBER;
+  if (envSha) {
+    return envSha;
+  }
+  try {
+    return execSync('git rev-parse HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+function getEnvMetadata() {
+  return {
+    nodeVersion: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    commitSha: resolveCommitSha(),
+  };
+}
 
 function createResources(count) {
   const ids = new Array(count);
@@ -196,26 +275,21 @@ function runMeasurement(snapshot) {
     checksum = computeStateChecksum(snapshot);
   }
 
-  const samples = [];
+  const samplesUs = [];
   for (let run = 0; run < RUNS; run += 1) {
     const start = performance.now();
     for (let index = 0; index < MEASURE_ITERATIONS; index += 1) {
       checksum = computeStateChecksum(snapshot);
     }
     const durationMs = performance.now() - start;
-    samples.push((durationMs * 1000) / MEASURE_ITERATIONS);
+    samplesUs.push((durationMs * 1000) / MEASURE_ITERATIONS);
   }
 
   if (checksum.length === 0) {
     throw new Error('Checksum computation did not produce output.');
   }
 
-  const total = samples.reduce((sum, value) => sum + value, 0);
-  const average = total / samples.length;
-  const min = Math.min(...samples);
-  const max = Math.max(...samples);
-
-  return { average, min, max };
+  return { samplesUs };
 }
 
 function formatScenarioLabel(scenario) {
@@ -232,19 +306,28 @@ function formatScenarioLabel(scenario) {
 
 function runScenario(scenario) {
   const snapshot = createSnapshot(scenario);
-  const { average, min, max } = runMeasurement(snapshot);
+  const { samplesUs } = runMeasurement(snapshot);
+  const total = samplesUs.reduce((sum, value) => sum + value, 0);
+  const averageUs = total / samplesUs.length;
+  const minUs = Math.min(...samplesUs);
+  const maxUs = Math.max(...samplesUs);
+  const statsMs = computeStats(
+    samplesUs.map((value) => value / 1000),
+  );
   const shouldCheckTarget = scenario.enforceTarget === true;
-  const passesTarget = average <= TARGET_US;
+  const passesTarget = averageUs <= TARGET_US;
   const status = shouldCheckTarget
     ? passesTarget
       ? 'OK'
       : 'ABOVE_TARGET'
     : 'INFO';
+  const meanOverTarget =
+    TARGET_US === 0 ? null : roundNumber(averageUs / TARGET_US, 4);
 
   console.log(`scenario=${scenario.label}`);
   console.log(`  shape=${formatScenarioLabel(scenario)}`);
   console.log(
-    `  checksum_avg=${average.toFixed(2)}us min=${min.toFixed(2)}us max=${max.toFixed(2)}us`,
+    `  checksum_avg=${averageUs.toFixed(2)}us min=${minUs.toFixed(2)}us max=${maxUs.toFixed(2)}us`,
   );
   console.log(
     `  target=${TARGET_US}us status=${status}${shouldCheckTarget ? '' : ' (not enforced)'}`,
@@ -253,6 +336,24 @@ function runScenario(scenario) {
   if (ENFORCE_TARGET && shouldCheckTarget && !passesTarget) {
     process.exitCode = 1;
   }
+
+  return {
+    label: scenario.label,
+    shape: {
+      resources: scenario.resources,
+      generators: scenario.generators,
+      upgrades: scenario.upgrades,
+      achievements: scenario.achievements,
+      automations: scenario.automations,
+      transforms: scenario.transforms,
+      commands: scenario.commands,
+    },
+    stats: statsMs,
+    meanOverTarget,
+    status,
+    targetUs: TARGET_US,
+    enforceTarget: shouldCheckTarget,
+  };
 }
 
 const SCENARIOS = [
@@ -299,6 +400,28 @@ const SCENARIOS = [
   },
 ];
 
+const scenarioResults = [];
 for (const scenario of SCENARIOS) {
-  runScenario(scenario);
+  scenarioResults.push(runScenario(scenario));
 }
+
+const payload = {
+  event: 'benchmark_run_end',
+  schemaVersion: 1,
+  benchmark: {
+    name: 'state-sync-checksum',
+  },
+  config: {
+    warmupIterations: WARMUP_ITERATIONS,
+    measureIterations: MEASURE_ITERATIONS,
+    runs: RUNS,
+    targetUs: TARGET_US,
+    enforceTarget: ENFORCE_TARGET,
+  },
+  results: {
+    scenarios: scenarioResults,
+  },
+  env: getEnvMetadata(),
+};
+
+console.log(JSON.stringify(payload));
