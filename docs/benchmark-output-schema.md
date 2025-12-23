@@ -40,6 +40,7 @@ type BenchmarkStats = {
 ## Notes
 - `config` captures benchmark configuration and scenario parameters.
 - `results` stores per-scenario/task stats and optional ratio fields to reduce CI noise.
+- `BenchmarkStats` uses 6 decimal places for ms fields and 3 for `hz`; ratio helpers default to 4 decimals.
 - `env.commitSha` is `null` when no SHA is available in the environment or repository.
 - The payload is validated with `tools/scripts/assert-json-tail.mjs`.
 
@@ -51,6 +52,10 @@ type BenchmarkStats = {
 - `ratios` includes `objectOverStructMean` and `objectOverStructMedian` (`number | null`).
 
 ### diagnostic-timeline-overhead
+- `config.stepSizeMs` sets the runtime step size in milliseconds.
+- `config.warmupTicks` and `config.measureTicks` define the warmup and measured tick counts.
+- `config.commandsPerTick`, `config.eventsPerTick`, `config.commandIterations`, and `config.heavySystemIterations` define the workload.
+- `config.bench` includes Tinybench settings: `time`, `iterations`, `warmupTime`, and `warmupIterations`.
 - `results.tasks[]` includes `name`, `diagnosticsEnabled`, and `stats`.
 - `stats` extends `BenchmarkStats` with `rmePercent` (`number | null`) and a tinybench-reported `hz` value.
 - `results.ratios` includes `enabledOverDisabledMean` and `enabledOverDisabledMedian` (`number | null`).

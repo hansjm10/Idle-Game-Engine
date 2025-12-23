@@ -1,5 +1,8 @@
 import { execSync } from 'node:child_process';
 
+export const BENCHMARK_EVENT = 'benchmark_run_end';
+export const BENCHMARK_SCHEMA_VERSION = 1;
+
 export function roundNumber(value, decimals = 6) {
   if (!Number.isFinite(value)) {
     return null;
@@ -90,7 +93,7 @@ export function ratio(numerator, denominator, decimals = 4) {
 }
 
 function isRecord(value) {
-  return value !== null && typeof value === 'object';
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function validateBenchmarkPayload(payload) {
@@ -99,11 +102,11 @@ export function validateBenchmarkPayload(payload) {
     errors.push('payload must be an object');
     return errors;
   }
-  if (payload.event !== 'benchmark_run_end') {
-    errors.push('event must be "benchmark_run_end"');
+  if (payload.event !== BENCHMARK_EVENT) {
+    errors.push(`event must be "${BENCHMARK_EVENT}"`);
   }
-  if (payload.schemaVersion !== 1) {
-    errors.push('schemaVersion must be 1');
+  if (payload.schemaVersion !== BENCHMARK_SCHEMA_VERSION) {
+    errors.push(`schemaVersion must be ${BENCHMARK_SCHEMA_VERSION}`);
   }
   if (
     !isRecord(payload.benchmark) ||

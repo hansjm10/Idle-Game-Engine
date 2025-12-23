@@ -3,6 +3,8 @@ import { performance } from 'node:perf_hooks';
 import { CommandPriority, computeStateChecksum } from '../dist/index.js';
 import {
   assertBenchmarkPayload,
+  BENCHMARK_EVENT,
+  BENCHMARK_SCHEMA_VERSION,
   computeStats,
   getEnvMetadata,
   roundNumber,
@@ -333,8 +335,8 @@ for (const scenario of SCENARIOS) {
 }
 
 const payload = {
-  event: 'benchmark_run_end',
-  schemaVersion: 1,
+  event: BENCHMARK_EVENT,
+  schemaVersion: BENCHMARK_SCHEMA_VERSION,
   benchmark: {
     name: 'state-sync-checksum',
   },

@@ -1,6 +1,8 @@
 import { Bench } from 'tinybench';
 import {
   assertBenchmarkPayload,
+  BENCHMARK_EVENT,
+  BENCHMARK_SCHEMA_VERSION,
   computeStats,
   getEnvMetadata,
   ratio,
@@ -318,8 +320,8 @@ async function runBenchmark() {
   };
 
   return {
-    event: 'benchmark_run_end',
-    schemaVersion: 1,
+    event: BENCHMARK_EVENT,
+    schemaVersion: BENCHMARK_SCHEMA_VERSION,
     benchmark: {
       name: 'diagnostic-timeline-overhead',
     },
