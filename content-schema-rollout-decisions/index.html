@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content Schema Rollout Decisions | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content Schema Rollout Decisions | Idle Engine Docs"><meta data-rh="true" name="description" content="This document captures key architectural decisions and risk mitigation strategies for the content schema system. It addresses open questions from the content schema design document and provides guidance for production rollout."><meta data-rh="true" property="og:description" content="This document captures key architectural decisions and risk mitigation strategies for the content schema system. It addresses open questions from the content schema design document and provides guidance for production rollout."><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content Schema Rollout Decisions","item":"https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.ba0575a1.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.4d06d405.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.267f9d33.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -224,7 +224,7 @@ Upgrade effects support these variants (upgrades.ts:79-124):</p>
 <li class="">Aligns with runtime event manifest pattern (proven approach)</li>
 </ul>
 <p><strong>Current State</strong>:</p>
-<p>Digest Implementation (pack.ts:381-404):</p>
+<p>Digest Implementation (<code>packages/content-schema/src/pack/normalize.ts</code>):</p>
 <ul>
 <li class="">FNV-1a hash of pack metadata + module id lists</li>
 <li class="">Format: <code>{ version: number; hash: string }</code> (e.g., <code>fnv1a-a3c2f1b8</code>)</li>
@@ -441,7 +441,7 @@ Upgrade effects support these variants (upgrades.ts:79-124):</p>
 <p><strong>Mitigation Planned</strong>:</p>
 <ul>
 <li class="">Design recommends caching normalized results</li>
-<li class="">Lookup maps included in NormalizedContentPack (pack.ts:142-173)</li>
+<li class="">Lookup maps included in NormalizedContentPack (<code>packages/content-schema/src/pack/types.ts</code>)</li>
 </ul>
 <p><strong>Current Performance</strong>:</p>
 <ul>
@@ -509,7 +509,7 @@ Upgrade effects support these variants (upgrades.ts:79-124):</p>
 <li class="">Formula definitions: <code>packages/content-schema/src/base/formulas.ts</code></li>
 <li class="">Formula arbitraries: <code>packages/content-schema/src/base/formulas.arbitraries.ts</code></li>
 <li class="">Runtime compatibility: <code>packages/content-schema/src/base/runtime-compat.ts</code></li>
-<li class="">Pack normalization: <code>packages/content-schema/src/base/pack.ts</code></li>
+<li class="">Pack normalization: <code>packages/content-schema/src/pack/normalize.ts</code></li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="test-suites">Test Suites<a href="#test-suites" class="hash-link" aria-label="Direct link to Test Suites" title="Direct link to Test Suites" translate="no">​</a></h3>
 <ul>

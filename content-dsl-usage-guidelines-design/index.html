@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Document DSL Usage Guidelines Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-usage-guidelines-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Document DSL Usage Guidelines Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-usage-guidelines-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-usage-guidelines-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-dsl-usage-guidelines-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.ba0575a1.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.4d06d405.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.267f9d33.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -19,7 +19,7 @@
 <li class=""><strong>Reviewers</strong>: Hans Jensen (Content Pipeline Owner), Docs Maintainers</li>
 <li class=""><strong>Status</strong>: Draft</li>
 <li class=""><strong>Last Updated</strong>: 2025-10-27</li>
-<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/15" target="_blank" rel="noopener noreferrer" class="">#15</a></li>
+<li class=""><strong>Related Issues</strong>: #15 (internal tracker)</li>
 <li class=""><strong>Execution Mode</strong>: AI-led</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
@@ -58,7 +58,7 @@
 </ul>
 </li>
 <li class=""><strong>Affected Packages/Services</strong>: <code>docs/</code>, <code>packages/content-schema</code>, <code>packages/content-sample</code>, and <code>tools/content-schema-cli</code> will be touched to land issue #15.</li>
-<li class=""><strong>Compatibility Considerations</strong>: Documentation must reflect existing schema contracts (<code>packages/content-schema/src/pack.ts:70-315</code>) and runtime compatibility gates (<code>packages/content-schema/src/runtime-compat.ts:1-98</code>) so issue #15 does not introduce conflicting guidance.</li>
+<li class=""><strong>Compatibility Considerations</strong>: Documentation must reflect existing schema contracts (<code>packages/content-schema/src/pack/schema.ts</code>) and runtime compatibility gates (<code>packages/content-schema/src/runtime-compat.ts:1-98</code>) so issue #15 does not introduce conflicting guidance.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
 <p>Issue #15 currently depends on deep technical docs without a user-facing guide: the schema design doc explains required fields and compatibility checks (<code>docs/content-dsl-schema-design.md:298-356</code>), the compiler design shows artifact expectations (<code>docs/content-compiler-design.md:32-170</code>), and the sample pack README outlines regeneration steps (<code>packages/content-sample/README.md:1-27</code>). The CLI validates packs and builds manifests (<code>tools/content-schema-cli/src/generate.js:17-99</code>), but there is no single entry point translating these facts into prescriptive authoring steps, leaving the gap documented by issue #15.</p>
@@ -73,7 +73,7 @@
 <ul>
 <li class=""><strong>Runtime Changes</strong>: No runtime code changes are demanded by issue #15; documentation will instead reference existing import-time guards that enforce warning-free packs (<code>packages/content-sample/src/index.ts:23-45</code>) and describe how to interpret them.</li>
 <li class=""><strong>Data &amp; Schemas</strong>: The guide will summarize metadata, dependency, and feature gate expectations with tables derived from schema definitions (<code>docs/content-dsl-schema-design.md:298-356</code>) and compatibility gates (<code>packages/content-schema/src/runtime-compat.ts:1-98</code>), satisfying the naming/versioning matrices called out in issue #15.</li>
-<li class=""><strong>APIs &amp; Contracts</strong>: Guidance will cross-link to schema exports (<code>packages/content-schema/src/pack.ts:70-315</code>) and compiler outputs (<code>docs/content-compiler-design.md:161-173</code>) so every directive in issue #15 is tied to a stable contract.</li>
+<li class=""><strong>APIs &amp; Contracts</strong>: Guidance will cross-link to schema exports (<code>packages/content-schema/src/pack/index.ts</code>) and compiler outputs (<code>docs/content-compiler-design.md:161-173</code>) so every directive in issue #15 is tied to a stable contract.</li>
 <li class=""><strong>Tooling &amp; Automation</strong>: To close issue #15 we will add markdownlint/link-check configuration for the new doc (referencing <code>packages/config-eslint</code> presets where applicable) and update <code>pnpm lint</code> documentation to ensure agents execute checks before submission.</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>

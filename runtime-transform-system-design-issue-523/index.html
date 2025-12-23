@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Runtime Transform System — Core Support for Content Transforms (issue-523) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Runtime Transform System — Core Support for Content Transforms (issue-523) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-transform-system-design-issue-523" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.ba0575a1.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.4d06d405.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.267f9d33.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -27,7 +27,7 @@
 <ul>
 <li class=""><strong>Background</strong>:<!-- -->
 <ul>
-<li class="">Content schema already defines transforms (triggers, modes, formulas, safety guards) in <code>packages/content-schema/src/modules/transforms.ts:42</code> and validates references/cycles in <code>packages/content-schema/src/pack.ts:1633</code>.</li>
+<li class="">Content schema already defines transforms (triggers, modes, formulas, safety guards) in <code>packages/content-schema/src/modules/transforms.ts:42</code> and validates references in <code>packages/content-schema/src/pack/validate-cross-references.ts</code> plus cycles in <code>packages/content-schema/src/pack/validate-cycles.ts</code>.</li>
 <li class="">The runtime tick loop executes commands, dispatches events, then ticks systems deterministically (<code>packages/core/src/index.ts:309</code>), and already supports similar “definition + system + persistence + snapshot” patterns for automations (<code>packages/core/src/automation-system.ts:178</code>) and progression snapshots (<code>packages/core/src/progression.ts:232</code>).</li>
 <li class="">Shell-web’s worker currently wires progression + automation only and emits <code>STATE_UPDATE</code> without any transform state (<code>packages/shell-web/src/runtime.worker.ts:194</code>, <code>packages/shell-web/src/runtime.worker.ts:317</code>).</li>
 </ul>
@@ -111,7 +111,7 @@
 <li class="">Transform definitions exist, but are inert at runtime:<!-- -->
 <ul>
 <li class="">Schema: <code>packages/content-schema/src/modules/transforms.ts:97</code> defines <code>mode</code>, <code>trigger</code>, <code>duration</code>, <code>cooldown</code>, and <code>safety</code>.</li>
-<li class="">Validation: pack cross-reference checks include transforms (<code>packages/content-schema/src/pack.ts:1352</code>) and cycles (<code>packages/content-schema/src/pack.ts:1633</code>).</li>
+<li class="">Validation: pack cross-reference checks include transforms (<code>packages/content-schema/src/pack/validate-cross-references.ts</code>) and cycles (<code>packages/content-schema/src/pack/validate-cycles.ts</code>).</li>
 <li class="">Compiler: transforms are carried through into the normalized pack (<code>packages/content-compiler/src/runtime.ts:57</code>).</li>
 </ul>
 </li>
@@ -619,7 +619,7 @@
 <ul>
 <li class="">GitHub issue #523: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/523" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/523</a></li>
 <li class="">Transform schema: <code>packages/content-schema/src/modules/transforms.ts:97</code></li>
-<li class="">Transform validation + cycles: <code>packages/content-schema/src/pack.ts:1633</code></li>
+<li class="">Transform validation + cycles: <code>packages/content-schema/src/pack/validate-cycles.ts</code></li>
 <li class="">Runtime tick ordering: <code>packages/core/src/index.ts:309</code></li>
 <li class="">Condition evaluation context: <code>packages/core/src/condition-evaluator.ts:39</code></li>
 <li class="">Event catalogue / channels: <code>packages/core/src/events/runtime-event-catalog.ts:61</code></li>
