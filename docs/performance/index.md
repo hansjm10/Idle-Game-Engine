@@ -13,7 +13,7 @@ Benchmark artifacts are generated in `artifacts/benchmarks/` and are ignored by 
 #### Run Details
 | Detail | Value |
 | --- | --- |
-| Commit | 008ec48147158fd8256a6547d114fca2c02b5094 |
+| Commit | b346573e098d06a7eef4d01440b0d13ee09cf0c7 |
 | Node | v22.21.1 |
 | Platform | linux |
 | Arch | x64 |
@@ -32,17 +32,17 @@ Benchmark artifacts are generated in `artifacts/benchmarks/` and are ignored by 
 #### Tasks
 | Task | Diagnostics Enabled | Mean (ms) | Median (ms) | Hz | RME (%) | Samples |
 | --- | --- | --- | --- | --- | --- | --- |
-| diagnostics-disabled | false | 322.2929 | 309.1929 | 3.10 | 558.63 | 30 |
-| diagnostics-enabled | true | 335.1000 | 329.2105 | 2.98 | 495.98 | 30 |
+| diagnostics-disabled | false | 273.5056 | 268.3064 | 3.66 | 338.17 | 30 |
+| diagnostics-enabled | true | 264.3028 | 261.3773 | 3.78 | 323.45 | 30 |
 
-Overhead ratio (enabled/disabled): mean 1.040x, median 1.065x.
+Overhead ratio (enabled/disabled): mean 0.966x, median 0.974x.
 
 ## event-frame-format
 ### @idle-engine/core
 #### Run Details
 | Detail | Value |
 | --- | --- |
-| Commit | 008ec48147158fd8256a6547d114fca2c02b5094 |
+| Commit | b346573e098d06a7eef4d01440b0d13ee09cf0c7 |
 | Node | v22.21.1 |
 | Platform | linux |
 | Arch | x64 |
@@ -52,15 +52,37 @@ Overhead ratio (enabled/disabled): mean 1.040x, median 1.065x.
 #### Scenarios
 | Scenario | Events/Tick | Struct Mean (ms) | Struct Median (ms) | Struct Hz | Object Mean (ms) | Object Median (ms) | Object Hz | Mean Ratio (object/struct) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| dense | 200 | 0.0898 | 0.0702 | 11137.48 | 0.0588 | 0.0497 | 17005.12 | 0.655 |
-| sparse | 8 | 0.0305 | 0.0154 | 32795.98 | 0.0066 | 0.0066 | 152338.36 | 0.215 |
+| dense | 200 | 0.0722 | 0.0460 | 13856.38 | 0.0457 | 0.0301 | 21904.29 | 0.633 |
+| sparse | 8 | 0.0224 | 0.0072 | 44725.76 | 0.0045 | 0.0037 | 219821.29 | 0.203 |
+
+## runtime-workload-sim
+### @idle-engine/runtime-sim-cli
+#### Run Details
+| Detail | Value |
+| --- | --- |
+| Commit | b346573e098d06a7eef4d01440b0d13ee09cf0c7 |
+| Node | v22.21.1 |
+| Platform | linux |
+| Arch | x64 |
+| Config: Step Size (ms) | 100 |
+| Config: Warmup Ticks | 50 |
+| Config: Measure Ticks | 300 |
+| Config: Seed | 4242 |
+| Config: Scenarios | 2 |
+| Config: Include Memory | false |
+
+#### Scenarios
+| Scenario | Mean (ms) | Median (ms) | Max (ms) | Slow Ticks | Max Queue Backlog | Dropped | Snapshot (KB) | RSS (MB) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| sample-pack-baseline | 0.2299 | 0.1960 | 3.3909 | 0 | 1 | 0 | 565.63 | n/a |
+| sample-pack-progression | 0.2306 | 0.2319 | 1.1199 | 0 | 1 | 0 | 565.58 | n/a |
 
 ## state-sync-checksum
 ### @idle-engine/core
 #### Run Details
 | Detail | Value |
 | --- | --- |
-| Commit | 008ec48147158fd8256a6547d114fca2c02b5094 |
+| Commit | b346573e098d06a7eef4d01440b0d13ee09cf0c7 |
 | Node | v22.21.1 |
 | Platform | linux |
 | Arch | x64 |
@@ -73,7 +95,7 @@ Overhead ratio (enabled/disabled): mean 1.040x, median 1.065x.
 #### Scenarios
 | Scenario | Shape | Mean (us) | Median (us) | Min (us) | Max (us) | Target (us) | Mean/Target | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| doc-typical | R100 G50 U0 Ach0 Auto0 Tr0 Cmd0 | 153.25 | 151.13 | 147.10 | 159.90 | 100 | 1.532 | ABOVE_TARGET |
-| typical-expanded | R100 G50 U40 Ach20 Auto15 Tr10 Cmd8 | 269.44 | 266.29 | 249.04 | 292.17 | 100 | 2.694 | INFO |
-| small | R20 G10 U8 Ach6 Auto5 Tr3 Cmd2 | 76.79 | 75.19 | 71.21 | 85.94 | 100 | 0.768 | INFO |
-| large | R500 G250 U200 Ach100 Auto80 Tr60 Cmd40 | 1159.28 | 1160.56 | 1143.92 | 1174.06 | 100 | 11.593 | INFO |
+| doc-typical | R100 G50 U0 Ach0 Auto0 Tr0 Cmd0 | 127.06 | 125.85 | 121.79 | 135.45 | 100 | 1.271 | ABOVE_TARGET |
+| typical-expanded | R100 G50 U40 Ach20 Auto15 Tr10 Cmd8 | 212.50 | 211.73 | 204.11 | 222.53 | 100 | 2.125 | INFO |
+| small | R20 G10 U8 Ach6 Auto5 Tr3 Cmd2 | 59.01 | 58.56 | 57.77 | 61.36 | 100 | 0.590 | INFO |
+| large | R500 G250 U200 Ach100 Auto80 Tr60 Cmd40 | 1049.83 | 1057.04 | 1000.92 | 1082.63 | 100 | 10.498 | INFO |
