@@ -82,34 +82,777 @@ Use it as a template when authoring or validating new packs:
   (`floor((energy + crystal + 2 * data-core) / 750)` capped to 1–5000). A
   minimum of 1 Prestige Flux is retained after each reset.
 
-### Prestige gating conditions
+## Content Authoring Guide
 
-`prestigeUnlocked` is easy to misread as "post-prestige". In the engine it means
-"the prestige layer is currently available/unlocked" (i.e., the reset action is
-available right now).
+This section adds field-level guidance, examples, and patterns for each content
+type. Examples use the `@idle-engine/content-schema` factory helpers from
+`packages/content-schema/src/factories.ts` when authoring in TypeScript, but the
+same shapes work inside `content/pack.json`.
 
-For "post-prestige only" content ("the player has prestiged at least once"),
-use `prestigeCompleted`, which evaluates against the `{layerId}-prestige-count`
-resource internally (so you don't need magic-string resource IDs).
+### Authoring with TypeScript factories
+
+When you want type-safe authoring in code, import the factories and build the
+objects you later embed in a pack definition:
+
+```typescript
+import {
+  createResource,
+  createGenerator,
+  createUpgrade,
+} from '@idle-engine/content-schema/factories';
+
+const energy = createResource({
+  id: 'docs-minimal.energy',
+  name: { default: 'Energy' },
+  category: 'currency',
+  tier: 1,
+});
+```
+
+### Content type reference
+
+Each section includes required fields, optional fields (with defaults), and
+minimal/complete examples.
+
+#### Resources
+
+**Purpose**: Declare currencies and materials tracked by the runtime.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Must be globally unique (prefix with pack slug). |
+| `name` | `LocalizedText` | Localized display name. |
+| `category` | `primary` \| `prestige` \| `automation` \| `currency` \| `misc` | Controls grouping and semantics. |
+| `tier` | `number` | Positive integer tier. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `economyClassification` (`soft`) | `hard` \| `soft` | Use `hard` for premium currency. |
+| `icon` | `string` | Asset path. |
+| `startAmount` (`0`) | `number` | Initial amount. |
+| `capacity` (`null`) | `number \| null` | `null` means no cap. |
+| `visible` (`true`) | `boolean` | Controls default visibility. |
+| `unlocked` (`false`) | `boolean` | Unlock state at start. |
+| `dirtyTolerance` | `number` | Optional numeric precision threshold. |
+| `order` | `number` | Sort ordering within UI. |
+| `unlockCondition` | `Condition` | Becomes monotonic. |
+| `visibilityCondition` | `Condition` | Evaluated each tick. |
+| `prestige` | `{ layerId, resetRetention? }` | Retention for prestige-layer resources. |
+| `tags` (`[]`) | `string[]` | Normalized, lowercased. |
+
+Minimal example:
 
 ```json
 {
-  "kind": "prestigeCompleted",
-  "prestigeLayerId": "sample-pack.ascension-alpha"
+  "id": "docs-minimal.energy",
+  "name": { "default": "Energy" },
+  "category": "currency",
+  "tier": 1
 }
 ```
 
-If you need a higher threshold (for example "after 5 prestiges"), use
-`prestigeCountThreshold`:
+Complete example:
 
 ```json
 {
-  "kind": "prestigeCountThreshold",
-  "prestigeLayerId": "sample-pack.ascension-alpha",
-  "comparator": "gte",
-  "count": 5
+  "id": "docs-prestige.prestige-points",
+  "name": { "default": "Prestige Points" },
+  "category": "prestige",
+  "economyClassification": "soft",
+  "tier": 3,
+  "icon": "icons/prestige-points.svg",
+  "startAmount": 0,
+  "capacity": null,
+  "visible": false,
+  "unlocked": false,
+  "unlockCondition": {
+    "kind": "prestigeUnlocked",
+    "prestigeLayerId": "docs-prestige.rebirth"
+  },
+  "visibilityCondition": {
+    "kind": "prestigeUnlocked",
+    "prestigeLayerId": "docs-prestige.rebirth"
+  },
+  "prestige": {
+    "layerId": "docs-prestige.rebirth",
+    "resetRetention": { "kind": "constant", "value": 1 }
+  },
+  "order": 30,
+  "tags": ["prestige", "core"]
 }
 ```
+
+#### Generators
+
+**Purpose**: Define producers that convert time into resources.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Generator identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `produces` | `{ resourceId, rate }[]` | At least one entry. |
+| `purchase` | `SingleCurrencyPurchase \| MultiCurrencyPurchase` | Cost model. |
+| `baseUnlock` | `Condition` | When generator becomes available. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `icon` | `string` | Asset path. |
+| `tags` (`[]`) | `string[]` | Categorization tags. |
+| `consumes` (`[]`) | `{ resourceId, rate }[]` | Resource drains. |
+| `initialLevel` (`0`) | `number` | Starting level. |
+| `maxLevel` | `number` | Level cap. |
+| `order` | `number` | UI ordering. |
+| `visibilityCondition` | `Condition` | UI-only visibility. |
+| `automation` | `{ automationId }` | Link to automation unlock. |
+| `effects` (`[]`) | `UpgradeEffect[]` | Effects applied per level. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-minimal.ticker",
+  "name": { "default": "Ticker" },
+  "produces": [
+    { "resourceId": "docs-minimal.energy", "rate": { "kind": "constant", "value": 1 } }
+  ],
+  "purchase": {
+    "currencyId": "docs-minimal.energy",
+    "costMultiplier": 10,
+    "costCurve": { "kind": "constant", "value": 1 }
+  },
+  "baseUnlock": { "kind": "always" }
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.core",
+  "name": { "default": "Core" },
+  "icon": "icons/core.svg",
+  "tags": ["primary"],
+  "produces": [
+    { "resourceId": "docs-prestige.energy", "rate": { "kind": "linear", "base": 1, "slope": 0.5 } }
+  ],
+  "consumes": [],
+  "purchase": {
+    "currencyId": "docs-prestige.energy",
+    "costMultiplier": 25,
+    "costCurve": { "kind": "exponential", "growth": 1.15 }
+  },
+  "initialLevel": 0,
+  "maxLevel": 50,
+  "order": 10,
+  "baseUnlock": { "kind": "always" },
+  "visibilityCondition": { "kind": "always" },
+  "effects": [
+    {
+      "kind": "modifyResourceRate",
+      "resourceId": "docs-prestige.energy",
+      "operation": "add",
+      "value": { "kind": "constant", "value": 0.25 }
+    }
+  ]
+}
+```
+
+#### Upgrades
+
+**Purpose**: One-time or repeatable modifiers tied to targets.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Upgrade identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `category` | `global` \| `resource` \| `generator` \| `automation` \| `prestige` \| `guild` | Organization label. |
+| `targets` | `UpgradeTarget[]` | At least one target. |
+| `cost` | `SingleCurrencyCost \| MultiCurrencyCost` | Purchase cost. |
+| `effects` | `UpgradeEffect[]` | At least one effect. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `icon` | `string` | Asset path. |
+| `tags` (`[]`) | `string[]` | Categorization. |
+| `repeatable` | `{ maxPurchases?, costCurve?, effectCurve? }` | Progression tuning. |
+| `prerequisites` (`[]`) | `Condition[]` | Strings become `upgradeOwned`. |
+| `order` | `number` | UI ordering. |
+| `unlockCondition` | `Condition` | Unlock gating. |
+| `visibilityCondition` | `Condition` | UI-only visibility. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-prestige.core-efficiency",
+  "name": { "default": "Core Efficiency" },
+  "category": "generator",
+  "targets": [{ "kind": "generator", "id": "docs-prestige.core" }],
+  "cost": {
+    "currencyId": "docs-prestige.energy",
+    "costMultiplier": 100,
+    "costCurve": { "kind": "constant", "value": 1 }
+  },
+  "effects": [
+    {
+      "kind": "modifyGeneratorRate",
+      "generatorId": "docs-prestige.core",
+      "operation": "multiply",
+      "value": { "kind": "constant", "value": 1.25 }
+    }
+  ]
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.core-efficiency-ii",
+  "name": { "default": "Core Efficiency II" },
+  "icon": "icons/upgrade-core.svg",
+  "tags": ["core", "efficiency"],
+  "category": "generator",
+  "targets": [{ "kind": "generator", "id": "docs-prestige.core" }],
+  "cost": {
+    "costs": [
+      {
+        "resourceId": "docs-prestige.energy",
+        "costMultiplier": 250,
+        "costCurve": { "kind": "linear", "base": 1, "slope": 0.2 }
+      }
+    ]
+  },
+  "repeatable": {
+    "maxPurchases": 10,
+    "costCurve": { "kind": "exponential", "growth": 1.1 },
+    "effectCurve": { "kind": "linear", "base": 1, "slope": 0.05 }
+  },
+  "prerequisites": ["docs-prestige.core-efficiency"],
+  "order": 20,
+  "unlockCondition": {
+    "kind": "resourceThreshold",
+    "resourceId": "docs-prestige.energy",
+    "comparator": "gte",
+    "amount": { "kind": "constant", "value": 500 }
+  },
+  "effects": [
+    {
+      "kind": "modifyGeneratorRate",
+      "generatorId": "docs-prestige.core",
+      "operation": "multiply",
+      "value": { "kind": "linear", "base": 1, "slope": 0.1 }
+    },
+    {
+      "kind": "unlockGenerator",
+      "generatorId": "docs-prestige.shard-miner"
+    }
+  ]
+}
+```
+
+#### Achievements
+
+**Purpose**: Track progress milestones and award rewards.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Achievement identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `description` | `LocalizedSummary` | Short description. |
+| `category` | `progression` \| `prestige` \| `automation` \| `social` \| `collection` | Classification. |
+| `tier` | `bronze` \| `silver` \| `gold` \| `platinum` | Presentation tier. |
+| `track` | `AchievementTrack` | Progress source. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `icon` | `string` | Asset path. |
+| `tags` (`[]`) | `string[]` | Categorization. |
+| `progress` (`{ mode: "oneShot" }`) | `{ mode, target?, repeatable? }` | Defaults target from track. |
+| `reward` | `AchievementReward` | Optional award. |
+| `unlockCondition` | `Condition` | Unlock gating. |
+| `visibilityCondition` | `Condition` | UI-only visibility. |
+| `onUnlockEvents` (`[]`) | `ContentId[]` | Emits runtime events. |
+| `displayOrder` | `number` | UI ordering. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-prestige.first-energy",
+  "name": { "default": "First Spark" },
+  "description": { "default": "Generate your first energy." },
+  "category": "progression",
+  "tier": "bronze",
+  "track": {
+    "kind": "resource",
+    "resourceId": "docs-prestige.energy",
+    "comparator": "gte",
+    "threshold": { "kind": "constant", "value": 1 }
+  }
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.energy-hoarder",
+  "name": { "default": "Energy Hoarder" },
+  "description": { "default": "Store 1,000 energy without spending it." },
+  "category": "progression",
+  "tier": "silver",
+  "icon": "icons/achievement-energy.svg",
+  "tags": ["energy"],
+  "track": {
+    "kind": "resource",
+    "resourceId": "docs-prestige.energy",
+    "comparator": "gte",
+    "threshold": { "kind": "constant", "value": 1000 }
+  },
+  "progress": {
+    "mode": "repeatable",
+    "repeatable": {
+      "resetWindow": { "kind": "constant", "value": 60 },
+      "maxRepeats": 3,
+      "rewardScaling": { "kind": "linear", "base": 1, "slope": 0.5 }
+    }
+  },
+  "reward": {
+    "kind": "grantResource",
+    "resourceId": "docs-prestige.energy",
+    "amount": { "kind": "constant", "value": 50 }
+  },
+  "onUnlockEvents": ["docs-prestige.achievement.energy-hoarder"]
+}
+```
+
+#### Automations
+
+**Purpose**: Encode auto-play behaviors (buy, collect, system actions).
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Automation identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `description` | `LocalizedText` | Description text. |
+| `targetType` | `generator` \| `upgrade` \| `purchaseGenerator` \| `collectResource` \| `system` | Operation type. |
+| `trigger` | `AutomationTrigger` | Interval/resource/event trigger. |
+| `unlockCondition` | `Condition` | Unlock gating. |
+
+Conditional required fields:
+
+| Field | Applies when | Notes |
+| --- | --- | --- |
+| `targetId` | `targetType !== "system"` | Required for non-system targets. |
+| `systemTargetId` | `targetType === "system"` | Required for system targets. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `targetEnabled` | `boolean` | Only for generator targets. |
+| `targetCount` | `NumericFormula` | Only for `purchaseGenerator`. |
+| `targetAmount` | `NumericFormula` | Only for `collectResource`. |
+| `cooldown` | `NumericFormula` | Post-success cooldown. |
+| `resourceCost` | `{ resourceId, rate }` | Cost per activation. |
+| `visibilityCondition` | `Condition` | UI-only visibility. |
+| `enabledByDefault` (`false`) | `boolean` | Initial toggle state. |
+| `order` | `number` | UI ordering. |
+| `scriptId` | `ScriptId` | Script integration. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-prestige.auto-core",
+  "name": { "default": "Auto Core" },
+  "description": { "default": "Automatically purchase cores." },
+  "targetType": "purchaseGenerator",
+  "targetId": "docs-prestige.core",
+  "targetCount": { "kind": "constant", "value": 1 },
+  "trigger": { "kind": "interval", "interval": { "kind": "constant", "value": 10 } },
+  "unlockCondition": { "kind": "always" }
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.auto-collect",
+  "name": { "default": "Auto Collect" },
+  "description": { "default": "Collect shards when the queue is empty." },
+  "targetType": "collectResource",
+  "targetId": "docs-prestige.shards",
+  "targetAmount": { "kind": "constant", "value": 5 },
+  "trigger": { "kind": "commandQueueEmpty" },
+  "cooldown": { "kind": "constant", "value": 15 },
+  "resourceCost": {
+    "resourceId": "docs-prestige.energy",
+    "rate": { "kind": "constant", "value": 2 }
+  },
+  "unlockCondition": {
+    "kind": "resourceThreshold",
+    "resourceId": "docs-prestige.energy",
+    "comparator": "gte",
+    "amount": { "kind": "constant", "value": 50 }
+  },
+  "visibilityCondition": { "kind": "always" },
+  "enabledByDefault": false,
+  "order": 40
+}
+```
+
+#### Prestige layers
+
+**Purpose**: Define reset mechanics and prestige rewards.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Layer identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `summary` | `LocalizedText` | Short summary. |
+| `resetTargets` | `ContentId[]` | Resources to reset (at least one). |
+| `unlockCondition` | `Condition` | When prestige becomes available. |
+| `reward` | `{ resourceId, baseReward, multiplierCurve? }` | Reward formula. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `icon` | `string` | Asset path. |
+| `resetGenerators` | `ContentId[]` | Generators to reset. |
+| `resetUpgrades` | `ContentId[]` | Upgrades to reset. |
+| `retention` (`[]`) | `{ kind, ... }[]` | Items retained after reset. |
+| `automation` | `{ automationId }` | Link to automation. |
+| `order` | `number` | UI ordering. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-prestige.rebirth",
+  "name": { "default": "Rebirth" },
+  "summary": { "default": "Reset for prestige points." },
+  "resetTargets": ["docs-prestige.energy", "docs-prestige.shards"],
+  "unlockCondition": {
+    "kind": "resourceThreshold",
+    "resourceId": "docs-prestige.shards",
+    "comparator": "gte",
+    "amount": { "kind": "constant", "value": 100 }
+  },
+  "reward": {
+    "resourceId": "docs-prestige.prestige-points",
+    "baseReward": { "kind": "constant", "value": 1 }
+  }
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.rebirth-plus",
+  "name": { "default": "Rebirth +" },
+  "summary": { "default": "Stronger resets with retention." },
+  "icon": "icons/rebirth.svg",
+  "resetTargets": ["docs-prestige.energy", "docs-prestige.shards"],
+  "resetGenerators": ["docs-prestige.core", "docs-prestige.shard-miner"],
+  "resetUpgrades": ["docs-prestige.core-efficiency"],
+  "unlockCondition": {
+    "kind": "generatorLevel",
+    "generatorId": "docs-prestige.core",
+    "comparator": "gte",
+    "level": { "kind": "constant", "value": 10 }
+  },
+  "reward": {
+    "resourceId": "docs-prestige.prestige-points",
+    "baseReward": { "kind": "constant", "value": 2 },
+    "multiplierCurve": { "kind": "linear", "base": 1, "slope": 0.5 }
+  },
+  "retention": [
+    {
+      "kind": "resource",
+      "resourceId": "docs-prestige.energy",
+      "amount": { "kind": "constant", "value": 50 }
+    }
+  ],
+  "order": 60
+}
+```
+
+#### Metrics
+
+**Purpose**: Instrument runtime or content-driven counters/gauges.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Metric identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `kind` | `counter` \| `gauge` \| `histogram` \| `upDownCounter` | Metric shape. |
+| `source` | `runtime` \| `content` \| `script` | Origin of updates. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `description` | `LocalizedSummary` | Text for dashboards. |
+| `unit` (`"1"`) | `string` | Unit label. |
+| `aggregation` | `sum` \| `delta` \| `cumulative` \| `distribution` | Required for histograms. |
+| `attributes` (`[]`) | `string[]` | `<= 3` recommended. |
+| `order` | `number` | UI ordering. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-prestige.total-energy",
+  "name": { "default": "Total Energy" },
+  "kind": "counter",
+  "source": { "kind": "runtime" }
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.energy-rate",
+  "name": { "default": "Energy Rate" },
+  "description": { "default": "Energy per second over time." },
+  "kind": "histogram",
+  "unit": "energy/s",
+  "aggregation": "distribution",
+  "attributes": ["source", "tier"],
+  "source": { "kind": "content" },
+  "order": 70
+}
+```
+
+#### Transforms
+
+**Purpose**: Define conversion recipes and crafting steps.
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Transform identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `description` | `LocalizedSummary` | Short description. |
+| `mode` | `instant` \| `continuous` \| `batch` | Execution mode. |
+| `inputs` | `{ resourceId, amount }[]` | At least one input. |
+| `outputs` | `{ resourceId, amount }[]` | At least one output. |
+| `trigger` | `TransformTrigger` | Manual, automation, condition, or event. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `duration` | `NumericFormula` | Required for `batch` mode. |
+| `cooldown` | `NumericFormula` | Cooldown between runs. |
+| `unlockCondition` | `Condition` | Unlock gating. |
+| `visibilityCondition` | `Condition` | UI-only visibility. |
+| `automation` | `{ automationId }` | Required for automation trigger. |
+| `tags` (`[]`) | `string[]` | Categorization. |
+| `safety` | `{ maxRunsPerTick?, maxOutstandingBatches? }` | Runtime guardrails. |
+| `order` | `number` | UI ordering. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-prestige.refine-shards",
+  "name": { "default": "Refine Shards" },
+  "description": { "default": "Convert energy into shards." },
+  "mode": "instant",
+  "inputs": [{ "resourceId": "docs-prestige.energy", "amount": { "kind": "constant", "value": 10 } }],
+  "outputs": [{ "resourceId": "docs-prestige.shards", "amount": { "kind": "constant", "value": 1 } }],
+  "trigger": { "kind": "manual" }
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-prestige.batch-refine",
+  "name": { "default": "Batch Refinery" },
+  "description": { "default": "Process larger shard batches over time." },
+  "mode": "batch",
+  "inputs": [{ "resourceId": "docs-prestige.energy", "amount": { "kind": "constant", "value": 50 } }],
+  "outputs": [{ "resourceId": "docs-prestige.shards", "amount": { "kind": "constant", "value": 8 } }],
+  "duration": { "kind": "constant", "value": 15 },
+  "cooldown": { "kind": "constant", "value": 10 },
+  "trigger": {
+    "kind": "condition",
+    "condition": {
+      "kind": "resourceThreshold",
+      "resourceId": "docs-prestige.energy",
+      "comparator": "gte",
+      "amount": { "kind": "constant", "value": 50 }
+    }
+  },
+  "unlockCondition": { "kind": "always" },
+  "safety": { "maxRunsPerTick": 5, "maxOutstandingBatches": 20 },
+  "order": 80
+}
+```
+
+### Conditions and formulas
+
+Conditions and formulas are shared across content types. Keep them small and
+deterministic to avoid hitting depth limits (`MAX_CONDITION_DEPTH`,
+`MAX_FORMULA_DEPTH`).
+
+#### Condition kinds
+
+- `always` / `never` - unconditional gates.
+- `resourceThreshold` - compare resource amount via `comparator` + `amount`.
+- `generatorLevel` - compare generator level via `comparator` + `level`.
+- `upgradeOwned` - require a number of purchases (defaults to 1).
+- `prestigeCountThreshold` - compare prestige count with comparator + count.
+- `prestigeCompleted` - true after at least one prestige reset.
+- `prestigeUnlocked` - true while the prestige action is currently available.
+- `flag` / `script` - driven by flags or scripts.
+- `allOf` / `anyOf` / `not` - logical composition.
+
+Example: multi-condition unlock
+
+```json
+{
+  "kind": "allOf",
+  "conditions": [
+    {
+      "kind": "resourceThreshold",
+      "resourceId": "docs-prestige.energy",
+      "comparator": "gte",
+      "amount": { "kind": "constant", "value": 250 }
+    },
+    {
+      "kind": "generatorLevel",
+      "generatorId": "docs-prestige.core",
+      "comparator": "gte",
+      "level": { "kind": "constant", "value": 5 }
+    }
+  ]
+}
+```
+
+**Prestige gotcha**: `prestigeUnlocked` means the layer is currently available,
+not "post-prestige". Use `prestigeCompleted` or `prestigeCountThreshold` for
+post-prestige gating.
+
+#### Formula kinds
+
+- `constant` - fixed numbers.
+- `linear` - `base + slope * level`.
+- `exponential` - `base * growth^level + offset`.
+- `polynomial` - coefficient-based curves.
+- `piecewise` - switch formulas by level.
+- `expression` - custom expression trees (use sparingly).
+
+Example: expression formula with references
+
+```json
+{
+  "kind": "expression",
+  "expression": {
+    "kind": "binary",
+    "op": "mul",
+    "left": { "kind": "ref", "target": { "type": "variable", "name": "level" } },
+    "right": { "kind": "literal", "value": 1.25 }
+  }
+}
+```
+
+### Effects system (upgrades + generator effects)
+
+Effect operations:
+
+- `add` - additive delta.
+- `multiply` - multiplicative scale.
+- `set` - override value.
+
+Effect kinds:
+
+- `modifyResourceRate`
+- `modifyResourceCapacity`
+- `modifyGeneratorRate`
+- `modifyGeneratorCost`
+- `modifyGeneratorConsumption`
+- `grantAutomation`
+- `grantFlag`
+- `unlockResource`
+- `unlockGenerator`
+- `alterDirtyTolerance`
+- `emitEvent`
+
+Example: mix of resource and generator effects
+
+```json
+[
+  {
+    "kind": "modifyResourceRate",
+    "resourceId": "docs-prestige.energy",
+    "operation": "add",
+    "value": { "kind": "constant", "value": 2 }
+  },
+  {
+    "kind": "modifyGeneratorCost",
+    "generatorId": "docs-prestige.core",
+    "operation": "multiply",
+    "value": { "kind": "constant", "value": 0.9 }
+  }
+]
+```
+
+### Authoring gotchas
+
+- `unlockCondition` vs `visibilityCondition` (resources): if a resource starts
+  `visible: false` and you never set a `visibilityCondition`, it stays hidden
+  even after unlocking. Mirror the unlock condition when you expect it to
+  reveal on unlock.
+- Automations: non-`always` `unlockCondition`s are not evaluated by
+  `AutomationSystem` today (see #502). Use upgrade effects and external wiring
+  to enable these automations when needed.
+- Prestige gating: use `prestigeCompleted` / `prestigeCountThreshold` for
+  post-prestige gates; `prestigeUnlocked` is "available now" (see #505).
+
+### Example packs
+
+Reference packs live in `docs/examples/`:
+
+- `docs/examples/minimal-pack/content/pack.json`
+- `docs/examples/prestige-pack/content/pack.json`
+
+Run `pnpm generate --check` to validate the examples alongside other packs.
+
+For quick lookups, use the condensed cheat sheet in
+`docs/content-quick-reference.md`.
 
 ## Naming Conventions
 

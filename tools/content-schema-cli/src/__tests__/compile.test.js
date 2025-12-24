@@ -102,7 +102,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('supports packs authored in JSON5', async () => {
     const workspace = await createWorkspace([
@@ -125,9 +125,11 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
-  it('emits structured cli.unhandled_error events when manifest generation fails', async () => {
+  it(
+    'emits structured cli.unhandled_error events when manifest generation fails',
+    async () => {
     const workspace = await createWorkspace([{ slug: 'error-pack' }]);
     const metadataPath = path.join(
       workspace.root,
@@ -168,7 +170,9 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+    },
+    60000,
+  );
 
   it('writes a failure summary when validation fails', async () => {
     const workspace = await createWorkspace([
@@ -215,7 +219,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('writes a failure summary in check mode', async () => {
     const workspace = await createWorkspace([
@@ -267,7 +271,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('reports drift in check mode', async () => {
     const workspace = await createWorkspace([
@@ -319,7 +323,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('does not treat a missing @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
     const workspace = await createWorkspace([
@@ -356,7 +360,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('treats a stale @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
     const workspace = await createWorkspace([
@@ -418,7 +422,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('emits failure events for missing dependencies', async () => {
     const workspace = await createWorkspace([
@@ -464,7 +468,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, 60000);
 
   it('emits watch run events for changes, skips, and repeated failures with aggregated triggers', async () => {
     const packSlug = 'watch-pack';

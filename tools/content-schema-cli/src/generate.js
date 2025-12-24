@@ -614,17 +614,19 @@ function escapeString(value) {
 }
 
 async function loadContentPackDocuments(rootDirectory) {
-  const packagesDir = path.join(rootDirectory, 'packages');
-  const directories = await fs.readdir(packagesDir, { withFileTypes: true });
-  directories.sort((left, right) => left.name.localeCompare(right.name));
   const packs = [];
+  const packRoots = [
+    ...(await listPackDirectories(path.join(rootDirectory, 'packages'))),
+    ...(await listPackDirectories(path.join(rootDirectory, 'docs/examples'))),
+  ];
 
-  for (const entry of directories) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
+  packRoots.sort((left, right) =>
+    toPosixPath(path.relative(rootDirectory, left)).localeCompare(
+      toPosixPath(path.relative(rootDirectory, right)),
+    ),
+  );
 
-    const packageRoot = path.join(packagesDir, entry.name);
+  for (const packageRoot of packRoots) {
     const packPath = await findContentPackPath(packageRoot);
     if (!packPath) {
       continue;
@@ -650,6 +652,16 @@ async function loadContentPackDocuments(rootDirectory) {
   }
 
   return packs;
+}
+
+async function listPackDirectories(baseDirectory) {
+  if (!(await fileExists(baseDirectory))) {
+    return [];
+  }
+  const entries = await fs.readdir(baseDirectory, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(baseDirectory, entry.name));
 }
 
 async function findContentPackPath(packageRoot) {

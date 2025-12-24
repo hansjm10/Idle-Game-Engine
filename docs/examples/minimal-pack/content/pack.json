@@ -1,0 +1,41 @@
+{
+  "metadata": {
+    "id": "docs-minimal",
+    "title": { "default": "Minimal Pack" },
+    "summary": { "default": "Minimal content pack for documentation examples." },
+    "version": "0.1.0",
+    "engine": ">=0.2.0 <0.6.0",
+    "authors": ["Idle Engine Docs"],
+    "defaultLocale": "en-US",
+    "supportedLocales": ["en-US"],
+    "tags": ["example", "minimal"]
+  },
+  "resources": [
+    {
+      "id": "docs-minimal.energy",
+      "name": { "default": "Energy" },
+      "category": "currency",
+      "tier": 1,
+      "startAmount": 0,
+      "unlocked": true
+    }
+  ],
+  "generators": [
+    {
+      "id": "docs-minimal.ticker",
+      "name": { "default": "Ticker" },
+      "produces": [
+        {
+          "resourceId": "docs-minimal.energy",
+          "rate": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "purchase": {
+        "currencyId": "docs-minimal.energy",
+        "costMultiplier": 10,
+        "costCurve": { "kind": "constant", "value": 1 }
+      },
+      "baseUnlock": { "kind": "always" }
+    }
+  ]
+}
