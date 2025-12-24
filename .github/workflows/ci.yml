@@ -111,6 +111,24 @@ jobs:
       - name: Generate Performance Report
         run: pnpm perf:md
 
+      - name: Verify performance report output
+        run: |
+          if [ ! -f docs/performance/index.md ]; then
+            echo "docs/performance/index.md not found; perf report generation failed."
+            exit 1
+          fi
+
+      - name: Build docs
+        run: pnpm docs:build
+
+      - name: Check benchmark outputs
+        run: |
+          if [ -d artifacts/benchmarks ]; then
+            echo "Found benchmark outputs in artifacts/benchmarks."
+          else
+            echo "No benchmark outputs found in artifacts/benchmarks; skipping raw JSON upload."
+          fi
+
       - name: Upload performance report
         uses: actions/upload-artifact@v4
         with:
