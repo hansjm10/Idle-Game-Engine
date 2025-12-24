@@ -133,7 +133,9 @@ describe('content schema CLI compile command', () => {
     }
   }, CLI_TEST_TIMEOUT_MS);
 
-  it('emits structured cli.unhandled_error events when manifest generation fails', async () => {
+  it(
+    'emits structured cli.unhandled_error events when manifest generation fails',
+    async () => {
     const workspace = await createWorkspace([{ slug: 'error-pack' }]);
     const metadataPath = path.join(
       workspace.root,
