@@ -10,6 +10,8 @@
     "test:ci": "./tools/scripts/run-workspace-test-ci.sh",
     "test:ci:serial": "pnpm -r run --sort --workspace-concurrency 1 test:ci",
     "test:fast": "node tools/scripts/run-fast-tests.mjs",
+    "benchmark": "./tools/scripts/run-workspace-benchmark.sh",
+    "perf:run": "./tools/scripts/run-workspace-benchmark.sh",
     "fast:check": "pnpm lint:fast && pnpm test:fast",
     "coverage:md": "./tools/scripts/run-workspace-coverage.sh && pnpm tsx tools/coverage-report/index.ts",
     "test:a11y": "pnpm --filter @idle-engine/a11y-smoke-tests run test",

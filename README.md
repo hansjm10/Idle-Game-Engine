@@ -27,6 +27,14 @@ Refer to the design document for roadmap and subsystem detail.
 - `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and writes `docs/coverage/index.md`. Commit the updated file after running the command so the docs build stays green. For consistent results with CI, run `nvm use` before generating coverage.
 - For a fast local pass, use `pnpm fast:check`. It runs cached linting plus `test:ci` for packages inferred from `git diff` against `origin/main`. Use `FAST_SCOPE=staged` to scope to staged files only and `FAST_BASE_REF=<ref>` to compare against a different base.
 
+## Benchmarks
+- `pnpm benchmark` runs workspace benchmarks; pass pnpm filters like `--filter @idle-engine/core` and forward benchmark args after `--`.
+- To validate trailing JSON output, pipe the logs into `node tools/scripts/assert-json-tail.mjs` (schema in `docs/benchmark-output-schema.md`).
+
+```
+pnpm benchmark --filter @idle-engine/core | node tools/scripts/assert-json-tail.mjs
+```
+
 ## Content Validation & Generation
 - `pnpm generate` now runs content validation before the compiler writes artifacts. Schema failures stop the pipeline immediately, so fix validation errors before retrying or the downstream artifacts will remain stale.
 - Structured JSON logs (`content_pack.validated`, `content_pack.compiled`, `content_pack.validation_failed`, `watch.run`, etc.) stream to stdout. Use `--pretty` only when you want human-readable formatting; automation should consume the default JSON lines.
