@@ -47,9 +47,11 @@ context.
 
 ## CI timing baseline
 
-- Latest CI baseline (2025-12-24, run 20479903522): full workflow completed in
-  ~5m06s on `ubuntu-latest` with lint, typecheck, build, generate, coverage,
-  docs build, and `pnpm test:ci`.
+- Latest CI quality gate baseline (2025-12-24, run 20479903522): workflow
+  completed in ~5m06s on `ubuntu-latest` with lint, typecheck, build (except
+  docs), generate, coverage, and `pnpm test:ci`.
+- Docs build runs in the Docs Preview workflow for PRs that touch docs and in
+  Docs Deploy for `main` when docs content changes.
 - When you make changes that affect CI duration, record before/after numbers in
   the issue and update this baseline if the steady-state timing changes.
 
