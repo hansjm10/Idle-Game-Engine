@@ -169,6 +169,107 @@
           "commitSha": "abc123"
         }
       }
+    },
+    {
+      "packageName": "@idle-engine/runtime-sim-cli",
+      "filePath": "artifacts/benchmarks/@idle-engine/runtime-sim-cli/runtime-workload-sim.json",
+      "payload": {
+        "event": "benchmark_run_end",
+        "schemaVersion": 1,
+        "benchmark": {
+          "name": "runtime-workload-sim"
+        },
+        "config": {
+          "stepSizeMs": 100,
+          "warmupTicks": 50,
+          "measureTicks": 300,
+          "seed": 4242,
+          "maxStepsPerFrame": 1,
+          "scenarios": [
+            "sample-pack-baseline",
+            "sample-pack-progression"
+          ],
+          "includeMemory": true
+        },
+        "results": {
+          "scenarios": [
+            {
+              "label": "sample-pack-baseline",
+              "stepSizeMs": 100,
+              "warmupTicks": 50,
+              "measureTicks": 300,
+              "stats": {
+                "meanMs": 0.52,
+                "medianMs": 0.5,
+                "stdDevMs": 0.12,
+                "minMs": 0.4,
+                "maxMs": 0.9,
+                "hz": 1923.07,
+                "samples": 300,
+                "unit": "ms"
+              },
+              "diagnostics": {
+                "slowTickCount": 0,
+                "maxQueueBacklog": 2,
+                "maxTickDurationMs": 0.9,
+                "avgTickDurationMs": 0.52,
+                "dropped": 0
+              },
+              "snapshot": {
+                "bytes": 145632,
+                "entries": 300
+              },
+              "memory": {
+                "rss": 65432192,
+                "heapTotal": 33554432,
+                "heapUsed": 15728640,
+                "external": 204800,
+                "arrayBuffers": 102400
+              }
+            },
+            {
+              "label": "sample-pack-progression",
+              "stepSizeMs": 100,
+              "warmupTicks": 50,
+              "measureTicks": 300,
+              "stats": {
+                "meanMs": 0.88,
+                "medianMs": 0.85,
+                "stdDevMs": 0.2,
+                "minMs": 0.7,
+                "maxMs": 1.3,
+                "hz": 1136.36,
+                "samples": 300,
+                "unit": "ms"
+              },
+              "diagnostics": {
+                "slowTickCount": 0,
+                "maxQueueBacklog": 4,
+                "maxTickDurationMs": 1.3,
+                "avgTickDurationMs": 0.88,
+                "dropped": 0
+              },
+              "snapshot": {
+                "bytes": 198765,
+                "entries": 300
+              },
+              "memory": {
+                "rss": 72351744,
+                "heapTotal": 37748736,
+                "heapUsed": 19922944,
+                "external": 245760,
+                "arrayBuffers": 122880
+              }
+            }
+          ]
+        },
+        "env": {
+          "nodeVersion": "v20.11.1",
+          "platform": "linux",
+          "arch": "x64",
+          "commitSha": "abc123"
+        }
+      }
     }
   ]
 }

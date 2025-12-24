@@ -498,6 +498,9 @@ importers:
 
   tools/runtime-sim:
     dependencies:
+      '@idle-engine/content-sample':
+        specifier: workspace:*
+        version: link:../../packages/content-sample
       '@idle-engine/core':
         specifier: workspace:*
         version: link:../../packages/core

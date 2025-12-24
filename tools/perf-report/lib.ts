@@ -131,6 +131,9 @@ function renderBenchmarkResults(benchmarkName: string, payload: BenchmarkPayload
   if (benchmarkName === 'state-sync-checksum') {
     return renderStateSyncChecksum(payload.results);
   }
+  if (benchmarkName === 'runtime-workload-sim') {
+    return renderRuntimeWorkload(payload.results);
+  }
 
   return renderUnknownBenchmark(payload.results);
 }
@@ -258,6 +261,46 @@ function renderStateSyncChecksum(results: Record<string, unknown>): string[] {
   ];
 }
 
+function renderRuntimeWorkload(results: Record<string, unknown>): string[] {
+  const scenarios = readArray(results.scenarios);
+  if (scenarios.length === 0) {
+    return ['_No scenarios reported._'];
+  }
+
+  const rows = scenarios.map((scenario) => {
+    const record = asRecord(scenario) ?? {};
+    const label = readString(record.label) ?? 'unknown';
+    const stats = readStats(record.stats);
+    const diagnostics = asRecord(record.diagnostics) ?? {};
+    const slowTickCount = readNumber(diagnostics.slowTickCount);
+    const maxQueueBacklog = readNumber(diagnostics.maxQueueBacklog);
+    const dropped = readNumber(diagnostics.dropped);
+    const snapshot = asRecord(record.snapshot) ?? {};
+    const snapshotBytes = readNumber(snapshot.bytes);
+    const memory = asRecord(record.memory) ?? {};
+    const rss = readNumber(memory.rss);
+
+    return formatRow([
+      label,
+      formatMs(stats.meanMs),
+      formatMs(stats.medianMs),
+      formatMs(stats.maxMs),
+      formatCount(slowTickCount),
+      formatCount(maxQueueBacklog),
+      formatCount(dropped),
+      formatKilobytes(snapshotBytes),
+      formatMegabytes(rss)
+    ]);
+  });
+
+  return [
+    '#### Scenarios',
+    '| Scenario | Mean (ms) | Median (ms) | Max (ms) | Slow Ticks | Max Queue Backlog | Dropped | Snapshot (KB) | RSS (MB) |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...rows
+  ];
+}
+
 function renderUnknownBenchmark(results: Record<string, unknown>): string[] {
   return [
     '#### Results',
@@ -299,6 +342,15 @@ function formatConfigDetails(
     pushDetail(details, 'Config: Runs', readNumber(cfg.runs));
     pushDetail(details, 'Config: Target (us)', readNumber(cfg.targetUs));
     pushDetail(details, 'Config: Enforce Target', readBoolean(cfg.enforceTarget));
+  } else if (benchmarkName === 'runtime-workload-sim') {
+    pushDetail(details, 'Config: Step Size (ms)', readNumber(cfg.stepSizeMs));
+    pushDetail(details, 'Config: Warmup Ticks', readNumber(cfg.warmupTicks));
+    pushDetail(details, 'Config: Measure Ticks', readNumber(cfg.measureTicks));
+    pushDetail(details, 'Config: Seed', readNumber(cfg.seed));
+    pushDetail(details, 'Config: Max Steps/Frame', readNumber(cfg.maxStepsPerFrame));
+    const scenarioCount = readArray(cfg.scenarios).length || null;
+    pushDetail(details, 'Config: Scenarios', scenarioCount);
+    pushDetail(details, 'Config: Include Memory', readBoolean(cfg.includeMemory));
   }
 
   return details;
@@ -414,6 +466,20 @@ function formatUs(value: number | null): string {
     return 'n/a';
   }
   return value.toFixed(2);
+}
+
+function formatKilobytes(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return 'n/a';
+  }
+  return (value / 1024).toFixed(2);
+}
+
+function formatMegabytes(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return 'n/a';
+  }
+  return (value / (1024 * 1024)).toFixed(2);
 }
 
 function formatRatio(value: number | null): string {
