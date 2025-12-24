@@ -8,7 +8,8 @@
     "benchmark": "tsx ./index.ts --scenario all"
   },
   "dependencies": {
-    "@idle-engine/core": "workspace:*"
+    "@idle-engine/core": "workspace:*",
+    "@idle-engine/content-sample": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",
