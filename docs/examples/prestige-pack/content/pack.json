@@ -1,0 +1,222 @@
+{
+  "metadata": {
+    "id": "docs-prestige",
+    "title": { "default": "Prestige Pack" },
+    "summary": { "default": "Example pack showcasing prestige mechanics." },
+    "version": "0.1.0",
+    "engine": ">=0.4.0 <0.6.0",
+    "authors": ["Idle Engine Docs"],
+    "defaultLocale": "en-US",
+    "supportedLocales": ["en-US"],
+    "tags": ["example", "prestige"]
+  },
+  "resources": [
+    {
+      "id": "docs-prestige.energy",
+      "name": { "default": "Energy" },
+      "category": "currency",
+      "tier": 1,
+      "startAmount": 10,
+      "unlocked": true
+    },
+    {
+      "id": "docs-prestige.shards",
+      "name": { "default": "Shards" },
+      "category": "primary",
+      "tier": 2,
+      "startAmount": 0,
+      "visible": false,
+      "unlocked": false,
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "docs-prestige.energy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 25 }
+      },
+      "visibilityCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "docs-prestige.energy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 25 }
+      }
+    },
+    {
+      "id": "docs-prestige.prestige-points",
+      "name": { "default": "Prestige Points" },
+      "category": "prestige",
+      "tier": 3,
+      "visible": false,
+      "unlocked": false,
+      "unlockCondition": {
+        "kind": "prestigeUnlocked",
+        "prestigeLayerId": "docs-prestige.rebirth"
+      },
+      "visibilityCondition": {
+        "kind": "prestigeUnlocked",
+        "prestigeLayerId": "docs-prestige.rebirth"
+      },
+      "prestige": {
+        "layerId": "docs-prestige.rebirth",
+        "resetRetention": { "kind": "constant", "value": 1 }
+      }
+    },
+    {
+      "id": "docs-prestige.rebirth-prestige-count",
+      "name": { "default": "Rebirth Count" },
+      "category": "misc",
+      "economyClassification": "soft",
+      "tier": 3,
+      "startAmount": 0,
+      "capacity": null,
+      "visible": false,
+      "unlocked": true
+    }
+  ],
+  "generators": [
+    {
+      "id": "docs-prestige.core",
+      "name": { "default": "Core" },
+      "produces": [
+        {
+          "resourceId": "docs-prestige.energy",
+          "rate": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "purchase": {
+        "currencyId": "docs-prestige.energy",
+        "costMultiplier": 25,
+        "costCurve": { "kind": "exponential", "growth": 1.12 }
+      },
+      "baseUnlock": { "kind": "always" }
+    },
+    {
+      "id": "docs-prestige.shard-miner",
+      "name": { "default": "Shard Miner" },
+      "produces": [
+        {
+          "resourceId": "docs-prestige.shards",
+          "rate": { "kind": "constant", "value": 0.5 }
+        }
+      ],
+      "consumes": [
+        {
+          "resourceId": "docs-prestige.energy",
+          "rate": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "purchase": {
+        "currencyId": "docs-prestige.energy",
+        "costMultiplier": 75,
+        "costCurve": { "kind": "linear", "base": 1, "slope": 0.2 }
+      },
+      "baseUnlock": {
+        "kind": "resourceThreshold",
+        "resourceId": "docs-prestige.energy",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 25 }
+      }
+    }
+  ],
+  "upgrades": [
+    {
+      "id": "docs-prestige.core-efficiency",
+      "name": { "default": "Core Efficiency" },
+      "category": "generator",
+      "targets": [{ "kind": "generator", "id": "docs-prestige.core" }],
+      "cost": {
+        "currencyId": "docs-prestige.energy",
+        "costMultiplier": 120,
+        "costCurve": { "kind": "constant", "value": 1 }
+      },
+      "effects": [
+        {
+          "kind": "modifyGeneratorRate",
+          "generatorId": "docs-prestige.core",
+          "operation": "multiply",
+          "value": { "kind": "constant", "value": 1.25 }
+        }
+      ]
+    }
+  ],
+  "achievements": [
+    {
+      "id": "docs-prestige.first-energy",
+      "name": { "default": "First Spark" },
+      "description": { "default": "Generate your first energy." },
+      "category": "progression",
+      "tier": "bronze",
+      "track": {
+        "kind": "resource",
+        "resourceId": "docs-prestige.energy",
+        "comparator": "gte",
+        "threshold": { "kind": "constant", "value": 1 }
+      },
+      "reward": {
+        "kind": "grantResource",
+        "resourceId": "docs-prestige.energy",
+        "amount": { "kind": "constant", "value": 10 }
+      }
+    }
+  ],
+  "automations": [
+    {
+      "id": "docs-prestige.auto-core",
+      "name": { "default": "Auto Core" },
+      "description": { "default": "Automatically purchase cores." },
+      "targetType": "purchaseGenerator",
+      "targetId": "docs-prestige.core",
+      "targetCount": { "kind": "constant", "value": 1 },
+      "trigger": { "kind": "interval", "interval": { "kind": "constant", "value": 10 } },
+      "unlockCondition": { "kind": "always" }
+    }
+  ],
+  "metrics": [
+    {
+      "id": "docs-prestige.total-energy",
+      "name": { "default": "Total Energy" },
+      "kind": "counter",
+      "source": { "kind": "runtime" }
+    }
+  ],
+  "transforms": [
+    {
+      "id": "docs-prestige.refine-shards",
+      "name": { "default": "Refine Shards" },
+      "description": { "default": "Convert energy into shards." },
+      "mode": "instant",
+      "inputs": [
+        {
+          "resourceId": "docs-prestige.energy",
+          "amount": { "kind": "constant", "value": 10 }
+        }
+      ],
+      "outputs": [
+        {
+          "resourceId": "docs-prestige.shards",
+          "amount": { "kind": "constant", "value": 1 }
+        }
+      ],
+      "trigger": { "kind": "manual" }
+    }
+  ],
+  "prestigeLayers": [
+    {
+      "id": "docs-prestige.rebirth",
+      "name": { "default": "Rebirth" },
+      "summary": { "default": "Reset for prestige points." },
+      "resetTargets": ["docs-prestige.energy", "docs-prestige.shards"],
+      "resetGenerators": ["docs-prestige.core", "docs-prestige.shard-miner"],
+      "resetUpgrades": ["docs-prestige.core-efficiency"],
+      "unlockCondition": {
+        "kind": "resourceThreshold",
+        "resourceId": "docs-prestige.shards",
+        "comparator": "gte",
+        "amount": { "kind": "constant", "value": 100 }
+      },
+      "reward": {
+        "resourceId": "docs-prestige.prestige-points",
+        "baseReward": { "kind": "constant", "value": 1 }
+      }
+    }
+  ]
+}
