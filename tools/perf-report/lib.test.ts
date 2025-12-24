@@ -16,6 +16,7 @@ test('renderMarkdown includes benchmark sections', async () => {
   assert.match(markdown, /\| Scenario \| Events\/Tick \|/);
   assert.match(markdown, /## diagnostic-timeline-overhead/);
   assert.match(markdown, /## state-sync-checksum/);
+  assert.match(markdown, /## runtime-workload-sim/);
 });
 
 async function loadFixture(): Promise<BenchmarkArtifact[]> {

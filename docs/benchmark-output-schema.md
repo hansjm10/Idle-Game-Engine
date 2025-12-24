@@ -1,11 +1,12 @@
 # Benchmark JSON Output Schema
 
-Core benchmarks under `packages/core/benchmarks` emit a trailing single-line JSON payload so CI and tooling can validate and diff results. The JSON line must be the last non-empty line in the log output.
+Core benchmarks under `packages/core/benchmarks` emit a trailing single-line JSON payload so CI and tooling can validate and diff results. The runtime workload harness under `tools/runtime-sim` uses the same envelope to feed the performance report. The JSON line must be the last non-empty line in the log output.
 
 ## Covered Benchmarks
 - `packages/core/benchmarks/event-frame-format.bench.mjs`
 - `packages/core/benchmarks/diagnostic-timeline-overhead.bench.mjs`
 - `packages/core/benchmarks/state-sync-checksum.bench.mjs`
+- `tools/runtime-sim` (runtime workload scenarios)
 
 ## Envelope (TypeScript-style)
 ```
@@ -64,6 +65,16 @@ type BenchmarkStats = {
 - `results.scenarios[]` includes `label`, `shape`, `stats`, `meanOverTarget`, `status`, `targetUs`, and `enforceTarget`.
 - `shape` includes `resources`, `generators`, `upgrades`, `achievements`, `automations`, `transforms`, and `commands`.
 - `meanOverTarget` is the ratio of mean checksum time to `targetUs` (`number | null`); `status` is `OK`, `ABOVE_TARGET`, or `INFO`.
+
+### runtime-workload-sim
+- `config.stepSizeMs`, `config.warmupTicks`, `config.measureTicks`, and `config.seed` describe the workload run.
+- `config.maxStepsPerFrame` is optional when the scenario overrides the runtime clamp.
+- `config.scenarios` lists the scenario IDs executed; `config.includeMemory` toggles memory payloads.
+- `results.scenarios[]` includes `label`, `stats`, `diagnostics`, `snapshot`, and optional `memory`.
+- `stats` follows `BenchmarkStats` (mean/median/min/max/stddev/hz over per-tick durations).
+- `diagnostics` includes `slowTickCount`, `maxQueueBacklog`, `maxTickDurationMs`, `avgTickDurationMs`, and `dropped`.
+- `snapshot` includes `bytes` and `entries` for the diagnostics payload size.
+- `memory` (when present) includes `rss`, `heapTotal`, `heapUsed`, `external`, and `arrayBuffers` in bytes.
 
 ## Example
 ```
