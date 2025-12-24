@@ -97,6 +97,11 @@ for (const file of changedFiles) {
     continue;
   }
 
+  if (file.startsWith('tools/economy-verification/')) {
+    affectedPackages.add('@idle-engine/economy-verification-cli');
+    continue;
+  }
+
   if (file.startsWith('services/social/')) {
     affectedPackages.add('@idle-engine/social-service');
     continue;

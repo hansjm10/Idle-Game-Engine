@@ -47,6 +47,7 @@ CLAUDE.md
 .codex/
 
 # Local tooling
+.cache/
 scripts/
 pr-review-output/
 pr-review/

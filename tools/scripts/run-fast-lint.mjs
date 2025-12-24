@@ -11,7 +11,7 @@ const readLines = (command) => {
   return output.split('\n').map((line) => line.trim()).filter(Boolean);
 };
 
-const stagedFiles = readLines('git diff --name-only --cached');
+const stagedFiles = readLines('git diff --name-only --diff-filter=ACMR --cached');
 const useStaged = scope === 'staged' || (scope === 'auto' && stagedFiles.length > 0);
 
 let changedFiles = [];
@@ -25,7 +25,7 @@ if (useStaged) {
     mergeBase = 'HEAD';
   }
 
-  changedFiles = readLines(`git diff --name-only ${mergeBase}`);
+  changedFiles = readLines(`git diff --name-only --diff-filter=ACMR ${mergeBase}`);
 }
 
 if (changedFiles.length === 0) {
