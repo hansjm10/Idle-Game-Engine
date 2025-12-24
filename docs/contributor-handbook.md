@@ -37,8 +37,10 @@ context.
   - Forced full runs (`pnpm exec lefthook run pre-commit --all-files --force`)
     still execute the entire matrix (~3m40s) for comparison with CI.
 - Optional fast pass: use `pnpm fast:check` or `pnpm exec lefthook run pre-commit-fast`
-  to run cached linting plus `test:ci` scoped to affected packages. Fast checks are
-  opt-in and do not replace the default pre-commit guardrails.
+  to run cached linting plus `test:ci` scoped to affected packages. Use
+  `FAST_SCOPE=staged` to scope to staged files only and `FAST_BASE_REF=<ref>` to
+  compare against a different base. Fast checks are opt-in and do not replace the
+  default pre-commit guardrails.
 - `pnpm test:ci` runs workspace tests in parallel with `--no-sort` (tune with
   `TEST_CI_WORKSPACE_CONCURRENCY`); use `pnpm test:ci:serial` when you need
   topological ordering or easier debugging.
