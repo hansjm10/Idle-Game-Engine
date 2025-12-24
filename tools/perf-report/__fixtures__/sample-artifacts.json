@@ -1,0 +1,174 @@
+{
+  "artifacts": [
+    {
+      "packageName": "@idle-engine/core",
+      "filePath": "artifacts/benchmarks/@idle-engine/core/event-frame-format.json",
+      "payload": {
+        "event": "benchmark_run_end",
+        "schemaVersion": 1,
+        "benchmark": {
+          "name": "event-frame-format"
+        },
+        "config": {
+          "iterations": 200,
+          "scenarios": [
+            {
+              "label": "dense",
+              "eventsPerTick": 200
+            }
+          ]
+        },
+        "results": {
+          "scenarios": [
+            {
+              "label": "dense",
+              "eventsPerTick": 200,
+              "formats": {
+                "struct-of-arrays": {
+                  "meanMs": 0.0421,
+                  "medianMs": 0.0419,
+                  "minMs": 0.0397,
+                  "maxMs": 0.0512,
+                  "hz": 23756.76
+                },
+                "object-array": {
+                  "meanMs": 0.0898,
+                  "medianMs": 0.0884,
+                  "minMs": 0.0812,
+                  "maxMs": 0.1043,
+                  "hz": 11135.92
+                }
+              },
+              "ratios": {
+                "objectOverStructMean": 2.1333,
+                "objectOverStructMedian": 2.1098
+              }
+            }
+          ]
+        },
+        "env": {
+          "nodeVersion": "v20.11.1",
+          "platform": "linux",
+          "arch": "x64",
+          "commitSha": "abc123"
+        }
+      }
+    },
+    {
+      "packageName": "@idle-engine/core",
+      "filePath": "artifacts/benchmarks/@idle-engine/core/diagnostic-timeline-overhead.json",
+      "payload": {
+        "event": "benchmark_run_end",
+        "schemaVersion": 1,
+        "benchmark": {
+          "name": "diagnostic-timeline-overhead"
+        },
+        "config": {
+          "stepSizeMs": 16,
+          "warmupTicks": 50,
+          "measureTicks": 320,
+          "commandsPerTick": 48,
+          "eventsPerTick": 32,
+          "commandIterations": 96,
+          "heavySystemIterations": 1536,
+          "bench": {
+            "time": 1000,
+            "iterations": 30,
+            "warmupTime": 250,
+            "warmupIterations": 8
+          }
+        },
+        "results": {
+          "tasks": [
+            {
+              "name": "diagnostics-disabled",
+              "diagnosticsEnabled": false,
+              "stats": {
+                "meanMs": 1.234,
+                "medianMs": 1.2,
+                "minMs": 1.1,
+                "maxMs": 1.35,
+                "hz": 1000,
+                "rmePercent": 1.23,
+                "samples": 30
+              }
+            },
+            {
+              "name": "diagnostics-enabled",
+              "diagnosticsEnabled": true,
+              "stats": {
+                "meanMs": 1.456,
+                "medianMs": 1.4,
+                "minMs": 1.3,
+                "maxMs": 1.6,
+                "hz": 900,
+                "rmePercent": 1.45,
+                "samples": 30
+              }
+            }
+          ],
+          "ratios": {
+            "enabledOverDisabledMean": 1.18,
+            "enabledOverDisabledMedian": 1.17
+          }
+        },
+        "env": {
+          "nodeVersion": "v20.11.1",
+          "platform": "linux",
+          "arch": "x64",
+          "commitSha": "abc123"
+        }
+      }
+    },
+    {
+      "packageName": "@idle-engine/core",
+      "filePath": "artifacts/benchmarks/@idle-engine/core/state-sync-checksum.json",
+      "payload": {
+        "event": "benchmark_run_end",
+        "schemaVersion": 1,
+        "benchmark": {
+          "name": "state-sync-checksum"
+        },
+        "config": {
+          "warmupIterations": 2000,
+          "measureIterations": 20000,
+          "runs": 5,
+          "targetUs": 100,
+          "enforceTarget": false
+        },
+        "results": {
+          "scenarios": [
+            {
+              "label": "doc-typical",
+              "shape": {
+                "resources": 100,
+                "generators": 50,
+                "upgrades": 0,
+                "achievements": 0,
+                "automations": 0,
+                "transforms": 0,
+                "commands": 0
+              },
+              "stats": {
+                "meanMs": 0.09,
+                "medianMs": 0.085,
+                "minMs": 0.08,
+                "maxMs": 0.1
+              },
+              "meanOverTarget": 0.9,
+              "status": "INFO",
+              "targetUs": 100,
+              "enforceTarget": false
+            }
+          ]
+        },
+        "env": {
+          "nodeVersion": "v20.11.1",
+          "platform": "linux",
+          "arch": "x64",
+          "commitSha": "abc123"
+        }
+      }
+    }
+  ]
+}

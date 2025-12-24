@@ -29,6 +29,14 @@ coverage/
 docs/coverage/
 !docs/coverage/index.md
 
+# Benchmarks
+artifacts/benchmarks/
+
+# Performance docs
+docs/performance/
+!docs/performance/
+!docs/performance/index.md
+
 # Playwright
 playwright-report/
 test-results/
@@ -49,6 +57,7 @@ CLAUDE.md
 # Local tooling
 .cache/
 scripts/
+!tools/scripts/
 pr-review-output/
 pr-review/
 
