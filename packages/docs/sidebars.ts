@@ -58,7 +58,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Diagnostics & Quality',
-      items: ['coverage/index'],
+      items: ['coverage/index', 'performance/index'],
     },
     {
       type: 'category',
