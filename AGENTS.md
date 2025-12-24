@@ -27,3 +27,5 @@ Always leave the JSON intact and avoid console noise that could corrupt the payl
 
 ## Commit & Pull Request Guidelines
 History favours Conventional Commits such as `chore: add vitest llm reporter` and `feat: define runtime command payloads`, occasionally supplemented by merge commits like `Integrate runtime command queue... (#52)`. Aim for `type(scope?): concise summary`, link issues or PR numbers in parentheses, and keep imperative voice. PRs should outline the problem, the solution, and test commands executed; include screenshots or recordings for `shell-web` changes and note any follow-up work. Ensure Lefthook is installed (`pnpm prepare`) so pre-commit lint, test, and build checks run before pushing.
+
+Pre-commit hooks can take several minutes (generate/build/lint/test-content). When running commits via automation, use extended timeouts (>=10 minutes) and allow long-running output without treating it as a hang.
