@@ -80,3 +80,59 @@ jobs:
         with:
           name: coverage-markdown
           path: docs/coverage/index.md
+
+  performance-report:
+    name: Performance Report
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.1
+          run_install: false
+          standalone: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Performance Report
+        run: pnpm perf:md
+
+      - name: Verify performance report output
+        run: |
+          if [ ! -f docs/performance/index.md ]; then
+            echo "docs/performance/index.md not found; perf report generation failed."
+            exit 1
+          fi
+
+      - name: Build docs
+        run: pnpm docs:build
+
+      - name: Check benchmark outputs
+        run: |
+          if [ -d artifacts/benchmarks ]; then
+            echo "Found benchmark outputs in artifacts/benchmarks."
+          else
+            echo "No benchmark outputs found in artifacts/benchmarks; skipping raw JSON upload."
+          fi
+
+      - name: Upload performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: |
+            docs/performance/index.md
+            artifacts/benchmarks/**
