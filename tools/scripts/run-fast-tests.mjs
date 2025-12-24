@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { resolve, sep } from 'node:path';
 
 const baseRef = process.env.FAST_BASE_REF ?? 'origin/main';
 const scope = process.env.FAST_SCOPE ?? 'auto';
@@ -10,6 +11,9 @@ const readLines = (command) => {
   }
   return output.split('\n').map((line) => line.trim()).filter(Boolean);
 };
+
+const repoRoot = process.cwd();
+const toRelatedPath = (file) => resolve(repoRoot, file).split(sep).join('/');
 
 const stagedFiles = readLines('git diff --name-only --cached');
 const useStaged = scope === 'staged' || (scope === 'auto' && stagedFiles.length > 0);
@@ -34,13 +38,30 @@ if (changedFiles.length === 0) {
 }
 
 const affectedPackages = new Set();
+const relatedFilesByPackage = new Map();
 let requiresFull = false;
 
-const addContentSuite = () => {
-  affectedPackages.add('@idle-engine/content-compiler');
-  affectedPackages.add('@idle-engine/content-schema');
-  affectedPackages.add('@idle-engine/content-sample');
-  affectedPackages.add('@idle-engine/content-validation-cli');
+const addRelatedFile = (pkg, file) => {
+  const relatedFiles = relatedFilesByPackage.get(pkg);
+  if (relatedFiles) {
+    relatedFiles.add(file);
+  } else {
+    relatedFilesByPackage.set(pkg, new Set([file]));
+  }
+};
+
+const contentPackages = [
+  '@idle-engine/content-compiler',
+  '@idle-engine/content-schema',
+  '@idle-engine/content-sample',
+  '@idle-engine/content-validation-cli'
+];
+
+const addContentSuite = (file) => {
+  for (const pkg of contentPackages) {
+    affectedPackages.add(pkg);
+    addRelatedFile(pkg, file);
+  }
 };
 
 const isConfigChange = (file) => {
@@ -79,41 +100,47 @@ for (const file of changedFiles) {
 
   if (file.startsWith('packages/core/')) {
     affectedPackages.add('@idle-engine/core');
+    addRelatedFile('@idle-engine/core', file);
     continue;
   }
 
   if (file.startsWith('packages/runtime-bridge-contracts/')) {
     affectedPackages.add('@idle-engine/runtime-bridge-contracts');
+    addRelatedFile('@idle-engine/runtime-bridge-contracts', file);
     continue;
   }
 
   if (file.startsWith('packages/shell-web/')) {
     affectedPackages.add('@idle-engine/shell-web');
+    addRelatedFile('@idle-engine/shell-web', file);
     continue;
   }
 
   if (file.startsWith('tools/a11y-smoke-tests/')) {
     affectedPackages.add('@idle-engine/a11y-smoke-tests');
+    addRelatedFile('@idle-engine/a11y-smoke-tests', file);
     continue;
   }
 
   if (file.startsWith('tools/economy-verification/')) {
     affectedPackages.add('@idle-engine/economy-verification-cli');
+    addRelatedFile('@idle-engine/economy-verification-cli', file);
     continue;
   }
 
   if (file.startsWith('services/social/')) {
     affectedPackages.add('@idle-engine/social-service');
+    addRelatedFile('@idle-engine/social-service', file);
     continue;
   }
 
   if (file.startsWith('content/')) {
-    addContentSuite();
+    addContentSuite(file);
     continue;
   }
 
   if (file.startsWith('packages/content-') || file.startsWith('tools/content-')) {
-    addContentSuite();
+    addContentSuite(file);
     continue;
   }
 }
@@ -129,11 +156,52 @@ if (affectedPackages.size === 0) {
   process.exit(0);
 }
 
-const filterArgs = [];
+const nonVitestPackages = new Set(['@idle-engine/a11y-smoke-tests']);
+const vitestPackages = [];
+const otherPackages = [];
+
 for (const pkg of affectedPackages) {
-  filterArgs.push('--filter', pkg);
+  if (nonVitestPackages.has(pkg)) {
+    otherPackages.push(pkg);
+  } else {
+    vitestPackages.push(pkg);
+  }
 }
 
-const command = ['pnpm', ...filterArgs, 'run', '--if-present', 'test:ci'];
-console.log(`test:fast: running ${[...affectedPackages].join(', ')}.`);
-execSync(command.join(' '), { stdio: 'inherit' });
+const runPackages = (packages, extraArgs = [], labelSuffix = '') => {
+  if (packages.length === 0) {
+    return;
+  }
+
+  const filterArgs = [];
+  for (const pkg of packages) {
+    filterArgs.push('--filter', pkg);
+  }
+
+  const command = ['pnpm', ...filterArgs, 'run', '--if-present', 'test:ci'];
+  if (extraArgs.length > 0) {
+    command.push('--', ...extraArgs);
+  }
+
+  const label = labelSuffix ? ` ${labelSuffix}` : '';
+  console.log(`test:fast: running ${packages.join(', ')}${label}.`);
+  execSync(command.join(' '), { stdio: 'inherit' });
+};
+
+const runVitestPackages = (packages) => {
+  for (const pkg of packages) {
+    const relatedFiles = relatedFilesByPackage.get(pkg);
+    if (!relatedFiles || relatedFiles.size === 0) {
+      console.log(`test:fast: no related files detected for ${pkg}; skipping.`);
+      continue;
+    }
+
+    const relatedArgs = [...relatedFiles].map(toRelatedPath);
+    const command = ['pnpm', '--filter', pkg, 'exec', 'vitest', 'related', ...relatedArgs];
+    console.log(`test:fast: running ${pkg} (vitest related).`);
+    execSync(command.join(' '), { stdio: 'inherit' });
+  }
+};
+
+runVitestPackages(vitestPackages);
+runPackages(otherPackages);
