@@ -6,6 +6,14 @@ import {
   TransportBufferPool,
   buildRuntimeEventFrame,
 } from '../dist/index.js';
+import {
+  assertBenchmarkPayload,
+  BENCHMARK_EVENT,
+  BENCHMARK_SCHEMA_VERSION,
+  computeStats,
+  getEnvMetadata,
+  ratio,
+} from './benchmark-json-helpers.mjs';
 
 const ITERATIONS = 200;
 const SCENARIOS = [
@@ -74,7 +82,7 @@ function measureFormat(scenario, format) {
 
   bus.beginTick(0);
 
-  let totalMs = 0;
+  const samples = [];
 
   for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
     const tick = iteration + 1;
@@ -88,41 +96,88 @@ function measureFormat(scenario, format) {
       owner: `benchmark:${scenario.label}`,
       format,
     });
-    totalMs += nowMs() - start;
+    samples.push(nowMs() - start);
     frameResult.release();
   }
 
   return {
     format,
-    averageMs: totalMs / ITERATIONS,
+    stats: computeStats(samples),
   };
 }
 
 function runScenario(scenario) {
   const structResult = measureFormat(scenario, 'struct-of-arrays');
   const objectResult = measureFormat(scenario, 'object-array');
-  const ratio =
-    structResult.averageMs === 0
-      ? Number.POSITIVE_INFINITY
-      : objectResult.averageMs / structResult.averageMs;
+  const meanRatio = ratio(
+    objectResult.stats.meanMs,
+    structResult.stats.meanMs,
+  );
+  const medianRatio = ratio(
+    objectResult.stats.medianMs,
+    structResult.stats.medianMs,
+  );
+  const structAverage =
+    structResult.stats.meanMs === null
+      ? 'n/a'
+      : structResult.stats.meanMs.toFixed(4);
+  const objectAverage =
+    objectResult.stats.meanMs === null
+      ? 'n/a'
+      : objectResult.stats.meanMs.toFixed(4);
+  const meanRatioLabel =
+    meanRatio === null ? 'n/a' : meanRatio.toFixed(3);
 
   console.log(
     `scenario=${scenario.label} iterations=${ITERATIONS} eventsPerTick=${scenario.eventsPerTick}`,
   );
   console.log(
-    `  format=struct-of-arrays average=${structResult.averageMs.toFixed(4)}ms`,
+    `  format=struct-of-arrays average=${structAverage}ms`,
   );
   console.log(
-    `  format=object-array    average=${objectResult.averageMs.toFixed(4)}ms`,
+    `  format=object-array    average=${objectAverage}ms`,
   );
-  console.log(`  relative (object/struct)=${ratio.toFixed(3)}x`);
+  console.log(`  relative (object/struct)=${meanRatioLabel}x`);
+
+  return {
+    label: scenario.label,
+    eventsPerTick: scenario.eventsPerTick,
+    formats: {
+      'struct-of-arrays': structResult.stats,
+      'object-array': objectResult.stats,
+    },
+    ratios: {
+      objectOverStructMean: meanRatio,
+      objectOverStructMedian: medianRatio,
+    },
+  };
 }
 
 function main() {
+  const scenarioResults = [];
   for (const scenario of SCENARIOS) {
-    runScenario(scenario);
+    scenarioResults.push(runScenario(scenario));
   }
   resetTelemetry();
+
+  const payload = {
+    event: BENCHMARK_EVENT,
+    schemaVersion: BENCHMARK_SCHEMA_VERSION,
+    benchmark: {
+      name: 'event-frame-format',
+    },
+    config: {
+      iterations: ITERATIONS,
+      scenarios: SCENARIOS,
+    },
+    results: {
+      scenarios: scenarioResults,
+    },
+    env: getEnvMetadata(),
+  };
+
+  assertBenchmarkPayload(payload);
+  console.log(JSON.stringify(payload));
 }
 
 main();

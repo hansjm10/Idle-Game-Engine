@@ -46,6 +46,11 @@ CLAUDE.md
 # Codex
 .codex/
 
+# Local tooling
+scripts/
+pr-review-output/
+pr-review/
+
 # Plans
 docs/plans/
 

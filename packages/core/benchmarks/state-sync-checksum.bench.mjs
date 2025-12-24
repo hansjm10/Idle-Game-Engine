@@ -1,6 +1,14 @@
 import { performance } from 'node:perf_hooks';
 
 import { CommandPriority, computeStateChecksum } from '../dist/index.js';
+import {
+  assertBenchmarkPayload,
+  BENCHMARK_EVENT,
+  BENCHMARK_SCHEMA_VERSION,
+  computeStats,
+  getEnvMetadata,
+  roundNumber,
+} from './benchmark-json-helpers.mjs';
 
 const WARMUP_ITERATIONS = 2_000;
 const MEASURE_ITERATIONS = 20_000;
@@ -196,26 +204,21 @@ function runMeasurement(snapshot) {
     checksum = computeStateChecksum(snapshot);
   }
 
-  const samples = [];
+  const samplesUs = [];
   for (let run = 0; run < RUNS; run += 1) {
     const start = performance.now();
     for (let index = 0; index < MEASURE_ITERATIONS; index += 1) {
       checksum = computeStateChecksum(snapshot);
     }
     const durationMs = performance.now() - start;
-    samples.push((durationMs * 1000) / MEASURE_ITERATIONS);
+    samplesUs.push((durationMs * 1000) / MEASURE_ITERATIONS);
   }
 
   if (checksum.length === 0) {
     throw new Error('Checksum computation did not produce output.');
   }
 
-  const total = samples.reduce((sum, value) => sum + value, 0);
-  const average = total / samples.length;
-  const min = Math.min(...samples);
-  const max = Math.max(...samples);
-
-  return { average, min, max };
+  return { samplesUs };
 }
 
 function formatScenarioLabel(scenario) {
@@ -232,19 +235,28 @@ function formatScenarioLabel(scenario) {
 
 function runScenario(scenario) {
   const snapshot = createSnapshot(scenario);
-  const { average, min, max } = runMeasurement(snapshot);
+  const { samplesUs } = runMeasurement(snapshot);
+  const total = samplesUs.reduce((sum, value) => sum + value, 0);
+  const averageUs = total / samplesUs.length;
+  const minUs = Math.min(...samplesUs);
+  const maxUs = Math.max(...samplesUs);
+  const statsMs = computeStats(
+    samplesUs.map((value) => value / 1000),
+  );
   const shouldCheckTarget = scenario.enforceTarget === true;
-  const passesTarget = average <= TARGET_US;
+  const passesTarget = averageUs <= TARGET_US;
   const status = shouldCheckTarget
     ? passesTarget
       ? 'OK'
       : 'ABOVE_TARGET'
     : 'INFO';
+  const meanOverTarget =
+    TARGET_US === 0 ? null : roundNumber(averageUs / TARGET_US, 4);
 
   console.log(`scenario=${scenario.label}`);
   console.log(`  shape=${formatScenarioLabel(scenario)}`);
   console.log(
-    `  checksum_avg=${average.toFixed(2)}us min=${min.toFixed(2)}us max=${max.toFixed(2)}us`,
+    `  checksum_avg=${averageUs.toFixed(2)}us min=${minUs.toFixed(2)}us max=${maxUs.toFixed(2)}us`,
   );
   console.log(
     `  target=${TARGET_US}us status=${status}${shouldCheckTarget ? '' : ' (not enforced)'}`,
@@ -253,6 +265,24 @@ function runScenario(scenario) {
   if (ENFORCE_TARGET && shouldCheckTarget && !passesTarget) {
     process.exitCode = 1;
   }
+
+  return {
+    label: scenario.label,
+    shape: {
+      resources: scenario.resources,
+      generators: scenario.generators,
+      upgrades: scenario.upgrades,
+      achievements: scenario.achievements,
+      automations: scenario.automations,
+      transforms: scenario.transforms,
+      commands: scenario.commands,
+    },
+    stats: statsMs,
+    meanOverTarget,
+    status,
+    targetUs: TARGET_US,
+    enforceTarget: shouldCheckTarget,
+  };
 }
 
 const SCENARIOS = [
@@ -299,6 +329,29 @@ const SCENARIOS = [
   },
 ];
 
+const scenarioResults = [];
 for (const scenario of SCENARIOS) {
-  runScenario(scenario);
+  scenarioResults.push(runScenario(scenario));
 }
+
+const payload = {
+  event: BENCHMARK_EVENT,
+  schemaVersion: BENCHMARK_SCHEMA_VERSION,
+  benchmark: {
+    name: 'state-sync-checksum',
+  },
+  config: {
+    warmupIterations: WARMUP_ITERATIONS,
+    measureIterations: MEASURE_ITERATIONS,
+    runs: RUNS,
+    targetUs: TARGET_US,
+    enforceTarget: ENFORCE_TARGET,
+  },
+  results: {
+    scenarios: scenarioResults,
+  },
+  env: getEnvMetadata(),
+};
+
+assertBenchmarkPayload(payload);
+console.log(JSON.stringify(payload));
