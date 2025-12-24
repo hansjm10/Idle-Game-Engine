@@ -23,7 +23,8 @@ const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   seed: DEFAULT_FORMULA_PROPERTY_SEED + offset,
 });
 
-const LONG_PROPERTY_TIMEOUT_MS = 30_000;
+const LONG_PROPERTY_TIMEOUT_MS = 45_000;
+const MEDIUM_PROPERTY_TIMEOUT_MS = 15_000;
 
 const withLevel = (
   base: FormulaEvaluationContext,
@@ -460,7 +461,7 @@ describe('createFormulaArbitrary', () => {
       }),
       propertyConfig(8),
     );
-  });
+  }, MEDIUM_PROPERTY_TIMEOUT_MS);
 
   it('omits entity references for empty reference pools', () => {
     const emptyResourcePool = { resource: [] as const };

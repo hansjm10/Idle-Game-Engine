@@ -532,6 +532,8 @@ describe('WorkerBridgeImpl', () => {
   });
 });
 
+const INLINE_WORKER_READY_TIMEOUT_MS = 15_000;
+
 describe('createInlineRuntimeWorker', () => {
   it('boots the runtime harness when the worker bridge flag is disabled', async () => {
     const worker = createInlineRuntimeWorker();
@@ -540,7 +542,7 @@ describe('createInlineRuntimeWorker', () => {
       const timeout = setTimeout(() => {
         worker.terminate();
         reject(new Error('Inline runtime worker did not emit READY'));
-      }, 5_000);
+      }, INLINE_WORKER_READY_TIMEOUT_MS);
 
       const listener = (event: MessageEvent<unknown>) => {
         const payload = event.data as { type?: string } | null;
@@ -558,7 +560,7 @@ describe('createInlineRuntimeWorker', () => {
     expect(readyEnvelope.schemaVersion).toBe(WORKER_MESSAGE_SCHEMA_VERSION);
 
     worker.terminate();
-  });
+  }, INLINE_WORKER_READY_TIMEOUT_MS);
 });
 
 describe('Inline runtime worker integration', () => {

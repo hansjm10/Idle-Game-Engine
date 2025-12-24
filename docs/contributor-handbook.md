@@ -36,8 +36,26 @@ context.
   - Content pack/schema edits (including property-based tests) finish in ≈26s.
   - Forced full runs (`pnpm exec lefthook run pre-commit --all-files --force`)
     still execute the entire matrix (~3m40s) for comparison with CI.
+- Optional fast pass: use `pnpm fast:check` or `pnpm exec lefthook run pre-commit-fast`
+  to run cached linting plus `test:ci` scoped to affected packages. Use
+  `FAST_SCOPE=staged` to scope to staged files only and `FAST_BASE_REF=<ref>` to
+  compare against a different base. Fast checks are opt-in and do not replace the
+  default pre-commit guardrails.
+- `pnpm test:ci` runs workspace tests in parallel with `--no-sort` (tune with
+  `TEST_CI_WORKSPACE_CONCURRENCY`); use `pnpm test:ci:serial` when you need
+  topological ordering or easier debugging.
 - Use `LEFTHOOK=0 git commit ...` sparingly when you must bypass hooks; CI still
   runs the full `pnpm test:ci` matrix and remains the ultimate gate.
+
+## CI timing baseline
+
+- Latest CI quality gate baseline (2025-12-24, run 20479903522): workflow
+  completed in ~5m06s on `ubuntu-latest` with lint, typecheck, build (except
+  docs), generate, coverage, and `pnpm test:ci`.
+- Docs build runs in the Docs Preview workflow for PRs that touch docs and in
+  Docs Deploy for `main` when docs content changes.
+- When you make changes that affect CI duration, record before/after numbers in
+  the issue and update this baseline if the steady-state timing changes.
 
 ## Repository layout
 

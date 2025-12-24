@@ -5,8 +5,12 @@
   "scripts": {
     "build": "./tools/scripts/run-workspace-build.sh",
     "lint": "./tools/scripts/run-workspace-lint.sh",
+    "lint:fast": "node tools/scripts/run-fast-lint.mjs",
     "test": "./tools/scripts/run-workspace-test.sh",
-    "test:ci": "pnpm -r run test:ci",
+    "test:ci": "./tools/scripts/run-workspace-test-ci.sh",
+    "test:ci:serial": "pnpm -r run --sort --workspace-concurrency 1 test:ci",
+    "test:fast": "node tools/scripts/run-fast-tests.mjs",
+    "fast:check": "pnpm lint:fast && pnpm test:fast",
     "coverage:md": "./tools/scripts/run-workspace-coverage.sh && pnpm tsx tools/coverage-report/index.ts",
     "test:a11y": "pnpm --filter @idle-engine/a11y-smoke-tests run test",
     "typecheck": "pnpm -r run typecheck",

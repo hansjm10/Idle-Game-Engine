@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   quality-gate:
@@ -68,9 +69,6 @@ jobs:
         env:
           NODE_OPTIONS: '--dns-result-order=ipv4first'
         run: pnpm coverage:md
-
-      - name: Build documentation
-        run: pnpm docs:build
 
       - name: Test
         env:
