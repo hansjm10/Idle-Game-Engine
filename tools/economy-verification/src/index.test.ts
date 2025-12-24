@@ -14,6 +14,7 @@ const repoRoot = path.resolve(packageRoot, '..', '..');
 const cliPath = path.resolve(packageRoot, 'src', 'index.ts');
 const snapshotPath = path.resolve(packageRoot, '__fixtures__', 'snapshot.json');
 const definitionsPath = path.resolve(packageRoot, '__fixtures__', 'definitions.json');
+const CLI_TEST_TIMEOUT_MS = 30000;
 
 describe('economy verification CLI', () => {
   it('emits deterministic JSON for the fixture snapshot', async () => {
@@ -54,7 +55,7 @@ describe('economy verification CLI', () => {
     expect(gems?.endAmount).toBeCloseTo(19, 6);
     expect(shards?.delta).toBeCloseTo(-2.5, 6);
     expect(shards?.endAmount).toBeCloseTo(2.5, 6);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('derives ticks from offline-ms when omitted', async () => {
     const offlineMs = 120;
@@ -80,5 +81,5 @@ describe('economy verification CLI', () => {
     expect(payload.ticks).toBe(expectedTicks);
     expect(payload.offlineMs).toBe(expectedTicks * payload.stepSizeMs);
     expect(payload.result.deltas.length).toBeGreaterThan(0);
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 });

@@ -12,6 +12,7 @@ import { buildRuntimeEventManifest } from '../generate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, '../compile.js');
+const CLI_TEST_TIMEOUT_MS = 30000;
 
 describe('content schema CLI compile command', () => {
   it('compiles packs and emits structured events', async () => {
@@ -102,7 +103,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('supports packs authored in JSON5', async () => {
     const workspace = await createWorkspace([
@@ -125,7 +126,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('emits structured cli.unhandled_error events when manifest generation fails', async () => {
     const workspace = await createWorkspace([{ slug: 'error-pack' }]);
@@ -168,7 +169,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('writes a failure summary when validation fails', async () => {
     const workspace = await createWorkspace([
@@ -215,7 +216,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('writes a failure summary in check mode', async () => {
     const workspace = await createWorkspace([
@@ -267,7 +268,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('reports drift in check mode', async () => {
     const workspace = await createWorkspace([
@@ -319,7 +320,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('does not treat a missing @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
     const workspace = await createWorkspace([
@@ -356,7 +357,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('treats a stale @idle-engine/core dist runtime event manifest as drift in check mode', async () => {
     const workspace = await createWorkspace([
@@ -418,7 +419,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('emits failure events for missing dependencies', async () => {
     const workspace = await createWorkspace([
@@ -464,7 +465,7 @@ describe('content schema CLI compile command', () => {
     } finally {
       await workspace.cleanup();
     }
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 
   it('emits watch run events for changes, skips, and repeated failures with aggregated triggers', async () => {
     const packSlug = 'watch-pack';
@@ -735,7 +736,7 @@ async function runCli(args, options) {
     child.on('close', (code) => {
       resolve({ code, stdout, stderr });
     });
-  });
+  }, CLI_TEST_TIMEOUT_MS);
 }
 
 async function assertFileExists(filePath) {

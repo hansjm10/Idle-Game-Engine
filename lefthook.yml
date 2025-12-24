@@ -123,3 +123,11 @@ pre-commit:
         - "packages/core/package.json"
         - "packages/core/src/version.ts"
       run: node tools/scripts/generate-version.mjs --check
+
+pre-commit-fast:
+  parallel: true
+  commands:
+    lint-fast:
+      run: pnpm lint:fast
+    test-fast:
+      run: pnpm test:fast

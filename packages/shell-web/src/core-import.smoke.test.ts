@@ -6,5 +6,5 @@ describe('core alias import', () => {
     const coreModule = await import('@idle-engine/core');
 
     expect(coreModule).toBeTruthy();
-  });
+  }, 15_000);
 });
