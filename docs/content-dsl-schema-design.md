@@ -345,9 +345,10 @@ The runtime generates unlock hints for locked content using `describeCondition()
 - `links`: optional array of URL metadata `{ kind, label, href }`
 - `createdAt` / `updatedAt`: ISO-8601 timestamps (optional)
 - `visibility`: optional enum `public | private | experimental`
+- `offlineProgression`: optional offline fast path metadata `{ mode, preconditions }` (preconditions: `constantRates`, `noUnlocks`, `noAchievements`, `noAutomation`, `modeledResourceBounds`)
 - `dependencies`: optional object shaped by `packDependencySchema` with `requires`, `optional`, `conflicts`, and `provides` arrays
 
-The schema normalises whitespace, enforces canonical casing, and ensures `engine` ranges include the active runtime version when known and that `supportedLocales` contains `defaultLocale`.
+The schema normalises whitespace, enforces canonical casing, validates offline progression metadata, and ensures `engine` ranges include the active runtime version when known and that `supportedLocales` contains `defaultLocale`.
 
 When authors pass `ContentSchemaOptions.runtimeVersion`, `validateCrossReferences` performs two compatibility checks:
 1. `semver.satisfies(runtimeVersion, metadata.engine)` must be true

@@ -1907,11 +1907,21 @@ describe('session snapshot protocol', () => {
       modeledResourceBounds: true,
     };
 
+    const content = createContentPack({
+      metadata: {
+        offlineProgression: {
+          mode: 'constant-rates',
+          preconditions,
+        },
+      },
+      resources: [createResourceDefinition('pack.test.energy')],
+    });
+
     harness = initializeRuntimeWorker({
       context: context as unknown as DedicatedWorkerGlobalScope,
       now: timeController.now,
       scheduleTick: timeController.scheduleTick,
-      offlineProgression: { preconditions },
+      content,
     });
 
     timeController.advanceTime(110);
@@ -1938,7 +1948,7 @@ describe('session snapshot protocol', () => {
     expect(offlineProgression?.mode).toBe('constant-rates');
     expect(offlineProgression?.preconditions).toEqual(preconditions);
     expect(
-      typeof offlineProgression?.resourceNetRates['sample-pack.energy'],
+      typeof offlineProgression?.resourceNetRates['pack.test.energy'],
     ).toBe('number');
   });
 

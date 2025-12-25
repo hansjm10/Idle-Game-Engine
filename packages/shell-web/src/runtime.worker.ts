@@ -25,7 +25,6 @@ import {
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
   type EventBus,
-  type OfflineProgressFastPathMode,
   type OfflineProgressFastPathPreconditions,
   type ResourceCommandHandlerOptions,
 } from '@idle-engine/core';
@@ -85,7 +84,6 @@ export interface RuntimeWorkerOptions {
   readonly fetch?: typeof fetch;
   readonly stepSizeMs?: number;
   readonly content?: NormalizedContentPack;
-  readonly offlineProgression?: RuntimeWorkerOfflineProgressionConfig;
 }
 
 interface WorkerGameState {
@@ -96,11 +94,6 @@ interface WorkerGameState {
 type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
 };
-
-type RuntimeWorkerOfflineProgressionConfig = Readonly<{
-  readonly mode?: OfflineProgressFastPathMode;
-  readonly preconditions: OfflineProgressFastPathPreconditions;
-}>;
 
 export interface RuntimeWorkerHarness {
   readonly runtime: IdleEngineRuntime;
@@ -166,7 +159,7 @@ export function initializeRuntimeWorker(
   }
 
   const content = options.content ?? sampleContent;
-  const offlineProgressionConfig = options.offlineProgression;
+  const offlineProgressionConfig = content.metadata.offlineProgression;
 
   const progressionCoordinator = createProgressionCoordinator({
     content,
@@ -383,7 +376,12 @@ export function initializeRuntimeWorker(
           },
         },
       );
-      if (offlineProgressionConfig) {
+      if (
+        offlineProgressionConfig &&
+        areFastPathPreconditionsMet(
+          offlineProgressionConfig.preconditions,
+        )
+      ) {
         captureResourceNetRates(progression.resources);
       }
       const transforms = Object.freeze({
@@ -812,14 +810,17 @@ export function initializeRuntimeWorker(
     }
   }
 
-  const areFastPathPreconditionsMet = (
+  function areFastPathPreconditionsMet(
     preconditions: OfflineProgressFastPathPreconditions,
-  ): boolean =>
-    preconditions.constantRates &&
-    preconditions.noUnlocks &&
-    preconditions.noAchievements &&
-    preconditions.noAutomation &&
-    preconditions.modeledResourceBounds;
+  ): boolean {
+    return (
+      preconditions.constantRates &&
+      preconditions.noUnlocks &&
+      preconditions.noAchievements &&
+      preconditions.noAutomation &&
+      preconditions.modeledResourceBounds
+    );
+  }
 
   const parseOfflineProgression = (
     value: RuntimeWorkerRestoreSession['offlineProgression'],
@@ -1129,7 +1130,11 @@ export function initializeRuntimeWorker(
       const capturedAt = new Date().toISOString();
       const contentDigest = progressionCoordinator.resourceState.getDefinitionDigest();
       const offlineProgression =
-        offlineProgressionConfig && lastResourceNetRates !== null
+        offlineProgressionConfig &&
+        areFastPathPreconditionsMet(
+          offlineProgressionConfig.preconditions,
+        ) &&
+        lastResourceNetRates !== null
           ? {
               mode:
                 offlineProgressionConfig.mode ?? 'constant-rates',

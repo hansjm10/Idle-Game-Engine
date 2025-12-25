@@ -66,7 +66,7 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
 
 ### 4.5 Session snapshots
 - **Capture performance**: Snapshot serialization is **synchronous** and blocks the worker tick loop. The worker captures the current runtime state via `exportForSave()` and emits a `SESSION_SNAPSHOT` message with the complete payload (state, metadata, content digest).
-- **Offline fast path metadata**: When configured, `SESSION_SNAPSHOT` includes `offlineProgression` (mode, resource net rates, preconditions) to enable constant-rate offline restores; missing or invalid metadata falls back to step-based catch-up.
+- **Offline fast path metadata**: When `metadata.offlineProgression` is configured and preconditions are met, `SESSION_SNAPSHOT` includes `offlineProgression` (mode, resource net rates, preconditions) to enable constant-rate offline restores; missing or invalid metadata falls back to step-based catch-up.
 - **Expected snapshot sizes**:
   - Small games (~10 resources): **1-5 KB**
   - Medium games (~50 resources): **5-25 KB**
