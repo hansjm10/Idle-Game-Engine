@@ -639,6 +639,15 @@ describe('combineConditions', () => {
 });
 
 describe('describeCondition', () => {
+  const createContext = (
+    overrides?: Partial<ConditionContext>,
+  ): ConditionContext => ({
+    getResourceAmount: () => 0,
+    getGeneratorLevel: () => 0,
+    getUpgradePurchases: () => 0,
+    ...overrides,
+  });
+
   it('returns undefined for undefined condition', () => {
     expect(describeCondition(undefined)).toBeUndefined();
   });
@@ -661,6 +670,116 @@ describe('describeCondition', () => {
       amount: { kind: 'constant', value: 100 },
     };
     expect(describeCondition(condition)).toBe('Requires energy >= 100');
+  });
+
+  it('uses display name resolvers when provided', () => {
+    const context = createContext({
+      resolveResourceName: (resourceId) =>
+        resourceId === 'resource.energy' ? 'Energy' : undefined,
+      resolveGeneratorName: (generatorId) =>
+        generatorId === 'generator.basic' ? 'Basic Generator' : undefined,
+      resolveUpgradeName: (upgradeId) =>
+        upgradeId === 'upgrade.starter' ? 'Starter Upgrade' : undefined,
+      resolvePrestigeLayerName: (prestigeLayerId) =>
+        prestigeLayerId === 'prestige.alpha' ? 'Alpha Layer' : undefined,
+    });
+
+    const resourceCondition: Condition = {
+      kind: 'resourceThreshold',
+      resourceId: cid('resource.energy'),
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 100 },
+    };
+    const generatorCondition: Condition = {
+      kind: 'generatorLevel',
+      generatorId: cid('generator.basic'),
+      comparator: 'gte',
+      level: { kind: 'constant', value: 5 },
+    };
+    const upgradeCondition: Condition = {
+      kind: 'upgradeOwned',
+      upgradeId: cid('upgrade.starter'),
+      requiredPurchases: 1,
+    };
+    const prestigeCondition: Condition = {
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: cid('prestige.alpha'),
+      comparator: 'gte',
+      count: 1,
+    };
+    const prestigeCompletedCondition: Condition = {
+      kind: 'prestigeCompleted',
+      prestigeLayerId: cid('prestige.alpha'),
+    };
+    const prestigeUnlockedCondition: Condition = {
+      kind: 'prestigeUnlocked',
+      prestigeLayerId: cid('prestige.alpha'),
+    };
+
+    expect(describeCondition(resourceCondition, context)).toBe(
+      'Requires Energy >= 100',
+    );
+    expect(describeCondition(generatorCondition, context)).toBe(
+      'Requires Basic Generator >= 5',
+    );
+    expect(describeCondition(upgradeCondition, context)).toBe(
+      'Requires owning 1× Starter Upgrade',
+    );
+    expect(describeCondition(prestigeCondition, context)).toBe(
+      'Requires prestige count for Alpha Layer >= 1',
+    );
+    expect(describeCondition(prestigeCompletedCondition, context)).toBe(
+      'Requires prestiged at least once in Alpha Layer',
+    );
+    expect(describeCondition(prestigeUnlockedCondition, context)).toBe(
+      'Requires prestige layer Alpha Layer available',
+    );
+  });
+
+  it('falls back to ids when resolvers return empty values', () => {
+    const context = createContext({
+      resolveResourceName: () => ' ',
+      resolveGeneratorName: () => undefined,
+      resolveUpgradeName: () => '  ',
+      resolvePrestigeLayerName: () => undefined,
+    });
+
+    const resourceCondition: Condition = {
+      kind: 'resourceThreshold',
+      resourceId: cid('resource.energy'),
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 100 },
+    };
+    const generatorCondition: Condition = {
+      kind: 'generatorLevel',
+      generatorId: cid('generator.basic'),
+      comparator: 'gte',
+      level: { kind: 'constant', value: 5 },
+    };
+    const upgradeCondition: Condition = {
+      kind: 'upgradeOwned',
+      upgradeId: cid('upgrade.starter'),
+      requiredPurchases: 1,
+    };
+    const prestigeCondition: Condition = {
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: cid('prestige.alpha'),
+      comparator: 'gte',
+      count: 1,
+    };
+
+    expect(describeCondition(resourceCondition, context)).toBe(
+      'Requires resource.energy >= 100',
+    );
+    expect(describeCondition(generatorCondition, context)).toBe(
+      'Requires generator.basic >= 5',
+    );
+    expect(describeCondition(upgradeCondition, context)).toBe(
+      'Requires owning 1× upgrade.starter',
+    );
+    expect(describeCondition(prestigeCondition, context)).toBe(
+      'Requires prestige count for prestige.alpha >= 1',
+    );
   });
 
   it('describes generatorLevel condition', () => {
@@ -716,10 +835,10 @@ describe('describeCondition', () => {
 	    );
 	  });
 
-	  it('describes allOf condition with multiple parts', () => {
-	    const condition: Condition = {
-	      kind: 'allOf',
-	      conditions: [
+  it('describes allOf condition with multiple parts', () => {
+    const condition: Condition = {
+      kind: 'allOf',
+      conditions: [
         {
           kind: 'resourceThreshold',
           resourceId: cid('energy'),
@@ -736,6 +855,35 @@ describe('describeCondition', () => {
     };
     expect(describeCondition(condition)).toBe(
       'Requires energy >= 100, Requires generator.test >= 5',
+    );
+  });
+
+  it('describes allOf condition with display names', () => {
+    const context = createContext({
+      resolveResourceName: (resourceId) =>
+        resourceId === 'resource.energy' ? 'Energy' : undefined,
+      resolveGeneratorName: (generatorId) =>
+        generatorId === 'generator.basic' ? 'Basic Generator' : undefined,
+    });
+    const condition: Condition = {
+      kind: 'allOf',
+      conditions: [
+        {
+          kind: 'resourceThreshold',
+          resourceId: cid('resource.energy'),
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 100 },
+        },
+        {
+          kind: 'generatorLevel',
+          generatorId: cid('generator.basic'),
+          comparator: 'gte',
+          level: { kind: 'constant', value: 5 },
+        },
+      ],
+    };
+    expect(describeCondition(condition, context)).toBe(
+      'Requires Energy >= 100, Requires Basic Generator >= 5',
     );
   });
 
@@ -775,6 +923,35 @@ describe('describeCondition', () => {
     };
     expect(describeCondition(condition)).toBe(
       'Requires any of: Requires energy >= 100 or Requires generator.test >= 5',
+    );
+  });
+
+  it('describes anyOf condition with display names', () => {
+    const context = createContext({
+      resolveResourceName: (resourceId) =>
+        resourceId === 'resource.energy' ? 'Energy' : undefined,
+      resolveGeneratorName: (generatorId) =>
+        generatorId === 'generator.basic' ? 'Basic Generator' : undefined,
+    });
+    const condition: Condition = {
+      kind: 'anyOf',
+      conditions: [
+        {
+          kind: 'resourceThreshold',
+          resourceId: cid('resource.energy'),
+          comparator: 'gte',
+          amount: { kind: 'constant', value: 100 },
+        },
+        {
+          kind: 'generatorLevel',
+          generatorId: cid('generator.basic'),
+          comparator: 'gte',
+          level: { kind: 'constant', value: 5 },
+        },
+      ],
+    };
+    expect(describeCondition(condition, context)).toBe(
+      'Requires any of: Requires Energy >= 100 or Requires Basic Generator >= 5',
     );
   });
 

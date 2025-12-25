@@ -101,6 +101,76 @@ function createGeneratorUnlockContentPack(): NormalizedContentPack {
   });
 }
 
+function createUnlockHintFallbackContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: ' ',
+  });
+  const prestige = createResourceDefinition('resource.prestige', {
+    name: ' ',
+  });
+  const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+    name: ' ',
+  });
+
+  const generator = createGeneratorDefinition('generator.unlockable', {
+    name: ' ',
+    purchase: {
+      currencyId: energy.id,
+      costMultiplier: 25,
+      costCurve: literalOne,
+    },
+    baseUnlock: {
+      kind: 'resourceThreshold',
+      resourceId: energy.id,
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 15 },
+    } as any,
+  });
+
+  const starterUpgrade = createUpgradeDefinition('upgrade.starter', {
+    name: ' ',
+    cost: {
+      currencyId: energy.id,
+      costMultiplier: 1,
+      costCurve: literalOne,
+    },
+  });
+  const gatedUpgrade = createUpgradeDefinition('upgrade.gated', {
+    name: ' ',
+    cost: {
+      currencyId: energy.id,
+      costMultiplier: 2,
+      costCurve: literalOne,
+    },
+    unlockCondition: {
+      kind: 'upgradeOwned',
+      upgradeId: starterUpgrade.id,
+      requiredPurchases: 1,
+    } as any,
+  });
+
+  const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+    name: ' ',
+    unlockCondition: {
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: 'prestige.ascension',
+      comparator: 'gte',
+      count: 1,
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy, prestige, prestigeCount],
+    generators: [generator],
+    upgrades: [starterUpgrade, gatedUpgrade],
+    prestigeLayers: [prestigeLayer],
+    metadata: {
+      id: 'pack.unlock-hint-fallback',
+      title: 'Unlock Hint Fallback Pack',
+    },
+  });
+}
+
 function createGeneratorLevelUnlockContentPack(): NormalizedContentPack {
   const energy = createResourceDefinition('resource.energy', {
     name: 'Energy',
@@ -219,6 +289,75 @@ function createCompoundGeneratorUnlockContentPack(): NormalizedContentPack {
     metadata: {
       id: 'pack.compound-generator-unlock',
       title: 'Compound Generator Unlock Pack',
+    },
+  });
+}
+
+function createUpgradeUnlockHintContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+
+  const starterUpgrade = createUpgradeDefinition('upgrade.starter', {
+    name: 'Starter Upgrade',
+    cost: {
+      currencyId: energy.id,
+      costMultiplier: 1,
+      costCurve: literalOne,
+    },
+  });
+
+  const gatedUpgrade = createUpgradeDefinition('upgrade.gated', {
+    name: 'Gated Upgrade',
+    cost: {
+      currencyId: energy.id,
+      costMultiplier: 2,
+      costCurve: literalOne,
+    },
+    unlockCondition: {
+      kind: 'upgradeOwned',
+      upgradeId: starterUpgrade.id,
+      requiredPurchases: 1,
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy],
+    upgrades: [starterUpgrade, gatedUpgrade],
+    metadata: {
+      id: 'pack.upgrade-unlock-hints',
+      title: 'Upgrade Unlock Hint Pack',
+    },
+  });
+}
+
+function createPrestigeUnlockHintContentPack(): NormalizedContentPack {
+  const energy = createResourceDefinition('resource.energy', {
+    name: 'Energy',
+  });
+  const prestige = createResourceDefinition('resource.prestige', {
+    name: 'Prestige',
+  });
+  const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+    name: 'Ascension Count',
+  });
+
+  const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+    name: 'Ascension',
+    unlockCondition: {
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: 'prestige.ascension',
+      comparator: 'gte',
+      count: 1,
+    } as any,
+  });
+
+  return createContentPack({
+    resources: [energy, prestige, prestigeCount],
+    prestigeLayers: [prestigeLayer],
+    metadata: {
+      id: 'pack.prestige-unlock-hints',
+      title: 'Prestige Unlock Hint Pack',
     },
   });
 }
@@ -798,7 +937,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.unlockable');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires resource.energy >= 15');
+    expect(generator?.unlockHint).toBe('Requires Energy >= 15');
   });
 
   it('includes unlockHint for generators locked by generator level', () => {
@@ -812,7 +951,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.gated');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
+    expect(generator?.unlockHint).toBe('Requires Basic Generator >= 5');
   });
 
   it('does not duplicate hint when visibilityCondition equals baseUnlock', () => {
@@ -828,7 +967,7 @@ describe('progression-coordinator', () => {
       (g) => g.id === 'generator.duplicate-visibility',
     );
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires resource.energy >= 10');
+    expect(generator?.unlockHint).toBe('Requires Energy >= 10');
   });
 
   it('includes unlockHint for generators locked by compound and condition', () => {
@@ -842,8 +981,8 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.compound');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toContain('resource.energy');
-    expect(generator?.unlockHint).toContain('generator.basic');
+    expect(generator?.unlockHint).toContain('Energy');
+    expect(generator?.unlockHint).toContain('Basic Generator');
   });
 
   it('omits satisfied subconditions from compound unlock hints', () => {
@@ -860,7 +999,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.compound');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
+    expect(generator?.unlockHint).toBe('Requires Basic Generator >= 5');
   });
 
   it('includes unlockHint for generators locked by or condition', () => {
@@ -875,8 +1014,8 @@ describe('progression-coordinator', () => {
     const generator = snapshot.generators.find((g) => g.id === 'generator.or');
     expect(generator?.unlocked).toBe(false);
     expect(generator?.unlockHint).toContain('Requires any of:');
-    expect(generator?.unlockHint).toContain('resource.energy');
-    expect(generator?.unlockHint).toContain('generator.basic');
+    expect(generator?.unlockHint).toContain('Energy');
+    expect(generator?.unlockHint).toContain('Basic Generator');
   });
 
   it('describes dynamic formula thresholds using current game state', () => {
@@ -904,7 +1043,57 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.dynamic');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires resource.energy >= 20');
+    expect(generator?.unlockHint).toBe('Requires Energy >= 20');
+  });
+
+  it('includes unlockHint for upgrades locked by upgrade ownership', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createUpgradeUnlockHintContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const upgrade = snapshot.upgrades.find((u) => u.id === 'upgrade.gated');
+    expect(upgrade?.status).toBe('locked');
+    expect(upgrade?.unlockHint).toBe('Requires owning 1× Starter Upgrade');
+  });
+
+  it('includes unlockHint for prestige layers locked by prestige count threshold', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createPrestigeUnlockHintContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const layer = snapshot.prestigeLayers.find((l) => l.id === 'prestige.ascension');
+    expect(layer?.status).toBe('locked');
+    expect(layer?.unlockHint).toBe('Requires prestige count for Ascension >= 1');
+  });
+
+  it('falls back to ids in unlockHint when display names are blank', () => {
+    const coordinator = createProgressionCoordinator({
+      content: createUnlockHintFallbackContentPack(),
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    const generator = snapshot.generators.find((g) => g.id === 'generator.unlockable');
+    expect(generator?.unlocked).toBe(false);
+    expect(generator?.unlockHint).toBe('Requires resource.energy >= 15');
+
+    const upgrade = snapshot.upgrades.find((u) => u.id === 'upgrade.gated');
+    expect(upgrade?.status).toBe('locked');
+    expect(upgrade?.unlockHint).toBe('Requires owning 1× upgrade.starter');
+
+    const layer = snapshot.prestigeLayers.find((l) => l.id === 'prestige.ascension');
+    expect(layer?.status).toBe('locked');
+    expect(layer?.unlockHint).toBe('Requires prestige count for prestige.ascension >= 1');
   });
 
   it('does not quote purchases for invisible generators', () => {

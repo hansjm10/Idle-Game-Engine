@@ -57,6 +57,15 @@ export type ConditionContext = {
    * Called when unknown condition kinds or comparators are encountered.
    */
   readonly onError?: (error: Error) => void;
+  /**
+   * Optional hooks for resolving display names in condition descriptions.
+   */
+  readonly resolveResourceName?: (resourceId: string) => string | undefined;
+  readonly resolveGeneratorName?: (generatorId: string) => string | undefined;
+  readonly resolveUpgradeName?: (upgradeId: string) => string | undefined;
+  readonly resolvePrestigeLayerName?: (
+    prestigeLayerId: string,
+  ) => string | undefined;
 };
 
 const createStaticFormulaEvaluationContext = (
@@ -116,6 +125,20 @@ const isConditionSatisfied = (
   } catch {
     return false;
   }
+};
+
+const resolveDisplayName = (
+  resolver: ((id: string) => string | undefined) | undefined,
+  fallbackId: string,
+): string => {
+  if (!resolver) {
+    return fallbackId;
+  }
+  const resolved = resolver(fallbackId);
+  if (typeof resolved !== 'string' || resolved.trim().length === 0) {
+    return fallbackId;
+  }
+  return resolved;
 };
 
 function reportMissingContextHook(
@@ -384,7 +407,11 @@ export function describeCondition(
       const amount = evaluateNumericFormula(condition.amount, {
         ...formulaContext,
       });
-      return `Requires ${condition.resourceId} ${formatComparator(
+      const resourceName = resolveDisplayName(
+        context?.resolveResourceName,
+        condition.resourceId,
+      );
+      return `Requires ${resourceName} ${formatComparator(
         condition.comparator,
       )} ${formatNumber(amount)}`;
     }
@@ -393,20 +420,34 @@ export function describeCondition(
       const level = evaluateNumericFormula(condition.level, {
         ...formulaContext,
       });
-      return `Requires ${condition.generatorId} ${formatComparator(
+      const generatorName = resolveDisplayName(
+        context?.resolveGeneratorName,
+        condition.generatorId,
+      );
+      return `Requires ${generatorName} ${formatComparator(
         condition.comparator,
       )} ${formatNumber(level)}`;
     }
     case 'upgradeOwned':
-      return `Requires owning ${condition.requiredPurchases}× ${condition.upgradeId}`;
+      return `Requires owning ${condition.requiredPurchases}× ${resolveDisplayName(
+        context?.resolveUpgradeName,
+        condition.upgradeId,
+      )}`;
     case 'prestigeCountThreshold':
-      return `Requires prestige count for ${condition.prestigeLayerId} ${formatComparator(
-        condition.comparator,
-      )} ${formatNumber(condition.count)}`;
+      return `Requires prestige count for ${resolveDisplayName(
+        context?.resolvePrestigeLayerName,
+        condition.prestigeLayerId,
+      )} ${formatComparator(condition.comparator)} ${formatNumber(condition.count)}`;
     case 'prestigeCompleted':
-      return `Requires prestiged at least once in ${condition.prestigeLayerId}`;
+      return `Requires prestiged at least once in ${resolveDisplayName(
+        context?.resolvePrestigeLayerName,
+        condition.prestigeLayerId,
+      )}`;
     case 'prestigeUnlocked':
-      return `Requires prestige layer ${condition.prestigeLayerId} available`;
+      return `Requires prestige layer ${resolveDisplayName(
+        context?.resolvePrestigeLayerName,
+        condition.prestigeLayerId,
+      )} available`;
     case 'allOf': {
       const pendingConditions =
         context
