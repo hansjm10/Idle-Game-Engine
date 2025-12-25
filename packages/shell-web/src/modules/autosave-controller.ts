@@ -229,6 +229,7 @@ export class AutosaveController {
       commandQueue: snapshot.commandQueue,
       runtimeVersion: snapshot.runtimeVersion,
       contentDigest: snapshot.contentDigest,
+      offlineProgression: snapshot.offlineProgression,
       // TODO: Populate contentPacks field when worker supplies content pack metadata
       // This will enable multi-pack migration tracking (planned for future runtime enhancement)
       flags: snapshot.flags,

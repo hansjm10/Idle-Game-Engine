@@ -167,6 +167,7 @@ export function PersistenceIntegration({
       state: snapshot.state,
       runtimeVersion: snapshot.runtimeVersion,
       contentDigest: snapshot.contentDigest,
+      offlineProgression: snapshot.offlineProgression,
       flags: snapshot.flags,
     });
   }, []);

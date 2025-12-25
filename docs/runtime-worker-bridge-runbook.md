@@ -59,13 +59,14 @@ Design Source: [runtime-react-worker-bridge-design.md](runtime-react-worker-brid
 - Monitor the console for `[runtime.worker]` warnings. Errors propagate through `bridge.onError` callbacks with typed detail (`RuntimeWorkerErrorDetails`) and request IDs for social commands.
 - Common codes:
   - `INVALID_COMMAND_PAYLOAD` – schema/version mismatch or malformed payload.
-  - `SCHEMA_VERSION_MISMATCH` – client bundle using different `WORKER_MESSAGE_SCHEMA_VERSION` (currently `3`).
+- `SCHEMA_VERSION_MISMATCH` – client bundle using different `WORKER_MESSAGE_SCHEMA_VERSION` (currently `4`).
   - `RESTORE_FAILED` – session payload rejected; inspect `.details` for reconciliation logs.
   - `STALE_COMMAND` – command `issuedAt` < last accepted; ensure callers use the bridge helpers.
   - `SNAPSHOT_FAILED` – session snapshot capture failed; see §4.5 for details.
 
 ### 4.5 Session snapshots
 - **Capture performance**: Snapshot serialization is **synchronous** and blocks the worker tick loop. The worker captures the current runtime state via `exportForSave()` and emits a `SESSION_SNAPSHOT` message with the complete payload (state, metadata, content digest).
+- **Offline fast path metadata**: When configured, `SESSION_SNAPSHOT` includes `offlineProgression` (mode, resource net rates, preconditions) to enable constant-rate offline restores; missing or invalid metadata falls back to step-based catch-up.
 - **Expected snapshot sizes**:
   - Small games (~10 resources): **1-5 KB**
   - Medium games (~50 resources): **5-25 KB**

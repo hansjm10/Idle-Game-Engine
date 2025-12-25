@@ -11,6 +11,7 @@ import {
   setGameState,
   getGameState,
   buildProgressionSnapshot,
+  applyOfflineProgress,
   registerResourceCommandHandlers,
   registerAutomationCommandHandlers,
   registerOfflineCatchupCommandHandler,
@@ -24,6 +25,8 @@ import {
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
   type EventBus,
+  type OfflineProgressFastPathMode,
+  type OfflineProgressFastPathPreconditions,
   type ResourceCommandHandlerOptions,
 } from '@idle-engine/core';
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
@@ -57,6 +60,7 @@ import {
   type RuntimeWorkerSessionRestored,
   type RuntimeWorkerRequestSessionSnapshot,
   type RuntimeWorkerSessionSnapshot,
+  type OfflineProgressSnapshot,
   type RuntimeWorkerSocialCommand,
   type RuntimeWorkerSocialCommandResult,
   type RuntimeWorkerSocialCommandFailure,
@@ -81,6 +85,7 @@ export interface RuntimeWorkerOptions {
   readonly fetch?: typeof fetch;
   readonly stepSizeMs?: number;
   readonly content?: NormalizedContentPack;
+  readonly offlineProgression?: RuntimeWorkerOfflineProgressionConfig;
 }
 
 interface WorkerGameState {
@@ -91,6 +96,11 @@ interface WorkerGameState {
 type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
 };
+
+type RuntimeWorkerOfflineProgressionConfig = Readonly<{
+  readonly mode?: OfflineProgressFastPathMode;
+  readonly preconditions: OfflineProgressFastPathPreconditions;
+}>;
 
 export interface RuntimeWorkerHarness {
   readonly runtime: IdleEngineRuntime;
@@ -156,6 +166,7 @@ export function initializeRuntimeWorker(
   }
 
   const content = options.content ?? sampleContent;
+  const offlineProgressionConfig = options.offlineProgression;
 
   const progressionCoordinator = createProgressionCoordinator({
     content,
@@ -287,6 +298,26 @@ export function initializeRuntimeWorker(
   const monotonicClock = createMonotonicClock(now);
 
   let lastTimestamp = now() - stepDurationMs;
+  let lastResourceNetRates: Record<string, number> | null = null;
+
+  const captureResourceNetRates = (
+    resources: readonly { id: string; perSecond: number }[],
+  ): void => {
+    const netRates: Record<string, number> = {};
+    for (const resource of resources) {
+      if (typeof resource.id !== 'string' || resource.id.length === 0) {
+        lastResourceNetRates = null;
+        return;
+      }
+      const rate = resource.perSecond;
+      if (!Number.isFinite(rate)) {
+        lastResourceNetRates = null;
+        return;
+      }
+      netRates[resource.id] = rate;
+    }
+    lastResourceNetRates = netRates;
+  };
 
   const emitCommandFailures = () => {
     const commandFailures = runtime.drainCommandFailures();
@@ -352,6 +383,9 @@ export function initializeRuntimeWorker(
           },
         },
       );
+      if (offlineProgressionConfig) {
+        captureResourceNetRates(progression.resources);
+      }
       const transforms = Object.freeze({
         step: currentStep,
         publishedAt,
@@ -778,6 +812,77 @@ export function initializeRuntimeWorker(
     }
   }
 
+  const areFastPathPreconditionsMet = (
+    preconditions: OfflineProgressFastPathPreconditions,
+  ): boolean =>
+    preconditions.constantRates &&
+    preconditions.noUnlocks &&
+    preconditions.noAchievements &&
+    preconditions.noAutomation &&
+    preconditions.modeledResourceBounds;
+
+  const parseOfflineProgression = (
+    value: RuntimeWorkerRestoreSession['offlineProgression'],
+  ): OfflineProgressSnapshot | undefined => {
+    if (!isRecord(value)) {
+      return undefined;
+    }
+
+    const mode = value.mode;
+    if (mode !== 'constant-rates') {
+      return undefined;
+    }
+
+    const resourceNetRates = value.resourceNetRates;
+    if (
+      !isRecord(resourceNetRates) ||
+      Array.isArray(resourceNetRates)
+    ) {
+      return undefined;
+    }
+
+    for (const rate of Object.values(resourceNetRates)) {
+      if (typeof rate !== 'number' || !Number.isFinite(rate)) {
+        return undefined;
+      }
+    }
+
+    const preconditions = value.preconditions;
+    if (!isRecord(preconditions)) {
+      return undefined;
+    }
+
+    const {
+      constantRates,
+      noUnlocks,
+      noAchievements,
+      noAutomation,
+      modeledResourceBounds,
+    } = preconditions;
+
+    if (
+      typeof constantRates !== 'boolean' ||
+      typeof noUnlocks !== 'boolean' ||
+      typeof noAchievements !== 'boolean' ||
+      typeof noAutomation !== 'boolean' ||
+      typeof modeledResourceBounds !== 'boolean'
+    ) {
+      return undefined;
+    }
+
+    return {
+      mode,
+      resourceNetRates: resourceNetRates as Record<string, number>,
+      preconditions: {
+        constantRates,
+        noUnlocks,
+        noAchievements,
+        noAutomation,
+        modeledResourceBounds,
+      },
+    };
+  };
+
   const handleRestoreSessionMessage = (
     message: RuntimeWorkerRestoreSession,
   ) => {
@@ -918,7 +1023,30 @@ export function initializeRuntimeWorker(
       const hasOfflineCatchup =
         offlineElapsedMs > 0 || Object.keys(offlineResourceDeltas).length > 0;
 
-      if (hasOfflineCatchup) {
+      const offlineProgression = parseOfflineProgression(
+        message.offlineProgression,
+      );
+      if (message.offlineProgression !== undefined && !offlineProgression) {
+        telemetry.recordWarning('OfflineProgressionSnapshotInvalid', {
+          reason: 'invalid_payload',
+        });
+      }
+
+      const shouldApplyFastPath =
+        offlineElapsedMs > 0 &&
+        offlineProgression !== undefined &&
+        areFastPathPreconditionsMet(offlineProgression.preconditions) &&
+        typeof runtime.fastForward === 'function';
+
+      if (shouldApplyFastPath) {
+        applyOfflineProgress({
+          elapsedMs: offlineElapsedMs,
+          coordinator: progressionCoordinator,
+          runtime,
+          resourceDeltas: offlineResourceDeltas,
+          fastPath: offlineProgression,
+        });
+      } else if (hasOfflineCatchup) {
         commandQueue.enqueue({
           type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
           payload: {
@@ -1000,6 +1128,15 @@ export function initializeRuntimeWorker(
       const monotonicMs = monotonicClock.now();
       const capturedAt = new Date().toISOString();
       const contentDigest = progressionCoordinator.resourceState.getDefinitionDigest();
+      const offlineProgression =
+        offlineProgressionConfig && lastResourceNetRates !== null
+          ? {
+              mode:
+                offlineProgressionConfig.mode ?? 'constant-rates',
+              resourceNetRates: { ...lastResourceNetRates },
+              preconditions: offlineProgressionConfig.preconditions,
+            }
+          : undefined;
 
       const snapshotEnvelope: RuntimeWorkerSessionSnapshot = {
         type: 'SESSION_SNAPSHOT',
@@ -1015,6 +1152,7 @@ export function initializeRuntimeWorker(
           commandQueue: commandQueueSnapshot,
           runtimeVersion: RUNTIME_VERSION,
           contentDigest,
+          ...(offlineProgression ? { offlineProgression } : {}),
         },
       };
 
@@ -1022,6 +1160,7 @@ export function initializeRuntimeWorker(
       const snapshotBytes = JSON.stringify({
         state,
         commandQueue: commandQueueSnapshot,
+        offlineProgression,
       }).length;
       const snapshotKB = (snapshotBytes / 1024).toFixed(2);
 

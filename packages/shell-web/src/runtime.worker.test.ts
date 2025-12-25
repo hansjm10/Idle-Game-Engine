@@ -13,6 +13,7 @@ import {
   type RuntimeWorkerError,
   SOCIAL_COMMAND_TYPES,
   type RuntimeWorkerSocialCommandResult,
+  type RuntimeWorkerSessionSnapshot,
 } from '@idle-engine/runtime-bridge-contracts';
 import { setSocialConfigOverrideForTesting } from './modules/social-config.js';
 import {
@@ -1581,6 +1582,56 @@ describe('runtime.worker integration', () => {
       expect(stateUpdate).toBeDefined();
     });
 
+    it('applies offline fast path when preconditions are met', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': 1,
+          },
+          preconditions: {
+            constantRates: true,
+            noUnlocks: true,
+            noAchievements: true,
+            noAutomation: true,
+            modeledResourceBounds: true,
+          },
+        },
+      });
+
+      expect(enqueueSpy).not.toHaveBeenCalled();
+
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+    });
+
     it('handles rapid command dispatch without dropping messages', () => {
       const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
       vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -1841,6 +1892,54 @@ describe('session snapshot protocol', () => {
     expect(Array.isArray(snapshotEnvelope.snapshot.contentDigest.ids)).toBe(true);
     expect(snapshotEnvelope.snapshot.state).toBeDefined();
     expect(snapshotEnvelope.snapshot.commandQueue).toBeDefined();
+  });
+
+  it('includes offline progression metadata when configured', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    const preconditions = {
+      constantRates: true,
+      noUnlocks: true,
+      noAchievements: true,
+      noAutomation: true,
+      modeledResourceBounds: true,
+    };
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      offlineProgression: { preconditions },
+    });
+
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-offline',
+    });
+
+    const snapshotCall = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'SESSION_SNAPSHOT',
+    );
+    expect(snapshotCall).toBeDefined();
+
+    const snapshotEnvelope = snapshotCall![0] as RuntimeWorkerSessionSnapshot;
+    const offlineProgression = snapshotEnvelope.snapshot.offlineProgression;
+
+    expect(offlineProgression).toBeDefined();
+    expect(offlineProgression?.mode).toBe('constant-rates');
+    expect(offlineProgression?.preconditions).toEqual(preconditions);
+    expect(
+      typeof offlineProgression?.resourceNetRates['sample-pack.energy'],
+    ).toBe('number');
   });
 
   it('documents snapshot gating during session restoration', () => {
