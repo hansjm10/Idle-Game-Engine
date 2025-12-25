@@ -142,12 +142,16 @@ function setupConstantRateHarness(
 function normalizeAccumulators(
   state: SerializedProductionAccumulators,
 ): SerializedProductionAccumulators {
+  const epsilon = 1e-9;
+  const round = (value: number): number =>
+    Math.round(value / epsilon) * epsilon;
   const accumulators: Record<string, number> = {};
   for (const [key, value] of Object.entries(state.accumulators)) {
-    if (Math.abs(value) < 1e-9) {
+    const normalized = round(value);
+    if (Math.abs(normalized) < epsilon) {
       continue;
     }
-    accumulators[key] = value;
+    accumulators[key] = normalized;
   }
   return { accumulators };
 }
@@ -307,6 +311,52 @@ describe('applyOfflineProgress', () => {
     applyOfflineProgress({
       elapsedMs: offlineElapsedMs,
       coordinator: fastPath.coordinator,
+      runtime: fastPath.runtime,
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: netRates,
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(tickSpy).not.toHaveBeenCalled();
+    expect(fastPath.runtime.getCurrentStep()).toBe(expected.runtime.getCurrentStep());
+    expect(fastPath.coordinator.resourceState.exportForSave()).toEqual(
+      expected.coordinator.resourceState.exportForSave(),
+    );
+    expect(
+      normalizeAccumulators(fastPath.productionSystem.exportAccumulators()),
+    ).toEqual(
+      normalizeAccumulators(expected.productionSystem.exportAccumulators()),
+    );
+  });
+
+  it('keeps production accumulators in sync when fast path uses production system', () => {
+    const offlineElapsedMs = STEP_SIZE_MS * 14;
+    const netRates = { 'resource.gold': 8 };
+
+    const expected = createHarness(0);
+    setupConstantRateHarness(expected);
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: expected.coordinator,
+      runtime: expected.runtime,
+    });
+
+    const fastPath = createHarness(0);
+    setupConstantRateHarness(fastPath);
+    const tickSpy = vi.spyOn(fastPath.runtime, 'tick');
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: fastPath.coordinator,
+      productionSystem: fastPath.productionSystem,
       runtime: fastPath.runtime,
       fastPath: {
         mode: 'constant-rates',

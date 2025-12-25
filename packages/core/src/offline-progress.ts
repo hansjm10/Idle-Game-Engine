@@ -1,5 +1,6 @@
-import type { ProgressionCoordinator } from './progression-coordinator.js';
 import { applyOfflineResourceDeltas } from './offline-resource-deltas.js';
+import type { ProductionSystem } from './production-system.js';
+import type { ProgressionCoordinator } from './progression-coordinator.js';
 
 export type OfflineProgressFastPathMode = 'constant-rates';
 
@@ -21,6 +22,7 @@ export type OfflineProgressFastPathOptions = Readonly<{
 export type ApplyOfflineProgressOptions = Readonly<{
   readonly elapsedMs: number;
   readonly coordinator: ProgressionCoordinator;
+  readonly productionSystem?: ProductionSystem;
   readonly runtime: Readonly<{
     tick(deltaMs: number): number;
     getCurrentStep(): number;
@@ -131,11 +133,15 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
       const stepsAdvanced = runtime.fastForward?.(clampedElapsedMs) ?? 0;
       const appliedMs = stepsAdvanced * stepSizeMs;
       if (appliedMs > 0) {
-        const fastPathDeltas = buildResourceDeltasFromNetRates(
-          fastPath.resourceNetRates,
-          appliedMs,
-        );
-        applyOfflineResourceDeltas(coordinator, fastPathDeltas);
+        if (options.productionSystem?.applyOfflineDelta) {
+          options.productionSystem.applyOfflineDelta(appliedMs);
+        } else {
+          const fastPathDeltas = buildResourceDeltasFromNetRates(
+            fastPath.resourceNetRates,
+            appliedMs,
+          );
+          applyOfflineResourceDeltas(coordinator, fastPathDeltas);
+        }
       }
       if (stepsAdvanced > 0) {
         coordinator.updateForStep(runtime.getCurrentStep());
