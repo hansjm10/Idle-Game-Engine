@@ -1632,6 +1632,63 @@ describe('runtime.worker integration', () => {
       expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
     });
 
+    it('warns and falls back when offline progression payload is invalid', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      const warningSpy = vi.spyOn(core.telemetry, 'recordWarning');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': Number.POSITIVE_INFINITY,
+          },
+          preconditions: {
+            constantRates: true,
+            noUnlocks: true,
+            noAchievements: true,
+            noAutomation: true,
+            modeledResourceBounds: true,
+          },
+        },
+      });
+
+      expect(warningSpy).toHaveBeenCalledWith(
+        'OfflineProgressionSnapshotInvalid',
+        { reason: 'invalid_payload' },
+      );
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+        type: string;
+        payload: { elapsedMs: number };
+        priority: core.CommandPriority;
+      };
+      expect(offlineCommand.type).toBe(
+        core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      );
+      expect(offlineCommand.payload.elapsedMs).toBe(1000);
+      expect(offlineCommand.priority).toBe(core.CommandPriority.SYSTEM);
+    });
+
     it('handles rapid command dispatch without dropping messages', () => {
       const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
       vi.spyOn(console, 'warn').mockImplementation(() => {});

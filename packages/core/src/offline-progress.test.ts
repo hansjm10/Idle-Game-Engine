@@ -377,4 +377,30 @@ describe('applyOfflineProgress', () => {
       normalizeAccumulators(expected.productionSystem.exportAccumulators()),
     );
   });
+
+  it('throws when fast path is invalid and onInvalid is error', () => {
+    const offlineElapsedMs = STEP_SIZE_MS * 5;
+    const harness = createHarness(0);
+    setupConstantRateHarness(harness);
+
+    expect(() =>
+      applyOfflineProgress({
+        elapsedMs: offlineElapsedMs,
+        coordinator: harness.coordinator,
+        runtime: harness.runtime,
+        fastPath: {
+          mode: 'constant-rates',
+          resourceNetRates: { 'resource.gold': 8 },
+          preconditions: {
+            constantRates: true,
+            noUnlocks: true,
+            noAchievements: true,
+            noAutomation: false,
+            modeledResourceBounds: true,
+          },
+          onInvalid: 'error',
+        },
+      }),
+    ).toThrowError('Offline progress fast path preconditions are not satisfied.');
+  });
 });
