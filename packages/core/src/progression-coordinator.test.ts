@@ -798,7 +798,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.unlockable');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires resource.energy >= 15');
+    expect(generator?.unlockHint).toBe('Requires Energy >= 15');
   });
 
   it('includes unlockHint for generators locked by generator level', () => {
@@ -812,7 +812,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.gated');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
+    expect(generator?.unlockHint).toBe('Requires Basic Generator >= 5');
   });
 
   it('does not duplicate hint when visibilityCondition equals baseUnlock', () => {
@@ -828,7 +828,7 @@ describe('progression-coordinator', () => {
       (g) => g.id === 'generator.duplicate-visibility',
     );
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires resource.energy >= 10');
+    expect(generator?.unlockHint).toBe('Requires Energy >= 10');
   });
 
   it('includes unlockHint for generators locked by compound and condition', () => {
@@ -842,8 +842,8 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.compound');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toContain('resource.energy');
-    expect(generator?.unlockHint).toContain('generator.basic');
+    expect(generator?.unlockHint).toContain('Energy');
+    expect(generator?.unlockHint).toContain('Basic Generator');
   });
 
   it('omits satisfied subconditions from compound unlock hints', () => {
@@ -860,7 +860,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.compound');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires generator.basic >= 5');
+    expect(generator?.unlockHint).toBe('Requires Basic Generator >= 5');
   });
 
   it('includes unlockHint for generators locked by or condition', () => {
@@ -875,8 +875,8 @@ describe('progression-coordinator', () => {
     const generator = snapshot.generators.find((g) => g.id === 'generator.or');
     expect(generator?.unlocked).toBe(false);
     expect(generator?.unlockHint).toContain('Requires any of:');
-    expect(generator?.unlockHint).toContain('resource.energy');
-    expect(generator?.unlockHint).toContain('generator.basic');
+    expect(generator?.unlockHint).toContain('Energy');
+    expect(generator?.unlockHint).toContain('Basic Generator');
   });
 
   it('describes dynamic formula thresholds using current game state', () => {
@@ -904,7 +904,7 @@ describe('progression-coordinator', () => {
     const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
     const generator = snapshot.generators.find((g) => g.id === 'generator.dynamic');
     expect(generator?.unlocked).toBe(false);
-    expect(generator?.unlockHint).toBe('Requires resource.energy >= 20');
+    expect(generator?.unlockHint).toBe('Requires Energy >= 20');
   });
 
   it('does not quote purchases for invisible generators', () => {

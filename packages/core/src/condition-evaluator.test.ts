@@ -639,6 +639,15 @@ describe('combineConditions', () => {
 });
 
 describe('describeCondition', () => {
+  const createContext = (
+    overrides?: Partial<ConditionContext>,
+  ): ConditionContext => ({
+    getResourceAmount: () => 0,
+    getGeneratorLevel: () => 0,
+    getUpgradePurchases: () => 0,
+    ...overrides,
+  });
+
   it('returns undefined for undefined condition', () => {
     expect(describeCondition(undefined)).toBeUndefined();
   });
@@ -661,6 +670,62 @@ describe('describeCondition', () => {
       amount: { kind: 'constant', value: 100 },
     };
     expect(describeCondition(condition)).toBe('Requires energy >= 100');
+  });
+
+  it('uses display name resolvers when provided', () => {
+    const context = createContext({
+      resolveResourceName: (resourceId) =>
+        resourceId === 'resource.energy' ? 'Energy' : undefined,
+      resolveGeneratorName: (generatorId) =>
+        generatorId === 'generator.basic' ? 'Basic Generator' : undefined,
+    });
+
+    const resourceCondition: Condition = {
+      kind: 'resourceThreshold',
+      resourceId: cid('resource.energy'),
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 100 },
+    };
+    const generatorCondition: Condition = {
+      kind: 'generatorLevel',
+      generatorId: cid('generator.basic'),
+      comparator: 'gte',
+      level: { kind: 'constant', value: 5 },
+    };
+
+    expect(describeCondition(resourceCondition, context)).toBe(
+      'Requires Energy >= 100',
+    );
+    expect(describeCondition(generatorCondition, context)).toBe(
+      'Requires Basic Generator >= 5',
+    );
+  });
+
+  it('falls back to ids when resolvers return empty values', () => {
+    const context = createContext({
+      resolveResourceName: () => ' ',
+      resolveGeneratorName: () => undefined,
+    });
+
+    const resourceCondition: Condition = {
+      kind: 'resourceThreshold',
+      resourceId: cid('resource.energy'),
+      comparator: 'gte',
+      amount: { kind: 'constant', value: 100 },
+    };
+    const generatorCondition: Condition = {
+      kind: 'generatorLevel',
+      generatorId: cid('generator.basic'),
+      comparator: 'gte',
+      level: { kind: 'constant', value: 5 },
+    };
+
+    expect(describeCondition(resourceCondition, context)).toBe(
+      'Requires resource.energy >= 100',
+    );
+    expect(describeCondition(generatorCondition, context)).toBe(
+      'Requires generator.basic >= 5',
+    );
   });
 
   it('describes generatorLevel condition', () => {

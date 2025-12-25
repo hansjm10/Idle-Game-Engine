@@ -396,6 +396,18 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
 
     const resourceMetadata = buildResourceMetadata(options.content.resources);
+    const generatorDisplayNames = new Map<string, string>(
+      options.content.generators.map((generator) => [
+        generator.id,
+        getDisplayName(generator.name, generator.id),
+      ]),
+    );
+    const upgradeDisplayNames = new Map<string, string>(
+      options.content.upgrades.map((upgrade) => [
+        upgrade.id,
+        getDisplayName(upgrade.name, upgrade.id),
+      ]),
+    );
     const progressionResources =
       (initialState?.resources as Mutable<ProgressionResourceState> | undefined) ??
       ({} as Mutable<ProgressionResourceState>);
@@ -445,6 +457,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     });
 
     const prestigeLayerDefinitions = options.content.prestigeLayers ?? [];
+    const prestigeLayerDisplayNames = new Map<string, string>(
+      prestigeLayerDefinitions.map((layer) => [
+        layer.id,
+        getDisplayName(layer.name, layer.id),
+      ]),
+    );
     this.prestigeLayers = new Map();
     const initialPrestigeLayers = new Map(
       (initialState?.prestigeLayers ?? []).map((layer) => [layer.id, layer]),
@@ -494,6 +512,13 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
         this.flagState.get(flagId) ??
         false,
       evaluateScriptCondition: options.evaluateScriptCondition,
+      resolveResourceName: (resourceId) =>
+        resourceMetadata.get(resourceId)?.displayName,
+      resolveGeneratorName: (generatorId) =>
+        generatorDisplayNames.get(generatorId),
+      resolveUpgradeName: (upgradeId) => upgradeDisplayNames.get(upgradeId),
+      resolvePrestigeLayerName: (prestigeLayerId) =>
+        prestigeLayerDisplayNames.get(prestigeLayerId),
     };
 
     this.generatorEvaluator = new ContentGeneratorEvaluator(this);
