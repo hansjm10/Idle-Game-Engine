@@ -4,6 +4,7 @@ import type { NumericFormula } from '@idle-engine/content-schema';
 
 import { IdleEngineRuntime } from './index.js';
 import { createProductionSystem } from './production-system.js';
+import type { SerializedProductionAccumulators } from './production-system.js';
 import { createProgressionCoordinator } from './progression-coordinator.js';
 import {
   createContentPack,
@@ -128,6 +129,27 @@ function registerProgressionCoordinatorSystem(
       coordinator.updateForStep(step + 1);
     },
   });
+}
+
+function setupConstantRateHarness(
+  harness: ReturnType<typeof createHarness>,
+): void {
+  harness.coordinator.incrementGeneratorOwned('generator.mine', 1);
+  harness.coordinator.setUpgradePurchases('upgrade.double-mine', 1);
+  harness.coordinator.updateForStep(harness.runtime.getCurrentStep());
+}
+
+function normalizeAccumulators(
+  state: SerializedProductionAccumulators,
+): SerializedProductionAccumulators {
+  const accumulators: Record<string, number> = {};
+  for (const [key, value] of Object.entries(state.accumulators)) {
+    if (Math.abs(value) < 1e-9) {
+      continue;
+    }
+    accumulators[key] = value;
+  }
+  return { accumulators };
 }
 
 describe('applyOfflineProgress', () => {
@@ -264,5 +286,95 @@ describe('applyOfflineProgress', () => {
       stepByStep.productionSystem.exportAccumulators(),
     );
     expect(tickSpy.mock.calls.length).toBeLessThan(fullSteps);
+  });
+
+  it('applies constant-rate fast path when preconditions are met', () => {
+    const offlineElapsedMs = STEP_SIZE_MS * 15;
+    const netRates = { 'resource.gold': 8 };
+
+    const expected = createHarness(0);
+    setupConstantRateHarness(expected);
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: expected.coordinator,
+      runtime: expected.runtime,
+    });
+
+    const fastPath = createHarness(0);
+    setupConstantRateHarness(fastPath);
+    const tickSpy = vi.spyOn(fastPath.runtime, 'tick');
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: fastPath.coordinator,
+      runtime: fastPath.runtime,
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: netRates,
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(tickSpy).not.toHaveBeenCalled();
+    expect(fastPath.runtime.getCurrentStep()).toBe(expected.runtime.getCurrentStep());
+    expect(fastPath.coordinator.resourceState.exportForSave()).toEqual(
+      expected.coordinator.resourceState.exportForSave(),
+    );
+    expect(
+      normalizeAccumulators(fastPath.productionSystem.exportAccumulators()),
+    ).toEqual(
+      normalizeAccumulators(expected.productionSystem.exportAccumulators()),
+    );
+  });
+
+  it('falls back to tick path when fast path preconditions are not satisfied', () => {
+    const offlineElapsedMs = STEP_SIZE_MS * 15;
+    const netRates = { 'resource.gold': 8 };
+
+    const expected = createHarness(0);
+    setupConstantRateHarness(expected);
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: expected.coordinator,
+      runtime: expected.runtime,
+    });
+
+    const fallback = createHarness(0);
+    setupConstantRateHarness(fallback);
+    const tickSpy = vi.spyOn(fallback.runtime, 'tick');
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: fallback.coordinator,
+      runtime: fallback.runtime,
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: netRates,
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: false,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(tickSpy).toHaveBeenCalled();
+    expect(fallback.runtime.getCurrentStep()).toBe(expected.runtime.getCurrentStep());
+    expect(fallback.coordinator.resourceState.exportForSave()).toEqual(
+      expected.coordinator.resourceState.exportForSave(),
+    );
+    expect(
+      normalizeAccumulators(fallback.productionSystem.exportAccumulators()),
+    ).toEqual(
+      normalizeAccumulators(expected.productionSystem.exportAccumulators()),
+    );
   });
 });
