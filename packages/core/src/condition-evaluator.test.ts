@@ -678,6 +678,10 @@ describe('describeCondition', () => {
         resourceId === 'resource.energy' ? 'Energy' : undefined,
       resolveGeneratorName: (generatorId) =>
         generatorId === 'generator.basic' ? 'Basic Generator' : undefined,
+      resolveUpgradeName: (upgradeId) =>
+        upgradeId === 'upgrade.starter' ? 'Starter Upgrade' : undefined,
+      resolvePrestigeLayerName: (prestigeLayerId) =>
+        prestigeLayerId === 'prestige.alpha' ? 'Alpha Layer' : undefined,
     });
 
     const resourceCondition: Condition = {
@@ -691,6 +695,17 @@ describe('describeCondition', () => {
       generatorId: cid('generator.basic'),
       comparator: 'gte',
       level: { kind: 'constant', value: 5 },
+    };
+    const upgradeCondition: Condition = {
+      kind: 'upgradeOwned',
+      upgradeId: cid('upgrade.starter'),
+      requiredPurchases: 1,
+    };
+    const prestigeCondition: Condition = {
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: cid('prestige.alpha'),
+      comparator: 'gte',
+      count: 1,
     };
 
     expect(describeCondition(resourceCondition, context)).toBe(
@@ -699,12 +714,20 @@ describe('describeCondition', () => {
     expect(describeCondition(generatorCondition, context)).toBe(
       'Requires Basic Generator >= 5',
     );
+    expect(describeCondition(upgradeCondition, context)).toBe(
+      'Requires owning 1× Starter Upgrade',
+    );
+    expect(describeCondition(prestigeCondition, context)).toBe(
+      'Requires prestige count for Alpha Layer >= 1',
+    );
   });
 
   it('falls back to ids when resolvers return empty values', () => {
     const context = createContext({
       resolveResourceName: () => ' ',
       resolveGeneratorName: () => undefined,
+      resolveUpgradeName: () => '  ',
+      resolvePrestigeLayerName: () => undefined,
     });
 
     const resourceCondition: Condition = {
@@ -719,12 +742,29 @@ describe('describeCondition', () => {
       comparator: 'gte',
       level: { kind: 'constant', value: 5 },
     };
+    const upgradeCondition: Condition = {
+      kind: 'upgradeOwned',
+      upgradeId: cid('upgrade.starter'),
+      requiredPurchases: 1,
+    };
+    const prestigeCondition: Condition = {
+      kind: 'prestigeCountThreshold',
+      prestigeLayerId: cid('prestige.alpha'),
+      comparator: 'gte',
+      count: 1,
+    };
 
     expect(describeCondition(resourceCondition, context)).toBe(
       'Requires resource.energy >= 100',
     );
     expect(describeCondition(generatorCondition, context)).toBe(
       'Requires generator.basic >= 5',
+    );
+    expect(describeCondition(upgradeCondition, context)).toBe(
+      'Requires owning 1× upgrade.starter',
+    );
+    expect(describeCondition(prestigeCondition, context)).toBe(
+      'Requires prestige count for prestige.alpha >= 1',
     );
   });
 
