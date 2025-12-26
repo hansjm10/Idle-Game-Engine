@@ -301,6 +301,46 @@ describe('WorkerBridgeImpl', () => {
     expect(commandEnvelope.type).toBe('COMMAND');
   });
 
+  it('includes maxElapsedMs and maxSteps in restore envelopes', async () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
+
+    const restorePromise = bridge.restoreSession({
+      elapsedMs: 42,
+      maxElapsedMs: 24000,
+      maxSteps: 3,
+    });
+
+    worker.emitMessage('message', {
+      type: 'READY',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+    await bridge.awaitReady();
+
+    expect(worker.postMessage).toHaveBeenCalledTimes(1);
+    const restoreEnvelope = worker.postMessage.mock.calls[0]![0] as {
+      type: string;
+      schemaVersion: number;
+      elapsedMs?: number;
+      maxElapsedMs?: number;
+      maxSteps?: number;
+    };
+    expect(restoreEnvelope).toMatchObject({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: 42,
+      maxElapsedMs: 24000,
+      maxSteps: 3,
+    });
+
+    worker.emitMessage('message', {
+      type: 'SESSION_RESTORED',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+    });
+
+    await restorePromise;
+  });
+
   it('rejects restore payloads with invalid maxElapsedMs values', async () => {
     const worker = new MockWorker();
     const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);

@@ -867,6 +867,45 @@ describe('runtime.worker integration', () => {
     expect(setGameStateSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('forwards maxElapsedMs and maxSteps into offline catchup payloads', () => {
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: 5000,
+      maxElapsedMs: 24000,
+      maxSteps: 3,
+      resourceDeltas: { 'sample-pack.energy': 10 },
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+      type: string;
+      payload: {
+        elapsedMs: number;
+        maxElapsedMs?: number;
+        maxSteps?: number;
+        resourceDeltas: Record<string, number>;
+      };
+    };
+    expect(offlineCommand.type).toBe(core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+    expect(offlineCommand.payload).toMatchObject({
+      elapsedMs: 5000,
+      maxElapsedMs: 24000,
+      maxSteps: 3,
+      resourceDeltas: { 'sample-pack.energy': 10 },
+    });
+  });
+
   it('rejects restore payloads with invalid maxElapsedMs values', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
