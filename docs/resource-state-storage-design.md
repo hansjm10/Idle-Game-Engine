@@ -368,15 +368,15 @@ Dual-mode support enables:
 
 **Integration**:
 
-1. **Worker Runtime**: Calls `buildProgressionSnapshot()` with live coordinator state after each tick (`packages/shell-web/src/runtime.worker.ts:228-232`)
-2. **Session Restore**: Initial snapshot uses serialized state from save file before coordinator rehydrates (`packages/shell-web/src/runtime.worker.ts:652-798`)
+1. **Worker Runtime**: Calls `buildProgressionSnapshot()` with live coordinator state after each tick (archived worker harness behavior)
+2. **Session Restore**: Initial snapshot uses serialized state from save file before coordinator rehydrates (archived worker harness behavior)
 3. **Save Preview** (future): Tooling can display save file contents by passing `SerializedResourceState` directly
 
 **Implementation Reference**:
 - Dual-mode snapshot builder: `packages/core/src/progression.ts:138-214`
 - Live state path: `packages/core/src/progression.ts:146-176`
 - Serialized state path: `packages/core/src/progression.ts:178-211`
-- Integration in worker: `packages/shell-web/src/runtime.worker.ts:228-232`
+- Integration in worker (archived)
 
 Consumers should continue to respect the dirty index list when emitting deltas, and because the publish path zeros `targetPublish.tickDelta` only for the explicitly dirty candidates (step 1 below), a resource that resolves to clean state never exposes a stale delta. Comparisons reuse the shared `epsilonEquals` helper, meaning near-zero differences neither propagate into the publish buffer nor keep indices marked dirty.
 
@@ -551,8 +551,7 @@ Every descriptor includes the typed-array constructor string, length, and byte o
 - `packages/core/src/immutable-snapshots.ts` - Immutable snapshot utilities
 - `docs/automation-system-api.md` - Automation state serialization details
 - `packages/core/src/progression.ts:138-214` - Dual-mode progression snapshot implementation (PR #303)
-- `packages/shell-web/src/runtime.worker.ts:228-232` - Worker runtime integration
-- `packages/shell-web/src/runtime.worker.ts:652-798` - Session restore implementation
+- Archived worker harness integration (removed)
 
 ## Appendix A — Glossary
 

@@ -104,24 +104,6 @@ for (const file of changedFiles) {
     continue;
   }
 
-  if (file.startsWith('packages/runtime-bridge-contracts/')) {
-    affectedPackages.add('@idle-engine/runtime-bridge-contracts');
-    addRelatedFile('@idle-engine/runtime-bridge-contracts', file);
-    continue;
-  }
-
-  if (file.startsWith('packages/shell-web/')) {
-    affectedPackages.add('@idle-engine/shell-web');
-    addRelatedFile('@idle-engine/shell-web', file);
-    continue;
-  }
-
-  if (file.startsWith('tools/a11y-smoke-tests/')) {
-    affectedPackages.add('@idle-engine/a11y-smoke-tests');
-    addRelatedFile('@idle-engine/a11y-smoke-tests', file);
-    continue;
-  }
-
   if (file.startsWith('tools/economy-verification/')) {
     affectedPackages.add('@idle-engine/economy-verification-cli');
     addRelatedFile('@idle-engine/economy-verification-cli', file);
@@ -156,7 +138,7 @@ if (affectedPackages.size === 0) {
   process.exit(0);
 }
 
-const nonVitestPackages = new Set(['@idle-engine/a11y-smoke-tests']);
+const nonVitestPackages = new Set();
 const vitestPackages = [];
 const otherPackages = [];
 

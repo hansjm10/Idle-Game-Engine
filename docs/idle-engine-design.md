@@ -38,13 +38,13 @@ The Idle Engine is a reusable, data-driven runtime for incremental/idle games. I
 ## 4. Stakeholders, Agents & Impacted Surfaces
 - **Primary Stakeholders**: Runtime Core maintainers; Content Pipeline maintainers; Shell maintainers; Social services maintainers; partner integrators.
 - **Agent Roles**: Docs & Design Agent; Runtime Implementation Agent; Content Pipeline Agent; Shell Integration Agent; Social Services Agent; QA & A11y Agent.
-- **Affected Packages/Services**: `packages/core`, `packages/content-schema`, `packages/content-sample`, `packages/shell-web`, `services/social`, `tools/`, and `docs/`.
+- **Affected Packages/Services**: `packages/core`, `packages/content-schema`, `packages/content-sample`, `services/social`, `tools/`, and `docs/` (presentation shells are archived).
 - **Compatibility Considerations**:
   - Content packs declare an engine compatibility range; validation gates features via `packages/content-schema/src/runtime-compat.ts`.
   - Runtime and content APIs use semantic versioning; breaking changes require explicit migration guidance and version negotiation.
 
 ## 5. Current State
-- Monorepo workstreams are split across deterministic runtime (`packages/core`), a Vite-powered web shell (`packages/shell-web`), reference content (`packages/content-sample`), and backend experiments (`services/social`).
+- Monorepo workstreams are split across deterministic runtime (`packages/core`), reference content (`packages/content-sample`), and backend experiments (`services/social`). Presentation shells are archived and removed from the active workspace.
 - Detailed subsystem proposals live in dedicated design docs (command queue, resource storage, event bus, content schema/compiler, worker bridge, economy ledger); this document is the umbrella architecture.
 
 ## 6. Proposed Solution
@@ -175,7 +175,7 @@ function runTick(deltaMs: number) {
 - Content DSL supports: resources, generators, transforms, upgrades, milestones/achievements, prestige layers, automations, runtime event extensions, and guild perks.
 - Support for hierarchical content packages (base game, seasonal event, micro-DLC) with dependency resolution.
 - Validation tooling verifies IDs, cyclical dependencies, formula sanity, and runtime feature compatibility before shipping.
-- Property-based sanitization guidance lives in [`docs/content-schema-rollout-decisions.md#6-property-based-formula-sanitization-guidance`](content-schema-rollout-decisions.md#6-property-based-formula-sanitization-guidance); run schema and CLI suites before shipping new formulas.
+- Property-based sanitization guidance lives in [`docs/content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance`](content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance); run schema and CLI suites before shipping new formulas.
 - Provide a CLI to bundle content, generate documentation, and run balance simulations.
 - `pnpm generate` invokes `tools/content-schema-cli`, which validates every `content/pack.json` via `@idle-engine/content-schema` before refreshing runtime event manifests and compiled artifacts. The CLI emits structured JSON log events (`content_pack.validated`, `content_pack.compiled`, `content_pack.validation_failed`, `watch.run`, etc.) so automation can gate builds on failures, warnings, or drift.
 - Watch and check flows are first-class: `--watch` keeps the pipeline alive after failures while surfacing iteration summaries, and `--check` exits non-zero whenever validation summaries or compiled artifacts would change. Lefthook and CI invoke `pnpm generate --check` to prevent stale outputs from landing.
@@ -204,7 +204,7 @@ function runTick(deltaMs: number) {
 - Profile with browser tools and Node benchmarks; escalate hotspots to WebAssembly implementations when ROI is justified.
 
 ##### Tooling & Developer Experience
-- Monorepo using pnpm: `packages/core`, `packages/content-*`, `packages/shell-web`, `services/social`, `tools/`.
+- Monorepo using pnpm: `packages/core`, `packages/content-*`, `services/social`, `tools/`.
 - Shared type definitions and schema validation via Zod or similar.
 - CLI tools for content linting, simulation playback, save migration testing.
 - Storybook or component library for UI kit review.
@@ -246,7 +246,7 @@ function runTick(deltaMs: number) {
 - **Prototype Milestone (8 weeks)**: Deliver a vertical slice proving the engine loop, content DSL, and social scaffolding.
   - **Deliverables**:
     - `packages/core`: runnable runtime with scheduler, resource system, upgrade processor, save/load (stub), diagnostics.
-    - `packages/shell-web`: minimal React UI consuming snapshots, executing commands, and visualizing resources/upgrades.
+    - Presentation shells (archived): UI consumers of runtime snapshots and commands.
     - `packages/content-sample`: reference game pack with ~10 resources, 6 generators, basic prestige layer, and sample guild perks.
     - `services/social`: self-hosted API providing stubbed leaderboard/guild endpoints with Keycloak integration.
     - CI pipeline executing unit/integration tests and content validation (`pnpm generate --check`).
@@ -286,7 +286,6 @@ function runTick(deltaMs: number) {
 - **Validation Hooks**:
   - `pnpm lint` and `pnpm test` for all changes; `pnpm test --filter <package>` while iterating.
   - `pnpm generate --check` after content or schema changes.
-  - `pnpm test:a11y` after shell UI or ARIA changes.
 
 ## 9. Alternatives Considered
 - **Single-repo, per-game bespoke engine**: faster iteration per title, but multiplies bugs and blocks shared tooling.
@@ -304,7 +303,6 @@ function runTick(deltaMs: number) {
   - Browser and Node benchmarks for tick budget adherence; validate Worker isolation.
   - Memory profiling for state growth and snapshot costs.
 - **Tooling / A11y**:
-  - Playwright smoke tests for shell UI; run `pnpm test:a11y` for accessibility regressions.
 
 ## 11. Risks & Mitigations
 - **Determinism drift**: Centralize clocks/RNG; add property-based tests and replay harnesses.

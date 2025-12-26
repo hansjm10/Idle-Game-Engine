@@ -22,7 +22,7 @@ This document specifies the design for the initiative `GEL-001`: stabilising the
 
 - **Background**
   - The Idle Engine core runtime (`packages/core/src/index.ts`) implements a deterministic fixed-step loop with a command queue, event bus, and diagnostics timeline suitable for browser and Node execution.
-  - The web shell (`packages/shell-web`) runs the core in a worker and will present resources, upgrades, and social UI.
+  - Archived presentation shells previously ran the core in a worker for UI consumption; no active shell is maintained in the workspace.
   - The social backend (`services/social/src/index.ts`) currently exposes stubbed `leaderboard` and `guild` routes but does not own any economic state; responses are placeholder-only.
   - Design goals in `docs/idle-engine-design.md` emphasise:
     - Web-first runtime, portable to Node and native shells.
@@ -88,7 +88,7 @@ This document specifies the design for the initiative `GEL-001`: stabilising the
   - **Docs & Design Agent**
     - Maintains this design and related docs in `docs/`, ensuring they track the implementation status of initiative `GEL-001`.
   - **Testing & Validation Agent**
-    - Extends Vitest suites in `packages/core`, `services/social`, and end-to-end smoke tests under `tools/a11y-smoke-tests`.
+    - Extends Vitest suites in `packages/core` and `services/social`.
 
 - **Affected Packages/Services**
   - `packages/core/src/index.ts` (runtime interface for diagnostics/verification).
@@ -112,8 +112,8 @@ This document specifies the design for the initiative `GEL-001`: stabilising the
     - Emits diagnostics via `createRuntimeDiagnosticsController` and `getDiagnosticTimelineSnapshot()` for offline analysis and CI (`tools/runtime-sim/index.ts`).
   - No explicit concept of “economy verification” exists; the runtime is agnostic to whether it is used in a client or server context.
 
-- **Web Shell (`packages/shell-web`)**
-  - Boots the runtime loop and will render panels for resources and social features (`packages/shell-web/README.md`).
+- **Presentation shells (archived)**
+  - No active presentation shell is maintained; downstream clients must integrate their own UI surfaces.
   - Currently assumes the client owns the moment-to-moment sim and fetches social data from `services/social`.
 
 - **Social Service (`services/social`)**
@@ -283,7 +283,7 @@ Populate GitHub issues based on the following table; all issues reference initia
 | feat(core): add verification runtime helpers | Expose runtime helpers to support deterministic economy replay | Runtime Implementation Agent | Design approval | New APIs documented; tests confirm deterministic behaviour in Node and browser |
 | feat(tools): add economy verification CLI | CLI wrapper around runtime helper for economic replay/validation | Runtime Implementation Agent | Verification helpers | CLI runs on snapshots; emits JSON; used in at least one test |
 | chore(test): add economic invariants to social tests | Expand Vitest suites under `services/social` | Testing & Validation Agent | Economy routes implemented | Tests fail on invariant violations; coverage includes all economic operations |
-| chore(a11y): extend shell-web tests for economy UI | Ensure economic UI interactions do not regress accessibility | Testing & Validation Agent | Basic economy UI implemented in shell | `pnpm test:a11y` passes for flows involving hard currency displays and errors |
+| chore(ui): add economy UI tests in downstream shells (archived) | Ensure economic UI interactions do not regress accessibility | Testing & Validation Agent | Basic economy UI implemented in shell | Shell-specific test commands documented in downstream repos |
 | chore(docs): update idle-engine-design.md with economy model | Summarise hard/soft currency model & ledger in main design doc | Docs & Design Agent | Implementation stable | `docs/idle-engine-design.md` references this document; glossary updated |
 
 ### 7.2 Milestones
@@ -299,7 +299,7 @@ Populate GitHub issues based on the following table; all issues reference initia
 
 - **Phase 2: Integration**
   - Wire leaderboards and guilds to the ledger.
-  - Integrate the web shell with economy endpoints (client reconciliation logic).
+  - Integrate downstream shells with economy endpoints (client reconciliation logic).
   - Introduce optional replay-based verification for high-risk flows.
   - Gating criteria:
     - Leaderboard and guild endpoints operate against ledger state.
@@ -319,7 +319,7 @@ Populate GitHub issues based on the following table; all issues reference initia
   - This design document (`docs/global-economy-ledger-design.md`).
   - References to runtime code (`packages/core/src/index.ts`), social service (`services/social/src`), and tools (`tools/runtime-sim/index.ts`).
   - Example payloads and JSON contracts for economy endpoints.
-  - Test commands: `pnpm test --filter @idle-engine/social-service`, `pnpm test --filter @idle-engine/core`, `pnpm test:a11y`.
+  - Test commands: `pnpm test --filter @idle-engine/social-service`, `pnpm test --filter @idle-engine/core`.
 
 - **Communication Cadence**
   - Weekly status update on initiative `GEL-001` summarising merged PRs and risk items.
@@ -364,7 +364,6 @@ Populate GitHub issues based on the following table; all issues reference initia
     - `pnpm lint`
     - `pnpm test --filter @idle-engine/social-service`
     - `pnpm test --filter @idle-engine/core`
-    - `pnpm test:a11y` when touching shell-web economy UI.
   - For CLI additions:
     - Ensure CLIs print final results as single-line JSON when intended for machine consumption (follow `tools/runtime-sim/index.ts` pattern).
 
@@ -419,11 +418,8 @@ Populate GitHub issues based on the following table; all issues reference initia
   - Targets:
     - Economy endpoints should handle at least a baseline of X operations/sec (TODO: define SLO) without degrading latency beyond Y ms at p95.
 
-- **Tooling / A11y**
-  - Extend Playwright a11y tests (`tools/a11y-smoke-tests`) to include:
-    - Display of hard currency balances.
-    - Error states when spends are rejected.
-  - Ensure new UI elements in `packages/shell-web` have proper ARIA attributes and keyboard accessibility.
+- **Tooling**
+  - Downstream shells should extend their UI accessibility coverage to include hard currency displays and rejected spend states.
 
 ## 11. Risks & Mitigations
 

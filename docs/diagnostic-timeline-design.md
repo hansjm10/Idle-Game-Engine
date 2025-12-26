@@ -29,19 +29,19 @@ The Diagnostic Timeline is the runtime’s structured, structured-clone-safe tra
   - Provide a ring-buffer snapshot + delta API that is structured-clone safe.[^structured-clone]
   - Emit guard-rail warnings (slow ticks, slow systems) through the telemetry facade so Prometheus adapters and logs can alert without devtools attached.
 - **Non-Goals**:
-  - Shipping a full visualization layer inside `packages/shell-web` (UI overlays remain separate follow-up work).
+  - Shipping a full visualization layer inside archived presentation shells (UI overlays remain separate follow-up work).
   - Persisting diagnostics beyond the in-memory ring buffer or exporting them to external observability stacks by default.
   - Replacing existing event bus diagnostics; the timeline consumes snapshots but does not redefine the event-bus data model.
   - Enforcing adaptive scheduling or auto-throttling; scope ends at recording and surfacing metadata.
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
-- **Primary Stakeholders**: Runtime Core maintainers; Shell Web maintainers; Tooling/Observability maintainers; partner integrators.
+- **Primary Stakeholders**: Runtime Core maintainers; Tooling/Observability maintainers; partner integrators.
 - **Agent Roles**:
   - *Docs Agent*: Maintains this design, cross-links, and changelog.
   - *Runtime Diagnostics Agent*: Extends runtime instrumentation and keeps diagnostics schemas stable.
-  - *Shell Devtools Agent*: Builds UI surfaces that consume diagnostics updates from the worker bridge.
+  - *Shell Devtools Agent*: Builds UI surfaces that consume diagnostics updates from the worker bridge (downstream shells).
   - *Observability Agent*: Wires telemetry warnings into Prometheus/exporters and validates signal quality.
-- **Affected Packages/Services**: `packages/core` (runtime, diagnostics, telemetry), `packages/shell-web` (worker bridge, state provider), `tools/` (benchmarks/sim harnesses), `docs/`.
+- **Affected Packages/Services**: `packages/core` (runtime, diagnostics, telemetry), presentation shell integrations (archived), `tools/` (benchmarks/sim harnesses), `docs/`.
 - **Compatibility Considerations**:
   - Diagnostics payloads must remain plain JSON-friendly objects and structured-clone safe (no functions, class instances, cyclic graphs).
   - Worker message schemas (`DIAGNOSTICS_UPDATE`) must remain backward compatible; large payloads should remain opt-in.
@@ -50,7 +50,7 @@ The Diagnostic Timeline is the runtime’s structured, structured-clone-safe tra
 - `packages/core/src/diagnostics/diagnostic-timeline.ts` implements a fixed-capacity ring buffer with a monotonic `head` cursor and `dropped` counter so clients can request deltas and detect buffer rollover.[^otel-delta]
 - `packages/core/src/diagnostics/runtime-diagnostics-controller.ts` wraps the recorder with runtime helpers for per-system spans, tick metadata, and telemetry warnings (`TickExecutionSlow`, `SystemExecutionSlow`).
 - `packages/core/src/index.ts` records per-tick system spans, command-queue size/capture/execution counts, event bus back-pressure metrics, and accumulator backlog when diagnostics are enabled.
-- `packages/shell-web` supports `DIAGNOSTICS_SUBSCRIBE`/`DIAGNOSTICS_UPDATE` and exposes a subscription API via `ShellDiagnosticsContext` so UI tooling can opt-in to streaming deltas.
+- Archived presentation shells supported `DIAGNOSTICS_SUBSCRIBE`/`DIAGNOSTICS_UPDATE`; downstream shells must implement their own subscription APIs to opt in to streaming deltas.
 - Known gaps:
   - Named tick phases are supported (`RuntimeTickDiagnostics.addPhase`) but the core tick loop does not currently record command/event/publish phases.
   - `ResourcePublishTransport` can carry an immutable diagnostics payload, but publish work itself is not timed as a phase today.
@@ -67,7 +67,7 @@ IdleEngineRuntime.tick()
   -> execute commands / dispatch events / run systems
   -> diagnostics.complete() (writes ring-buffer entry)
 
-WorkerBridge (shell-web)
+WorkerBridge (archived)
   -> DIAGNOSTICS_SUBSCRIBE enables runtime diagnostics
   -> runtime.readDiagnosticsDelta(lastHead) after ticks
   -> DIAGNOSTICS_UPDATE streams deltas to UI
@@ -112,7 +112,7 @@ WorkerBridge (shell-web)
 | docs: migrate Diagnostic Timeline design to template | Align `docs/diagnostic-timeline-design.md` with the standard template and add agent guidance | Docs Agent | Template stable | Document merged; changelog updated; issue map actionable |
 | feat(core): record tick phases in diagnostics | Emit named phases for commands + event dispatch + publish | Runtime Diagnostics Agent | Doc approval | Phases visible in `DiagnosticTimelineEntry.metadata.phases`; unit tests cover stability |
 | feat(core): capture publish-phase diagnostics | Time resource publish/build work and attach phase durations | Runtime Diagnostics Agent | Phase recording | Publish work appears as a phase when enabled; transport remains backward compatible |
-| feat(shell-web): diagnostics timeline UI panel | Consume `DIAGNOSTICS_UPDATE` and render recent ticks/systems | Shell Devtools Agent | Diagnostics stream stable | UI can toggle diagnostics; renders deltas without impacting baseline state updates |
+| feat(presentation-shell): diagnostics timeline UI panel (archived) | Consume `DIAGNOSTICS_UPDATE` and render recent ticks/systems | Shell Devtools Agent | Diagnostics stream stable | UI can toggle diagnostics; renders deltas without impacting baseline state updates |
 | docs: document enabling diagnostics | Add usage notes to `docs/runtime-step-lifecycle.md` and/or shell guides | Docs Agent | Feature stability | Docs show how to subscribe/toggle; links are repo-relative and current |
 
 ### 7.2 Milestones
@@ -120,11 +120,11 @@ WorkerBridge (shell-web)
 - **Phase 2**: Publish-phase capture + shell UI surfaces (target: next iteration after Phase 1).
 
 ### 7.3 Coordination Notes
-- **Hand-off Package**: `docs/diagnostic-timeline-design.md`, `packages/core/src/diagnostics/`, `packages/core/src/index.ts`, `packages/shell-web/src/runtime.worker.ts`, `packages/shell-web/src/modules/worker-bridge.ts`.
+- **Hand-off Package**: `docs/diagnostic-timeline-design.md`, `packages/core/src/diagnostics/`, `packages/core/src/index.ts`.
 - **Communication Cadence**: Post status updates in the GitHub issue thread for each mapped issue at least twice weekly; escalate schema changes before implementation.
 
 ## 8. Agent Guidance & Guardrails
-- **Context Packets**: `docs/diagnostic-timeline-design.md`, `docs/design-document-template.md`, `docs/idle-engine-design.md`, `packages/core/src/diagnostics/diagnostic-timeline.ts`, `packages/core/src/diagnostics/runtime-diagnostics-controller.ts`, `packages/shell-web/src/runtime.worker.ts`.
+- **Context Packets**: `docs/diagnostic-timeline-design.md`, `docs/design-document-template.md`, `docs/idle-engine-design.md`, `packages/core/src/diagnostics/diagnostic-timeline.ts`, `packages/core/src/diagnostics/runtime-diagnostics-controller.ts`.
 - **Prompting & Constraints**:
   - Keep the simulation deterministic: diagnostics may observe clocks but must not influence simulation state decisions.
   - Keep diagnostics payloads structured-clone safe (plain objects/arrays; no functions/classes; avoid cyclic graphs).
@@ -137,7 +137,6 @@ WorkerBridge (shell-web)
 - **Validation Hooks**:
   - `pnpm lint`
   - `pnpm test --filter @idle-engine/core`
-  - `pnpm test --filter @idle-engine/shell-web` (if worker bridge/UI changes)
   - `pnpm --filter @idle-engine/core run benchmark:diagnostics` (when changing capture overhead)
 
 ## 9. Alternatives Considered
@@ -148,9 +147,9 @@ WorkerBridge (shell-web)
 ## 10. Testing & Validation Plan
 - **Unit / Integration**:
   - Ring-buffer behavior, delta semantics, and error serialization (`packages/core/src/diagnostics/diagnostic-timeline.test.ts`).
-  - Runtime integration and structured-clone safety (`packages/core/src/command-recorder.test.ts`, worker bridge tests in `packages/shell-web`).
+  - Runtime integration and structured-clone safety (`packages/core/src/command-recorder.test.ts`).
 - **Performance**: Track benchmark deltas for diagnostics overhead; investigate when overhead exceeds budget targets.
-- **Tooling / A11y**: If new shell UI flows are added for diagnostics, run `pnpm test:a11y`.
+- **Tooling / A11y**: If downstream shells add new diagnostics UI flows, run their UI test suites.
 
 ## 11. Risks & Mitigations
 - **Clock precision variance across environments**: Provide explicit clock injection and deterministic tests; fall back to `Date.now()` only when necessary.
@@ -164,11 +163,11 @@ WorkerBridge (shell-web)
 
 ## 13. Open Questions
 - Should the default ring-buffer capacity be increased (e.g., from 120 to 512) to provide longer history without drops?[^performanceobserver-buffer]
-- Should shell-web enable diagnostics automatically in development mode (e.g., behind a debug flag), or remain strictly user-triggered?
+- Should downstream shells enable diagnostics automatically in development mode (e.g., behind a debug flag), or remain strictly user-triggered?
 - Should the timeline include per-command-type spans (high cardinality risk) or remain system/phase focused?
 
 ## 14. Follow-Up Work
-- Add a devtools overlay/panel in `packages/shell-web` that visualizes system spans and slow-tick warnings.
+- Add a devtools overlay/panel in downstream shells that visualizes system spans and slow-tick warnings.
 - Explore exporting diagnostics to Perfetto/trace-event formats for offline analysis.[^perfetto-track-events]
 - Add docs coverage in `docs/runtime-step-lifecycle.md` once the phase model is finalized.
 
@@ -179,8 +178,6 @@ WorkerBridge (shell-web)
 - `packages/core/src/diagnostics/runtime-diagnostics-controller.ts`
 - `packages/core/src/index.ts`
 - `packages/core/src/telemetry-prometheus.ts`
-- `packages/shell-web/src/runtime.worker.ts`
-- `packages/shell-web/src/modules/worker-bridge.ts`
 - [^fixed-step]: Glenn Fiedler, “Fix Your Timestep!”, *Gaffer On Games*. Highlights maintaining a constant simulation `dt` per step for deterministic behavior. https://gafferongames.com/post/fix_your_timestep/
 - [^object-pool]: Robert Nystrom, *Game Programming Patterns: Object Pool*, on reusing preallocated objects to avoid allocation spikes in high-churn systems. https://gameprogrammingpatterns.com/object-pool.html
 - [^object-freeze]: MDN Web Docs, “Object.freeze()”, noting that frozen objects cannot be modified or extended. https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze

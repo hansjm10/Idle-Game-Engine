@@ -31,8 +31,6 @@ touch most often.
 
 ## Shell & UX engineers
 
-- `docs/accessibility-smoke-tests-design.md` outlines the Playwright suites.
-- `packages/shell-web/README.md` documents local dev commands and Vite setup.
 - When integrating new runtime events, consult
   `docs/runtime-event-manifest-authoring.md` and the generated manifest exports
   in `@idle-engine/core`.

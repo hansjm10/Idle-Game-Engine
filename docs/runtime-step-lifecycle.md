@@ -31,8 +31,8 @@ This document verifies that the Idle Engine runtime implementation correctly fol
 
 - **Goals**:
   - Verify IdleEngineRuntime manages currentStep/nextExecutableStep as specified
-  - Confirm Worker Bridge correctly stamps player commands
-  - Validate Presentation Shell maintains proper lifecycle synchronization
+  - Confirm command ingress correctly stamps player commands
+  - Validate presentation integrations maintain proper lifecycle synchronization
   - Ensure automation system uses deterministic timestamps
   - Document diagnostics timeline integration
 
@@ -47,7 +47,7 @@ This document verifies that the Idle Engine runtime implementation correctly fol
 - **Agent Roles**: N/A (verification document)
 - **Affected Packages/Services**:
   - `packages/core` (IdleEngineRuntime, automation system, diagnostics)
-  - `packages/shell-web` (Worker Bridge, Presentation Shell)
+  - Presentation shell integrations (archived)
 - **Compatibility Considerations**: Implementation must maintain backward compatibility with existing command queue behavior.
 
 ## 5. Current State
@@ -86,8 +86,6 @@ The runtime manages `currentStep` / `nextExecutableStep` exactly as described in
 
 #### Worker Bridge
 
-**File**: `packages/shell-web/src/runtime.worker.ts`
-
 Acts as the security boundary for UI commands:
 
 - Incoming messages are always treated as `PLAYER` priority
@@ -95,17 +93,13 @@ Acts as the security boundary for UI commands:
 - Systems running inside the Worker can enqueue with elevated priorities because they already execute within the trusted boundary
 - The Worker runs the simulation loop on a fixed interval, forwarding the current step back to the UI so presentation code can confirm progression without accessing internal counters directly
 
-#### Presentation Shell
-
-**Files**:
-- `packages/shell-web/src/modules/worker-bridge.ts`
-- `packages/shell-web/src/modules/App.tsx`
+#### Presentation Integrations (Archived)
 
 The bridge exposes `sendCommand` that mirrors the design's `WorkerBridge` API (§7.1):
 
 - Wraps UI commands with `CommandSource.PLAYER` and a UI-side timestamp
 - Delegates actual step stamping to the Worker
-- `App.tsx` consumes the bridge and reacts to state updates
+- Presentation code consumes the bridge and reacts to state updates
 - Keeps UI logic aligned with the Worker-driven tick lifecycle rather than assuming direct access to runtime internals
 
 #### Automation System Timestamps
@@ -209,9 +203,7 @@ None identified.
 
 - `docs/runtime-command-queue-design.md` - Primary design specification (§4.3, §7.1, §7.2)
 - `packages/core/src/index.ts` - IdleEngineRuntime implementation
-- `packages/shell-web/src/runtime.worker.ts` - Worker Bridge implementation
-- `packages/shell-web/src/modules/worker-bridge.ts` - Presentation Shell bridge API
-- `packages/shell-web/src/modules/App.tsx` - UI integration
+- Archived worker bridge harness (removed with presentation shell deprecation)
 - `packages/core/src/automation-system.ts` - Automation timestamp handling
 - `packages/core/src/devtools/diagnostics.ts` - Diagnostics utilities
 

@@ -998,8 +998,7 @@ the compiler and runtime guardrails described in the design docs.
 ## Transform Runtime Semantics
 
 Transforms execute deterministically in the core runtime. The following notes
-summarize runtime behavior (see `docs/runtime-transform-system-design-issue-523.md`
-§6.2, §13 for the full contract).
+summarize runtime behavior and the current contract.
 
 ### Trigger kinds
 
@@ -1476,6 +1475,5 @@ The progression view (`buildProgressionSnapshot`) must be deterministic so that 
 - Authors changing content should expect golden updates when business logic changes intentionally; otherwise treat diffs as regressions.
 
 References:
-- `docs/build-resource-generator-upgrade-ui-components-design.md` (cost examples)
 - `docs/content-dsl-schema-design.md` (schema contracts)
 - `packages/core/src/progression.ts` (snapshot construction)

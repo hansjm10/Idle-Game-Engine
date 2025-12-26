@@ -27,7 +27,6 @@ const sidebars: SidebarsConfig = {
         'idle-engine-design',
         'runtime-step-lifecycle',
         'runtime-command-queue-design',
-        'runtime-command-queue-validation-plan',
         'runtime-event-pubsub-design',
         'runtime-event-bus-decisions',
         'runtime-event-manifest-authoring',
@@ -45,14 +44,6 @@ const sidebars: SidebarsConfig = {
         'content-compiler-design',
         'content-schema-rollout-decisions',
         'content-validation-cli-design',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Shell Integration',
-      items: [
-        'accessibility-smoke-tests-design',
-        'worker-bridge-extension-tutorial',
       ],
     },
     {

@@ -57,12 +57,12 @@ The Idle Engine runtime requires a mechanism to manage state mutations from mult
 
 ### Agent Roles
 - Runtime Implementation Agent: Implements core command queue and dispatcher logic
-- Integration Agent: Connects command queue to tick loop and worker bridge
+- Integration Agent: Connects command queue to tick loop and external command ingress
 - Testing Agent: Creates unit and integration tests for command flow
 
 ### Affected Packages/Services
 - `packages/core`: Command queue, dispatcher, recorder implementations
-- `packages/shell-web`: Worker bridge integration for command submission
+- Presentation shells (archived): Worker bridge integration for command submission
 - Runtime worker: Tick loop integration and command execution
 
 ### Compatibility Considerations
@@ -597,7 +597,7 @@ Within the same priority tier, commands execute in timestamp order (FIFO).
 
 ##### Worker Bridge API
 
-The Worker bridge provides a type-safe command interface for the presentation layer:
+Presentation integrations should provide a type-safe command interface for the UI layer:
 
 ```typescript
 export enum CommandSource {
@@ -749,7 +749,7 @@ Key metrics exposed:
 | feat(core): add command types for resource operations | Payload interfaces for core commands | Runtime Implementation Agent | None | TypeScript compilation; payload validation |
 | feat(core): integrate command queue into tick loop | Connect queue to runtime execution | Integration Agent | CommandQueue, CommandDispatcher | Commands execute in correct order within tick |
 | feat(core): implement command handlers | Resource operation handlers | Integration Agent | Tick loop integration | Handlers mutate state correctly; telemetry emitted |
-| feat(shell-web): add Worker bridge command handler | Message handling for external commands | Integration Agent | Tick loop integration | Commands from UI reach runtime; step stamping correct |
+| feat(presentation-shell): add worker bridge command handler (archived) | Message handling for external commands | Integration Agent | Tick loop integration | Commands from UI reach runtime; step stamping correct |
 | feat(core): implement CommandRecorder | Recording and replay functionality | Runtime Implementation Agent | CommandDispatcher | Replay produces identical state; logs are immutable |
 | feat(core): add queue capacity limits | Overflow handling and eviction | Runtime Implementation Agent | CommandQueue | Queue respects limits; telemetry on overflow |
 | docs(core): document command API contracts | API documentation for content modules | Documentation Agent | All implementation complete | Clear usage examples; common patterns documented |
@@ -764,7 +764,7 @@ Key metrics exposed:
 **Phase 2: Integration (Week 2)**
 - Tick loop integration
 - Command handlers for core operations
-- Worker bridge message handling
+- External command ingress handling (archived)
 - Integration tests for end-to-end flow
 
 **Phase 3: Recording & Polish (Week 3)**
@@ -778,7 +778,7 @@ Key metrics exposed:
 **Hand-off Package**:
 - Source files: `packages/core/src/command-queue.ts`, `packages/core/src/command-dispatcher.ts`, `packages/core/src/command-recorder.ts`
 - Test files: `packages/core/src/command-queue.test.ts`, `packages/core/src/index.test.ts`
-- Integration points: `packages/core/src/index.ts` (tick loop), `packages/shell-web/src/runtime.worker.ts` (worker bridge)
+- Integration points: `packages/core/src/index.ts` (tick loop), worker bridge harnesses (archived)
 
 **Communication Cadence**: Daily status updates during active implementation; review checkpoints at end of each phase
 
@@ -948,7 +948,7 @@ All design questions have been resolved through the development process. See Sec
 - `packages/core/src/index.ts:120`: Tick loop integration
 - `packages/core/src/command-queue.test.ts:553`: Priority resolution tests
 - `packages/core/src/index.test.ts:193`: Integration tests
-- `packages/shell-web/src/runtime.worker.test.ts:136`: Worker bridge tests
+- Archived worker bridge tests (removed with presentation shell deprecation)
 
 ## Appendix A — Glossary
 
@@ -991,8 +991,8 @@ All design questions have been resolved through the development process. See Sec
 ### In Progress (Week 2)
 - [ ] Integrate command queue into tick loop (update `IdleEngineRuntime`)
 - [ ] Implement command handlers for purchase/toggle operations
-- [ ] Add Worker bridge message handler for incoming commands
-- [x] Write integration tests for end-to-end command flow (`packages/core/src/index.test.ts:193`, `packages/shell-web/src/runtime.worker.test.ts:136`)
+- [ ] Add external command ingress handling in downstream shells (archived)
+- [x] Write integration tests for end-to-end command flow (`packages/core/src/index.test.ts:193`)
 
 ### Pending (Week 3)
 - [ ] Implement `CommandRecorder` for debugging/replay
@@ -1007,5 +1007,5 @@ The command queue is complete when:
 1. **Determinism**: Replaying a command log produces identical final state (verified by property tests) - IN PROGRESS
 2. **Priority**: Commands execute in correct priority order across 1000+ enqueued commands (benchmark) - COMPLETE
 3. **Performance**: Command processing overhead stays under 5% of the tick budget at 60 ticks/sec (profiled) - PENDING
-4. **Integration**: React shell can enqueue commands, runtime executes them, state updates reflected in UI (E2E test) - IN PROGRESS
+4. **Integration**: Downstream shells can enqueue commands, runtime executes them, state updates reflected in UI (E2E test) - IN PROGRESS
 5. **Observability**: Command queue depth and execution metrics exposed via diagnostics interface - PENDING

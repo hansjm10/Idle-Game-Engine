@@ -23,7 +23,7 @@ This document describes the **Progression Coordinator pattern** implemented in P
   - Provide unified purchase cost quotes to the presentation layer
   - Update generator/upgrade visibility dynamically based on game state
 
-- **Forces**: The solution needed to preserve deterministic command execution, integrate with existing resource state management (`packages/core/src/resource-state.ts`), support the progression snapshot schema defined in `docs/build-resource-generator-upgrade-ui-components-design.md` §6.2, and enable session restoration as specified in `docs/runtime-react-worker-bridge-design.md` §14.1.
+- **Forces**: The solution needed to preserve deterministic command execution, integrate with existing resource state management (`packages/core/src/resource-state.ts`), support the progression snapshot schema in `packages/core/src/progression.ts`, and enable session restoration as specified in `docs/resource-state-storage-design.md`.
 
 ## 3. Goals & Non-Goals
 
@@ -45,7 +45,7 @@ This document describes the **Progression Coordinator pattern** implemented in P
 
 - **Primary Stakeholders**: Runtime Core maintainers; Shell UX team consuming snapshots
 - **Agent Roles**: N/A (existing implementation)
-- **Affected Packages/Services**: `packages/core` (coordinator implementation, interfaces, resource state, progression types); `packages/shell-web` (worker integration, UI consumption); `packages/content-sample` (consumed by coordinator)
+- **Affected Packages/Services**: `packages/core` (coordinator implementation, interfaces, resource state, progression types); presentation shell integrations (archived); `packages/content-sample` (consumed by coordinator)
 - **Compatibility Considerations**: Coordinator integrates with existing command handlers; saves from pre-PR#303 require migration handled by resource state reconciliation
 
 ## 5. Current State
@@ -60,7 +60,7 @@ The coordinator is a facade that:
 - Evaluates content-defined conditions via `condition-evaluator.ts`
 - Updates all progression state in `updateForStep()` called every game tick
 
-**Integration point** (`packages/shell-web/src/runtime.worker.ts:134-160`):
+**Integration point** (archived worker harness):
 - Worker creates coordinator with `sampleContent` and optional `initialState` from saved game
 - Coordinator's evaluators are registered with command handlers
 - `updateForStep()` is called after runtime step advances (line 225)
@@ -207,7 +207,7 @@ type UpgradeRecord = {
 
 **`updateForStep(step)`** (`packages/core/src/progression-coordinator.ts`):
 
-Called by runtime worker after step advances (`packages/shell-web/src/runtime.worker.ts:225`).
+Called by runtime worker after step advances (archived worker harness).
 
 **Generator update loop** (lines 304-329):
 ```typescript
@@ -310,7 +310,7 @@ Delegates to `hydrateResourceState()` utility (lines 741-788):
 3. **Publish snapshot**:
    - Call `state.snapshot({ mode: 'publish' })` to flush changes to published buffer
 
-**Integration** (`packages/shell-web/src/runtime.worker.ts:652-798`):
+**Integration** (archived worker harness):
 - Worker receives `RESTORE_SESSION` message with `state: SerializedResourceState`
 - Preserves coordinator's resource metadata (line 746)
 - Stores serialized state for reference (line 747)
@@ -471,7 +471,7 @@ Create new state objects every tick instead of mutating records.
 
 - **556 lines of unit tests** covering all condition types, comparators, error handling
 
-**Runtime worker integration tests** (`packages/shell-web/src/runtime.worker.test.ts`):
+**Runtime worker integration tests** (archived worker harness tests removed):
 
 - Test "hydrates progression snapshot from sample content state" (line 202)
 - Test "hydrates live resource state from serialized progression when reusing game state" (line 327)
@@ -521,15 +521,11 @@ Create new state objects every tick instead of mutating records.
 - `packages/core/src/progression-coordinator.ts` - Coordinator implementation
 - `packages/core/src/condition-evaluator.ts` - Condition evaluation system
 - `packages/core/src/progression-coordinator.test.ts` - Integration tests
-- `packages/shell-web/src/runtime.worker.ts:134-160` - Worker integration
-- `packages/shell-web/src/runtime.worker.ts:225` - Per-tick update call
-- `packages/shell-web/src/runtime.worker.ts:652-798` - Session restore integration
+- Archived worker harness integration (removed)
 - `packages/core/src/progression.ts:1-400` - Snapshot builder
 - `packages/core/src/resource-state.ts` - Resource state storage
 
 ### Design Documents
-- `docs/build-resource-generator-upgrade-ui-components-design.md` §6.2 - Progression snapshot schema
-- `docs/runtime-react-worker-bridge-design.md` §14.1 - Session restore flow
 - `docs/resource-state-storage-design.md` §5.3 - Resource hydration mechanics
 
 ### Related Issues

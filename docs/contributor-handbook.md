@@ -13,8 +13,6 @@ context.
 
 - Node.js ≥20.10 (matches the docs site requirement; stay on the 20.x LTS stream)
 - pnpm ≥8 (we track the exact version in `packageManager` inside `package.json`)
-- Playwright system dependencies (`pnpm exec playwright install-deps`) on fresh
-  Linux hosts before running accessibility smoke tests
 - Lefthook hooks (`pnpm prepare`) to ensure lint, test, and build checks run
   locally before commits
 
@@ -27,7 +25,6 @@ context.
     updates so packs stay fresh.
   - Runtime/service changes trigger `pnpm --filter @idle-engine/core --filter @idle-engine/social-service run --if-present test:ci`.
   - Content pipeline changes trigger `pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci`.
-  - Shell or a11y harness edits run `pnpm --filter @idle-engine/a11y-smoke-tests run test:ci`.
   - The targeted markdown checks for `docs/content-dsl-usage-guidelines-design.md`
     remain unchanged.
 - Typical warm-cache timings:
@@ -60,10 +57,9 @@ context.
 ## Repository layout
 
 - `packages/core` — deterministic runtime, command queue, telemetry
-- `packages/shell-web` — Vite/React shell that embeds the runtime worker
 - `packages/content-*` — declarative content DSL and sample packs
 - `services/` — backend experiments (leaderboards, guild services, auth)
-- `tools/` — validation CLIs, a11y harnesses, and development helpers
+- `tools/` — validation CLIs and development helpers
 - `docs/` — design documents and the source for this documentation site
 
 See `docs/implementation-plan.md` for the current roadmap and open milestones.
@@ -79,13 +75,7 @@ pnpm test
 
 # focused package scripts
 pnpm --filter @idle-engine/core test
-pnpm --filter @idle-engine/shell-web dev
-
-# run accessibility smoke tests (headless)
-pnpm test:a11y
 ```
-
-The accessibility workspace shells out to `tools/a11y-smoke-tests/scripts/run-playwright.cjs`, which bootstraps both the Vite preview and dev servers with `start-server-and-test`. Running `pnpm exec playwright test` directly is still supported, but you must start the appropriate servers yourself—otherwise the suite aborts early during the new server readiness check with guidance to use `pnpm test:a11y`. When reusing a locally running `pnpm dev`/`pnpm preview`, point the harness at those ports via `PLAYWRIGHT_DEV_PORT`/`PLAYWRIGHT_PREVIEW_PORT` and export `PLAYWRIGHT_A11Y_SKIP_BUILD=1` after the first build so the `pretest` hook stops rebuilding the world each run.
 
 We use `vitest-llm-reporter`, so test runs print a final JSON object. Avoid extra
 console output around that summary to keep downstream tooling happy.
@@ -154,8 +144,7 @@ for future contributors skimming barrel files.
 ## Pull request expectations
 
 - Follow Conventional Commit prefixes (`feat:`, `fix:`, `chore:`…)
-- Include test commands executed (Vitest filters, `pnpm test:a11y`, etc.)
-- Attach screenshots or recordings when touching `packages/shell-web`
+- Include test commands executed (Vitest filters, etc.)
 - Note known gaps so follow-up work is clear to reviewers
 
 Questions? Start a discussion on the issue tracker or tag the feature owner

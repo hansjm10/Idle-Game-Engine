@@ -20,37 +20,4 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-definitions': 'off',
     },
   },
-  {
-    files: ['packages/shell-web/src/**/*.{ts,tsx}'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: './modules/runtime-worker-protocol.js',
-              message:
-                'Use @idle-engine/runtime-bridge-contracts as the canonical schema package.',
-            },
-            {
-              name: '../modules/runtime-worker-protocol.js',
-              message:
-                'Use @idle-engine/runtime-bridge-contracts as the canonical schema package.',
-            },
-          ],
-          patterns: [
-            {
-              group: [
-                '**/modules/runtime-worker-protocol',
-                '**/modules/runtime-worker-protocol.js',
-                '**/modules/runtime-worker-protocol.ts',
-              ],
-              message:
-                'Use @idle-engine/runtime-bridge-contracts as the canonical schema package.',
-            },
-          ],
-        },
-      ],
-    },
-  },
 );
