@@ -241,8 +241,8 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 
 **Restore**
 1. Shell reads the latest slot at startup (or when the user selects a save) and validates it against current content definitions using `reconcileSaveAgainstDefinitions`.
-2. Shell computes offline elapsed time as `max(now - capturedAt, 0)`, passes a `maxElapsedMs` cap (e.g., `OFFLINE_CAP_MS`) to core, and derives optional `resourceDeltas` if migrations supply them.
-3. Shell calls `WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, maxElapsedMs, resourceDeltas, offlineProgression })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`. Fast-path restores require runtime `fastForward` support and a valid `offlineProgression` payload; otherwise the worker falls back to step-based offline catch-up.
+2. Shell computes offline elapsed time as `max(now - capturedAt, 0)`, passes a `maxElapsedMs` cap (e.g., `OFFLINE_CAP_MS`) and optional `maxSteps` to core, and derives optional `resourceDeltas` if migrations supply them.
+3. Shell calls `WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, maxElapsedMs, maxSteps, resourceDeltas, offlineProgression })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`. Fast-path restores require runtime `fastForward` support and a valid `offlineProgression` payload; otherwise the worker falls back to step-based offline catch-up.
 4. On success the shell resumes normal command flow; on failure it records telemetry, surfaces UI prompts, and may retry after running migrations.
 
 **Stored Payload (v1)**

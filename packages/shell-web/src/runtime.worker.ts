@@ -1117,6 +1117,10 @@ export function initializeRuntimeWorker(
           productionSystem,
           runtime,
           resourceDeltas: offlineResourceDeltas,
+          limits: {
+            maxElapsedMs: offlineMaxElapsedMs,
+            maxSteps: offlineMaxSteps,
+          },
           fastPath: offlineProgression,
         });
       } else if (hasOfflineCatchup) {
