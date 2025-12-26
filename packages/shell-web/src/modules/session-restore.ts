@@ -47,7 +47,7 @@ export interface SessionRestoreOptions {
  * Process:
  * 1. Load latest snapshot from IndexedDB
  * 2. Validate against current resource definitions
- * 3. Compute offline elapsed time (clamped to cap)
+ * 3. Compute offline elapsed time and pass the cap to core
  * 4. Call bridge.restoreSession() with validated state
  *
  * See docs/runtime-react-worker-bridge-design.md §14.1 for architecture.
@@ -128,10 +128,12 @@ export async function restoreSession(
         if (migrationResult.success && migrationResult.migratedState) {
           // Migration succeeded - continue with migrated state
           const elapsedMs = adapter.computeOfflineElapsedMs(snapshot);
+          const maxElapsedMs = adapter.getOfflineCapMs();
 
           await bridge.restoreSession({
             state: migrationResult.migratedState,
             elapsedMs,
+            maxElapsedMs,
             savedWorkerStep: snapshot.workerStep,
           });
 
@@ -243,10 +245,12 @@ export async function restoreSession(
         if (migrationResult.success && migrationResult.migratedState) {
           // Migration succeeded - continue with migrated state
           const elapsedMs = adapter.computeOfflineElapsedMs(snapshot);
+          const maxElapsedMs = adapter.getOfflineCapMs();
 
           await bridge.restoreSession({
             state: migrationResult.migratedState,
             elapsedMs,
+            maxElapsedMs,
             savedWorkerStep: snapshot.workerStep,
           });
 
@@ -322,12 +326,14 @@ export async function restoreSession(
 
     // Compute offline elapsed time
     const elapsedMs = adapter.computeOfflineElapsedMs(snapshot);
+    const maxElapsedMs = adapter.getOfflineCapMs();
 
     // Restore session via worker bridge
     await bridge.restoreSession({
       state: snapshot.state,
       commandQueue: snapshot.commandQueue,
       elapsedMs,
+      maxElapsedMs,
       offlineProgression: snapshot.offlineProgression,
       savedWorkerStep: snapshot.workerStep,
       // resourceDeltas would come from migration transforms

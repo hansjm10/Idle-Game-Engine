@@ -72,6 +72,7 @@ describe('session-restore', () => {
     mockAdapter = {
       load: vi.fn().mockResolvedValue(createMockSnapshot()),
       computeOfflineElapsedMs: vi.fn().mockReturnValue(10000),
+      getOfflineCapMs: vi.fn().mockReturnValue(24000),
     } as unknown as SessionPersistenceAdapter;
   });
 
@@ -90,6 +91,7 @@ describe('session-restore', () => {
       expect(mockBridge.restoreSession).toHaveBeenCalledWith(expect.objectContaining({
         state: expect.any(Object),
         elapsedMs: 10000,
+        maxElapsedMs: 24000,
         savedWorkerStep: 1000,
       }));
     });

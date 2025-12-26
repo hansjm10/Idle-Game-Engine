@@ -870,6 +870,141 @@ describe('runtime.worker integration', () => {
     expect(setGameStateSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('forwards maxElapsedMs and maxSteps into offline catchup payloads', () => {
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      elapsedMs: 5000,
+      maxElapsedMs: 24000,
+      maxSteps: 3,
+      resourceDeltas: { 'sample-pack.energy': 10 },
+    });
+
+    expect(enqueueSpy).toHaveBeenCalledTimes(1);
+    const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+      type: string;
+      payload: {
+        elapsedMs: number;
+        maxElapsedMs?: number;
+        maxSteps?: number;
+        resourceDeltas: Record<string, number>;
+      };
+    };
+    expect(offlineCommand.type).toBe(core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+    expect(offlineCommand.payload).toMatchObject({
+      elapsedMs: 5000,
+      maxElapsedMs: 24000,
+      maxSteps: 3,
+      resourceDeltas: { 'sample-pack.energy': 10 },
+    });
+  });
+
+  it('rejects restore payloads with invalid maxElapsedMs values', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      maxElapsedMs: Number.POSITIVE_INFINITY,
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects restore payloads with invalid maxSteps values', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      maxSteps: Number.NaN,
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects restore payloads with non-integer maxSteps values', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      maxSteps: 1.5,
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects restore payloads with non-finite resource delta values', () => {
 
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -1625,6 +1760,69 @@ describe('runtime.worker integration', () => {
         type: 'RESTORE_SESSION',
         schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
         elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': 1,
+          },
+          preconditions,
+        },
+      });
+
+      expect(enqueueSpy).not.toHaveBeenCalled();
+
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+    });
+
+    it('applies maxElapsedMs caps during offline fast path', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const preconditions = {
+        constantRates: true,
+        noUnlocks: true,
+        noAchievements: true,
+        noAutomation: true,
+        modeledResourceBounds: true,
+      };
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions,
+          },
+        },
+        resources: [createResourceDefinition('sample-pack.energy')],
+      });
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+        content,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 5000,
+        maxElapsedMs: 1000,
         state: serializedState,
         offlineProgression: {
           mode: 'constant-rates',

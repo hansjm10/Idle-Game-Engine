@@ -1,6 +1,13 @@
 import { applyOfflineResourceDeltas } from './offline-resource-deltas.js';
+import {
+  resolveMaxTicksPerCall,
+  resolveOfflineProgressTotals,
+  type OfflineProgressLimits,
+} from './offline-progress-limits.js';
 import type { ProductionSystem } from './production-system.js';
 import type { ProgressionCoordinator } from './progression-coordinator.js';
+
+export type { OfflineProgressLimits } from './offline-progress-limits.js';
 
 export type OfflineProgressFastPathMode = 'constant-rates';
 
@@ -30,8 +37,32 @@ export type ApplyOfflineProgressOptions = Readonly<{
     getMaxStepsPerFrame?: () => number;
     fastForward?: (deltaMs: number) => number;
   }>;
+  /**
+   * Applied once per call; omit on subsequent chunked calls to avoid reapplying.
+   */
   readonly resourceDeltas?: Readonly<Record<string, number>>;
+  readonly limits?: OfflineProgressLimits;
   readonly fastPath?: OfflineProgressFastPathOptions;
+  readonly onProgress?: (progress: OfflineProgressUpdate) => void;
+}>;
+
+export type OfflineProgressUpdate = Readonly<{
+  readonly processedMs: number;
+  readonly totalMs: number;
+  readonly processedSteps: number;
+  readonly totalSteps: number;
+  readonly remainingMs: number;
+  readonly remainingSteps: number;
+}>;
+
+export type OfflineProgressResult = Readonly<{
+  readonly processedMs: number;
+  readonly totalMs: number;
+  readonly processedSteps: number;
+  readonly totalSteps: number;
+  readonly remainingMs: number;
+  readonly remainingSteps: number;
+  readonly completed: boolean;
 }>;
 
 function applyResourceDeltas(
@@ -39,6 +70,43 @@ function applyResourceDeltas(
   resourceDeltas: Readonly<Record<string, number>>,
 ): void {
   applyOfflineResourceDeltas(coordinator, resourceDeltas);
+}
+
+function buildProgressUpdate(
+  processedMs: number,
+  totalMs: number,
+  processedSteps: number,
+  totalSteps: number,
+): OfflineProgressUpdate {
+  const remainingMs = Math.max(0, totalMs - processedMs);
+  const remainingSteps = Math.max(0, totalSteps - processedSteps);
+  return {
+    processedMs,
+    totalMs,
+    processedSteps,
+    totalSteps,
+    remainingMs,
+    remainingSteps,
+  };
+}
+
+function buildProgressResult(
+  processedMs: number,
+  totalMs: number,
+  processedSteps: number,
+  totalSteps: number,
+): OfflineProgressResult {
+  const remainingMs = Math.max(0, totalMs - processedMs);
+  const remainingSteps = Math.max(0, totalSteps - processedSteps);
+  return {
+    processedMs,
+    totalMs,
+    processedSteps,
+    totalSteps,
+    remainingMs,
+    remainingSteps,
+    completed: remainingMs === 0 && remainingSteps === 0,
+  };
 }
 
 function buildResourceDeltasFromNetRates(
@@ -104,8 +172,10 @@ function resolveFastPathError(
   return undefined;
 }
 
-export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void {
-  const { runtime, coordinator } = options;
+export function applyOfflineProgress(
+  options: ApplyOfflineProgressOptions,
+): OfflineProgressResult {
+  const { runtime, coordinator, onProgress } = options;
 
   if (options.resourceDeltas) {
     applyResourceDeltas(coordinator, options.resourceDeltas);
@@ -113,7 +183,7 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
 
   const stepSizeMs = runtime.getStepSizeMs();
   if (!Number.isFinite(stepSizeMs) || stepSizeMs <= 0) {
-    return;
+    return buildProgressResult(0, 0, 0, 0);
   }
 
   const startingStep = runtime.getCurrentStep();
@@ -121,16 +191,42 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
 
   const elapsedMs = options.elapsedMs;
   if (typeof elapsedMs !== 'number' || !Number.isFinite(elapsedMs) || elapsedMs <= 0) {
-    return;
+    return buildProgressResult(0, 0, 0, 0);
   }
 
-  const clampedElapsedMs = Math.max(0, elapsedMs);
+  const { totalMs, totalSteps, totalRemainderMs } = resolveOfflineProgressTotals(
+    elapsedMs,
+    stepSizeMs,
+    options.limits,
+  );
+  if (totalMs <= 0) {
+    return buildProgressResult(0, totalMs, 0, totalSteps);
+  }
+
+  const maxTicksPerCall = resolveMaxTicksPerCall(options.limits);
+  const callSteps = maxTicksPerCall !== undefined
+    ? Math.min(totalSteps, maxTicksPerCall)
+    : totalSteps;
+  const callRemainderMs = callSteps === totalSteps ? totalRemainderMs : 0;
+  const callElapsedMs = callSteps * stepSizeMs + callRemainderMs;
+
+  let processedSteps = 0;
+  let processedMs = 0;
+
+  const reportProgress = () => {
+    if (!onProgress) {
+      return;
+    }
+    onProgress(
+      buildProgressUpdate(processedMs, totalMs, processedSteps, totalSteps),
+    );
+  };
 
   const fastPath = options.fastPath;
   if (fastPath) {
     const fastPathError = resolveFastPathError(fastPath, runtime);
     if (!fastPathError) {
-      const stepsAdvanced = runtime.fastForward?.(clampedElapsedMs) ?? 0;
+      const stepsAdvanced = runtime.fastForward?.(callElapsedMs) ?? 0;
       const appliedMs = stepsAdvanced * stepSizeMs;
       if (appliedMs > 0) {
         if (options.productionSystem?.applyOfflineDelta) {
@@ -146,16 +242,18 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
       if (stepsAdvanced > 0) {
         coordinator.updateForStep(runtime.getCurrentStep());
       }
-      return;
+      processedSteps = callSteps;
+      processedMs = callElapsedMs;
+      if (callElapsedMs > 0) {
+        reportProgress();
+      }
+      return buildProgressResult(processedMs, totalMs, processedSteps, totalSteps);
     }
 
     if (fastPath.onInvalid === 'error') {
       throw new Error(fastPathError);
     }
   }
-
-  const fullSteps = Math.floor(clampedElapsedMs / stepSizeMs);
-  const remainderMs = clampedElapsedMs - fullSteps * stepSizeMs;
 
   const maxStepsPerFrame =
     typeof runtime.getMaxStepsPerFrame === 'function'
@@ -167,12 +265,15 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
       : 1;
 
   let coordinatorUpdatedByRuntime = false;
-  let remainingFullSteps = fullSteps;
+  let remainingFullSteps = callSteps;
 
   if (remainingFullSteps > 0) {
     const lastUpdatedBeforeTick = coordinator.getLastUpdatedStep();
     const stepsProcessed = runtime.tick(stepSizeMs);
     remainingFullSteps -= 1;
+    processedSteps += 1;
+    processedMs += stepSizeMs;
+    reportProgress();
 
     if (stepsProcessed > 0) {
       const stepAfterTick = runtime.getCurrentStep();
@@ -194,16 +295,23 @@ export function applyOfflineProgress(options: ApplyOfflineProgressOptions): void
     const batchSteps = Math.min(remainingFullSteps, batchStepsLimit);
     const stepsProcessed = runtime.tick(batchSteps * stepSizeMs);
     remainingFullSteps -= batchSteps;
+    processedSteps += batchSteps;
+    processedMs += batchSteps * stepSizeMs;
+    reportProgress();
 
     if (!coordinatorUpdatedByRuntime && stepsProcessed > 0) {
       coordinator.updateForStep(runtime.getCurrentStep());
     }
   }
 
-  if (remainderMs > 0) {
-    const stepsProcessed = runtime.tick(remainderMs);
+  if (callRemainderMs > 0) {
+    const stepsProcessed = runtime.tick(callRemainderMs);
+    processedMs += callRemainderMs;
+    reportProgress();
     if (stepsProcessed > 0) {
       coordinator.updateForStep(runtime.getCurrentStep());
     }
   }
+
+  return buildProgressResult(processedMs, totalMs, processedSteps, totalSteps);
 }

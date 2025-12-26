@@ -183,6 +183,10 @@ export class SessionPersistenceAdapter {
     this.offlineCapMs = options.offlineCapMs ?? DEFAULT_OFFLINE_CAP_MS;
   }
 
+  getOfflineCapMs(): number {
+    return this.offlineCapMs;
+  }
+
   /**
    * Opens the IndexedDB database, creating it if necessary.
    * Handles schema migrations via the onupgradeneeded event.
@@ -539,7 +543,7 @@ export class SessionPersistenceAdapter {
   }
 
   /**
-   * Computes offline elapsed time for restore, clamped to the configured cap.
+   * Computes offline elapsed time for restore.
    * Returns elapsed milliseconds since the snapshot was captured.
    */
   computeOfflineElapsedMs(snapshot: StoredSessionSnapshot): number {
@@ -551,7 +555,6 @@ export class SessionPersistenceAdapter {
     const now = Date.now();
     const elapsed = now - capturedTimestamp;
 
-    // Clamp to offline cap to prevent runaway gains
-    return Math.min(Math.max(0, elapsed), this.offlineCapMs);
+    return Math.max(0, elapsed);
   }
 }

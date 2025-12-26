@@ -14,6 +14,10 @@ import {
 } from './content-test-helpers.js';
 import { applyOfflineProgress } from './offline-progress.js';
 import {
+  resolveMaxTicksPerCall,
+  resolveOfflineProgressTotals,
+} from './offline-progress-limits.js';
+import {
   hydrateProgressionCoordinatorState,
   serializeProgressionCoordinatorState,
 } from './progression-coordinator-save.js';
@@ -322,6 +326,330 @@ describe('applyOfflineProgress', () => {
     expect(tickSpy.mock.calls.length).toBeLessThan(fullSteps);
   });
 
+  it('reports progress and respects maxTicksPerCall limits', () => {
+    const harness = createHarness(0);
+    const progressSpy = vi.fn();
+
+    const result = applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 5,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxTicksPerCall: 2 },
+      onProgress: progressSpy,
+    });
+
+    expect(progressSpy).toHaveBeenCalledTimes(2);
+    const lastProgress = progressSpy.mock.calls[
+      progressSpy.mock.calls.length - 1
+    ]?.[0];
+    expect(lastProgress).toEqual({
+      processedMs: STEP_SIZE_MS * 2,
+      totalMs: STEP_SIZE_MS * 5,
+      processedSteps: 2,
+      totalSteps: 5,
+      remainingMs: STEP_SIZE_MS * 3,
+      remainingSteps: 3,
+    });
+    expect(result).toMatchObject({
+      processedSteps: 2,
+      totalSteps: 5,
+      remainingSteps: 3,
+      completed: false,
+    });
+  });
+
+  it('treats maxTicksPerCall 0 as no limit', () => {
+    const harness = createHarness(0);
+    const elapsedMs = STEP_SIZE_MS * 3;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxTicksPerCall: 0 },
+    });
+
+    expect(result).toMatchObject({
+      processedSteps: 3,
+      totalSteps: 3,
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(3);
+  });
+
+  it('reports progress for remainder elapsed time', () => {
+    const harness = createHarness(0);
+    const progressSpy = vi.fn();
+    const elapsedMs = STEP_SIZE_MS * 2 + 50;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      onProgress: progressSpy,
+    });
+
+    expect(progressSpy).toHaveBeenCalledTimes(3);
+    const lastProgress =
+      progressSpy.mock.calls[progressSpy.mock.calls.length - 1]?.[0];
+    expect(lastProgress).toEqual({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: 2,
+      totalSteps: 2,
+      remainingMs: 0,
+      remainingSteps: 0,
+    });
+    expect(result).toMatchObject({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: 2,
+      totalSteps: 2,
+      remainingMs: 0,
+      remainingSteps: 0,
+      completed: true,
+    });
+  });
+
+  it('caps elapsedMs while preserving remainder below the step cap', () => {
+    const harness = createHarness(0);
+
+    const result = applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 3 + 50,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxElapsedMs: STEP_SIZE_MS * 2 + 50 },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 2,
+      totalMs: STEP_SIZE_MS * 2 + 50,
+      processedSteps: 2,
+      processedMs: STEP_SIZE_MS * 2 + 50,
+      remainingMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(2);
+  });
+
+  it('caps steps and drops remainder beyond the step cap', () => {
+    const harness = createHarness(0);
+
+    const result = applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 3 + 50,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxSteps: 1 },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 1,
+      totalMs: STEP_SIZE_MS,
+      processedSteps: 1,
+      processedMs: STEP_SIZE_MS,
+      remainingMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(1);
+  });
+
+  it('treats maxSteps 0 as zero processed steps', () => {
+    const harness = createHarness(0);
+    const elapsedMs = STEP_SIZE_MS * 3;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxSteps: 0 },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 0,
+      totalMs: 0,
+      processedSteps: 0,
+      processedMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(0);
+  });
+
+  it('applies maxElapsedMs before maxSteps and drops remainder when maxSteps truncates', () => {
+    const harness = createHarness(0);
+    const elapsedMs = STEP_SIZE_MS * 6 + 50;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: {
+        maxElapsedMs: STEP_SIZE_MS * 3 + 50,
+        maxSteps: 2,
+      },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 2,
+      totalMs: STEP_SIZE_MS * 2,
+      processedSteps: 2,
+      processedMs: STEP_SIZE_MS * 2,
+      remainingMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(2);
+  });
+
+  it('ignores invalid maxElapsedMs values when resolving totals', () => {
+    const elapsedMs = STEP_SIZE_MS * 5 + 50;
+    const baseline = resolveOfflineProgressTotals(elapsedMs, STEP_SIZE_MS);
+    const invalidValues = [
+      -1,
+      -100,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+
+    for (const value of invalidValues) {
+      const limits = { maxElapsedMs: value };
+      const totals = resolveOfflineProgressTotals(
+        elapsedMs,
+        STEP_SIZE_MS,
+        limits,
+      );
+
+      expect(totals).toEqual(baseline);
+      if (Number.isNaN(value)) {
+        expect(Number.isNaN(limits.maxElapsedMs)).toBe(true);
+      } else {
+        expect(limits.maxElapsedMs).toBe(value);
+      }
+    }
+  });
+
+  it('ignores invalid maxSteps values when resolving totals', () => {
+    const elapsedMs = STEP_SIZE_MS * 5 + 50;
+    const baseline = resolveOfflineProgressTotals(elapsedMs, STEP_SIZE_MS);
+    const invalidValues = [
+      -1,
+      -100,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+
+    for (const value of invalidValues) {
+      const limits = { maxSteps: value };
+      const totals = resolveOfflineProgressTotals(
+        elapsedMs,
+        STEP_SIZE_MS,
+        limits,
+      );
+
+      expect(totals).toEqual(baseline);
+      if (Number.isNaN(value)) {
+        expect(Number.isNaN(limits.maxSteps)).toBe(true);
+      } else {
+        expect(limits.maxSteps).toBe(value);
+      }
+    }
+  });
+
+  it('ignores non-positive or invalid maxTicksPerCall values when resolving max ticks', () => {
+    const invalidValues = [
+      0,
+      -1,
+      -100,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+
+    for (const value of invalidValues) {
+      const limits = { maxTicksPerCall: value };
+      expect(resolveMaxTicksPerCall(limits)).toBeUndefined();
+      if (Number.isNaN(value)) {
+        expect(Number.isNaN(limits.maxTicksPerCall)).toBe(true);
+      } else {
+        expect(limits.maxTicksPerCall).toBe(value);
+      }
+    }
+  });
+
+  it('matches uninterrupted outcomes when chunked across calls', () => {
+    const baseline = createHarness(0);
+    baseline.coordinator.incrementGeneratorOwned('generator.mine', 1);
+    baseline.coordinator.setUpgradePurchases('upgrade.double-mine', 1);
+    baseline.coordinator.updateForStep(baseline.runtime.getCurrentStep());
+
+    applyFrameDeltas(baseline.runtime, baseline.coordinator, [
+      STEP_SIZE_MS,
+      STEP_SIZE_MS,
+      STEP_SIZE_MS,
+    ]);
+
+    const saved = serializeProgressionCoordinatorState(
+      baseline.coordinator,
+      baseline.productionSystem,
+    );
+
+    const offlineElapsedMs = STEP_SIZE_MS * 45 + 34;
+
+    const uninterrupted = createHarness(saved.step);
+    hydrateProgressionCoordinatorState(
+      saved,
+      uninterrupted.coordinator,
+      uninterrupted.productionSystem,
+    );
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: uninterrupted.coordinator,
+      runtime: uninterrupted.runtime,
+    });
+
+    const chunked = createHarness(saved.step);
+    hydrateProgressionCoordinatorState(
+      saved,
+      chunked.coordinator,
+      chunked.productionSystem,
+    );
+
+    let remainingMs = offlineElapsedMs;
+    let result = applyOfflineProgress({
+      elapsedMs: remainingMs,
+      coordinator: chunked.coordinator,
+      runtime: chunked.runtime,
+      limits: { maxTicksPerCall: 7 },
+    });
+    remainingMs = result.remainingMs;
+
+    let guard = 0;
+    while (!result.completed && guard < 20) {
+      result = applyOfflineProgress({
+        elapsedMs: remainingMs,
+        coordinator: chunked.coordinator,
+        runtime: chunked.runtime,
+        limits: { maxTicksPerCall: 7 },
+      });
+      remainingMs = result.remainingMs;
+      guard += 1;
+    }
+
+    expect(result.completed).toBe(true);
+    expect(chunked.runtime.getCurrentStep()).toBe(
+      uninterrupted.runtime.getCurrentStep(),
+    );
+    expect(chunked.coordinator.resourceState.exportForSave()).toEqual(
+      uninterrupted.coordinator.resourceState.exportForSave(),
+    );
+    expect(chunked.productionSystem.exportAccumulators()).toEqual(
+      uninterrupted.productionSystem.exportAccumulators(),
+    );
+  });
+
   it('applies constant-rate fast path when preconditions are met', () => {
     const offlineElapsedMs = STEP_SIZE_MS * 15;
     const netRates = { 'resource.gold': 8 };
@@ -365,6 +693,54 @@ describe('applyOfflineProgress', () => {
     ).toEqual(
       normalizeAccumulators(expected.productionSystem.exportAccumulators()),
     );
+  });
+
+  it('reports progress when using the constant-rate fast path', () => {
+    const elapsedMs = STEP_SIZE_MS * 5 + 50;
+    const totalSteps = Math.floor(elapsedMs / STEP_SIZE_MS);
+    const netRates = { 'resource.gold': 8 };
+
+    const harness = createHarness(0);
+    setupConstantRateHarness(harness);
+    const progressSpy = vi.fn();
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      onProgress: progressSpy,
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: netRates,
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(progressSpy).toHaveBeenCalledTimes(1);
+    const progress = progressSpy.mock.calls[0]?.[0];
+    expect(progress).toEqual({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: totalSteps,
+      totalSteps,
+      remainingMs: 0,
+      remainingSteps: 0,
+    });
+    expect(result).toMatchObject({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: totalSteps,
+      totalSteps,
+      remainingMs: 0,
+      remainingSteps: 0,
+      completed: true,
+    });
   });
 
   it('keeps production accumulators in sync when fast path uses production system', () => {

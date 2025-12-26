@@ -173,6 +173,8 @@ export interface PrestigeResetPayload {
 export interface OfflineCatchupPayload {
   readonly elapsedMs: number;
   readonly resourceDeltas: Record<string, number>;
+  readonly maxElapsedMs?: number;
+  readonly maxSteps?: number;
 }
 
 /**

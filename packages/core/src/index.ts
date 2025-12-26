@@ -1500,6 +1500,9 @@ export {
   type OfflineProgressFastPathMode,
   type OfflineProgressFastPathOptions,
   type OfflineProgressFastPathPreconditions,
+  type OfflineProgressLimits,
+  type OfflineProgressResult,
+  type OfflineProgressUpdate,
 } from './offline-progress.js';
 export {
   registerOfflineCatchupCommandHandler,

@@ -231,4 +231,44 @@ describe('OFFLINE_CATCHUP command handler', () => {
     expect(state.getAmount(goldIndex)).toBe(5);
     expect(state.getAmount(energyIndex)).toBe(0);
   });
+
+  it('caps offline elapsed time with maxElapsedMs', () => {
+    const harness = createHarness(0);
+
+    harness.queue.enqueue({
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      payload: {
+        elapsedMs: STEP_SIZE_MS * 5 + 20,
+        maxElapsedMs: STEP_SIZE_MS * 2 + 50,
+        resourceDeltas: {},
+      },
+      timestamp: 0,
+      step: harness.runtime.getCurrentStep(),
+    });
+
+    harness.runtime.tick(STEP_SIZE_MS);
+
+    expect(harness.runtime.getCurrentStep()).toBe(2);
+  });
+
+  it('caps offline elapsed time with maxSteps', () => {
+    const harness = createHarness(0);
+
+    harness.queue.enqueue({
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      payload: {
+        elapsedMs: STEP_SIZE_MS * 6,
+        maxSteps: 3,
+        resourceDeltas: {},
+      },
+      timestamp: 0,
+      step: harness.runtime.getCurrentStep(),
+    });
+
+    harness.runtime.tick(STEP_SIZE_MS);
+
+    expect(harness.runtime.getCurrentStep()).toBe(3);
+  });
 });

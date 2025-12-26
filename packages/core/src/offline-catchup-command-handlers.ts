@@ -4,6 +4,7 @@ import {
 } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
 import { applyOfflineResourceDeltas } from './offline-resource-deltas.js';
+import { resolveOfflineProgressTotals } from './offline-progress-limits.js';
 import type { ProgressionCoordinator } from './progression-coordinator.js';
 import { telemetry } from './telemetry.js';
 
@@ -72,10 +73,17 @@ function createOfflineCatchupHandler(options: {
       return;
     }
 
-    const remainingMs = elapsedMs - stepSizeMs;
+    const { totalMs } = resolveOfflineProgressTotals(elapsedMs, stepSizeMs, {
+      maxElapsedMs: payload.maxElapsedMs,
+      maxSteps: payload.maxSteps,
+    });
+    if (totalMs <= 0) {
+      return;
+    }
+
+    const remainingMs = totalMs - stepSizeMs;
     if (remainingMs > 0) {
       runtime.creditTime(remainingMs);
     }
   };
 }
-

@@ -571,6 +571,8 @@ interface PrestigeResetPayload {
 interface OfflineCatchupPayload {
   elapsedMs: number;
   resourceDeltas: Record<string, number>;
+  maxElapsedMs?: number;
+  maxSteps?: number;
 }
 
 interface ApplyMigrationPayload {
@@ -579,6 +581,8 @@ interface ApplyMigrationPayload {
   transformations: MigrationStep[];
 }
 ```
+
+`maxElapsedMs` must be a non-negative finite number, and `maxSteps` must be a non-negative integer; invalid values are rejected during restore validation.
 
 ##### Priority Resolution
 

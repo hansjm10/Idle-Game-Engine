@@ -291,7 +291,7 @@ describe('SessionPersistenceAdapter', () => {
       expect(elapsed).toBeLessThan(11000);
     });
 
-    it('should clamp elapsed time to offline cap', () => {
+    it('should return elapsed time even when beyond the offline cap', () => {
       const customCapMs = 1000; // 1 second cap
       const customAdapter = new SessionPersistenceAdapter({
         offlineCapMs: customCapMs,
@@ -304,8 +304,8 @@ describe('SessionPersistenceAdapter', () => {
 
       const elapsed = customAdapter.computeOfflineElapsedMs(snapshot);
 
-      // Should be clamped to 1 second
-      expect(elapsed).toBe(customCapMs);
+      expect(elapsed).toBeGreaterThan(customCapMs);
+      expect(customAdapter.getOfflineCapMs()).toBe(customCapMs);
 
       customAdapter.close();
     });
@@ -329,14 +329,8 @@ describe('SessionPersistenceAdapter', () => {
       expect(elapsed).toBe(0);
     });
 
-    it('should use DEFAULT_OFFLINE_CAP_MS when not specified', () => {
-      const capturedTimestamp = Date.now() - (DEFAULT_OFFLINE_CAP_MS + 10000);
-      const snapshot = createMockSnapshot({
-        capturedAt: new Date(capturedTimestamp).toISOString(),
-      });
-
-      const elapsed = adapter.computeOfflineElapsedMs(snapshot);
-      expect(elapsed).toBe(DEFAULT_OFFLINE_CAP_MS);
+    it('should expose DEFAULT_OFFLINE_CAP_MS when not specified', () => {
+      expect(adapter.getOfflineCapMs()).toBe(DEFAULT_OFFLINE_CAP_MS);
     });
   });
 
