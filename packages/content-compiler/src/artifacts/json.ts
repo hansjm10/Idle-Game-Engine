@@ -24,7 +24,6 @@ const EMPTY_MODULES: SerializedNormalizedModules = {
   automations: Object.freeze([]) as SerializedNormalizedModules['automations'],
   transforms: Object.freeze([]) as SerializedNormalizedModules['transforms'],
   prestigeLayers: Object.freeze([]) as SerializedNormalizedModules['prestigeLayers'],
-  guildPerks: Object.freeze([]) as SerializedNormalizedModules['guildPerks'],
   runtimeEvents: Object.freeze([]) as SerializedNormalizedModules['runtimeEvents'],
 };
 
@@ -157,7 +156,6 @@ function resolveSerializedModules(
     automations: pack.automations,
     transforms: pack.transforms,
     prestigeLayers: pack.prestigeLayers,
-    guildPerks: pack.guildPerks,
     runtimeEvents: pack.runtimeEvents,
   };
 }

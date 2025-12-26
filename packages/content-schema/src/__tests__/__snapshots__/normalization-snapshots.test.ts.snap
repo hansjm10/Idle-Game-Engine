@@ -218,14 +218,14 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
 
 exports[`Normalization Snapshots > produces consistent digest hashes for equivalent packs > digest-format 1`] = `
 {
-  "hash": "fnv1a-0869eed8",
+  "hash": "fnv1a-9a511b4e",
   "version": 1,
 }
 `;
 
 exports[`Normalization Snapshots > produces deterministic output for comprehensive pack > pack-digest 1`] = `
 {
-  "hash": "fnv1a-d11b94ec",
+  "hash": "fnv1a-72ed8b6a",
   "version": 1,
 }
 `;
@@ -274,7 +274,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
   ],
   "automations": [],
   "digest": {
-    "hash": "fnv1a-d11b94ec",
+    "hash": "fnv1a-72ed8b6a",
     "version": 1,
   },
   "generators": [
@@ -317,7 +317,6 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "tags": [],
     },
   ],
-  "guildPerks": [],
   "lookup": {
     "achievements": Map {
       "first-energy" => {
@@ -400,7 +399,6 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "tags": [],
       },
     },
-    "guildPerks": Map {},
     "metrics": Map {
       "total-energy-produced" => {
         "attributes": [],
@@ -738,7 +736,6 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "tags": [],
       },
     },
-    "guildPerkById": {},
     "metricById": {
       "total-energy-produced": {
         "attributes": [],

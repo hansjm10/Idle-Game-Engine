@@ -80,7 +80,6 @@ describe('Type Assertions: NormalizedContentPack', () => {
     expectTypeOf<NormalizedContentPack>().toHaveProperty('automations');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('transforms');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('prestigeLayers');
-    expectTypeOf<NormalizedContentPack>().toHaveProperty('guildPerks');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('runtimeEvents');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('lookup');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('serializedLookup');

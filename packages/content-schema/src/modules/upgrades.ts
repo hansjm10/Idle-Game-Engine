@@ -63,12 +63,6 @@ const upgradeTargetSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
-      kind: z.literal('guildPerk'),
-      id: contentIdSchema,
-    })
-    .strict(),
-  z
-    .object({
       kind: z.literal('global'),
     })
     .strict(),
@@ -396,7 +390,7 @@ type UpgradeDefinitionInput = {
   readonly name: z.input<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly tags?: readonly string[];
-  readonly category: 'global' | 'resource' | 'generator' | 'automation' | 'prestige' | 'guild';
+  readonly category: 'global' | 'resource' | 'generator' | 'automation' | 'prestige';
   readonly targets: readonly z.input<typeof upgradeTargetSchema>[];
   readonly cost: z.input<typeof costSchema>;
   readonly repeatable?: {
@@ -416,7 +410,7 @@ type UpgradeDefinition = {
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly tags: readonly string[];
-  readonly category: 'global' | 'resource' | 'generator' | 'automation' | 'prestige' | 'guild';
+  readonly category: 'global' | 'resource' | 'generator' | 'automation' | 'prestige';
   readonly targets: readonly z.infer<typeof upgradeTargetSchema>[];
   readonly cost: z.infer<typeof costSchema>;
   readonly repeatable?: RepeatableUpgrade;
@@ -453,7 +447,7 @@ export const upgradeDefinitionSchema: z.ZodType<
       .max(128, { message: 'Icon paths must contain at most 128 characters.' })
       .optional(),
     tags: z.array(tagSchema).default([]),
-    category: z.enum(['global', 'resource', 'generator', 'automation', 'prestige', 'guild'] as const),
+    category: z.enum(['global', 'resource', 'generator', 'automation', 'prestige'] as const),
     targets: z.array(upgradeTargetSchema).min(1, {
       message: 'Upgrades must target at least one entity.',
     }),

@@ -42,7 +42,6 @@ const createMinimalPack = () => ({
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 });
 

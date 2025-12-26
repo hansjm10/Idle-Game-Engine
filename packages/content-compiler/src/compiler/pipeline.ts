@@ -383,7 +383,6 @@ function withSerializedModules(
     automations: pack.automations,
     transforms: pack.transforms,
     prestigeLayers: pack.prestigeLayers,
-    guildPerks: pack.guildPerks,
     runtimeEvents: pack.runtimeEvents,
   };
 

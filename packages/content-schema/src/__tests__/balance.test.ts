@@ -17,7 +17,6 @@ type TestPack = {
   readonly automations: Record<string, unknown>[];
   readonly transforms: Record<string, unknown>[];
   readonly prestigeLayers: Record<string, unknown>[];
-  readonly guildPerks: Record<string, unknown>[];
   readonly runtimeEvents: Record<string, unknown>[];
 };
 
@@ -55,7 +54,6 @@ const createBasePack = (): TestPack => ({
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 });
 

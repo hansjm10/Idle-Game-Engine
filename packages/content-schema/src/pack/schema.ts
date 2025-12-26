@@ -7,9 +7,6 @@ import type {
   AutomationDefinition,
 } from '../modules/automations.js';
 import type { Generator } from '../modules/generators.js';
-import type {
-  GuildPerkDefinition,
-} from '../modules/guild-perks.js';
 import type { Metadata } from '../modules/metadata.js';
 import type { MetricDefinition } from '../modules/metrics.js';
 import type {
@@ -30,9 +27,6 @@ import {
   automationCollectionSchema,
 } from '../modules/automations.js';
 import { generatorCollectionSchema } from '../modules/generators.js';
-import {
-  guildPerkCollectionSchema,
-} from '../modules/guild-perks.js';
 import { metadataSchema } from '../modules/metadata.js';
 import { metricCollectionSchema } from '../modules/metrics.js';
 import {
@@ -57,7 +51,6 @@ export interface ParsedContentPack {
   readonly automations: readonly AutomationDefinition[];
   readonly transforms: readonly TransformDefinition[];
   readonly prestigeLayers: readonly PrestigeLayerDefinition[];
-  readonly guildPerks: readonly GuildPerkDefinition[];
   readonly runtimeEvents: readonly RuntimeEventContribution[];
 }
 
@@ -72,7 +65,6 @@ const baseContentPackSchema: z.ZodType<ParsedContentPack, z.ZodTypeDef, unknown>
     automations: automationCollectionSchema.default([]),
     transforms: transformCollectionSchema.default([]),
     prestigeLayers: prestigeCollectionSchema.default([]),
-    guildPerks: guildPerkCollectionSchema.default([]),
     runtimeEvents: runtimeEventContributionCollectionSchema.default([]),
   })
   .strict();

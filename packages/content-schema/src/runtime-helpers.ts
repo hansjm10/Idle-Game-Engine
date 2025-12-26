@@ -18,7 +18,6 @@ export interface ContentPackDigestModules {
   readonly automations: readonly IdentifiedEntity[];
   readonly transforms: readonly IdentifiedEntity[];
   readonly prestigeLayers: readonly IdentifiedEntity[];
-  readonly guildPerks: readonly IdentifiedEntity[];
   readonly runtimeEvents: readonly IdentifiedEntity[];
 }
 
@@ -52,7 +51,6 @@ export const createContentPackDigest = <Modules extends ContentPackDigestModules
       automations: pack.automations.map((automation) => automation.id),
       transforms: pack.transforms.map((transform) => transform.id),
       prestigeLayers: pack.prestigeLayers.map((layer) => layer.id),
-      guildPerks: pack.guildPerks.map((perk) => perk.id),
       runtimeEvents: pack.runtimeEvents.map((event) => event.id),
     },
   };

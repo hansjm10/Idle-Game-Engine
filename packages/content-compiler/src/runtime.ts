@@ -63,7 +63,6 @@ const LOOKUP_PROPERTY: Record<ModuleName, LookupKey> = {
   automations: 'automations',
   transforms: 'transforms',
   prestigeLayers: 'prestigeLayers',
-  guildPerks: 'guildPerks',
   runtimeEvents: 'runtimeEvents',
 };
 
@@ -76,7 +75,6 @@ const SERIALIZED_LOOKUP_PROPERTY: Record<ModuleName, SerializedLookupKey> = {
   automations: 'automationById',
   transforms: 'transformById',
   prestigeLayers: 'prestigeLayerById',
-  guildPerks: 'guildPerkById',
   runtimeEvents: 'runtimeEventById',
 };
 
@@ -174,7 +172,6 @@ function resolveModulesObject(
     automations: packModules.automations,
     transforms: packModules.transforms,
     prestigeLayers: packModules.prestigeLayers,
-    guildPerks: packModules.guildPerks,
     runtimeEvents: packModules.runtimeEvents,
   });
 }
@@ -243,7 +240,6 @@ export function rehydrateNormalizedPack(
     automations: clonedModules.automations,
     transforms: clonedModules.transforms,
     prestigeLayers: clonedModules.prestigeLayers,
-    guildPerks: clonedModules.guildPerks,
     runtimeEvents: clonedModules.runtimeEvents,
     modules: modulesObject,
     lookup,

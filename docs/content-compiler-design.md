@@ -269,7 +269,6 @@ export interface ModuleIndexTables {
   readonly automations: ReadonlyMap<string, number>;
   readonly transforms: ReadonlyMap<string, number>;
   readonly prestigeLayers: ReadonlyMap<string, number>;
-  readonly guildPerks: ReadonlyMap<string, number>;
   readonly runtimeEvents: ReadonlyMap<string, number>;
 }
 ```
@@ -311,7 +310,6 @@ export interface ModuleIndexTables {
        readonly automations: readonly NormalizedAutomation[];
        readonly transforms: readonly NormalizedTransform[];
        readonly prestigeLayers: readonly NormalizedPrestigeLayer[];
-       readonly guildPerks: readonly NormalizedGuildPerk[];
        readonly runtimeEvents: readonly NormalizedRuntimeEventContribution[];
      };
      readonly digest: NormalizedContentPack['digest'];

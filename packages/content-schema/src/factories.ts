@@ -32,10 +32,6 @@ import {
   prestigeLayerSchema,
   type PrestigeLayerDefinition,
 } from './modules/prestige.js';
-import {
-  guildPerkDefinitionSchema,
-  type GuildPerkDefinition,
-} from './modules/guild-perks.js';
 
 // ============================================================================
 // Input Types
@@ -67,9 +63,6 @@ export type TransformInput = z.input<typeof transformDefinitionSchema>;
 
 /** Input type for creating a prestige layer definition. */
 export type PrestigeLayerInput = z.input<typeof prestigeLayerSchema>;
-
-/** Input type for creating a guild perk definition. */
-export type GuildPerkInput = z.input<typeof guildPerkDefinitionSchema>;
 
 // ============================================================================
 // Factory Functions
@@ -228,24 +221,4 @@ export function createTransform(input: TransformInput): TransformDefinition {
  */
 export function createPrestigeLayer(input: PrestigeLayerInput): PrestigeLayerDefinition {
   return prestigeLayerSchema.parse(input);
-}
-
-/**
- * Creates a normalized guild perk definition from plain input.
- *
- * @example
- * ```typescript
- * const guildBonus = createGuildPerk({
- *   id: 'my-pack.guild-bonus',
- *   name: { default: 'Guild Bonus' },
- *   description: { default: 'Increases production for all guild members' },
- *   category: 'buff',
- *   maxRank: 10,
- *   effects: [{ kind: 'modifyResourceRate', resourceId: 'my-pack.energy', operation: 'multiply', value: { kind: 'constant', value: 1.1 } }],
- *   cost: { kind: 'currency', resourceId: 'my-pack.guild-points', amount: { kind: 'constant', value: 100 } },
- * });
- * ```
- */
-export function createGuildPerk(input: GuildPerkInput): GuildPerkDefinition {
-  return guildPerkDefinitionSchema.parse(input);
 }

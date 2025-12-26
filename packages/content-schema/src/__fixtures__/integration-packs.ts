@@ -192,7 +192,6 @@ export const validComprehensivePackFixture = {
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 };
 

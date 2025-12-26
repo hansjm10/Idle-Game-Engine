@@ -17,7 +17,7 @@ This document captures key architectural decisions and risk mitigation strategie
 
 ## 1. Summary
 
-This document addresses critical design decisions for the content schema system's production rollout, including icon path generation strategy, guild perk persistence integration, scripted modifier support, and schema digest migration patterns. It also tracks mitigation status for six identified risks and provides property-based formula sanitization guidance. All decisions enable Phase 2 content DSL implementation while deferring complex features to later phases.
+This document addresses critical design decisions for the content schema system's production rollout, including icon path generation strategy, social feature de-scope, scripted modifier support, and schema digest migration patterns. It also tracks mitigation status for six identified risks and provides property-based formula sanitization guidance. All decisions enable Phase 2 content DSL implementation while deferring complex features to later phases.
 
 ## 2. Context & Problem Statement
 
@@ -27,7 +27,7 @@ The content schema design document (docs/content-dsl-schema-design.md) establish
 ### Problem
 Four critical design questions needed resolution:
 1. Should the schema expose calculated presentation defaults (e.g., auto-generated icon paths)?
-2. How will guild perk costs interface with future persistence data when live storage lands?
+2. Should guild/leaderboard concepts remain in the schema and documentation for the prototype milestone?
 3. Do we need additional effect types (e.g., scripted modifiers) before schema v1.0?
 4. What is the migration strategy when schema digests change?
 
@@ -50,7 +50,7 @@ Additionally, six identified risks required mitigation tracking and implementati
 
 ### Non-Goals
 - Implementing scripting runtime (deferred to Phase 7+)
-- Designing guild persistence schema (deferred until backend persistence is defined)
+- Reintroducing social/guild schema support (de-scoped for prototype)
 - Building compiler icon resolution (follow-up issue)
 - Creating save file format specification (Phase 4 work)
 
@@ -75,7 +75,7 @@ All decisions maintain backward compatibility with existing content packs. New f
 ## 5. Current State
 
 ### Schema Implementation Status
-- All core modules implemented (resources, generators, upgrades, achievements, prestige layers, guild perks)
+- All core modules implemented (resources, generators, upgrades, achievements, prestige layers)
 - Formula system with numeric expressions, common curves, and safe math operations
 - Feature gate system mapping runtime versions to schema modules
 - Cross-reference validation with structured error reporting
@@ -89,7 +89,6 @@ All decisions maintain backward compatibility with existing content packs. New f
 
 ### Outstanding Dependencies
 - Scripting design document does not exist
-- Guild persistence schema not yet designed (Phase 5)
 - Save file format specification pending (Phase 4)
 - Compiler icon resolution strategy undefined
 
@@ -125,32 +124,27 @@ The solution addresses each open question with a clear decision, rationale, and 
 - Add optional `iconPath` validation to check extension types (.svg, .png, .webp)
 - Consider adding `iconPathSchema` with URL validation when compiler spec lands
 
-#### Decision 2: Guild Perk Persistence Integration
+#### Decision 2: Social Feature De-scope (Guilds/Leaderboards)
 
-**Decision**: Defer guild-specific cost modeling until backend persistence work is planned.
+**Decision**: Remove guild/leaderboard concepts from the content schema and documentation for the prototype milestone.
 
 **Rationale**:
-- Current `cost` schema is flexible enough for prototype phase (Issue #11, Phase 0-4)
-- Guild persistence design is not yet finalized
-- Schema can be extended with `GuildCostSchema` when backend persistence lands
-- FEATURE_GATES already restrict guild perks to runtime >=0.5.0
+- Social service scaffolding was removed in #662/#663, leaving stale schema and doc references.
+- No runtime handling or persistence exists for guild mechanics.
+- Reduces validation surface area while the core progression loop stabilizes.
 
 **Current State**:
-- Guild perk schema complete in `packages/content-schema/src/modules/guild-perks.ts`
-- No backend persistence exists yet
-- No database schema exists for guild perks or guild state
+- Guild perk schema and related upgrade/achievement hooks removed from `@idle-engine/content-schema`.
+- Feature gate entry for guild perks removed from `runtime-compat.ts`.
+- Sample pack and documentation scrubbed of guild/leaderboard references.
 
-**Follow-up** (Issue #138 recommended):
-- Design guild persistence schema (Postgres tables: guilds, guild_perks, member_contributions)
-- Add `GuildResourceDefinition` with ownership semantics (guild-scoped vs player-scoped)
-- Extend cost schema with `scope: 'player' | 'guild'` discriminator if needed
-- Add validation ensuring guild perk costs only reference guild-category resources
+**Follow-up** (new issue recommended):
+- If social features return, author a dedicated social systems design document before reintroducing schema modules.
 
 **Acceptance Criteria for Follow-up**:
-- Backend persists guild perk unlock state
-- Content packs can define guild-scoped currency resources
-- Validation ensures guild perk costs reference valid guild currencies
-- Documentation examples show guild contribution tracking
+- Social/guild persistence model defined.
+- Runtime APIs and UI contracts specified.
+- Content schema and compiler updated with approved modules.
 
 #### Decision 3: Scripted Modifiers & Effect Types
 
@@ -307,7 +301,6 @@ Load save:
 
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
-| #138: Design guild persistence schema | Guild-scoped resources, cost model extension | Backend Team | Phase 5 start | Schema supports guild currencies, validation complete |
 | #139: Scripting design document and scripted effect support | Sandbox model, scripted effect type | Runtime Team | Scripting design approval | Design doc approved, scripted effects implemented with security sandbox |
 | #140: Save file format with content pack manifests | Save metadata, migration registry | Persistence Team | Phase 4 start | Save files include pack manifests, migrations tested |
 | #141: CI schema compatibility checks | Runtime version validation | DevOps Team | None | CI blocks releases on schema drift |
@@ -317,7 +310,6 @@ Load save:
 ### 7.2 Milestones
 - **Phase 2 (Weeks 2-4)**: Content DSL & Sample Pack - UNBLOCKED by this document
 - **Phase 4 (Weeks 4-5)**: Save file format implementation (Issue #140)
-- **Phase 5 (Weeks 5-7)**: Guild persistence schema (Issue #138)
 - **Phase 6**: Performance optimization (Issue #143)
 - **Phase 7+**: Scripting runtime (Issue #139)
 
@@ -365,12 +357,12 @@ pnpm --filter @idle-engine/content-validation-cli test -- --run "validateContent
 | Compiler-level defaults | Flexible, deployment-aware | Requires compiler spec first | **Selected** (deferred to compiler design) |
 | No defaults | Maximum flexibility | Author friction | Rejected |
 
-### Guild Cost Model Alternatives
+### Social Feature Scope Alternatives
 | Approach | Pros | Cons | Decision |
 |----------|------|------|----------|
-| Extend schema now | Future-proof | No persistence design yet | Rejected |
-| Generic cost schema | Works today | May need refactor later | **Selected** (defer to Phase 5) |
-| Separate guild currency type | Type-safe | Premature optimization | Rejected |
+| Keep guild perks gated in schema | Preserves future work | Stale surface without runtime support | Rejected |
+| Remove social modules now | Reduces confusion and maintenance | Requires reintroduction later | **Selected** |
+| Move social features to external extension | Keeps core schema lean | Adds integration complexity | Rejected |
 
 ### Scripted Modifier Alternatives
 | Approach | Pros | Cons | Decision |
@@ -507,7 +499,6 @@ pnpm --filter @idle-engine/content-validation-cli test -- --run "validateContent
 ### Milestones
 - **Phase 2 (Weeks 2-4)**: Content DSL & Sample Pack - UNBLOCKED
 - **Phase 4**: Save file format with digest migration (Issue #140)
-- **Phase 5**: Guild persistence schema extension (Issue #138)
 - **Phase 6**: Performance optimization and caching (Issue #143)
 - **Phase 7+**: Scripting runtime and scripted effects (Issue #139)
 
@@ -519,7 +510,7 @@ pnpm --filter @idle-engine/content-validation-cli test -- --run "validateContent
 
 ### Communication
 - Decision log closes Issue #137
-- Follow-up issues (#138-143) created and linked to #11
+- Follow-up issues (#139-143) created and linked to #11
 - Implementation plan updated with new backlog items
 - Author documentation updated with compiler workflow guidance
 
@@ -537,7 +528,6 @@ All Section 10 open questions from the content schema design document have been 
 ### New Issues Created
 | Issue | Title | Priority | Blocking |
 |-------|-------|----------|----------|
-| #138 | Design guild persistence schema and extend cost model | P2 | Phase 5 |
 | #139 | Scripting design document and scripted effect support | P3 | Post-prototype |
 | #140 | Save file format with content pack manifests and migrations | P1 | Phase 4 |
 | #141 | CI schema compatibility checks for runtime releases | P1 | Pre-v1.0 |
@@ -546,7 +536,6 @@ All Section 10 open questions from the content schema design document have been 
 
 ### Deferred Features
 - Compiler icon resolution strategy (follow-up to compiler design)
-- Guild-scoped resource ownership semantics (Phase 5)
 - Scripting sandbox and security model (Phase 7+)
 - Cross-version save migration registry (Phase 4)
 

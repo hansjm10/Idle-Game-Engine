@@ -30,7 +30,6 @@ around github issue 419 expands the sample pack with new resources, generators, 
 - **Non-Goals**:
   - Changing runtime economic algorithms or command contracts beyond content wiring.
   - Shipping full prestige UX in archived presentation shells (only fixtures/tests).
-  - Adding guild perks/social features (defer).
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
 - **Primary Stakeholders**: Content pipeline maintainers; Runtime core maintainers.
@@ -147,7 +146,6 @@ Populate the table as the canonical source for downstream GitHub issues.
 - Should balance warnings be fatal in CI but soft locally? (Owner: Balance Validation Agent).
 
 ## 14. Follow-Up Work
-- Add guild perk stub per implementation plan (Owner: Content Authoring Agent).
 - Extend balance checks to localization completeness and automation cooldown sanity (Owner: Balance Validation Agent).
 - Publish JSON schema for `content/compiled/index.json` for external tooling (Owner: Compiler Integration Agent).
 

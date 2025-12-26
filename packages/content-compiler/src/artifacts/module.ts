@@ -70,7 +70,6 @@ export function createModuleIndices(
     automations: buildIndex(pack.automations),
     transforms: buildIndex(pack.transforms),
     prestigeLayers: buildIndex(pack.prestigeLayers),
-    guildPerks: buildIndex(pack.guildPerks),
     runtimeEvents: buildIndex(pack.runtimeEvents),
   };
 }

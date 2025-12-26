@@ -21,11 +21,6 @@ export const FEATURE_GATES = [
     introducedIn: '0.4.0',
     docRef: 'docs/idle-engine-design.md (§6.2)',
   },
-  {
-    module: 'guildPerks',
-    introducedIn: '0.5.0',
-    docRef: 'docs/idle-engine-design.md (§6.2)',
-  },
 ] as const;
 
 export type FeatureGateModule = (typeof FEATURE_GATES)[number]['module'];

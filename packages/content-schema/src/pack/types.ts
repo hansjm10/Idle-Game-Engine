@@ -10,7 +10,6 @@ import type {
 } from '../modules/achievements.js';
 import type { AutomationDefinition } from '../modules/automations.js';
 import type { Generator } from '../modules/generators.js';
-import type { GuildPerkDefinition } from '../modules/guild-perks.js';
 import type { Metadata } from '../modules/metadata.js';
 import type { MetricDefinition } from '../modules/metrics.js';
 import type { PrestigeLayerDefinition } from '../modules/prestige.js';
@@ -36,7 +35,6 @@ export type NormalizedAchievement = AchievementDefinition;
 export type NormalizedAutomation = AutomationDefinition;
 export type NormalizedTransform = TransformDefinition;
 export type NormalizedPrestigeLayer = PrestigeLayerDefinition;
-export type NormalizedGuildPerk = GuildPerkDefinition;
 export type NormalizedRuntimeEventContribution = RuntimeEventContribution;
 
 export type NormalizedContentPackModules = {
@@ -49,7 +47,6 @@ export type NormalizedContentPackModules = {
   readonly automations: readonly NormalizedAutomation[];
   readonly transforms: readonly NormalizedTransform[];
   readonly prestigeLayers: readonly NormalizedPrestigeLayer[];
-  readonly guildPerks: readonly NormalizedGuildPerk[];
   readonly runtimeEvents: readonly NormalizedRuntimeEventContribution[];
 };
 
@@ -63,7 +60,6 @@ export interface NormalizedContentPack extends NormalizedContentPackModules {
     readonly automations: ReadonlyMap<ContentId, NormalizedAutomation>;
     readonly transforms: ReadonlyMap<ContentId, NormalizedTransform>;
     readonly prestigeLayers: ReadonlyMap<ContentId, NormalizedPrestigeLayer>;
-    readonly guildPerks: ReadonlyMap<ContentId, NormalizedGuildPerk>;
     readonly runtimeEvents: ReadonlyMap<ContentId, NormalizedRuntimeEventContribution>;
   };
   readonly serializedLookup: {
@@ -75,7 +71,6 @@ export interface NormalizedContentPack extends NormalizedContentPackModules {
     readonly automationById: Readonly<Record<string, NormalizedAutomation>>;
     readonly transformById: Readonly<Record<string, NormalizedTransform>>;
     readonly prestigeLayerById: Readonly<Record<string, NormalizedPrestigeLayer>>;
-    readonly guildPerkById: Readonly<Record<string, NormalizedGuildPerk>>;
     readonly runtimeEventById: Readonly<Record<string, NormalizedRuntimeEventContribution>>;
   };
   readonly digest: ContentPackDigest;

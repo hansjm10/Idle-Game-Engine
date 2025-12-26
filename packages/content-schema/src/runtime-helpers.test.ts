@@ -26,7 +26,6 @@ const createDigestInput = (
   automations: overrides.automations ?? freezeArray([{ id: 'automation.a' }]),
   transforms: overrides.transforms ?? freezeArray([{ id: 'transform.a' }]),
   prestigeLayers: overrides.prestigeLayers ?? freezeArray([{ id: 'prestige.a' }]),
-  guildPerks: overrides.guildPerks ?? freezeArray([{ id: 'guildPerk.a' }]),
   runtimeEvents: overrides.runtimeEvents ?? freezeArray([{ id: 'runtimeEvent.a' }]),
 });
 

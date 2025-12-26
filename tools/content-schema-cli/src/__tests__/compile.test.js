@@ -607,7 +607,6 @@ function createPackDocument(id, overrides = {}) {
     automations: [],
     transforms: [],
     prestigeLayers: [],
-    guildPerks: [],
     runtimeEvents: [],
   };
 

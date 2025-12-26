@@ -55,7 +55,6 @@ function createPackDocument(id: string): Record<string, unknown> {
     automations: [],
     transforms: [],
     prestigeLayers: [],
-    guildPerks: [],
     runtimeEvents: [],
   };
 }
