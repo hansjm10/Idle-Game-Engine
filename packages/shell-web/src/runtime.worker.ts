@@ -815,6 +815,38 @@ export function initializeRuntimeWorker(
       }
 
       if (
+        Object.prototype.hasOwnProperty.call(message, 'maxElapsedMs') &&
+        message.maxElapsedMs !== undefined &&
+        (typeof message.maxElapsedMs !== 'number' ||
+          !Number.isFinite(message.maxElapsedMs) ||
+          message.maxElapsedMs < 0)
+      ) {
+        throw Object.assign(
+          new Error('maxElapsedMs must be a non-negative finite number'),
+          {
+            code: 'INVALID_RESTORE_MAX_ELAPSED_MS' as const,
+            details: { maxElapsedMs: message.maxElapsedMs },
+          },
+        );
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(message, 'maxSteps') &&
+        message.maxSteps !== undefined &&
+        (typeof message.maxSteps !== 'number' ||
+          !Number.isFinite(message.maxSteps) ||
+          message.maxSteps < 0)
+      ) {
+        throw Object.assign(
+          new Error('maxSteps must be a non-negative finite number'),
+          {
+            code: 'INVALID_RESTORE_MAX_STEPS' as const,
+            details: { maxSteps: message.maxSteps },
+          },
+        );
+      }
+
+      if (
         message.resourceDeltas !== undefined &&
         (typeof message.resourceDeltas !== 'object' ||
           message.resourceDeltas === null)
@@ -911,6 +943,8 @@ export function initializeRuntimeWorker(
       }
 
       const offlineElapsedMs = message.elapsedMs ?? 0;
+      const offlineMaxElapsedMs = message.maxElapsedMs;
+      const offlineMaxSteps = message.maxSteps;
       const offlineResourceDeltas =
         message.resourceDeltas !== undefined
           ? { ...message.resourceDeltas }
@@ -923,6 +957,12 @@ export function initializeRuntimeWorker(
           type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
           payload: {
             elapsedMs: offlineElapsedMs,
+            ...(offlineMaxElapsedMs !== undefined && {
+              maxElapsedMs: offlineMaxElapsedMs,
+            }),
+            ...(offlineMaxSteps !== undefined && {
+              maxSteps: offlineMaxSteps,
+            }),
             resourceDeltas: offlineResourceDeltas,
           },
           priority: CommandPriority.SYSTEM,

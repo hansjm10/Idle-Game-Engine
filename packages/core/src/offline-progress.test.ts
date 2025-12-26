@@ -265,4 +265,150 @@ describe('applyOfflineProgress', () => {
     );
     expect(tickSpy.mock.calls.length).toBeLessThan(fullSteps);
   });
+
+  it('reports progress and respects maxTicksPerCall limits', () => {
+    const harness = createHarness(0);
+    const progressSpy = vi.fn();
+
+    const result = applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 5,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxTicksPerCall: 2 },
+      onProgress: progressSpy,
+    });
+
+    expect(progressSpy).toHaveBeenCalledTimes(2);
+    const lastProgress = progressSpy.mock.calls[
+      progressSpy.mock.calls.length - 1
+    ]?.[0];
+    expect(lastProgress).toEqual({
+      processedMs: STEP_SIZE_MS * 2,
+      totalMs: STEP_SIZE_MS * 5,
+      processedSteps: 2,
+      totalSteps: 5,
+      remainingMs: STEP_SIZE_MS * 3,
+      remainingSteps: 3,
+    });
+    expect(result).toMatchObject({
+      processedSteps: 2,
+      totalSteps: 5,
+      remainingSteps: 3,
+      completed: false,
+    });
+  });
+
+  it('caps elapsedMs while preserving remainder below the step cap', () => {
+    const harness = createHarness(0);
+
+    const result = applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 3 + 50,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxElapsedMs: STEP_SIZE_MS * 2 + 50 },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 2,
+      totalMs: STEP_SIZE_MS * 2 + 50,
+      processedSteps: 2,
+      processedMs: STEP_SIZE_MS * 2 + 50,
+      remainingMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(2);
+  });
+
+  it('caps steps and drops remainder beyond the step cap', () => {
+    const harness = createHarness(0);
+
+    const result = applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 3 + 50,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxSteps: 1 },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 1,
+      totalMs: STEP_SIZE_MS,
+      processedSteps: 1,
+      processedMs: STEP_SIZE_MS,
+      remainingMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(1);
+  });
+
+  it('matches uninterrupted outcomes when chunked across calls', () => {
+    const baseline = createHarness(0);
+    baseline.coordinator.incrementGeneratorOwned('generator.mine', 1);
+    baseline.coordinator.setUpgradePurchases('upgrade.double-mine', 1);
+    baseline.coordinator.updateForStep(baseline.runtime.getCurrentStep());
+
+    applyFrameDeltas(baseline.runtime, baseline.coordinator, [
+      STEP_SIZE_MS,
+      STEP_SIZE_MS,
+      STEP_SIZE_MS,
+    ]);
+
+    const saved = serializeProgressionCoordinatorState(
+      baseline.coordinator,
+      baseline.productionSystem,
+    );
+
+    const offlineElapsedMs = STEP_SIZE_MS * 45 + 34;
+
+    const uninterrupted = createHarness(saved.step);
+    hydrateProgressionCoordinatorState(
+      saved,
+      uninterrupted.coordinator,
+      uninterrupted.productionSystem,
+    );
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: uninterrupted.coordinator,
+      runtime: uninterrupted.runtime,
+    });
+
+    const chunked = createHarness(saved.step);
+    hydrateProgressionCoordinatorState(
+      saved,
+      chunked.coordinator,
+      chunked.productionSystem,
+    );
+
+    let remainingMs = offlineElapsedMs;
+    let result = applyOfflineProgress({
+      elapsedMs: remainingMs,
+      coordinator: chunked.coordinator,
+      runtime: chunked.runtime,
+      limits: { maxTicksPerCall: 7 },
+    });
+    remainingMs = result.remainingMs;
+
+    let guard = 0;
+    while (!result.completed && guard < 20) {
+      result = applyOfflineProgress({
+        elapsedMs: remainingMs,
+        coordinator: chunked.coordinator,
+        runtime: chunked.runtime,
+        limits: { maxTicksPerCall: 7 },
+      });
+      remainingMs = result.remainingMs;
+      guard += 1;
+    }
+
+    expect(result.completed).toBe(true);
+    expect(chunked.runtime.getCurrentStep()).toBe(
+      uninterrupted.runtime.getCurrentStep(),
+    );
+    expect(chunked.coordinator.resourceState.exportForSave()).toEqual(
+      uninterrupted.coordinator.resourceState.exportForSave(),
+    );
+    expect(chunked.productionSystem.exportAccumulators()).toEqual(
+      uninterrupted.productionSystem.exportAccumulators(),
+    );
+  });
 });

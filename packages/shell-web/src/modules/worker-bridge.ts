@@ -40,6 +40,8 @@ export interface WorkerRestoreSessionPayload {
   readonly state?: SerializedResourceState;
   readonly commandQueue?: SerializedCommandQueue;
   readonly elapsedMs?: number;
+  readonly maxElapsedMs?: number;
+  readonly maxSteps?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
   /**
    * Optional: worker step recorded in the save snapshot. If provided, the
@@ -515,6 +517,24 @@ export class WorkerBridgeImpl<TState = unknown>
     }
 
     if (
+      payload.maxElapsedMs !== undefined &&
+      (!Number.isFinite(payload.maxElapsedMs) || payload.maxElapsedMs < 0)
+    ) {
+      return Promise.reject(
+        new Error('maxElapsedMs must be a non-negative finite number'),
+      );
+    }
+
+    if (
+      payload.maxSteps !== undefined &&
+      (!Number.isFinite(payload.maxSteps) || payload.maxSteps < 0)
+    ) {
+      return Promise.reject(
+        new Error('maxSteps must be a non-negative finite number'),
+      );
+    }
+
+    if (
       payload.resourceDeltas !== undefined &&
       (typeof payload.resourceDeltas !== 'object' ||
         payload.resourceDeltas === null)
@@ -535,6 +555,12 @@ export class WorkerBridgeImpl<TState = unknown>
       }),
       ...(payload.elapsedMs !== undefined && {
         elapsedMs: payload.elapsedMs,
+      }),
+      ...(payload.maxElapsedMs !== undefined && {
+        maxElapsedMs: payload.maxElapsedMs,
+      }),
+      ...(payload.maxSteps !== undefined && {
+        maxSteps: payload.maxSteps,
       }),
       ...(payload.resourceDeltas !== undefined && {
         resourceDeltas: payload.resourceDeltas,

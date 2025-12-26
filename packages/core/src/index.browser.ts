@@ -1503,6 +1503,9 @@ export {
 export {
   applyOfflineProgress,
   type ApplyOfflineProgressOptions,
+  type OfflineProgressLimits,
+  type OfflineProgressResult,
+  type OfflineProgressUpdate,
 } from './offline-progress.js';
 export {
   registerOfflineCatchupCommandHandler,

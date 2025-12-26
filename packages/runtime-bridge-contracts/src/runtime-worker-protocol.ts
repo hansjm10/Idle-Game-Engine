@@ -188,6 +188,8 @@ export interface RuntimeWorkerRestoreSession {
   readonly state?: SerializedResourceState;
   readonly commandQueue?: SerializedCommandQueue;
   readonly elapsedMs?: number;
+  readonly maxElapsedMs?: number;
+  readonly maxSteps?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
   /**
    * Optional: worker step when the snapshot was captured.

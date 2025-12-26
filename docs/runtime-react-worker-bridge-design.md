@@ -237,12 +237,12 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 **Save / Autosave**
 1. Shell calls `WorkerBridge.requestSessionSnapshot(reason)` (new API) when autosave timers, user actions, or shutdown events fire. The bridge enqueues a `REQUEST_SESSION_SNAPSHOT` message after `awaitReady()` and outside `restoreSession` windows.
 2. Worker captures deterministic data: `SerializedResourceState` via `resourceState.exportForSave()`, pending commands via `commandQueue.exportForSave()`, current tick step, and monotonic clock reference. It responds with `SESSION_SNAPSHOT { requestId, capturedAt, state, commandQueue, step, monotonicNow }`.
-3. Shell adapter normalises metadata (e.g., converts `capturedAt` to UTC, clamps offline caps) and writes the entry to the `sessions` object store within a single IndexedDB transaction. On error it surfaces telemetry through the existing `WorkerBridge` error channel.
+3. Shell adapter normalises metadata (e.g., converts `capturedAt` to UTC) and writes the entry to the `sessions` object store within a single IndexedDB transaction. On error it surfaces telemetry through the existing `WorkerBridge` error channel.
 
 **Restore**
 1. Shell reads the latest slot at startup (or when the user selects a save) and validates it against current content definitions using `reconcileSaveAgainstDefinitions`.
-2. Shell computes offline elapsed time as `min(now - capturedAt, OFFLINE_CAP_MS)` and derives optional `resourceDeltas` if migrations supply them.
-3. Shell calls `WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, resourceDeltas })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`.
+2. Shell computes offline elapsed time as `max(now - capturedAt, 0)`, passes a `maxElapsedMs` cap policy to core, and derives optional `resourceDeltas` if migrations supply them.
+3. Shell calls `WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, maxElapsedMs, resourceDeltas })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`.
 4. On success the shell resumes normal command flow; on failure it records telemetry, surfaces UI prompts, and may retry after running migrations.
 
 **Stored Payload (v1)**
