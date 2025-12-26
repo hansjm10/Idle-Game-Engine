@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">State Synchronization Protocol Design | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/state-synchronization-protocol-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="State Synchronization Protocol Design | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/state-synchronization-protocol-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/state-synchronization-protocol-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/state-synchronization-protocol-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.fc37d836.js" defer="defer"></script>
-<script src="/Idle-Game-Engine/assets/js/main.3aec751b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.85fed14b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.09e9ec30.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -81,7 +81,6 @@
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="primary-stakeholders">Primary Stakeholders<a href="#primary-stakeholders" class="hash-link" aria-label="Direct link to Primary Stakeholders" title="Direct link to Primary Stakeholders" translate="no">​</a></h3>
 <ul>
 <li class="">Runtime Core maintainers (implementation)</li>
-<li class="">Social Services maintainers (integration with GEL-001)</li>
 <li class="">Shell maintainers (Worker bridge updates)</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="agent-roles">Agent Roles<a href="#agent-roles" class="hash-link" aria-label="Direct link to Agent Roles" title="Direct link to Agent Roles" translate="no">​</a></h3>
@@ -90,7 +89,6 @@
 <ul>
 <li class=""><code>packages/core/src/</code> - New synchronization module</li>
 <li class=""><code>packages/core/src/index.ts</code> - Public API exports</li>
-<li class=""><code>services/social</code> - Future integration for server validation</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="compatibility-considerations">Compatibility Considerations<a href="#compatibility-considerations" class="hash-link" aria-label="Direct link to Compatibility Considerations" title="Direct link to Compatibility Considerations" translate="no">​</a></h3>
 <ul>
@@ -192,7 +190,7 @@ this to <code>IdleEngineRuntime</code> automatically.</p>
 <ul>
 <li class=""><strong>Phase 1</strong>: Core APIs (<code>captureGameStateSnapshot</code>, <code>computeStateChecksum</code>, <code>restoreFromSnapshot</code>)</li>
 <li class=""><strong>Phase 2</strong>: Debugging tools (<code>compareStates</code>, partial checksums)</li>
-<li class=""><strong>Phase 3</strong>: Integration with services (GEL-001 validation, cloud sync)</li>
+<li class=""><strong>Phase 3</strong>: Integration with future services (cloud sync)</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
 <ul>
@@ -293,7 +291,7 @@ this to <code>IdleEngineRuntime</code> automatically.</p>
 <ol>
 <li class=""><strong>Core APIs</strong>: Implement and test snapshot/checksum/restore</li>
 <li class=""><strong>Integration</strong>: Wire into Worker bridge for UI sync diagnostics</li>
-<li class=""><strong>Server Validation</strong>: Integrate with GEL-001 for server-side verification</li>
+<li class=""><strong>Server Validation</strong>: Integrate with future backend verification (TBD)</li>
 </ol>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="migration-strategy">Migration Strategy<a href="#migration-strategy" class="hash-link" aria-label="Direct link to Migration Strategy" title="Direct link to Migration Strategy" translate="no">​</a></h3>
 <ul>
@@ -331,7 +329,6 @@ support restore-and-continue determinism without changing the v1 schema.</p>
 <li class=""><code>packages/core/src/index.ts:940-979</code> - Verification runtime pattern</li>
 <li class=""><code>packages/core/src/index.ts:499-591</code> - EconomyStateSummary pattern</li>
 <li class=""><code>docs/idle-engine-design.md</code> - Engine architecture</li>
-<li class=""><code>docs/global-economy-ledger-design.md</code> - GEL-001 economy ledger</li>
 <li class=""><a href="https://gafferongames.com/post/state_synchronization/" target="_blank" rel="noopener noreferrer" class="">Gaffer On Games: State Synchronization</a></li>
 <li class=""><a href="https://gafferongames.com/post/deterministic_lockstep/" target="_blank" rel="noopener noreferrer" class="">Gaffer On Games: Deterministic Lockstep</a></li>
 <li class=""><a href="https://gafferongames.com/post/snapshot_compression/" target="_blank" rel="noopener noreferrer" class="">Gaffer On Games: Snapshot Compression</a></li>

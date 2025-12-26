@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Content Schema Rollout Decisions | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Content Schema Rollout Decisions | Idle Engine Docs"><meta data-rh="true" name="description" content="This document captures key architectural decisions and risk mitigation strategies for the content schema system. It addresses open questions from the content schema design document and provides guidance for production rollout."><meta data-rh="true" property="og:description" content="This document captures key architectural decisions and risk mitigation strategies for the content schema system. It addresses open questions from the content schema design document and provides guidance for production rollout."><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Content Schema Rollout Decisions","item":"https://hansjm10.github.io/Idle-Game-Engine/content-schema-rollout-decisions"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.fc37d836.js" defer="defer"></script>
-<script src="/Idle-Game-Engine/assets/js/main.3aec751b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.85fed14b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.09e9ec30.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -32,7 +32,7 @@
 <p>Four critical design questions needed resolution:</p>
 <ol>
 <li class="">Should the schema expose calculated presentation defaults (e.g., auto-generated icon paths)?</li>
-<li class="">How will guild perk costs interface with social-service data when live persistence lands?</li>
+<li class="">How will guild perk costs interface with future persistence data when live storage lands?</li>
 <li class="">Do we need additional effect types (e.g., scripted modifiers) before schema v1.0?</li>
 <li class="">What is the migration strategy when schema digests change?</li>
 </ol>
@@ -56,7 +56,7 @@
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="non-goals">Non-Goals<a href="#non-goals" class="hash-link" aria-label="Direct link to Non-Goals" title="Direct link to Non-Goals" translate="no">​</a></h3>
 <ul>
 <li class="">Implementing scripting runtime (deferred to Phase 7+)</li>
-<li class="">Designing guild persistence schema (deferred to Phase 5)</li>
+<li class="">Designing guild persistence schema (deferred until backend persistence is defined)</li>
 <li class="">Building compiler icon resolution (follow-up issue)</li>
 <li class="">Creating save file format specification (Phase 4 work)</li>
 </ul>
@@ -73,7 +73,6 @@
 <ul>
 <li class=""><code>packages/content-schema</code> - Schema definitions and validation</li>
 <li class=""><code>packages/core</code> - Runtime integration</li>
-<li class=""><code>services/social</code> - Guild persistence (future)</li>
 <li class=""><code>tools/content-schema-cli</code> - Validation and compilation tooling</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="compatibility-considerations">Compatibility Considerations<a href="#compatibility-considerations" class="hash-link" aria-label="Direct link to Compatibility Considerations" title="Direct link to Compatibility Considerations" translate="no">​</a></h3>
@@ -133,31 +132,30 @@
 <li class="">Consider adding <code>iconPathSchema</code> with URL validation when compiler spec lands</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_EdDC" id="decision-2-guild-perk-persistence-integration">Decision 2: Guild Perk Persistence Integration<a href="#decision-2-guild-perk-persistence-integration" class="hash-link" aria-label="Direct link to Decision 2: Guild Perk Persistence Integration" title="Direct link to Decision 2: Guild Perk Persistence Integration" translate="no">​</a></h4>
-<p><strong>Decision</strong>: Defer guild-specific cost modeling to Phase 5 persistence implementation.</p>
+<p><strong>Decision</strong>: Defer guild-specific cost modeling until backend persistence work is planned.</p>
 <p><strong>Rationale</strong>:</p>
 <ul>
 <li class="">Current <code>cost</code> schema is flexible enough for prototype phase (Issue #11, Phase 0-4)</li>
-<li class="">Guild persistence design is not yet finalized (Phase 5: Weeks 5-7)</li>
-<li class="">Schema can be extended with <code>GuildCostSchema</code> when social service adds persistence</li>
+<li class="">Guild persistence design is not yet finalized</li>
+<li class="">Schema can be extended with <code>GuildCostSchema</code> when backend persistence lands</li>
 <li class="">FEATURE_GATES already restrict guild perks to runtime &gt;=0.5.0</li>
 </ul>
 <p><strong>Current State</strong>:</p>
 <ul>
 <li class="">Guild perk schema complete in <code>packages/content-schema/src/modules/guild-perks.ts</code></li>
-<li class="">Social service has stub guild routes (<code>services/social/src/routes/guild.ts</code>)</li>
-<li class="">Persistence is in-memory only (Phase 5 work per implementation plan)</li>
+<li class="">No backend persistence exists yet</li>
 <li class="">No database schema exists for guild perks or guild state</li>
 </ul>
-<p><strong>Phase 5 Follow-up</strong> (Issue #138 recommended):</p>
+<p><strong>Follow-up</strong> (Issue #138 recommended):</p>
 <ul>
 <li class="">Design guild persistence schema (Postgres tables: guilds, guild_perks, member_contributions)</li>
 <li class="">Add <code>GuildResourceDefinition</code> with ownership semantics (guild-scoped vs player-scoped)</li>
 <li class="">Extend cost schema with <code>scope: &#x27;player&#x27; | &#x27;guild&#x27;</code> discriminator if needed</li>
 <li class="">Add validation ensuring guild perk costs only reference guild-category resources</li>
 </ul>
-<p><strong>Acceptance Criteria for Phase 5</strong>:</p>
+<p><strong>Acceptance Criteria for Follow-up</strong>:</p>
 <ul>
-<li class="">Social service persists guild perk unlock state</li>
+<li class="">Backend persists guild perk unlock state</li>
 <li class="">Content packs can define guild-scoped currency resources</li>
 <li class="">Validation ensures guild perk costs reference valid guild currencies</li>
 <li class="">Documentation examples show guild contribution tracking</li>

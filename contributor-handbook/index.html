@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Contributor Handbook | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Contributor Handbook | Idle Engine Docs"><meta data-rh="true" name="description" content="This guide covers day-to-day development in the Idle Engine monorepo. Pair it"><meta data-rh="true" property="og:description" content="This guide covers day-to-day development in the Idle Engine monorepo. Pair it"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Contributor Handbook","item":"https://hansjm10.github.io/Idle-Game-Engine/contributor-handbook"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.fc37d836.js" defer="defer"></script>
-<script src="/Idle-Game-Engine/assets/js/main.3aec751b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.85fed14b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.09e9ec30.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -30,7 +30,7 @@ locally before commits</li>
 workspace code or shared config changes.</li>
 <li class=""><code>pnpm generate --check</code> runs for <code>content/**</code>, content tooling, and schema
 updates so packs stay fresh.</li>
-<li class="">Runtime/service changes trigger <code>pnpm --filter @idle-engine/core --filter @idle-engine/social-service run --if-present test:ci</code>.</li>
+<li class="">Runtime changes trigger <code>pnpm --filter @idle-engine/core run --if-present test:ci</code>.</li>
 <li class="">Content pipeline changes trigger <code>pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci</code>.</li>
 <li class="">The targeted markdown checks for <code>docs/content-dsl-usage-guidelines-design.md</code>
 remain unchanged.</li>
@@ -70,7 +70,6 @@ the issue and update this baseline if the steady-state timing changes.</li>
 <ul>
 <li class=""><code>packages/core</code> — deterministic runtime, command queue, telemetry</li>
 <li class=""><code>packages/content-*</code> — declarative content DSL and sample packs</li>
-<li class=""><code>services/</code> — backend experiments (leaderboards, guild services, auth)</li>
 <li class=""><code>tools/</code> — validation CLIs and development helpers</li>
 <li class=""><code>docs/</code> — design documents and the source for this documentation site</li>
 </ul>

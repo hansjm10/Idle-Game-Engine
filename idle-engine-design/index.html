@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Idle Engine Design Document | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Idle Engine Design Document | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Idle Engine Design Document","item":"https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.fc37d836.js" defer="defer"></script>
-<script src="/Idle-Game-Engine/assets/js/main.3aec751b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.85fed14b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.09e9ec30.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -19,7 +19,7 @@
 <li class=""><strong>Reviewers</strong>: TODO (Runtime Core, Content Pipeline, Shell, Social maintainers)</li>
 <li class=""><strong>Status</strong>: Draft</li>
 <li class=""><strong>Last Updated</strong>: 2025-12-14</li>
-<li class=""><strong>Related Issues</strong>: Idle-Game-Engine#197; Idle-Game-Engine#6; Idle-Game-Engine#11; Idle-Game-Engine#159; Idle-Game-Engine#399 (GEL-001); Idle-Game-Engine#408</li>
+<li class=""><strong>Related Issues</strong>: Idle-Game-Engine#197; Idle-Game-Engine#6; Idle-Game-Engine#11; Idle-Game-Engine#159</li>
 <li class=""><strong>Execution Mode</strong>: Hybrid</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
@@ -33,8 +33,6 @@
 <li class="">Web-first execution (Worker-friendly) while keeping portability to Node/desktop shells.</li>
 <li class="">Determinism for offline catch-up, diagnostics, and replay-based verification.</li>
 <li class="">Performance budgets (foreground smoothness, background throttling) and bounded memory growth.</li>
-<li class="">Optional social features (leaderboards, guilds) must not compromise local simulation correctness.</li>
-<li class="">Authentication uses OpenID Connect; baseline deployment uses self-hosted Keycloak (or Ory Hydra/Kratos), and tokens remain compatible with managed OIDC providers.</li>
 </ul>
 </li>
 </ul>
@@ -47,7 +45,6 @@
 <li class="">Provide a declarative content pipeline for defining resources, generators, upgrades, achievements, and events.</li>
 <li class="">Support instant deployment to browsers while enabling optional native packaging with the exact same engine build.</li>
 <li class="">Keep the core easily testable, observable, and instrumentable for analytics and A/B experimentation.</li>
-<li class="">Stabilise shared/global economy via a server-authoritative ledger and economic invariants as defined in <code>docs/global-economy-ledger-design.md</code> (initiative <code>GEL-001</code>).</li>
 </ul>
 </li>
 <li class=""><strong>Non-Goals</strong>:<!-- -->
@@ -60,9 +57,9 @@
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
 <ul>
-<li class=""><strong>Primary Stakeholders</strong>: Runtime Core maintainers; Content Pipeline maintainers; Shell maintainers; Social services maintainers; partner integrators.</li>
-<li class=""><strong>Agent Roles</strong>: Docs &amp; Design Agent; Runtime Implementation Agent; Content Pipeline Agent; Shell Integration Agent; Social Services Agent; QA &amp; A11y Agent.</li>
-<li class=""><strong>Affected Packages/Services</strong>: <code>packages/core</code>, <code>packages/content-schema</code>, <code>packages/content-sample</code>, <code>services/social</code>, <code>tools/</code>, and <code>docs/</code> (presentation shells are archived).</li>
+<li class=""><strong>Primary Stakeholders</strong>: Runtime Core maintainers; Content Pipeline maintainers; Shell maintainers; partner integrators.</li>
+<li class=""><strong>Agent Roles</strong>: Docs &amp; Design Agent; Runtime Implementation Agent; Content Pipeline Agent; Shell Integration Agent; QA &amp; A11y Agent.</li>
+<li class=""><strong>Affected Packages/Services</strong>: <code>packages/core</code>, <code>packages/content-schema</code>, <code>packages/content-sample</code>, <code>tools/</code>, and <code>docs/</code> (presentation shells are archived).</li>
 <li class=""><strong>Compatibility Considerations</strong>:<!-- -->
 <ul>
 <li class="">Content packs declare an engine compatibility range; validation gates features via <code>packages/content-schema/src/runtime-compat.ts</code>.</li>
@@ -72,15 +69,15 @@
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
 <ul>
-<li class="">Monorepo workstreams are split across deterministic runtime (<code>packages/core</code>), reference content (<code>packages/content-sample</code>), and backend experiments (<code>services/social</code>). Presentation shells are archived and removed from the active workspace.</li>
+<li class="">Monorepo workstreams are split across deterministic runtime (<code>packages/core</code>), reference content (<code>packages/content-sample</code>), and tooling under <code>tools/</code>. Presentation shells are archived and removed from the active workspace.</li>
 <li class="">Detailed subsystem proposals live in dedicated design docs (command queue, resource storage, event bus, content schema/compiler, worker bridge, economy ledger); this document is the umbrella architecture.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
 <ul>
-<li class=""><strong>Narrative</strong>: Run a deterministic simulation loop inside a Worker/Node host, apply all state mutations via commands and systems in a fixed order, publish snapshots/deltas to a presentation shell, and keep game-specific behavior in validated content packs. Social systems remain optional and integrate through explicit APIs and reconciliation rules.</li>
+<li class=""><strong>Narrative</strong>: Run a deterministic simulation loop inside a Worker/Node host, apply all state mutations via commands and systems in a fixed order, publish snapshots/deltas to a presentation shell, and keep game-specific behavior in validated content packs.</li>
 <li class=""><strong>Diagram</strong>:<!-- -->
-<div class="language-text codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-text codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|          Presentation        |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">| (Web UI, Native Shell UI)    |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|      Engine Integration      |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  (Runtime Adapter, IPC/API)  |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|         Core Runtime         |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  - Simulation Scheduler      |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  - State Graph               |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  - Systems (Progression,     |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|    Automation, Events)       |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|       Content Modules        |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">| (Game-specific data + rules) |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|     Social/Cloud Services    |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  (Leaderboards, Guild APIs)  |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span></code></pre></div></div>
+<div class="language-text codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-text codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|          Presentation        |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">| (Web UI, Native Shell UI)    |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|      Engine Integration      |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  (Runtime Adapter, IPC/API)  |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|         Core Runtime         |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  - Simulation Scheduler      |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  - State Graph               |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|  - Systems (Progression,     |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|    Automation, Events)       |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">              v</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">|       Content Modules        |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">| (Game-specific data + rules) |</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">+------------------------------+</span><br></span></code></pre></div></div>
 </li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
@@ -111,7 +108,6 @@
 <li class=""><strong>Prestige System</strong>: manages layer resets with carry-over rewards.</li>
 <li class=""><strong>Event System</strong>: publishes domain events (thresholds met, unlocks) for UI/telemetry.</li>
 <li class=""><strong>Task Scheduler</strong>: handles time-based tasks (quests, research timers) with pause/resume semantics.</li>
-<li class=""><strong>Social System</strong>: interfaces with leaderboard and guild services, queues outbound intents, applies confirmed updates, and reconciles conflicts on reconnect.</li>
 <li class="">Systems register deterministic execution order and optional dependencies; the engine validates order at startup to prevent circular hooks.</li>
 <li class="">Modifiers are expressed as pure functions operating on typed contexts (<code>ResourceCtx</code>, <code>GeneratorCtx</code>) to preserve testability.</li>
 </ul>
@@ -129,31 +125,6 @@
 <li class="">Autosave scheduler (e.g., every 30 seconds, on significant events, and before unload).</li>
 <li class="">Per-title save slots keyed by content package; no cross-title sharing to avoid balance exploits.</li>
 <li class="">Browser shells use IndexedDB/localStorage; native wrappers use filesystem APIs.</li>
-</ul>
-<h5 class="anchor anchorTargetStickyNavbar_EdDC" id="social-services-integration">Social Services Integration<a href="#social-services-integration" class="hash-link" aria-label="Direct link to Social Services Integration" title="Direct link to Social Services Integration" translate="no">​</a></h5>
-<ul>
-<li class="">Provide REST/gRPC client wrappers for leaderboard submissions, guild roster updates, messaging, and reward claims.</li>
-<li class="">Support optimistic UI updates with eventual server confirmation; roll back state when server rejects a change.</li>
-<li class="">Enforce rate limiting, authentication tokens, and replay protection to deter cheating.</li>
-<li class="">Offer abstractions so implementations can swap between in-house services and third-party platforms without touching game logic.</li>
-<li class="">Ship a reference self-host service (Node/Rust) with deployment scripts (Docker/Kubernetes) and clearly defined interfaces for alternative providers.</li>
-<li class="">For global economy stability and hard-currency invariants, rely on a server-authoritative ledger and economy APIs as specified in <code>docs/global-economy-ledger-design.md</code> (initiative <code>GEL-001</code>).</li>
-</ul>
-<h6 class="anchor anchorTargetStickyNavbar_EdDC" id="economy-model-gel-001">Economy Model (GEL-001)<a href="#economy-model-gel-001" class="hash-link" aria-label="Direct link to Economy Model (GEL-001)" title="Direct link to Economy Model (GEL-001)" translate="no">​</a></h6>
-<ul>
-<li class="">Hard vs soft split: <strong>hard currencies</strong> are server-authoritative and only mutate through validated social service operations; <strong>soft progression</strong> (local resources, upgrades, automation) stays client-authoritative and deterministic inside the runtime.</li>
-<li class="">Ledger ownership: the social service maintains the canonical ledger for all hard currencies (balances, transactions, guild contributions) and enforces invariants such as no overspend, bounded earn rates, and authenticated identities.</li>
-<li class="">Client/server cooperation: clients can render optimistic UI for spends/transfers but reconcile using authoritative ledger responses; discrepancies clamp to server values and can trigger anomaly flags.</li>
-<li class="">Verification: when needed, the social service can perform deterministic replay using the runtime under Node to bound-check suspicious claims without running a continuous server-side simulation.</li>
-<li class="">Navigation: see <code>docs/global-economy-ledger-design.md</code> (<code>GEL-001</code>) for API shapes, invariants, replay workflow, and delivery plan.</li>
-</ul>
-<h5 class="anchor anchorTargetStickyNavbar_EdDC" id="authentication--integrity-controls">Authentication &amp; Integrity Controls<a href="#authentication--integrity-controls" class="hash-link" aria-label="Direct link to Authentication &amp; Integrity Controls" title="Direct link to Authentication &amp; Integrity Controls" translate="no">​</a></h5>
-<ul>
-<li class="">Self-hosted Keycloak issues short-lived JWT access tokens and rotation-backed refresh tokens; clients authenticate via email magic link or device key exchange.</li>
-<li class="">Engine SDK signs every social mutation with the current token and device fingerprint; backend validates signature, token scope, and rate limits per identity/device/IP.</li>
-<li class="">Server derives authoritative leaderboard scores (never trusts raw client totals) and clamps suspicious deltas before persistence.</li>
-<li class="">Telemetry pipeline feeds anomaly detection (baseline heuristics + configurable z-score rules) that can flag or quarantine accounts automatically.</li>
-<li class="">Adapter interfaces accept any OIDC-compliant IdP so partners can switch to managed providers (Auth0, Cognito, etc.) without changing client code.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_EdDC" id="data--schemas">Data &amp; Schemas<a href="#data--schemas" class="hash-link" aria-label="Direct link to Data &amp; Schemas" title="Direct link to Data &amp; Schemas" translate="no">​</a></h4>
 <h5 class="anchor anchorTargetStickyNavbar_EdDC" id="content-pipeline">Content Pipeline<a href="#content-pipeline" class="hash-link" aria-label="Direct link to Content Pipeline" title="Direct link to Content Pipeline" translate="no">​</a></h5>
@@ -192,7 +163,7 @@
 </ul>
 <h5 class="anchor anchorTargetStickyNavbar_EdDC" id="tooling--developer-experience">Tooling &amp; Developer Experience<a href="#tooling--developer-experience" class="hash-link" aria-label="Direct link to Tooling &amp; Developer Experience" title="Direct link to Tooling &amp; Developer Experience" translate="no">​</a></h5>
 <ul>
-<li class="">Monorepo using pnpm: <code>packages/core</code>, <code>packages/content-*</code>, <code>services/social</code>, <code>tools/</code>.</li>
+<li class="">Monorepo using pnpm: <code>packages/core</code>, <code>packages/content-*</code>, <code>tools/</code>.</li>
 <li class="">Shared type definitions and schema validation via Zod or similar.</li>
 <li class="">CLI tools for content linting, simulation playback, save migration testing.</li>
 <li class="">Storybook or component library for UI kit review.</li>
@@ -204,7 +175,6 @@
 <li class="">Browser build bundles runtime + content and serves via CDN; service workers support offline caching.</li>
 <li class="">Desktop build packages web artifacts with Tauri/Electron and leverages native filesystem APIs for saves and optional integrations.</li>
 <li class="">Continuous delivery runs tests, bundles content, and publishes npm packages for runtime/tools.</li>
-<li class="">Social services deploy independently and use feature flags for staged rollouts.</li>
 </ul>
 </li>
 <li class=""><strong>Telemetry &amp; Observability</strong>:<!-- -->
@@ -220,23 +190,21 @@
 <li class="">Validate content bundles before loading to avoid malicious overrides.</li>
 <li class="">Harden save loading with schema validation to avoid corrupted states.</li>
 <li class="">Rotate API secrets regularly, store them in Vault/Secrets Manager, and audit access logs.</li>
-<li class="">Provide moderation tooling to ban or shadowban users flagged by integrity rules, and support rapid leaderboard purges.</li>
 </ul>
 </li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
-<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>docs: migrate Idle Engine Design to template (#197)</td><td>Convert this doc to the standard template and refresh cross-links</td><td>Docs &amp; Design Agent</td><td>None</td><td>Doc follows template headings; issue map + guardrails added; references updated</td></tr><tr><td>feat(core): deterministic command queue (#6)</td><td>Ensure all state mutations flow through a replayable command queue</td><td>Runtime Implementation Agent</td><td>Engine design aligned</td><td>Unit tests for ordering/replay; docs updated; no nondeterministic sources</td></tr><tr><td>feat(core): struct-of-arrays resource storage (#7)</td><td>Implement cache-friendly resource buffers and snapshot publishing</td><td>Runtime Implementation Agent</td><td>Command queue</td><td>Resource state tests; snapshot/delta API consumed by shell</td></tr><tr><td>feat(core): runtime event pub/sub (#8)</td><td>Deterministic event bus for cross-system signalling</td><td>Runtime Implementation Agent</td><td>Command queue</td><td>Event ordering tests; event frames exportable to shells/telemetry</td></tr><tr><td>feat(core): diagnostic timeline instrumentation (#9)</td><td>Per-tick phase timing + queue pressure snapshots</td><td>Runtime + QA Agent</td><td>Scheduler + queue</td><td>Timeline available via diagnostics; tests cover backlog &amp; segments</td></tr><tr><td>feat(core): tick accumulator edge-case coverage (#10)</td><td>Clamp/drift/backlog tests for fixed-step scheduler</td><td>QA Agent</td><td>Scheduler implementation</td><td>Tests validate backlog telemetry and drift tolerance</td></tr><tr><td>feat(content): content DSL schema contract (#11)</td><td>Zod schemas + normalization for content packs</td><td>Content Pipeline Agent</td><td>Engine goals agreed</td><td>Schema tests; CLI validation gates packs; docs link</td></tr><tr><td>feat(content): deterministic content compiler (#159)</td><td>Compile packs into reproducible artifacts consumed by runtime</td><td>Content Pipeline Agent</td><td>Schema contract</td><td><code>pnpm generate --check</code> stable; generated artifacts committed; smoke tests</td></tr><tr><td>feat(design): global economy ledger initiative (GEL-001) (#399)</td><td>Define ledger invariants + replay verification strategy</td><td>Social Services + Docs Agent</td><td>Auth model</td><td>Ledger APIs documented; invariants enforced; references in engine design</td></tr><tr><td>chore(docs): document economy model in engine design (#408)</td><td>Hard/soft currency split and glossary</td><td>Docs Agent</td><td>GEL-001</td><td>Updated design section + glossary entries; links current</td></tr></tbody></table>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>docs: migrate Idle Engine Design to template (#197)</td><td>Convert this doc to the standard template and refresh cross-links</td><td>Docs &amp; Design Agent</td><td>None</td><td>Doc follows template headings; issue map + guardrails added; references updated</td></tr><tr><td>feat(core): deterministic command queue (#6)</td><td>Ensure all state mutations flow through a replayable command queue</td><td>Runtime Implementation Agent</td><td>Engine design aligned</td><td>Unit tests for ordering/replay; docs updated; no nondeterministic sources</td></tr><tr><td>feat(core): struct-of-arrays resource storage (#7)</td><td>Implement cache-friendly resource buffers and snapshot publishing</td><td>Runtime Implementation Agent</td><td>Command queue</td><td>Resource state tests; snapshot/delta API consumed by shell</td></tr><tr><td>feat(core): runtime event pub/sub (#8)</td><td>Deterministic event bus for cross-system signalling</td><td>Runtime Implementation Agent</td><td>Command queue</td><td>Event ordering tests; event frames exportable to shells/telemetry</td></tr><tr><td>feat(core): diagnostic timeline instrumentation (#9)</td><td>Per-tick phase timing + queue pressure snapshots</td><td>Runtime + QA Agent</td><td>Scheduler + queue</td><td>Timeline available via diagnostics; tests cover backlog &amp; segments</td></tr><tr><td>feat(core): tick accumulator edge-case coverage (#10)</td><td>Clamp/drift/backlog tests for fixed-step scheduler</td><td>QA Agent</td><td>Scheduler implementation</td><td>Tests validate backlog telemetry and drift tolerance</td></tr><tr><td>feat(content): content DSL schema contract (#11)</td><td>Zod schemas + normalization for content packs</td><td>Content Pipeline Agent</td><td>Engine goals agreed</td><td>Schema tests; CLI validation gates packs; docs link</td></tr><tr><td>feat(content): deterministic content compiler (#159)</td><td>Compile packs into reproducible artifacts consumed by runtime</td><td>Content Pipeline Agent</td><td>Schema contract</td><td><code>pnpm generate --check</code> stable; generated artifacts committed; smoke tests</td></tr></tbody></table>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
 <ul>
-<li class=""><strong>Prototype Milestone (8 weeks)</strong>: Deliver a vertical slice proving the engine loop, content DSL, and social scaffolding.<!-- -->
+<li class=""><strong>Prototype Milestone (8 weeks)</strong>: Deliver a vertical slice proving the engine loop and content DSL.<!-- -->
 <ul>
 <li class=""><strong>Deliverables</strong>:<!-- -->
 <ul>
 <li class=""><code>packages/core</code>: runnable runtime with scheduler, resource system, upgrade processor, save/load (stub), diagnostics.</li>
 <li class="">Presentation shells (archived): UI consumers of runtime snapshots and commands.</li>
 <li class=""><code>packages/content-sample</code>: reference game pack with ~10 resources, 6 generators, basic prestige layer, and sample guild perks.</li>
-<li class=""><code>services/social</code>: self-hosted API providing stubbed leaderboard/guild endpoints with Keycloak integration.</li>
 <li class="">CI pipeline executing unit/integration tests and content validation (<code>pnpm generate --check</code>).</li>
 </ul>
 </li>
@@ -246,7 +214,6 @@
 <li class="">Content &amp; DSL (Week 2-4): schema, compiler, sample content pack, validation CLI.</li>
 <li class="">Presentation Adapter (Week 3-5): Worker runtime integration, delta subscription, basic UI kit.</li>
 <li class="">Persistence &amp; Offline (Week 4-6): save/load, offline catch-up logic, autosave timers, smoke tests.</li>
-<li class="">Social Stub (Week 5-7): Keycloak bootstrap, social API, token validation in SDK, stub leaderboard UI.</li>
 <li class="">Hardening (Week 7-8): profiling, coverage targets, docs/runbooks, milestone demo.</li>
 </ol>
 </li>
@@ -254,9 +221,8 @@
 <ul>
 <li class="">Reference game runs at 60 ticks/sec in browser foreground with under 30% main-thread utilization on target hardware.</li>
 <li class="">Offline catch-up simulates up to 12 hours without divergence from continuous-play baselines.</li>
-<li class="">Leaderboard submissions authenticated via Keycloak and shown in UI (stubbed data acceptable).</li>
 <li class="">Content CLI blocks invalid definitions and outputs human-friendly diagnostics.</li>
-<li class="">CI green (lint/test/generate) and docker-compose stack (engine + Keycloak + social API) launches via single command.</li>
+<li class="">CI green (lint/test/generate).</li>
 </ul>
 </li>
 </ul>
@@ -274,7 +240,6 @@
 <li class="">Read: <code>docs/design-document-template.md</code>, <code>docs/idle-engine-design.md</code>, <code>docs/implementation-plan.md</code>.</li>
 <li class="">For runtime work: <code>docs/runtime-command-queue-design.md</code>, <code>docs/resource-state-storage-design.md</code>, <code>docs/runtime-event-pubsub-design.md</code>.</li>
 <li class="">For content work: <code>docs/content-dsl-schema-design.md</code>, <code>docs/content-compiler-design.md</code>, <code>docs/content-validation-cli-design.md</code>.</li>
-<li class="">For social/economy work: <code>docs/global-economy-ledger-design.md</code>.</li>
 </ul>
 </li>
 <li class=""><strong>Prompting &amp; Constraints</strong>:<!-- -->
@@ -313,7 +278,7 @@
 <li class="">Unit tests for tick calculations, formula evaluation, state reducers, and determinism invariants.</li>
 <li class="">Integration tests running full simulations for offline progression scenarios and save/load migrations.</li>
 <li class="">Snapshot tests for content definitions and compiled artifacts to catch accidental drift.</li>
-<li class="">Contract tests for leaderboard submissions, guild workflows, and offline/online reconciliation.</li>
+<li class="">Contract tests for offline/online reconciliation.</li>
 </ul>
 </li>
 <li class=""><strong>Performance</strong>:<!-- -->
@@ -329,7 +294,7 @@
 <li class=""><strong>Determinism drift</strong>: Centralize clocks/RNG; add property-based tests and replay harnesses.</li>
 <li class=""><strong>Performance regressions</strong>: Keep hot paths in SoA buffers; profile before optimizing; gate expensive features behind flags.</li>
 <li class=""><strong>Content pipeline complexity</strong>: Enforce <code>pnpm generate --check</code>, keep logs structured, and document upgrade paths in design docs.</li>
-<li class=""><strong>Security of extensibility</strong>: Sandbox script hooks; validate packs; treat social mutations as server-authoritative where required.</li>
+<li class=""><strong>Security of extensibility</strong>: Sandbox script hooks; validate packs.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
 <ul>
@@ -340,7 +305,6 @@
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
 <ul>
 <li class="">How do we expose extensibility to partners while preserving engine stability (module vetting, version caps)?</li>
-<li class="">Which managed providers should we validate adapters against, and what migration tooling do partners need?</li>
 <li class="">Which telemetry thresholds or machine-learning models will we standardize on for automated cheat detection escalation?</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
@@ -360,15 +324,10 @@
 <li class=""><code>docs/content-dsl-schema-design.md</code></li>
 <li class=""><code>docs/content-compiler-design.md</code></li>
 <li class=""><code>docs/content-validation-cli-design.md</code></li>
-<li class=""><code>docs/global-economy-ledger-design.md</code></li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
 <ul>
-<li class=""><strong>Hard currency</strong>: Server-authoritative currency recorded in the global ledger; mutations only occur through authenticated social service operations that enforce invariants (no overspend, bounded earns).</li>
-<li class=""><strong>Soft progression</strong>: Client-authoritative simulation state (resources, upgrades, automation) managed deterministically by the runtime; reconciles only on sync boundaries where hard currency balances are authoritative.</li>
-<li class=""><strong>Server-authoritative ledger</strong>: Social service subsystem that maintains canonical balances and transaction history for hard currencies, powers leaderboards/guild contributions, and is documented in <code>docs/global-economy-ledger-design.md</code>.</li>
-<li class=""><strong>Optimistic UI + reconciliation</strong>: Client may show provisional spend/transfer results but must apply server responses to clamp balances to ledger truth and surface rejection metadata.</li>
-<li class=""><strong>Deterministic replay verification</strong>: Optional server-side check that replays a bounded segment of simulation using the runtime (Node) to validate suspicious economic claims without running continuous server-side simulation.</li>
+<li class=""><strong>Soft progression</strong>: Client-authoritative simulation state (resources, upgrades, automation) managed deterministically by the runtime.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
 <table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2025-12-14</td><td>Idle Engine Docs Agent</td><td>Migrate <code>docs/idle-engine-design.md</code> onto the standard design template (Fixes #197).</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_QKxP"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/idle-engine-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_wOWh" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_Basj"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/Idle-Game-Engine/design-document-template"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Design Document Template</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/Idle-Game-Engine/runtime-step-lifecycle"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Runtime Step Lifecycle Alignment</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_AUZ0 thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_cYRj"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_cYRj"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2025 Idle Engine.</div></div></div></footer></div>
