@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Stabilise Global Economy with Server-Authoritative Ledger | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/global-economy-ledger-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Stabilise Global Economy with Server-Authoritative Ledger | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/global-economy-ledger-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/global-economy-ledger-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/global-economy-ledger-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.98f6dcd5.js" defer="defer"></script>
-<script src="/Idle-Game-Engine/assets/js/main.12436fc9.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.fc37d836.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.3aec751b.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -30,7 +30,7 @@
 <p><strong>Background</strong></p>
 <ul>
 <li class="">The Idle Engine core runtime (<code>packages/core/src/index.ts</code>) implements a deterministic fixed-step loop with a command queue, event bus, and diagnostics timeline suitable for browser and Node execution.</li>
-<li class="">The web shell (<code>packages/shell-web</code>) runs the core in a worker and will present resources, upgrades, and social UI.</li>
+<li class="">Archived presentation shells previously ran the core in a worker for UI consumption; no active shell is maintained in the workspace.</li>
 <li class="">The social backend (<code>services/social/src/index.ts</code>) currently exposes stubbed <code>leaderboard</code> and <code>guild</code> routes but does not own any economic state; responses are placeholder-only.</li>
 <li class="">Design goals in <code>docs/idle-engine-design.md</code> emphasise:<!-- -->
 <ul>
@@ -144,7 +144,7 @@
 </li>
 <li class=""><strong>Testing &amp; Validation Agent</strong>
 <ul>
-<li class="">Extends Vitest suites in <code>packages/core</code>, <code>services/social</code>, and end-to-end smoke tests under <code>tools/a11y-smoke-tests</code>.</li>
+<li class="">Extends Vitest suites in <code>packages/core</code> and <code>services/social</code>.</li>
 </ul>
 </li>
 </ul>
@@ -185,9 +185,9 @@
 </ul>
 </li>
 <li class="">
-<p><strong>Web Shell (<code>packages/shell-web</code>)</strong></p>
+<p><strong>Presentation shells (archived)</strong></p>
 <ul>
-<li class="">Boots the runtime loop and will render panels for resources and social features (<code>packages/shell-web/README.md</code>).</li>
+<li class="">No active presentation shell is maintained; downstream clients must integrate their own UI surfaces.</li>
 <li class="">Currently assumes the client owns the moment-to-moment sim and fetches social data from <code>services/social</code>.</li>
 </ul>
 </li>
@@ -487,7 +487,7 @@
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
 <p>Populate GitHub issues based on the following table; all issues reference initiative <code>GEL-001</code> in their descriptions.</p>
-<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>feat(design): formalise global economy stability (<code>GEL-001</code>)</td><td>Capture final design doc in <code>docs/</code> and link to related specs</td><td>Docs &amp; Design Agent</td><td>None</td><td>Design merged; referenced from <code>docs/idle-engine-design.md</code>; reviewers sign off</td></tr><tr><td>feat(schema): classify hard vs soft currencies</td><td>Extend content schema to mark hard currencies and sample content to use them</td><td>Content/Schema Agent</td><td>Design approval</td><td>Schema/docs updated; tests in <code>content-schema</code> pass; sample packs compile</td></tr><tr><td>feat(social): introduce server-authoritative ledger abstraction</td><td>Add in-memory ledger types and interfaces in <code>services/social/src/types</code></td><td>Social Service Implementation Agent</td><td>Schema classification (optional)</td><td>Ledger API supports create/read/update operations; unit tests cover basic operations</td></tr><tr><td>feat(social): implement economy routes (/economy)</td><td>Add balances, spend, transfer, and guild contribution endpoints</td><td>Social Service Implementation Agent</td><td>Ledger abstraction</td><td>Routes validated with zod, protected by auth; tests verify invariants (no overspend, etc.)</td></tr><tr><td>feat(social): wire leaderboards and guilds to ledger</td><td>Drive leaderboard scores and guild resources from ledger data</td><td>Social Service Implementation Agent</td><td>Economy routes</td><td><code>GET /leaderboard/:id</code> and <code>GET /guilds/mine</code> use ledger-derived values; tests updated</td></tr><tr><td>feat(core): add verification runtime helpers</td><td>Expose runtime helpers to support deterministic economy replay</td><td>Runtime Implementation Agent</td><td>Design approval</td><td>New APIs documented; tests confirm deterministic behaviour in Node and browser</td></tr><tr><td>feat(tools): add economy verification CLI</td><td>CLI wrapper around runtime helper for economic replay/validation</td><td>Runtime Implementation Agent</td><td>Verification helpers</td><td>CLI runs on snapshots; emits JSON; used in at least one test</td></tr><tr><td>chore(test): add economic invariants to social tests</td><td>Expand Vitest suites under <code>services/social</code></td><td>Testing &amp; Validation Agent</td><td>Economy routes implemented</td><td>Tests fail on invariant violations; coverage includes all economic operations</td></tr><tr><td>chore(a11y): extend shell-web tests for economy UI</td><td>Ensure economic UI interactions do not regress accessibility</td><td>Testing &amp; Validation Agent</td><td>Basic economy UI implemented in shell</td><td><code>pnpm test:a11y</code> passes for flows involving hard currency displays and errors</td></tr><tr><td>chore(docs): update idle-engine-design.md with economy model</td><td>Summarise hard/soft currency model &amp; ledger in main design doc</td><td>Docs &amp; Design Agent</td><td>Implementation stable</td><td><code>docs/idle-engine-design.md</code> references this document; glossary updated</td></tr></tbody></table>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>feat(design): formalise global economy stability (<code>GEL-001</code>)</td><td>Capture final design doc in <code>docs/</code> and link to related specs</td><td>Docs &amp; Design Agent</td><td>None</td><td>Design merged; referenced from <code>docs/idle-engine-design.md</code>; reviewers sign off</td></tr><tr><td>feat(schema): classify hard vs soft currencies</td><td>Extend content schema to mark hard currencies and sample content to use them</td><td>Content/Schema Agent</td><td>Design approval</td><td>Schema/docs updated; tests in <code>content-schema</code> pass; sample packs compile</td></tr><tr><td>feat(social): introduce server-authoritative ledger abstraction</td><td>Add in-memory ledger types and interfaces in <code>services/social/src/types</code></td><td>Social Service Implementation Agent</td><td>Schema classification (optional)</td><td>Ledger API supports create/read/update operations; unit tests cover basic operations</td></tr><tr><td>feat(social): implement economy routes (/economy)</td><td>Add balances, spend, transfer, and guild contribution endpoints</td><td>Social Service Implementation Agent</td><td>Ledger abstraction</td><td>Routes validated with zod, protected by auth; tests verify invariants (no overspend, etc.)</td></tr><tr><td>feat(social): wire leaderboards and guilds to ledger</td><td>Drive leaderboard scores and guild resources from ledger data</td><td>Social Service Implementation Agent</td><td>Economy routes</td><td><code>GET /leaderboard/:id</code> and <code>GET /guilds/mine</code> use ledger-derived values; tests updated</td></tr><tr><td>feat(core): add verification runtime helpers</td><td>Expose runtime helpers to support deterministic economy replay</td><td>Runtime Implementation Agent</td><td>Design approval</td><td>New APIs documented; tests confirm deterministic behaviour in Node and browser</td></tr><tr><td>feat(tools): add economy verification CLI</td><td>CLI wrapper around runtime helper for economic replay/validation</td><td>Runtime Implementation Agent</td><td>Verification helpers</td><td>CLI runs on snapshots; emits JSON; used in at least one test</td></tr><tr><td>chore(test): add economic invariants to social tests</td><td>Expand Vitest suites under <code>services/social</code></td><td>Testing &amp; Validation Agent</td><td>Economy routes implemented</td><td>Tests fail on invariant violations; coverage includes all economic operations</td></tr><tr><td>chore(ui): add economy UI tests in downstream shells (archived)</td><td>Ensure economic UI interactions do not regress accessibility</td><td>Testing &amp; Validation Agent</td><td>Basic economy UI implemented in shell</td><td>Shell-specific test commands documented in downstream repos</td></tr><tr><td>chore(docs): update idle-engine-design.md with economy model</td><td>Summarise hard/soft currency model &amp; ledger in main design doc</td><td>Docs &amp; Design Agent</td><td>Implementation stable</td><td><code>docs/idle-engine-design.md</code> references this document; glossary updated</td></tr></tbody></table>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
 <ul>
 <li class="">
@@ -509,7 +509,7 @@
 <p><strong>Phase 2: Integration</strong></p>
 <ul>
 <li class="">Wire leaderboards and guilds to the ledger.</li>
-<li class="">Integrate the web shell with economy endpoints (client reconciliation logic).</li>
+<li class="">Integrate downstream shells with economy endpoints (client reconciliation logic).</li>
 <li class="">Introduce optional replay-based verification for high-risk flows.</li>
 <li class="">Gating criteria:<!-- -->
 <ul>
@@ -542,7 +542,7 @@
 <li class="">This design document (<code>docs/global-economy-ledger-design.md</code>).</li>
 <li class="">References to runtime code (<code>packages/core/src/index.ts</code>), social service (<code>services/social/src</code>), and tools (<code>tools/runtime-sim/index.ts</code>).</li>
 <li class="">Example payloads and JSON contracts for economy endpoints.</li>
-<li class="">Test commands: <code>pnpm test --filter @idle-engine/social-service</code>, <code>pnpm test --filter @idle-engine/core</code>, <code>pnpm test:a11y</code>.</li>
+<li class="">Test commands: <code>pnpm test --filter @idle-engine/social-service</code>, <code>pnpm test --filter @idle-engine/core</code>.</li>
 </ul>
 </li>
 <li class="">
@@ -622,7 +622,6 @@
 <li class=""><code>pnpm lint</code></li>
 <li class=""><code>pnpm test --filter @idle-engine/social-service</code></li>
 <li class=""><code>pnpm test --filter @idle-engine/core</code></li>
-<li class=""><code>pnpm test:a11y</code> when touching shell-web economy UI.</li>
 </ul>
 </li>
 <li class="">For CLI additions:<!-- -->
@@ -734,15 +733,9 @@
 </ul>
 </li>
 <li class="">
-<p><strong>Tooling / A11y</strong></p>
+<p><strong>Tooling</strong></p>
 <ul>
-<li class="">Extend Playwright a11y tests (<code>tools/a11y-smoke-tests</code>) to include:<!-- -->
-<ul>
-<li class="">Display of hard currency balances.</li>
-<li class="">Error states when spends are rejected.</li>
-</ul>
-</li>
-<li class="">Ensure new UI elements in <code>packages/shell-web</code> have proper ARIA attributes and keyboard accessibility.</li>
+<li class="">Downstream shells should extend their UI accessibility coverage to include hard currency displays and rejected spend states.</li>
 </ul>
 </li>
 </ul>

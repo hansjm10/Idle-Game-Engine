@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Expand Sample Pack and Balance Validation (issue-420) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/sample-pack-balance-validation-design-issue-420"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Expand Sample Pack and Balance Validation (issue-420) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/sample-pack-balance-validation-design-issue-420"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/sample-pack-balance-validation-design-issue-420" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/sample-pack-balance-validation-design-issue-420" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.98f6dcd5.js" defer="defer"></script>
-<script src="/Idle-Game-Engine/assets/js/main.12436fc9.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.fc37d836.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.3aec751b.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg style="display: none;"><defs>
@@ -36,23 +36,23 @@
 <li class="">Expand the sample pack with additional resources/generators, multi-tier upgrades, and a prestige layer per issue 419.</li>
 <li class="">Add fast-check-backed balance validation to <code>@idle-engine/content-schema</code>, surfaced through compiler/CLI and CI.</li>
 <li class="">Extend compiler tests for balance gating and deterministic hashes.</li>
-<li class="">Align core and shell consumers/tests with new content IDs/tiers and prestige flows.</li>
+<li class="">Align core and downstream consumer tests with new content IDs/tiers and prestige flows.</li>
 <li class="">Update docs (content DSL usage, sample README) to describe new content and validation rules.</li>
 </ol>
 </li>
 <li class=""><strong>Non-Goals</strong>:<!-- -->
 <ul>
 <li class="">Changing runtime economic algorithms or command contracts beyond content wiring.</li>
-<li class="">Shipping full prestige UX in shell-web (only fixtures/tests).</li>
+<li class="">Shipping full prestige UX in archived presentation shells (only fixtures/tests).</li>
 <li class="">Adding guild perks/social features (defer).</li>
 </ul>
 </li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
 <ul>
-<li class=""><strong>Primary Stakeholders</strong>: Content pipeline maintainers; Runtime core maintainers; Shell UX maintainers.</li>
-<li class=""><strong>Agent Roles</strong>: Content Authoring Agent (pack expansion); Balance Validation Agent (fast-check invariants); Compiler Integration Agent (CLI wiring); Shell Consumer Agent (progression updates); Docs Agent (guides/readme).</li>
-<li class=""><strong>Affected Packages/Services</strong>: <code>packages/content-schema</code>, <code>packages/content-compiler</code>, <code>packages/content-sample</code>, <code>packages/core</code>, <code>packages/shell-web</code>, <code>tools/content-schema-cli</code>, <code>docs/</code>.</li>
+<li class=""><strong>Primary Stakeholders</strong>: Content pipeline maintainers; Runtime core maintainers.</li>
+<li class=""><strong>Agent Roles</strong>: Content Authoring Agent (pack expansion); Balance Validation Agent (fast-check invariants); Compiler Integration Agent (CLI wiring); Consumer Integration Agent (progression updates); Docs Agent (guides/readme).</li>
+<li class=""><strong>Affected Packages/Services</strong>: <code>packages/content-schema</code>, <code>packages/content-compiler</code>, <code>packages/content-sample</code>, <code>packages/core</code>, <code>tools/content-schema-cli</code>, <code>docs/</code>.</li>
 <li class=""><strong>Compatibility Considerations</strong>: Preserve deterministic ordering/hashes; keep <code>content/compiled/index.json</code> shape; avoid schema breaks; maintain shell cost/visibility expectations (<code>packages/core/src/progression-coordinator.ts</code>).</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
@@ -60,13 +60,13 @@
 <li class="">Sample pack limited to two resources/two generators, minimal upgrades, no prestige (<code>packages/content-sample/content/pack.json</code>).</li>
 <li class="">Schema validation enforces structure/uniqueness; no balance/monotonicity (<code>packages/content-schema/src/modules/generators.ts</code>, <code>packages/content-schema/src/modules/prestige.ts</code>); property suites only for formulas (<code>packages/content-schema/src/base/formulas.property.test.ts</code>).</li>
 <li class="">Compiler and CLI ignore balance results (<code>packages/content-compiler/src/compiler/index.ts</code>, <code>packages/content-compiler/src/__tests__/compiler.test.ts</code>, <code>tools/content-schema-cli/src/compile.js</code>).</li>
-<li class="">Shell progression uses pack data for costs/unlocks (<code>packages/core/src/progression-coordinator.ts</code>); new IDs would currently break fixtures.</li>
+<li class="">Progression coordinator uses pack data for costs/unlocks (<code>packages/core/src/progression-coordinator.ts</code>); new IDs would currently break fixtures.</li>
 <li class="">Implementation plan demands richer packs and prestige coverage (<code>docs/implementation-plan.md</code>); progression guidance exists (<code>docs/progression-coordinator-design.md</code>).</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
 <ul>
-<li class=""><strong>Narrative</strong>: Author richer pack content (mid/late resources, generators, multi-tier upgrades, prestige), add fast-check balance invariants in <code>@idle-engine/content-schema</code>, wire balance gating into compiler/CLI, and refresh core/shell consumers so deterministic artifacts remain stable.</li>
+<li class=""><strong>Narrative</strong>: Author richer pack content (mid/late resources, generators, multi-tier upgrades, prestige), add fast-check balance invariants in <code>@idle-engine/content-schema</code>, wire balance gating into compiler/CLI, and refresh core/consumer fixtures so deterministic artifacts remain stable.</li>
 <li class=""><strong>Diagram</strong>:<!-- -->
 <div class="language-text codeBlockContainer_b5Q5 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_yI8N"><pre tabindex="0" class="prism-code language-text codeBlock_DEW9 thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_eNcQ"><span class="token-line" style="color:#393A34"><span class="token plain">pack.json/json5 → schema + balance validator (fast-check) → compiler (deterministic artifacts) → sample pack exports</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      ↑                    |                               ↓</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"> docs/guides           CLI/CI logs                 core + shell tests</span><br></span></code></pre></div></div>
 </li>
@@ -138,7 +138,7 @@
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
 <p>Populate the table as the canonical source for downstream GitHub issues.</p>
-<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>feat(content-schema): add balance property checks (issue 419)</td><td>Implement fast-check invariants, options, and warnings/errors</td><td>Balance Validation Agent</td><td>None</td><td>Balance failures surface structured errors; <code>pnpm test --filter content-schema</code> green; seeds documented</td></tr><tr><td>feat(content-compiler): enforce balance in CLI/summary (issue 419)</td><td>Wire balance results into compiler and logs; halt on errors</td><td>Compiler Integration Agent</td><td>Balance checks</td><td><code>pnpm generate --check</code> fails on balance errors; summary includes balance status; compiler tests updated</td></tr><tr><td>feat(content-sample): expand pack with upgrades and prestige (issue 419)</td><td>Author new resources/generators/upgrades/prestige; regenerate artifacts</td><td>Content Authoring Agent</td><td>Balance checks merged</td><td>Pack compiles warning-free; prestige rewards per design; digests refreshed</td></tr><tr><td>chore(shell-web/core): align progression fixtures to new content</td><td>Update shell/core tests for new IDs/tiers/prestige</td><td>Shell Consumer Agent</td><td>Expanded pack</td><td><code>pnpm test --filter shell-web</code> and core progression tests pass; no runtime errors</td></tr><tr><td>docs: update content DSL usage/sample pack README</td><td>Document new content, prestige flows, validation</td><td>Docs Agent</td><td>Expanded pack</td><td><code>docs/content-dsl-usage-guidelines.md</code> and <code>packages/content-sample/README.md</code> updated with links</td></tr></tbody></table>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>feat(content-schema): add balance property checks (issue 419)</td><td>Implement fast-check invariants, options, and warnings/errors</td><td>Balance Validation Agent</td><td>None</td><td>Balance failures surface structured errors; <code>pnpm test --filter content-schema</code> green; seeds documented</td></tr><tr><td>feat(content-compiler): enforce balance in CLI/summary (issue 419)</td><td>Wire balance results into compiler and logs; halt on errors</td><td>Compiler Integration Agent</td><td>Balance checks</td><td><code>pnpm generate --check</code> fails on balance errors; summary includes balance status; compiler tests updated</td></tr><tr><td>feat(content-sample): expand pack with upgrades and prestige (issue 419)</td><td>Author new resources/generators/upgrades/prestige; regenerate artifacts</td><td>Content Authoring Agent</td><td>Balance checks merged</td><td>Pack compiles warning-free; prestige rewards per design; digests refreshed</td></tr><tr><td>chore(core): align progression fixtures to new content</td><td>Update core tests for new IDs/tiers/prestige</td><td>Consumer Integration Agent</td><td>Expanded pack</td><td><code>pnpm test --filter core</code> passes; no runtime errors</td></tr><tr><td>docs: update content DSL usage/sample pack README</td><td>Document new content, prestige flows, validation</td><td>Docs Agent</td><td>Expanded pack</td><td><code>docs/content-dsl-usage-guidelines.md</code> and <code>packages/content-sample/README.md</code> updated with links</td></tr></tbody></table>
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
 <ul>
 <li class=""><strong>Phase 1 (Week 0-1)</strong>: Balance validation + CLI/compiler wiring with tests.</li>
@@ -155,7 +155,7 @@
 <li class=""><strong>Context Packets</strong>: <code>docs/content-dsl-usage-guidelines.md</code>, <code>docs/content-compiler-design.md</code>, <code>docs/content-validation-cli-design.md</code>, <code>docs/progression-coordinator-design.md</code>, <code>packages/content-sample/content/pack.json</code>, <code>packages/core/src/progression-coordinator.ts</code>.</li>
 <li class=""><strong>Prompting &amp; Constraints</strong>: Use ES modules, two-space indentation, type-only imports/exports; keep generated output deterministic; never edit <code>dist/</code> manually.</li>
 <li class=""><strong>Safety Rails</strong>: Avoid destructive git commands; keep console output JSON-only; cap fast-check runs; avoid non-ASCII text.</li>
-<li class=""><strong>Validation Hooks</strong>: <code>pnpm generate --check</code>, <code>pnpm test --filter content-schema</code>, <code>pnpm test --filter content-compiler</code>, <code>pnpm test --filter content-sample</code>, <code>pnpm test --filter shell-web</code>, <code>pnpm coverage:md</code> when coverage changes.</li>
+<li class=""><strong>Validation Hooks</strong>: <code>pnpm generate --check</code>, <code>pnpm test --filter content-schema</code>, <code>pnpm test --filter content-compiler</code>, <code>pnpm test --filter content-sample</code>, <code>pnpm test --filter core</code>, <code>pnpm coverage:md</code> when coverage changes.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
 <ul>
@@ -165,9 +165,9 @@
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
 <ul>
-<li class=""><strong>Unit / Integration</strong>: Balance property suites in <code>packages/content-schema</code>; compiler pipeline tests for gating; sample pack prestige/reset fixtures; shell progression tests for new IDs.</li>
+<li class=""><strong>Unit / Integration</strong>: Balance property suites in <code>packages/content-schema</code>; compiler pipeline tests for gating; sample pack prestige/reset fixtures; core progression tests for new IDs.</li>
 <li class=""><strong>Performance</strong>: Track balance check runtime; target under 5s per suite with bounded fast-check.</li>
-<li class=""><strong>Tooling / A11y</strong>: Preserve <code>vitest-llm-reporter</code> JSON; run <code>pnpm coverage:md</code> after test changes; no UI delta to trigger new a11y tests.</li>
+<li class=""><strong>Tooling / A11y</strong>: Preserve <code>vitest-llm-reporter</code> JSON; run <code>pnpm coverage:md</code> after test changes.</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_EdDC" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
 <ul>
