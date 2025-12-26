@@ -571,6 +571,8 @@ interface PrestigeResetPayload {
 interface OfflineCatchupPayload {
   elapsedMs: number;
   resourceDeltas: Record<string, number>;
+  maxElapsedMs?: number;
+  maxSteps?: number;
 }
 
 interface ApplyMigrationPayload {

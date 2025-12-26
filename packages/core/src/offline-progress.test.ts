@@ -13,6 +13,10 @@ import {
 } from './content-test-helpers.js';
 import { applyOfflineProgress } from './offline-progress.js';
 import {
+  resolveMaxTicksPerCall,
+  resolveOfflineProgressTotals,
+} from './offline-progress-limits.js';
+import {
   hydrateProgressionCoordinatorState,
   serializeProgressionCoordinatorState,
 } from './progression-coordinator-save.js';
@@ -372,6 +376,107 @@ describe('applyOfflineProgress', () => {
       completed: true,
     });
     expect(harness.runtime.getCurrentStep()).toBe(1);
+  });
+
+  it('applies maxElapsedMs before maxSteps and drops remainder when maxSteps truncates', () => {
+    const harness = createHarness(0);
+    const elapsedMs = STEP_SIZE_MS * 6 + 50;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: {
+        maxElapsedMs: STEP_SIZE_MS * 3 + 50,
+        maxSteps: 2,
+      },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 2,
+      totalMs: STEP_SIZE_MS * 2,
+      processedSteps: 2,
+      processedMs: STEP_SIZE_MS * 2,
+      remainingMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(2);
+  });
+
+  it('ignores invalid maxElapsedMs values when resolving totals', () => {
+    const elapsedMs = STEP_SIZE_MS * 5 + 50;
+    const baseline = resolveOfflineProgressTotals(elapsedMs, STEP_SIZE_MS);
+    const invalidValues = [
+      -1,
+      -100,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+
+    for (const value of invalidValues) {
+      const limits = { maxElapsedMs: value };
+      const totals = resolveOfflineProgressTotals(
+        elapsedMs,
+        STEP_SIZE_MS,
+        limits,
+      );
+
+      expect(totals).toEqual(baseline);
+      if (Number.isNaN(value)) {
+        expect(Number.isNaN(limits.maxElapsedMs)).toBe(true);
+      } else {
+        expect(limits.maxElapsedMs).toBe(value);
+      }
+    }
+  });
+
+  it('ignores invalid maxSteps values when resolving totals', () => {
+    const elapsedMs = STEP_SIZE_MS * 5 + 50;
+    const baseline = resolveOfflineProgressTotals(elapsedMs, STEP_SIZE_MS);
+    const invalidValues = [
+      -1,
+      -100,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+
+    for (const value of invalidValues) {
+      const limits = { maxSteps: value };
+      const totals = resolveOfflineProgressTotals(
+        elapsedMs,
+        STEP_SIZE_MS,
+        limits,
+      );
+
+      expect(totals).toEqual(baseline);
+      if (Number.isNaN(value)) {
+        expect(Number.isNaN(limits.maxSteps)).toBe(true);
+      } else {
+        expect(limits.maxSteps).toBe(value);
+      }
+    }
+  });
+
+  it('ignores invalid maxTicksPerCall values when resolving max ticks', () => {
+    const invalidValues = [
+      -1,
+      -100,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+
+    for (const value of invalidValues) {
+      const limits = { maxTicksPerCall: value };
+      expect(resolveMaxTicksPerCall(limits)).toBeUndefined();
+      if (Number.isNaN(value)) {
+        expect(Number.isNaN(limits.maxTicksPerCall)).toBe(true);
+      } else {
+        expect(limits.maxTicksPerCall).toBe(value);
+      }
+    }
   });
 
   it('matches uninterrupted outcomes when chunked across calls', () => {
