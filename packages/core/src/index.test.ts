@@ -202,6 +202,32 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getCurrentStep()).toBe(2);
   });
 
+  it('fastForward returns 0 when delta does not reach a step', () => {
+    const { runtime } = createRuntime();
+
+    const stepsProcessed = runtime.fastForward(5);
+
+    expect(stepsProcessed).toBe(0);
+    expect(runtime.getCurrentStep()).toBe(0);
+    expect(runtime.getNextExecutableStep()).toBe(0);
+  });
+
+  it('fastForward accumulates remainder and advances steps', () => {
+    const { runtime } = createRuntime();
+
+    const firstAdvance = runtime.fastForward(25);
+
+    expect(firstAdvance).toBe(2);
+    expect(runtime.getCurrentStep()).toBe(2);
+    expect(runtime.getNextExecutableStep()).toBe(2);
+
+    const secondAdvance = runtime.fastForward(5);
+
+    expect(secondAdvance).toBe(1);
+    expect(runtime.getCurrentStep()).toBe(3);
+    expect(runtime.getNextExecutableStep()).toBe(3);
+  });
+
   it('records command failures when async handlers resolve to a failure result', async () => {
     const { runtime, queue, dispatcher } = createRuntime();
 

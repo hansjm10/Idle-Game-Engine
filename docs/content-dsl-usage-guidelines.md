@@ -881,6 +881,13 @@ in mind before you run validation:
 - [ ] Document non-obvious tags or visibility flags in the package README so
   reviewers capture intent.
 
+## Offline Progression Fast Path
+
+Use `metadata.offlineProgression` to opt into constant-rate offline restores:
+
+- Supply `mode: "constant-rates"` with `preconditions` (`constantRates`, `noUnlocks`, `noAchievements`, `noAutomation`, `modeledResourceBounds`).
+- Omit the block if any precondition is false so restores fall back to step-based catch-up.
+
 ## Declaring Dependencies
 
 Model relationships through `metadata.dependencies`:

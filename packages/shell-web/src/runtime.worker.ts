@@ -11,10 +11,12 @@ import {
   setGameState,
   getGameState,
   buildProgressionSnapshot,
+  applyOfflineProgress,
   registerResourceCommandHandlers,
   registerAutomationCommandHandlers,
   registerOfflineCatchupCommandHandler,
   createAutomationSystem,
+  createProductionSystem,
   createTransformSystem,
   createResourceStateAdapter,
   createProgressionCoordinator,
@@ -24,6 +26,7 @@ import {
   type ProgressionResourceState,
   type DiagnosticTimelineResult,
   type EventBus,
+  type OfflineProgressFastPathPreconditions,
   type ResourceCommandHandlerOptions,
 } from '@idle-engine/core';
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
@@ -57,6 +60,7 @@ import {
   type RuntimeWorkerSessionRestored,
   type RuntimeWorkerRequestSessionSnapshot,
   type RuntimeWorkerSessionSnapshot,
+  type OfflineProgressSnapshot,
   type RuntimeWorkerSocialCommand,
   type RuntimeWorkerSocialCommandResult,
   type RuntimeWorkerSocialCommandFailure,
@@ -156,6 +160,7 @@ export function initializeRuntimeWorker(
   }
 
   const content = options.content ?? sampleContent;
+  const offlineProgressionConfig = content.metadata.offlineProgression;
 
   const progressionCoordinator = createProgressionCoordinator({
     content,
@@ -219,6 +224,36 @@ export function initializeRuntimeWorker(
     resourceState: resourceStateAdapter,
     conditionContext: progressionCoordinator.getConditionContext(),
   });
+
+  const enableProduction = content.generators.length > 0;
+  const applyViaFinalizeTick = true;
+  const productionSystem = enableProduction
+    ? createProductionSystem({
+        applyViaFinalizeTick,
+        generators: () =>
+          (progressionCoordinator.state.generators ?? []).map(
+            (generator) => ({
+              id: generator.id,
+              owned: generator.owned,
+              enabled: generator.enabled,
+              produces: generator.produces ?? [],
+              consumes: generator.consumes ?? [],
+            }),
+          ),
+        resourceState: progressionCoordinator.resourceState,
+      })
+    : undefined;
+
+  if (productionSystem) {
+    runtime.addSystem(productionSystem);
+    if (applyViaFinalizeTick) {
+      runtime.addSystem({
+        id: 'resource-finalize',
+        tick: ({ deltaMs }) =>
+          progressionCoordinator.resourceState.finalizeTick(deltaMs),
+      });
+    }
+  }
 
   runtime.addSystem(automationSystem);
   runtime.addSystem(transformSystem);
@@ -287,6 +322,26 @@ export function initializeRuntimeWorker(
   const monotonicClock = createMonotonicClock(now);
 
   let lastTimestamp = now() - stepDurationMs;
+  let lastResourceNetRates: Record<string, number> | null = null;
+
+  const captureResourceNetRates = (
+    resources: readonly { id: string; perSecond: number }[],
+  ): void => {
+    const netRates: Record<string, number> = {};
+    for (const resource of resources) {
+      if (typeof resource.id !== 'string' || resource.id.length === 0) {
+        lastResourceNetRates = null;
+        return;
+      }
+      const rate = resource.perSecond;
+      if (!Number.isFinite(rate)) {
+        lastResourceNetRates = null;
+        return;
+      }
+      netRates[resource.id] = rate;
+    }
+    lastResourceNetRates = netRates;
+  };
 
   const emitCommandFailures = () => {
     const commandFailures = runtime.drainCommandFailures();
@@ -352,6 +407,14 @@ export function initializeRuntimeWorker(
           },
         },
       );
+      if (
+        offlineProgressionConfig &&
+        areFastPathPreconditionsMet(
+          offlineProgressionConfig.preconditions,
+        )
+      ) {
+        captureResourceNetRates(progression.resources);
+      }
       const transforms = Object.freeze({
         step: currentStep,
         publishedAt,
@@ -778,6 +841,80 @@ export function initializeRuntimeWorker(
     }
   }
 
+  function areFastPathPreconditionsMet(
+    preconditions: OfflineProgressFastPathPreconditions,
+  ): boolean {
+    return (
+      preconditions.constantRates &&
+      preconditions.noUnlocks &&
+      preconditions.noAchievements &&
+      preconditions.noAutomation &&
+      preconditions.modeledResourceBounds
+    );
+  }
+
+  const parseOfflineProgression = (
+    value: RuntimeWorkerRestoreSession['offlineProgression'],
+  ): OfflineProgressSnapshot | undefined => {
+    if (!isRecord(value)) {
+      return undefined;
+    }
+
+    const mode = value.mode;
+    if (mode !== 'constant-rates') {
+      return undefined;
+    }
+
+    const resourceNetRates = value.resourceNetRates;
+    if (
+      !isRecord(resourceNetRates) ||
+      Array.isArray(resourceNetRates)
+    ) {
+      return undefined;
+    }
+
+    for (const rate of Object.values(resourceNetRates)) {
+      if (typeof rate !== 'number' || !Number.isFinite(rate)) {
+        return undefined;
+      }
+    }
+
+    const preconditions = value.preconditions;
+    if (!isRecord(preconditions)) {
+      return undefined;
+    }
+
+    const {
+      constantRates,
+      noUnlocks,
+      noAchievements,
+      noAutomation,
+      modeledResourceBounds,
+    } = preconditions;
+
+    if (
+      typeof constantRates !== 'boolean' ||
+      typeof noUnlocks !== 'boolean' ||
+      typeof noAchievements !== 'boolean' ||
+      typeof noAutomation !== 'boolean' ||
+      typeof modeledResourceBounds !== 'boolean'
+    ) {
+      return undefined;
+    }
+
+    return {
+      mode,
+      resourceNetRates: resourceNetRates as Record<string, number>,
+      preconditions: {
+        constantRates,
+        noUnlocks,
+        noAchievements,
+        noAutomation,
+        modeledResourceBounds,
+      },
+    };
+  };
+
   const handleRestoreSessionMessage = (
     message: RuntimeWorkerRestoreSession,
   ) => {
@@ -918,7 +1055,37 @@ export function initializeRuntimeWorker(
       const hasOfflineCatchup =
         offlineElapsedMs > 0 || Object.keys(offlineResourceDeltas).length > 0;
 
-      if (hasOfflineCatchup) {
+      const offlineProgression = parseOfflineProgression(
+        message.offlineProgression,
+      );
+      if (message.offlineProgression !== undefined && !offlineProgression) {
+        telemetry.recordWarning('OfflineProgressionSnapshotInvalid', {
+          reason: 'invalid_payload',
+        });
+      }
+
+      const isFastPathEnabled =
+        offlineProgressionConfig !== undefined &&
+        areFastPathPreconditionsMet(
+          offlineProgressionConfig.preconditions,
+        );
+      const shouldApplyFastPath =
+        offlineElapsedMs > 0 &&
+        offlineProgression !== undefined &&
+        isFastPathEnabled &&
+        areFastPathPreconditionsMet(offlineProgression.preconditions) &&
+        typeof runtime.fastForward === 'function';
+
+      if (shouldApplyFastPath) {
+        applyOfflineProgress({
+          elapsedMs: offlineElapsedMs,
+          coordinator: progressionCoordinator,
+          productionSystem,
+          runtime,
+          resourceDeltas: offlineResourceDeltas,
+          fastPath: offlineProgression,
+        });
+      } else if (hasOfflineCatchup) {
         commandQueue.enqueue({
           type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
           payload: {
@@ -1000,6 +1167,19 @@ export function initializeRuntimeWorker(
       const monotonicMs = monotonicClock.now();
       const capturedAt = new Date().toISOString();
       const contentDigest = progressionCoordinator.resourceState.getDefinitionDigest();
+      const offlineProgression =
+        offlineProgressionConfig &&
+        areFastPathPreconditionsMet(
+          offlineProgressionConfig.preconditions,
+        ) &&
+        lastResourceNetRates !== null
+          ? {
+              mode:
+                offlineProgressionConfig.mode ?? 'constant-rates',
+              resourceNetRates: { ...lastResourceNetRates },
+              preconditions: offlineProgressionConfig.preconditions,
+            }
+          : undefined;
 
       const snapshotEnvelope: RuntimeWorkerSessionSnapshot = {
         type: 'SESSION_SNAPSHOT',
@@ -1015,6 +1195,7 @@ export function initializeRuntimeWorker(
           commandQueue: commandQueueSnapshot,
           runtimeVersion: RUNTIME_VERSION,
           contentDigest,
+          ...(offlineProgression ? { offlineProgression } : {}),
         },
       };
 
@@ -1022,6 +1203,7 @@ export function initializeRuntimeWorker(
       const snapshotBytes = JSON.stringify({
         state,
         commandQueue: commandQueueSnapshot,
+        offlineProgression,
       }).length;
       const snapshotKB = (snapshotBytes / 1024).toFixed(2);
 

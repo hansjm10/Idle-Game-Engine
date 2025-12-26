@@ -79,6 +79,23 @@ const linkSchema = z
   })
   .strict();
 
+const offlineProgressionPreconditionsSchema = z
+  .object({
+    constantRates: z.boolean(),
+    noUnlocks: z.boolean(),
+    noAchievements: z.boolean(),
+    noAutomation: z.boolean(),
+    modeledResourceBounds: z.boolean(),
+  })
+  .strict();
+
+const offlineProgressionSchema = z
+  .object({
+    mode: z.literal('constant-rates').optional(),
+    preconditions: offlineProgressionPreconditionsSchema,
+  })
+  .strict();
+
 const sortCaseInsensitive = (values: readonly string[]): string[] =>
   [...values].sort((left, right) =>
     left.localeCompare(right, undefined, { sensitivity: 'base' }),
@@ -211,6 +228,7 @@ const baseMetadataSchema = z
     createdAt: isoDateSchema.optional(),
     updatedAt: isoDateSchema.optional(),
     visibility: z.enum(['public', 'private', 'experimental'] as const).optional(),
+    offlineProgression: offlineProgressionSchema.optional(),
     dependencies: dependencyCollectionSchema.optional(),
   })
   .strict()

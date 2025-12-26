@@ -3,6 +3,7 @@ import type {
   SerializedResourceState,
   ResourceDefinitionDigest,
 } from '@idle-engine/core';
+import type { OfflineProgressSnapshot } from '@idle-engine/runtime-bridge-contracts';
 import { PERSISTENCE_SCHEMA_VERSION } from '@idle-engine/core';
 import { recordTelemetryError } from './telemetry-utils.js';
 
@@ -72,6 +73,7 @@ export interface StoredSessionSnapshot {
   readonly commandQueue?: SerializedCommandQueue;
   readonly runtimeVersion: string;
   readonly contentDigest: ResourceDefinitionDigest;
+  readonly offlineProgression?: OfflineProgressSnapshot;
   /**
    * Content pack manifests for migration tracking.
    * Each entry captures the pack's identity, version, and digest at save time.

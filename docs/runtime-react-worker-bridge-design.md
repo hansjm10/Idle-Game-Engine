@@ -236,13 +236,13 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 
 **Save / Autosave**
 1. Shell calls `WorkerBridge.requestSessionSnapshot(reason)` (new API) when autosave timers, user actions, or shutdown events fire. The bridge enqueues a `REQUEST_SESSION_SNAPSHOT` message after `awaitReady()` and outside `restoreSession` windows.
-2. Worker captures deterministic data: `SerializedResourceState` via `resourceState.exportForSave()`, pending commands via `commandQueue.exportForSave()`, current tick step, and monotonic clock reference. It responds with `SESSION_SNAPSHOT { requestId, capturedAt, state, commandQueue, step, monotonicNow }`.
+2. Worker captures deterministic data: `SerializedResourceState` via `resourceState.exportForSave()`, pending commands via `commandQueue.exportForSave()`, current tick step, monotonic clock reference, and optional offline progression metadata (mode, net rates, preconditions) when `content.metadata.offlineProgression` opts in. It responds with `SESSION_SNAPSHOT { requestId, capturedAt, state, commandQueue, step, monotonicNow, offlineProgression }`.
 3. Shell adapter normalises metadata (e.g., converts `capturedAt` to UTC, clamps offline caps) and writes the entry to the `sessions` object store within a single IndexedDB transaction. On error it surfaces telemetry through the existing `WorkerBridge` error channel.
 
 **Restore**
 1. Shell reads the latest slot at startup (or when the user selects a save) and validates it against current content definitions using `reconcileSaveAgainstDefinitions`.
 2. Shell computes offline elapsed time as `min(now - capturedAt, OFFLINE_CAP_MS)` and derives optional `resourceDeltas` if migrations supply them.
-3. Shell calls `WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, resourceDeltas })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`.
+3. Shell calls `WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, resourceDeltas, offlineProgression })`. The worker follows the existing restore path, emitting either `SESSION_RESTORED` or `ERROR { code: 'RESTORE_FAILED' }`. Fast-path restores require runtime `fastForward` support and a valid `offlineProgression` payload; otherwise the worker falls back to step-based offline catch-up.
 4. On success the shell resumes normal command flow; on failure it records telemetry, surfaces UI prompts, and may retry after running migrations.
 
 **Stored Payload (v1)**
@@ -255,12 +255,14 @@ Full build, rollout, and troubleshooting procedures live in the [Runtime->React 
 - `commandQueue`: `SerializedCommandQueue` (optional pending commands captured at snapshot time).
 - `runtimeVersion`: semver string of `@idle-engine/core`.
 - `contentDigest`: `ResourceDefinitionDigest` for compatibility checks.
+- `offlineProgression`: optional `{ mode, resourceNetRates, preconditions }` captured from the latest state update when the content pack declares fast-path metadata.
 - `flags`: `{ pendingMigration?: boolean; abortedRestore?: boolean }`.
 
 **Migration Considerations**
 - Content packs publish digests; the adapter compares stored `contentDigest` against the live pack before restore. When digests diverge but a pack-supplied migration exists, the adapter runs it prior to calling `restoreSession`.
 - Schema upgrades use IndexedDB version migrations. Each bump records a deterministic transform function so older saves can be rewritten in place without loading them into the worker.
 - Record `runtimeVersion` and `persistenceSchemaVersion` to gate restores when the runtime introduces breaking changes. Future workers can advertise supported versions via `READY { supportedPersistence }`.
+- Clear `offlineProgression` after migrations to avoid applying stale net-rate snapshots; migrated restores fall back to step-based offline catch-up.
 - For detailed guidance on authoring migrations, see [Persistence Migration Guide](./persistence-migration-guide.md).
 
 **Risks & Mitigations**

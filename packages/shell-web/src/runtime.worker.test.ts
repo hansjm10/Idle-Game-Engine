@@ -13,6 +13,7 @@ import {
   type RuntimeWorkerError,
   SOCIAL_COMMAND_TYPES,
   type RuntimeWorkerSocialCommandResult,
+  type RuntimeWorkerSessionSnapshot,
 } from '@idle-engine/runtime-bridge-contracts';
 import { setSocialConfigOverrideForTesting } from './modules/social-config.js';
 import {
@@ -22,7 +23,9 @@ import {
 } from './test-utils.js';
 import {
   createContentPack,
+  createGeneratorDefinition,
   createResourceDefinition,
+  literalOne,
 } from './modules/test-helpers.js';
 import type { NormalizedTransform } from '@idle-engine/content-schema';
 
@@ -1581,6 +1584,277 @@ describe('runtime.worker integration', () => {
       expect(stateUpdate).toBeDefined();
     });
 
+    it('applies offline fast path when preconditions are met', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const preconditions = {
+        constantRates: true,
+        noUnlocks: true,
+        noAchievements: true,
+        noAutomation: true,
+        modeledResourceBounds: true,
+      };
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions,
+          },
+        },
+        resources: [createResourceDefinition('sample-pack.energy')],
+      });
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+        content,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': 1,
+          },
+          preconditions,
+        },
+      });
+
+      expect(enqueueSpy).not.toHaveBeenCalled();
+
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+    });
+
+    it('uses production system when applying offline fast path', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const preconditions = {
+        constantRates: true,
+        noUnlocks: true,
+        noAchievements: true,
+        noAutomation: true,
+        modeledResourceBounds: true,
+      };
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions,
+          },
+        },
+        resources: [createResourceDefinition('pack.test.energy')],
+        generators: [
+          createGeneratorDefinition('pack.test.reactor', {
+            initialLevel: 1,
+            purchase: {
+              currencyId: 'pack.test.energy',
+              costMultiplier: 1,
+              costCurve: literalOne,
+            },
+            produces: [
+              {
+                resourceId: 'pack.test.energy',
+                rate: literalOne,
+              },
+            ],
+          }),
+        ],
+      });
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+        content,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['pack.test.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'pack.test.energy': 0,
+          },
+          preconditions,
+        },
+      });
+
+      expect(enqueueSpy).not.toHaveBeenCalled();
+
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('pack.test.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+    });
+
+    it('falls back when offline progression preconditions are not met', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      const warningSpy = vi.spyOn(core.telemetry, 'recordWarning');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions: {
+              constantRates: true,
+              noUnlocks: true,
+              noAchievements: true,
+              noAutomation: true,
+              modeledResourceBounds: true,
+            },
+          },
+        },
+        resources: [createResourceDefinition('sample-pack.energy')],
+      });
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+        content,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': 1,
+          },
+          preconditions: {
+            constantRates: true,
+            noUnlocks: true,
+            noAchievements: true,
+            noAutomation: false,
+            modeledResourceBounds: true,
+          },
+        },
+      });
+
+      expect(warningSpy).not.toHaveBeenCalledWith(
+        'OfflineProgressionSnapshotInvalid',
+        { reason: 'invalid_payload' },
+      );
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+        type: string;
+        payload: { elapsedMs: number };
+        priority: core.CommandPriority;
+      };
+      expect(offlineCommand.type).toBe(
+        core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      );
+      expect(offlineCommand.payload.elapsedMs).toBe(1000);
+      expect(offlineCommand.priority).toBe(core.CommandPriority.SYSTEM);
+    });
+
+    it('warns and falls back when offline progression payload is invalid', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      const warningSpy = vi.spyOn(core.telemetry, 'recordWarning');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': Number.POSITIVE_INFINITY,
+          },
+          preconditions: {
+            constantRates: true,
+            noUnlocks: true,
+            noAchievements: true,
+            noAutomation: true,
+            modeledResourceBounds: true,
+          },
+        },
+      });
+
+      expect(warningSpy).toHaveBeenCalledWith(
+        'OfflineProgressionSnapshotInvalid',
+        { reason: 'invalid_payload' },
+      );
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+        type: string;
+        payload: { elapsedMs: number };
+        priority: core.CommandPriority;
+      };
+      expect(offlineCommand.type).toBe(
+        core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      );
+      expect(offlineCommand.payload.elapsedMs).toBe(1000);
+      expect(offlineCommand.priority).toBe(core.CommandPriority.SYSTEM);
+    });
+
     it('handles rapid command dispatch without dropping messages', () => {
       const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
       vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -1841,6 +2115,64 @@ describe('session snapshot protocol', () => {
     expect(Array.isArray(snapshotEnvelope.snapshot.contentDigest.ids)).toBe(true);
     expect(snapshotEnvelope.snapshot.state).toBeDefined();
     expect(snapshotEnvelope.snapshot.commandQueue).toBeDefined();
+  });
+
+  it('includes offline progression metadata when configured', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+    const preconditions = {
+      constantRates: true,
+      noUnlocks: true,
+      noAchievements: true,
+      noAutomation: true,
+      modeledResourceBounds: true,
+    };
+
+    const content = createContentPack({
+      metadata: {
+        offlineProgression: {
+          mode: 'constant-rates',
+          preconditions,
+        },
+      },
+      resources: [createResourceDefinition('pack.test.energy')],
+    });
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+      content,
+    });
+
+    timeController.advanceTime(110);
+    timeController.runTick();
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'REQUEST_SESSION_SNAPSHOT',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      requestId: 'snap-offline',
+    });
+
+    const snapshotCall = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'SESSION_SNAPSHOT',
+    );
+    expect(snapshotCall).toBeDefined();
+
+    const snapshotEnvelope = snapshotCall![0] as RuntimeWorkerSessionSnapshot;
+    const offlineProgression = snapshotEnvelope.snapshot.offlineProgression;
+
+    expect(offlineProgression).toBeDefined();
+    expect(offlineProgression?.mode).toBe('constant-rates');
+    expect(offlineProgression?.preconditions).toEqual(preconditions);
+    expect(
+      typeof offlineProgression?.resourceNetRates['pack.test.energy'],
+    ).toBe('number');
   });
 
   it('documents snapshot gating during session restoration', () => {
