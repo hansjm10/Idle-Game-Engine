@@ -233,6 +233,36 @@ describe('applyOfflineProgress', () => {
     expect(state.getAmount(energyIndex)).toBe(0);
   });
 
+  it('applies resource deltas before fast-path net rates', () => {
+    const harness = createHarness(0);
+    const state = harness.coordinator.resourceState;
+    const goldIndex = state.requireIndex('resource.gold');
+
+    applyOfflineProgress({
+      elapsedMs: STEP_SIZE_MS * 2,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      resourceDeltas: {
+        'resource.gold': -10,
+      },
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: {
+          'resource.gold': 10,
+        },
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(state.getAmount(goldIndex)).toBeCloseTo(2, 6);
+  });
+
   it('batches ticks when the runtime advances the coordinator', () => {
     const baseline = createHarness(0);
     registerProgressionCoordinatorSystem(baseline.runtime, baseline.coordinator);
@@ -411,6 +441,58 @@ describe('applyOfflineProgress', () => {
           noUnlocks: true,
           noAchievements: true,
           noAutomation: false,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(tickSpy).toHaveBeenCalled();
+    expect(fallback.runtime.getCurrentStep()).toBe(expected.runtime.getCurrentStep());
+    expect(fallback.coordinator.resourceState.exportForSave()).toEqual(
+      expected.coordinator.resourceState.exportForSave(),
+    );
+    expect(
+      normalizeAccumulators(fallback.productionSystem.exportAccumulators()),
+    ).toEqual(
+      normalizeAccumulators(expected.productionSystem.exportAccumulators()),
+    );
+  });
+
+  it('falls back to tick path when runtime lacks fastForward', () => {
+    const offlineElapsedMs = STEP_SIZE_MS * 12;
+    const netRates = { 'resource.gold': 8 };
+
+    const expected = createHarness(0);
+    setupConstantRateHarness(expected);
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: expected.coordinator,
+      runtime: expected.runtime,
+    });
+
+    const fallback = createHarness(0);
+    setupConstantRateHarness(fallback);
+    const tickSpy = vi.spyOn(fallback.runtime, 'tick');
+
+    const runtimeWithoutFastForward = {
+      tick: (deltaMs: number) => fallback.runtime.tick(deltaMs),
+      getCurrentStep: () => fallback.runtime.getCurrentStep(),
+      getStepSizeMs: () => fallback.runtime.getStepSizeMs(),
+      getMaxStepsPerFrame: () => fallback.runtime.getMaxStepsPerFrame(),
+    };
+
+    applyOfflineProgress({
+      elapsedMs: offlineElapsedMs,
+      coordinator: fallback.coordinator,
+      runtime: runtimeWithoutFastForward,
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: netRates,
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
           modeledResourceBounds: true,
         },
       },
