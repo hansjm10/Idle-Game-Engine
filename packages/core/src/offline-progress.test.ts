@@ -652,6 +652,54 @@ describe('applyOfflineProgress', () => {
     );
   });
 
+  it('reports progress when using the constant-rate fast path', () => {
+    const elapsedMs = STEP_SIZE_MS * 5 + 50;
+    const totalSteps = Math.floor(elapsedMs / STEP_SIZE_MS);
+    const netRates = { 'resource.gold': 8 };
+
+    const harness = createHarness(0);
+    setupConstantRateHarness(harness);
+    const progressSpy = vi.fn();
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      onProgress: progressSpy,
+      fastPath: {
+        mode: 'constant-rates',
+        resourceNetRates: netRates,
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(progressSpy).toHaveBeenCalledTimes(1);
+    const progress = progressSpy.mock.calls[0]?.[0];
+    expect(progress).toEqual({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: totalSteps,
+      totalSteps,
+      remainingMs: 0,
+      remainingSteps: 0,
+    });
+    expect(result).toMatchObject({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: totalSteps,
+      totalSteps,
+      remainingMs: 0,
+      remainingSteps: 0,
+      completed: true,
+    });
+  });
+
   it('keeps production accumulators in sync when fast path uses production system', () => {
     const offlineElapsedMs = STEP_SIZE_MS * 14;
     const netRates = { 'resource.gold': 8 };

@@ -361,10 +361,13 @@ describe('WorkerBridgeImpl', () => {
 
     await expect(
       bridge.restoreSession({ maxSteps: -1 }),
-    ).rejects.toThrow('maxSteps must be a non-negative finite number');
+    ).rejects.toThrow('maxSteps must be a non-negative finite integer');
     await expect(
       bridge.restoreSession({ maxSteps: Number.NaN }),
-    ).rejects.toThrow('maxSteps must be a non-negative finite number');
+    ).rejects.toThrow('maxSteps must be a non-negative finite integer');
+    await expect(
+      bridge.restoreSession({ maxSteps: 1.5 }),
+    ).rejects.toThrow('maxSteps must be a non-negative finite integer');
 
     expect(worker.postMessage).not.toHaveBeenCalled();
   });

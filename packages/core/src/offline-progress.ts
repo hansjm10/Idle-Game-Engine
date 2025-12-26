@@ -37,6 +37,9 @@ export type ApplyOfflineProgressOptions = Readonly<{
     getMaxStepsPerFrame?: () => number;
     fastForward?: (deltaMs: number) => number;
   }>;
+  /**
+   * Applied once per call; omit on subsequent chunked calls to avoid reapplying.
+   */
   readonly resourceDeltas?: Readonly<Record<string, number>>;
   readonly limits?: OfflineProgressLimits;
   readonly fastPath?: OfflineProgressFastPathOptions;

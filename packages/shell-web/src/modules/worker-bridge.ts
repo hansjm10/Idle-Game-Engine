@@ -530,10 +530,12 @@ export class WorkerBridgeImpl<TState = unknown>
 
     if (
       payload.maxSteps !== undefined &&
-      (!Number.isFinite(payload.maxSteps) || payload.maxSteps < 0)
+      (!Number.isFinite(payload.maxSteps) ||
+        payload.maxSteps < 0 ||
+        !Number.isInteger(payload.maxSteps))
     ) {
       return Promise.reject(
-        new Error('maxSteps must be a non-negative finite number'),
+        new Error('maxSteps must be a non-negative finite integer'),
       );
     }
 

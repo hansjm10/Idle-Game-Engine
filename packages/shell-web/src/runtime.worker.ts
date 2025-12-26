@@ -972,10 +972,11 @@ export function initializeRuntimeWorker(
         message.maxSteps !== undefined &&
         (typeof message.maxSteps !== 'number' ||
           !Number.isFinite(message.maxSteps) ||
-          message.maxSteps < 0)
+          message.maxSteps < 0 ||
+          !Number.isInteger(message.maxSteps))
       ) {
         throw Object.assign(
-          new Error('maxSteps must be a non-negative finite number'),
+          new Error('maxSteps must be a non-negative finite integer'),
           {
             code: 'INVALID_RESTORE_MAX_STEPS' as const,
             details: { maxSteps: message.maxSteps },
