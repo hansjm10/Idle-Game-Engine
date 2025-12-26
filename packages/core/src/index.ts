@@ -265,6 +265,23 @@ export class IdleEngineRuntime {
     this.accumulator += deltaMs;
   }
 
+  fastForward(deltaMs: number): number {
+    if (typeof deltaMs !== 'number' || !Number.isFinite(deltaMs) || deltaMs <= 0) {
+      return 0;
+    }
+
+    this.accumulator += deltaMs;
+    const steps = Math.floor(this.accumulator / this.stepSizeMs);
+    if (steps <= 0) {
+      return 0;
+    }
+
+    this.accumulator -= steps * this.stepSizeMs;
+    this.currentStep += steps;
+    this.nextExecutableStep = this.currentStep;
+    return steps;
+  }
+
   getEventBus(): EventBus {
     return this.eventBus;
   }
@@ -1480,6 +1497,9 @@ export {
 export {
   applyOfflineProgress,
   type ApplyOfflineProgressOptions,
+  type OfflineProgressFastPathMode,
+  type OfflineProgressFastPathOptions,
+  type OfflineProgressFastPathPreconditions,
   type OfflineProgressLimits,
   type OfflineProgressResult,
   type OfflineProgressUpdate,

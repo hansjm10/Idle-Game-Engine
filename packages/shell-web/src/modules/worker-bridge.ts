@@ -27,6 +27,7 @@ import {
   type SocialCommandType,
   type RuntimeWorkerSocialCommandFailure,
   SOCIAL_COMMAND_TYPES,
+  type OfflineProgressSnapshot,
 } from '@idle-engine/runtime-bridge-contracts';
 import { isSocialCommandsEnabled } from './social-config.js';
 import { isWorkerBridgeEnabled } from './worker-bridge-config.js';
@@ -43,6 +44,7 @@ export interface WorkerRestoreSessionPayload {
   readonly maxElapsedMs?: number;
   readonly maxSteps?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
+  readonly offlineProgression?: OfflineProgressSnapshot;
   /**
    * Optional: worker step recorded in the save snapshot. If provided, the
    * worker rebases absolute step fields (like automation cooldowns) to the
@@ -125,6 +127,7 @@ export interface SessionSnapshotPayload {
   readonly commandQueue?: SerializedCommandQueue;
   readonly runtimeVersion: string;
   readonly contentDigest: ResourceDefinitionDigest;
+  readonly offlineProgression?: OfflineProgressSnapshot;
   readonly flags?: {
     readonly pendingMigration?: boolean;
     readonly abortedRestore?: boolean;
@@ -564,6 +567,9 @@ export class WorkerBridgeImpl<TState = unknown>
       }),
       ...(payload.resourceDeltas !== undefined && {
         resourceDeltas: payload.resourceDeltas,
+      }),
+      ...(payload.offlineProgression !== undefined && {
+        offlineProgression: payload.offlineProgression,
       }),
       ...(payload.savedWorkerStep !== undefined && {
         savedWorkerStep: payload.savedWorkerStep,

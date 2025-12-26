@@ -61,6 +61,61 @@ describe('metadataSchema', () => {
     ).toThrowError(/supported locales/i);
   });
 
+  it('accepts offline progression metadata', () => {
+    const result = metadataSchema.parse({
+      id: 'sample-pack',
+      title: { default: 'Idle Pack', variants: {} },
+      version: '1.0.0',
+      engine: '^1.0.0',
+      defaultLocale: 'en-US',
+      supportedLocales: ['en-US'],
+      offlineProgression: {
+        mode: 'constant-rates',
+        preconditions: {
+          constantRates: true,
+          noUnlocks: true,
+          noAchievements: true,
+          noAutomation: true,
+          modeledResourceBounds: true,
+        },
+      },
+    });
+
+    expect(result.offlineProgression).toEqual({
+      mode: 'constant-rates',
+      preconditions: {
+        constantRates: true,
+        noUnlocks: true,
+        noAchievements: true,
+        noAutomation: true,
+        modeledResourceBounds: true,
+      },
+    });
+  });
+
+  it('rejects offline progression metadata with invalid preconditions', () => {
+    expect(() =>
+      metadataSchema.parse({
+        id: 'sample-pack',
+        title: { default: 'Idle Pack', variants: {} },
+        version: '1.0.0',
+        engine: '^1.0.0',
+        defaultLocale: 'en-US',
+        supportedLocales: ['en-US'],
+        offlineProgression: {
+          mode: 'constant-rates',
+          preconditions: {
+            constantRates: true,
+            noUnlocks: 'no' as unknown as boolean,
+            noAchievements: true,
+            noAutomation: true,
+            modeledResourceBounds: true,
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
   it('rejects self-referential dependencies', () => {
     expect(() =>
       metadataSchema.parse({

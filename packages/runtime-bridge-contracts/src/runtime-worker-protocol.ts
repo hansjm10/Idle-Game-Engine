@@ -6,9 +6,11 @@ import type {
   ProgressionSnapshot,
   TransformSnapshot,
   ResourceDefinitionDigest,
+  OfflineProgressFastPathMode,
+  OfflineProgressFastPathPreconditions,
 } from '@idle-engine/core';
 
-export const WORKER_MESSAGE_SCHEMA_VERSION = 3;
+export const WORKER_MESSAGE_SCHEMA_VERSION = 4;
 
 export enum CommandSource {
   PLAYER = 'PLAYER',
@@ -31,6 +33,12 @@ export interface RuntimeStatePayload {
   readonly backPressure: BackPressureSnapshot;
   readonly progression: ProgressionSnapshot;
   readonly transforms?: TransformSnapshot;
+}
+
+export interface OfflineProgressSnapshot {
+  readonly mode: OfflineProgressFastPathMode;
+  readonly resourceNetRates: Readonly<Record<string, number>>;
+  readonly preconditions: OfflineProgressFastPathPreconditions;
 }
 
 export interface RuntimeWorkerCommand<TPayload = unknown> {
@@ -191,6 +199,7 @@ export interface RuntimeWorkerRestoreSession {
   readonly maxElapsedMs?: number;
   readonly maxSteps?: number;
   readonly resourceDeltas?: Readonly<Record<string, number>>;
+  readonly offlineProgression?: OfflineProgressSnapshot;
   /**
    * Optional: worker step when the snapshot was captured.
    * When provided, the worker rebases any absolute step fields (e.g., automation
@@ -273,6 +282,7 @@ export interface RuntimeWorkerSessionSnapshot {
     readonly commandQueue?: SerializedCommandQueue;
     readonly runtimeVersion: string;
     readonly contentDigest: ResourceDefinitionDigest;
+    readonly offlineProgression?: OfflineProgressSnapshot;
     readonly flags?: {
       readonly pendingMigration?: boolean;
       readonly abortedRestore?: boolean;

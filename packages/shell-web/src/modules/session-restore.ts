@@ -153,6 +153,7 @@ export async function restoreSession(
               state: migrationResult.migratedState,
               contentDigest: currentDigest,
               capturedAt: new Date().toISOString(),
+              offlineProgression: undefined,
             };
             await adapter.save(migratedSnapshot);
             recordTelemetryEvent('PersistenceMigratedStateSaved', { slotId });
@@ -269,6 +270,7 @@ export async function restoreSession(
               state: migrationResult.migratedState,
               contentDigest: currentDigest,
               capturedAt: new Date().toISOString(),
+              offlineProgression: undefined,
             };
             await adapter.save(migratedSnapshot);
             recordTelemetryEvent('PersistenceMigratedStateSaved', { slotId });
@@ -332,6 +334,7 @@ export async function restoreSession(
       commandQueue: snapshot.commandQueue,
       elapsedMs,
       maxElapsedMs,
+      offlineProgression: snapshot.offlineProgression,
       savedWorkerStep: snapshot.workerStep,
       // resourceDeltas would come from migration transforms
     });
