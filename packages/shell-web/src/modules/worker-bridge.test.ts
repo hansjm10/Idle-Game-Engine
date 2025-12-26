@@ -301,6 +301,34 @@ describe('WorkerBridgeImpl', () => {
     expect(commandEnvelope.type).toBe('COMMAND');
   });
 
+  it('rejects restore payloads with invalid maxElapsedMs values', async () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
+
+    await expect(
+      bridge.restoreSession({ maxElapsedMs: -1 }),
+    ).rejects.toThrow('maxElapsedMs must be a non-negative finite number');
+    await expect(
+      bridge.restoreSession({ maxElapsedMs: Number.POSITIVE_INFINITY }),
+    ).rejects.toThrow('maxElapsedMs must be a non-negative finite number');
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects restore payloads with invalid maxSteps values', async () => {
+    const worker = new MockWorker();
+    const bridge = new WorkerBridgeImpl(worker as WorkerBridgeWorker);
+
+    await expect(
+      bridge.restoreSession({ maxSteps: -1 }),
+    ).rejects.toThrow('maxSteps must be a non-negative finite number');
+    await expect(
+      bridge.restoreSession({ maxSteps: Number.NaN }),
+    ).rejects.toThrow('maxSteps must be a non-negative finite number');
+
+    expect(worker.postMessage).not.toHaveBeenCalled();
+  });
+
   it('rejects session restore when the worker reports a failure', async () => {
     const telemetrySpy = vi.fn();
     (globalThis as {

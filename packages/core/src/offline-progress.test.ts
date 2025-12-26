@@ -298,6 +298,40 @@ describe('applyOfflineProgress', () => {
     });
   });
 
+  it('reports progress for remainder elapsed time', () => {
+    const harness = createHarness(0);
+    const progressSpy = vi.fn();
+    const elapsedMs = STEP_SIZE_MS * 2 + 50;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      onProgress: progressSpy,
+    });
+
+    expect(progressSpy).toHaveBeenCalledTimes(3);
+    const lastProgress =
+      progressSpy.mock.calls[progressSpy.mock.calls.length - 1]?.[0];
+    expect(lastProgress).toEqual({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: 2,
+      totalSteps: 2,
+      remainingMs: 0,
+      remainingSteps: 0,
+    });
+    expect(result).toMatchObject({
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      processedSteps: 2,
+      totalSteps: 2,
+      remainingMs: 0,
+      remainingSteps: 0,
+      completed: true,
+    });
+  });
+
   it('caps elapsedMs while preserving remainder below the step cap', () => {
     const harness = createHarness(0);
 

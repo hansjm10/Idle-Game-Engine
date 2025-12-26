@@ -867,6 +867,70 @@ describe('runtime.worker integration', () => {
     expect(setGameStateSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects restore payloads with invalid maxElapsedMs values', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      maxElapsedMs: Number.POSITIVE_INFINITY,
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects restore payloads with invalid maxSteps values', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+    const setGameStateSpy = vi.spyOn(core, 'setGameState');
+
+    harness = initializeRuntimeWorker({
+      context: context as unknown as DedicatedWorkerGlobalScope,
+      now: timeController.now,
+      scheduleTick: timeController.scheduleTick,
+    });
+
+    context.postMessage.mockClear();
+
+    context.dispatch({
+      type: 'RESTORE_SESSION',
+      schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+      maxSteps: Number.NaN,
+    });
+
+    const restoreError = context.postMessage.mock.calls.find(
+      ([payload]) =>
+        (payload as { type?: string } | undefined)?.type === 'ERROR',
+    )?.[0] as RuntimeWorkerError | undefined;
+
+    expect(restoreError).toBeDefined();
+    expect(restoreError!.error).toMatchObject({
+      code: 'RESTORE_FAILED',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    expect(setGameStateSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects restore payloads with non-finite resource delta values', () => {
 
     vi.spyOn(console, 'warn').mockImplementation(() => {});
