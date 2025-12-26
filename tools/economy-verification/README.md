@@ -1,6 +1,6 @@
 # Economy Verification CLI
 
-Wraps the runtime verification helpers from `@idle-engine/core` (GEL-001) to project plausible hard-currency deltas over a bounded offline window.
+Wraps the runtime verification helpers from `@idle-engine/core` to project plausible currency deltas over a bounded offline window.
 
 ## Usage
 

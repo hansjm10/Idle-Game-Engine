@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Modules are declared in `pnpm-workspace.yaml`: `packages/core` contains the deterministic runtime with colocated `*.test.ts`, `packages/content-sample` ships reference data packs, and `packages/config-*` publish shared lint/test presets. Backend experiments sit in `services/social`, and command-line tooling in `tools/`. Generated `dist/` outputs are checked in for inspectors but should not be edited by hand.
+Modules are declared in `pnpm-workspace.yaml`: `packages/core` contains the deterministic runtime with colocated `*.test.ts`, `packages/content-sample` ships reference data packs, and `packages/config-*` publish shared lint/test presets. Command-line tooling lives in `tools/`. Generated `dist/` outputs are checked in for inspectors but should not be edited by hand.
 
 ## Build, Test, and Development Commands
 Use `pnpm install` with Node ≥20.10 and pnpm ≥8 to sync dependencies. `pnpm lint` runs eslint across the workspace, and `pnpm test` executes all Vitest suites in parallel; `pnpm test:ci` runs workspace `test:ci` scripts in parallel (tune with `TEST_CI_WORKSPACE_CONCURRENCY`), while `pnpm test:ci:serial` keeps the serialized order for debugging.

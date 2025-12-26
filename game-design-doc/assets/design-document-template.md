@@ -31,7 +31,7 @@ Provide a one-paragraph executive summary outlining the problem, proposed soluti
 ## 4. Stakeholders, Agents & Impacted Surfaces
 - **Primary Stakeholders**: _Teams or roles accountable for implementation._
 - **Agent Roles**: _Describe autonomous/AI agents that will act on the plan and their responsibilities (e.g., “Docs Agent”, “Runtime Implementation Agent”)._
-- **Affected Packages/Services**: _e.g., `packages/core`, `services/social`, `tools/content-schema-cli`._
+- **Affected Packages/Services**: _e.g., `packages/core`, `packages/content-schema`, `tools/content-schema-cli`._
 - **Compatibility Considerations**: _Backward/forward compatibility, API stability promises._
 
 ## 5. Current State

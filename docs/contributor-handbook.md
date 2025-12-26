@@ -23,7 +23,7 @@ context.
     workspace code or shared config changes.
   - `pnpm generate --check` runs for `content/**`, content tooling, and schema
     updates so packs stay fresh.
-  - Runtime/service changes trigger `pnpm --filter @idle-engine/core --filter @idle-engine/social-service run --if-present test:ci`.
+  - Runtime changes trigger `pnpm --filter @idle-engine/core run --if-present test:ci`.
   - Content pipeline changes trigger `pnpm --filter @idle-engine/content-compiler --filter @idle-engine/content-schema --filter @idle-engine/content-sample --filter @idle-engine/content-validation-cli run --if-present test:ci`.
   - The targeted markdown checks for `docs/content-dsl-usage-guidelines-design.md`
     remain unchanged.
@@ -58,7 +58,6 @@ context.
 
 - `packages/core` — deterministic runtime, command queue, telemetry
 - `packages/content-*` — declarative content DSL and sample packs
-- `services/` — backend experiments (leaderboards, guild services, auth)
 - `tools/` — validation CLIs and development helpers
 - `docs/` — design documents and the source for this documentation site
 

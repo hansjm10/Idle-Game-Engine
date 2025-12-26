@@ -72,7 +72,6 @@ Without a unified state synchronization protocol:
 ### Primary Stakeholders
 
 - Runtime Core maintainers (implementation)
-- Social Services maintainers (integration with GEL-001)
 - Shell maintainers (Worker bridge updates)
 
 ### Agent Roles
@@ -87,7 +86,6 @@ Without a unified state synchronization protocol:
 
 - `packages/core/src/` - New synchronization module
 - `packages/core/src/index.ts` - Public API exports
-- `services/social` - Future integration for server validation
 
 ### Compatibility Considerations
 
@@ -733,7 +731,7 @@ restorePartial(
 
 - **Phase 1**: Core APIs (`captureGameStateSnapshot`, `computeStateChecksum`, `restoreFromSnapshot`)
 - **Phase 2**: Debugging tools (`compareStates`, partial checksums)
-- **Phase 3**: Integration with services (GEL-001 validation, cloud sync)
+- **Phase 3**: Integration with future services (cloud sync)
 
 ### 7.3 Coordination Notes
 
@@ -860,7 +858,7 @@ Commands agents must run:
 
 1. **Core APIs**: Implement and test snapshot/checksum/restore
 2. **Integration**: Wire into Worker bridge for UI sync diagnostics
-3. **Server Validation**: Integrate with GEL-001 for server-side verification
+3. **Server Validation**: Integrate with future backend verification (TBD)
 
 ### Migration Strategy
 
@@ -899,7 +897,6 @@ support restore-and-continue determinism without changing the v1 schema.
 - `packages/core/src/index.ts:940-979` - Verification runtime pattern
 - `packages/core/src/index.ts:499-591` - EconomyStateSummary pattern
 - `docs/idle-engine-design.md` - Engine architecture
-- `docs/global-economy-ledger-design.md` - GEL-001 economy ledger
 - [Gaffer On Games: State Synchronization](https://gafferongames.com/post/state_synchronization/)
 - [Gaffer On Games: Deterministic Lockstep](https://gafferongames.com/post/deterministic_lockstep/)
 - [Gaffer On Games: Snapshot Compression](https://gafferongames.com/post/snapshot_compression/)

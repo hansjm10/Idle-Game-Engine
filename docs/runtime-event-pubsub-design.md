@@ -16,11 +16,11 @@ Use this design document to understand the event publication and subscription sy
 - **Execution Mode**: Hybrid
 
 ## 1. Summary
-The Idle Engine requires a deterministic in-process event bus to enable systems, command handlers, and integrations to react to runtime activity without tight coupling or shared mutable state. This design introduces a type-safe, bounded-allocation pub/sub system that emits immutable event payloads tagged with tick metadata, routed to both internal systems running inside the simulation worker and external observers (presentation shell, telemetry, persistence replay). The solution maintains the single-threaded simulation model while providing explicit contracts for domain events such as threshold triggers, automation toggles, and social notifications.
+The Idle Engine requires a deterministic in-process event bus to enable systems, command handlers, and integrations to react to runtime activity without tight coupling or shared mutable state. This design introduces a type-safe, bounded-allocation pub/sub system that emits immutable event payloads tagged with tick metadata, routed to both internal systems running inside the simulation worker and external observers (presentation shell, telemetry, persistence replay). The solution maintains the single-threaded simulation model while providing explicit contracts for domain events such as threshold triggers, automation toggles, and notifications.
 
 ## 2. Context & Problem Statement
 - **Background**: The engine currently relies on direct callbacks and resource polling for cross-system communication. `packages/core` exposes a command queue, dispatcher, and recorder but lacks a general event aggregation mechanism. Systems communicate via direct function calls and shared resource state (`resource-state.ts`). The `resource-publish-transport.ts` mirrors resource deltas to the presentation shell but cannot emit domain-specific events (e.g., achievement unlocked). Telemetry utilities (`telemetry.ts`) provide logging hooks but cannot subscribe to structured runtime events.
-- **Problem**: The lack of an explicit event layer creates tight coupling between systems, makes it difficult to implement reactive features (threshold triggers, automation toggles, social notifications), and prevents deterministic replay validation of domain events. No test scaffolding exists to assert deterministic delivery order or to validate that subscriptions remain isolated between saves.
+- **Problem**: The lack of an explicit event layer creates tight coupling between systems, makes it difficult to implement reactive features (threshold triggers, automation toggles, notifications), and prevents deterministic replay validation of domain events. No test scaffolding exists to assert deterministic delivery order or to validate that subscriptions remain isolated between saves.
 - **Forces**: Must preserve the single-threaded simulation model described in `docs/idle-engine-design.md` §6.2. Must maintain 60 Hz tick cadence under typical load (≤200 events per tick). Must support offline catch-up and deterministic replay for recorded sessions. Must integrate with existing transport buffers for presentation shell communication.
 
 ## 3. Goals & Non-Goals
@@ -32,7 +32,7 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
   5. **Snapshot-ready batches**: The bus emits compact frames the existing transport layer can forward to the presentation shell without bespoke wiring.
 
 - **Non-Goals**:
-  - Building cross-process or network delivery (handled later by social services and backend integrations).
+  - Building cross-process or network delivery (handled later by backend integrations).
   - Persisting a long-lived analytics stream; the bus retains only the current tick plus the in-flight snapshot batch.
   - Supporting asynchronous listeners; all handlers execute within the simulation tick and may not yield control or schedule promises.
   - Publishing UI layout events or rendering hints (handled by the shell based on state snapshots).
@@ -77,7 +77,7 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
     readonly payload: Readonly<TPayload>;
   }
   ```
-- `RuntimeEventType` is a string literal union grouped by domains (`resource`, `automation`, `social`, `telemetry`). Runtime-owned types live in `packages/core`, while content packs contribute additional entries through an offline manifest.
+- `RuntimeEventType` is a string literal union grouped by domains (`resource`, `automation`, `telemetry`). Runtime-owned types live in `packages/core`, while content packs contribute additional entries through an offline manifest.
 - Pack manifests emit `eventTypes` metadata that is sorted by `(packSlug, eventKey)` during generation so every build produces the same declaration file and replay manifests stay stable.
 - Export canonical payload types under `@idle-engine/core/events` (e.g., `ResourceThresholdReachedEvent`, `AutomationToggleEvent`) so command handlers and systems share definitions.
 
@@ -245,7 +245,7 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
 All deferred decisions from the draft have been finalized in `docs/runtime-event-bus-decisions.md` (issue #87). No open questions remain.
 
 ## 14. Follow-Up Work
-- **Cross-process event delivery**: Build network transport for social services and backend integrations (deferred to Phase 2).
+- **Cross-process event delivery**: Build network transport for backend integrations (deferred to Phase 2).
 - **Long-lived analytics stream**: Investigate persistent event storage for analytics workloads beyond current tick + snapshot batch (deferred pending analytics requirements).
 - **Advanced subscription patterns**: Explore filtered subscriptions (e.g., subscribe to specific resource IDs) if common patterns emerge (deferred until usage data available).
 - **Event replay UI**: Build dedicated replay viewer with timeline scrubbing and event filtering (deferred to tooling roadmap).
@@ -265,7 +265,7 @@ All deferred decisions from the draft have been finalized in `docs/runtime-event
 ## Appendix A — Glossary
 - **Event Bus**: In-process pub/sub system for routing domain events between runtime systems
 - **RuntimeEvent**: Immutable event payload tagged with tick metadata and event type
-- **RuntimeEventType**: String literal union discriminating event categories (resource, automation, social, telemetry)
+- **RuntimeEventType**: String literal union discriminating event categories (resource, automation, telemetry)
 - **EventPublisher**: Interface for publishing events during command execution or system updates
 - **EventHandler**: Synchronous callback invoked when subscribed event is dispatched
 - **EventDispatchContext**: Read-only runtime state snapshot passed to event handlers
