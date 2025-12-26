@@ -837,7 +837,7 @@ CLI changes in `tools/content-schema-cli` (follow-up work):
 ## 13. Open Questions
 
 - Should the schema expose calculated presentation defaults (e.g., auto-generated icon paths) or leave that to the compiler?
-- How will guild perk costs interface with social-service data when live persistence lands?
+- How will guild perk costs interface with future persistence data when live storage lands?
 - Do we need additional effect types (e.g., scripted modifiers) before schema v1.0, or can they wait for the scripting design doc?
 - What is the migration strategy when schema digests change (e.g., do we embed the digest into save files similar to event manifests)?
 - Should we migrate remaining TypeScript/hand-authored sample data into the CLI-discoverable pack format before or after schema v1.0?

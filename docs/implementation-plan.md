@@ -16,33 +16,30 @@ This document converts the design document into actionable engineering work. It 
 - **Execution Mode**: AI-led
 
 ## 1. Summary
-This implementation plan establishes a phased approach to building the Idle Engine from prototype through production-ready state. The plan emphasizes prototype-first delivery with deterministic behaviors, shared tooling, incremental delivery via feature flags, and single-responsibility pull requests. Six phases (0-5) cover foundations, runtime core, content DSL, presentation shell integration, persistence/offline capabilities, and social features with authentication, culminating in a hardening and demo phase. The plan is designed for AI-orchestrated execution with clear task decomposition and exit criteria.
+This implementation plan establishes a phased approach to building the Idle Engine from prototype through production-ready state. The plan emphasizes prototype-first delivery with deterministic behaviors, shared tooling, incremental delivery via feature flags, and single-responsibility pull requests. Five phases (0-4) cover foundations, runtime core, content DSL, presentation shell integration, and persistence/offline capabilities, culminating in a hardening and demo phase. The plan is designed for AI-orchestrated execution with clear task decomposition and exit criteria.
 
 ## 2. Context & Problem Statement
-- **Background**: The Idle Engine project requires a structured implementation roadmap that converts design specifications into executable engineering work. The system must support deterministic gameplay mechanics, content authoring via DSL, social features, and offline progression.
+- **Background**: The Idle Engine project requires a structured implementation roadmap that converts design specifications into executable engineering work. The system must support deterministic gameplay mechanics, content authoring via DSL, and offline progression.
 - **Problem**: Without a clear implementation plan, work risks becoming uncoordinated, lacking clear priorities, and missing critical success criteria. The prototype milestone needs explicit scope boundaries and phase-based delivery to ensure core functionality is proven before expansion.
 - **Forces**:
   - Must maintain deterministic behavior across all runtime operations
   - AI-orchestrated development requires explicit task decomposition and contracts
   - Monorepo architecture demands consistent tooling and testing
-  - React 19/Vite 7/Express 5 beta dependencies introduce compatibility risks
-  - Keycloak integration for authentication requires reliable local development setup
+  - React 19/Vite 7 dependencies introduce compatibility risks
 
 ## 3. Goals & Non-Goals
 ### Goals
-1. Ship a vertical slice proving runtime loop, content DSL, and social scaffolding in the prototype milestone
+1. Ship a vertical slice proving runtime loop and content DSL in the prototype milestone
 2. Establish deterministic, testable runtime core with profiling and observability hooks
 3. Implement centralized tooling (linting, testing, validation) across monorepo packages
 4. Enable incremental delivery with feature flags and single-responsibility PRs
 5. Deliver working offline progression with 12-hour deterministic replay capability
-6. Integrate authentication and social features (leaderboards, guilds) with Keycloak
-7. Provide comprehensive documentation for onboarding, APIs, and operational runbooks
+6. Provide comprehensive documentation for onboarding, APIs, and operational runbooks
 
 ### Non-Goals
 - Building production-scale features before prototype validation
 - Expanding scope beyond defined phases without explicit approval
-- Implementing advanced social features beyond leaderboard/guild stubs in prototype
-- Production database optimization before Phase 5
+- Production database optimization before the hardening phase
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
 ### Primary Stakeholders
@@ -54,9 +51,8 @@ This implementation plan establishes a phased approach to building the Idle Engi
 - **Runtime Implementation Agent**: Implements core runtime systems, state management, and deterministic scheduler
 - **Content Pipeline Agent**: Develops DSL schemas, compiler, validation CLI, and sample content packs
 - **UI Integration Agent**: Builds presentation shell, Worker bridge, and React components
-- **Social Services Agent**: Implements authentication flows, leaderboard/guild APIs, and Keycloak integration
 - **Tooling Automation Agent**: Manages CI/CD, lint/test configs, and monorepo infrastructure
-- **Ops & Infrastructure Agent**: Handles Docker setup, IaC templates, and deployment automation
+- **Ops & Infrastructure Agent**: Handles infrastructure setup, IaC templates, and deployment automation
 
 ### Affected Packages/Services
 - `@idle-engine/core` - Runtime state model, scheduler, systems framework
@@ -65,11 +61,9 @@ This implementation plan establishes a phased approach to building the Idle Engi
 - `@idle-engine/config-eslint` - Shared linting configuration
 - `@idle-engine/config-vitest` - Shared testing setup
 - Presentation shell (React/Vite application)
-- Social service (Express API with Keycloak auth)
 
 ### Compatibility Considerations
 - React 19 and Vite 7 Worker compatibility must be verified
-- Express 5 beta API stability monitoring required
 - Content DSL versioning and migration strategy needed
 - Backward compatibility for save slot migrations
 
@@ -77,32 +71,26 @@ This implementation plan establishes a phased approach to building the Idle Engi
 The project currently has:
 - Basic monorepo structure with pnpm workspace
 - Skeleton implementations of runtime core (tick accumulator)
-- Social service scaffolding with basic routes
-- Docker compose setup (requires dependency installation fixes)
 - Lefthook pre-commit hooks for local development
 - No CI/CD pipeline yet
 - Incomplete test coverage across packages
-- Keycloak integration in progress but missing realm bootstrap
 
 Key gaps:
 - Missing GitHub Actions CI pipeline
-- Social service Docker build fails due to pnpm dependency issues
-- No Keycloak realm bootstrap for local development
 - Minimal Vitest coverage for existing code
 - Content DSL and compiler not yet implemented
 - Persistence layer not implemented
 
 ## 6. Proposed Solution
 ### 6.1 Architecture Overview
-The implementation follows a six-phase approach, with each phase building on previous work and gated by clear deliverables. AI agents execute tasks within defined contracts, with human oversight at phase boundaries and architecture reviews when interfaces change.
+The implementation follows a five-phase approach, with each phase building on previous work and gated by clear deliverables. AI agents execute tasks within defined contracts, with human oversight at phase boundaries and architecture reviews when interfaces change.
 
 **Workstreams:**
 1. **Runtime Core**: Deterministic scheduler, state graph, systems framework
 2. **Content Pipeline**: DSL schemas, compiler, validation CLI, sample content
 3. **Presentation Shell**: Web UI consuming runtime snapshots via Worker bridge
-4. **Social Services**: Leaderboards, guild API, Keycloak integration
-5. **Tooling & QA**: Monorepo infrastructure, lint/test configs, CI/CD
-6. **Delivery & Ops**: Docker, IaC, release management
+4. **Tooling & QA**: Monorepo infrastructure, lint/test configs, CI/CD
+5. **Delivery & Ops**: IaC, release management
 
 ### 6.2 Detailed Design
 
@@ -115,7 +103,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 - Offline catch-up processing with caps and deterministic replay
 
 #### Data & Schemas
-- Zod schemas for: metadata, resources, generators, upgrades, prestige, guild perks
+- Zod schemas for: metadata, resources, generators, upgrades, prestige
 - Compiler transforms JSON/YAML/TS modules into normalized engine definitions
 - Content validation CLI with severity levels and actionable reporting
 - Save slot manager with migration hooks
@@ -124,9 +112,6 @@ The implementation follows a six-phase approach, with each phase building on pre
 #### APIs & Contracts
 - Worker bridge postMessage contract between runtime and React shell
 - Typed state/snapshot contract stubs (published Week 2 of Phase 1)
-- Auth hooks/SDK bridge for token fetch/refresh
-- Social service REST APIs: leaderboard ranking, guild roster (join/leave/invite)
-- Rate limiting on social endpoints
 
 #### Tooling & Automation
 - `@idle-engine/config-eslint` shared linting
@@ -139,22 +124,17 @@ The implementation follows a six-phase approach, with each phase building on pre
 
 #### Deployment
 - GitHub Actions pipeline: install → lint → test → build matrix
-- Docker compose including Postgres and Keycloak with config import
 - Terraform module stubs for self-host deployment
 - Release versioning policy and changelog process
 
 #### Telemetry & Observability
 - Profiling counters and event bus in diagnostics interface
 - Devtools overlay for tick metrics and state diff inspection
-- Request metrics and anomaly alerts on social service endpoints
 - Performance profiling to confirm CPU/memory budgets
 
 #### Security & Compliance
-- Keycloak realm configuration with proper client/scopes/roles
-- Token validation middleware on all protected routes
-- Rate limiting on social API endpoints
 - Audit logging for sensitive operations
-- Security review checklist for auth flows
+- Security review checklist for sensitive operations
 
 ## 7. Work Breakdown & Delivery Plan
 
@@ -164,10 +144,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
 | feat(tooling): add GitHub Actions CI pipeline | Install, lint, test across monorepo | Tooling Automation Agent | None | Pipeline runs on PR, mirrors lefthook |
-| fix(social): update Docker build for pnpm | Fix dependency installation in container | Ops & Infrastructure Agent | None | `docker-compose build` succeeds |
-| feat(social): add Keycloak realm bootstrap | Import script/seed container for JWKS | Social Services Agent | None | Local dev acquires JWKS |
 | test(core): add tick accumulator coverage | Vitest tests for current skeleton | Runtime Implementation Agent | None | Tests green, coverage >80% |
-| test(social): add route validator coverage | Vitest tests for route validation | Social Services Agent | None | Tests green, coverage >80% |
 | feat(tooling): create shared ESLint config | `@idle-engine/config-eslint` package | Tooling Automation Agent | None | All workspaces consume config |
 | feat(tooling): create shared Vitest config | `@idle-engine/config-vitest` with LLM reporter | Tooling Automation Agent | None | All workspaces use setup |
 | feat(tooling): configure pre-commit hooks | Husky/lefthook lint/test/build | Tooling Automation Agent | Shared configs | Hooks prevent bad commits |
@@ -191,7 +168,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 | feat(content): define Zod schemas | Metadata, resources, generators, etc. | Content Pipeline Agent | Phase 1 contract freeze | Schemas validate sample data |
 | feat(content): build compiler | TS/JSON/YAML → normalized definitions | Content Pipeline Agent | Zod schemas | Deterministic output ordering |
 | feat(content): add validation CLI | Severity levels, actionable output | Content Pipeline Agent | Compiler | CLI rejects invalid samples |
-| feat(content): create extended sample pack | 10 resources, 6 generators, 3 upgrades, prestige, guild stub | Content Pipeline Agent | Compiler | `@idle-engine/content-sample` builds |
+| feat(content): create extended sample pack | 10 resources, 6 generators, 3 upgrades, prestige layer | Content Pipeline Agent | Compiler | `@idle-engine/content-sample` builds |
 | test(content): property-based formula tests | Stats never negative, etc. | Content Pipeline Agent | Compiler | Fast-check tests pass |
 | docs(content): DSL usage guidelines | Naming, versioning, compatibility | Content Pipeline Agent | Validation CLI | Contributors can author content |
 | feat(content): integrate pnpm generate | Workspace validation, machine-readable output | Content Pipeline Agent | Validation CLI | Post-edit workflow documented |
@@ -204,7 +181,6 @@ The implementation follows a six-phase approach, with each phase building on pre
 | feat(ui): build ResourcePanel component | Display resource state | UI Integration Agent | Context provider | Renders dynamic data |
 | feat(ui): build GeneratorGrid component | Generator cards with actions | UI Integration Agent | Context provider | Buy/sell interactions work |
 | feat(ui): build UpgradeDialog component | Upgrade modal with purchase | UI Integration Agent | Context provider | Modal shows, processes purchase |
-| feat(ui): build GuildPanel component | Guild placeholder UI | UI Integration Agent | Context provider | Displays stub data |
 | feat(ui): add devtools overlay | Tick metrics, state diff inspection | UI Integration Agent | DiagnosticTimeline | Hotkey toggles overlay |
 | test(ui): Playwright smoke tests | Load, buy generator, observe increase | UI Integration Agent | All UI components | End-to-end test passes |
 | test(ui): accessibility checks | Axe-core integration in CI | UI Integration Agent | Shared tooling | No critical a11y violations |
@@ -218,26 +194,12 @@ The implementation follows a six-phase approach, with each phase building on pre
 | feat(core): add import/export capability | Debug feature with integrity check | Runtime Implementation Agent | Save slot manager | Behind dev flag, hashed |
 | test(core): migration fixture tests | Verify save migrations | Runtime Implementation Agent | Save slot manager | Old saves load correctly |
 
-#### Phase 5 – Social Stub & Auth (Weeks 5-7)
-| Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
-|-------------|---------------|-------------------------|--------------|---------------------|
-| feat(social): configure Keycloak realm | Automate provisioning script | Social Services Agent | Phase 0 bootstrap | Realm script idempotent |
-| feat(social): extend social service routes | In-memory persistence, validation | Social Services Agent | Keycloak realm | CRUD operations work |
-| feat(social): implement leaderboard ranking | Deterministic tie-breaking | Social Services Agent | Routes extended | Rankings correct |
-| feat(social): implement guild roster endpoints | Join/leave/invite with rate limits | Social Services Agent | Routes extended | Rate limits enforced |
-| feat(ui): integrate token fetch/refresh | Auth hooks/SDK bridge | UI Integration Agent | Keycloak realm | Token lifecycle managed |
-| feat(ui): display leaderboard in shell | Connect to stub backend | UI Integration Agent | Token integration | Shows rankings |
-| feat(ui): display guild info in shell | Connect to stub backend | UI Integration Agent | Token integration | Shows guild roster |
-| test(social): end-to-end auth test | Post score, display ranking, deny invalid token | Social Services Agent | All social features | E2E test green |
-| feat(social): add request metrics | Instrumentation and anomaly alerts | Social Services Agent | Routes extended | Metrics observable |
-
-#### Phase 6 – Hardening & Demo (Weeks 7-8)
+#### Phase 5 – Hardening & Demo (Weeks 7-8)
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
 | perf(core): performance profiling | Identify hotspots, confirm budgets | Runtime Implementation Agent | All phases complete | CPU/memory within targets |
-| security(social): auth flow review | Checklist for auth, rate limits, audit logs | Social Services Agent | Phase 5 | Security checklist passed |
 | docs: onboarding guide | Developer setup instructions | Tooling Automation Agent | All phases | New dev can start in `<30min` |
-| docs: API references | Runtime, content, social APIs | Content Pipeline Agent | All phases | API docs complete |
+| docs: API references | Runtime and content APIs | Content Pipeline Agent | All phases | API docs complete |
 | docs: operational runbooks | Health checks, log inspection, restart | Ops & Infrastructure Agent | All phases | On-call runbook ready |
 | docs: partner briefing deck | Demo materials and overview | TBD | All phases | Stakeholder presentation ready |
 | milestone: demo & retrospective | Lock next phase priorities | All agents | All tasks | Retro action items captured |
@@ -245,7 +207,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 ### 7.2 Milestones
 
 **Phase 0 – Foundations (Weeks 0-1)**
-- **Deliverables**: CI pipeline, shared tooling configs, Docker fixes, Keycloak bootstrap, basic test coverage
+- **Deliverables**: CI pipeline, shared tooling configs, basic test coverage
 - **Timeline**: 1 week
 - **Gating Criteria**: All Phase 0 tasks green; CI runs successfully on PRs
 
@@ -269,12 +231,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 - **Timeline**: 2 weeks
 - **Gating Criteria**: 12-hour offline simulation automated test passes; migrations verified
 
-**Phase 5 – Social Stub & Auth (Weeks 5-7)**
-- **Deliverables**: Keycloak realm, social routes, leaderboard/guild logic, token integration, E2E auth test
-- **Timeline**: 2 weeks
-- **Gating Criteria**: End-to-end test posts score, displays ranking, denies invalid token
-
-**Phase 6 – Hardening & Demo (Weeks 7-8)**
+**Phase 5 – Hardening & Demo (Weeks 7-8)**
 - **Deliverables**: Performance profiling, security review, comprehensive docs, demo, retrospective
 - **Timeline**: 1 week
 - **Gating Criteria**: All documentation complete; demo scenario successful; retro action items logged
@@ -354,7 +311,6 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`
 **Rollback Procedures**:
 - Feature flags protect WIP functionality
 - Database migrations include down scripts
-- Docker images tagged with git SHA for rollback
 - CI prevents deployment if tests fail
 
 ### Validation Hooks
@@ -386,11 +342,6 @@ Before marking task complete, agents must:
 **Rationale**: Native ESM support, faster execution, Vite integration, AI-friendly reporting via `vitest-llm-reporter`.
 **Trade-offs**: Smaller community than Jest but better DX and performance.
 
-### Auth: Custom JWT vs. Keycloak
-**Selected**: Keycloak
-**Rationale**: Industry-standard OAuth2/OIDC, reduces security burden, supports federated identity future expansion.
-**Trade-offs**: Additional infrastructure complexity vs. custom auth simplicity.
-
 ### Content Format: Pure JSON vs. TypeScript DSL
 **Selected**: TypeScript DSL compiled to JSON
 **Rationale**: Better DX with type safety and IDE support for content authors; validation at compile time.
@@ -405,11 +356,10 @@ Before marking task complete, agents must:
 
 ### Unit / Integration
 - **Coverage Expectation**: >80% for all new code, >90% for runtime core
-- **Frameworks**: Vitest with jsdom for UI, node for backend
+- **Frameworks**: Vitest with jsdom for UI, node for tooling
 - **Test Suites**:
   - Runtime: Tick accumulator, command queue, catch-up, zero-delta, state mutations
   - Content: Schema validation, compiler determinism, formula property tests (fast-check)
-  - Social: Auth middleware, route validation, leaderboard ranking logic
   - UI: Component rendering, Worker bridge messaging, state subscriptions
 
 ### Performance
@@ -421,7 +371,7 @@ Before marking task complete, agents must:
   - Offline catch-up: 12-hour simulation completes in `<5 seconds`
 
 ### Tooling / A11y
-- **Playwright Coverage**: Smoke tests for core user flows (load, buy generator, observe progression, leaderboard interaction)
+- **Playwright Coverage**: Smoke tests for core user flows (load, buy generator, observe progression)
 - **Accessibility**: Axe-core integration in CI; no critical violations allowed; WCAG 2.1 AA target
 - **Manual QA**: Devtools overlay validation, cross-browser testing (Chrome, Firefox, Safari)
 
@@ -436,14 +386,11 @@ Before marking task complete, agents must:
 | Risk | Impact | Probability | Mitigation |
 |------|--------|-------------|------------|
 | React 19 / Vite 7 Worker incompatibility | High - blocks UI integration | Medium | Verify compatibility in Phase 0; fallback to React 18 if issues arise |
-| Express 5 beta API instability | Medium - social service disruption | Medium | Monitor stability; pin to specific commit or revert to Express 4 LTS |
-| Keycloak local dev reliability | Medium - blocks auth work | Low | Container health checks; realm export for quick recovery; document troubleshooting |
 | Offline catch-up performance | High - poor UX on return | Medium | Early instrumentation; cap catch-up iterations; progressive disclosure if slow |
 | Tooling drift across packages | Medium - inconsistent quality | High | Shared config packages enforced via CI; automated updates |
 | Team capacity / coordination | High - delays delivery | Medium | Clear ownership per workstream; weekly status summaries; escalation path |
 | Scope creep into prototype | High - missed milestone | Medium | Explicit approval required for scope changes; feature flags for experimental work |
 | Content DSL breaking changes | Medium - invalidates authored content | Low | Versioning strategy; migration tooling; changelog process |
-| Security vulnerability in auth flow | High - data breach risk | Low | Security review checklist; external audit before production; rate limiting |
 
 ## 12. Rollout Plan
 
@@ -454,42 +401,37 @@ See Section 7.2 for detailed phase milestones. High-level rollout:
 3. **Phase 2 (Weeks 2-4)**: Content DSL - schemas, compiler, sample pack
 4. **Phase 3 (Weeks 3-5)**: UI integration - Worker bridge, components, tests
 5. **Phase 4 (Weeks 4-6)**: Persistence - offline catch-up, save system
-6. **Phase 5 (Weeks 5-7)**: Social - auth, leaderboards, guilds
-7. **Phase 6 (Weeks 7-8)**: Hardening - profiling, security, docs, demo
+6. **Phase 5 (Weeks 7-8)**: Hardening - profiling, security, docs, demo
 
 ### Migration Strategy
 - **Feature Flags**: All WIP features behind flags; enabled per-environment
 - **Content Versioning**: DSL version field in metadata; compiler validates compatibility
 - **Save Migrations**: Migration hooks in save slot manager; fixture tests verify old saves load
-- **API Versioning**: Social service APIs versioned (`/api/v1/`); deprecation notices before breaking changes
-- **Database Migrations**: Start with in-memory (Phase 5); plan Postgres migrations with up/down scripts
+- **API Versioning**: Runtime and content APIs versioned; deprecation notices before breaking changes
+- **Database Migrations**: Plan migrations with up/down scripts for future persistence needs
 
 ### Communication
 - **Release Announcements**: Weekly progress updates during prototype phase; changelog for each phase completion
-- **Partner Updates**: Briefing deck prepared in Phase 6; demo session scheduled post-hardening
-- **Runbooks**: Operational runbooks delivered in Phase 6; on-call training materials included
+- **Partner Updates**: Briefing deck prepared in Phase 5; demo session scheduled post-hardening
+- **Runbooks**: Operational runbooks delivered in Phase 5; on-call training materials included
 
 ## 13. Open Questions
 1. **Content Authoring Workflow**: Should content authors work in separate repo with CI validation, or monorepo packages? (Decision needed by Phase 2 Week 1)
-2. **Production Database**: PostgreSQL confirmed for social service, but what about game state persistence - continue with IndexedDB client-side or cloud sync? (Decision deferred to post-prototype)
-3. **Hosting Strategy**: Self-hosted Kubernetes, managed PaaS (Render, Railway), or hybrid? (Terraform stubs in Phase 6, but final decision deferred)
-4. **Telemetry Backend**: Where do metrics/logs aggregate - self-hosted (Grafana/Loki) or SaaS (Datadog, New Relic)? (Decision needed by Phase 6)
+2. **Production Database**: If server-side persistence is needed, which store should we use, and how should it integrate with client saves? (Decision deferred to post-prototype)
+3. **Hosting Strategy**: Self-hosted Kubernetes, managed PaaS (Render, Railway), or hybrid? (Terraform stubs in Phase 5, but final decision deferred)
+4. **Telemetry Backend**: Where do metrics/logs aggregate - self-hosted (Grafana/Loki) or SaaS (Datadog, New Relic)? (Decision needed by Phase 5)
 5. **Prestige Mechanics**: Exact reset behavior and carry-over bonuses need content design input (impacts Phase 2 schema design)
-6. **Guild Persistence**: In-memory stub sufficient for prototype, but what's the data model for production guilds? (Design needed post-Phase 5)
-7. **Versioning Policy**: Semantic versioning for engine packages, but how to handle content pack versions and compatibility matrix? (Decision by Phase 2 Week 2)
+6. **Versioning Policy**: Semantic versioning for engine packages, but how to handle content pack versions and compatibility matrix? (Decision by Phase 2 Week 2)
 
 ## 14. Follow-Up Work
 Items explicitly deferred out of prototype scope:
-1. **Production Database Migration**: Move from in-memory to Postgres for social service (Owner: Ops Agent, Timing: Post-demo)
-2. **Advanced Social Features**: Guild wars, chat, friend lists (Owner: Social Services Agent, Timing: Phase 2 roadmap)
-3. **Content Editor UI**: Visual content authoring tool (Owner: UI Agent, Timing: Post-prototype)
-4. **Mobile Client**: React Native or PWA optimization (Owner: UI Agent, Timing: Q2 2026)
-5. **Multiplayer Events**: Time-limited competitions, seasonal content (Owner: Runtime + Social Agents, Timing: Post-persistence cloud sync decision)
-6. **Analytics Dashboard**: Player behavior tracking and visualization (Owner: Tooling Agent, Timing: After telemetry backend selection)
-7. **Localization**: i18n framework and initial translations (Owner: UI Agent, Timing: Pre-public launch)
-8. **Performance Optimization**: WASM for hot paths, Worker pool scaling (Owner: Runtime Agent, Timing: If profiling reveals bottlenecks)
-9. **Security Hardening**: Penetration testing, DDoS protection, rate limiting refinement (Owner: Social Services + Ops Agents, Timing: Pre-production)
-10. **Documentation Site**: Full Docusaurus deployment with tutorials, API explorer (Owner: Docs Agent, Timing: Post-prototype milestone)
+1. **Content Editor UI**: Visual content authoring tool (Owner: UI Agent, Timing: Post-prototype)
+2. **Mobile Client**: React Native or PWA optimization (Owner: UI Agent, Timing: Q2 2026)
+3. **Analytics Dashboard**: Player behavior tracking and visualization (Owner: Tooling Agent, Timing: After telemetry backend selection)
+4. **Localization**: i18n framework and initial translations (Owner: UI Agent, Timing: Pre-public launch)
+5. **Performance Optimization**: WASM for hot paths, Worker pool scaling (Owner: Runtime Agent, Timing: If profiling reveals bottlenecks)
+6. **Security Hardening**: Penetration testing, DDoS protection, dependency audits (Owner: Ops Agent, Timing: Pre-production)
+7. **Documentation Site**: Full Docusaurus deployment with tutorials, API explorer (Owner: Docs Agent, Timing: Post-prototype milestone)
 
 ## 15. References
 - [Design Document Template](./design-document-template.md) - Template this plan follows
@@ -498,7 +440,6 @@ Items explicitly deferred out of prototype scope:
 - API Contract Documentation (TBD) - Published in Phase 1 Week 2
 - [Conventional Commits](https://www.conventionalcommits.org/) - Commit message standard
 - [WCAG 2.1 Guidelines](https://www.w3.org/WAI/WCAG21/quickref/) - Accessibility standards
-- [Keycloak Documentation](https://www.keycloak.org/documentation) - Auth integration reference
 - [Vitest Documentation](https://vitest.dev/) - Testing framework guide
 
 ## Appendix A — Glossary
@@ -508,8 +449,6 @@ Items explicitly deferred out of prototype scope:
 - **Prestige**: Game mechanic that resets progress in exchange for permanent bonuses
 - **Generator**: Game entity that produces resources over time
 - **Upgrade**: Purchasable improvement that modifies generator or resource behavior
-- **Guild**: Social feature allowing players to form groups for shared benefits
-- **Leaderboard**: Ranked list of player scores or achievements
 - **Snapshot**: Serialized copy of runtime state for UI consumption
 - **Worker**: Web Worker executing game runtime in background thread
 - **Deterministic**: Behavior that produces identical results given identical inputs (critical for replay/validation)
@@ -528,7 +467,7 @@ Items explicitly deferred out of prototype scope:
 ## Guiding Principles
 The following principles guide all execution within this plan:
 
-1. **Prototype-first**: Ship a vertical slice proving the runtime loop, content DSL, and social scaffolding before expanding scope.
+1. **Prototype-first**: Ship a vertical slice proving the runtime loop and content DSL before expanding scope.
 2. **Deterministic behaviors over features**: Correctness, profiling hooks, and observability trump new content until the engine core is trusted.
 3. **Shared tooling**: Linting, testing, and content validation are centralized so packages stay consistent as the monorepo grows.
 4. **Incremental delivery**: Every workstream maintains mergeable branches with behind-feature flags.
@@ -536,8 +475,8 @@ The following principles guide all execution within this plan:
 
 ## Exit Criteria for Prototype Milestone
 The prototype milestone is considered complete when:
-1. All Phase 0-6 tasks complete or explicitly deferred with rationale
-2. **Demo scenario successful**: New user loads web shell, plays 5 minutes, closes tab, returns after 8 hours with correct offline progression, posts to leaderboard, sees guild placeholder
+1. All Phase 0-5 tasks complete or explicitly deferred with rationale
+2. **Demo scenario successful**: New user loads web shell, plays 5 minutes, closes tab, returns after 8 hours with correct offline progression
 3. Documentation updated: README, design doc cross-links, developer onboarding guide
 4. Retrospective captured with action items feeding Phase 2 (beyond prototype) backlog
 

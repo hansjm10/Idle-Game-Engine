@@ -27,7 +27,7 @@ The content schema design document (docs/content-dsl-schema-design.md) establish
 ### Problem
 Four critical design questions needed resolution:
 1. Should the schema expose calculated presentation defaults (e.g., auto-generated icon paths)?
-2. How will guild perk costs interface with social-service data when live persistence lands?
+2. How will guild perk costs interface with future persistence data when live storage lands?
 3. Do we need additional effect types (e.g., scripted modifiers) before schema v1.0?
 4. What is the migration strategy when schema digests change?
 
@@ -50,7 +50,7 @@ Additionally, six identified risks required mitigation tracking and implementati
 
 ### Non-Goals
 - Implementing scripting runtime (deferred to Phase 7+)
-- Designing guild persistence schema (deferred to Phase 5)
+- Designing guild persistence schema (deferred until backend persistence is defined)
 - Building compiler icon resolution (follow-up issue)
 - Creating save file format specification (Phase 4 work)
 
@@ -67,7 +67,6 @@ N/A - This is a decision document, not an implementation plan.
 ### Affected Packages/Services
 - `packages/content-schema` - Schema definitions and validation
 - `packages/core` - Runtime integration
-- `services/social` - Guild persistence (future)
 - `tools/content-schema-cli` - Validation and compilation tooling
 
 ### Compatibility Considerations
@@ -128,28 +127,27 @@ The solution addresses each open question with a clear decision, rationale, and 
 
 #### Decision 2: Guild Perk Persistence Integration
 
-**Decision**: Defer guild-specific cost modeling to Phase 5 persistence implementation.
+**Decision**: Defer guild-specific cost modeling until backend persistence work is planned.
 
 **Rationale**:
 - Current `cost` schema is flexible enough for prototype phase (Issue #11, Phase 0-4)
-- Guild persistence design is not yet finalized (Phase 5: Weeks 5-7)
-- Schema can be extended with `GuildCostSchema` when social service adds persistence
+- Guild persistence design is not yet finalized
+- Schema can be extended with `GuildCostSchema` when backend persistence lands
 - FEATURE_GATES already restrict guild perks to runtime >=0.5.0
 
 **Current State**:
 - Guild perk schema complete in `packages/content-schema/src/modules/guild-perks.ts`
-- Social service has stub guild routes (`services/social/src/routes/guild.ts`)
-- Persistence is in-memory only (Phase 5 work per implementation plan)
+- No backend persistence exists yet
 - No database schema exists for guild perks or guild state
 
-**Phase 5 Follow-up** (Issue #138 recommended):
+**Follow-up** (Issue #138 recommended):
 - Design guild persistence schema (Postgres tables: guilds, guild_perks, member_contributions)
 - Add `GuildResourceDefinition` with ownership semantics (guild-scoped vs player-scoped)
 - Extend cost schema with `scope: 'player' | 'guild'` discriminator if needed
 - Add validation ensuring guild perk costs only reference guild-category resources
 
-**Acceptance Criteria for Phase 5**:
-- Social service persists guild perk unlock state
+**Acceptance Criteria for Follow-up**:
+- Backend persists guild perk unlock state
 - Content packs can define guild-scoped currency resources
 - Validation ensures guild perk costs reference valid guild currencies
 - Documentation examples show guild contribution tracking

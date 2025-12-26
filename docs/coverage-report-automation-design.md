@@ -51,7 +51,7 @@ CI lacks a deterministic view of Vitest coverage, forcing stakeholders to run lo
 
 ### 6.1 Architecture Overview
 1. **Collection**: `pnpm coverage:md` invokes a new helper (`tools/scripts/run-workspace-coverage.sh`) that reuses the existing workspace runner but always forwards `vitest run --coverage --reporter=json` to each package. Coverage config adds `json-summary` so Vitest writes `coverage/coverage-summary.json` under every package.
-2. **Aggregation**: After tests finish, the command executes `tsx tools/coverage-report/index.ts`. The script crawls `packages/`, `services/`, and `tools/` for `coverage/coverage-summary.json`, infers the package name from the nearest `package.json`, and aggregates totals plus per-package stats.
+2. **Aggregation**: After tests finish, the command executes `tsx tools/coverage-report/index.ts`. The script crawls `packages/` and `tools/` for `coverage/coverage-summary.json`, infers the package name from the nearest `package.json`, and aggregates totals plus per-package stats.
 3. **Publication**: The script writes `docs/coverage/index.md` with (a) an intro + regeneration instructions, (b) an overall coverage table, and (c) a per-package table sorted alphabetically. Formatting uses fixed-width percentage strings (two decimals) to keep diffs stable.
 4. **Enforcement**: CI gains a `Coverage Report` step after `pnpm test:ci` that runs `pnpm coverage:md` and fails when coverage generation or markdown emission leaves a dirty working tree, guaranteeing main always contains the latest report.
 

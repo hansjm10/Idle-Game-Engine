@@ -1,6 +1,6 @@
 # Idle Engine Monorepo
 
-This repository hosts the idle-game engine, reference content packs, presentation shells, and supporting services described in `docs/idle-engine-design.md`.
+This repository hosts the idle-game engine, reference content packs, presentation shells, and supporting tooling described in `docs/idle-engine-design.md`.
 
 ## Environment
 - Node: 22.20.0 (pinned for deterministic coverage). Run `nvm use` from the repo root to adopt the version from `.nvmrc`.
@@ -8,7 +8,6 @@ This repository hosts the idle-game engine, reference content packs, presentatio
 
 ## Structure
 - `packages/` – core runtime and client-facing packages.
-- `services/` – backend services (leaderboards, guilds, auth integrations).
 - `tools/` – developer tooling such as content validators and simulation CLIs.
 - `docs/` – design documents and technical specs.
 
@@ -56,7 +55,7 @@ Options:
 
 ## Economy Verification CLI
 
-Project maximum plausible hard-currency deltas from an economy snapshot (GEL-001):
+Project maximum plausible currency deltas from an economy snapshot:
 
 ```
 pnpm --silent core:economy-verify --snapshot tools/economy-verification/__fixtures__/snapshot.json --ticks 40

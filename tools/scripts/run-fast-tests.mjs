@@ -110,12 +110,6 @@ for (const file of changedFiles) {
     continue;
   }
 
-  if (file.startsWith('services/social/')) {
-    affectedPackages.add('@idle-engine/social-service');
-    addRelatedFile('@idle-engine/social-service', file);
-    continue;
-  }
-
   if (file.startsWith('content/')) {
     addContentSuite(file);
     continue;
