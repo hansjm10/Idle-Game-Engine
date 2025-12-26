@@ -358,6 +358,27 @@ describe('applyOfflineProgress', () => {
     });
   });
 
+  it('treats maxTicksPerCall 0 as no limit', () => {
+    const harness = createHarness(0);
+    const elapsedMs = STEP_SIZE_MS * 3;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxTicksPerCall: 0 },
+    });
+
+    expect(result).toMatchObject({
+      processedSteps: 3,
+      totalSteps: 3,
+      processedMs: elapsedMs,
+      totalMs: elapsedMs,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(3);
+  });
+
   it('reports progress for remainder elapsed time', () => {
     const harness = createHarness(0);
     const progressSpy = vi.fn();
@@ -432,6 +453,27 @@ describe('applyOfflineProgress', () => {
       completed: true,
     });
     expect(harness.runtime.getCurrentStep()).toBe(1);
+  });
+
+  it('treats maxSteps 0 as zero processed steps', () => {
+    const harness = createHarness(0);
+    const elapsedMs = STEP_SIZE_MS * 3;
+
+    const result = applyOfflineProgress({
+      elapsedMs,
+      coordinator: harness.coordinator,
+      runtime: harness.runtime,
+      limits: { maxSteps: 0 },
+    });
+
+    expect(result).toMatchObject({
+      totalSteps: 0,
+      totalMs: 0,
+      processedSteps: 0,
+      processedMs: 0,
+      completed: true,
+    });
+    expect(harness.runtime.getCurrentStep()).toBe(0);
   });
 
   it('applies maxElapsedMs before maxSteps and drops remainder when maxSteps truncates', () => {
@@ -515,8 +557,9 @@ describe('applyOfflineProgress', () => {
     }
   });
 
-  it('ignores invalid maxTicksPerCall values when resolving max ticks', () => {
+  it('ignores non-positive or invalid maxTicksPerCall values when resolving max ticks', () => {
     const invalidValues = [
+      0,
       -1,
       -100,
       Number.NaN,

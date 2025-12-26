@@ -582,6 +582,8 @@ interface ApplyMigrationPayload {
 }
 ```
 
+`maxElapsedMs` must be a non-negative finite number, and `maxSteps` must be a non-negative integer; invalid values are rejected during restore validation.
+
 ##### Priority Resolution
 
 When multiple commands are enqueued during a single frame:

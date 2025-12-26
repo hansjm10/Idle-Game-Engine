@@ -60,5 +60,9 @@ export function resolveOfflineProgressTotals(
 export function resolveMaxTicksPerCall(
   limits?: OfflineProgressLimits,
 ): number | undefined {
-  return normalizeNonNegativeInteger(limits?.maxTicksPerCall);
+  const maxTicksPerCall = normalizeNonNegativeInteger(limits?.maxTicksPerCall);
+  if (maxTicksPerCall === undefined || maxTicksPerCall <= 0) {
+    return undefined;
+  }
+  return maxTicksPerCall;
 }
