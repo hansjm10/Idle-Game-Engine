@@ -151,7 +151,7 @@ function runTick(deltaMs: number) {
 - Support optimistic UI updates with eventual server confirmation; roll back state when server rejects a change.
 - Enforce rate limiting, authentication tokens, and replay protection to deter cheating.
 - Offer abstractions so implementations can swap between in-house services and third-party platforms without touching game logic.
-- Ship a reference self-host service (Node/Rust) with deployment scripts (Docker/Kubernetes) and clearly defined interfaces for alternative providers.
+- Ship a reference self-host service (Node/Rust) with deployment scripts and clearly defined interfaces for alternative providers.
 - For global economy stability and hard-currency invariants, rely on a server-authoritative ledger and economy APIs as specified in `docs/global-economy-ledger-design.md` (initiative `GEL-001`).
 
 ###### Economy Model (GEL-001)
@@ -262,7 +262,7 @@ function runTick(deltaMs: number) {
     - Offline catch-up simulates up to 12 hours without divergence from continuous-play baselines.
     - Leaderboard submissions authenticated via Keycloak and shown in UI (stubbed data acceptable).
     - Content CLI blocks invalid definitions and outputs human-friendly diagnostics.
-    - CI green (lint/test/generate) and docker-compose stack (engine + Keycloak + social API) launches via single command.
+    - CI green (lint/test/generate).
 
 ### 7.3 Coordination Notes
 - **Hand-off Package**: Agents should preload this doc, `docs/implementation-plan.md`, and the subsystem specs in `docs/` referenced in §15.

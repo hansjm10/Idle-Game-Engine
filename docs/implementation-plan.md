@@ -56,7 +56,7 @@ This implementation plan establishes a phased approach to building the Idle Engi
 - **UI Integration Agent**: Builds presentation shell, Worker bridge, and React components
 - **Social Services Agent**: Implements authentication flows, leaderboard/guild APIs, and Keycloak integration
 - **Tooling Automation Agent**: Manages CI/CD, lint/test configs, and monorepo infrastructure
-- **Ops & Infrastructure Agent**: Handles Docker setup, IaC templates, and deployment automation
+- **Ops & Infrastructure Agent**: Handles infrastructure setup, IaC templates, and deployment automation
 
 ### Affected Packages/Services
 - `@idle-engine/core` - Runtime state model, scheduler, systems framework
@@ -78,7 +78,6 @@ The project currently has:
 - Basic monorepo structure with pnpm workspace
 - Skeleton implementations of runtime core (tick accumulator)
 - Social service scaffolding with basic routes
-- Docker compose setup (requires dependency installation fixes)
 - Lefthook pre-commit hooks for local development
 - No CI/CD pipeline yet
 - Incomplete test coverage across packages
@@ -86,7 +85,6 @@ The project currently has:
 
 Key gaps:
 - Missing GitHub Actions CI pipeline
-- Social service Docker build fails due to pnpm dependency issues
 - No Keycloak realm bootstrap for local development
 - Minimal Vitest coverage for existing code
 - Content DSL and compiler not yet implemented
@@ -102,7 +100,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 3. **Presentation Shell**: Web UI consuming runtime snapshots via Worker bridge
 4. **Social Services**: Leaderboards, guild API, Keycloak integration
 5. **Tooling & QA**: Monorepo infrastructure, lint/test configs, CI/CD
-6. **Delivery & Ops**: Docker, IaC, release management
+6. **Delivery & Ops**: IaC, release management
 
 ### 6.2 Detailed Design
 
@@ -139,7 +137,6 @@ The implementation follows a six-phase approach, with each phase building on pre
 
 #### Deployment
 - GitHub Actions pipeline: install → lint → test → build matrix
-- Docker compose including Postgres and Keycloak with config import
 - Terraform module stubs for self-host deployment
 - Release versioning policy and changelog process
 
@@ -164,7 +161,6 @@ The implementation follows a six-phase approach, with each phase building on pre
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
 | feat(tooling): add GitHub Actions CI pipeline | Install, lint, test across monorepo | Tooling Automation Agent | None | Pipeline runs on PR, mirrors lefthook |
-| fix(social): update Docker build for pnpm | Fix dependency installation in container | Ops & Infrastructure Agent | None | `docker-compose build` succeeds |
 | feat(social): add Keycloak realm bootstrap | Import script/seed container for JWKS | Social Services Agent | None | Local dev acquires JWKS |
 | test(core): add tick accumulator coverage | Vitest tests for current skeleton | Runtime Implementation Agent | None | Tests green, coverage >80% |
 | test(social): add route validator coverage | Vitest tests for route validation | Social Services Agent | None | Tests green, coverage >80% |
@@ -245,7 +241,7 @@ The implementation follows a six-phase approach, with each phase building on pre
 ### 7.2 Milestones
 
 **Phase 0 – Foundations (Weeks 0-1)**
-- **Deliverables**: CI pipeline, shared tooling configs, Docker fixes, Keycloak bootstrap, basic test coverage
+- **Deliverables**: CI pipeline, shared tooling configs, Keycloak bootstrap, basic test coverage
 - **Timeline**: 1 week
 - **Gating Criteria**: All Phase 0 tasks green; CI runs successfully on PRs
 
@@ -354,7 +350,6 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`
 **Rollback Procedures**:
 - Feature flags protect WIP functionality
 - Database migrations include down scripts
-- Docker images tagged with git SHA for rollback
 - CI prevents deployment if tests fail
 
 ### Validation Hooks

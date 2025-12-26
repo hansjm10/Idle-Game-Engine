@@ -127,7 +127,7 @@ This document specifies the design for the initiative `GEL-001`: stabilising the
   - `guildRouter` (`services/social/src/routes/guild.ts`):
     - `GET /guilds/mine`: returns `guild: null` stub.
     - `POST /guilds`: validates, generates a synthetic `guildId`, and returns an accepted response; no persistence or economic rules.
-  - No DB or durable storage is configured; `docker-compose.yml` starts the social service alongside Keycloak but without an attached datastore.
+  - No DB or durable storage is configured; the social service runs without an attached datastore.
 
 - **Content & Schema**
   - Content modules and schemas define resources, generators, upgrades, etc., but there is no explicit notion of **hard** vs **soft** currencies encoded at the schema level (follow-up work may be needed).
@@ -245,7 +245,6 @@ Conceptual flow (to be formalised as a diagram in a follow-up PR):
 ### 6.3 Operational Considerations
 
 - **Deployment**
-  - Continue using `docker-compose.yml` for local Keycloak + social service; extend configuration to include persistent storage for the ledger when adopted.
   - For initial milestones, in-memory ledger is acceptable for development; production deployments MUST configure a persistent store before enabling real economic features (TODO: choose DB technology).
   - CI must run `pnpm test --filter @idle-engine/social-service` to validate economic routes and invariants.
 
