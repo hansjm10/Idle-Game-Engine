@@ -38,7 +38,7 @@ CI lacks a deterministic view of Vitest coverage, forcing stakeholders to run lo
 - **Agent Roles**
   - *Tooling Automation Agent*: implements the coverage command, aggregator script, and CI wiring.
   - *Docs Agent*: owns the generated markdown, sidebar entry, and contributor guidance.
-- **Affected Packages/Services**: `@idle-engine/core`, `@idle-engine/shell-web`, `@idle-engine/content-*`, `packages/docs`, new `tools/coverage-report` utility, `.github/workflows/ci.yml`, root `package.json`.
+- **Affected Packages/Services**: `@idle-engine/core`, `@idle-engine/content-*`, `packages/docs`, new `tools/coverage-report` utility, `.github/workflows/ci.yml`, root `package.json`.
 - **Compatibility Considerations**: Coverage command must respect existing test filters and avoid mutating package APIs. Generated docs are additive and should not break existing sidebar routes.
 
 ## 5. Current State
@@ -158,4 +158,3 @@ CI lacks a deterministic view of Vitest coverage, forcing stakeholders to run lo
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-11-07 | Codex Automation Agent | Initial draft |
-

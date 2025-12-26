@@ -719,7 +719,7 @@ export function evaluateEventTrigger(
 
 /**
  * Minimal ResourceState interface for automation evaluation.
- * The full ResourceState is defined in shell-web package.
+ * The full ResourceState is defined in `packages/core/src/resource-state.ts`.
  */
 export interface ResourceStateAccessor {
   getAmount(resourceIndex: number): number;

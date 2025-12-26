@@ -93,7 +93,7 @@ const literal = (value: number): NumericFormula => ({ kind: 'constant', value })
 
 /**
  * Generates resource IDs for testing.
- * IDs use branded types from shell-web package; use `as any` to avoid circular dependency
+ * IDs use branded types in presentation integrations; use `as any` to avoid circular dependency
  */
 const resourceIdArb = fc.constantFrom(
   'res:gold' as any,
@@ -103,13 +103,13 @@ const resourceIdArb = fc.constantFrom(
 
 /**
  * Generates automation IDs.
- * IDs use branded types from shell-web package; use `as any` to avoid circular dependency
+ * IDs use branded types in presentation integrations; use `as any` to avoid circular dependency
  */
 const automationIdArb = fc.nat({ max: 999 }).map(n => `auto:test-${n}` as any);
 
 /**
  * Generates generator target IDs.
- * IDs use branded types from shell-web package; use `as any` to avoid circular dependency
+ * IDs use branded types in presentation integrations; use `as any` to avoid circular dependency
  */
 const generatorIdArb = fc.constantFrom(
   'gen:clicker' as any,
@@ -119,7 +119,7 @@ const generatorIdArb = fc.constantFrom(
 
 /**
  * Generates upgrade target IDs.
- * IDs use branded types from shell-web package; use `as any` to avoid circular dependency
+ * IDs use branded types in presentation integrations; use `as any` to avoid circular dependency
  */
 const upgradeIdArb = fc.constantFrom(
   'upg:doubler' as any,
@@ -129,7 +129,7 @@ const upgradeIdArb = fc.constantFrom(
 
 /**
  * Generates event IDs for event triggers.
- * IDs use branded types from shell-web package; use `as any` to avoid circular dependency
+ * IDs use branded types in presentation integrations; use `as any` to avoid circular dependency
  */
 const eventIdArb = fc.constantFrom(
   'resource:threshold-reached' as any,

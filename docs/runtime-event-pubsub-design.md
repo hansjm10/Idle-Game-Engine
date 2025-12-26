@@ -47,7 +47,7 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
   - `packages/core` (primary implementation)
   - `packages/core/src/events` (new directory)
   - `packages/core/src/command-recorder.ts` (replay integration)
-  - `packages/shell-web` (event frame consumption)
+  - Presentation shells (archived) (event frame consumption)
   - `resource-publish-transport.ts` (transport integration)
 - **Compatibility Considerations**: Must maintain backward compatibility with existing command queue and resource state systems. Event frames must be versioned for forward compatibility as new event types are added.
 
@@ -136,7 +136,7 @@ The Idle Engine requires a deterministic in-process event bus to enable systems,
 
 #### APIs & Contracts
 - Event frames feed into the command recorder (`packages/core/src/command-recorder.ts`) so replay files contain both commands and events. Replays validate that emitted events match recorded ones.
-- Presentation shell consumes event frames to trigger UI transitions (e.g., toast notifications). The Vite web shell filters events client-side to avoid jank during heavy tick loads, as detailed in `packages/shell-web`.
+- Presentation shells can consume event frames to trigger UI transitions (e.g., toast notifications). Client-side filtering helps avoid jank during heavy tick loads.
 - Persistence layer optionally stores the most recent N frames (configurable) to resume UI transitions after reload.
 - Scripts running inside the deterministic sandbox receive a limited proxy that only allows them to subscribe to whitelisted event types (guarded by content permissions).
 
@@ -259,7 +259,7 @@ All deferred decisions from the draft have been finalized in `docs/runtime-event
 - `docs/runtime-step-lifecycle.md`: Target location for event catalog tables documentation
 - `packages/core/src/events/`: Event system implementation directory
 - `packages/core/src/command-recorder.ts`: Replay integration point
-- `packages/shell-web`: Event frame consumption implementation
+- Archived presentation shell implementation (removed)
 - `resource-publish-transport.ts`: Transport layer integration point
 
 ## Appendix A — Glossary

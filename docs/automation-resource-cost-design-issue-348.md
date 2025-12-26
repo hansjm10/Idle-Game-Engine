@@ -270,7 +270,7 @@ issue-348 addresses a gap in the automation system: automations that declare a r
 - Performance:
   - Micro-benchmark: negligible overhead for “no resourceCost” path; cost path 1–2 numeric formula evaluations and 1 spendAmount call.
 - Tooling / A11y:
-  - No UI changes; a11y tests unaffected. Run pnpm test:a11y if any shell-web changes occur (N/A here).
+  - No UI changes; downstream shells should run their UI test suites if they adopt related changes.
 
 ## 11. Risks & Mitigations
 - Risk: Atomicity violations if accessor not wired correctly.

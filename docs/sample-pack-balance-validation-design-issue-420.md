@@ -25,29 +25,29 @@ around github issue 419 expands the sample pack with new resources, generators, 
   1. Expand the sample pack with additional resources/generators, multi-tier upgrades, and a prestige layer per issue 419.
   2. Add fast-check-backed balance validation to `@idle-engine/content-schema`, surfaced through compiler/CLI and CI.
   3. Extend compiler tests for balance gating and deterministic hashes.
-  4. Align core and shell consumers/tests with new content IDs/tiers and prestige flows.
+  4. Align core and downstream consumer tests with new content IDs/tiers and prestige flows.
   5. Update docs (content DSL usage, sample README) to describe new content and validation rules.
 - **Non-Goals**:
   - Changing runtime economic algorithms or command contracts beyond content wiring.
-  - Shipping full prestige UX in shell-web (only fixtures/tests).
+  - Shipping full prestige UX in archived presentation shells (only fixtures/tests).
   - Adding guild perks/social features (defer).
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
-- **Primary Stakeholders**: Content pipeline maintainers; Runtime core maintainers; Shell UX maintainers.
-- **Agent Roles**: Content Authoring Agent (pack expansion); Balance Validation Agent (fast-check invariants); Compiler Integration Agent (CLI wiring); Shell Consumer Agent (progression updates); Docs Agent (guides/readme).
-- **Affected Packages/Services**: `packages/content-schema`, `packages/content-compiler`, `packages/content-sample`, `packages/core`, `packages/shell-web`, `tools/content-schema-cli`, `docs/`.
+- **Primary Stakeholders**: Content pipeline maintainers; Runtime core maintainers.
+- **Agent Roles**: Content Authoring Agent (pack expansion); Balance Validation Agent (fast-check invariants); Compiler Integration Agent (CLI wiring); Consumer Integration Agent (progression updates); Docs Agent (guides/readme).
+- **Affected Packages/Services**: `packages/content-schema`, `packages/content-compiler`, `packages/content-sample`, `packages/core`, `tools/content-schema-cli`, `docs/`.
 - **Compatibility Considerations**: Preserve deterministic ordering/hashes; keep `content/compiled/index.json` shape; avoid schema breaks; maintain shell cost/visibility expectations (`packages/core/src/progression-coordinator.ts`).
 
 ## 5. Current State
 - Sample pack limited to two resources/two generators, minimal upgrades, no prestige (`packages/content-sample/content/pack.json`).
 - Schema validation enforces structure/uniqueness; no balance/monotonicity (`packages/content-schema/src/modules/generators.ts`, `packages/content-schema/src/modules/prestige.ts`); property suites only for formulas (`packages/content-schema/src/base/formulas.property.test.ts`).
 - Compiler and CLI ignore balance results (`packages/content-compiler/src/compiler/index.ts`, `packages/content-compiler/src/__tests__/compiler.test.ts`, `tools/content-schema-cli/src/compile.js`).
-- Shell progression uses pack data for costs/unlocks (`packages/core/src/progression-coordinator.ts`); new IDs would currently break fixtures.
+- Progression coordinator uses pack data for costs/unlocks (`packages/core/src/progression-coordinator.ts`); new IDs would currently break fixtures.
 - Implementation plan demands richer packs and prestige coverage (`docs/implementation-plan.md`); progression guidance exists (`docs/progression-coordinator-design.md`).
 
 ## 6. Proposed Solution
 ### 6.1 Architecture Overview
-- **Narrative**: Author richer pack content (mid/late resources, generators, multi-tier upgrades, prestige), add fast-check balance invariants in `@idle-engine/content-schema`, wire balance gating into compiler/CLI, and refresh core/shell consumers so deterministic artifacts remain stable.
+- **Narrative**: Author richer pack content (mid/late resources, generators, multi-tier upgrades, prestige), add fast-check balance invariants in `@idle-engine/content-schema`, wire balance gating into compiler/CLI, and refresh core/consumer fixtures so deterministic artifacts remain stable.
 - **Diagram**:
   ```
   pack.json/json5 → schema + balance validator (fast-check) → compiler (deterministic artifacts) → sample pack exports
@@ -102,7 +102,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 | feat(content-schema): add balance property checks (issue 419) | Implement fast-check invariants, options, and warnings/errors | Balance Validation Agent | None | Balance failures surface structured errors; `pnpm test --filter content-schema` green; seeds documented |
 | feat(content-compiler): enforce balance in CLI/summary (issue 419) | Wire balance results into compiler and logs; halt on errors | Compiler Integration Agent | Balance checks | `pnpm generate --check` fails on balance errors; summary includes balance status; compiler tests updated |
 | feat(content-sample): expand pack with upgrades and prestige (issue 419) | Author new resources/generators/upgrades/prestige; regenerate artifacts | Content Authoring Agent | Balance checks merged | Pack compiles warning-free; prestige rewards per design; digests refreshed |
-| chore(shell-web/core): align progression fixtures to new content | Update shell/core tests for new IDs/tiers/prestige | Shell Consumer Agent | Expanded pack | `pnpm test --filter shell-web` and core progression tests pass; no runtime errors |
+| chore(core): align progression fixtures to new content | Update core tests for new IDs/tiers/prestige | Consumer Integration Agent | Expanded pack | `pnpm test --filter core` passes; no runtime errors |
 | docs: update content DSL usage/sample pack README | Document new content, prestige flows, validation | Docs Agent | Expanded pack | `docs/content-dsl-usage-guidelines.md` and `packages/content-sample/README.md` updated with links |
 
 ### 7.2 Milestones
@@ -118,7 +118,7 @@ Populate the table as the canonical source for downstream GitHub issues.
 - **Context Packets**: `docs/content-dsl-usage-guidelines.md`, `docs/content-compiler-design.md`, `docs/content-validation-cli-design.md`, `docs/progression-coordinator-design.md`, `packages/content-sample/content/pack.json`, `packages/core/src/progression-coordinator.ts`.
 - **Prompting & Constraints**: Use ES modules, two-space indentation, type-only imports/exports; keep generated output deterministic; never edit `dist/` manually.
 - **Safety Rails**: Avoid destructive git commands; keep console output JSON-only; cap fast-check runs; avoid non-ASCII text.
-- **Validation Hooks**: `pnpm generate --check`, `pnpm test --filter content-schema`, `pnpm test --filter content-compiler`, `pnpm test --filter content-sample`, `pnpm test --filter shell-web`, `pnpm coverage:md` when coverage changes.
+- **Validation Hooks**: `pnpm generate --check`, `pnpm test --filter content-schema`, `pnpm test --filter content-compiler`, `pnpm test --filter content-sample`, `pnpm test --filter core`, `pnpm coverage:md` when coverage changes.
 
 ## 9. Alternatives Considered
 - Manual heuristic balance checks: rejected for low coverage and maintenance cost.
@@ -126,9 +126,9 @@ Populate the table as the canonical source for downstream GitHub issues.
 - Separate prestige-only pack: rejected; single sample pack should exercise resets and base progression together.
 
 ## 10. Testing & Validation Plan
-- **Unit / Integration**: Balance property suites in `packages/content-schema`; compiler pipeline tests for gating; sample pack prestige/reset fixtures; shell progression tests for new IDs.
+- **Unit / Integration**: Balance property suites in `packages/content-schema`; compiler pipeline tests for gating; sample pack prestige/reset fixtures; core progression tests for new IDs.
 - **Performance**: Track balance check runtime; target under 5s per suite with bounded fast-check.
-- **Tooling / A11y**: Preserve `vitest-llm-reporter` JSON; run `pnpm coverage:md` after test changes; no UI delta to trigger new a11y tests.
+- **Tooling / A11y**: Preserve `vitest-llm-reporter` JSON; run `pnpm coverage:md` after test changes.
 
 ## 11. Risks & Mitigations
 - Fast-check flakiness → Fix seeds and bound `numRuns`; document defaults.

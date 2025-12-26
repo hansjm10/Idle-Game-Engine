@@ -85,7 +85,7 @@ Without automation execution, the engine fails to deliver on the core promise of
 
 ### Affected Packages/Services
 - `packages/core`: New `AutomationSystem`, state types, command handlers
-- `packages/shell-web`: Integration into `runtime.worker.ts`, save migrations
+- Presentation shell integrations (archived): worker harness wiring, save migrations
 - `packages/content-schema`: No changes (schema already complete)
 - `packages/content-sample`: Example automations for testing and reference
 
@@ -552,9 +552,7 @@ export function createAutomationSystem(
 }
 ```
 
-#### 6.2.7 Integration with Runtime Worker
-
-**File**: `packages/shell-web/src/runtime.worker.ts`
+#### 6.2.7 Integration with Runtime Worker (Archived Harness)
 
 Add after line 166 (after `registerResourceCommandHandlers`):
 
@@ -601,7 +599,7 @@ runtime.addSystem(automationSystem);
 | feat(core): integrate AutomationSystem into runtime | Register AutomationSystem in `runtime.worker.ts` and wire to ProgressionCoordinator | Runtime Implementation Agent | AutomationSystem core | Integration tests pass; automations fire in worker context |
 | feat(core): add automation toggle command handler | Implement `TOGGLE_AUTOMATION` command and emit `automation:toggled` events | Runtime Implementation Agent | AutomationSystem core | Command toggles automation state; event published |
 | test(core): property-based automation tests | Generate random automation sequences and verify trigger invariants | Testing Agent | AutomationSystem core | 1000+ test cases pass; edge cases documented |
-| feat(shell-web): automation state migration | Add migration for saves without automation state | Migration Agent | AutomationSystem integration | Old saves load with default automation state; tests verify |
+| feat(presentation-shell): automation state migration (archived) | Add migration for saves without automation state | Migration Agent | AutomationSystem integration | Old saves load with default automation state; tests verify |
 | feat(content-sample): add example automations | Create sample automations for each trigger type in sample pack | Runtime Implementation Agent | None | Sample pack includes 4+ automations; validated against schema |
 | docs(core): automation system API docs | Document AutomationSystem API and content authoring guide | Documentation Agent | AutomationSystem core | API docs published; authoring guide includes examples |
 
@@ -685,7 +683,7 @@ Agents must load before execution:
 
 Agents must run before marking tasks complete:
 - `pnpm test --filter core` (all core tests pass)
-- `pnpm test --filter shell-web` (all shell-web tests pass)
+- Downstream shell UI tests (archived) as applicable.
 - `pnpm lint --filter core` (no lint errors)
 - `pnpm build` (TypeScript compilation succeeds)
 - Verify automation fires in worker context (integration test)
@@ -841,7 +839,7 @@ Agents must run before marking tasks complete:
 ## 15. References
 
 - Issue #319: Design: Runtime automation execution system
-- Issue #298: feat(shell-web): resource dashboard UI (related work)
+- Issue #298: presentation shell resource dashboard UI (archived, related work)
 - `packages/content-schema/src/modules/automations.ts` (schema)
 - `packages/core/src/index.ts:116-156` (system registration)
 - `packages/core/src/events/runtime-event-catalog.ts:7-22` (automation events)

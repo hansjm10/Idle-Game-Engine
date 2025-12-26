@@ -8,8 +8,8 @@ slug: /
 
 Welcome to the developer hub for the Idle Engine monorepo. This site pulls
 together the design proposals in `docs/`, package READMEs, and new contributor
-guides so you can reason about the runtime, shell, and content pipeline in one
-place.
+guides so you can reason about the runtime, content pipeline, and supporting
+services in one place.
 
 ## How to use these docs
 
@@ -19,12 +19,7 @@ place.
 - Browse **Core Runtime** and **Content Pipeline** sections for in-depth design
   notes and current implementation status. Each design doc links back to the
   relevant source files in `packages/`.
-- Extending the presentation shell? Follow the
-  [Worker Bridge Extension Tutorial](worker-bridge-extension-tutorial.md) to add
-  new commands end-to-end.
-- Consuming shared shell state? Read the
-  [Shell State Provider Integration Guide](shell-state-provider-guide.md) for
-  hook usage, diagnostics, and migration practices.
+- Presentation shell docs have been archived; downstream shells should maintain their own integration guides.
 - Use the **Design Document Template** when drafting new proposals or migrating
   historical specs so the archive stays consistent.
 - Check the **Decisions** section when you need historical context before

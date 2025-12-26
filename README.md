@@ -20,9 +20,6 @@ Refer to the design document for roadmap and subsystem detail.
 - `docs/examples/` – validated example packs referenced by the guides.
 
 ## Testing
-- `pnpm test:a11y` runs the Playwright-based accessibility smoke suite against the web shell via `tools/a11y-smoke-tests/scripts/run-playwright.cjs`. The harness starts preview/dev servers sequentially with `start-server-and-test`, so invoking `pnpm exec playwright test` directly now requires you to boot compatible servers first (the suite exits early with guidance if it cannot reach them). Use `PLAYWRIGHT_DEV_PORT`/`PLAYWRIGHT_PREVIEW_PORT` to point at existing `pnpm dev`/`pnpm preview` servers and set `PLAYWRIGHT_A11Y_SKIP_BUILD=1` after the first build to reuse those processes without rerunning the pretest build.
-- `pnpm test --filter shell-web` scopes Vitest to the web shell worker bridge and presentation infrastructure; run this after touching diagnostics or bridge logic so the issue #255 coverage stays green.
-- On fresh Linux environments you might need to install Playwright system dependencies once via `pnpm exec playwright install-deps`.
 - Vitest suites inherit the shared `@idle-engine/config-vitest` defaults, which now include `vitest-llm-reporter` with streaming disabled. Each run prints a JSON summary block at the end of the output so AI agents and CI jobs can parse results without scraping console text.
 - `pnpm coverage:md` runs coverage-enabled Vitest suites for every package and writes `docs/coverage/index.md`. Commit the updated file after running the command so the docs build stays green. For consistent results with CI, run `nvm use` before generating coverage.
 - For a fast local pass, use `pnpm fast:check`. It runs cached linting plus `test:ci` for packages inferred from `git diff` against `origin/main`. Use `FAST_SCOPE=staged` to scope to staged files only and `FAST_BASE_REF=<ref>` to compare against a different base.
