@@ -16,6 +16,7 @@ import {
   registerAutomationCommandHandlers,
   registerOfflineCatchupCommandHandler,
   createAutomationSystem,
+  createProductionSystem,
   createTransformSystem,
   createResourceStateAdapter,
   createProgressionCoordinator,
@@ -223,6 +224,36 @@ export function initializeRuntimeWorker(
     resourceState: resourceStateAdapter,
     conditionContext: progressionCoordinator.getConditionContext(),
   });
+
+  const enableProduction = content.generators.length > 0;
+  const applyViaFinalizeTick = true;
+  const productionSystem = enableProduction
+    ? createProductionSystem({
+        applyViaFinalizeTick,
+        generators: () =>
+          (progressionCoordinator.state.generators ?? []).map(
+            (generator) => ({
+              id: generator.id,
+              owned: generator.owned,
+              enabled: generator.enabled,
+              produces: generator.produces ?? [],
+              consumes: generator.consumes ?? [],
+            }),
+          ),
+        resourceState: progressionCoordinator.resourceState,
+      })
+    : undefined;
+
+  if (productionSystem) {
+    runtime.addSystem(productionSystem);
+    if (applyViaFinalizeTick) {
+      runtime.addSystem({
+        id: 'resource-finalize',
+        tick: ({ deltaMs }) =>
+          progressionCoordinator.resourceState.finalizeTick(deltaMs),
+      });
+    }
+  }
 
   runtime.addSystem(automationSystem);
   runtime.addSystem(transformSystem);
@@ -1049,6 +1080,7 @@ export function initializeRuntimeWorker(
         applyOfflineProgress({
           elapsedMs: offlineElapsedMs,
           coordinator: progressionCoordinator,
+          productionSystem,
           runtime,
           resourceDeltas: offlineResourceDeltas,
           fastPath: offlineProgression,

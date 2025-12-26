@@ -23,7 +23,9 @@ import {
 } from './test-utils.js';
 import {
   createContentPack,
+  createGeneratorDefinition,
   createResourceDefinition,
+  literalOne,
 } from './modules/test-helpers.js';
 import type { NormalizedTransform } from '@idle-engine/content-schema';
 
@@ -1641,6 +1643,84 @@ describe('runtime.worker integration', () => {
       const resourceState = liveState.progression.resources?.state;
       const energyIndex =
         resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+    });
+
+    it('uses production system when applying offline fast path', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const preconditions = {
+        constantRates: true,
+        noUnlocks: true,
+        noAchievements: true,
+        noAutomation: true,
+        modeledResourceBounds: true,
+      };
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions,
+          },
+        },
+        resources: [createResourceDefinition('pack.test.energy')],
+        generators: [
+          createGeneratorDefinition('pack.test.reactor', {
+            initialLevel: 1,
+            purchase: {
+              currencyId: 'pack.test.energy',
+              costMultiplier: 1,
+              costCurve: literalOne,
+            },
+            produces: [
+              {
+                resourceId: 'pack.test.energy',
+                rate: literalOne,
+              },
+            ],
+          }),
+        ],
+      });
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+        content,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['pack.test.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'pack.test.energy': 0,
+          },
+          preconditions,
+        },
+      });
+
+      expect(enqueueSpy).not.toHaveBeenCalled();
+
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('pack.test.energy') ?? 0;
       expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
     });
 
