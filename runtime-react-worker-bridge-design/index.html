@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Implement Runtime-&gt;React Worker Bridge | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Implement Runtime-&gt;React Worker Bridge | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #16 (implementation) / #251 (design doc) - Presentation Shell Workstream"><meta data-rh="true" property="og:description" content="Issue: #16 (implementation) / #251 (design doc) - Presentation Shell Workstream"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-react-worker-bridge-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.f880a82f.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.2e016cd9.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.12436fc9.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -296,14 +296,14 @@
 <p><strong>Save / Autosave</strong></p>
 <ol>
 <li class="">Shell calls <code>WorkerBridge.requestSessionSnapshot(reason)</code> (new API) when autosave timers, user actions, or shutdown events fire. The bridge enqueues a <code>REQUEST_SESSION_SNAPSHOT</code> message after <code>awaitReady()</code> and outside <code>restoreSession</code> windows.</li>
-<li class="">Worker captures deterministic data: <code>SerializedResourceState</code> via <code>resourceState.exportForSave()</code>, pending commands via <code>commandQueue.exportForSave()</code>, current tick step, and monotonic clock reference. It responds with <code>SESSION_SNAPSHOT { requestId, capturedAt, state, commandQueue, step, monotonicNow }</code>.</li>
+<li class="">Worker captures deterministic data: <code>SerializedResourceState</code> via <code>resourceState.exportForSave()</code>, pending commands via <code>commandQueue.exportForSave()</code>, current tick step, monotonic clock reference, and optional offline progression metadata (mode, net rates, preconditions) when <code>content.metadata.offlineProgression</code> opts in. It responds with <code>SESSION_SNAPSHOT { requestId, capturedAt, state, commandQueue, step, monotonicNow, offlineProgression }</code>.</li>
 <li class="">Shell adapter normalises metadata (e.g., converts <code>capturedAt</code> to UTC, clamps offline caps) and writes the entry to the <code>sessions</code> object store within a single IndexedDB transaction. On error it surfaces telemetry through the existing <code>WorkerBridge</code> error channel.</li>
 </ol>
 <p><strong>Restore</strong></p>
 <ol>
 <li class="">Shell reads the latest slot at startup (or when the user selects a save) and validates it against current content definitions using <code>reconcileSaveAgainstDefinitions</code>.</li>
 <li class="">Shell computes offline elapsed time as <code>min(now - capturedAt, OFFLINE_CAP_MS)</code> and derives optional <code>resourceDeltas</code> if migrations supply them.</li>
-<li class="">Shell calls <code>WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, resourceDeltas })</code>. The worker follows the existing restore path, emitting either <code>SESSION_RESTORED</code> or <code>ERROR { code: &#x27;RESTORE_FAILED&#x27; }</code>.</li>
+<li class="">Shell calls <code>WorkerBridge.restoreSession({ state, commandQueue, elapsedMs, resourceDeltas, offlineProgression })</code>. The worker follows the existing restore path, emitting either <code>SESSION_RESTORED</code> or <code>ERROR { code: &#x27;RESTORE_FAILED&#x27; }</code>. Fast-path restores require runtime <code>fastForward</code> support and a valid <code>offlineProgression</code> payload; otherwise the worker falls back to step-based offline catch-up.</li>
 <li class="">On success the shell resumes normal command flow; on failure it records telemetry, surfaces UI prompts, and may retry after running migrations.</li>
 </ol>
 <p><strong>Stored Payload (v1)</strong></p>
@@ -317,6 +317,7 @@
 <li class=""><code>commandQueue</code>: <code>SerializedCommandQueue</code> (optional pending commands captured at snapshot time).</li>
 <li class=""><code>runtimeVersion</code>: semver string of <code>@idle-engine/core</code>.</li>
 <li class=""><code>contentDigest</code>: <code>ResourceDefinitionDigest</code> for compatibility checks.</li>
+<li class=""><code>offlineProgression</code>: optional <code>{ mode, resourceNetRates, preconditions }</code> captured from the latest state update when the content pack declares fast-path metadata.</li>
 <li class=""><code>flags</code>: <code>{ pendingMigration?: boolean; abortedRestore?: boolean }</code>.</li>
 </ul>
 <p><strong>Migration Considerations</strong></p>
@@ -324,6 +325,7 @@
 <li class="">Content packs publish digests; the adapter compares stored <code>contentDigest</code> against the live pack before restore. When digests diverge but a pack-supplied migration exists, the adapter runs it prior to calling <code>restoreSession</code>.</li>
 <li class="">Schema upgrades use IndexedDB version migrations. Each bump records a deterministic transform function so older saves can be rewritten in place without loading them into the worker.</li>
 <li class="">Record <code>runtimeVersion</code> and <code>persistenceSchemaVersion</code> to gate restores when the runtime introduces breaking changes. Future workers can advertise supported versions via <code>READY { supportedPersistence }</code>.</li>
+<li class="">Clear <code>offlineProgression</code> after migrations to avoid applying stale net-rate snapshots; migrated restores fall back to step-based offline catch-up.</li>
 <li class="">For detailed guidance on authoring migrations, see <a class="" href="/Idle-Game-Engine/persistence-migration-guide">Persistence Migration Guide</a>.</li>
 </ul>
 <p><strong>Risks &amp; Mitigations</strong></p>

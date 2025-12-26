@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Runtime-&gt;React Worker Bridge Operational Runbook | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/runtime-worker-bridge-runbook"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Runtime-&gt;React Worker Bridge Operational Runbook | Idle Engine Docs"><meta data-rh="true" name="description" content="Issue: #261"><meta data-rh="true" property="og:description" content="Issue: #261"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-worker-bridge-runbook"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-worker-bridge-runbook" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/runtime-worker-bridge-runbook" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.f880a82f.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.2e016cd9.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.12436fc9.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -81,7 +81,10 @@
 <li class="">Common codes:<!-- -->
 <ul>
 <li class=""><code>INVALID_COMMAND_PAYLOAD</code> – schema/version mismatch or malformed payload.</li>
-<li class=""><code>SCHEMA_VERSION_MISMATCH</code> – client bundle using different <code>WORKER_MESSAGE_SCHEMA_VERSION</code> (currently <code>3</code>).</li>
+</ul>
+</li>
+<li class=""><code>SCHEMA_VERSION_MISMATCH</code> – client bundle using different <code>WORKER_MESSAGE_SCHEMA_VERSION</code> (currently <code>4</code>).<!-- -->
+<ul>
 <li class=""><code>RESTORE_FAILED</code> – session payload rejected; inspect <code>.details</code> for reconciliation logs.</li>
 <li class=""><code>STALE_COMMAND</code> – command <code>issuedAt</code> &lt; last accepted; ensure callers use the bridge helpers.</li>
 <li class=""><code>SNAPSHOT_FAILED</code> – session snapshot capture failed; see §4.5 for details.</li>
@@ -91,6 +94,7 @@
 <h3 class="anchor anchorTargetStickyNavbar_EdDC" id="45-session-snapshots">4.5 Session snapshots<a href="#45-session-snapshots" class="hash-link" aria-label="Direct link to 4.5 Session snapshots" title="Direct link to 4.5 Session snapshots" translate="no">​</a></h3>
 <ul>
 <li class=""><strong>Capture performance</strong>: Snapshot serialization is <strong>synchronous</strong> and blocks the worker tick loop. The worker captures the current runtime state via <code>exportForSave()</code> and emits a <code>SESSION_SNAPSHOT</code> message with the complete payload (state, metadata, content digest).</li>
+<li class=""><strong>Offline fast path metadata</strong>: When <code>metadata.offlineProgression</code> is configured and preconditions are met, <code>SESSION_SNAPSHOT</code> includes <code>offlineProgression</code> (mode, resource net rates, preconditions) to enable constant-rate offline restores; missing or invalid metadata falls back to step-based catch-up.</li>
 <li class=""><strong>Expected snapshot sizes</strong>:<!-- -->
 <ul>
 <li class="">Small games (~10 resources): <strong>1-5 KB</strong></li>
