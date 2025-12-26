@@ -1033,9 +1033,15 @@ export function initializeRuntimeWorker(
         });
       }
 
+      const isFastPathEnabled =
+        offlineProgressionConfig !== undefined &&
+        areFastPathPreconditionsMet(
+          offlineProgressionConfig.preconditions,
+        );
       const shouldApplyFastPath =
         offlineElapsedMs > 0 &&
         offlineProgression !== undefined &&
+        isFastPathEnabled &&
         areFastPathPreconditionsMet(offlineProgression.preconditions) &&
         typeof runtime.fastForward === 'function';
 

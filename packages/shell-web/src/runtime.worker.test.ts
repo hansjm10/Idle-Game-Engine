@@ -1586,10 +1586,90 @@ describe('runtime.worker integration', () => {
       const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
       vi.spyOn(console, 'warn').mockImplementation(() => {});
 
+      const preconditions = {
+        constantRates: true,
+        noUnlocks: true,
+        noAchievements: true,
+        noAutomation: true,
+        modeledResourceBounds: true,
+      };
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions,
+          },
+        },
+        resources: [createResourceDefinition('sample-pack.energy')],
+      });
+
       harness = initializeRuntimeWorker({
         context: context as unknown as DedicatedWorkerGlobalScope,
         now: timeController.now,
         scheduleTick: timeController.scheduleTick,
+        content,
+      });
+
+      const serializedState: core.SerializedResourceState = {
+        ids: ['sample-pack.energy'],
+        amounts: [0],
+        capacities: [1000],
+        flags: [0],
+        unlocked: [true],
+        visible: [true],
+      };
+
+      context.dispatch({
+        type: 'RESTORE_SESSION',
+        schemaVersion: WORKER_MESSAGE_SCHEMA_VERSION,
+        elapsedMs: 1000,
+        state: serializedState,
+        offlineProgression: {
+          mode: 'constant-rates',
+          resourceNetRates: {
+            'sample-pack.energy': 1,
+          },
+          preconditions,
+        },
+      });
+
+      expect(enqueueSpy).not.toHaveBeenCalled();
+
+      const liveState = core.getGameState<{
+        progression: core.ProgressionAuthoritativeState;
+      }>();
+      const resourceState = liveState.progression.resources?.state;
+      const energyIndex =
+        resourceState?.requireIndex('sample-pack.energy') ?? 0;
+      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+    });
+
+    it('falls back when offline progression preconditions are not met', () => {
+      const enqueueSpy = vi.spyOn(core.CommandQueue.prototype, 'enqueue');
+      const warningSpy = vi.spyOn(core.telemetry, 'recordWarning');
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const content = createContentPack({
+        metadata: {
+          offlineProgression: {
+            mode: 'constant-rates',
+            preconditions: {
+              constantRates: true,
+              noUnlocks: true,
+              noAchievements: true,
+              noAutomation: true,
+              modeledResourceBounds: true,
+            },
+          },
+        },
+        resources: [createResourceDefinition('sample-pack.energy')],
+      });
+
+      harness = initializeRuntimeWorker({
+        context: context as unknown as DedicatedWorkerGlobalScope,
+        now: timeController.now,
+        scheduleTick: timeController.scheduleTick,
+        content,
       });
 
       const serializedState: core.SerializedResourceState = {
@@ -1615,21 +1695,27 @@ describe('runtime.worker integration', () => {
             constantRates: true,
             noUnlocks: true,
             noAchievements: true,
-            noAutomation: true,
+            noAutomation: false,
             modeledResourceBounds: true,
           },
         },
       });
 
-      expect(enqueueSpy).not.toHaveBeenCalled();
-
-      const liveState = core.getGameState<{
-        progression: core.ProgressionAuthoritativeState;
-      }>();
-      const resourceState = liveState.progression.resources?.state;
-      const energyIndex =
-        resourceState?.requireIndex('sample-pack.energy') ?? 0;
-      expect(resourceState?.getAmount(energyIndex)).toBeCloseTo(1, 6);
+      expect(warningSpy).not.toHaveBeenCalledWith(
+        'OfflineProgressionSnapshotInvalid',
+        { reason: 'invalid_payload' },
+      );
+      expect(enqueueSpy).toHaveBeenCalledTimes(1);
+      const offlineCommand = enqueueSpy.mock.calls[0]![0] as {
+        type: string;
+        payload: { elapsedMs: number };
+        priority: core.CommandPriority;
+      };
+      expect(offlineCommand.type).toBe(
+        core.RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      );
+      expect(offlineCommand.payload.elapsedMs).toBe(1000);
+      expect(offlineCommand.priority).toBe(core.CommandPriority.SYSTEM);
     });
 
     it('warns and falls back when offline progression payload is invalid', () => {
