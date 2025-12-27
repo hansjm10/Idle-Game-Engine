@@ -12,9 +12,23 @@ import {
  * same time unit as `CommandEnvelope.sentAt`.
  */
 export interface PendingCommandTracker {
+  /**
+   * Track a command envelope. Tracking the same requestId replaces the
+   * existing entry.
+   */
   track(envelope: CommandEnvelope): void;
+  /**
+   * Resolve a response and remove the pending entry if present.
+   */
   resolve(response: CommandResponse): void;
+  /**
+   * Expire pending envelopes with expiresAt <= now. Returns expired
+   * envelopes in insertion order of tracking (not sorted).
+   */
   expire(now: number): CommandEnvelope[];
+  /**
+   * Returns a snapshot of pending envelopes in insertion order.
+   */
   getPending(): readonly CommandEnvelope[];
 }
 

@@ -88,6 +88,18 @@ describe('InMemoryPendingCommandTracker', () => {
     expect(tracker.getPending()).toEqual([]);
   });
 
+  it('expires immediately when timeout is zero', () => {
+    const tracker = new InMemoryPendingCommandTracker({
+      timeoutMs: 0,
+    });
+    const envelope = createEnvelope('req-zero', 100);
+
+    tracker.track(envelope);
+
+    expect(tracker.expire(100)).toEqual([envelope]);
+    expect(tracker.getPending()).toEqual([]);
+  });
+
   it('expires multiple envelopes in one call', () => {
     const tracker = new InMemoryPendingCommandTracker({
       timeoutMs: 100,
