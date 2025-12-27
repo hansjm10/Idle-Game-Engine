@@ -738,6 +738,9 @@ Key metrics exposed:
 - Queue size limits prevent memory exhaustion attacks
 - Command logs may contain sensitive game state—encryption required for transmission
 
+### 6.4 Transport Protocol Usage (Issue 545)
+When commands cross process or network boundaries, the command queue remains the execution authority while the transport layer adds envelopes, acknowledgments, and idempotency handling. Use `CommandEnvelope`/`CommandResponse`, the idempotency registry, and the pending tracker as described in [Runtime Command Transport Design (Issue 545)](./runtime-command-transport-design-issue-545.md).
+
 ## 7. Work Breakdown & Delivery Plan
 
 ### 7.1 Issue Map
