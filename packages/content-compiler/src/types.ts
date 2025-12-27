@@ -4,7 +4,6 @@ import type {
   NormalizedAutomation,
   NormalizedContentPack as SchemaNormalizedContentPack,
   NormalizedGenerator,
-  NormalizedGuildPerk,
   NormalizedMetadata,
   NormalizedMetric,
   NormalizedPrestigeLayer,
@@ -104,7 +103,6 @@ export const MODULE_NAMES = [
   'automations',
   'transforms',
   'prestigeLayers',
-  'guildPerks',
   'runtimeEvents',
 ] as const;
 
@@ -119,7 +117,6 @@ interface ModuleTypeMap {
   readonly automations: NormalizedAutomation;
   readonly transforms: NormalizedTransform;
   readonly prestigeLayers: NormalizedPrestigeLayer;
-  readonly guildPerks: NormalizedGuildPerk;
   readonly runtimeEvents: NormalizedRuntimeEventContribution;
 }
 
@@ -163,7 +160,6 @@ export interface ModuleIndexTables {
   readonly automations: ReadonlyMap<string, number>;
   readonly transforms: ReadonlyMap<string, number>;
   readonly prestigeLayers: ReadonlyMap<string, number>;
-  readonly guildPerks: ReadonlyMap<string, number>;
   readonly runtimeEvents: ReadonlyMap<string, number>;
 }
 

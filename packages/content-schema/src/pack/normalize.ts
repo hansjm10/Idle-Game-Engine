@@ -18,7 +18,6 @@ import type {
   NormalizedContentPack,
   NormalizedContentPackModules,
   NormalizedGenerator,
-  NormalizedGuildPerk,
   NormalizedMetadata,
   NormalizedMetric,
   NormalizedPrestigeLayer,
@@ -189,20 +188,6 @@ export const normalizeContentPack = (
     ),
   );
 
-  const normalizedGuildPerks = freezeArray(
-    pack.guildPerks.map(
-      (perk, index) =>
-        freezeObject({
-          ...perk,
-          name: normalize(perk.name, ['guildPerks', index, 'name']),
-          description: normalize(
-            perk.description,
-            ['guildPerks', index, 'description'],
-          ),
-        }) as NormalizedGuildPerk,
-    ),
-  );
-
   const normalizedRuntimeEvents = freezeArray(
     pack.runtimeEvents.map(
       (event) => freezeObject({ ...event }) as NormalizedRuntimeEventContribution,
@@ -219,7 +204,6 @@ export const normalizeContentPack = (
     automations: normalizedAutomations,
     transforms: normalizedTransforms,
     prestigeLayers: normalizedPrestigeLayers,
-    guildPerks: normalizedGuildPerks,
     runtimeEvents: normalizedRuntimeEvents,
   };
 
@@ -232,7 +216,6 @@ export const normalizeContentPack = (
     automations: freezeMap(normalizedModules.automations),
     transforms: freezeMap(normalizedModules.transforms),
     prestigeLayers: freezeMap(normalizedModules.prestigeLayers),
-    guildPerks: freezeMap(normalizedModules.guildPerks),
     runtimeEvents: freezeMap(normalizedModules.runtimeEvents),
   });
 
@@ -245,7 +228,6 @@ export const normalizeContentPack = (
     automationById: freezeRecord(normalizedModules.automations),
     transformById: freezeRecord(normalizedModules.transforms),
     prestigeLayerById: freezeRecord(normalizedModules.prestigeLayers),
-    guildPerkById: freezeRecord(normalizedModules.guildPerks),
     runtimeEventById: freezeRecord(normalizedModules.runtimeEvents),
   });
 

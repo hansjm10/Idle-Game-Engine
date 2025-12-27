@@ -54,7 +54,6 @@ export type {
   NormalizedAutomation,
   NormalizedTransform,
   NormalizedPrestigeLayer,
-  NormalizedGuildPerk,
   NormalizedRuntimeEventContribution,
   NormalizationContext,
 } from './types.js';
@@ -147,7 +146,6 @@ const buildFeatureGateMap = (pack: ParsedContentPack): FeatureGateMap => ({
   transforms: pack.transforms.length > 0,
   runtimeEvents: pack.runtimeEvents.length > 0,
   prestigeLayers: pack.prestigeLayers.length > 0,
-  guildPerks: pack.guildPerks.length > 0,
 });
 
 const validateFeatureGates = (

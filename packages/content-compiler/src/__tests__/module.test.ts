@@ -36,7 +36,6 @@ async function createWorkspace(slug: string): Promise<string> {
         automations: [],
         transforms: [],
         prestigeLayers: [],
-        guildPerks: [],
         runtimeEvents: [],
       },
       null,

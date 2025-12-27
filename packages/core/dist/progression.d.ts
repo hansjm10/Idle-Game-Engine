@@ -53,7 +53,7 @@ export type UpgradeView = Readonly<{
     unlockHint?: string;
     visible: boolean;
 }>;
-export type AchievementCategory = 'progression' | 'prestige' | 'automation' | 'social' | 'collection';
+export type AchievementCategory = 'progression' | 'prestige' | 'automation' | 'collection';
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 export type AchievementProgressMode = 'oneShot' | 'incremental' | 'repeatable';
 export type AchievementView = Readonly<{

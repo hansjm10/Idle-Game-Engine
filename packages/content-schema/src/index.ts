@@ -14,7 +14,6 @@ export {
   type NormalizedAutomation,
   type NormalizedTransform,
   type NormalizedPrestigeLayer,
-  type NormalizedGuildPerk,
   type NormalizedRuntimeEventContribution,
   type NormalizationContext,
 } from './pack.js';
@@ -48,7 +47,6 @@ export * from './modules/metrics.js';
 export * from './modules/achievements.js';
 export * from './modules/automations.js';
 export * from './modules/prestige.js';
-export * from './modules/guild-perks.js';
 export * from './modules/transforms.js';
 export * from './modules/runtime-events.js';
 export * from './modules/dependencies.js';
@@ -64,7 +62,6 @@ export {
   createAutomation,
   createTransform,
   createPrestigeLayer,
-  createGuildPerk,
   type ResourceInput,
   type GeneratorInput,
   type UpgradeInput,
@@ -73,5 +70,4 @@ export {
   type AutomationInput,
   type TransformInput,
   type PrestigeLayerInput,
-  type GuildPerkInput,
 } from './factories.js';

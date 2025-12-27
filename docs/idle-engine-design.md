@@ -140,7 +140,7 @@ function runTick(deltaMs: number) {
 
 ##### Content Pipeline
 - Content described via declarative TypeScript/JSON modules and compiled into normalized definitions.
-- Content DSL supports: resources, generators, transforms, upgrades, milestones/achievements, prestige layers, automations, runtime event extensions, and guild perks.
+- Content DSL supports: resources, generators, transforms, upgrades, milestones/achievements, prestige layers, automations, and runtime event extensions.
 - Support for hierarchical content packages (base game, seasonal event, micro-DLC) with dependency resolution.
 - Validation tooling verifies IDs, cyclical dependencies, formula sanity, and runtime feature compatibility before shipping.
 - Property-based sanitization guidance lives in [`docs/content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance`](content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance); run schema and CLI suites before shipping new formulas.
@@ -149,7 +149,7 @@ function runTick(deltaMs: number) {
 - Watch and check flows are first-class: `--watch` keeps the pipeline alive after failures while surfacing iteration summaries, and `--check` exits non-zero whenever validation summaries or compiled artifacts would change. Lefthook and CI invoke `pnpm generate --check` to prevent stale outputs from landing.
 - Every run persists a workspace summary at `content/compiled/index.json` (overrideable via `--summary`) that records validation and compilation status. Downstream tooling must treat the summary as stale when validation fails or the CLI reports drift; rerun `pnpm generate` to refresh artifacts before consumption.
 - Authoring packs live alongside their manifests (e.g., `packages/content-sample/content/pack.json`). Keep schema warnings at zero, add missing localized variants for declared locales, and document intentional deviations so future migrations stay deterministic.
-- Extendable DSL supports custom modifiers, scripted events, and guild-related hooks while maintaining sandbox boundaries.
+- Extendable DSL supports custom modifiers and scripted events while maintaining sandbox boundaries.
 - DSL expressed as strongly typed schemas (Zod) compiled into immutable definitions; support a YAML authoring option for non-TS teams via build-time conversion.
 - Each content item declares metadata (version, compatibility range), definitions, formulas (AST or limited expression strings), and unlock conditions.
 - Preprocessors resolve derived values (e.g., cumulative cost curves) and emit warnings when difficulty spikes exceed configured thresholds.
@@ -210,7 +210,7 @@ function runTick(deltaMs: number) {
   - **Deliverables**:
     - `packages/core`: runnable runtime with scheduler, resource system, upgrade processor, save/load (stub), diagnostics.
     - Presentation shells (archived): UI consumers of runtime snapshots and commands.
-    - `packages/content-sample`: reference game pack with ~10 resources, 6 generators, basic prestige layer, and sample guild perks.
+    - `packages/content-sample`: reference game pack with ~10 resources, 6 generators, and a basic prestige layer.
     - CI pipeline executing unit/integration tests and content validation (`pnpm generate --check`).
   - **Sequencing**:
     1. Foundation (Week 1-2): monorepo tooling, scheduler skeleton, resource structures, command bus.

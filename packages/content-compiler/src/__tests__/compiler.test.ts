@@ -37,7 +37,6 @@ const createSchemaDocument = () =>
     automations: [],
     transforms: [],
     prestigeLayers: [],
-    guildPerks: [],
     runtimeEvents: [],
   }) as const;
 
@@ -53,7 +52,6 @@ const EMPTY_MODULES: SerializedNormalizedModules = {
   automations: [] as SerializedNormalizedModules['automations'],
   transforms: [] as SerializedNormalizedModules['transforms'],
   prestigeLayers: [] as SerializedNormalizedModules['prestigeLayers'],
-  guildPerks: [] as SerializedNormalizedModules['guildPerks'],
   runtimeEvents: [] as SerializedNormalizedModules['runtimeEvents'],
 };
 
@@ -69,7 +67,6 @@ function createModules(
     automations: overrides.automations ?? EMPTY_MODULES.automations,
     transforms: overrides.transforms ?? EMPTY_MODULES.transforms,
     prestigeLayers: overrides.prestigeLayers ?? EMPTY_MODULES.prestigeLayers,
-    guildPerks: overrides.guildPerks ?? EMPTY_MODULES.guildPerks,
     runtimeEvents: overrides.runtimeEvents ?? EMPTY_MODULES.runtimeEvents,
   };
 }
@@ -180,7 +177,6 @@ describe('content compiler scaffolding', () => {
       automations: [],
       transforms: [],
       prestigeLayers: [],
-      guildPerks: [],
       runtimeEvents: [],
     } as const;
 

@@ -137,7 +137,6 @@ export function createContentPack(config: {
     automations,
     transforms,
     prestigeLayers,
-    guildPerks: [],
     runtimeEvents: [],
     lookup: {
       resources: resourcesMap,
@@ -148,7 +147,6 @@ export function createContentPack(config: {
       automations: automationsMap,
       transforms: transformsMap,
       prestigeLayers: prestigeLayersMap,
-      guildPerks: new Map(),
       runtimeEvents: new Map(),
     },
     serializedLookup: {
@@ -160,7 +158,6 @@ export function createContentPack(config: {
       automationById,
       transformById,
       prestigeLayerById,
-      guildPerkById: {},
       runtimeEventById: {},
     },
     digest: createTestDigest(

@@ -9,7 +9,6 @@ import {
   createAutomation,
   createTransform,
   createPrestigeLayer,
-  createGuildPerk,
   type ResourceInput,
   type GeneratorInput,
   type UpgradeInput,
@@ -18,7 +17,6 @@ import {
   type AutomationInput,
   type TransformInput,
   type PrestigeLayerInput,
-  type GuildPerkInput,
 } from './factories.js';
 
 describe('createResource', () => {
@@ -457,65 +455,6 @@ describe('createPrestigeLayer', () => {
           baseReward: { kind: 'constant', value: 1 },
         },
         resetTargets: [],
-      }),
-    ).toThrow();
-  });
-});
-
-describe('createGuildPerk', () => {
-  const baseGuildPerk: GuildPerkInput = {
-    id: 'test.guild-bonus',
-    name: { default: 'Guild Bonus' },
-    description: { default: 'Increases production for all guild members' },
-    category: 'buff',
-    maxRank: 10,
-    effects: [
-      {
-        kind: 'modifyResourceRate',
-        resourceId: 'test.energy',
-        operation: 'multiply',
-        value: { kind: 'constant', value: 1.1 },
-      },
-    ],
-    cost: {
-      kind: 'currency',
-      resourceId: 'test.guild-points',
-      amount: { kind: 'constant', value: 100 },
-    },
-  };
-
-  it('creates a normalized guild perk from plain input', () => {
-    const result = createGuildPerk(baseGuildPerk);
-
-    expect(result.id).toBe('test.guild-bonus');
-    expect(result.name.default).toBe('Guild Bonus');
-    expect(result.maxRank).toBe(10);
-  });
-
-  it('throws when required fields are missing', () => {
-    expect(() =>
-      createGuildPerk({
-        id: 'test.perk',
-        name: { default: 'Perk' },
-        // missing description, category, maxRank, effects, cost
-      } as GuildPerkInput),
-    ).toThrow();
-  });
-
-  it('throws for invalid maxRank', () => {
-    expect(() =>
-      createGuildPerk({
-        ...baseGuildPerk,
-        maxRank: 0,
-      }),
-    ).toThrow();
-  });
-
-  it('throws for invalid category', () => {
-    expect(() =>
-      createGuildPerk({
-        ...baseGuildPerk,
-        category: 'invalid' as GuildPerkInput['category'],
       }),
     ).toThrow();
   });

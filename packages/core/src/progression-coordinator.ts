@@ -1171,12 +1171,6 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       this.achievementFlagState.set(reward.flagId, reward.value);
     } else if (reward?.kind === 'emitEvent') {
       this.publishAchievementEvent(reward.eventId, options?.events);
-    } else if (reward?.kind === 'grantGuildPerk') {
-      this.onError?.(
-        new Error(
-          `Achievement reward "${achievement.id}" references guild perks, but guild perk runtime handling is not implemented.`,
-        ),
-      );
     }
 
     for (const eventId of achievement.onUnlockEvents) {

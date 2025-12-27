@@ -77,7 +77,6 @@ function createPackDocument(
     automations: [],
     transforms: [],
     prestigeLayers: [],
-    guildPerks: [],
     runtimeEvents: [],
   };
 
@@ -138,7 +137,6 @@ describe('content compiler pipeline', () => {
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 }`;
     await workspace.writePack(
@@ -207,7 +205,6 @@ describe('content compiler pipeline', () => {
       automations: [],
       transforms: [],
       prestigeLayers: [],
-      guildPerks: [],
       runtimeEvents: [],
     };
     await workspace.writePack('invalid', invalidDocument);

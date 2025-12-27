@@ -13,7 +13,6 @@ type AchievementCategory =
   | 'progression'
   | 'prestige'
   | 'automation'
-  | 'social'
   | 'collection';
 
 type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';
@@ -123,12 +122,6 @@ const achievementRewardSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('grantUpgrade'),
       upgradeId: contentIdSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('grantGuildPerk'),
-      perkId: contentIdSchema,
     })
     .strict(),
   z
@@ -303,7 +296,7 @@ export const achievementDefinitionSchema: z.ZodType<
     name: localizedTextSchema,
     description: localizedSummarySchema,
     category: z.enum(
-      ['progression', 'prestige', 'automation', 'social', 'collection'] as const,
+      ['progression', 'prestige', 'automation', 'collection'] as const,
     ),
     tier: z.enum(['bronze', 'silver', 'gold', 'platinum'] as const),
     icon: z

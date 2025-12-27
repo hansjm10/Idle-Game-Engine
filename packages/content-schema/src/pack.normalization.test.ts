@@ -74,7 +74,6 @@ const createNormalizationFixture = () => ({
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 });
 

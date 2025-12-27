@@ -90,7 +90,6 @@ export type AchievementCategory =
   | 'progression'
   | 'prestige'
   | 'automation'
-  | 'social'
   | 'collection';
 
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum';

@@ -45,7 +45,7 @@ The Idle Engine runtime requires a mechanism to manage state mutations from mult
 - **Type Safety**: Strongly-typed command payloads that prevent invalid mutations at compile time
 
 ### Non-Goals
-- Network synchronization protocols (handled by separate social system layer)
+- Network synchronization protocols (out of scope for prototype milestone)
 - Complex undo/redo UI flows (out of scope for prototype milestone)
 - Cross-tick command scheduling (time-based tasks use dedicated Task Scheduler system)
 

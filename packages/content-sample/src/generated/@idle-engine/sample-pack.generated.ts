@@ -4,9 +4,9 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "603443649fce11c37f2908a47332d36bfacdc45e1fc1cc4503f6aef37aa254b2",
+  "artifactHash": "29e2d46a481346424d5157ecee75995cec29bc60cbe77dc5278b425153b83c45",
   "digest": {
-    "hash": "fnv1a-1dafab35",
+    "hash": "fnv1a-437f9e3f",
     "version": 1
   },
   "formatVersion": 1,
@@ -551,7 +551,6 @@ const serialized = {
         }
       }
     ],
-    "guildPerks": [],
     "metrics": [
       {
         "attributes": [],

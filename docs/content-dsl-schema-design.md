@@ -17,7 +17,7 @@ This design document specifies the canonical Zod schema contract for Idle Engine
 
 ## 1. Summary
 
-The Idle Engine content DSL bridges designer-authored data and the deterministic runtime. Today, sample packs provide ad-hoc TypeScript interfaces, but the monorepo lacks an enforceable schema. This document specifies the Zod schemas, normalisation rules, and validation flow that future CLI tooling will use before content is compiled into runtime-ready definitions. The goal is to deliver a single package that validates metadata, resources, generators, upgrades, metrics, achievements, prestige layers, automations, transforms, runtime event extensions, guild perks, and pack dependency metadata while providing strong typing for TypeScript consumers.
+The Idle Engine content DSL bridges designer-authored data and the deterministic runtime. Today, sample packs provide ad-hoc TypeScript interfaces, but the monorepo lacks an enforceable schema. This document specifies the Zod schemas, normalisation rules, and validation flow that future CLI tooling will use before content is compiled into runtime-ready definitions. The goal is to deliver a single package that validates metadata, resources, generators, upgrades, metrics, achievements, prestige layers, automations, transforms, runtime event extensions, and pack dependency metadata while providing strong typing for TypeScript consumers.
 
 ## 2. Context & Problem Statement
 
@@ -118,7 +118,6 @@ packages/content-schema/
       achievements.ts
       automations.ts
       prestige.ts
-      guild-perks.ts
       transforms.ts
     runtime-events.ts
     dependencies.ts
@@ -396,7 +395,7 @@ Cross-validation ensures referenced resources exist, consumption and production 
 
 `upgradeDefinitionSchema` captures upgrade catalog entries:
 - `id`, `name`, `icon`, `tags`
-- `category`: enum (`global`, `resource`, `generator`, `automation`, `prestige`, `guild`)
+- `category`: enum (`global`, `resource`, `generator`, `automation`, `prestige`)
 - `targets`: array of typed handles
 - `cost`: same schema as generator `purchase`
 - `repeatable`: optional block describing stacking rules
@@ -428,13 +427,13 @@ Validation rejects duplicate metric ids and surfaces warnings when attribute key
 - `id`: `contentIdSchema`
 - `name`: `localizedTextSchema`
 - `description`: `localizedSummarySchema`
-- `category`: enum (`progression`, `prestige`, `automation`, `social`, `collection`)
+- `category`: enum (`progression`, `prestige`, `automation`, `collection`)
 - `tier`: enum (`bronze`, `silver`, `gold`, `platinum`)
 - `icon`: optional icon path
 - `tags`: array for analytics or in-game filters
 - `track`: discriminated union describing progress measurement (resource, generatorLevel, upgradeOwned, flag, script, customMetric)
 - `progress`: object describing accumulation semantics with `target`, `mode`, and optional `repeatable` block
-- `reward`: optional union (grantResource, grantUpgrade, grantGuildPerk, emitEvent, unlockAutomation, grantFlag)
+- `reward`: optional union (grantResource, grantUpgrade, emitEvent, unlockAutomation, grantFlag)
 - `unlockCondition` / `visibilityCondition`
 - `onUnlockEvents`: optional array of runtime event ids
 - `displayOrder`: optional float
@@ -495,22 +494,6 @@ Validation confirms every transform references declared resources, batch modes d
 - `order`: optional float
 
 Validation enforces that prestige rewards reference prestige-class resources and that reset targets cover at least one non-prestige resource.
-
-**Guild Perk Schema**:
-
-`guildPerkSchema` provides hooks for social systems:
-- `id`: `contentIdSchema`
-- `name`: `localizedTextSchema`
-- `description`: `localizedTextSchema`
-- `category`: enum (`buff`, `utility`, `cosmetic`)
-- `maxRank`: positive integer
-- `effects`: union aligned with upgrade effects plus guild-specific entries
-- `cost`: block referencing guild currency or contribution metrics
-- `unlockCondition`: `conditionSchema`
-- `order`: optional float
-- `visibilityCondition`
-
-Guild perks can be optional for prototype packs; schema allows empty arrays.
 
 **Runtime Event Contribution Schema**:
 
@@ -619,11 +602,6 @@ export const FEATURE_GATES = [
     introducedIn: '0.4.0',
     docRef: 'docs/idle-engine-design.md (§6.2)',
   },
-  {
-    module: 'guildPerks',
-    introducedIn: '0.5.0',
-    docRef: 'docs/idle-engine-design.md (§6.2)',
-  },
 ] as const;
 ```
 
@@ -659,7 +637,6 @@ interface NormalizedContentPack {
   readonly automations: readonly NormalizedAutomation[];
   readonly transforms: readonly NormalizedTransform[];
   readonly prestigeLayers: readonly NormalizedPrestigeLayer[];
-  readonly guildPerks: readonly NormalizedGuildPerk[];
   readonly runtimeEvents: readonly NormalizedRuntimeEventContribution[];
   readonly lookup: {
     readonly resources: ReadonlyMap<ContentId, NormalizedResource>;
@@ -670,7 +647,6 @@ interface NormalizedContentPack {
     readonly automations: ReadonlyMap<ContentId, NormalizedAutomation>;
     readonly transforms: ReadonlyMap<ContentId, NormalizedTransform>;
     readonly prestigeLayers: ReadonlyMap<ContentId, NormalizedPrestigeLayer>;
-    readonly guildPerks: ReadonlyMap<ContentId, NormalizedGuildPerk>;
     readonly runtimeEvents: ReadonlyMap<ContentId, NormalizedRuntimeEventContribution>;
   };
   readonly serializedLookup: {
@@ -682,7 +658,6 @@ interface NormalizedContentPack {
     readonly automationById: Readonly<Record<string, NormalizedAutomation>>;
     readonly transformById: Readonly<Record<string, NormalizedTransform>>;
     readonly prestigeLayerById: Readonly<Record<string, NormalizedPrestigeLayer>>;
-    readonly guildPerkById: Readonly<Record<string, NormalizedGuildPerk>>;
     readonly runtimeEventById: Readonly<Record<string, NormalizedRuntimeEventContribution>>;
   };
   readonly digest: {
@@ -837,7 +812,6 @@ CLI changes in `tools/content-schema-cli` (follow-up work):
 ## 13. Open Questions
 
 - Should the schema expose calculated presentation defaults (e.g., auto-generated icon paths) or leave that to the compiler?
-- How will guild perk costs interface with future persistence data when live storage lands?
 - Do we need additional effect types (e.g., scripted modifiers) before schema v1.0, or can they wait for the scripting design doc?
 - What is the migration strategy when schema digests change (e.g., do we embed the digest into save files similar to event manifests)?
 - Should we migrate remaining TypeScript/hand-authored sample data into the CLI-discoverable pack format before or after schema v1.0?

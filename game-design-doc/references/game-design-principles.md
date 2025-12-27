@@ -43,10 +43,10 @@ Apply when: Evaluating progression difficulty, onboarding flows, endgame content
 ### Bartle's Player Types (adapted for idle games)
 - **Achievers**: Completionists (achievements, milestones, 100% goals)
 - **Explorers**: Discovery-oriented (hidden mechanics, easter eggs, experimentation)
-- **Socializers**: Community-focused (leaderboards, guilds, sharing strategies)
-- **Killers**: Competition-driven (PvP leaderboards, speed-run challenges)
+- **Socializers**: Community-focused (cooperative play, sharing strategies)
+- **Killers**: Competition-driven (time trials, speed-run challenges)
 
-Apply when: Designing retention features, social systems, achievement structures.
+Apply when: Designing retention features and achievement structures.
 
 ### Koster's Theory of Fun
 - **Fun is Learning**: Patterns, mastery, optimization discovery

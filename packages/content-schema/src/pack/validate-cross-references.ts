@@ -3,7 +3,6 @@ import { z } from 'zod';
 import type { Condition } from '../base/conditions.js';
 import type { ExpressionNode, NumericFormula } from '../base/formulas.js';
 import type { ContentSchemaWarning } from '../errors.js';
-import type { GuildPerkDefinition } from '../modules/guild-perks.js';
 import type { ParsedContentPack } from './schema.js';
 import type {
   CrossReferenceContext,
@@ -174,7 +173,7 @@ const ensureFormulaReference = (
 };
 
 const validateUpgradeEffect = (
-  effect: UpgradeEffect | GuildPerkDefinition['effects'][number],
+  effect: UpgradeEffect,
   path: readonly (string | number)[],
   ctx: z.RefinementCtx,
   context: CrossReferenceContext,
@@ -281,32 +280,6 @@ const validateUpgradeEffect = (
           message: `Effect references unknown runtime event "${effect.eventId}".`,
         });
       }
-      break;
-    case 'unlockGuildAutomation':
-      ensureReference(
-        automations,
-        effect.automationId,
-        `Effect references unknown automation "${effect.automationId}".`,
-      );
-      break;
-    case 'modifyGuildStorage':
-      ensureReference(
-        resources,
-        effect.storageId,
-        `Effect references unknown resource "${effect.storageId}".`,
-      );
-      collectFormulaEntityReferences(effect.value, (reference) => {
-        ensureFormulaReference(
-          reference,
-          path,
-          ctx,
-          resources,
-          generators,
-          upgrades,
-          automations,
-          prestigeLayers,
-        );
-      });
       break;
     default:
       break;
@@ -459,7 +432,6 @@ export const validateCrossReferences = (
   const automationIndex = getIndexMap(pack.automations);
   const transformIndex = getIndexMap(pack.transforms);
   const prestigeIndex = getIndexMap(pack.prestigeLayers);
-  const guildPerkIndex = getIndexMap(pack.guildPerks);
   const knownRuntimeEvents = new Set<string>(context.runtimeEventCatalogue);
   pack.runtimeEvents.forEach((event) => {
     knownRuntimeEvents.add(event.id);
@@ -776,14 +748,6 @@ export const validateCrossReferences = (
             `Upgrade "${upgrade.id}" targets unknown prestige layer "${target.id}".`,
           );
           break;
-        case 'guildPerk':
-          ensureContentReference(
-            guildPerkIndex,
-            target.id,
-            ['upgrades', index, 'targets', targetIndex, 'id'],
-            `Upgrade "${upgrade.id}" targets unknown guild perk "${target.id}".`,
-          );
-          break;
         default:
           break;
       }
@@ -1032,14 +996,6 @@ export const validateCrossReferences = (
             achievement.reward.upgradeId,
             ['achievements', index, 'reward', 'upgradeId'],
             `Achievement "${achievement.id}" grants unknown upgrade "${achievement.reward.upgradeId}".`,
-          );
-          break;
-        case 'grantGuildPerk':
-          ensureContentReference(
-            guildPerkIndex,
-            achievement.reward.perkId,
-            ['achievements', index, 'reward', 'perkId'],
-            `Achievement "${achievement.id}" grants unknown guild perk "${achievement.reward.perkId}".`,
           );
           break;
         case 'emitEvent':
@@ -1518,90 +1474,5 @@ export const validateCrossReferences = (
       `Prestige layer "${layer.id}" requires a resource named "${prestigeCountId}" to track prestige count. ` +
         `Add this resource to your content pack's resources array.`,
     );
-  });
-
-  pack.guildPerks.forEach((perk, index) => {
-    perk.effects.forEach((effect, effectIndex) => {
-      validateUpgradeEffect(
-        effect,
-        ['guildPerks', index, 'effects', effectIndex],
-        ctx,
-        context,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        automationIndex,
-        prestigeIndex,
-        knownRuntimeEvents,
-      );
-    });
-    switch (perk.cost.kind) {
-      case 'currency':
-        ensureContentReference(
-          resourceIndex,
-          perk.cost.resourceId,
-          ['guildPerks', index, 'cost', 'resourceId'],
-          `Guild perk "${perk.id}" references unknown resource "${perk.cost.resourceId}".`,
-        );
-        collectFormulaEntityReferences(perk.cost.amount, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['guildPerks', index, 'cost', 'amount'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-        break;
-      case 'metric':
-        ensureContentReference(
-          metricIndex,
-          perk.cost.metricId,
-          ['guildPerks', index, 'cost', 'metricId'],
-          `Guild perk "${perk.id}" references unknown metric "${perk.cost.metricId}".`,
-        );
-        collectFormulaEntityReferences(perk.cost.amount, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['guildPerks', index, 'cost', 'amount'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-        break;
-      default:
-        break;
-    }
-    if (perk.unlockCondition) {
-      validateConditionNode(
-        perk.unlockCondition,
-        ['guildPerks', index, 'unlockCondition'],
-        ctx,
-        context,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        prestigeIndex,
-      );
-    }
-    if (perk.visibilityCondition) {
-      validateConditionNode(
-        perk.visibilityCondition,
-        ['guildPerks', index, 'visibilityCondition'],
-        ctx,
-        context,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        prestigeIndex,
-      );
-    }
   });
 };

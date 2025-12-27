@@ -59,7 +59,6 @@ function createPackDocument(
     automations: [],
     transforms: [],
     prestigeLayers: [],
-    guildPerks: [],
     runtimeEvents: [],
   };
 

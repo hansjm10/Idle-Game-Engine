@@ -275,7 +275,7 @@ Required fields:
 | --- | --- | --- |
 | `id` | `ContentId` | Upgrade identifier. |
 | `name` | `LocalizedText` | Display name. |
-| `category` | `global` \| `resource` \| `generator` \| `automation` \| `prestige` \| `guild` | Organization label. |
+| `category` | `global` \| `resource` \| `generator` \| `automation` \| `prestige` | Organization label. |
 | `targets` | `UpgradeTarget[]` | At least one target. |
 | `cost` | `SingleCurrencyCost \| MultiCurrencyCost` | Purchase cost. |
 | `effects` | `UpgradeEffect[]` | At least one effect. |
@@ -374,7 +374,7 @@ Required fields:
 | `id` | `ContentId` | Achievement identifier. |
 | `name` | `LocalizedText` | Display name. |
 | `description` | `LocalizedSummary` | Short description. |
-| `category` | `progression` \| `prestige` \| `automation` \| `social` \| `collection` | Classification. |
+| `category` | `progression` \| `prestige` \| `automation` \| `collection` | Classification. |
 | `tier` | `bronze` \| `silver` \| `gold` \| `platinum` | Presentation tier. |
 | `track` | `AchievementTrack` | Progress source. |
 
@@ -962,7 +962,6 @@ lives in `packages/content-schema/src/runtime-compat.ts`:
 | `transforms` | `0.3.0` | `docs/idle-engine-design.md` (§6.2) |
 | `runtimeEvents` | `0.3.0` | `docs/runtime-event-pubsub-design.md` |
 | `prestigeLayers` | `0.4.0` | `docs/idle-engine-design.md` (§6.2) |
-| `guildPerks` | `0.5.0` | `docs/idle-engine-design.md` (§6.2) |
 
 When `metadata.engine` omits or predates the required version, validation pushes
 structured `FeatureViolation` errors or warnings (see

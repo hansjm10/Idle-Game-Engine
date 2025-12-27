@@ -344,7 +344,6 @@ const buildPackDocument = (
     automations: [],
     transforms: [],
     prestigeLayers: [],
-    guildPerks: [],
     runtimeEvents: [],
   };
 };
@@ -412,7 +411,6 @@ const buildBalanceWarningPackDocument = () => ({
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 });
 
@@ -464,7 +462,6 @@ const buildBalanceErrorPackDocument = () => ({
   automations: [],
   transforms: [],
   prestigeLayers: [],
-  guildPerks: [],
   runtimeEvents: [],
 });
 

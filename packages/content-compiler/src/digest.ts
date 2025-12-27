@@ -28,7 +28,6 @@ function extractModules(input: DigestInput): SerializedNormalizedModules {
       automations: input.automations,
       transforms: input.transforms,
       prestigeLayers: input.prestigeLayers,
-      guildPerks: input.guildPerks,
       runtimeEvents: input.runtimeEvents,
     };
   }
@@ -59,7 +58,6 @@ export function computeContentDigest(input: DigestInput): SerializedContentDiges
     automations: modules.automations,
     transforms: modules.transforms,
     prestigeLayers: modules.prestigeLayers,
-    guildPerks: modules.guildPerks,
     runtimeEvents: modules.runtimeEvents,
   } as const;
 
