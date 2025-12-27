@@ -1263,6 +1263,13 @@ export {
 } from './command-transport.js';
 export type { IdempotencyRegistry } from './idempotency-registry.js';
 export { InMemoryIdempotencyRegistry } from './idempotency-registry.js';
+export type {
+  PendingCommandTracker,
+  PendingCommandTrackerOptions,
+} from './pending-command-tracker.js';
+export {
+  InMemoryPendingCommandTracker,
+} from './pending-command-tracker.js';
 export {
   CommandDispatcher,
   type CommandHandler,
