@@ -56,8 +56,8 @@ Runtime UI   <- CommandResponse <- Pending Tracker <-    Idempotency Reg  <- Com
 ```
 
 ### 6.2 Detailed Design
-- **Runtime Changes**: Issue 545 adds a `CommandExecutionOutcome` stream (success or failure with `requestId`, `serverStep`, and `CommandError`) and a `drainCommandOutcomes()` API alongside `drainCommandFailures()` (`packages/core/src/index.ts:237`). The transport server uses these outcomes to finalize responses without changing command queue order (`packages/core/src/command-queue.ts:74`) and serializes `CommandError` into a JSON-safe transport error.
-- **Data & Schemas**: Issue 545 introduces a JSON-safe `SerializedCommand` and transport wrappers aligned with existing payload serialization (`packages/core/src/command-queue.ts:33`).
+- **Runtime Changes**: Issue 545 adds a `CommandExecutionOutcome` stream (success or failure with `requestId`, `serverStep` for the execution step, and `CommandError`) and a `drainCommandOutcomes()` API alongside `drainCommandFailures()` (`packages/core/src/index.ts:237`). The transport server uses these outcomes to finalize responses without changing command queue order (`packages/core/src/command-queue.ts:74`) and serializes `CommandError` into a JSON-safe transport error.
+- **Data & Schemas**: Issue 545 introduces a JSON-safe `SerializedCommand` and transport wrappers aligned with existing payload serialization (`packages/core/src/command-queue.ts:33`). `CommandResponse.serverStep` records the server enqueue step (acknowledgment), not the execution step.
 ```typescript
 export type SerializedCommand = Readonly<{
   readonly type: string;
@@ -159,7 +159,6 @@ Issue 545 risks and mitigations:
 - **Communication**: Issue 545 release notes should link to this doc and reference issue 545 acceptance criteria.
 
 ## 13. Open Questions
-- Issue 545 TODO (Owner: Runtime Core Maintainer): Should `serverStep` in `CommandResponse` reflect enqueue step or execution step?
 - Issue 545 TODO (Owner: Transport Protocol Agent): What are the default TTL and timeout durations for idempotency and pending tracking?
 - Issue 545 TODO (Owner: Docs Agent): Where should transport protocol usage be documented beyond this design doc?
 
@@ -191,3 +190,4 @@ Issue 545 risks and mitigations:
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2025-12-27 | TODO (Owner: Runtime Core Maintainer) | Initial Issue 545 draft |
+| 2025-12-27 | Codex | Clarify `CommandResponse.serverStep` as enqueue step |
