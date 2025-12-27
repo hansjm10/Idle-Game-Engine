@@ -1196,6 +1196,12 @@ export type {
   CommandResponse,
 } from './command-transport.js';
 export {
+  DEFAULT_IDEMPOTENCY_TTL_MS,
+  DEFAULT_PENDING_COMMAND_TIMEOUT_MS,
+} from './command-transport.js';
+export type { IdempotencyRegistry } from './idempotency-registry.js';
+export { InMemoryIdempotencyRegistry } from './idempotency-registry.js';
+export {
   CommandDispatcher,
   type CommandHandler,
   type CommandHandlerResult,
