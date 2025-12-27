@@ -1189,6 +1189,12 @@ export {
   type SerializedCommandQueueV1,
   type SerializedCommandQueue,
 } from './command-queue.js';
+export type {
+  SerializedCommand,
+  CommandResponseError,
+  CommandEnvelope,
+  CommandResponse,
+} from './command-transport.js';
 export {
   CommandDispatcher,
   type CommandHandler,
