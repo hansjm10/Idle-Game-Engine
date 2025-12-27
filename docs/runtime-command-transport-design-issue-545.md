@@ -111,6 +111,13 @@ export interface PendingCommandTracker {
 - **Telemetry & Observability**: Issue 545 adds telemetry events for duplicate requests and timeouts without logging payload contents.
 - **Security & Compliance**: Issue 545 validates `clientId`/`requestId` length and format, and scopes idempotency keys to `{clientId, requestId}`.
 
+### 6.4 Usage Guidance (Initial)
+- **When to use**: Apply the transport protocol when commands originate outside the runtime process (networked client, multi-process shell). Local-only commands can enqueue directly without envelopes.
+- **Envelope creation**: Wrap commands in `CommandEnvelope` with stable `clientId`, unique `requestId` per client, and `sentAt` for observability; keep payloads JSON-safe via `SerializedCommand`.
+- **Server handling**: Validate identifiers, check the idempotency registry by `{clientId, requestId}`, return cached `duplicate` responses, and record `accepted` responses keyed to the enqueue `serverStep`; return `rejected` with `CommandResponseError` for invalid requests.
+- **Client handling**: Track pending envelopes, resolve on `CommandResponse`, and expire/retry based on configured timeouts using the pending tracker.
+- **Related runtime guidance**: A runtime-facing stub lives in [Runtime Command Queue Design](./runtime-command-queue-design.md) for quick discovery and links back here for full protocol details.
+
 ## 7. Work Breakdown & Delivery Plan
 ### 7.1 Issue Map
 | Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
@@ -160,7 +167,6 @@ Issue 545 risks and mitigations:
 
 ## 13. Open Questions
 - Issue 545 TODO (Owner: Transport Protocol Agent): What are the default TTL and timeout durations for idempotency and pending tracking?
-- Issue 545 TODO (Owner: Docs Agent): Where should transport protocol usage be documented beyond this design doc?
 
 ## 14. Follow-Up Work
 - Issue 545 follow-up: build concrete WebSocket/HTTP transport adapters in shell repos.
@@ -191,3 +197,4 @@ Issue 545 risks and mitigations:
 |------------|--------|----------------|
 | 2025-12-27 | TODO (Owner: Runtime Core Maintainer) | Initial Issue 545 draft |
 | 2025-12-27 | Codex | Clarify `CommandResponse.serverStep` as enqueue step |
+| 2025-12-27 | Codex | Add initial transport usage guidance and runtime doc stub (Issue #677) |
