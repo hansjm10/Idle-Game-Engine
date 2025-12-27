@@ -30,6 +30,19 @@ export interface CommandFailure {
   readonly error: CommandError;
 }
 
+export type CommandExecutionOutcome =
+  | Readonly<{
+      readonly success: true;
+      readonly requestId?: string;
+      readonly serverStep: number;
+    }>
+  | Readonly<{
+      readonly success: false;
+      readonly requestId?: string;
+      readonly serverStep: number;
+      readonly error: CommandError;
+    }>;
+
 export interface ExecutionContext {
   readonly step: number;
   readonly timestamp: number;
