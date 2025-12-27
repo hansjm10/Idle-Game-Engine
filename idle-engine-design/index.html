@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Idle Engine Design Document | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Idle Engine Design Document | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Idle Engine Design Document","item":"https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.85fed14b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.1329e814.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.09e9ec30.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -130,7 +130,7 @@
 <h5 class="anchor anchorTargetStickyNavbar_EdDC" id="content-pipeline">Content Pipeline<a href="#content-pipeline" class="hash-link" aria-label="Direct link to Content Pipeline" title="Direct link to Content Pipeline" translate="no">​</a></h5>
 <ul>
 <li class="">Content described via declarative TypeScript/JSON modules and compiled into normalized definitions.</li>
-<li class="">Content DSL supports: resources, generators, transforms, upgrades, milestones/achievements, prestige layers, automations, runtime event extensions, and guild perks.</li>
+<li class="">Content DSL supports: resources, generators, transforms, upgrades, milestones/achievements, prestige layers, automations, and runtime event extensions.</li>
 <li class="">Support for hierarchical content packages (base game, seasonal event, micro-DLC) with dependency resolution.</li>
 <li class="">Validation tooling verifies IDs, cyclical dependencies, formula sanity, and runtime feature compatibility before shipping.</li>
 <li class="">Property-based sanitization guidance lives in <a class="" href="/Idle-Game-Engine/content-schema-rollout-decisions#property-based-formula-sanitization-guidance"><code>docs/content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance</code></a>; run schema and CLI suites before shipping new formulas.</li>
@@ -139,7 +139,7 @@
 <li class="">Watch and check flows are first-class: <code>--watch</code> keeps the pipeline alive after failures while surfacing iteration summaries, and <code>--check</code> exits non-zero whenever validation summaries or compiled artifacts would change. Lefthook and CI invoke <code>pnpm generate --check</code> to prevent stale outputs from landing.</li>
 <li class="">Every run persists a workspace summary at <code>content/compiled/index.json</code> (overrideable via <code>--summary</code>) that records validation and compilation status. Downstream tooling must treat the summary as stale when validation fails or the CLI reports drift; rerun <code>pnpm generate</code> to refresh artifacts before consumption.</li>
 <li class="">Authoring packs live alongside their manifests (e.g., <code>packages/content-sample/content/pack.json</code>). Keep schema warnings at zero, add missing localized variants for declared locales, and document intentional deviations so future migrations stay deterministic.</li>
-<li class="">Extendable DSL supports custom modifiers, scripted events, and guild-related hooks while maintaining sandbox boundaries.</li>
+<li class="">Extendable DSL supports custom modifiers and scripted events while maintaining sandbox boundaries.</li>
 <li class="">DSL expressed as strongly typed schemas (Zod) compiled into immutable definitions; support a YAML authoring option for non-TS teams via build-time conversion.</li>
 <li class="">Each content item declares metadata (version, compatibility range), definitions, formulas (AST or limited expression strings), and unlock conditions.</li>
 <li class="">Preprocessors resolve derived values (e.g., cumulative cost curves) and emit warnings when difficulty spikes exceed configured thresholds.</li>
@@ -204,7 +204,7 @@
 <ul>
 <li class=""><code>packages/core</code>: runnable runtime with scheduler, resource system, upgrade processor, save/load (stub), diagnostics.</li>
 <li class="">Presentation shells (archived): UI consumers of runtime snapshots and commands.</li>
-<li class=""><code>packages/content-sample</code>: reference game pack with ~10 resources, 6 generators, basic prestige layer, and sample guild perks.</li>
+<li class=""><code>packages/content-sample</code>: reference game pack with ~10 resources, 6 generators, and a basic prestige layer.</li>
 <li class="">CI pipeline executing unit/integration tests and content validation (<code>pnpm generate --check</code>).</li>
 </ul>
 </li>
