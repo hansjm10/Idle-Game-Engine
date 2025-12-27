@@ -56,7 +56,7 @@ Runtime UI   <- CommandResponse <- Pending Tracker <-    Idempotency Reg  <- Com
 ```
 
 ### 6.2 Detailed Design
-- **Runtime Changes**: Issue 545 adds a `CommandExecutionOutcome` stream (success or failure with `requestId`, `serverStep`, and `CommandError`) and a `drainCommandOutcomes()` API alongside `drainCommandFailures()` (`packages/core/src/index.ts:237`). The transport server uses these outcomes to finalize responses without changing command queue order (`packages/core/src/command-queue.ts:74`).
+- **Runtime Changes**: Issue 545 adds a `CommandExecutionOutcome` stream (success or failure with `requestId`, `serverStep`, and `CommandError`) and a `drainCommandOutcomes()` API alongside `drainCommandFailures()` (`packages/core/src/index.ts:237`). The transport server uses these outcomes to finalize responses without changing command queue order (`packages/core/src/command-queue.ts:74`) and serializes `CommandError` into a JSON-safe transport error.
 - **Data & Schemas**: Issue 545 introduces a JSON-safe `SerializedCommand` and transport wrappers aligned with existing payload serialization (`packages/core/src/command-queue.ts:33`).
 ```typescript
 export type SerializedCommand = Readonly<{
@@ -75,11 +75,17 @@ export interface CommandEnvelope {
   readonly sentAt: number;
 }
 
+export type CommandResponseError = Readonly<{
+  readonly code: string;
+  readonly message: string;
+  readonly details?: JsonValue;
+}>;
+
 export interface CommandResponse {
   readonly requestId: string;
   readonly status: 'accepted' | 'rejected' | 'duplicate';
   readonly serverStep: number;
-  readonly error?: CommandError;
+  readonly error?: CommandResponseError;
 }
 ```
 - **APIs & Contracts**: Issue 545 adds idempotency and pending tracking interfaces with deterministic, in-memory implementations.
@@ -145,7 +151,7 @@ Issue 545 alternatives considered:
 Issue 545 risks and mitigations:
 - Duplicate requestId collisions across clients lead to incorrect responses. Mitigation: scope registry keys by `{clientId, requestId}` and validate input formats.
 - Pending tracker leaks entries when no response arrives. Mitigation: require timeout eviction and expose pending counts for diagnostics.
-- Command rejection lacks explicit error payload. Mitigation: standardize rejection errors using `CommandError` (`packages/core/src/command-dispatcher.ts:7`).
+- Command rejection lacks explicit error payload. Mitigation: standardize rejection errors using `CommandError` (`packages/core/src/command-dispatcher.ts:7`) and serialize to `CommandResponseError` for transport.
 
 ## 12. Rollout Plan
 - **Milestones**: Issue 545 ships in two phases (types/registry first, adapter and tests second).
