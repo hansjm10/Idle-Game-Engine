@@ -4,6 +4,13 @@ import {
   type CommandResponse,
 } from './command-transport.js';
 
+/**
+ * Tracks pending command envelopes by requestId.
+ *
+ * Timeouts are computed as `sentAt + timeoutMs`. `expire(now)` treats
+ * entries with `expiresAt <= now` as expired, so `now` should use the
+ * same time unit as `CommandEnvelope.sentAt`.
+ */
 export interface PendingCommandTracker {
   track(envelope: CommandEnvelope): void;
   resolve(response: CommandResponse): void;
@@ -12,6 +19,10 @@ export interface PendingCommandTracker {
 }
 
 export interface PendingCommandTrackerOptions {
+  /**
+   * Milliseconds before a tracked envelope expires (defaults to
+   * DEFAULT_PENDING_COMMAND_TIMEOUT_MS).
+   */
   readonly timeoutMs?: number;
 }
 

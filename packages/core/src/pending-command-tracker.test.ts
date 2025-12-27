@@ -88,6 +88,27 @@ describe('InMemoryPendingCommandTracker', () => {
     expect(tracker.getPending()).toEqual([]);
   });
 
+  it('expires multiple envelopes in one call', () => {
+    const tracker = new InMemoryPendingCommandTracker({
+      timeoutMs: 100,
+    });
+    const envelopeA = createEnvelope('req-a', 0);
+    const envelopeB = createEnvelope('req-b', 10);
+    const envelopeC = createEnvelope('req-c', 200);
+
+    tracker.track(envelopeA);
+    tracker.track(envelopeB);
+    tracker.track(envelopeC);
+
+    const expired = tracker.expire(150);
+
+    expect(expired).toEqual(
+      expect.arrayContaining([envelopeA, envelopeB]),
+    );
+    expect(expired).toHaveLength(2);
+    expect(tracker.getPending()).toEqual([envelopeC]);
+  });
+
   it('uses the default timeout when none is provided', () => {
     const tracker = new InMemoryPendingCommandTracker();
     const envelope = createEnvelope('req-default', 50);
@@ -102,6 +123,20 @@ describe('InMemoryPendingCommandTracker', () => {
     expect(
       tracker.expire(50 + DEFAULT_PENDING_COMMAND_TIMEOUT_MS),
     ).toEqual([envelope]);
+    expect(tracker.getPending()).toEqual([]);
+  });
+
+  it('does not change state when resolving after expire', () => {
+    const tracker = new InMemoryPendingCommandTracker({
+      timeoutMs: 100,
+    });
+    const envelope = createEnvelope('req-expired', 0);
+
+    tracker.track(envelope);
+
+    tracker.expire(100);
+    tracker.resolve(createResponse('req-expired'));
+
     expect(tracker.getPending()).toEqual([]);
   });
 
