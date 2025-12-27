@@ -26,6 +26,7 @@ export interface CommandEnvelope {
 export interface CommandResponse {
   readonly requestId: string;
   readonly status: 'accepted' | 'rejected' | 'duplicate';
+  /** Server step when the command was enqueued (acknowledgment step). */
   readonly serverStep: number;
   readonly error?: CommandResponseError;
 }
