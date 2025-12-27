@@ -116,6 +116,7 @@ export interface PendingCommandTracker {
 - **Envelope creation**: Wrap commands in `CommandEnvelope` with stable `clientId`, unique `requestId` per client, and `sentAt` for observability; keep payloads JSON-safe via `SerializedCommand`.
 - **Server handling**: Validate identifiers, check the idempotency registry by `{clientId, requestId}`, return cached `duplicate` responses, and record `accepted` responses keyed to the enqueue `serverStep`; return `rejected` with `CommandResponseError` for invalid requests.
 - **Client handling**: Track pending envelopes, resolve on `CommandResponse`, and expire/retry based on configured timeouts using the pending tracker.
+- **Defaults**: Recommend `DEFAULT_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000` and `DEFAULT_PENDING_COMMAND_TIMEOUT_MS = 30 * 1000`; tune per transport latency and retry strategy.
 - **Related runtime guidance**: A runtime-facing stub lives in [Runtime Command Queue Design](./runtime-command-queue-design.md) for quick discovery and links back here for full protocol details.
 
 ## 7. Work Breakdown & Delivery Plan
@@ -166,7 +167,7 @@ Issue 545 risks and mitigations:
 - **Communication**: Issue 545 release notes should link to this doc and reference issue 545 acceptance criteria.
 
 ## 13. Open Questions
-- Issue 545 TODO (Owner: Transport Protocol Agent): What are the default TTL and timeout durations for idempotency and pending tracking?
+- Resolved: default idempotency retention is 5 minutes and pending timeout is 30 seconds (both configurable).
 
 ## 14. Follow-Up Work
 - Issue 545 follow-up: build concrete WebSocket/HTTP transport adapters in shell repos.
