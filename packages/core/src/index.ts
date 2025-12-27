@@ -1195,6 +1195,8 @@ export type {
   CommandEnvelope,
   CommandResponse,
 } from './command-transport.js';
+export type { IdempotencyRegistry } from './idempotency-registry.js';
+export { InMemoryIdempotencyRegistry } from './idempotency-registry.js';
 export {
   CommandDispatcher,
   type CommandHandler,
