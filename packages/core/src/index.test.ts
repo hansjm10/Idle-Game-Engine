@@ -228,6 +228,57 @@ describe('IdleEngineRuntime', () => {
     expect(runtime.getNextExecutableStep()).toBe(3);
   });
 
+  it('records command outcomes for sync handlers', () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+
+    dispatcher.register('SYNC_SUCCESS', () => undefined);
+    dispatcher.register('SYNC_FAIL', () => ({
+      success: false,
+      error: {
+        code: 'TEST_FAILURE',
+        message: 'Nope',
+      },
+    }));
+
+    queue.enqueue({
+      type: 'SYNC_SUCCESS',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+      requestId: 'command:sync-success',
+    });
+
+    queue.enqueue({
+      type: 'SYNC_FAIL',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 2,
+      step: 0,
+      requestId: 'command:sync-fail',
+    });
+
+    runtime.tick(10);
+
+    expect(runtime.drainCommandOutcomes()).toEqual([
+      {
+        success: true,
+        requestId: 'command:sync-success',
+        serverStep: 0,
+      },
+      {
+        success: false,
+        requestId: 'command:sync-fail',
+        serverStep: 0,
+        error: {
+          code: 'TEST_FAILURE',
+          message: 'Nope',
+        },
+      },
+    ]);
+    expect(runtime.drainCommandOutcomes()).toEqual([]);
+  });
+
   it('records command failures when async handlers resolve to a failure result', async () => {
     const { runtime, queue, dispatcher } = createRuntime();
 
@@ -266,6 +317,17 @@ describe('IdleEngineRuntime', () => {
         }),
       }),
     ]);
+    expect(runtime.drainCommandOutcomes()).toEqual([
+      expect.objectContaining({
+        success: false,
+        requestId: 'command:async',
+        serverStep: 0,
+        error: expect.objectContaining({
+          code: 'TEST_FAILURE',
+          message: 'Nope',
+        }),
+      }),
+    ]);
   });
 
   it('records command failures when async handlers reject', async () => {
@@ -293,6 +355,36 @@ describe('IdleEngineRuntime', () => {
           code: 'COMMAND_EXECUTION_FAILED',
         }),
       }),
+    ]);
+  });
+
+  it('records command outcomes when async handlers resolve', async () => {
+    const { runtime, queue, dispatcher } = createRuntime();
+
+    dispatcher.register('ASYNC_SUCCESS', async () => ({
+      success: true,
+    }));
+
+    queue.enqueue({
+      type: 'ASYNC_SUCCESS',
+      priority: CommandPriority.PLAYER,
+      payload: {},
+      timestamp: 1,
+      step: 0,
+      requestId: 'command:async-success',
+    });
+
+    runtime.tick(10);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runtime.drainCommandOutcomes()).toEqual([
+      {
+        success: true,
+        requestId: 'command:async-success',
+        serverStep: 0,
+      },
     ]);
   });
 

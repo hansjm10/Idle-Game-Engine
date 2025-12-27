@@ -27,7 +27,11 @@ import {
 import type { RuntimeEventType } from './events/runtime-event.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
 import type { Command } from './command.js';
-import { CommandDispatcher, type CommandFailure } from './command-dispatcher.js';
+import {
+  CommandDispatcher,
+  type CommandExecutionOutcome,
+  type CommandFailure,
+} from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import { telemetry } from './telemetry.js';
 import {
@@ -160,6 +164,7 @@ export class IdleEngineRuntime {
   private readonly eventBusClock: DeterministicTickClock | null;
   private readonly eventPublisher: EventPublisher;
   private readonly commandFailures: CommandFailure[] = [];
+  private readonly commandOutcomes: CommandExecutionOutcome[] = [];
   private currentStep = 0;
   private nextExecutableStep = 0;
   private readonly diagnostics: RuntimeDiagnosticsController;
@@ -259,6 +264,14 @@ export class IdleEngineRuntime {
     }
 
     return this.commandFailures.splice(0, this.commandFailures.length);
+  }
+
+  drainCommandOutcomes(): CommandExecutionOutcome[] {
+    if (this.commandOutcomes.length === 0) {
+      return [];
+    }
+
+    return this.commandOutcomes.splice(0, this.commandOutcomes.length);
   }
 
   getCurrentStep(): number {
@@ -395,6 +408,11 @@ export class IdleEngineRuntime {
             if (result instanceof Promise) {
               void result.then((resolved) => {
                 if (resolved.success) {
+                  this.commandOutcomes.push({
+                    success: true,
+                    requestId: command.requestId,
+                    serverStep: command.step,
+                  });
                   return;
                 }
 
@@ -406,6 +424,12 @@ export class IdleEngineRuntime {
                   step: command.step,
                   error: resolved.error,
                 });
+                this.commandOutcomes.push({
+                  success: false,
+                  requestId: command.requestId,
+                  serverStep: command.step,
+                  error: resolved.error,
+                });
               });
             } else if (!result.success) {
               this.commandFailures.push({
@@ -415,6 +439,18 @@ export class IdleEngineRuntime {
                 timestamp: command.timestamp,
                 step: command.step,
                 error: result.error,
+              });
+              this.commandOutcomes.push({
+                success: false,
+                requestId: command.requestId,
+                serverStep: command.step,
+                error: result.error,
+              });
+            } else {
+              this.commandOutcomes.push({
+                success: true,
+                requestId: command.requestId,
+                serverStep: command.step,
               });
             }
           }
@@ -1235,6 +1271,7 @@ export {
   type CommandResultFailure,
   type CommandResultSuccess,
   type CommandError,
+  type CommandExecutionOutcome,
   type CommandFailure,
   type ExecutionContext,
 } from './command-dispatcher.js';
