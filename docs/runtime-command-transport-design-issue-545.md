@@ -15,7 +15,7 @@ sidebar_position: 4
 - **Execution Mode**: AI-led
 
 ## 1. Summary
-Issue 545 defines a command transport layer that wraps runtime commands in a network-ready envelope, produces authoritative acknowledgments or rejections, and enforces idempotency with client-side pending tracking so networked command execution can be built without altering Idle Engine determinism.
+Issue 545 defines a command transport layer that wraps runtime commands in a network-ready envelope, produces authoritative acknowledgments or rejections, and enforces idempotency with client-side pending tracking so networked command execution can be built without altering Idle Engine determinism. The server treats client-supplied command metadata as advisory and stamps authoritative `serverStep`, priority, and timestamps on receipt.
 
 ## 2. Context & Problem Statement
 - **Background**: Issue 545 builds on the existing command model with optional request identifiers (`packages/core/src/command.ts:18`), deterministic queueing and serialization (`packages/core/src/command-queue.ts:33`, `packages/core/src/command-queue.ts:207`), and dispatcher error reporting (`packages/core/src/command-dispatcher.ts:7`), while state sync documentation explicitly defers transport (`docs/state-synchronization-protocol-design.md`).
@@ -105,6 +105,11 @@ export interface PendingCommandTracker {
 }
 ```
 - **Tooling & Automation**: Issue 545 exports transport types and helpers from `packages/core/src/index.ts`, adds unit/integration tests in `packages/core/src`, and updates docs references in `docs/`.
+- **Authority & Trust Boundaries**:
+  - Server is authoritative for command execution order. Client-supplied `step`, `priority`, and `timestamp` are treated as advisory and MUST be normalized on receipt.
+  - Transport MUST stamp `serverStep` via `runtime.getNextExecutableStep()` and normalize priority to `CommandPriority.PLAYER` for client-originated commands (server/system commands may use `SYSTEM`).
+  - Transport MUST apply server-side timestamps to avoid client clock skew influencing ordering within a priority lane.
+  - Idempotency remains scoped to `{clientId, requestId}`; duplicates return cached responses (`packages/core/src/command-transport-server.ts:106`).
 
 ### 6.3 Operational Considerations
 - **Deployment**: Issue 545 is additive and requires no runtime deployment changes.
@@ -115,6 +120,7 @@ export interface PendingCommandTracker {
 - **When to use**: Apply the transport protocol when commands originate outside the runtime process (networked client, multi-process shell). Local-only commands can enqueue directly without envelopes.
 - **Envelope creation**: Wrap commands in `CommandEnvelope` with stable `clientId`, unique `requestId` per client, and `sentAt` for observability; keep payloads JSON-safe via `SerializedCommand`.
 - **Server handling**: Validate identifiers, check the idempotency registry by `{clientId, requestId}`, return cached `duplicate` responses, and record `accepted` responses keyed to the enqueue `serverStep`; return `rejected` with `CommandResponseError` for invalid requests.
+  - Normalize command metadata: override `command.step` with `getNextExecutableStep()`, clamp priority to `CommandPriority.PLAYER` for client-originated traffic, and overwrite `command.timestamp` with server time before enqueueing to preserve deterministic ordering under client clock skew.
 - **RequestId collisions**: Reject envelopes that reuse a `requestId` across different `clientId` values while the requestId is still pending, returning `REQUEST_ID_IN_USE`.
 - **Server adapter example**:
   ```ts
@@ -208,6 +214,7 @@ Issue 545 risks and mitigations:
 ## Appendix B - Change Log
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
+| 2025-12-28 | Codex | Clarify server-stamped step/priority/timestamp authority |
 | 2025-12-27 | TODO (Owner: Runtime Core Maintainer) | Initial Issue 545 draft |
 | 2025-12-27 | Codex | Clarify `CommandResponse.serverStep` as enqueue step |
 | 2025-12-27 | Codex | Add initial transport usage guidance and runtime doc stub (Issue #677) |

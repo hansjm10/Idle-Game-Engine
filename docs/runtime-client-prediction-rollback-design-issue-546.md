@@ -15,7 +15,7 @@ sidebar_position: 4
 - **Execution Mode**: AI-led
 
 ## 1. Summary
-Issue 546 introduces client-side prediction and rollback for networked play in the Idle Engine. This design adds a core PredictionManager that buffers local commands, records per-step checksums, applies authoritative server snapshots, and performs rollback plus deterministic replay when divergence is detected. The approach explicitly builds on the existing command queue and state-sync snapshot/restore APIs to keep simulation deterministic, minimize prediction latency, and bound memory usage while remaining transport-agnostic for Issue 546.
+Issue 546 introduces client-side prediction and rollback for networked play in the Idle Engine. This design adds a core PredictionManager that buffers local commands, records per-step checksums, applies authoritative server snapshots, and performs rollback plus deterministic replay when divergence is detected. The approach explicitly builds on the existing command queue and state-sync snapshot/restore APIs to keep simulation deterministic, minimize prediction latency, and bound memory usage while remaining transport-agnostic for Issue 546. Authority is explicitly server-side: client-supplied metadata is treated as advisory and validated or overridden by the transport layer.
 
 ## 2. Context & Problem Statement
 - **Background**:
@@ -28,7 +28,7 @@ Issue 546 introduces client-side prediction and rollback for networked play in t
   - Without Issue 546, network latency forces either blocked input or custom per-shell reconciliation logic that risks breaking determinism.
 - **Forces**:
   - Determinism is mandatory across replay, including RNG seed/state restoration (`packages/core/src/state-sync/restore.ts:227`, `packages/core/src/command-recorder.ts:393`).
-  - Performance budgets from state sync must be preserved: checksum <100 microseconds, capture <1ms, restore <5ms (`docs/state-synchronization-protocol-design.md:833`).
+  - Performance budgets from state sync must be preserved: checksum under 100 microseconds, capture under 1ms, restore under 5ms (`docs/state-synchronization-protocol-design.md:833`).
   - Prediction should not violate runtime cadence; maintain 60Hz where configured and respect `maxStepsPerFrame` (`packages/core/src/index.ts:110`, `docs/runtime-event-pubsub-design.md:24`).
   - Memory must stay bounded: avoid unbounded command buffering or full snapshot histories in Issue 546.
   - Compatibility must remain additive: no changes to save formats or command queue schemas (`packages/core/src/game-state-save.ts:319`, `packages/core/src/command-queue.ts:40`).
@@ -132,21 +132,32 @@ export type RollbackResult = Readonly<{
 ```
   - `recordPredictedStep` is required for Issue 546 to record checksums at each simulated step. For networked clients, configure `maxStepsPerFrame = 1` to ensure per-step recording (`packages/core/src/index.ts:110`).
 
+- **Authority & Trust Boundaries (Issue 546)**:
+  - Server is authoritative for confirmed steps and snapshot content; clients never decide the canonical state.
+  - Client-supplied `step`, `priority`, and `timestamp` are treated as advisory. The transport layer MUST stamp authoritative `serverStep` (`runtime.getNextExecutableStep()`), normalize client commands to `CommandPriority.PLAYER`, and apply server-side timestamps on receipt (`packages/core/src/command-transport-server.ts:145`, `packages/core/src/command-queue.ts:18`).
+  - Idempotency is enforced by `{clientId, requestId}` keys; duplicate or replayed envelopes resolve to cached `CommandResponse` (`packages/core/src/command-transport.ts:1`, `packages/core/src/command-transport-server.ts:106`).
+  - Authentication/authorization is transport-layer scope (Issue 545); core prediction assumes envelopes have been validated and authorized before enqueue.
+
 - **Prediction History (Issue 546)**:
   - Store a ring buffer of `{ step, checksum }` only; optionally store snapshots in debug mode for diffing.
   - Default history window: 50 steps or 5 seconds at `stepSizeMs = 100` (configurable).
   - Checksum uses `computeStateChecksum` and excludes `capturedAt` (`packages/core/src/state-sync/checksum.ts:56`).
+  - If the confirmed step is outside the stored history window, treat it as a prediction window overflow and resync from the authoritative snapshot.
+  - If `maxStepsPerFrame > 1`, record checksums every `checksumIntervalSteps` (default 1) and accept coarser rollback granularity to keep capture overhead bounded.
 
 - **Pending Command Buffer (Issue 546)**:
   - Store `Command` objects in step order with requestId and timestamp.
   - Default maximum pending commands: 1000 (configurable, independent of `DEFAULT_MAX_QUEUE_SIZE`).
   - On buffer overflow: return `status = 'resynced'` and force authoritative restore.
+  - Pending commands are client-originated only. Authoritative remote commands must arrive via snapshots or a server-authored command stream and are applied before replay.
 
 - **Server State Application (Issue 546)**:
   1. Ignore stale snapshots where `confirmedStep < lastConfirmedStep`.
-  2. Compute server checksum and compare to local checksum stored for `confirmedStep`.
-  3. If checksums match: drop pending commands at or before `confirmedStep` and advance confirmed pointer.
-  4. If checksums differ: trigger rollback and replay.
+  2. If `confirmedStep === lastConfirmedStep`, treat the snapshot as idempotent; only rollback if the checksum differs.
+  3. If the local checksum history does not include `confirmedStep`, resync immediately (treat as prediction window overflow).
+  4. Compute server checksum and compare to local checksum stored for `confirmedStep`.
+  5. If checksums match: drop pending commands at or before `confirmedStep` and advance confirmed pointer.
+  6. If checksums differ: trigger rollback and replay.
 
 - **Rollback and Replay (Issue 546)**:
   - Restoration is built on state-sync snapshot restore and runtime wiring:
@@ -154,9 +165,13 @@ export type RollbackResult = Readonly<{
     - The helper composes `restoreFromSnapshot`, `createProgressionCoordinator`, `wireGameRuntime`, and system restore hooks (`packages/core/src/state-sync/restore.ts:188`, `packages/core/src/index.ts:904`, `packages/core/src/automation-system.ts:267`, `packages/core/src/transform-system.ts:1100`).
   - Replay flow:
     1. Restore authoritative snapshot to a fresh runtime wiring.
-    2. Re-enqueue pending commands with original step values.
-    3. Tick forward from `confirmedStep` to the prior local step using fixed-step ticks.
-    4. Replace the active runtime wiring and emit a rollback telemetry event.
+    2. Restore the authoritative command queue from the snapshot (included in `GameStateSnapshot.commandQueue`).
+    3. Re-enqueue pending client commands with original step values where `step > confirmedStep`.
+       - Commands at or before `confirmedStep` are dropped as confirmed.
+       - Queue ordering remains deterministic via priority + timestamp + sequence (`packages/core/src/command-queue.ts:18`).
+       - If the server provides a separate authoritative command stream, apply it before pending replay; otherwise disable prediction when snapshots are partial.
+    4. Tick forward from `confirmedStep` to the prior local step using fixed-step ticks.
+    5. Replace the active runtime wiring and emit a rollback telemetry event.
 
 - **Runtime Restore Helper (Issue 546)**:
   - Proposed signature:
@@ -176,7 +191,8 @@ export function restoreGameRuntimeFromSnapshot(options: {
 
 - **Event and Telemetry Behavior (Issue 546)**:
   - Emit telemetry events: `PredictionChecksumMismatch`, `PredictionRollback`, `PredictionResync`, `PredictionBufferOverflow` via `telemetry` (`packages/core/src/telemetry.ts:3`).
-  - External observers should treat events emitted during replay as non-authoritative unless explicitly opted in; default to suppress external side effects during replay (TODO owner in Section 13).
+  - External observers should treat events emitted during replay as non-authoritative unless explicitly opted in; default to suppress external side effects during replay by wiring a no-op `EventPublisher` (mirrors replay safety in `CommandRecorder`, `packages/core/src/command-recorder.ts:79`).
+  - Telemetry payloads SHOULD include `confirmedStep`, `localStep`, `pendingCommands`, `replayedSteps`, `snapshotVersion`, `runtimeVersion` (transport-level), `definitionDigest` (from resources), `queueSize`, and `replayDurationMs` for live debugging.
 
 - **Configuration Defaults (Issue 546)**:
   - `maxPredictionSteps`: 50
@@ -184,11 +200,16 @@ export function restoreGameRuntimeFromSnapshot(options: {
   - `checksumIntervalSteps`: 1
   - `snapshotHistorySteps`: 0 (checksums only, enable snapshots for debug)
   - `maxReplayStepsPerTick`: align with `maxStepsPerFrame`
+  - Recommended server snapshot cadence: ~10 steps at `stepSizeMs = 100` (about 1s), and no more than half the prediction window to avoid history eviction.
 
 ### 6.3 Operational Considerations
 - **Deployment**: Issue 546 is core-only and additive; no build or infrastructure changes.
 - **Telemetry & Observability**: new prediction telemetry events plus existing diagnostics timelines for tick performance (`packages/core/src/diagnostics/runtime-diagnostics-controller.ts:699`).
 - **Security & Compliance**: snapshots contain gameplay state, not PII; checksums are non-cryptographic and should not be used for authentication.
+- **Versioning & Compatibility**:
+  - Require `snapshot.version === 1` and reject/force resync on mismatch (`packages/core/src/state-sync/types.ts:1`).
+  - Validate resource definition digest on restore; mismatch triggers resync or session rejection (`packages/core/src/resource-state.ts:1368`).
+  - Transport should include `runtimeVersion` and `contentDigest` in the snapshot envelope for mixed-client compatibility; prediction should disable on incompatible versions (`packages/core/src/version.ts:1`).
 
 ## 7. Work Breakdown & Delivery Plan
 ### 7.1 Issue Map
@@ -270,7 +291,7 @@ Populate the table as the canonical source for downstream GitHub issues tied to 
 | Replay determinism drift | High | Medium | Use state-sync snapshots + RNG restore; add property tests (`packages/core/src/__tests__/state-sync.property.test.ts:31`). |
 | Prediction window overflow | Medium | Medium | Bound pending commands and enforce resync fallback. |
 | Snapshot step mismatch | Medium | Low | Reject stale snapshots; emit telemetry for diagnostics. |
-| Event side effects during replay | Medium | Medium | Provide replay suppression hook or warn integrators (TODO). |
+| Event side effects during replay | Medium | Medium | Use a no-op `EventPublisher` during replay by default; require explicit opt-in for side effects. |
 | Performance regression | Medium | Low | Track replay time via telemetry; keep checksum history lightweight. |
 
 ## 12. Rollout Plan
@@ -283,11 +304,11 @@ Populate the table as the canonical source for downstream GitHub issues tied to 
 - **Communication**:
   - Announce new prediction APIs in release notes and link Issue 546 design doc.
 
-## 13. Open Questions
-- TODO (Owner: Runtime Core Maintainers): Confirm whether rollback should rebuild runtime wiring or introduce a step-reset API for `IdleEngineRuntime`.
-- TODO (Owner: Network/Transport Maintainers): Define expected server snapshot cadence to tune default prediction window for Issue 546.
-- TODO (Owner: Runtime Core Maintainers): Decide whether external event observers should be suppressed during replay for Issue 546.
-- TODO (Owner: Runtime Core Maintainers): Confirm whether server snapshots include command queue state in network payloads.
+## 13. Resolved Decisions
+- Rollback rebuilds runtime wiring using snapshot restore helpers; there is no step-reset API on `IdleEngineRuntime` (`packages/core/src/state-sync/restore.ts:188`, `packages/core/src/index.ts:904`).
+- Server snapshots are expected to include command queue state (`GameStateSnapshot.commandQueue`) for authoritative reconciliation; if partial snapshots are used, prediction is disabled until a full resync is applied (`packages/core/src/state-sync/types.ts:7`).
+- External event observers are suppressed during replay by default; replay uses a no-op event publisher unless explicitly configured (`packages/core/src/command-recorder.ts:79`).
+- Recommended snapshot cadence is ~1s (10 steps at `DEFAULT_STEP_MS = 100`), capped at half the prediction window to avoid history eviction (`packages/core/src/index.ts:110`).
 
 ## 14. Follow-Up Work
 - Integrate Issue 546 with transport-level acknowledgments and pending tracking (Issue 545).
@@ -319,4 +340,5 @@ Populate the table as the canonical source for downstream GitHub issues tied to 
 ## Appendix B - Change Log
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
+| 2025-12-28 | Codex | Resolve review feedback on authority, reconciliation, replay safety, and compatibility |
 | 2025-12-28 | Codex | Initial Issue 546 design draft |
