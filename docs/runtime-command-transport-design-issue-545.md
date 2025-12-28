@@ -115,6 +115,18 @@ export interface PendingCommandTracker {
 - **When to use**: Apply the transport protocol when commands originate outside the runtime process (networked client, multi-process shell). Local-only commands can enqueue directly without envelopes.
 - **Envelope creation**: Wrap commands in `CommandEnvelope` with stable `clientId`, unique `requestId` per client, and `sentAt` for observability; keep payloads JSON-safe via `SerializedCommand`.
 - **Server handling**: Validate identifiers, check the idempotency registry by `{clientId, requestId}`, return cached `duplicate` responses, and record `accepted` responses keyed to the enqueue `serverStep`; return `rejected` with `CommandResponseError` for invalid requests.
+- **RequestId collisions**: Reject envelopes that reuse a `requestId` across different `clientId` values while the requestId is still pending, returning `REQUEST_ID_IN_USE`.
+- **Server adapter example**:
+  ```ts
+  const server = createCommandTransportServer({
+    commandQueue,
+    getNextExecutableStep: () => runtime.getNextExecutableStep(),
+    drainCommandOutcomes: () => runtime.drainCommandOutcomes(),
+  });
+
+  const response = server.handleEnvelope(envelope);
+  const outcomes = server.drainOutcomeResponses();
+  ```
 - **Client handling**: Track pending envelopes, resolve on `CommandResponse`, and expire/retry based on configured timeouts using the pending tracker.
 - **Defaults**: Recommend `DEFAULT_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000` and `DEFAULT_PENDING_COMMAND_TIMEOUT_MS = 30 * 1000`; tune per transport latency and retry strategy.
 - **Related runtime guidance**: A runtime-facing stub lives in [Runtime Command Queue Design](./runtime-command-queue-design.md) for quick discovery and links back here for full protocol details.

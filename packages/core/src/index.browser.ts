@@ -1271,6 +1271,11 @@ export {
   InMemoryPendingCommandTracker,
 } from './pending-command-tracker.js';
 export {
+  createCommandTransportServer,
+  type CommandTransportServer,
+  type CommandTransportServerOptions,
+} from './command-transport-server.js';
+export {
   CommandDispatcher,
   type CommandHandler,
   type CommandHandlerResult,
