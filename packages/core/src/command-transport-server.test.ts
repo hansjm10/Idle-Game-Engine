@@ -302,12 +302,57 @@ describe('createCommandTransportServer', () => {
 
   it.each([
     {
+      label: 'invalid priority',
+      commandOverrides: { priority: 99 },
+      errorCode: 'INVALID_COMMAND_PRIORITY',
+    },
+    {
+      label: 'invalid timestamp',
+      commandOverrides: { timestamp: Number.NaN },
+      errorCode: 'INVALID_COMMAND_TIMESTAMP',
+    },
+    {
+      label: 'invalid step',
+      commandOverrides: { step: -1 },
+      errorCode: 'INVALID_COMMAND_STEP',
+    },
+  ])('rejects commands with $label', ({ commandOverrides, errorCode }) => {
+    const { commandQueue } = createRuntime();
+
+    const baseCommand = createEnvelope().command;
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const envelope = createEnvelope({
+      command: {
+        ...baseCommand,
+        ...commandOverrides,
+      },
+    });
+
+    const rejected = server.handleEnvelope(envelope);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.error?.code).toBe(errorCode);
+    expect(commandQueue.size).toBe(0);
+  });
+
+  it.each([
+    {
       label: 'undefined values',
       createPayload: () => ({ value: undefined }),
     },
     {
       label: 'circular reference',
       createPayload: () => createCircularPayload(),
+    },
+    {
+      label: 'non-plain object',
+      createPayload: () => new (class Payload {})(),
+    },
+    {
+      label: 'symbol key',
+      createPayload: () => ({ [Symbol('payload')]: 'value' }),
     },
   ])('rejects commands with invalid payloads ($label)', ({ createPayload }) => {
     const { commandQueue } = createRuntime();
