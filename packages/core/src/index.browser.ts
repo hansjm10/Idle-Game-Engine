@@ -1625,6 +1625,7 @@ export {
   computeStateChecksum,
   fnv1a32,
 } from './state-sync/checksum.js';
+export { createPredictionManager } from './state-sync/prediction-manager.js';
 export { compareStates, hasStateDiverged } from './state-sync/compare.js';
 export type {
   AchievementDiff,
@@ -1642,6 +1643,12 @@ export type {
   TransformDiff,
   UpgradeDiff,
 } from './state-sync/compare.js';
+export type {
+  PredictionManager,
+  PredictionManagerOptions,
+  PredictionWindow,
+  RollbackResult,
+} from './state-sync/prediction-manager.js';
 export {
   restorePartial,
   type RestoreMode,
