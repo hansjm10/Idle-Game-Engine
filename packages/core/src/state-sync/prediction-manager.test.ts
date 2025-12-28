@@ -181,6 +181,86 @@ describe('createPredictionManager', () => {
     expect(result.replayedSteps).toBe(2);
   });
 
+  it('drops pending commands at or before confirmed step on checksum match', () => {
+    const currentStep = 1;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(1);
+    manager.recordLocalCommand(createCommand(0, 1));
+    manager.recordLocalCommand(createCommand(1, 2));
+    manager.recordLocalCommand(createCommand(2, 3));
+
+    const result = manager.applyServerState(createSnapshot(1), 1);
+
+    expect(result.status).toBe('confirmed');
+    expect(result.pendingCommands).toBe(1);
+    expect(manager.getPendingCommands().map((command) => command.step)).toEqual(
+      [2],
+    );
+  });
+
+  it('drops pending commands at or before confirmed step on checksum mismatch', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    currentStep = 1;
+    manager.recordPredictedStep(1);
+    currentStep = 2;
+    manager.recordPredictedStep(2);
+    manager.recordLocalCommand(createCommand(0, 1));
+    manager.recordLocalCommand(createCommand(1, 2));
+    manager.recordLocalCommand(createCommand(2, 3));
+
+    const result = manager.applyServerState(
+      createSnapshot(1, createResources(25)),
+      1,
+    );
+
+    expect(result.status).toBe('rolled-back');
+    expect(result.pendingCommands).toBe(1);
+    expect(manager.getPendingCommands().map((command) => command.step)).toEqual(
+      [2],
+    );
+  });
+
+  it('treats equal confirmed steps as idempotent when checksum matches', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+    manager.recordLocalCommand(createCommand(1, 2));
+
+    const firstResult = manager.applyServerState(createSnapshot(0), 0);
+    const secondResult = manager.applyServerState(createSnapshot(0), 0);
+
+    expect(firstResult.status).toBe('confirmed');
+    expect(secondResult.status).toBe('confirmed');
+    expect(manager.getPendingCommands().map((command) => command.step)).toEqual(
+      [1],
+    );
+  });
+
   it('returns ignored when confirmed step is stale', () => {
     let currentStep = 0;
     const captureSnapshot = () => createSnapshot(currentStep);
