@@ -98,7 +98,10 @@ export function createCommandTransportServer(
       );
     }
 
-    const key = `${clientIdResult.value}:${requestIdResult.value}`;
+    const key = createRegistryKey(
+      clientIdResult.value,
+      requestIdResult.value,
+    );
     const cached = registry.get(key);
     if (cached) {
       return toDuplicateResponse(cached);
@@ -484,6 +487,10 @@ function resolveServerStep(
   }
 
   return 0;
+}
+
+function createRegistryKey(clientId: string, requestId: string): string {
+  return JSON.stringify([clientId, requestId]);
 }
 
 function createAcceptedResponse(

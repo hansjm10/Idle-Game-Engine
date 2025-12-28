@@ -119,6 +119,67 @@ describe('createCommandTransportServer', () => {
     expect(commandQueue.size).toBe(1);
   });
 
+  it('accepts distinct client/request pairs when identifiers include colons', () => {
+    const { runtime, commandQueue, commandDispatcher } = createRuntime();
+    commandDispatcher.register('TEST', () => undefined);
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      getNextExecutableStep: () => runtime.getNextExecutableStep(),
+    });
+
+    const first = createEnvelope({
+      requestId: 'c',
+      clientId: 'a:b',
+      command: {
+        type: 'TEST',
+        priority: CommandPriority.PLAYER,
+        timestamp: 100,
+        step: 0,
+        payload: {},
+        requestId: 'c',
+      },
+    });
+
+    const second = createEnvelope({
+      requestId: 'b:c',
+      clientId: 'a',
+      command: {
+        type: 'TEST',
+        priority: CommandPriority.PLAYER,
+        timestamp: 100,
+        step: 0,
+        payload: {},
+        requestId: 'b:c',
+      },
+    });
+
+    expect(server.handleEnvelope(first).status).toBe('accepted');
+    expect(server.handleEnvelope(second).status).toBe('accepted');
+    expect(commandQueue.size).toBe(2);
+  });
+
+  it('rejects envelopes with non-finite sentAt values', () => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const envelope = createEnvelope({
+      sentAt: Number.NaN,
+    });
+
+    const rejected = server.handleEnvelope(envelope);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.error?.code).toBe('INVALID_SENT_AT');
+    expect(commandQueue.size).toBe(0);
+
+    const duplicate = server.handleEnvelope(envelope);
+    expect(duplicate.status).toBe('duplicate');
+    expect(duplicate.error?.code).toBe('INVALID_SENT_AT');
+  });
+
   it('updates stored responses when command outcomes are drained', () => {
     const { runtime, commandQueue, commandDispatcher } = createRuntime();
     commandDispatcher.register('TEST_FAIL', () => ({
@@ -168,5 +229,49 @@ describe('createCommandTransportServer', () => {
     const duplicate = server.handleEnvelope(envelope);
     expect(duplicate.status).toBe('duplicate');
     expect(duplicate.error?.code).toBe('TEST_FAILURE');
+  });
+
+  it('returns accepted outcome responses when commands succeed', () => {
+    const { runtime, commandQueue, commandDispatcher } = createRuntime();
+    commandDispatcher.register('TEST_SUCCESS', () => undefined);
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      getNextExecutableStep: () => runtime.getNextExecutableStep(),
+      drainCommandOutcomes: () => runtime.drainCommandOutcomes(),
+    });
+
+    const envelope = createEnvelope({
+      requestId: 'req-success',
+      command: {
+        type: 'TEST_SUCCESS',
+        priority: CommandPriority.PLAYER,
+        timestamp: 50,
+        step: 0,
+        payload: {},
+        requestId: 'req-success',
+      },
+    });
+
+    const accepted = server.handleEnvelope(envelope);
+    expect(accepted.status).toBe('accepted');
+
+    runtime.tick(10);
+
+    const outcomes = server.drainOutcomeResponses();
+    expect(outcomes).toEqual([
+      {
+        requestId: 'req-success',
+        status: 'accepted',
+        serverStep: 0,
+      },
+    ]);
+
+    const duplicate = server.handleEnvelope(envelope);
+    expect(duplicate).toEqual({
+      requestId: 'req-success',
+      status: 'duplicate',
+      serverStep: 0,
+    });
   });
 });
