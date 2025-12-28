@@ -240,6 +240,32 @@ describe('createCommandTransportServer', () => {
 
   it.each([
     {
+      label: 'numeric requestId',
+      requestId: 42 as unknown as string,
+    },
+    {
+      label: 'null requestId',
+      requestId: null as unknown as string,
+    },
+    {
+      label: 'undefined requestId',
+      requestId: undefined as unknown as string,
+    },
+  ])('rejects non-string requestId ($label)', ({ requestId }) => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const response = server.handleEnvelope(createEnvelope({ requestId }));
+    expect(response.status).toBe('rejected');
+    expect(response.error?.code).toBe('INVALID_IDENTIFIER');
+    expect(commandQueue.size).toBe(0);
+  });
+
+  it.each([
+    {
       label: 'empty clientId',
       clientId: '',
       errorCode: 'INVALID_IDENTIFIER',
@@ -276,6 +302,32 @@ describe('createCommandTransportServer', () => {
     const response = server.handleEnvelope(createEnvelope({ clientId }));
     expect(response.status).toBe('rejected');
     expect(response.error?.code).toBe(errorCode);
+    expect(commandQueue.size).toBe(0);
+  });
+
+  it.each([
+    {
+      label: 'numeric clientId',
+      clientId: 42 as unknown as string,
+    },
+    {
+      label: 'null clientId',
+      clientId: null as unknown as string,
+    },
+    {
+      label: 'undefined clientId',
+      clientId: undefined as unknown as string,
+    },
+  ])('rejects non-string clientId ($label)', ({ clientId }) => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const response = server.handleEnvelope(createEnvelope({ clientId }));
+    expect(response.status).toBe('rejected');
+    expect(response.error?.code).toBe('INVALID_IDENTIFIER');
     expect(commandQueue.size).toBe(0);
   });
 
@@ -335,6 +387,58 @@ describe('createCommandTransportServer', () => {
     expect(rejected.status).toBe('rejected');
     expect(rejected.error?.code).toBe(errorCode);
     expect(commandQueue.size).toBe(0);
+  });
+
+  it('rejects commands with invalid command requestId values', () => {
+    const { commandQueue } = createRuntime();
+
+    const baseCommand = createEnvelope().command;
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const envelope = createEnvelope({
+      command: {
+        ...baseCommand,
+        requestId: ' invalid',
+      },
+    });
+
+    const rejected = server.handleEnvelope(envelope);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.error?.code).toBe('INVALID_COMMAND_REQUEST_ID');
+    expect(commandQueue.size).toBe(0);
+
+    const duplicate = server.handleEnvelope(envelope);
+    expect(duplicate.status).toBe('duplicate');
+    expect(duplicate.error?.code).toBe('INVALID_COMMAND_REQUEST_ID');
+  });
+
+  it.each([
+    {
+      label: 'string command',
+      command: 'invalid' as unknown as CommandEnvelope['command'],
+    },
+    {
+      label: 'null command',
+      command: null as unknown as CommandEnvelope['command'],
+    },
+  ])('rejects non-object commands ($label)', ({ command }) => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const envelope = createEnvelope({ command });
+    const rejected = server.handleEnvelope(envelope);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.error?.code).toBe('INVALID_COMMAND');
+    expect(commandQueue.size).toBe(0);
+
+    const duplicate = server.handleEnvelope(envelope);
+    expect(duplicate.status).toBe('duplicate');
+    expect(duplicate.error?.code).toBe('INVALID_COMMAND');
   });
 
   it.each([

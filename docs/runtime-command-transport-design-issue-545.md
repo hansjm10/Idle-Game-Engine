@@ -115,6 +115,7 @@ export interface PendingCommandTracker {
 - **When to use**: Apply the transport protocol when commands originate outside the runtime process (networked client, multi-process shell). Local-only commands can enqueue directly without envelopes.
 - **Envelope creation**: Wrap commands in `CommandEnvelope` with stable `clientId`, unique `requestId` per client, and `sentAt` for observability; keep payloads JSON-safe via `SerializedCommand`.
 - **Server handling**: Validate identifiers, check the idempotency registry by `{clientId, requestId}`, return cached `duplicate` responses, and record `accepted` responses keyed to the enqueue `serverStep`; return `rejected` with `CommandResponseError` for invalid requests.
+- **RequestId collisions**: Reject envelopes that reuse a `requestId` across different `clientId` values while the requestId is still pending, returning `REQUEST_ID_IN_USE`.
 - **Server adapter example**:
   ```ts
   const server = createCommandTransportServer({
