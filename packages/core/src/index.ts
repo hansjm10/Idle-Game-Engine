@@ -1619,8 +1619,10 @@ export type {
   TransformDiff,
   UpgradeDiff,
 } from './state-sync/compare.js';
+export { createPredictionManager } from './state-sync/prediction-manager.js';
 export type {
   PredictionManager,
+  PredictionManagerOptions,
   PredictionWindow,
   RollbackResult,
 } from './state-sync/prediction-manager.js';

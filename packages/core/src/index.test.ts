@@ -5,6 +5,7 @@ import { CommandDispatcher } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import {
   IdleEngineRuntime,
+  createPredictionManager,
   type AutomationState,
   type IdleEngineRuntimeOptions,
   type PredictionManager,
@@ -172,6 +173,10 @@ describe('core exports', () => {
     expect(manager).toBeNull();
     expect(window).toBeNull();
     expect(rollback).toBeNull();
+  });
+
+  it('exposes prediction manager factory', () => {
+    expect(createPredictionManager).toBeTypeOf('function');
   });
 });
 
