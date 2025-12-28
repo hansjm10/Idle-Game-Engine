@@ -8,17 +8,19 @@ import type { GameStateSnapshot } from './types.js';
 
 import { createPredictionManager } from './prediction-manager.js';
 
-const baseResources: SerializedResourceState = {
+const createResources = (
+  amount = 10,
+): SerializedResourceState => ({
   ids: ['resource.energy'],
-  amounts: [10],
+  amounts: [amount],
   capacities: [null],
   flags: [0],
-};
+});
 
 const baseProgression: SerializedProgressionCoordinatorStateV2 = {
   schemaVersion: 2,
   step: 0,
-  resources: baseResources,
+  resources: createResources(),
   generators: [],
   upgrades: [],
   achievements: [],
@@ -29,7 +31,10 @@ const baseCommandQueue: SerializedCommandQueueV1 = {
   entries: [],
 };
 
-const createSnapshot = (step: number): GameStateSnapshot => ({
+const createSnapshot = (
+  step: number,
+  resources: SerializedResourceState = createResources(),
+): GameStateSnapshot => ({
   version: 1,
   capturedAt: 0,
   runtime: {
@@ -38,11 +43,11 @@ const createSnapshot = (step: number): GameStateSnapshot => ({
     rngSeed: 1,
     rngState: 1,
   },
-  resources: baseResources,
+  resources,
   progression: {
     ...baseProgression,
     step,
-    resources: baseResources,
+    resources,
   },
   automation: [],
   transforms: [],
@@ -147,5 +152,74 @@ describe('createPredictionManager', () => {
 
     expect(result.status).toBe('resynced');
     expect(result.reason).toBe('prediction-window-exceeded');
+  });
+
+  it('returns rolled-back when checksum mismatches local history', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    for (let step = 0; step <= 2; step += 1) {
+      currentStep = step;
+      manager.recordPredictedStep(step);
+    }
+
+    const mismatchedSnapshot = createSnapshot(
+      0,
+      createResources(25),
+    );
+    const result = manager.applyServerState(mismatchedSnapshot, 0);
+
+    expect(result.status).toBe('rolled-back');
+    expect(result.reason).toBe('checksum-mismatch');
+    expect(result.replayedSteps).toBe(2);
+  });
+
+  it('returns ignored when confirmed step is stale', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+    currentStep = 1;
+    manager.recordPredictedStep(1);
+    manager.applyServerState(createSnapshot(1), 1);
+
+    const result = manager.applyServerState(createSnapshot(0), 0);
+
+    expect(result.status).toBe('ignored');
+    expect(result.reason).toBe('stale-snapshot');
+  });
+
+  it('returns resync when pending commands are disabled', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 0,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordLocalCommand(createCommand(0, 1));
+
+    const result = manager.applyServerState(createSnapshot(0), 0);
+
+    expect(result.status).toBe('resynced');
+    expect(result.pendingCommands).toBe(0);
+    expect(manager.getPendingCommands()).toHaveLength(0);
   });
 });
