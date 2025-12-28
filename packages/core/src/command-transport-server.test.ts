@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CommandPriority } from './command.js';
 import { CommandDispatcher } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
+import type { JsonValue } from './command-queue.js';
 import { createCommandTransportServer } from './command-transport-server.js';
 import { IdleEngineRuntime } from './index.js';
 import type { CommandEnvelope } from './command-transport.js';
@@ -36,6 +37,14 @@ const createEnvelope = (
   },
   ...overrides,
 });
+
+const createIdentifier = (length: number) => 'x'.repeat(length);
+
+const createCircularPayload = (): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+  payload.self = payload;
+  return payload;
+};
 
 describe('createCommandTransportServer', () => {
   it('accepts envelopes and returns duplicates without enqueueing again', () => {
@@ -119,6 +128,35 @@ describe('createCommandTransportServer', () => {
     expect(commandQueue.size).toBe(1);
   });
 
+  it('rejects envelopes when command requestId differs from envelope requestId', () => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const envelope = createEnvelope({
+      requestId: 'req-envelope',
+      command: {
+        type: 'TEST',
+        priority: CommandPriority.PLAYER,
+        timestamp: 10,
+        step: 0,
+        payload: {},
+        requestId: 'req-command',
+      },
+    });
+
+    const rejected = server.handleEnvelope(envelope);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.error?.code).toBe('REQUEST_ID_MISMATCH');
+    expect(commandQueue.size).toBe(0);
+
+    const duplicate = server.handleEnvelope(envelope);
+    expect(duplicate.status).toBe('duplicate');
+    expect(duplicate.error?.code).toBe('REQUEST_ID_MISMATCH');
+  });
+
   it('accepts distinct client/request pairs when identifiers include colons', () => {
     const { runtime, commandQueue, commandDispatcher } = createRuntime();
     commandDispatcher.register('TEST', () => undefined);
@@ -159,6 +197,88 @@ describe('createCommandTransportServer', () => {
     expect(commandQueue.size).toBe(2);
   });
 
+  it.each([
+    {
+      label: 'empty requestId',
+      requestId: '',
+      errorCode: 'INVALID_IDENTIFIER',
+    },
+    {
+      label: 'whitespace requestId',
+      requestId: ' ',
+      errorCode: 'INVALID_IDENTIFIER',
+    },
+    {
+      label: 'leading whitespace requestId',
+      requestId: ' req-1',
+      errorCode: 'INVALID_IDENTIFIER_FORMAT',
+    },
+    {
+      label: 'trailing whitespace requestId',
+      requestId: 'req-1 ',
+      errorCode: 'INVALID_IDENTIFIER_FORMAT',
+    },
+    {
+      label: 'over-length requestId',
+      requestId: createIdentifier(6),
+      errorCode: 'IDENTIFIER_TOO_LONG',
+      maxIdentifierLength: 5,
+    },
+  ])('rejects invalid requestId ($label)', ({ requestId, errorCode, maxIdentifierLength }) => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      maxIdentifierLength,
+    });
+
+    const response = server.handleEnvelope(createEnvelope({ requestId }));
+    expect(response.status).toBe('rejected');
+    expect(response.error?.code).toBe(errorCode);
+    expect(commandQueue.size).toBe(0);
+  });
+
+  it.each([
+    {
+      label: 'empty clientId',
+      clientId: '',
+      errorCode: 'INVALID_IDENTIFIER',
+    },
+    {
+      label: 'whitespace clientId',
+      clientId: ' ',
+      errorCode: 'INVALID_IDENTIFIER',
+    },
+    {
+      label: 'leading whitespace clientId',
+      clientId: ' client-1',
+      errorCode: 'INVALID_IDENTIFIER_FORMAT',
+    },
+    {
+      label: 'trailing whitespace clientId',
+      clientId: 'client-1 ',
+      errorCode: 'INVALID_IDENTIFIER_FORMAT',
+    },
+    {
+      label: 'over-length clientId',
+      clientId: createIdentifier(6),
+      errorCode: 'IDENTIFIER_TOO_LONG',
+      maxIdentifierLength: 5,
+    },
+  ])('rejects invalid clientId ($label)', ({ clientId, errorCode, maxIdentifierLength }) => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      maxIdentifierLength,
+    });
+
+    const response = server.handleEnvelope(createEnvelope({ clientId }));
+    expect(response.status).toBe('rejected');
+    expect(response.error?.code).toBe(errorCode);
+    expect(commandQueue.size).toBe(0);
+  });
+
   it('rejects envelopes with non-finite sentAt values', () => {
     const { commandQueue } = createRuntime();
 
@@ -178,6 +298,40 @@ describe('createCommandTransportServer', () => {
     const duplicate = server.handleEnvelope(envelope);
     expect(duplicate.status).toBe('duplicate');
     expect(duplicate.error?.code).toBe('INVALID_SENT_AT');
+  });
+
+  it.each([
+    {
+      label: 'undefined values',
+      createPayload: () => ({ value: undefined }),
+    },
+    {
+      label: 'circular reference',
+      createPayload: () => createCircularPayload(),
+    },
+  ])('rejects commands with invalid payloads ($label)', ({ createPayload }) => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+    });
+
+    const payload = createPayload() as unknown as JsonValue;
+    const envelope = createEnvelope({
+      command: {
+        type: 'TEST',
+        priority: CommandPriority.PLAYER,
+        timestamp: 100,
+        step: 0,
+        payload,
+        requestId: 'req-1',
+      },
+    });
+
+    const rejected = server.handleEnvelope(envelope);
+    expect(rejected.status).toBe('rejected');
+    expect(rejected.error?.code).toBe('INVALID_COMMAND_PAYLOAD');
+    expect(commandQueue.size).toBe(0);
   });
 
   it('updates stored responses when command outcomes are drained', () => {
