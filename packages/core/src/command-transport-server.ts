@@ -104,6 +104,25 @@ export function createCommandTransportServer(
       return toDuplicateResponse(cached);
     }
 
+    const pending = pendingKeys.get(requestIdResult.value);
+    if (pending && pending.key !== key) {
+      const error = createResponseError(
+        'REQUEST_ID_IN_USE',
+        'Envelope requestId is already in use by another client.',
+      );
+      const response = createRejectedResponse(
+        requestIdResult.value,
+        resolveServerStep(undefined, options.getNextExecutableStep),
+        error,
+      );
+      registry.record(
+        key,
+        response,
+        atTime + idempotencyTtlMs,
+      );
+      return response;
+    }
+
     if (!Number.isFinite(envelope?.sentAt)) {
       const error = createResponseError(
         'INVALID_SENT_AT',

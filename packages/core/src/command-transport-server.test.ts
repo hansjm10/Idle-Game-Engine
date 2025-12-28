@@ -93,6 +93,32 @@ describe('createCommandTransportServer', () => {
     expect(duplicate.error?.code).toBe('INVALID_COMMAND_TYPE');
   });
 
+  it('rejects requestId collisions across clients', () => {
+    const { runtime, commandQueue, commandDispatcher } = createRuntime();
+    commandDispatcher.register('TEST', () => undefined);
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      getNextExecutableStep: () => runtime.getNextExecutableStep(),
+    });
+
+    const envelope = createEnvelope();
+    const accepted = server.handleEnvelope(envelope);
+    expect(accepted.status).toBe('accepted');
+    expect(commandQueue.size).toBe(1);
+
+    const collision = server.handleEnvelope(
+      createEnvelope({ clientId: 'client-2' }),
+    );
+    expect(collision.status).toBe('rejected');
+    expect(collision.error?.code).toBe('REQUEST_ID_IN_USE');
+    expect(commandQueue.size).toBe(1);
+
+    const duplicate = server.handleEnvelope(envelope);
+    expect(duplicate.status).toBe('duplicate');
+    expect(commandQueue.size).toBe(1);
+  });
+
   it('updates stored responses when command outcomes are drained', () => {
     const { runtime, commandQueue, commandDispatcher } = createRuntime();
     commandDispatcher.register('TEST_FAIL', () => ({
