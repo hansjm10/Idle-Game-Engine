@@ -5,8 +5,11 @@ import { CommandDispatcher } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import {
   IdleEngineRuntime,
-  type IdleEngineRuntimeOptions,
   type AutomationState,
+  type IdleEngineRuntimeOptions,
+  type PredictionManager,
+  type PredictionWindow,
+  type RollbackResult,
 } from './index.js';
 import {
   DEFAULT_EVENT_BUS_OPTIONS,
@@ -159,6 +162,18 @@ function readBacklog(
   const result = runtime.readDiagnosticsDelta(head);
   return { entries: result.entries, head: result.head };
 }
+
+describe('core exports', () => {
+  it('exposes prediction manager types', () => {
+    const manager = null as unknown as PredictionManager;
+    const window = null as unknown as PredictionWindow;
+    const rollback = null as unknown as RollbackResult;
+
+    expect(manager).toBeNull();
+    expect(window).toBeNull();
+    expect(rollback).toBeNull();
+  });
+});
 
 describe('IdleEngineRuntime', () => {
   it('executes queued commands for the current step and advances counters', () => {
