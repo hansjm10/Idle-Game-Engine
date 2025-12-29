@@ -374,6 +374,7 @@ describe('createPredictionManager', () => {
       pendingCommands: 0,
       replayedSteps: 0,
       snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
       definitionDigest: null,
       queueSize: 0,
     }, 'zero');
@@ -408,6 +409,7 @@ describe('createPredictionManager', () => {
       pendingCommands: 1,
       replayedSteps: 0,
       snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
       definitionDigest: null,
       queueSize: 0,
     }, 'zero');
@@ -505,6 +507,7 @@ describe('createPredictionManager', () => {
       pendingCommands: 0,
       replayedSteps: 0,
       snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
       definitionDigest: null,
       queueSize: 0,
     }, 'non-negative');
@@ -560,6 +563,7 @@ describe('createPredictionManager', () => {
       pendingCommands: 0,
       replayedSteps: 0,
       snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
       definitionDigest: null,
       queueSize: 0,
     }, 'non-negative');
@@ -623,6 +627,7 @@ describe('createPredictionManager', () => {
       pendingCommands: 0,
       replayedSteps: 2,
       snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
       definitionDigest: null,
       queueSize: 0,
     }, 'non-negative');
@@ -634,6 +639,7 @@ describe('createPredictionManager', () => {
       pendingCommands: 0,
       replayedSteps: 2,
       snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
       definitionDigest: null,
       queueSize: 0,
     }, 'non-negative');

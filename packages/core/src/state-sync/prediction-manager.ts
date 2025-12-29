@@ -12,6 +12,7 @@ import type { TelemetryEventData } from '../telemetry.js';
 import type { GameStateSnapshot } from './types.js';
 import { computeStateChecksum } from './checksum.js';
 import { telemetry } from '../telemetry.js';
+import { RUNTIME_VERSION } from '../version.js';
 
 /**
  * Tracks client prediction state and reconciliation inputs.
@@ -181,6 +182,7 @@ const buildTelemetryPayload = (
   pendingCommands: result.pendingCommands,
   replayedSteps: result.replayedSteps,
   snapshotVersion: snapshot.version,
+  runtimeVersion: RUNTIME_VERSION,
   definitionDigest: snapshot.resources.definitionDigest ?? null,
   queueSize: snapshot.commandQueue.entries.length,
   replayDurationMs,

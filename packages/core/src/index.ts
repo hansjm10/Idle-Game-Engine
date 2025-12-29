@@ -1403,7 +1403,14 @@ export type {
   TransformDiff,
   UpgradeDiff,
 } from './state-sync/compare.js';
-export { createPredictionManager } from './state-sync/prediction-manager.js';
+export {
+  createPredictionManager,
+  TELEMETRY_BUFFER_OVERFLOW,
+  TELEMETRY_CHECKSUM_MATCH,
+  TELEMETRY_CHECKSUM_MISMATCH,
+  TELEMETRY_RESYNC,
+  TELEMETRY_ROLLBACK,
+} from './state-sync/prediction-manager.js';
 export type {
   PredictionManager,
   PredictionManagerOptions,
