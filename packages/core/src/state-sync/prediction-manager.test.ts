@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
-import { CommandPriority, type Command } from '../command.js';
+import {
+  CommandPriority,
+  RUNTIME_COMMAND_TYPES,
+  type Command,
+} from '../command.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type { SerializedResourceState } from '../resource-state.js';
+import {
+  captureGameStateSnapshot,
+  createGameRuntime,
+  restoreGameRuntimeFromSnapshot,
+  type IdleEngineRuntime,
+  type PredictionReplayWiring,
+} from '../index.js';
+import {
+  createContentPack,
+  createResourceDefinition,
+} from '../content-test-helpers.js';
 import type { GameStateSnapshot } from './types.js';
 
 import { createPredictionManager } from './prediction-manager.js';
@@ -53,6 +68,24 @@ const createSnapshot = (
   transforms: [],
   commandQueue: baseCommandQueue,
 });
+
+const emptyState = new Map<string, never>();
+
+const captureWiringSnapshot = (
+  wiring: PredictionReplayWiring,
+): GameStateSnapshot =>
+  captureGameStateSnapshot({
+    runtime: wiring.runtime as IdleEngineRuntime,
+    progressionCoordinator: wiring.coordinator,
+    commandQueue: wiring.commandQueue,
+    getAutomationState: () =>
+      wiring.automationSystem?.getState() ?? emptyState,
+    getTransformState: () =>
+      wiring.transformSystem?.getState() ?? emptyState,
+    ...(wiring.productionSystem
+      ? { productionSystem: wiring.productionSystem }
+      : {}),
+  });
 
 const createCommand = (
   step: number,
@@ -340,5 +373,101 @@ describe('createPredictionManager', () => {
     expect(result.status).toBe('resynced');
     expect(result.pendingCommands).toBe(0);
     expect(manager.getPendingCommands()).toHaveLength(0);
+  });
+
+  it('replays pending commands after rollback and restores snapshot queue', () => {
+    const content = createContentPack({
+      resources: [createResourceDefinition('resource.energy')],
+    });
+    let wiring: PredictionReplayWiring = createGameRuntime({
+      content,
+      stepSizeMs: 100,
+      maxStepsPerFrame: 1,
+    });
+
+    const captureSnapshot = () => captureWiringSnapshot(wiring);
+
+    const manager = createPredictionManager({
+      captureSnapshot,
+      getCurrentStep: () => wiring.runtime.getCurrentStep(),
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+      replay: {
+        restoreRuntime: ({ snapshot, eventPublisher }) =>
+          restoreGameRuntimeFromSnapshot({
+            content,
+            snapshot,
+            runtimeOptions: { eventPublisher },
+          }),
+        captureSnapshot: captureWiringSnapshot,
+        onRuntimeReplaced: (nextWiring) => {
+          wiring = nextWiring;
+        },
+      },
+    });
+
+    const authoritativeCommand = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 5 },
+      timestamp: 1,
+      step: 0,
+    } satisfies Command;
+
+    wiring.commandQueue.enqueue(authoritativeCommand);
+    const serverSnapshot = captureWiringSnapshot(wiring);
+
+    manager.recordPredictedStep(0);
+
+    const pendingCommand = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 3 },
+      timestamp: 2,
+      step: 1,
+    } satisfies Command;
+
+    wiring.commandQueue.enqueue(pendingCommand);
+    manager.recordLocalCommand(pendingCommand);
+
+    wiring.runtime.tick(100);
+    manager.recordPredictedStep(1);
+    wiring.runtime.tick(100);
+    manager.recordPredictedStep(2);
+
+    const baselineAmount = 20;
+    const mismatchedSnapshot: GameStateSnapshot = {
+      ...serverSnapshot,
+      resources: {
+        ...serverSnapshot.resources,
+        amounts: [baselineAmount],
+      },
+      progression: {
+        ...serverSnapshot.progression,
+        resources: {
+          ...serverSnapshot.progression.resources,
+          amounts: [baselineAmount],
+        },
+      },
+    };
+
+    const result = manager.applyServerState(mismatchedSnapshot, 0);
+
+    const energyIndex = wiring.coordinator.resourceState.requireIndex(
+      'resource.energy',
+    );
+
+    expect(result.status).toBe('rolled-back');
+    expect(result.replayedSteps).toBe(2);
+    expect(result.pendingCommands).toBe(1);
+    expect(wiring.runtime.getCurrentStep()).toBe(2);
+    expect(wiring.coordinator.resourceState.getAmount(energyIndex)).toBe(
+      baselineAmount + 5 + 3,
+    );
+    expect(manager.getPendingCommands().map((command) => command.step)).toEqual([
+      1,
+    ]);
   });
 });

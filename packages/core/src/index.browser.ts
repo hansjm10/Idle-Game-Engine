@@ -114,6 +114,7 @@ export interface RuntimeDependencies {
   readonly commandQueue?: CommandQueue;
   readonly commandDispatcher?: CommandDispatcher;
   readonly eventBus?: EventBus;
+  readonly eventPublisher?: EventPublisher;
 }
 
 export interface IdleEngineRuntimeOptions
@@ -188,7 +189,8 @@ export class IdleEngineRuntime {
 
     this.eventBusClock = eventBusClock;
     this.eventBus = options.eventBus ?? new EventBus(resolvedEventBusOptions);
-    this.eventPublisher = createEventPublisher(this.eventBus);
+    this.eventPublisher =
+      options.eventPublisher ?? createEventPublisher(this.eventBus);
 
     this.commandDispatcher.setEventPublisher(this.eventPublisher);
 
@@ -1427,6 +1429,10 @@ export type {
 export type {
   PredictionManager,
   PredictionManagerOptions,
+  PredictionReplayOptions,
+  PredictionReplayRuntime,
+  PredictionReplayRuntimeFactoryOptions,
+  PredictionReplayWiring,
   PredictionWindow,
   RollbackResult,
 } from './state-sync/prediction-manager.js';

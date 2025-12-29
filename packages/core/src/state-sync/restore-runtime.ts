@@ -23,7 +23,10 @@ export type RestoreGameRuntimeFromSnapshotOptions = Readonly<{
     readonly applyViaFinalizeTick?: boolean;
   };
   readonly runtimeOptions?: Readonly<
-    Pick<IdleEngineRuntimeOptions, 'initialStep' | 'maxStepsPerFrame'>
+    Pick<
+      IdleEngineRuntimeOptions,
+      'initialStep' | 'maxStepsPerFrame' | 'eventPublisher'
+    >
   >;
 }>;
 
@@ -65,12 +68,16 @@ export function restoreGameRuntimeFromSnapshot(
 
   const runtimeOptions =
     options.runtimeOptions?.initialStep === undefined &&
+    options.runtimeOptions?.eventPublisher === undefined &&
     maxStepsPerFrame === undefined
       ? undefined
       : {
           ...(options.runtimeOptions?.initialStep === undefined
             ? {}
             : { initialStep: options.runtimeOptions.initialStep }),
+          ...(options.runtimeOptions?.eventPublisher === undefined
+            ? {}
+            : { eventPublisher: options.runtimeOptions.eventPublisher }),
           ...(maxStepsPerFrame === undefined ? {} : { maxStepsPerFrame }),
         };
 
