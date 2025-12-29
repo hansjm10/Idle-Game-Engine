@@ -19,8 +19,11 @@ export type RestoreGameRuntimeFromSnapshotOptions = Readonly<{
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
   readonly enableTransforms?: boolean;
+  readonly production?: {
+    readonly applyViaFinalizeTick?: boolean;
+  };
   readonly runtimeOptions?: Readonly<
-    Pick<IdleEngineRuntimeOptions, 'initialStep'>
+    Pick<IdleEngineRuntimeOptions, 'initialStep' | 'maxStepsPerFrame'>
   >;
 }>;
 
@@ -50,9 +53,15 @@ export function restoreGameRuntimeFromSnapshot(
   const resourceDefinitions = buildResourceDefinitions(content);
   const hasGenerators = content.generators.length > 0;
   const enableProduction = options.enableProduction ?? hasGenerators;
-  const applyViaFinalizeTick = true;
+  const applyViaFinalizeTick =
+    options.production?.applyViaFinalizeTick ?? true;
   const maxStepsPerFrame =
-    applyViaFinalizeTick && enableProduction && hasGenerators ? 1 : undefined;
+    options.runtimeOptions?.maxStepsPerFrame ??
+    (applyViaFinalizeTick && enableProduction && hasGenerators ? 1 : undefined);
+  const productionOptions =
+    options.production === undefined
+      ? { applyViaFinalizeTick }
+      : { ...options.production, applyViaFinalizeTick };
 
   const runtimeOptions =
     options.runtimeOptions?.initialStep === undefined &&
@@ -92,7 +101,7 @@ export function restoreGameRuntimeFromSnapshot(
     enableProduction,
     enableAutomation: options.enableAutomation,
     enableTransforms: options.enableTransforms,
-    production: { applyViaFinalizeTick },
+    production: productionOptions,
   });
 
   hydrateProgressionCoordinatorState(

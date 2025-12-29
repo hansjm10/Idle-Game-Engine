@@ -584,6 +584,38 @@ describe('restoreGameRuntimeFromSnapshot', () => {
     expect(getRNGState()).toBe(snapshot.runtime.rngState);
   });
 
+  it('respects applyViaFinalizeTick override when restoring', () => {
+    const content = createTestContent();
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      production: { applyViaFinalizeTick: false },
+    });
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+      production: { applyViaFinalizeTick: false },
+    });
+
+    expect(restored.runtime.getMaxStepsPerFrame()).toBeGreaterThan(1);
+    expect(restored.systems.map((system) => system.id)).toEqual([
+      'production',
+      'progression-coordinator',
+    ]);
+  });
+
   it('rebases automation and transform steps when restoring into a later step', () => {
     const baseContent = createTestContent();
     const content = createContentPack({
