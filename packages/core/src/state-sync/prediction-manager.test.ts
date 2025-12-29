@@ -27,7 +27,14 @@ import {
 } from '../content-test-helpers.js';
 import type { GameStateSnapshot } from './types.js';
 
-import { createPredictionManager } from './prediction-manager.js';
+import {
+  createPredictionManager,
+  TELEMETRY_CHECKSUM_MATCH,
+  TELEMETRY_CHECKSUM_MISMATCH,
+  TELEMETRY_ROLLBACK,
+  TELEMETRY_RESYNC,
+  TELEMETRY_BUFFER_OVERFLOW,
+} from './prediction-manager.js';
 
 type RecordedTelemetry = Readonly<{
   kind: 'error' | 'progress' | 'warning';
@@ -65,11 +72,18 @@ const expectTelemetryPayload = (
     definitionDigest: unknown;
     queueSize: number;
   }>,
+  replayDurationExpectation: 'zero' | 'non-negative' = 'non-negative',
 ): void => {
   expect(data).toBeDefined();
   const payload = data as Record<string, unknown>;
   expect(payload).toMatchObject(expected);
-  expect(typeof payload.replayDurationMs).toBe('number');
+  const replayDurationMs = payload.replayDurationMs as number;
+  expect(typeof replayDurationMs).toBe('number');
+  if (replayDurationExpectation === 'zero') {
+    expect(replayDurationMs).toBe(0);
+  } else {
+    expect(replayDurationMs).toBeGreaterThanOrEqual(0);
+  }
 };
 
 const createResources = (
@@ -325,7 +339,7 @@ describe('createPredictionManager', () => {
     manager.applyServerState(createSnapshot(0), 0);
 
     const matchEvent = entries.find(
-      (entry) => entry.event === 'PredictionChecksumMatch',
+      (entry) => entry.event === TELEMETRY_CHECKSUM_MATCH,
     );
 
     expect(matchEvent?.kind).toBe('progress');
@@ -337,7 +351,41 @@ describe('createPredictionManager', () => {
       snapshotVersion: 1,
       definitionDigest: null,
       queueSize: 0,
+    }, 'zero');
+  });
+
+  it('emits telemetry on checksum match with pending commands', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const entries = createTelemetryRecorder();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
     });
+
+    manager.recordPredictedStep(0);
+    currentStep = 1;
+    manager.recordPredictedStep(1);
+    manager.recordLocalCommand(createCommand(1, 1));
+    manager.applyServerState(createSnapshot(0), 0);
+
+    const matchEvent = entries.find(
+      (entry) => entry.event === TELEMETRY_CHECKSUM_MATCH,
+    );
+
+    expect(matchEvent?.kind).toBe('progress');
+    expectTelemetryPayload(matchEvent?.data, {
+      confirmedStep: 0,
+      localStep: 1,
+      pendingCommands: 1,
+      replayedSteps: 0,
+      snapshotVersion: 1,
+      definitionDigest: null,
+      queueSize: 0,
+    }, 'zero');
   });
 
   it('confirms when checksum matches local history', () => {
@@ -377,7 +425,7 @@ describe('createPredictionManager', () => {
     manager.applyServerState(createSnapshot(0), 0);
 
     const overflowEvent = entries.find(
-      (entry) => entry.event === 'PredictionBufferOverflow',
+      (entry) => entry.event === TELEMETRY_BUFFER_OVERFLOW,
     );
 
     expect(overflowEvent?.kind).toBe('warning');
@@ -389,7 +437,7 @@ describe('createPredictionManager', () => {
       snapshotVersion: 1,
       definitionDigest: null,
       queueSize: 0,
-    });
+    }, 'non-negative');
   });
 
   it('returns resync when pending buffer overflows', () => {
@@ -432,7 +480,7 @@ describe('createPredictionManager', () => {
     manager.applyServerState(createSnapshot(1), 1);
 
     const resyncEvent = entries.find(
-      (entry) => entry.event === 'PredictionResync',
+      (entry) => entry.event === TELEMETRY_RESYNC,
     );
 
     expect(resyncEvent?.kind).toBe('warning');
@@ -444,7 +492,7 @@ describe('createPredictionManager', () => {
       snapshotVersion: 1,
       definitionDigest: null,
       queueSize: 0,
-    });
+    }, 'non-negative');
   });
 
   it('returns resync when confirmed step is outside the history window', () => {
@@ -492,10 +540,10 @@ describe('createPredictionManager', () => {
     );
 
     const mismatchEvent = entries.find(
-      (entry) => entry.event === 'PredictionChecksumMismatch',
+      (entry) => entry.event === TELEMETRY_CHECKSUM_MISMATCH,
     );
     const rollbackEvent = entries.find(
-      (entry) => entry.event === 'PredictionRollback',
+      (entry) => entry.event === TELEMETRY_ROLLBACK,
     );
 
     expect(mismatchEvent?.kind).toBe('warning');
@@ -507,7 +555,7 @@ describe('createPredictionManager', () => {
       snapshotVersion: 1,
       definitionDigest: null,
       queueSize: 0,
-    });
+    }, 'non-negative');
 
     expect(rollbackEvent?.kind).toBe('progress');
     expectTelemetryPayload(rollbackEvent?.data, {
@@ -518,7 +566,7 @@ describe('createPredictionManager', () => {
       snapshotVersion: 1,
       definitionDigest: null,
       queueSize: 0,
-    });
+    }, 'non-negative');
   });
 
   it('returns rolled-back when checksum mismatches local history', () => {

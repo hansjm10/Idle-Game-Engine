@@ -146,11 +146,11 @@ const DEFAULT_MAX_PENDING_COMMANDS = 1000;
 const DEFAULT_CHECKSUM_INTERVAL_STEPS = 1;
 const DEFAULT_SNAPSHOT_HISTORY_STEPS = 0;
 const DEFAULT_MAX_REPLAY_STEPS_PER_TICK = 1;
-const TELEMETRY_CHECKSUM_MATCH = 'PredictionChecksumMatch';
-const TELEMETRY_CHECKSUM_MISMATCH = 'PredictionChecksumMismatch';
-const TELEMETRY_ROLLBACK = 'PredictionRollback';
-const TELEMETRY_RESYNC = 'PredictionResync';
-const TELEMETRY_BUFFER_OVERFLOW = 'PredictionBufferOverflow';
+export const TELEMETRY_CHECKSUM_MATCH = 'PredictionChecksumMatch';
+export const TELEMETRY_CHECKSUM_MISMATCH = 'PredictionChecksumMismatch';
+export const TELEMETRY_ROLLBACK = 'PredictionRollback';
+export const TELEMETRY_RESYNC = 'PredictionResync';
+export const TELEMETRY_BUFFER_OVERFLOW = 'PredictionBufferOverflow';
 const DEFAULT_REPLAY_EVENT_PUBLISHER: EventPublisher = {
   publish(eventType) {
     return {
