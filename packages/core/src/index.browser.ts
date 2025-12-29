@@ -1234,6 +1234,7 @@ export {
 } from './resource-publish-transport.js';
 export {
   createConsoleTelemetry,
+  createContextualTelemetry,
   resetTelemetry,
   setTelemetry,
   silentTelemetry,
@@ -1408,7 +1409,14 @@ export {
   computeStateChecksum,
   fnv1a32,
 } from './state-sync/checksum.js';
-export { createPredictionManager } from './state-sync/prediction-manager.js';
+export {
+  createPredictionManager,
+  TELEMETRY_BUFFER_OVERFLOW,
+  TELEMETRY_CHECKSUM_MATCH,
+  TELEMETRY_CHECKSUM_MISMATCH,
+  TELEMETRY_RESYNC,
+  TELEMETRY_ROLLBACK,
+} from './state-sync/prediction-manager.js';
 export { compareStates, hasStateDiverged } from './state-sync/compare.js';
 export type {
   AchievementDiff,

@@ -190,9 +190,10 @@ export function restoreGameRuntimeFromSnapshot(options: {
     - Hydrate coordinator and restore automation/transform states with step rebasing (`packages/core/src/progression-coordinator-save.ts:331`, `packages/core/src/automation-system.ts:267`, `packages/core/src/transform-system.ts:1100`).
 
 - **Event and Telemetry Behavior (Issue 546)**:
-  - Emit telemetry events: `PredictionChecksumMismatch`, `PredictionRollback`, `PredictionResync`, `PredictionBufferOverflow` via `telemetry` (`packages/core/src/telemetry.ts:3`).
+  - Emit telemetry events: `PredictionChecksumMatch`, `PredictionChecksumMismatch`, `PredictionRollback`, `PredictionResync`, `PredictionBufferOverflow` via `telemetry` (`packages/core/src/telemetry.ts:3`).
+  - Event levels: emit `PredictionChecksumMatch` and `PredictionRollback` as progress events; emit `PredictionChecksumMismatch`, `PredictionResync`, and `PredictionBufferOverflow` as warning events. On checksum mismatch, emit `PredictionChecksumMismatch` before `PredictionRollback`.
   - External observers should treat events emitted during replay as non-authoritative unless explicitly opted in; default to suppress external side effects during replay by wiring a no-op `EventPublisher` (mirrors replay safety in `CommandRecorder`, `packages/core/src/command-recorder.ts:79`).
-  - Telemetry payloads SHOULD include `confirmedStep`, `localStep`, `pendingCommands`, `replayedSteps`, `snapshotVersion`, `runtimeVersion` (transport-level), `definitionDigest` (from resources), `queueSize`, and `replayDurationMs` for live debugging.
+  - Telemetry payloads SHOULD include `confirmedStep`, `localStep`, `pendingCommands`, `replayedSteps`, `snapshotVersion`, `runtimeVersion` (defaults to the core runtime version), `definitionDigest` (from resources), `queueSize`, and `replayDurationMs` for live debugging.
 
 - **Configuration Defaults (Issue 546)**:
   - `maxPredictionSteps`: 50

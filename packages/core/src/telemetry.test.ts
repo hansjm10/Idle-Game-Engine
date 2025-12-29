@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TelemetryEventData, TelemetryFacade } from './telemetry.js';
 import {
   createConsoleTelemetry,
+  createContextualTelemetry,
   resetTelemetry,
   setTelemetry,
   silentTelemetry,
@@ -71,6 +72,43 @@ describe('telemetry facade', () => {
     ]);
     expect(facade.lastProgressData).toBe(progressData);
     expect(facade.lastCounters).toEqual({ published: 3 });
+  });
+
+  it('merges shared context into event payloads', () => {
+    const recordError = vi.fn();
+    const recordWarning = vi.fn();
+    const recordProgress = vi.fn();
+    const recordCounters = vi.fn();
+    const recordTick = vi.fn();
+
+    const baseFacade: TelemetryFacade = {
+      recordError,
+      recordWarning,
+      recordProgress,
+      recordCounters,
+      recordTick,
+    };
+
+    const contextual = createContextualTelemetry(baseFacade, {
+      runtimeVersion: '1.2.3',
+      clientId: 'client-1',
+    });
+
+    contextual.recordWarning('unstable');
+    contextual.recordProgress('prediction', {
+      runtimeVersion: 'override',
+      localStep: 3,
+    });
+
+    expect(recordWarning).toHaveBeenCalledWith('unstable', {
+      runtimeVersion: '1.2.3',
+      clientId: 'client-1',
+    });
+    expect(recordProgress).toHaveBeenCalledWith('prediction', {
+      runtimeVersion: 'override',
+      clientId: 'client-1',
+      localStep: 3,
+    });
   });
 
   it('logs a console error when delegated invocation fails', () => {

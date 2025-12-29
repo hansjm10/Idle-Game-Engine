@@ -8,8 +8,11 @@ import type {
   GameRuntimeWiring,
   RuntimeWiringRuntime,
 } from '../game-runtime-wiring.js';
+import type { TelemetryEventData } from '../telemetry.js';
 import type { GameStateSnapshot } from './types.js';
 import { computeStateChecksum } from './checksum.js';
+import { telemetry } from '../telemetry.js';
+import { RUNTIME_VERSION } from '../version.js';
 
 /**
  * Tracks client prediction state and reconciliation inputs.
@@ -144,6 +147,11 @@ const DEFAULT_MAX_PENDING_COMMANDS = 1000;
 const DEFAULT_CHECKSUM_INTERVAL_STEPS = 1;
 const DEFAULT_SNAPSHOT_HISTORY_STEPS = 0;
 const DEFAULT_MAX_REPLAY_STEPS_PER_TICK = 1;
+export const TELEMETRY_CHECKSUM_MATCH = 'PredictionChecksumMatch';
+export const TELEMETRY_CHECKSUM_MISMATCH = 'PredictionChecksumMismatch';
+export const TELEMETRY_ROLLBACK = 'PredictionRollback';
+export const TELEMETRY_RESYNC = 'PredictionResync';
+export const TELEMETRY_BUFFER_OVERFLOW = 'PredictionBufferOverflow';
 const DEFAULT_REPLAY_EVENT_PUBLISHER: EventPublisher = {
   publish(eventType) {
     return {
@@ -157,6 +165,51 @@ const DEFAULT_REPLAY_EVENT_PUBLISHER: EventPublisher = {
       softLimitActive: false,
     };
   },
+};
+
+const now = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+
+const buildTelemetryPayload = (
+  snapshot: GameStateSnapshot,
+  result: RollbackResult,
+  replayDurationMs: number,
+): TelemetryEventData => ({
+  confirmedStep: result.confirmedStep,
+  localStep: result.localStep,
+  pendingCommands: result.pendingCommands,
+  replayedSteps: result.replayedSteps,
+  snapshotVersion: snapshot.version,
+  runtimeVersion: RUNTIME_VERSION,
+  definitionDigest: snapshot.resources.definitionDigest ?? null,
+  queueSize: snapshot.commandQueue.entries.length,
+  replayDurationMs,
+});
+
+type TelemetryEventRecord = Readonly<{
+  kind: 'progress' | 'warning';
+  event: string;
+}>;
+
+const recordTelemetryEvents = (
+  events: readonly TelemetryEventRecord[],
+  snapshot: GameStateSnapshot,
+  result: RollbackResult,
+  replayDurationMs: number,
+): void => {
+  if (events.length === 0) {
+    return;
+  }
+  const payload = buildTelemetryPayload(snapshot, result, replayDurationMs);
+  for (const { kind, event } of events) {
+    if (kind === 'warning') {
+      telemetry.recordWarning(event, payload);
+    } else {
+      telemetry.recordProgress(event, payload);
+    }
+  }
 };
 
 const resolveNonNegativeInteger = (
@@ -461,6 +514,29 @@ export function createPredictionManager(
     };
   };
 
+  const reconcileWithTelemetry = (
+    snapshot: GameStateSnapshot,
+    confirmedStep: number,
+    targetStep: number,
+    status: RollbackResult['status'],
+    reason?: RollbackResult['reason'],
+    checksumMatch?: boolean,
+    replayPending = true,
+  ): Readonly<{ result: RollbackResult; replayDurationMs: number }> => {
+    const start = now();
+    const result = reconcileWithReplay(
+      snapshot,
+      confirmedStep,
+      targetStep,
+      status,
+      reason,
+      checksumMatch,
+      replayPending,
+    );
+    const replayDurationMs = Math.max(0, now() - start);
+    return { result, replayDurationMs };
+  };
+
   return {
     recordLocalCommand(command, atStep) {
       if (maxPendingCommands === 0) {
@@ -528,7 +604,7 @@ export function createPredictionManager(
       if (pendingOverflowed) {
         pendingCommands = [];
         pendingOverflowed = false;
-        return reconcileWithReplay(
+        const { result, replayDurationMs } = reconcileWithTelemetry(
           snapshot,
           confirmedStep,
           snapshot.runtime.step,
@@ -537,18 +613,32 @@ export function createPredictionManager(
           undefined,
           false,
         );
+        recordTelemetryEvents(
+          [{ kind: 'warning', event: TELEMETRY_BUFFER_OVERFLOW }],
+          snapshot,
+          result,
+          replayDurationMs,
+        );
+        return result;
       }
 
       const localChecksum = findChecksum(confirmedStep);
       if (localChecksum === undefined) {
         dropPendingCommands(confirmedStep);
-        return reconcileWithReplay(
+        const { result, replayDurationMs } = reconcileWithTelemetry(
           snapshot,
           confirmedStep,
           resolvedLocalStep,
           'resynced',
           'prediction-window-exceeded',
         );
+        recordTelemetryEvents(
+          [{ kind: 'warning', event: TELEMETRY_RESYNC }],
+          snapshot,
+          result,
+          replayDurationMs,
+        );
+        return result;
       }
 
       const serverChecksum = computeStateChecksum(snapshot);
@@ -557,7 +647,7 @@ export function createPredictionManager(
       lastConfirmedStep = confirmedStep;
 
       if (checksumMatch) {
-        return {
+        const result: RollbackResult = {
           status: 'confirmed',
           confirmedStep,
           localStep: resolvedLocalStep,
@@ -566,9 +656,16 @@ export function createPredictionManager(
           checksumMatch,
           reason: 'checksum-match',
         };
+        recordTelemetryEvents(
+          [{ kind: 'progress', event: TELEMETRY_CHECKSUM_MATCH }],
+          snapshot,
+          result,
+          0,
+        );
+        return result;
       }
 
-      return reconcileWithReplay(
+      const { result, replayDurationMs } = reconcileWithTelemetry(
         snapshot,
         confirmedStep,
         resolvedLocalStep,
@@ -576,6 +673,16 @@ export function createPredictionManager(
         'checksum-mismatch',
         checksumMatch,
       );
+      recordTelemetryEvents(
+        [
+          { kind: 'warning', event: TELEMETRY_CHECKSUM_MISMATCH },
+          { kind: 'progress', event: TELEMETRY_ROLLBACK },
+        ],
+        snapshot,
+        result,
+        replayDurationMs,
+      );
+      return result;
     },
     getPendingCommands() {
       return pendingCommands.slice();
