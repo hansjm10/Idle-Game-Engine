@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { createAutomation } from '@idle-engine/content-schema';
+
 import {
   CommandPriority,
   RUNTIME_COMMAND_TYPES,
   type Command,
 } from '../command.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
+import type { EventPublisher } from '../events/event-bus.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type { SerializedResourceState } from '../resource-state.js';
 import {
@@ -18,6 +21,7 @@ import {
 import {
   createContentPack,
   createResourceDefinition,
+  literalOne,
 } from '../content-test-helpers.js';
 import type { GameStateSnapshot } from './types.js';
 
@@ -100,6 +104,137 @@ const createCommand = (
     step,
     requestId,
   } satisfies Command);
+
+const createReplayEventContent = () => {
+  const toggleAutomationId = 'automation.toggle';
+  const listenerAutomationId = 'automation.listener';
+
+  return createContentPack({
+    resources: [createResourceDefinition('resource.energy')],
+    automations: [
+      createAutomation({
+        id: toggleAutomationId,
+        name: { default: 'Toggle Automation' },
+        description: { default: 'Toggle Automation' },
+        targetType: 'collectResource',
+        targetId: 'resource.energy',
+        targetAmount: literalOne,
+        trigger: { kind: 'commandQueueEmpty' },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: false,
+      }),
+      createAutomation({
+        id: listenerAutomationId,
+        name: { default: 'Listener Automation' },
+        description: { default: 'Listener Automation' },
+        targetType: 'collectResource',
+        targetId: 'resource.energy',
+        targetAmount: literalOne,
+        trigger: { kind: 'event', eventId: 'automation:toggled' },
+        unlockCondition: { kind: 'always' },
+        enabledByDefault: true,
+      }),
+    ],
+  });
+};
+
+const replayWithAutomationEvent = (
+  enableReplayEventPublisher: boolean,
+) => {
+  const content = createReplayEventContent();
+  let wiring: PredictionReplayWiring = createGameRuntime({
+    content,
+    stepSizeMs: 100,
+    maxStepsPerFrame: 1,
+  });
+
+  const toggleCommand = {
+    type: RUNTIME_COMMAND_TYPES.TOGGLE_AUTOMATION,
+    priority: CommandPriority.PLAYER,
+    payload: { automationId: 'automation.toggle', enabled: false },
+    timestamp: 0,
+    step: 0,
+  } satisfies Command;
+
+  wiring.commandQueue.enqueue(toggleCommand);
+  const serverSnapshot = captureWiringSnapshot(wiring);
+  const baselineAmount = 5;
+
+  const mismatchedSnapshot: GameStateSnapshot = {
+    ...serverSnapshot,
+    resources: {
+      ...serverSnapshot.resources,
+      amounts: [baselineAmount],
+    },
+    progression: {
+      ...serverSnapshot.progression,
+      resources: {
+        ...serverSnapshot.progression.resources,
+        amounts: [baselineAmount],
+      },
+    },
+  };
+
+  let replayBus: EventPublisher | null = null;
+  const replayEventPublisher: EventPublisher | undefined =
+    enableReplayEventPublisher
+      ? {
+          publish(eventType, payload, metadata) {
+            if (!replayBus) {
+              throw new Error('Replay event bus has not been initialized.');
+            }
+            return replayBus.publish(eventType, payload, metadata);
+          },
+        }
+      : undefined;
+
+  const manager = createPredictionManager({
+    captureSnapshot: () => captureWiringSnapshot(wiring),
+    getCurrentStep: () => wiring.runtime.getCurrentStep(),
+    maxPredictionSteps: 10,
+    maxPendingCommands: 10,
+    checksumIntervalSteps: 1,
+    maxReplayStepsPerTick: 1,
+    replay: {
+      restoreRuntime: ({ snapshot, eventPublisher }) => {
+        const nextWiring = restoreGameRuntimeFromSnapshot({
+          content,
+          snapshot,
+          runtimeOptions: { eventPublisher },
+        });
+
+        if (enableReplayEventPublisher) {
+          replayBus = nextWiring.runtime.getEventBus();
+        }
+
+        return nextWiring;
+      },
+      captureSnapshot: captureWiringSnapshot,
+      onRuntimeReplaced: (nextWiring) => {
+        wiring = nextWiring;
+      },
+      eventPublisher: replayEventPublisher,
+    },
+  });
+
+  manager.recordPredictedStep(0);
+  wiring.runtime.tick(100);
+  manager.recordPredictedStep(1);
+  wiring.runtime.tick(100);
+  manager.recordPredictedStep(2);
+
+  const result = manager.applyServerState(mismatchedSnapshot, 0);
+  const energyIndex = wiring.coordinator.resourceState.requireIndex(
+    'resource.energy',
+  );
+
+  return {
+    baselineAmount,
+    currentStep: wiring.runtime.getCurrentStep(),
+    energy: wiring.coordinator.resourceState.getAmount(energyIndex),
+    result,
+  };
+};
 
 describe('createPredictionManager', () => {
   it('returns resync when confirmed step has no recorded checksum', () => {
@@ -469,5 +604,25 @@ describe('createPredictionManager', () => {
     expect(manager.getPendingCommands().map((command) => command.step)).toEqual([
       1,
     ]);
+  });
+
+  it('suppresses event-triggered automations during replay by default', () => {
+    const { baselineAmount, currentStep, energy, result } =
+      replayWithAutomationEvent(false);
+
+    expect(result.status).toBe('rolled-back');
+    expect(result.replayedSteps).toBe(2);
+    expect(currentStep).toBe(2);
+    expect(energy).toBe(baselineAmount);
+  });
+
+  it('replays event-triggered automations when an event publisher is provided', () => {
+    const { baselineAmount, currentStep, energy, result } =
+      replayWithAutomationEvent(true);
+
+    expect(result.status).toBe('rolled-back');
+    expect(result.replayedSteps).toBe(2);
+    expect(currentStep).toBe(2);
+    expect(energy).toBe(baselineAmount + 1);
   });
 });
