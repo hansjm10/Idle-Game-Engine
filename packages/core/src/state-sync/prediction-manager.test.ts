@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { createAutomation } from '@idle-engine/content-schema';
 
@@ -18,6 +18,8 @@ import {
   type IdleEngineRuntime,
   type PredictionReplayWiring,
 } from '../index.js';
+import { resetTelemetry, setTelemetry } from '../telemetry.js';
+import type { TelemetryEventData, TelemetryFacade } from '../telemetry.js';
 import {
   createContentPack,
   createResourceDefinition,
@@ -26,6 +28,49 @@ import {
 import type { GameStateSnapshot } from './types.js';
 
 import { createPredictionManager } from './prediction-manager.js';
+
+type RecordedTelemetry = Readonly<{
+  kind: 'error' | 'progress' | 'warning';
+  event: string;
+  data?: TelemetryEventData;
+}>;
+
+const createTelemetryRecorder = (): RecordedTelemetry[] => {
+  const entries: RecordedTelemetry[] = [];
+  const facade: TelemetryFacade = {
+    recordError(event, data) {
+      entries.push({ kind: 'error', event, data });
+    },
+    recordWarning(event, data) {
+      entries.push({ kind: 'warning', event, data });
+    },
+    recordProgress(event, data) {
+      entries.push({ kind: 'progress', event, data });
+    },
+    recordCounters() {},
+    recordTick() {},
+  };
+  setTelemetry(facade);
+  return entries;
+};
+
+const expectTelemetryPayload = (
+  data: TelemetryEventData | undefined,
+  expected: Readonly<{
+    confirmedStep: number;
+    localStep: number;
+    pendingCommands: number;
+    replayedSteps: number;
+    snapshotVersion: number;
+    definitionDigest: unknown;
+    queueSize: number;
+  }>,
+): void => {
+  expect(data).toBeDefined();
+  const payload = data as Record<string, unknown>;
+  expect(payload).toMatchObject(expected);
+  expect(typeof payload.replayDurationMs).toBe('number');
+};
 
 const createResources = (
   amount = 10,
@@ -237,6 +282,10 @@ const replayWithAutomationEvent = (
 };
 
 describe('createPredictionManager', () => {
+  afterEach(() => {
+    resetTelemetry();
+  });
+
   it('returns resync when confirmed step has no recorded checksum', () => {
     let currentStep = 0;
     const captureSnapshot = () => createSnapshot(currentStep);
@@ -260,6 +309,37 @@ describe('createPredictionManager', () => {
     expect(result.reason).toBe('prediction-window-exceeded');
   });
 
+  it('emits telemetry on checksum match', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const entries = createTelemetryRecorder();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+    manager.applyServerState(createSnapshot(0), 0);
+
+    const matchEvent = entries.find(
+      (entry) => entry.event === 'PredictionChecksumMatch',
+    );
+
+    expect(matchEvent?.kind).toBe('progress');
+    expectTelemetryPayload(matchEvent?.data, {
+      confirmedStep: 0,
+      localStep: 0,
+      pendingCommands: 0,
+      replayedSteps: 0,
+      snapshotVersion: 1,
+      definitionDigest: null,
+      queueSize: 0,
+    });
+  });
+
   it('confirms when checksum matches local history', () => {
     const currentStep = 0;
     const captureSnapshot = () => createSnapshot(currentStep);
@@ -278,6 +358,38 @@ describe('createPredictionManager', () => {
     expect(result.status).toBe('confirmed');
     expect(result.reason).toBe('checksum-match');
     expect(result.checksumMatch).toBe(true);
+  });
+
+  it('emits telemetry on buffer overflow resync', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const entries = createTelemetryRecorder();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 1,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordLocalCommand(createCommand(0, 1));
+    manager.recordLocalCommand(createCommand(1, 2));
+    manager.applyServerState(createSnapshot(0), 0);
+
+    const overflowEvent = entries.find(
+      (entry) => entry.event === 'PredictionBufferOverflow',
+    );
+
+    expect(overflowEvent?.kind).toBe('warning');
+    expectTelemetryPayload(overflowEvent?.data, {
+      confirmedStep: 0,
+      localStep: 0,
+      pendingCommands: 0,
+      replayedSteps: 0,
+      snapshotVersion: 1,
+      definitionDigest: null,
+      queueSize: 0,
+    });
   });
 
   it('returns resync when pending buffer overflows', () => {
@@ -300,6 +412,41 @@ describe('createPredictionManager', () => {
     expect(manager.getPendingCommands()).toHaveLength(0);
   });
 
+  it('emits telemetry on prediction window resync', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const entries = createTelemetryRecorder();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 2,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+    currentStep = 1;
+    manager.recordPredictedStep(1);
+    currentStep = 2;
+    manager.recordPredictedStep(2);
+    manager.applyServerState(createSnapshot(1), 1);
+
+    const resyncEvent = entries.find(
+      (entry) => entry.event === 'PredictionResync',
+    );
+
+    expect(resyncEvent?.kind).toBe('warning');
+    expectTelemetryPayload(resyncEvent?.data, {
+      confirmedStep: 1,
+      localStep: 1,
+      pendingCommands: 0,
+      replayedSteps: 0,
+      snapshotVersion: 1,
+      definitionDigest: null,
+      queueSize: 0,
+    });
+  });
+
   it('returns resync when confirmed step is outside the history window', () => {
     let currentStep = 0;
     const captureSnapshot = () => createSnapshot(currentStep);
@@ -320,6 +467,58 @@ describe('createPredictionManager', () => {
 
     expect(result.status).toBe('resynced');
     expect(result.reason).toBe('prediction-window-exceeded');
+  });
+
+  it('emits telemetry on checksum mismatch and rollback', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const entries = createTelemetryRecorder();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    for (let step = 0; step <= 2; step += 1) {
+      currentStep = step;
+      manager.recordPredictedStep(step);
+    }
+
+    manager.applyServerState(
+      createSnapshot(0, createResources(25)),
+      0,
+    );
+
+    const mismatchEvent = entries.find(
+      (entry) => entry.event === 'PredictionChecksumMismatch',
+    );
+    const rollbackEvent = entries.find(
+      (entry) => entry.event === 'PredictionRollback',
+    );
+
+    expect(mismatchEvent?.kind).toBe('warning');
+    expectTelemetryPayload(mismatchEvent?.data, {
+      confirmedStep: 0,
+      localStep: 2,
+      pendingCommands: 0,
+      replayedSteps: 2,
+      snapshotVersion: 1,
+      definitionDigest: null,
+      queueSize: 0,
+    });
+
+    expect(rollbackEvent?.kind).toBe('progress');
+    expectTelemetryPayload(rollbackEvent?.data, {
+      confirmedStep: 0,
+      localStep: 2,
+      pendingCommands: 0,
+      replayedSteps: 2,
+      snapshotVersion: 1,
+      definitionDigest: null,
+      queueSize: 0,
+    });
   });
 
   it('returns rolled-back when checksum mismatches local history', () => {
