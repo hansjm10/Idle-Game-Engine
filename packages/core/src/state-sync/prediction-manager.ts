@@ -3,6 +3,11 @@
  * See docs/runtime-client-prediction-rollback-design-issue-546.md (Section 6.2).
  */
 import type { Command } from '../command.js';
+import type { EventPublisher } from '../events/event-bus.js';
+import type {
+  GameRuntimeWiring,
+  RuntimeWiringRuntime,
+} from '../game-runtime-wiring.js';
 import type { GameStateSnapshot } from './types.js';
 import { computeStateChecksum } from './checksum.js';
 
@@ -32,6 +37,28 @@ export interface PredictionManager {
   getPredictionWindow(): PredictionWindow;
 }
 
+export type PredictionReplayRuntime = RuntimeWiringRuntime & {
+  tick: (deltaMs: number) => number;
+};
+
+export type PredictionReplayWiring = GameRuntimeWiring<PredictionReplayRuntime>;
+
+export type PredictionReplayRuntimeFactoryOptions = Readonly<{
+  readonly snapshot: GameStateSnapshot;
+  readonly eventPublisher: EventPublisher;
+}>;
+
+export type PredictionReplayOptions = Readonly<{
+  readonly restoreRuntime: (
+    options: PredictionReplayRuntimeFactoryOptions,
+  ) => PredictionReplayWiring;
+  readonly captureSnapshot: (
+    wiring: PredictionReplayWiring,
+  ) => GameStateSnapshot;
+  readonly onRuntimeReplaced?: (wiring: PredictionReplayWiring) => void;
+  readonly eventPublisher?: EventPublisher;
+}>;
+
 export type PredictionManagerOptions = Readonly<{
   readonly captureSnapshot: () => GameStateSnapshot;
   readonly getCurrentStep?: () => number;
@@ -40,6 +67,7 @@ export type PredictionManagerOptions = Readonly<{
   readonly checksumIntervalSteps?: number;
   readonly snapshotHistorySteps?: number;
   readonly maxReplayStepsPerTick?: number;
+  readonly replay?: PredictionReplayOptions;
 }>;
 
 /**
@@ -116,6 +144,20 @@ const DEFAULT_MAX_PENDING_COMMANDS = 1000;
 const DEFAULT_CHECKSUM_INTERVAL_STEPS = 1;
 const DEFAULT_SNAPSHOT_HISTORY_STEPS = 0;
 const DEFAULT_MAX_REPLAY_STEPS_PER_TICK = 1;
+const DEFAULT_REPLAY_EVENT_PUBLISHER: EventPublisher = {
+  publish(eventType) {
+    return {
+      accepted: true,
+      state: 'accepted',
+      type: eventType,
+      channel: 0,
+      bufferSize: 0,
+      remainingCapacity: 0,
+      dispatchOrder: 0,
+      softLimitActive: false,
+    };
+  },
+};
 
 const resolveNonNegativeInteger = (
   value: number | undefined,
@@ -186,10 +228,15 @@ export function createPredictionManager(
 ): PredictionManager {
   const predictionWindow = resolvePredictionWindow(options);
   const { captureSnapshot, getCurrentStep } = options;
+  const replayOptions = options.replay;
+  const replayEventPublisher =
+    replayOptions?.eventPublisher ?? DEFAULT_REPLAY_EVENT_PUBLISHER;
+  const replayCaptureSnapshot = replayOptions?.captureSnapshot;
   const {
     maxPredictionSteps,
     maxPendingCommands,
     checksumIntervalSteps,
+    maxReplayStepsPerTick,
   } = predictionWindow;
 
   const historyCapacity = maxPredictionSteps;
@@ -253,6 +300,18 @@ export function createPredictionManager(
     pruneHistory(step);
   };
 
+  const recordSnapshotChecksum = (
+    step: number,
+    snapshot: GameStateSnapshot,
+  ): void => {
+    localStep = step;
+    if (!shouldRecordChecksum(step)) {
+      return;
+    }
+    recordChecksum(step, computeStateChecksum(snapshot));
+    lastRecordedStep = step;
+  };
+
   const findChecksum = (step: number): string | undefined => {
     if (historySize === 0 || historyCapacity === 0) {
       return undefined;
@@ -283,6 +342,123 @@ export function createPredictionManager(
     pendingOverflowed = false;
     lastConfirmedStep = confirmedStep;
     localStep = snapshotStep;
+  };
+
+  const recordReplayStep = (
+    step: number,
+    wiring: PredictionReplayWiring,
+  ): void => {
+    localStep = step;
+    if (!shouldRecordChecksum(step)) {
+      return;
+    }
+    if (!replayCaptureSnapshot) {
+      throw new Error('Prediction replay snapshot capture is not configured.');
+    }
+    const snapshot = replayCaptureSnapshot(wiring);
+    recordChecksum(step, computeStateChecksum(snapshot));
+    lastRecordedStep = step;
+  };
+
+  const replayToStep = (
+    wiring: PredictionReplayWiring,
+    targetStep: number,
+  ): number => {
+    const runtime = wiring.runtime as PredictionReplayRuntime;
+    const stepSizeMs = runtime.getStepSizeMs();
+    const batchSize = Math.max(1, maxReplayStepsPerTick);
+    let replayedSteps = 0;
+    let remainingSteps = Math.max(
+      0,
+      targetStep - runtime.getCurrentStep(),
+    );
+
+    while (remainingSteps > 0) {
+      const batch = Math.min(batchSize, remainingSteps);
+      for (let i = 0; i < batch; i += 1) {
+        const processed = runtime.tick(stepSizeMs);
+        if (processed <= 0) {
+          remainingSteps = 0;
+          break;
+        }
+        replayedSteps += processed;
+        remainingSteps -= processed;
+        recordReplayStep(runtime.getCurrentStep(), wiring);
+      }
+    }
+
+    return replayedSteps;
+  };
+
+  const reconcileWithReplay = (
+    snapshot: GameStateSnapshot,
+    confirmedStep: number,
+    targetStep: number,
+    status: RollbackResult['status'],
+    reason?: RollbackResult['reason'],
+    checksumMatch?: boolean,
+    replayPending = true,
+  ): RollbackResult => {
+    const snapshotStep = snapshot.runtime.step;
+
+    if (!replayOptions) {
+      const fallbackReplayedSteps =
+        status === 'rolled-back'
+          ? Math.max(0, targetStep - confirmedStep)
+          : 0;
+      if (status === 'resynced') {
+        resetForResync(confirmedStep, snapshotStep);
+      } else {
+        clearHistory();
+      }
+      return {
+        status,
+        confirmedStep,
+        localStep,
+        replayedSteps: fallbackReplayedSteps,
+        pendingCommands: pendingCommands.length,
+        ...(checksumMatch === undefined ? {} : { checksumMatch }),
+        ...(reason === undefined ? {} : { reason }),
+      };
+    }
+
+    const wiring = replayOptions.restoreRuntime({
+      snapshot,
+      eventPublisher: replayEventPublisher,
+    });
+
+    clearHistory();
+    pendingOverflowed = false;
+    lastConfirmedStep = confirmedStep;
+
+    if (!replayPending) {
+      pendingCommands = [];
+    }
+
+    recordSnapshotChecksum(snapshotStep, snapshot);
+
+    if (replayPending) {
+      for (const command of pendingCommands) {
+        if (command.step > confirmedStep) {
+          wiring.commandQueue.enqueue(command);
+        }
+      }
+    }
+
+    const replayTargetStep = Math.max(snapshotStep, targetStep);
+    const replayedSteps = replayToStep(wiring, replayTargetStep);
+
+    replayOptions.onRuntimeReplaced?.(wiring);
+
+    return {
+      status,
+      confirmedStep,
+      localStep,
+      replayedSteps,
+      pendingCommands: pendingCommands.length,
+      ...(checksumMatch === undefined ? {} : { checksumMatch }),
+      ...(reason === undefined ? {} : { reason }),
+    };
   };
 
   return {
@@ -350,27 +526,29 @@ export function createPredictionManager(
       }
 
       if (pendingOverflowed) {
-        resetForResync(confirmedStep, snapshot.runtime.step);
-        return {
-          status: 'resynced',
+        pendingCommands = [];
+        pendingOverflowed = false;
+        return reconcileWithReplay(
+          snapshot,
           confirmedStep,
-          localStep,
-          replayedSteps: 0,
-          pendingCommands: pendingCommands.length,
-        };
+          snapshot.runtime.step,
+          'resynced',
+          undefined,
+          undefined,
+          false,
+        );
       }
 
       const localChecksum = findChecksum(confirmedStep);
       if (localChecksum === undefined) {
-        resetForResync(confirmedStep, snapshot.runtime.step);
-        return {
-          status: 'resynced',
+        dropPendingCommands(confirmedStep);
+        return reconcileWithReplay(
+          snapshot,
           confirmedStep,
-          localStep,
-          replayedSteps: 0,
-          pendingCommands: pendingCommands.length,
-          reason: 'prediction-window-exceeded',
-        };
+          resolvedLocalStep,
+          'resynced',
+          'prediction-window-exceeded',
+        );
       }
 
       const serverChecksum = computeStateChecksum(snapshot);
@@ -390,19 +568,14 @@ export function createPredictionManager(
         };
       }
 
-      clearHistory();
-      return {
-        status: 'rolled-back',
+      return reconcileWithReplay(
+        snapshot,
         confirmedStep,
-        localStep: resolvedLocalStep,
-        replayedSteps: Math.max(
-          0,
-          resolvedLocalStep - confirmedStep,
-        ),
-        pendingCommands: pendingCommands.length,
+        resolvedLocalStep,
+        'rolled-back',
+        'checksum-mismatch',
         checksumMatch,
-        reason: 'checksum-mismatch',
-      };
+      );
     },
     getPendingCommands() {
       return pendingCommands.slice();
