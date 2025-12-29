@@ -19,8 +19,10 @@ import {
 import {
   captureGameStateSnapshot,
   CommandQueue,
+  createGameRuntime,
   createResourceState,
   IdleEngineRuntime,
+  restoreGameRuntimeFromSnapshot,
   restoreFromSnapshot,
   restorePartial,
 } from '../index.js';
@@ -506,6 +508,204 @@ describe('restoreFromSnapshot', () => {
     const restoredQueue = restored.commandQueue.exportForSave();
     expect(restoredQueue.entries[0]?.step).toBe(4);
     expect(restored.runtime.getCurrentStep()).toBe(4);
+  });
+});
+
+describe('restoreGameRuntimeFromSnapshot', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetRNG();
+  });
+
+  it('restores wiring so snapshots round-trip', () => {
+    setRNGSeed(4242);
+    seededRandom();
+    seededRandom();
+    const expectedRngState = getRNGState();
+
+    const baseContent = createTestContent();
+    const content = createContentPack({
+      resources: [...baseContent.resources],
+      generators: [...baseContent.generators],
+      upgrades: [...baseContent.upgrades],
+      automations: createTestAutomations(),
+      transforms: createTestTransforms(),
+    });
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      initialStep: INITIAL_STEP,
+    });
+
+    wiring.coordinator.incrementGeneratorOwned('generator.mine', 2);
+    wiring.coordinator.incrementUpgradePurchases('upgrade.double-mine');
+    wiring.coordinator.updateForStep(INITIAL_STEP);
+
+    wiring.commandQueue.enqueue({
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 5 },
+      timestamp: 12345,
+      step: INITIAL_STEP,
+    });
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    expect(snapshot.runtime.rngState).toBe(expectedRngState);
+
+    setRNGSeed(7);
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+    });
+
+    const roundTrip = captureGameStateSnapshot({
+      runtime: restored.runtime,
+      progressionCoordinator: restored.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => restored.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => restored.transformSystem?.getState() ?? new Map(),
+      commandQueue: restored.commandQueue,
+      productionSystem: restored.productionSystem,
+    });
+
+    expect(roundTrip).toEqual(snapshot);
+    expect(getCurrentRNGSeed()).toBe(snapshot.runtime.rngSeed);
+    expect(getRNGState()).toBe(snapshot.runtime.rngState);
+  });
+
+  it('respects applyViaFinalizeTick override when restoring', () => {
+    const content = createTestContent();
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      production: { applyViaFinalizeTick: false },
+    });
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+      production: { applyViaFinalizeTick: false },
+    });
+
+    expect(restored.runtime.getMaxStepsPerFrame()).toBeGreaterThan(1);
+    expect(restored.systems.map((system) => system.id)).toEqual([
+      'production',
+      'progression-coordinator',
+    ]);
+  });
+
+  it('rebases automation and transform steps when restoring into a later step', () => {
+    const baseContent = createTestContent();
+    const content = createContentPack({
+      resources: [...baseContent.resources],
+      generators: [...baseContent.generators],
+      upgrades: [...baseContent.upgrades],
+      automations: createTestAutomations(),
+      transforms: createTestTransforms(),
+    });
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      initialStep: INITIAL_STEP,
+    });
+
+    const automationSystem = wiring.automationSystem;
+    const transformSystem = wiring.transformSystem;
+    if (!automationSystem || !transformSystem) {
+      throw new Error('Expected automation and transform systems to be wired.');
+    }
+
+    const savedStep = wiring.runtime.getCurrentStep();
+    const rebaseDelta = 5;
+    const targetStep = savedStep + rebaseDelta;
+
+    const lastFiredStep = savedStep - 2;
+    const automationCooldown = savedStep + 4;
+    const transformCooldown = savedStep + 6;
+
+    automationSystem.restoreState(
+      [
+        {
+          id: 'auto:collector',
+          enabled: true,
+          lastFiredStep,
+          cooldownExpiresStep: automationCooldown,
+          unlocked: true,
+          lastThresholdSatisfied: false,
+        },
+      ],
+      { savedWorkerStep: savedStep, currentStep: savedStep },
+    );
+
+    transformSystem.restoreState(
+      [
+        {
+          id: 'transform:convert',
+          unlocked: true,
+          cooldownExpiresStep: transformCooldown,
+        },
+      ],
+      { savedWorkerStep: savedStep, currentStep: savedStep },
+    );
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+      runtimeOptions: { initialStep: targetStep },
+    });
+
+    const restoredAutomation = restored.automationSystem
+      ?.getState()
+      .get('auto:collector');
+    const restoredTransform = restored.transformSystem
+      ?.getState()
+      .get('transform:convert');
+
+    if (!restoredAutomation || !restoredTransform) {
+      throw new Error('Expected automation and transform systems to be wired.');
+    }
+
+    expect(restored.runtime.getCurrentStep()).toBe(targetStep);
+    expect(restoredAutomation.lastFiredStep).toBe(lastFiredStep + rebaseDelta);
+    expect(restoredAutomation.cooldownExpiresStep).toBe(
+      automationCooldown + rebaseDelta,
+    );
+    expect(restoredTransform.cooldownExpiresStep).toBe(
+      transformCooldown + rebaseDelta,
+    );
   });
 });
 

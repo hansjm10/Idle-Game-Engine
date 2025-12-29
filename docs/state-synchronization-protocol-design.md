@@ -671,6 +671,21 @@ const diff = compareStates(snapshot, roundTrip);
 console.log('Round-trip identical:', diff.identical);
 ```
 
+**Runtime restore helper**
+```typescript
+const wiring = restoreGameRuntimeFromSnapshot({
+  content,
+  snapshot,
+  // Optional: match a runtime that disabled finalize-tick production.
+  production: { applyViaFinalizeTick: false },
+  // Optional: restore into a later step (rebases automation/transform/commands).
+  runtimeOptions: { initialStep: snapshot.runtime.step + 5 },
+});
+```
+- `restoreGameRuntimeFromSnapshot()` composes `restoreFromSnapshot()`, `createProgressionCoordinator()`, and `wireGameRuntime()`.
+- Automation/transform state is restored with step rebasing based on the snapshot step and the runtime's current step.
+- Production restores default to `applyViaFinalizeTick` and cap `maxStepsPerFrame` to 1 when generators are enabled; override `production.applyViaFinalizeTick` to match non-finalize-tick runtimes.
+
 **Debugging desyncs**
 ```typescript
 if (hasStateDiverged(localSnapshot, remoteSnapshot)) {
