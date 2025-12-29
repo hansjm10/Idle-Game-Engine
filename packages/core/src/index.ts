@@ -1412,6 +1412,7 @@ export {
   TELEMETRY_ROLLBACK,
 } from './state-sync/prediction-manager.js';
 export type {
+  PredictionCompatibilityMetadata,
   PredictionManager,
   PredictionManagerOptions,
   PredictionReplayOptions,

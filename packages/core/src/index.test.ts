@@ -8,6 +8,7 @@ import {
   createPredictionManager,
   type AutomationState,
   type IdleEngineRuntimeOptions,
+  type PredictionCompatibilityMetadata,
   type PredictionManager,
   type PredictionWindow,
   type RollbackResult,
@@ -166,10 +167,12 @@ function readBacklog(
 
 describe('core exports', () => {
   it('exposes prediction manager types', () => {
+    const compatibility = null as unknown as PredictionCompatibilityMetadata;
     const manager = null as unknown as PredictionManager;
     const window = null as unknown as PredictionWindow;
     const rollback = null as unknown as RollbackResult;
 
+    expect(compatibility).toBeNull();
     expect(manager).toBeNull();
     expect(window).toBeNull();
     expect(rollback).toBeNull();
