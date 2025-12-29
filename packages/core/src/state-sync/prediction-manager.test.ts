@@ -76,6 +76,7 @@ const expectTelemetryPayload = (
     definitionDigest: unknown;
     queueSize: number;
     runtimeVersion?: string;
+    clientId?: string;
   }>,
   replayDurationExpectation: 'zero' | 'non-negative' = 'non-negative',
 ): void => {
@@ -425,7 +426,7 @@ describe('createPredictionManager', () => {
         definitionDigest,
         queueEntries,
       });
-    const entries = createTelemetryRecorder({ runtimeVersion: RUNTIME_VERSION });
+    const entries = createTelemetryRecorder({ clientId: 'client-1' });
     const manager = createPredictionManager({
       captureSnapshot,
       maxPredictionSteps: 10,
@@ -457,6 +458,7 @@ describe('createPredictionManager', () => {
       definitionDigest,
       queueSize: queueEntries.length,
       runtimeVersion: RUNTIME_VERSION,
+      clientId: 'client-1',
     }, 'zero');
   });
 
@@ -500,6 +502,40 @@ describe('createPredictionManager', () => {
       (entry) => entry.event === TELEMETRY_BUFFER_OVERFLOW,
     );
 
+    expect(overflowEvent?.kind).toBe('warning');
+    expectTelemetryPayload(overflowEvent?.data, {
+      confirmedStep: 0,
+      localStep: 0,
+      pendingCommands: 0,
+      replayedSteps: 0,
+      snapshotVersion: 1,
+      runtimeVersion: RUNTIME_VERSION,
+      definitionDigest: null,
+      queueSize: 0,
+    }, 'non-negative');
+  });
+
+  it('emits telemetry on buffer overflow resync when maxPendingCommands is zero', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const entries = createTelemetryRecorder();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 0,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordLocalCommand(createCommand(0, 1));
+    const result = manager.applyServerState(createSnapshot(0), 0);
+
+    const overflowEvent = entries.find(
+      (entry) => entry.event === TELEMETRY_BUFFER_OVERFLOW,
+    );
+
+    expect(result.status).toBe('resynced');
+    expect(manager.getPendingCommands()).toHaveLength(0);
     expect(overflowEvent?.kind).toBe('warning');
     expectTelemetryPayload(overflowEvent?.data, {
       confirmedStep: 0,
