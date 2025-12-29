@@ -1050,25 +1050,36 @@ describe('createPredictionManager', () => {
 
     manager.recordPredictedStep(0);
 
-    const requestId = 'request-1';
-    const pendingCommand = {
+    const requestIdOne = 'request-1';
+    const requestIdTwo = 'request-2';
+    const pendingCommandOne = {
       type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
       priority: CommandPriority.PLAYER,
       payload: { resourceId: 'resource.energy', amount: 3 },
       timestamp: 2,
       step: 1,
-      requestId,
+      requestId: requestIdOne,
+    } satisfies Command;
+    const pendingCommandTwo = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 4 },
+      timestamp: 3,
+      step: 1,
+      requestId: requestIdTwo,
     } satisfies Command;
 
-    wiring.commandQueue.enqueue(pendingCommand);
-    manager.recordLocalCommand(pendingCommand);
+    wiring.commandQueue.enqueue(pendingCommandOne);
+    manager.recordLocalCommand(pendingCommandOne);
+    wiring.commandQueue.enqueue(pendingCommandTwo);
+    manager.recordLocalCommand(pendingCommandTwo);
 
     wiring.runtime.tick(100);
     manager.recordPredictedStep(1);
     wiring.runtime.tick(100);
     manager.recordPredictedStep(2);
 
-    const baselineAmount = 20;
+    const baselineAmount = (serverSnapshot.resources.amounts[0] ?? 0) + 1;
     const mismatchedSnapshot: GameStateSnapshot = {
       ...serverSnapshot,
       resources: {
@@ -1087,16 +1098,27 @@ describe('createPredictionManager', () => {
     const result = manager.applyServerState(mismatchedSnapshot, 0);
 
     expect(result.status).toBe('rolled-back');
-    expect(result.pendingCommands).toBe(1);
-    expect(manager.getPendingCommands().map((command) => command.requestId)).toEqual([
-      requestId,
-    ]);
+    expect(result.reason).toBe('checksum-mismatch');
+    expect(result.pendingCommands).toBe(2);
+    expect(manager.getPendingCommands().map((command) => command.requestId)).toEqual(
+      [requestIdOne, requestIdTwo],
+    );
 
     const outcomes = (wiring.runtime as unknown as IdleEngineRuntime).drainCommandOutcomes();
-    const replayOutcome = outcomes.find((outcome) => outcome.requestId === requestId);
-    expect(replayOutcome).toMatchObject({
+    const replayOutcomeOne = outcomes.find(
+      (outcome) => outcome.requestId === requestIdOne,
+    );
+    expect(replayOutcomeOne).toMatchObject({
       success: true,
-      requestId,
+      requestId: requestIdOne,
+      serverStep: 1,
+    });
+    const replayOutcomeTwo = outcomes.find(
+      (outcome) => outcome.requestId === requestIdTwo,
+    );
+    expect(replayOutcomeTwo).toMatchObject({
+      success: true,
+      requestId: requestIdTwo,
       serverStep: 1,
     });
   });
