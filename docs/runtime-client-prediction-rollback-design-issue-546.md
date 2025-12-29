@@ -192,7 +192,7 @@ export function restoreGameRuntimeFromSnapshot(options: {
 - **Event and Telemetry Behavior (Issue 546)**:
   - Emit telemetry events: `PredictionChecksumMatch`, `PredictionChecksumMismatch`, `PredictionRollback`, `PredictionResync`, `PredictionBufferOverflow` via `telemetry` (`packages/core/src/telemetry.ts:3`).
   - External observers should treat events emitted during replay as non-authoritative unless explicitly opted in; default to suppress external side effects during replay by wiring a no-op `EventPublisher` (mirrors replay safety in `CommandRecorder`, `packages/core/src/command-recorder.ts:79`).
-  - Telemetry payloads SHOULD include `confirmedStep`, `localStep`, `pendingCommands`, `replayedSteps`, `snapshotVersion`, `runtimeVersion` (transport-level), `definitionDigest` (from resources), `queueSize`, and `replayDurationMs` for live debugging.
+  - Telemetry payloads SHOULD include `confirmedStep`, `localStep`, `pendingCommands`, `replayedSteps`, `snapshotVersion`, `runtimeVersion` (transport-level, injected via telemetry context), `definitionDigest` (from resources), `queueSize`, and `replayDurationMs` for live debugging.
 
 - **Configuration Defaults (Issue 546)**:
   - `maxPredictionSteps`: 50

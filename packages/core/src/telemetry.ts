@@ -41,6 +41,46 @@ export const silentTelemetry: TelemetryFacade = {
 };
 
 /**
+ * Creates a telemetry facade that merges shared context into event payloads.
+ * Event-specific data overrides context keys when both are provided.
+ */
+export function createContextualTelemetry(
+  facade: TelemetryFacade,
+  context: TelemetryEventData,
+): TelemetryFacade {
+  const hasContext = Object.keys(context).length > 0;
+  const mergeData = (
+    data: TelemetryEventData | undefined,
+  ): TelemetryEventData | undefined => {
+    if (!hasContext) {
+      return data;
+    }
+    if (!data) {
+      return context;
+    }
+    return { ...context, ...data };
+  };
+
+  return {
+    recordError(event, data) {
+      facade.recordError(event, mergeData(data));
+    },
+    recordWarning(event, data) {
+      facade.recordWarning(event, mergeData(data));
+    },
+    recordProgress(event, data) {
+      facade.recordProgress(event, mergeData(data));
+    },
+    recordCounters(group, counters) {
+      facade.recordCounters(group, counters);
+    },
+    recordTick() {
+      facade.recordTick();
+    },
+  };
+}
+
+/**
  * Creates a telemetry facade that logs all events to the console.
  * Use this for development/debugging when you want to see telemetry output.
  *

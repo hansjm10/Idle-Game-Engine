@@ -18,8 +18,10 @@ import {
   type IdleEngineRuntime,
   type PredictionReplayWiring,
 } from '../index.js';
-import { resetTelemetry, setTelemetry } from '../telemetry.js';
+import { createDefinitionDigest } from '../resource-state.js';
+import { createContextualTelemetry, resetTelemetry, setTelemetry } from '../telemetry.js';
 import type { TelemetryEventData, TelemetryFacade } from '../telemetry.js';
+import { RUNTIME_VERSION } from '../version.js';
 import {
   createContentPack,
   createResourceDefinition,
@@ -42,7 +44,9 @@ type RecordedTelemetry = Readonly<{
   data?: TelemetryEventData;
 }>;
 
-const createTelemetryRecorder = (): RecordedTelemetry[] => {
+const createTelemetryRecorder = (
+  context: TelemetryEventData = {},
+): RecordedTelemetry[] => {
   const entries: RecordedTelemetry[] = [];
   const facade: TelemetryFacade = {
     recordError(event, data) {
@@ -57,7 +61,7 @@ const createTelemetryRecorder = (): RecordedTelemetry[] => {
     recordCounters() {},
     recordTick() {},
   };
-  setTelemetry(facade);
+  setTelemetry(createContextualTelemetry(facade, context));
   return entries;
 };
 
@@ -71,6 +75,7 @@ const expectTelemetryPayload = (
     snapshotVersion: number;
     definitionDigest: unknown;
     queueSize: number;
+    runtimeVersion?: string;
   }>,
   replayDurationExpectation: 'zero' | 'non-negative' = 'non-negative',
 ): void => {
@@ -112,6 +117,10 @@ const baseCommandQueue: SerializedCommandQueueV1 = {
 const createSnapshot = (
   step: number,
   resources: SerializedResourceState = createResources(),
+  options: Readonly<{
+    definitionDigest?: SerializedResourceState['definitionDigest'];
+    queueEntries?: SerializedCommandQueueV1['entries'];
+  }> = {},
 ): GameStateSnapshot => ({
   version: 1,
   capturedAt: 0,
@@ -121,7 +130,9 @@ const createSnapshot = (
     rngSeed: 1,
     rngState: 1,
   },
-  resources,
+  resources: options.definitionDigest
+    ? { ...resources, definitionDigest: options.definitionDigest }
+    : resources,
   progression: {
     ...baseProgression,
     step,
@@ -129,7 +140,10 @@ const createSnapshot = (
   },
   automation: [],
   transforms: [],
-  commandQueue: baseCommandQueue,
+  commandQueue: {
+    ...baseCommandQueue,
+    entries: options.queueEntries ?? baseCommandQueue.entries,
+  },
 });
 
 const emptyState = new Map<string, never>();
@@ -163,6 +177,17 @@ const createCommand = (
     step,
     requestId,
   } satisfies Command);
+
+const createQueueEntries = (
+  count: number,
+): SerializedCommandQueueV1['entries'] =>
+  Array.from({ length: count }, (_, index) => ({
+    type: 'command.test',
+    priority: CommandPriority.PLAYER,
+    timestamp: index,
+    step: index,
+    payload: { value: index },
+  }));
 
 const createReplayEventContent = () => {
   const toggleAutomationId = 'automation.toggle';
@@ -385,6 +410,51 @@ describe('createPredictionManager', () => {
       snapshotVersion: 1,
       definitionDigest: null,
       queueSize: 0,
+    }, 'zero');
+  });
+
+  it('emits telemetry with context and snapshot metadata', () => {
+    const currentStep = 0;
+    const resources = createResources();
+    const definitionDigest = createDefinitionDigest(resources.ids);
+    const queueEntries = createQueueEntries(2);
+    const captureSnapshot = () =>
+      createSnapshot(currentStep, resources, {
+        definitionDigest,
+        queueEntries,
+      });
+    const entries = createTelemetryRecorder({ runtimeVersion: RUNTIME_VERSION });
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+    manager.applyServerState(
+      createSnapshot(0, resources, {
+        definitionDigest,
+        queueEntries,
+      }),
+      0,
+    );
+
+    const matchEvent = entries.find(
+      (entry) => entry.event === TELEMETRY_CHECKSUM_MATCH,
+    );
+
+    expect(matchEvent?.kind).toBe('progress');
+    expectTelemetryPayload(matchEvent?.data, {
+      confirmedStep: 0,
+      localStep: 0,
+      pendingCommands: 0,
+      replayedSteps: 0,
+      snapshotVersion: 1,
+      definitionDigest,
+      queueSize: queueEntries.length,
+      runtimeVersion: RUNTIME_VERSION,
     }, 'zero');
   });
 

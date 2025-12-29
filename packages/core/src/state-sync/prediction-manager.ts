@@ -186,6 +186,30 @@ const buildTelemetryPayload = (
   replayDurationMs,
 });
 
+type TelemetryEventRecord = Readonly<{
+  kind: 'progress' | 'warning';
+  event: string;
+}>;
+
+const recordTelemetryEvents = (
+  events: readonly TelemetryEventRecord[],
+  snapshot: GameStateSnapshot,
+  result: RollbackResult,
+  replayDurationMs: number,
+): void => {
+  if (events.length === 0) {
+    return;
+  }
+  const payload = buildTelemetryPayload(snapshot, result, replayDurationMs);
+  for (const { kind, event } of events) {
+    if (kind === 'warning') {
+      telemetry.recordWarning(event, payload);
+    } else {
+      telemetry.recordProgress(event, payload);
+    }
+  }
+};
+
 const resolveNonNegativeInteger = (
   value: number | undefined,
   fallback: number,
@@ -587,9 +611,11 @@ export function createPredictionManager(
           undefined,
           false,
         );
-        telemetry.recordWarning(
-          TELEMETRY_BUFFER_OVERFLOW,
-          buildTelemetryPayload(snapshot, result, replayDurationMs),
+        recordTelemetryEvents(
+          [{ kind: 'warning', event: TELEMETRY_BUFFER_OVERFLOW }],
+          snapshot,
+          result,
+          replayDurationMs,
         );
         return result;
       }
@@ -604,9 +630,11 @@ export function createPredictionManager(
           'resynced',
           'prediction-window-exceeded',
         );
-        telemetry.recordWarning(
-          TELEMETRY_RESYNC,
-          buildTelemetryPayload(snapshot, result, replayDurationMs),
+        recordTelemetryEvents(
+          [{ kind: 'warning', event: TELEMETRY_RESYNC }],
+          snapshot,
+          result,
+          replayDurationMs,
         );
         return result;
       }
@@ -626,9 +654,11 @@ export function createPredictionManager(
           checksumMatch,
           reason: 'checksum-match',
         };
-        telemetry.recordProgress(
-          TELEMETRY_CHECKSUM_MATCH,
-          buildTelemetryPayload(snapshot, result, 0),
+        recordTelemetryEvents(
+          [{ kind: 'progress', event: TELEMETRY_CHECKSUM_MATCH }],
+          snapshot,
+          result,
+          0,
         );
         return result;
       }
@@ -641,9 +671,15 @@ export function createPredictionManager(
         'checksum-mismatch',
         checksumMatch,
       );
-      const payload = buildTelemetryPayload(snapshot, result, replayDurationMs);
-      telemetry.recordWarning(TELEMETRY_CHECKSUM_MISMATCH, payload);
-      telemetry.recordProgress(TELEMETRY_ROLLBACK, payload);
+      recordTelemetryEvents(
+        [
+          { kind: 'warning', event: TELEMETRY_CHECKSUM_MISMATCH },
+          { kind: 'progress', event: TELEMETRY_ROLLBACK },
+        ],
+        snapshot,
+        result,
+        replayDurationMs,
+      );
       return result;
     },
     getPendingCommands() {

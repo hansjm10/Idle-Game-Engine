@@ -1208,6 +1208,7 @@ export {
 } from './resource-publish-transport.js';
 export {
   createConsoleTelemetry,
+  createContextualTelemetry,
   resetTelemetry,
   setTelemetry,
   silentTelemetry,
