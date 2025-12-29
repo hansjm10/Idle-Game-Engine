@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createAutomation } from '@idle-engine/content-schema';
 
@@ -963,6 +963,205 @@ describe('createPredictionManager', () => {
     expect(manager.getPendingCommands().map((command) => command.step)).toEqual([
       1,
     ]);
+  });
+
+  it('does not replay or replace runtime when checksum matches (predict-then-confirm)', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const restoreRuntime = vi.fn(() => {
+      throw new Error('restoreRuntime should not be called on checksum match.');
+    });
+    const onRuntimeReplaced = vi.fn();
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+      replay: {
+        restoreRuntime,
+        captureSnapshot: () => {
+          throw new Error(
+            'Replay snapshot capture should not be called on checksum match.',
+          );
+        },
+        onRuntimeReplaced,
+      },
+    });
+
+    manager.recordPredictedStep(0);
+    manager.recordLocalCommand(createCommand(1, 1));
+    const result = manager.applyServerState(createSnapshot(0), 0);
+
+    expect(result.status).toBe('confirmed');
+    expect(result.reason).toBe('checksum-match');
+    expect(result.replayedSteps).toBe(0);
+    expect(result.pendingCommands).toBe(1);
+    expect(manager.getPendingCommands().map((command) => command.step)).toEqual([
+      1,
+    ]);
+    expect(restoreRuntime).not.toHaveBeenCalled();
+    expect(onRuntimeReplaced).not.toHaveBeenCalled();
+  });
+
+  it('preserves requestId across rollback replay', () => {
+    const content = createContentPack({
+      resources: [createResourceDefinition('resource.energy')],
+    });
+    let wiring: PredictionReplayWiring = createGameRuntime({
+      content,
+      stepSizeMs: 100,
+      maxStepsPerFrame: 1,
+    });
+
+    const captureSnapshot = () => captureWiringSnapshot(wiring);
+
+    const manager = createPredictionManager({
+      captureSnapshot,
+      getCurrentStep: () => wiring.runtime.getCurrentStep(),
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+      replay: {
+        restoreRuntime: ({ snapshot, eventPublisher }) =>
+          restoreGameRuntimeFromSnapshot({
+            content,
+            snapshot,
+            runtimeOptions: { eventPublisher },
+          }),
+        captureSnapshot: captureWiringSnapshot,
+        onRuntimeReplaced: (nextWiring) => {
+          wiring = nextWiring;
+        },
+      },
+    });
+
+    const authoritativeCommand = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 5 },
+      timestamp: 1,
+      step: 0,
+    } satisfies Command;
+
+    wiring.commandQueue.enqueue(authoritativeCommand);
+    const serverSnapshot = captureWiringSnapshot(wiring);
+
+    manager.recordPredictedStep(0);
+
+    const requestIdOne = 'request-1';
+    const requestIdTwo = 'request-2';
+    const pendingCommandOne = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 3 },
+      timestamp: 2,
+      step: 1,
+      requestId: requestIdOne,
+    } satisfies Command;
+    const pendingCommandTwo = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'resource.energy', amount: 4 },
+      timestamp: 3,
+      step: 1,
+      requestId: requestIdTwo,
+    } satisfies Command;
+
+    wiring.commandQueue.enqueue(pendingCommandOne);
+    manager.recordLocalCommand(pendingCommandOne);
+    wiring.commandQueue.enqueue(pendingCommandTwo);
+    manager.recordLocalCommand(pendingCommandTwo);
+
+    wiring.runtime.tick(100);
+    manager.recordPredictedStep(1);
+    wiring.runtime.tick(100);
+    manager.recordPredictedStep(2);
+
+    const baselineAmount = (serverSnapshot.resources.amounts[0] ?? 0) + 1;
+    const mismatchedSnapshot: GameStateSnapshot = {
+      ...serverSnapshot,
+      resources: {
+        ...serverSnapshot.resources,
+        amounts: [baselineAmount],
+      },
+      progression: {
+        ...serverSnapshot.progression,
+        resources: {
+          ...serverSnapshot.progression.resources,
+          amounts: [baselineAmount],
+        },
+      },
+    };
+
+    const result = manager.applyServerState(mismatchedSnapshot, 0);
+
+    expect(result.status).toBe('rolled-back');
+    expect(result.reason).toBe('checksum-mismatch');
+    expect(result.pendingCommands).toBe(2);
+    expect(manager.getPendingCommands().map((command) => command.requestId)).toEqual(
+      [requestIdOne, requestIdTwo],
+    );
+
+    const outcomes = (wiring.runtime as unknown as IdleEngineRuntime).drainCommandOutcomes();
+    const replayOutcomeOne = outcomes.find(
+      (outcome) => outcome.requestId === requestIdOne,
+    );
+    expect(replayOutcomeOne).toMatchObject({
+      success: true,
+      requestId: requestIdOne,
+      serverStep: 1,
+    });
+    const replayOutcomeTwo = outcomes.find(
+      (outcome) => outcome.requestId === requestIdTwo,
+    );
+    expect(replayOutcomeTwo).toMatchObject({
+      success: true,
+      requestId: requestIdTwo,
+      serverStep: 1,
+    });
+  });
+
+  it('stress: handles repeated rollback and resync decisions deterministically', () => {
+    let currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 20,
+      maxPendingCommands: 50,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    for (let step = 0; step <= 49; step += 1) {
+      currentStep = step;
+      manager.recordPredictedStep(step);
+    }
+
+    const rollback = manager.applyServerState(
+      createSnapshot(35, createResources(25)),
+      35,
+    );
+
+    expect(rollback.status).toBe('rolled-back');
+    expect(rollback.reason).toBe('checksum-mismatch');
+    expect(rollback.confirmedStep).toBe(35);
+    expect(rollback.localStep).toBe(49);
+    expect(rollback.replayedSteps).toBe(14);
+
+    for (let step = 50; step <= 80; step += 1) {
+      currentStep = step;
+      manager.recordPredictedStep(step);
+    }
+
+    const resync = manager.applyServerState(createSnapshot(50), 50);
+
+    expect(resync.status).toBe('resynced');
+    expect(resync.reason).toBe('prediction-window-exceeded');
+    expect(resync.confirmedStep).toBe(50);
+    expect(resync.localStep).toBe(50);
+    expect(resync.replayedSteps).toBe(0);
   });
 
   it('suppresses event-triggered automations during replay by default', () => {
