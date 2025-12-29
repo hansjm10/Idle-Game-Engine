@@ -583,6 +583,98 @@ describe('restoreGameRuntimeFromSnapshot', () => {
     expect(getCurrentRNGSeed()).toBe(snapshot.runtime.rngSeed);
     expect(getRNGState()).toBe(snapshot.runtime.rngState);
   });
+
+  it('rebases automation and transform steps when restoring into a later step', () => {
+    const baseContent = createTestContent();
+    const content = createContentPack({
+      resources: [...baseContent.resources],
+      generators: [...baseContent.generators],
+      upgrades: [...baseContent.upgrades],
+      automations: createTestAutomations(),
+      transforms: createTestTransforms(),
+    });
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      initialStep: INITIAL_STEP,
+    });
+
+    const automationSystem = wiring.automationSystem;
+    const transformSystem = wiring.transformSystem;
+    if (!automationSystem || !transformSystem) {
+      throw new Error('Expected automation and transform systems to be wired.');
+    }
+
+    const savedStep = wiring.runtime.getCurrentStep();
+    const rebaseDelta = 5;
+    const targetStep = savedStep + rebaseDelta;
+
+    const lastFiredStep = savedStep - 2;
+    const automationCooldown = savedStep + 4;
+    const transformCooldown = savedStep + 6;
+
+    automationSystem.restoreState(
+      [
+        {
+          id: 'auto:collector',
+          enabled: true,
+          lastFiredStep,
+          cooldownExpiresStep: automationCooldown,
+          unlocked: true,
+          lastThresholdSatisfied: false,
+        },
+      ],
+      { savedWorkerStep: savedStep, currentStep: savedStep },
+    );
+
+    transformSystem.restoreState(
+      [
+        {
+          id: 'transform:convert',
+          unlocked: true,
+          cooldownExpiresStep: transformCooldown,
+        },
+      ],
+      { savedWorkerStep: savedStep, currentStep: savedStep },
+    );
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+      runtimeOptions: { initialStep: targetStep },
+    });
+
+    const restoredAutomation = restored.automationSystem
+      ?.getState()
+      .get('auto:collector');
+    const restoredTransform = restored.transformSystem
+      ?.getState()
+      .get('transform:convert');
+
+    if (!restoredAutomation || !restoredTransform) {
+      throw new Error('Expected automation and transform systems to be wired.');
+    }
+
+    expect(restored.runtime.getCurrentStep()).toBe(targetStep);
+    expect(restoredAutomation.lastFiredStep).toBe(lastFiredStep + rebaseDelta);
+    expect(restoredAutomation.cooldownExpiresStep).toBe(
+      automationCooldown + rebaseDelta,
+    );
+    expect(restoredTransform.cooldownExpiresStep).toBe(
+      transformCooldown + rebaseDelta,
+    );
+  });
 });
 
 describe('restorePartial', () => {

@@ -9,7 +9,12 @@ import {
   literalOne,
 } from './content-test-helpers.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
-import { createGameRuntime } from './index.js';
+import {
+  createGameRuntime,
+  createProgressionCoordinator,
+  IdleEngineRuntime,
+} from './index.js';
+import { wireGameRuntime } from './game-runtime-wiring.js';
 import { resetRNG, setRNGSeed } from './rng.js';
 
 function createTestAutomation() {
@@ -329,5 +334,27 @@ describe('createGameRuntime', () => {
     expect(restoredAutomation?.cooldownExpiresStep).toBe(runtimeStep + 3);
     expect(restoredTransform?.cooldownExpiresStep).toBe(runtimeStep + 2);
     expect(restored.commandQueue.exportForSave()).toEqual(save.commandQueue);
+  });
+});
+
+describe('wireGameRuntime', () => {
+  it('throws when coordinator step duration mismatches runtime step size', () => {
+    const content = createContentPack({
+      resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],
+    });
+
+    const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 200,
+    });
+
+    expect(() =>
+      wireGameRuntime({
+        content,
+        runtime,
+        coordinator,
+      }),
+    ).toThrow(/must match coordinator stepDurationMs/);
   });
 });

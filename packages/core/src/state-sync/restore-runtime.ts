@@ -1,5 +1,6 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 
+import type { IdleEngineRuntimeOptions } from '../index.js';
 import { createProgressionCoordinator } from '../progression-coordinator.js';
 import { hydrateProgressionCoordinatorState } from '../progression-coordinator-save.js';
 import type { ProgressionAuthoritativeState } from '../progression.js';
@@ -18,6 +19,9 @@ export type RestoreGameRuntimeFromSnapshotOptions = Readonly<{
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
   readonly enableTransforms?: boolean;
+  readonly runtimeOptions?: Readonly<
+    Pick<IdleEngineRuntimeOptions, 'initialStep'>
+  >;
 }>;
 
 const buildResourceDefinitions = (
@@ -50,12 +54,21 @@ export function restoreGameRuntimeFromSnapshot(
   const maxStepsPerFrame =
     applyViaFinalizeTick && enableProduction && hasGenerators ? 1 : undefined;
 
+  const runtimeOptions =
+    options.runtimeOptions?.initialStep === undefined &&
+    maxStepsPerFrame === undefined
+      ? undefined
+      : {
+          ...(options.runtimeOptions?.initialStep === undefined
+            ? {}
+            : { initialStep: options.runtimeOptions.initialStep }),
+          ...(maxStepsPerFrame === undefined ? {} : { maxStepsPerFrame }),
+        };
+
   const restored = restoreFromSnapshot({
     snapshot,
     resourceDefinitions,
-    ...(maxStepsPerFrame === undefined
-      ? {}
-      : { runtimeOptions: { maxStepsPerFrame } }),
+    ...(runtimeOptions ? { runtimeOptions } : {}),
   });
 
   const stepDurationMs = snapshot.runtime.stepSizeMs;
