@@ -220,6 +220,83 @@ export function restoreGameRuntimeFromSnapshot(options: {
   - `maxReplayStepsPerTick`: align with `maxStepsPerFrame`
   - Recommended server snapshot cadence: ~10 steps at `stepSizeMs = 100` (about 1s), and no more than half the prediction window to avoid history eviction.
 
+- **Usage Guidance (Issue 546)**:
+  - Create one `PredictionManager` per predicted runtime session; supply `captureSnapshot` and `getCurrentStep` to minimize extra snapshot captures.
+  - Record local commands when they are enqueued, and pass `atStep` if you override `Command.step` locally to keep the pending buffer ordered.
+  - Call `recordPredictedStep()` after each predicted tick (or tune `checksumIntervalSteps` when `maxStepsPerFrame > 1`).
+  - Apply authoritative snapshots with `applyServerState(snapshot, confirmedStep, metadata)`; treat `RollbackResult` as the source of truth for rollback or resync decisions.
+  - Provide `replay` options to enable automatic restore/replay; without `replay`, the manager only tracks checksums/pending commands and the caller must handle runtime resyncs.
+  - Ensure the transport stamps authoritative `confirmedStep`, `priority`, and `timestamp`, and pass `runtimeVersion`/`contentDigest` in `PredictionCompatibilityMetadata` for compatibility checks.
+  - Follow the snapshot cadence guidance above to avoid prediction window overflow.
+  - Example usage:
+```typescript
+const captureSnapshot = (): GameStateSnapshot =>
+  captureGameStateSnapshot({
+    runtime,
+    progressionCoordinator,
+    commandQueue,
+    getAutomationState: () => automationSystem?.getState() ?? new Map(),
+    getTransformState: () => transformSystem?.getState() ?? new Map(),
+    ...(productionSystem ? { productionSystem } : {}),
+  });
+
+const prediction = createPredictionManager({
+  captureSnapshot,
+  getCurrentStep: () => runtime.getCurrentStep(),
+  contentDigest,
+  replay: {
+    restoreRuntime: ({ snapshot, eventPublisher }) =>
+      restoreGameRuntimeFromSnapshot({
+        content,
+        snapshot,
+        runtimeOptions: { eventPublisher },
+      }),
+    captureSnapshot: (wiring) =>
+      captureGameStateSnapshot({
+        runtime: wiring.runtime,
+        progressionCoordinator: wiring.coordinator,
+        commandQueue: wiring.commandQueue,
+        getAutomationState: () =>
+          wiring.automationSystem?.getState() ?? new Map(),
+        getTransformState: () =>
+          wiring.transformSystem?.getState() ?? new Map(),
+        ...(wiring.productionSystem
+          ? { productionSystem: wiring.productionSystem }
+          : {}),
+      }),
+    onRuntimeReplaced: (wiring) => {
+      runtime = wiring.runtime;
+      commandQueue = wiring.commandQueue;
+    },
+  },
+});
+
+function onLocalCommand(command: Command): void {
+  commandQueue.enqueue(command);
+  prediction.recordLocalCommand(command);
+}
+
+function onPredictedTick(stepSizeMs: number): void {
+  runtime.tick(stepSizeMs);
+  prediction.recordPredictedStep();
+}
+
+function onServerSnapshot(
+  snapshot: GameStateSnapshot,
+  confirmedStep: number,
+  metadata?: PredictionCompatibilityMetadata,
+): void {
+  const result = prediction.applyServerState(
+    snapshot,
+    confirmedStep,
+    metadata,
+  );
+  if (result.status === 'resynced' || result.reason === 'prediction-disabled') {
+    // Pause prediction until a full resync completes.
+  }
+}
+```
+
 ### 6.3 Operational Considerations
 - **Deployment**: Issue 546 is core-only and additive; no build or infrastructure changes.
 - **Telemetry & Observability**: new prediction telemetry events plus existing diagnostics timelines for tick performance (`packages/core/src/diagnostics/runtime-diagnostics-controller.ts:699`).

@@ -135,6 +135,7 @@ export interface PendingCommandTracker {
   ```
 - **Client handling**: Track pending envelopes, resolve on `CommandResponse`, and expire/retry based on configured timeouts using the pending tracker.
 - **Defaults**: Recommend `DEFAULT_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000` and `DEFAULT_PENDING_COMMAND_TIMEOUT_MS = 30 * 1000`; tune per transport latency and retry strategy.
+- **Prediction and reconciliation**: For client-side prediction usage, authority boundaries, and snapshot cadence, see [Client Prediction and Rollback Design (Issue 546)](./runtime-client-prediction-rollback-design-issue-546.md).
 - **Related runtime guidance**: A runtime-facing stub lives in [Runtime Command Queue Design](./runtime-command-queue-design.md) for quick discovery and links back here for full protocol details.
 
 ## 7. Work Breakdown & Delivery Plan
