@@ -13,7 +13,7 @@ import {
 } from './event-broadcast.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
 import { buildRuntimeEventFrame } from './runtime-event-frame.js';
-import type { RuntimeEventPayload } from './runtime-event.js';
+import type { RuntimeEventManifestHash, RuntimeEventPayload } from './runtime-event.js';
 import { TransportBufferPool } from '../transport-buffer-pool.js';
 
 describe('event broadcast', () => {
@@ -248,5 +248,110 @@ describe('event broadcast', () => {
     expect(coalescedFrame.checksum).toBe(
       computeEventBroadcastChecksum(coalescedFrame),
     );
+  });
+
+  it('throws when manifest hash mismatches', () => {
+    const bus = createBus();
+
+    const frame = createFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    const badFrame: EventBroadcastFrame = {
+      ...frame,
+      manifestHash: `${bus.getManifestHash()}-mismatch` as RuntimeEventManifestHash,
+    };
+
+    expect(() => applyEventBroadcastFrame(bus, badFrame)).toThrow(
+      'Runtime event manifest hash mismatch while applying broadcast frame.',
+    );
+  });
+
+  it('throws when checksum mismatches', () => {
+    const bus = createBus();
+    const frame = createChecksummedFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    const badFrame: EventBroadcastFrame = {
+      ...frame,
+      checksum: 'bad-checksum',
+    };
+
+    expect(() => applyEventBroadcastFrame(bus, badFrame)).toThrow(
+      'Event broadcast checksum mismatch.',
+    );
+  });
+
+  it('flushes when maxDelayMs elapses', () => {
+    const batcher = new EventBroadcastBatcher({
+      maxSteps: 5,
+      maxDelayMs: 10,
+    });
+
+    const first = createFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 1,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+    const second = createFrame(2, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 2,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    expect(batcher.ingestFrame(first, 0)).toHaveLength(0);
+    const batches = batcher.ingestFrame(second, 10);
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0].fromStep).toBe(1);
+    expect(batches[0].toStep).toBe(1);
+    expect(batches[0].frames).toHaveLength(1);
+    expect(batches[0].frames[0].serverStep).toBe(1);
+  });
+
+  it('hydrates frames after JSON round-trip with checksum', () => {
+    const serverBus = createBus();
+    const pool = new TransportBufferPool();
+
+    serverBus.beginTick(1);
+    serverBus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 10,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const frameResult = buildRuntimeEventFrame(serverBus, pool, {
+      tick: 1,
+      manifestHash: serverBus.getManifestHash(),
+      format: 'object-array',
+    });
+
+    const broadcast = createEventBroadcastFrame(frameResult.frame, {
+      includeChecksum: true,
+    });
+    frameResult.release();
+
+    const roundTrip = JSON.parse(
+      JSON.stringify(broadcast),
+    ) as EventBroadcastFrame;
+
+    const clientBus = createBus();
+    const received: string[] = [];
+
+    clientBus.on('resource:threshold-reached', (event) => {
+      received.push(`resource:${event.payload.threshold}`);
+    });
+
+    applyEventBroadcastFrame(clientBus, roundTrip);
+
+    expect(received).toEqual(['resource:10']);
   });
 });
