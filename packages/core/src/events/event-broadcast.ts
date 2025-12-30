@@ -95,6 +95,19 @@ export function computeEventBroadcastChecksum(
   return fnv1a32(utf8Encoder.encode(json));
 }
 
+function refreshBroadcastFrameChecksum(
+  frame: EventBroadcastFrame,
+  recompute: boolean,
+): EventBroadcastFrame {
+  if (!recompute || frame.checksum === undefined) {
+    return frame;
+  }
+  return {
+    ...frame,
+    checksum: computeEventBroadcastChecksum(frame),
+  };
+}
+
 export interface EventBroadcastHydrateOptions {
   readonly filter?: EventFilter;
   readonly deduper?: EventBroadcastDeduper;
@@ -227,23 +240,25 @@ export class EventBroadcastBatcher {
       return batches;
     }
 
+    let adjustedFrame: EventBroadcastFrame = {
+      ...frame,
+      events: [...events],
+    };
+    adjustedFrame = refreshBroadcastFrameChecksum(
+      adjustedFrame,
+      events.length !== frame.events.length,
+    );
+
     if (this.priorityTypes && hasPriorityEvent(events, this.priorityTypes)) {
       const flushed = this.flush();
       if (flushed) {
         batches.push(flushed);
       }
-      const immediateFrame = {
-        ...frame,
-        events: [...events],
-      };
-      batches.push(this.buildBatch([immediateFrame]));
+      batches.push(this.buildBatch([adjustedFrame]));
       return batches;
     }
 
-    this.addPendingFrame({
-      ...frame,
-      events: [...events],
-    }, now);
+    this.addPendingFrame(adjustedFrame, now);
 
     if (this.shouldFlushAfterAdd()) {
       const flushed = this.flush();
@@ -468,10 +483,15 @@ function coalesceBatchFrames(
     if (compacted.length === 0) {
       continue;
     }
-    result.push({
+    let updated: EventBroadcastFrame = {
       ...frame,
       events: compacted,
-    });
+    };
+    updated = refreshBroadcastFrameChecksum(
+      updated,
+      compacted.length !== frame.events.length,
+    );
+    result.push(updated);
   }
   return result;
 }

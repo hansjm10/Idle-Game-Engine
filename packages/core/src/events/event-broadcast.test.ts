@@ -5,6 +5,7 @@ import {
   EventBroadcastBatcher,
   EventBroadcastDeduper,
   applyEventBroadcastFrame,
+  computeEventBroadcastChecksum,
   createEventBroadcastFrame,
   createEventTypeFilter,
   type EventBroadcastFrame,
@@ -37,6 +38,17 @@ describe('event broadcast', () => {
     serverStep,
     events,
   });
+
+  const createChecksummedFrame = (
+    serverStep: number,
+    events: readonly SerializedRuntimeEvent[],
+  ): EventBroadcastFrame => {
+    const frame = createFrame(serverStep, events);
+    return {
+      ...frame,
+      checksum: computeEventBroadcastChecksum(frame),
+    };
+  };
 
   it('serializes runtime event frames with type filtering', () => {
     const bus = createBus();
@@ -168,5 +180,73 @@ describe('event broadcast', () => {
     expect(batches3[0].frames).toHaveLength(2);
     expect(batches3[1].frames).toHaveLength(1);
     expect(batches3[1].frames[0].events[0].type).toBe('automation:toggled');
+  });
+
+  it('recomputes checksum when batcher filters events', () => {
+    const frame = createChecksummedFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 7,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+      createEvent('automation:toggled', 1, {
+        automationId: 'auto:1',
+        enabled: true,
+      } as RuntimeEventPayload<'automation:toggled'>),
+    ]);
+
+    const batcher = new EventBroadcastBatcher({
+      filter: createEventTypeFilter(['automation:toggled']),
+    });
+
+    const batches = batcher.ingestFrame(frame);
+    expect(batches).toHaveLength(1);
+    const batchedFrame = batches[0].frames[0];
+
+    expect(batchedFrame.events).toHaveLength(1);
+    expect(batchedFrame.checksum).toBe(
+      computeEventBroadcastChecksum(batchedFrame),
+    );
+  });
+
+  it('recomputes checksum when batcher coalesces events', () => {
+    const frame1 = createChecksummedFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+      createEvent('automation:toggled', 1, {
+        automationId: 'auto:1',
+        enabled: false,
+      } as RuntimeEventPayload<'automation:toggled'>),
+    ]);
+    const frame2 = createChecksummedFrame(2, [
+      createEvent('resource:threshold-reached', 2, {
+        resourceId: 'energy',
+        threshold: 4,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    const batcher = new EventBroadcastBatcher({
+      maxSteps: 2,
+      coalesce: { key: (event) => event.type },
+    });
+
+    expect(batcher.ingestFrame(frame1)).toHaveLength(0);
+    const batches = batcher.ingestFrame(frame2);
+    expect(batches).toHaveLength(1);
+    const [batch] = batches;
+
+    const coalescedFrame = batch.frames.find(
+      (entry) => entry.serverStep === 1,
+    );
+    if (!coalescedFrame) {
+      throw new Error('Expected coalesced frame for step 1.');
+    }
+
+    expect(coalescedFrame.events).toHaveLength(1);
+    expect(coalescedFrame.events[0].type).toBe('automation:toggled');
+    expect(coalescedFrame.checksum).toBe(
+      computeEventBroadcastChecksum(coalescedFrame),
+    );
   });
 });
