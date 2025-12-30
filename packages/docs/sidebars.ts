@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
         'idle-engine-design',
         'runtime-step-lifecycle',
         'runtime-command-queue-design',
+        'controls-contract-design-issue-705',
         'runtime-event-pubsub-design',
         'runtime-event-bus-decisions',
         'runtime-event-manifest-authoring',
