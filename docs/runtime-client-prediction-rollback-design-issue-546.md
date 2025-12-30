@@ -115,10 +115,16 @@ export interface PredictionManager {
   applyServerState(
     snapshot: GameStateSnapshot,
     confirmedStep: number,
+    metadata?: PredictionCompatibilityMetadata,
   ): RollbackResult;
   getPendingCommands(): readonly Command[];
   getPredictionWindow(): PredictionWindow;
 }
+
+export type PredictionCompatibilityMetadata = Readonly<{
+  readonly runtimeVersion?: string;
+  readonly contentDigest?: ResourceDefinitionDigest;
+}>;
 
 export type RollbackResult = Readonly<{
   readonly status: 'confirmed' | 'rolled-back' | 'resynced' | 'ignored';
@@ -127,10 +133,21 @@ export type RollbackResult = Readonly<{
   readonly replayedSteps: number;
   readonly pendingCommands: number;
   readonly checksumMatch?: boolean;
-  readonly reason?: 'checksum-match' | 'checksum-mismatch' | 'stale-snapshot' | 'prediction-window-exceeded';
+  readonly reason?:
+    | 'checksum-match'
+    | 'checksum-mismatch'
+    | 'stale-snapshot'
+    | 'prediction-window-exceeded'
+    | 'snapshot-version-mismatch'
+    | 'definition-digest-missing'
+    | 'definition-digest-mismatch'
+    | 'runtime-version-mismatch'
+    | 'content-digest-mismatch'
+    | 'prediction-disabled';
 }>;
 ```
   - `recordPredictedStep` is required for Issue 546 to record checksums at each simulated step. For networked clients, configure `maxStepsPerFrame = 1` to ensure per-step recording (`packages/core/src/index.ts:110`).
+  - `PredictionManagerOptions.contentDigest` can be provided to pin the expected resource definition digest; if omitted, the manager resolves it from captured snapshots.
 
 - **Authority & Trust Boundaries (Issue 546)**:
   - Server is authoritative for confirmed steps and snapshot content; clients never decide the canonical state.

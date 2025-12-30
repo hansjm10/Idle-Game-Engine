@@ -8,6 +8,7 @@ import type {
   GameRuntimeWiring,
   RuntimeWiringRuntime,
 } from '../game-runtime-wiring.js';
+import type { ResourceDefinitionDigest } from '../resource-state.js';
 import type { TelemetryEventData } from '../telemetry.js';
 import type { GameStateSnapshot } from './types.js';
 import { computeStateChecksum } from './checksum.js';
@@ -29,7 +30,11 @@ export interface PredictionManager {
   /**
    * Apply an authoritative server snapshot and return reconciliation details.
    */
-  applyServerState(snapshot: GameStateSnapshot, confirmedStep: number): RollbackResult;
+  applyServerState(
+    snapshot: GameStateSnapshot,
+    confirmedStep: number,
+    metadata?: PredictionCompatibilityMetadata,
+  ): RollbackResult;
   /**
    * Return commands still awaiting confirmation.
    */
@@ -43,6 +48,11 @@ export interface PredictionManager {
 export type PredictionReplayRuntime = RuntimeWiringRuntime & {
   tick: (deltaMs: number) => number;
 };
+
+export type PredictionCompatibilityMetadata = Readonly<{
+  readonly runtimeVersion?: string;
+  readonly contentDigest?: ResourceDefinitionDigest;
+}>;
 
 export type PredictionReplayWiring = GameRuntimeWiring<PredictionReplayRuntime>;
 
@@ -70,6 +80,7 @@ export type PredictionManagerOptions = Readonly<{
   readonly checksumIntervalSteps?: number;
   readonly snapshotHistorySteps?: number;
   readonly maxReplayStepsPerTick?: number;
+  readonly contentDigest?: ResourceDefinitionDigest;
   readonly replay?: PredictionReplayOptions;
 }>;
 
@@ -134,7 +145,13 @@ export type RollbackResult = Readonly<{
     | 'checksum-match'
     | 'checksum-mismatch'
     | 'stale-snapshot'
-    | 'prediction-window-exceeded';
+    | 'prediction-window-exceeded'
+    | 'snapshot-version-mismatch'
+    | 'definition-digest-missing'
+    | 'definition-digest-mismatch'
+    | 'runtime-version-mismatch'
+    | 'content-digest-mismatch'
+    | 'prediction-disabled';
 }>;
 
 type ChecksumEntry = Readonly<{
@@ -250,6 +267,15 @@ const comparePendingCommands = (left: Command, right: Command): number => {
   return 0;
 };
 
+const digestsMatch = (
+  left: ResourceDefinitionDigest | null | undefined,
+  right: ResourceDefinitionDigest | null | undefined,
+): boolean =>
+  !!left &&
+  !!right &&
+  left.version === right.version &&
+  left.hash === right.hash;
+
 const resolvePredictionWindow = (
   options: PredictionManagerOptions,
 ): PredictionWindow =>
@@ -303,6 +329,9 @@ export function createPredictionManager(
   let pendingOverflowed = false;
   let localStep = -1;
   let lastConfirmedStep = -1;
+  let predictionDisabled = false;
+  let cachedContentDigest: ResourceDefinitionDigest | null | undefined =
+    options.contentDigest;
 
   const clearHistory = (): void => {
     if (historyCapacity > 0) {
@@ -395,6 +424,18 @@ export function createPredictionManager(
     pendingOverflowed = false;
     lastConfirmedStep = confirmedStep;
     localStep = snapshotStep;
+  };
+
+  const resolveContentDigest = ():
+    | ResourceDefinitionDigest
+    | null
+    | undefined => {
+    if (cachedContentDigest !== undefined) {
+      return cachedContentDigest;
+    }
+    const snapshot = captureSnapshot();
+    cachedContentDigest = snapshot.resources.definitionDigest ?? null;
+    return cachedContentDigest;
   };
 
   const recordReplayStep = (
@@ -537,8 +578,46 @@ export function createPredictionManager(
     return { result, replayDurationMs };
   };
 
+  const resyncWithoutReplay = (
+    snapshot: GameStateSnapshot,
+    confirmedStep: number,
+    reason: RollbackResult['reason'],
+    emitTelemetry = true,
+  ): RollbackResult => {
+    const { result, replayDurationMs } = reconcileWithTelemetry(
+      snapshot,
+      confirmedStep,
+      snapshot.runtime.step,
+      'resynced',
+      reason,
+      undefined,
+      false,
+    );
+    if (emitTelemetry) {
+      recordTelemetryEvents(
+        [{ kind: 'warning', event: TELEMETRY_RESYNC }],
+        snapshot,
+        result,
+        replayDurationMs,
+      );
+    }
+    return result;
+  };
+
+  const resyncAndDisablePrediction = (
+    snapshot: GameStateSnapshot,
+    confirmedStep: number,
+    reason: RollbackResult['reason'],
+  ): RollbackResult => {
+    predictionDisabled = true;
+    return resyncWithoutReplay(snapshot, confirmedStep, reason);
+  };
+
   return {
     recordLocalCommand(command, atStep) {
+      if (predictionDisabled) {
+        return;
+      }
       if (maxPendingCommands === 0) {
         pendingOverflowed = true;
         pendingCommands = [];
@@ -562,6 +641,9 @@ export function createPredictionManager(
       }
     },
     recordPredictedStep(step) {
+      if (predictionDisabled) {
+        return;
+      }
       let snapshot: GameStateSnapshot | undefined;
       const resolvedStep =
         step ??
@@ -581,13 +663,17 @@ export function createPredictionManager(
         return;
       }
       const resolvedSnapshot = snapshot ?? captureSnapshot();
+      if (cachedContentDigest === undefined) {
+        cachedContentDigest =
+          resolvedSnapshot.resources.definitionDigest ?? null;
+      }
       recordChecksum(
         resolvedStep,
         computeStateChecksum(resolvedSnapshot),
       );
       lastRecordedStep = resolvedStep;
     },
-    applyServerState(snapshot, confirmedStep) {
+    applyServerState(snapshot, confirmedStep, metadata) {
       const resolvedLocalStep =
         localStep >= 0 ? localStep : snapshot.runtime.step;
       if (confirmedStep < lastConfirmedStep) {
@@ -599,6 +685,76 @@ export function createPredictionManager(
           pendingCommands: pendingCommands.length,
           reason: 'stale-snapshot',
         };
+      }
+
+      if (predictionDisabled) {
+        return resyncWithoutReplay(
+          snapshot,
+          confirmedStep,
+          'prediction-disabled',
+          false,
+        );
+      }
+
+      if (snapshot.version !== 1) {
+        return resyncAndDisablePrediction(
+          snapshot,
+          confirmedStep,
+          'snapshot-version-mismatch',
+        );
+      }
+
+      if (
+        metadata?.runtimeVersion !== undefined &&
+        metadata.runtimeVersion !== RUNTIME_VERSION
+      ) {
+        return resyncAndDisablePrediction(
+          snapshot,
+          confirmedStep,
+          'runtime-version-mismatch',
+        );
+      }
+
+      let expectedContentDigest:
+        | ResourceDefinitionDigest
+        | null
+        | undefined;
+      const getExpectedContentDigest = () => {
+        if (expectedContentDigest === undefined) {
+          expectedContentDigest = resolveContentDigest();
+        }
+        return expectedContentDigest;
+      };
+
+      if (metadata?.contentDigest !== undefined) {
+        const expectedDigest = getExpectedContentDigest();
+        if (!digestsMatch(metadata.contentDigest, expectedDigest)) {
+          return resyncAndDisablePrediction(
+            snapshot,
+            confirmedStep,
+            'content-digest-mismatch',
+          );
+        }
+      }
+
+      const snapshotDigest = snapshot.resources.definitionDigest ?? null;
+      if (snapshotDigest === null) {
+        return resyncAndDisablePrediction(
+          snapshot,
+          confirmedStep,
+          'definition-digest-missing',
+        );
+      }
+
+      const expectedDigest = getExpectedContentDigest();
+      if (!digestsMatch(snapshotDigest, expectedDigest)) {
+        return resyncAndDisablePrediction(
+          snapshot,
+          confirmedStep,
+          expectedDigest == null
+            ? 'definition-digest-missing'
+            : 'definition-digest-mismatch',
+        );
       }
 
       if (pendingOverflowed) {

@@ -101,6 +101,10 @@ const createResources = (
   flags: [0],
 });
 
+const DEFAULT_DEFINITION_DIGEST = createDefinitionDigest(
+  createResources().ids,
+);
+
 const baseProgression: SerializedProgressionCoordinatorStateV2 = {
   schemaVersion: 2,
   step: 0,
@@ -119,33 +123,42 @@ const createSnapshot = (
   step: number,
   resources: SerializedResourceState = createResources(),
   options: Readonly<{
-    definitionDigest?: SerializedResourceState['definitionDigest'];
+    definitionDigest?: SerializedResourceState['definitionDigest'] | null;
     queueEntries?: SerializedCommandQueueV1['entries'];
   }> = {},
-): GameStateSnapshot => ({
-  version: 1,
-  capturedAt: 0,
-  runtime: {
-    step,
-    stepSizeMs: 100,
-    rngSeed: 1,
-    rngState: 1,
-  },
-  resources: options.definitionDigest
-    ? { ...resources, definitionDigest: options.definitionDigest }
-    : resources,
-  progression: {
-    ...baseProgression,
-    step,
-    resources,
-  },
-  automation: [],
-  transforms: [],
-  commandQueue: {
-    ...baseCommandQueue,
-    entries: options.queueEntries ?? baseCommandQueue.entries,
-  },
-});
+): GameStateSnapshot => {
+  const resolvedDefinitionDigest =
+    options.definitionDigest !== undefined
+      ? options.definitionDigest
+      : resources.definitionDigest ?? createDefinitionDigest(resources.ids);
+  const resolvedResources =
+    resolvedDefinitionDigest === null
+      ? { ...resources, definitionDigest: undefined }
+      : { ...resources, definitionDigest: resolvedDefinitionDigest };
+
+  return {
+    version: 1,
+    capturedAt: 0,
+    runtime: {
+      step,
+      stepSizeMs: 100,
+      rngSeed: 1,
+      rngState: 1,
+    },
+    resources: resolvedResources,
+    progression: {
+      ...baseProgression,
+      step,
+      resources: resolvedResources,
+    },
+    automation: [],
+    transforms: [],
+    commandQueue: {
+      ...baseCommandQueue,
+      entries: options.queueEntries ?? baseCommandQueue.entries,
+    },
+  };
+};
 
 const emptyState = new Map<string, never>();
 
@@ -376,7 +389,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 0,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'zero');
   });
@@ -411,7 +424,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 0,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'zero');
   });
@@ -510,7 +523,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 0,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'non-negative');
   });
@@ -544,7 +557,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 0,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'non-negative');
   });
@@ -600,7 +613,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 0,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'non-negative');
   });
@@ -664,7 +677,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 2,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'non-negative');
 
@@ -676,7 +689,7 @@ describe('createPredictionManager', () => {
       replayedSteps: 2,
       snapshotVersion: 1,
       runtimeVersion: RUNTIME_VERSION,
-      definitionDigest: null,
+      definitionDigest: DEFAULT_DEFINITION_DIGEST,
       queueSize: 0,
     }, 'non-negative');
   });
@@ -847,6 +860,178 @@ describe('createPredictionManager', () => {
 
     expect(result.status).toBe('ignored');
     expect(result.reason).toBe('stale-snapshot');
+  });
+
+  it('resyncs and disables prediction when snapshot version mismatches', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+    manager.recordLocalCommand(createCommand(1, 1));
+
+    const incompatibleSnapshot = {
+      ...createSnapshot(0),
+      version: 2,
+    } as unknown as GameStateSnapshot;
+    const result = manager.applyServerState(incompatibleSnapshot, 0);
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('snapshot-version-mismatch');
+    expect(manager.getPendingCommands()).toHaveLength(0);
+
+    manager.recordLocalCommand(createCommand(1, 2));
+    const followUp = manager.applyServerState(createSnapshot(1), 1);
+
+    expect(followUp.status).toBe('resynced');
+    expect(followUp.reason).toBe('prediction-disabled');
+    expect(manager.getPendingCommands()).toHaveLength(0);
+  });
+
+  it('resyncs and disables prediction when definition digest mismatches', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+
+    const mismatchedDigest = createDefinitionDigest(['resource.gold']);
+    const mismatchedSnapshot = createSnapshot(0, createResources(), {
+      definitionDigest: mismatchedDigest,
+    });
+    const result = manager.applyServerState(mismatchedSnapshot, 0);
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('definition-digest-mismatch');
+  });
+
+  it('resyncs and disables prediction when definition digest is missing', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+
+    const missingDigestSnapshot = createSnapshot(0, createResources(), {
+      definitionDigest: null,
+    });
+    const result = manager.applyServerState(missingDigestSnapshot, 0);
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('definition-digest-missing');
+  });
+
+  it('resyncs and disables prediction when runtime version metadata mismatches', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+
+    const result = manager.applyServerState(createSnapshot(0), 0, {
+      runtimeVersion: '0.0.0',
+    });
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('runtime-version-mismatch');
+  });
+
+  it('resyncs and disables prediction when content digest metadata mismatches', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+
+    const mismatchedDigest = createDefinitionDigest(['resource.gold']);
+    const result = manager.applyServerState(createSnapshot(0), 0, {
+      contentDigest: mismatchedDigest,
+    });
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('content-digest-mismatch');
+  });
+
+  it('ignores local prediction updates after incompatibility disables prediction', () => {
+    const currentStep = 0;
+    let captureCalls = 0;
+    const captureSnapshot = () => {
+      captureCalls += 1;
+      return createSnapshot(currentStep);
+    };
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    const incompatibleSnapshot = {
+      ...createSnapshot(0),
+      version: 2,
+    } as unknown as GameStateSnapshot;
+    const result = manager.applyServerState(incompatibleSnapshot, 0);
+
+    manager.recordLocalCommand(createCommand(1, 1));
+    manager.recordPredictedStep(1);
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('snapshot-version-mismatch');
+    expect(manager.getPendingCommands()).toHaveLength(0);
+    expect(captureCalls).toBe(0);
+  });
+
+  it('accepts matching compatibility metadata and continues reconciliation', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+
+    const result = manager.applyServerState(createSnapshot(0), 0, {
+      runtimeVersion: RUNTIME_VERSION,
+      contentDigest: DEFAULT_DEFINITION_DIGEST,
+    });
+
+    expect(result.status).toBe('confirmed');
+    expect(result.reason).toBe('checksum-match');
   });
 
   it('returns resync when pending commands are disabled', () => {

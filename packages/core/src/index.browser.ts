@@ -1435,6 +1435,7 @@ export type {
   UpgradeDiff,
 } from './state-sync/compare.js';
 export type {
+  PredictionCompatibilityMetadata,
   PredictionManager,
   PredictionManagerOptions,
   PredictionReplayOptions,
