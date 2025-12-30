@@ -898,7 +898,7 @@ support restore-and-continue determinism without changing the v1 schema.
 ## 14. Follow-Up Work
 
 - **Delta synchronization**: Layer delta compression on snapshots for bandwidth optimization
-- **Client prediction**: Build on restore/compare APIs for prediction with rollback
+- **Client prediction**: Build on restore/compare APIs for prediction with rollback; see [Client Prediction and Rollback Design (Issue 546)](./runtime-client-prediction-rollback-design-issue-546.md).
 - **Server continuous validation**: Optional mode where server runs shadow simulation
 - **Snapshot versioning/migration**: Utilities for upgrading old snapshot formats
 - **Binary serialization**: Replace JSON with MessagePack for size reduction
