@@ -982,6 +982,58 @@ describe('createPredictionManager', () => {
     expect(result.reason).toBe('content-digest-mismatch');
   });
 
+  it('ignores local prediction updates after incompatibility disables prediction', () => {
+    const currentStep = 0;
+    let captureCalls = 0;
+    const captureSnapshot = () => {
+      captureCalls += 1;
+      return createSnapshot(currentStep);
+    };
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    const incompatibleSnapshot = {
+      ...createSnapshot(0),
+      version: 2,
+    } as unknown as GameStateSnapshot;
+    const result = manager.applyServerState(incompatibleSnapshot, 0);
+
+    manager.recordLocalCommand(createCommand(1, 1));
+    manager.recordPredictedStep(1);
+
+    expect(result.status).toBe('resynced');
+    expect(result.reason).toBe('snapshot-version-mismatch');
+    expect(manager.getPendingCommands()).toHaveLength(0);
+    expect(captureCalls).toBe(0);
+  });
+
+  it('accepts matching compatibility metadata and continues reconciliation', () => {
+    const currentStep = 0;
+    const captureSnapshot = () => createSnapshot(currentStep);
+    const manager = createPredictionManager({
+      captureSnapshot,
+      maxPredictionSteps: 10,
+      maxPendingCommands: 10,
+      checksumIntervalSteps: 1,
+      maxReplayStepsPerTick: 1,
+    });
+
+    manager.recordPredictedStep(0);
+
+    const result = manager.applyServerState(createSnapshot(0), 0, {
+      runtimeVersion: RUNTIME_VERSION,
+      contentDigest: DEFAULT_DEFINITION_DIGEST,
+    });
+
+    expect(result.status).toBe('confirmed');
+    expect(result.reason).toBe('checksum-match');
+  });
+
   it('returns resync when pending commands are disabled', () => {
     const currentStep = 0;
     const captureSnapshot = () => createSnapshot(currentStep);

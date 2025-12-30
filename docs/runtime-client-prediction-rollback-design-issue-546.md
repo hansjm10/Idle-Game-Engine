@@ -147,6 +147,7 @@ export type RollbackResult = Readonly<{
 }>;
 ```
   - `recordPredictedStep` is required for Issue 546 to record checksums at each simulated step. For networked clients, configure `maxStepsPerFrame = 1` to ensure per-step recording (`packages/core/src/index.ts:110`).
+  - `PredictionManagerOptions.contentDigest` can be provided to pin the expected resource definition digest; if omitted, the manager resolves it from captured snapshots.
 
 - **Authority & Trust Boundaries (Issue 546)**:
   - Server is authoritative for confirmed steps and snapshot content; clients never decide the canonical state.
