@@ -120,6 +120,35 @@ describe('event broadcast', () => {
     expect(received).toEqual(['automation:true', 'resource:5']);
   });
 
+  it('filters events when hydrating broadcast frames', () => {
+    const bus = createBus();
+    const received: string[] = [];
+
+    bus.on('resource:threshold-reached', (event) => {
+      received.push(`resource:${event.payload.threshold}`);
+    });
+    bus.on('automation:toggled', (event) => {
+      received.push(`automation:${event.payload.enabled}`);
+    });
+
+    const frame = createFrame(1, [
+      createEvent('resource:threshold-reached', 1, {
+        resourceId: 'energy',
+        threshold: 10,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+      createEvent('automation:toggled', 0, {
+        automationId: 'auto:1',
+        enabled: true,
+      } as RuntimeEventPayload<'automation:toggled'>),
+    ]);
+
+    const filter = createEventTypeFilter(['resource:threshold-reached']);
+
+    applyEventBroadcastFrame(bus, frame, { filter });
+
+    expect(received).toEqual(['resource:10']);
+  });
+
   it('deduplicates replayed frames when a deduper is provided', () => {
     const bus = createBus();
     const handler = vi.fn();
@@ -180,6 +209,35 @@ describe('event broadcast', () => {
     expect(batches3[0].frames).toHaveLength(2);
     expect(batches3[1].frames).toHaveLength(1);
     expect(batches3[1].frames[0].events[0].type).toBe('automation:toggled');
+  });
+
+  it('flushes when maxEvents is reached', () => {
+    const batcher = new EventBroadcastBatcher({
+      maxEvents: 2,
+    });
+
+    const first = createFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 1,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+    const second = createFrame(2, [
+      createEvent('automation:toggled', 1, {
+        automationId: 'auto:1',
+        enabled: true,
+      } as RuntimeEventPayload<'automation:toggled'>),
+    ]);
+
+    expect(batcher.ingestFrame(first)).toHaveLength(0);
+    const batches = batcher.ingestFrame(second);
+
+    expect(batches).toHaveLength(1);
+    const [batch] = batches;
+    expect(batch.eventCount).toBe(2);
+    expect(batch.fromStep).toBe(1);
+    expect(batch.toStep).toBe(2);
+    expect(batch.frames).toHaveLength(2);
   });
 
   it('recomputes checksum when batcher filters events', () => {
@@ -270,6 +328,26 @@ describe('event broadcast', () => {
     );
   });
 
+  it('skips manifest validation when validateManifest is false', () => {
+    const bus = createBus();
+
+    const frame = createFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    const badFrame: EventBroadcastFrame = {
+      ...frame,
+      manifestHash: `${bus.getManifestHash()}-mismatch` as RuntimeEventManifestHash,
+    };
+
+    expect(() =>
+      applyEventBroadcastFrame(bus, badFrame, { validateManifest: false }),
+    ).not.toThrow();
+  });
+
   it('throws when checksum mismatches', () => {
     const bus = createBus();
     const frame = createChecksummedFrame(1, [
@@ -287,6 +365,25 @@ describe('event broadcast', () => {
     expect(() => applyEventBroadcastFrame(bus, badFrame)).toThrow(
       'Event broadcast checksum mismatch.',
     );
+  });
+
+  it('skips checksum validation when validateChecksum is false', () => {
+    const bus = createBus();
+    const frame = createChecksummedFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    const badFrame: EventBroadcastFrame = {
+      ...frame,
+      checksum: 'bad-checksum',
+    };
+
+    expect(() =>
+      applyEventBroadcastFrame(bus, badFrame, { validateChecksum: false }),
+    ).not.toThrow();
   });
 
   it('flushes when maxDelayMs elapses', () => {
