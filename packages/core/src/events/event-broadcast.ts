@@ -117,6 +117,12 @@ export interface EventBroadcastHydrateOptions {
   readonly resetOutbound?: boolean;
 }
 
+/**
+ * Applies a broadcast frame to a bus.
+ *
+ * By default, begins the tick with `resetOutbound: true` to clear outbound buffers;
+ * pass `resetOutbound: false` to preserve locally published outbound events.
+ */
 export function applyEventBroadcastFrame(
   bus: EventBus,
   frame: EventBroadcastFrame,
@@ -332,6 +338,9 @@ export interface EventBroadcastDeduperOptions {
   readonly capacity?: number;
 }
 
+/**
+ * Deduplicates replayed events using `serverStep`, `dispatchOrder`, and `type`.
+ */
 export class EventBroadcastDeduper {
   private readonly capacity: number;
   private readonly seen = new Set<string>();

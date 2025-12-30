@@ -4,10 +4,12 @@ import { EventBus } from './event-bus.js';
 import {
   EventBroadcastBatcher,
   EventBroadcastDeduper,
+  applyEventBroadcastBatch,
   applyEventBroadcastFrame,
   computeEventBroadcastChecksum,
   createEventBroadcastFrame,
   createEventTypeFilter,
+  type EventBroadcastBatch,
   type EventBroadcastFrame,
   type SerializedRuntimeEvent,
 } from './event-broadcast.js';
@@ -170,6 +172,66 @@ describe('event broadcast', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('replays after a deduper reset', () => {
+    const bus = createBus();
+    const handler = vi.fn();
+
+    bus.on('resource:threshold-reached', handler);
+
+    const frame = createFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+
+    const deduper = new EventBroadcastDeduper({ capacity: 4 });
+
+    applyEventBroadcastFrame(bus, frame, { deduper });
+    applyEventBroadcastFrame(bus, frame, { deduper });
+    deduper.reset();
+    applyEventBroadcastFrame(bus, frame, { deduper });
+
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies batches with filters and dedupers', () => {
+    const bus = createBus();
+    const received: string[] = [];
+
+    bus.on('resource:threshold-reached', (event) => {
+      received.push(`resource:${event.payload.threshold}`);
+    });
+    bus.on('automation:toggled', (event) => {
+      received.push(`automation:${event.payload.enabled}`);
+    });
+
+    const frame = createFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 1,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+      createEvent('automation:toggled', 1, {
+        automationId: 'auto:1',
+        enabled: true,
+      } as RuntimeEventPayload<'automation:toggled'>),
+    ]);
+
+    const batch: EventBroadcastBatch = {
+      frames: [frame, frame],
+      fromStep: 1,
+      toStep: 1,
+      eventCount: 4,
+    };
+
+    const filter = createEventTypeFilter(['automation:toggled']);
+    const deduper = new EventBroadcastDeduper();
+
+    applyEventBroadcastBatch(bus, batch, { filter, deduper });
+
+    expect(received).toEqual(['automation:true']);
+  });
+
   it('batches frames and flushes when priority events arrive', () => {
     const batcher = new EventBroadcastBatcher({
       maxSteps: 5,
@@ -305,6 +367,54 @@ describe('event broadcast', () => {
     expect(coalescedFrame.events[0].type).toBe('automation:toggled');
     expect(coalescedFrame.checksum).toBe(
       computeEventBroadcastChecksum(coalescedFrame),
+    );
+  });
+
+  it('coalesces with mode "first"', () => {
+    const frame1 = createChecksummedFrame(1, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 3,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+    ]);
+    const frame2 = createChecksummedFrame(2, [
+      createEvent('resource:threshold-reached', 0, {
+        resourceId: 'energy',
+        threshold: 4,
+      } as RuntimeEventPayload<'resource:threshold-reached'>),
+      createEvent('automation:toggled', 1, {
+        automationId: 'auto:1',
+        enabled: true,
+      } as RuntimeEventPayload<'automation:toggled'>),
+    ]);
+
+    const batcher = new EventBroadcastBatcher({
+      maxSteps: 2,
+      coalesce: { key: (event) => event.type, mode: 'first' },
+    });
+
+    expect(batcher.ingestFrame(frame1)).toHaveLength(0);
+    const batches = batcher.ingestFrame(frame2);
+    expect(batches).toHaveLength(1);
+    const [batch] = batches;
+
+    const firstFrame = batch.frames.find((entry) => entry.serverStep === 1);
+    if (!firstFrame) {
+      throw new Error('Expected frame for step 1.');
+    }
+    const secondFrame = batch.frames.find((entry) => entry.serverStep === 2);
+    if (!secondFrame) {
+      throw new Error('Expected frame for step 2.');
+    }
+
+    expect(firstFrame.events).toHaveLength(1);
+    expect(firstFrame.events[0].type).toBe('resource:threshold-reached');
+    expect(firstFrame.events[0].payload).toMatchObject({ threshold: 3 });
+
+    expect(secondFrame.events).toHaveLength(1);
+    expect(secondFrame.events[0].type).toBe('automation:toggled');
+    expect(secondFrame.checksum).toBe(
+      computeEventBroadcastChecksum(secondFrame),
     );
   });
 
