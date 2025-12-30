@@ -20,11 +20,41 @@ const TICKS = 120;
 const EVENTS_PER_TICK = 40;
 const MESSAGE_OVERHEAD_BYTES = 64;
 
+function expectedMessageCountForSteps(maxSteps) {
+  return Math.ceil(TICKS / maxSteps);
+}
+
 const SCENARIOS = [
-  { label: 'unbatched', options: { maxSteps: 1 } },
-  { label: 'batch-5-steps', options: { maxSteps: 5 } },
-  { label: 'batch-10-steps', options: { maxSteps: 10 } },
+  {
+    label: 'unbatched',
+    options: { maxSteps: 1 },
+    expectations: { messageCount: expectedMessageCountForSteps(1) },
+  },
+  {
+    label: 'batch-5-steps',
+    options: { maxSteps: 5 },
+    expectations: {
+      messageCount: expectedMessageCountForSteps(5),
+      reducesMessageCount: true,
+      reducesOverhead: true,
+    },
+  },
+  {
+    label: 'batch-10-steps',
+    options: { maxSteps: 10 },
+    expectations: {
+      messageCount: expectedMessageCountForSteps(10),
+      reducesMessageCount: true,
+      reducesOverhead: true,
+    },
+  },
 ];
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
 
 setTelemetry({
   recordError() {},
@@ -122,6 +152,47 @@ function main() {
   const frames = buildFrames();
   const results = SCENARIOS.map((scenario) => measureScenario(frames, scenario));
   const baseline = results.find((entry) => entry.label === 'unbatched');
+  assert(baseline, 'Expected a baseline scenario labeled "unbatched".');
+
+  for (const scenario of SCENARIOS) {
+    const entry = results.find((result) => result.label === scenario.label);
+    assert(entry, `Missing results for scenario "${scenario.label}".`);
+
+    const expectations = scenario.expectations;
+    assert(expectations, `Scenario "${scenario.label}" is missing expectations.`);
+
+    if (expectations.messageCount !== undefined) {
+      assert(
+        entry.messageCount === expectations.messageCount,
+        `Expected ${scenario.label} to produce ${expectations.messageCount} messages (received ${entry.messageCount}).`,
+      );
+    }
+    if (expectations.minMessageCount !== undefined) {
+      assert(
+        entry.messageCount >= expectations.minMessageCount,
+        `Expected ${scenario.label} to produce at least ${expectations.minMessageCount} messages (received ${entry.messageCount}).`,
+      );
+    }
+    if (expectations.maxMessageCount !== undefined) {
+      assert(
+        entry.messageCount <= expectations.maxMessageCount,
+        `Expected ${scenario.label} to produce at most ${expectations.maxMessageCount} messages (received ${entry.messageCount}).`,
+      );
+    }
+    if (expectations.reducesMessageCount) {
+      assert(
+        entry.messageCount < baseline.messageCount,
+        `Expected ${scenario.label} to reduce message count versus unbatched.`,
+      );
+    }
+    if (expectations.reducesOverhead) {
+      assert(
+        entry.overheadBytes < baseline.overheadBytes,
+        `Expected ${scenario.label} to reduce overhead bytes versus unbatched.`,
+      );
+    }
+  }
+
   const comparisons = results.map((entry) => ({
     label: entry.label,
     totalBytesOverBaseline: ratio(entry.totalBytes, baseline?.totalBytes ?? 0),
