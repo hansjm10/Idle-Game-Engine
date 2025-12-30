@@ -1098,6 +1098,24 @@ export {
   type RuntimeEventFrameFormat,
 } from './events/runtime-event-frame-format.js';
 export {
+  EventBroadcastBatcher,
+  EventBroadcastDeduper,
+  applyEventBroadcastBatch,
+  applyEventBroadcastFrame,
+  computeEventBroadcastChecksum,
+  createEventBroadcastFrame,
+  createEventTypeFilter,
+  type EventBroadcastBatch,
+  type EventBroadcastBatcherOptions,
+  type EventBroadcastDeduperOptions,
+  type EventBroadcastFrame,
+  type EventBroadcastFrameOptions,
+  type EventBroadcastHydrateOptions,
+  type EventCoalescingOptions,
+  type EventFilter,
+  type SerializedRuntimeEvent,
+} from './events/event-broadcast.js';
+export {
   CONTENT_EVENT_CHANNELS,
   CONTENT_EVENT_DEFINITIONS,
   GENERATED_RUNTIME_EVENT_DEFINITIONS,
