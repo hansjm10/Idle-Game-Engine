@@ -50,7 +50,8 @@ export type RuntimeEventFrame =
 
 export interface RuntimeEventFrameBuildOptions {
   readonly tick: number;
-  readonly manifestHash: RuntimeEventManifestHash;
+  /** Defaults to bus.getManifestHash() when omitted. */
+  readonly manifestHash?: RuntimeEventManifestHash;
   readonly owner?: string;
   readonly mode?: 'share' | 'transfer';
   readonly format?: RuntimeEventFrameFormat;
@@ -72,6 +73,7 @@ export function buildRuntimeEventFrame(
 ): RuntimeEventFrameBuildResult {
   const owner = options.owner ?? DEFAULT_OWNER;
   const mode = options.mode ?? 'share';
+  const manifestHash = options.manifestHash ?? bus.getManifestHash();
   const manifest = bus.getManifest();
   const channelCount = manifest.entries.length;
 
@@ -109,7 +111,7 @@ export function buildRuntimeEventFrame(
     const frame: RuntimeEventObjectArrayFrame = {
       format,
       tick: options.tick,
-      manifestHash: options.manifestHash,
+      manifestHash,
       count: totalEvents,
       events,
       diagnostics,
@@ -183,7 +185,7 @@ export function buildRuntimeEventFrame(
   const frame: RuntimeEventFrame = {
     format,
     tick: options.tick,
-    manifestHash: options.manifestHash,
+    manifestHash,
     count: totalEvents,
     channelIndices,
     typeIndices,

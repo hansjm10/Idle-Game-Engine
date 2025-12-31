@@ -716,6 +716,24 @@ describe('EventBus', () => {
       resetTelemetry();
     }
   });
+
+  it('defaults manifestHash to bus.getManifestHash() when omitted', () => {
+    const bus = createBus();
+    const pool = new TransportBufferPool();
+
+    bus.beginTick(1);
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 5,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const frameResult = buildRuntimeEventFrame(bus, pool, {
+      tick: 1,
+    });
+
+    expect(frameResult.frame.manifestHash).toBe(bus.getManifestHash());
+    frameResult.release();
+  });
 });
 
 describe('EventBus performance', () => {
