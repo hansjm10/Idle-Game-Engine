@@ -52,9 +52,13 @@ export interface RuntimeEventFrameBuildOptions {
   readonly tick: number;
   /** Defaults to bus.getManifestHash() when omitted. */
   readonly manifestHash?: RuntimeEventManifestHash;
+  /** Defaults to 'RuntimeEventFrame' when omitted. */
   readonly owner?: string;
+  /** Defaults to 'share' when omitted. */
   readonly mode?: 'share' | 'transfer';
+  /** Defaults to 'struct-of-arrays' when omitted. */
   readonly format?: RuntimeEventFrameFormat;
+  /** Optional diagnostics metadata to include in the frame. */
   readonly diagnostics?: RuntimeEventFrameDiagnostics;
 }
 
