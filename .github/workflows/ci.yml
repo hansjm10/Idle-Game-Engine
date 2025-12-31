@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for SonarCloud analysis
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -83,6 +85,11 @@ jobs:
         with:
           name: coverage-markdown
           path: docs/coverage/index.md
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   performance-report:
     name: Performance Report
