@@ -117,6 +117,54 @@ describe('resolveControlActions', () => {
 
     expect(resolveControlActions(scheme, event)).toEqual([]);
   });
+
+  it('ignores bindings with empty phases', () => {
+    const schemeWithEmptyPhases: ControlScheme = {
+      id: 'scheme:empty-phases',
+      version: '1',
+      actions: [toggleAction],
+      bindings: [
+        {
+          id: 'binding:empty-phases',
+          intent: 'toggle',
+          actionId: toggleAction.id,
+          phases: [],
+        },
+      ],
+    };
+
+    const event: ControlEvent = { intent: 'toggle', phase: 'start' };
+
+    expect(resolveControlActions(schemeWithEmptyPhases, event)).toEqual([]);
+  });
+
+  it('throws when action ids are duplicated', () => {
+    const schemeWithDuplicates: ControlScheme = {
+      id: 'scheme:duplicate-actions',
+      version: '1',
+      actions: [
+        toggleAction,
+        {
+          ...toggleAction,
+          payload: { generatorId: 'gen:beta', enabled: false },
+        },
+      ],
+      bindings: [
+        {
+          id: 'binding:toggle-start',
+          intent: 'toggle',
+          actionId: toggleAction.id,
+          phases: ['start'],
+        },
+      ],
+    };
+
+    const event: ControlEvent = { intent: 'toggle', phase: 'start' };
+
+    expect(() => resolveControlActions(schemeWithDuplicates, event)).toThrowError(
+      'Control action with id "action:toggle" is duplicated.',
+    );
+  });
 });
 
 describe('createControlCommand', () => {

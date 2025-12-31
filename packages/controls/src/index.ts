@@ -72,9 +72,10 @@ const buildActionLookup = (
 ): Map<ControlActionId, ControlAction> => {
   const lookup = new Map<ControlActionId, ControlAction>();
   for (const action of actions) {
-    if (!lookup.has(action.id)) {
-      lookup.set(action.id, action);
+    if (lookup.has(action.id)) {
+      throw new Error(`Control action with id "${action.id}" is duplicated.`);
     }
+    lookup.set(action.id, action);
   }
   return lookup;
 };
