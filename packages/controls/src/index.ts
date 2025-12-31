@@ -99,13 +99,16 @@ const buildActionLookup = (
   return lookup;
 };
 
+const compareStrings = (left: string, right: string): number =>
+  left.localeCompare(right, 'en');
+
 const sortById = <T extends { id: string }>(
   values: readonly T[],
 ): T[] =>
   values
     .map((value, index) => ({ value, index }))
     .sort((left, right) => {
-      const result = left.value.id.localeCompare(right.value.id);
+      const result = compareStrings(left.value.id, right.value.id);
       return result !== 0 ? result : left.index - right.index;
     })
     .map(({ value }) => value);
@@ -113,9 +116,7 @@ const sortById = <T extends { id: string }>(
 const normalizePhases = (
   phases: readonly ControlEventPhase[],
 ): readonly ControlEventPhase[] =>
-  Array.from(new Set(phases)).sort((left, right) =>
-    left.localeCompare(right),
-  );
+  Array.from(new Set(phases)).sort(compareStrings);
 
 const createValidationIssue = (
   code: ControlSchemeValidationCode,

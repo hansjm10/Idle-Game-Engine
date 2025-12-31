@@ -278,6 +278,38 @@ describe('normalizeControlScheme', () => {
     expect(normalized.bindings[0]?.phases).toEqual(['end', 'start']);
     expect(normalized.bindings[1]?.phases).toEqual(['repeat', 'start']);
   });
+
+  it('preserves missing or empty phases', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:normalize-phases',
+      version: '1',
+      actions: [toggleAction],
+      bindings: [
+        {
+          id: 'binding:missing',
+          intent: 'toggle',
+          actionId: toggleAction.id,
+        },
+        {
+          id: 'binding:empty',
+          intent: 'toggle',
+          actionId: toggleAction.id,
+          phases: [],
+        },
+      ],
+    };
+
+    const normalized = normalizeControlScheme(localScheme);
+    const emptyBinding = normalized.bindings.find(
+      (binding) => binding.id === 'binding:empty',
+    );
+    const missingBinding = normalized.bindings.find(
+      (binding) => binding.id === 'binding:missing',
+    );
+
+    expect(emptyBinding?.phases).toEqual([]);
+    expect(missingBinding?.phases).toBeUndefined();
+  });
 });
 
 describe('validateControlScheme', () => {
@@ -339,6 +371,80 @@ describe('validateControlScheme', () => {
         message:
           'Control binding "binding:missing-action" references missing action id "action:missing".',
         path: ['bindings', 2, 'actionId'],
+        severity: 'error',
+      },
+    ]);
+  });
+
+  it('reports issues for each extra duplicate occurrence', () => {
+    const baseAction: ControlAction<
+      typeof RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR
+    > = {
+      id: 'action:duplicate-many',
+      commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+      payload: { generatorId: 'gen:alpha', enabled: true },
+    };
+
+    const localScheme: ControlScheme = {
+      id: 'scheme:duplicate-many',
+      version: '1',
+      actions: [
+        baseAction,
+        {
+          ...baseAction,
+          payload: { generatorId: 'gen:beta', enabled: false },
+        },
+        {
+          ...baseAction,
+          payload: { generatorId: 'gen:gamma', enabled: true },
+        },
+      ],
+      bindings: [
+        {
+          id: 'binding:duplicate-many',
+          intent: 'toggle',
+          actionId: baseAction.id,
+        },
+        {
+          id: 'binding:duplicate-many',
+          intent: 'toggle',
+          actionId: baseAction.id,
+        },
+        {
+          id: 'binding:duplicate-many',
+          intent: 'toggle',
+          actionId: baseAction.id,
+        },
+      ],
+    };
+
+    expect(validateControlScheme(localScheme)).toEqual([
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_ACTION_ID,
+        message:
+          'Duplicate control action id "action:duplicate-many" also defined at index 0.',
+        path: ['actions', 1, 'id'],
+        severity: 'error',
+      },
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_ACTION_ID,
+        message:
+          'Duplicate control action id "action:duplicate-many" also defined at index 0.',
+        path: ['actions', 2, 'id'],
+        severity: 'error',
+      },
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_BINDING_ID,
+        message:
+          'Duplicate control binding id "binding:duplicate-many" also defined at index 0.',
+        path: ['bindings', 1, 'id'],
+        severity: 'error',
+      },
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_BINDING_ID,
+        message:
+          'Duplicate control binding id "binding:duplicate-many" also defined at index 0.',
+        path: ['bindings', 2, 'id'],
         severity: 'error',
       },
     ]);

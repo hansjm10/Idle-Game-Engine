@@ -24,14 +24,15 @@ const buildActionLookup = (actions) => {
     }
     return lookup;
 };
+const compareStrings = (left, right) => left.localeCompare(right, 'en');
 const sortById = (values) => values
     .map((value, index) => ({ value, index }))
     .sort((left, right) => {
-    const result = left.value.id.localeCompare(right.value.id);
+    const result = compareStrings(left.value.id, right.value.id);
     return result !== 0 ? result : left.index - right.index;
 })
     .map(({ value }) => value);
-const normalizePhases = (phases) => Array.from(new Set(phases)).sort((left, right) => left.localeCompare(right));
+const normalizePhases = (phases) => Array.from(new Set(phases)).sort(compareStrings);
 const createValidationIssue = (code, message, path) => ({
     code,
     message,
