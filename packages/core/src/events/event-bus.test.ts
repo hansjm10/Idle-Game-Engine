@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EventBus, EventBufferOverflowError } from './event-bus.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './runtime-event-catalog.js';
-import { type RuntimeEventPayload } from './runtime-event.js';
+import type {
+  RuntimeEventManifestHash,
+  RuntimeEventPayload,
+} from './runtime-event.js';
 import { buildRuntimeEventFrame } from './runtime-event-frame.js';
 import {
   resetTelemetry,
@@ -715,6 +718,64 @@ describe('EventBus', () => {
     } finally {
       resetTelemetry();
     }
+  });
+
+  it('defaults manifestHash to bus.getManifestHash() when omitted', () => {
+    const bus = createBus();
+    const pool = new TransportBufferPool();
+
+    bus.beginTick(1);
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 5,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const frameResult = buildRuntimeEventFrame(bus, pool, {
+      tick: 1,
+    });
+
+    expect(frameResult.frame.manifestHash).toBe(bus.getManifestHash());
+    frameResult.release();
+  });
+
+  it('uses explicit manifestHash when provided', () => {
+    const bus = createBus();
+    const pool = new TransportBufferPool();
+    const customHash = 'custom-test-hash' as RuntimeEventManifestHash;
+
+    bus.beginTick(1);
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 5,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const frameResult = buildRuntimeEventFrame(bus, pool, {
+      tick: 1,
+      manifestHash: customHash,
+    });
+
+    expect(frameResult.frame.manifestHash).toBe(customHash);
+    frameResult.release();
+  });
+
+  it('defaults manifestHash in object-array format', () => {
+    const bus = createBus();
+    const pool = new TransportBufferPool();
+
+    bus.beginTick(1);
+    bus.publish('resource:threshold-reached', {
+      resourceId: 'energy',
+      threshold: 5,
+    } as RuntimeEventPayload<'resource:threshold-reached'>);
+
+    const frameResult = buildRuntimeEventFrame(bus, pool, {
+      tick: 1,
+      format: 'object-array',
+    });
+
+    expect(frameResult.frame.manifestHash).toBe(bus.getManifestHash());
+    expect(frameResult.frame.format).toBe('object-array');
+    frameResult.release();
   });
 });
 
