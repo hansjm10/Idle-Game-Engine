@@ -53,6 +53,9 @@ jobs:
       - name: Build (except docs)
         run: pnpm -r --filter "!@idle-engine/docs" run build
 
+      - name: Verify dist/ in sync
+        run: node tools/scripts/verify-dist-sync.mjs
+
       - name: Validate Content
         run: |
           set -o pipefail
