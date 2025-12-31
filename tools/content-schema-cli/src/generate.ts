@@ -140,8 +140,11 @@ async function readExistingManifest(rootDirectory: string): Promise<string | und
   const targetPath = path.join(rootDirectory, GENERATED_MODULE_RELATIVE_PATH);
   try {
     return await fs.readFile(targetPath, 'utf8');
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
   }
 }
 
@@ -314,8 +317,18 @@ async function loadAchievementEventDefinitions(rootDirectory: string): Promise<C
     let document: ContentPackDocument | undefined;
     try {
       document = await readContentPackDocument(packPath);
-    } catch {
-      // Skip invalid pack files - they'll be caught during validation
+    } catch (error) {
+      // Only skip if file not found; re-throw permission/IO errors
+      if (isNodeError(error) && error.code === 'ENOENT') {
+        continue;
+      }
+      // Log non-ENOENT errors so users know why achievement events may be missing
+      console.warn(formatLogPayload({
+        event: 'content_pack.achievement_extraction_skipped',
+        path: toPosixPath(path.relative(rootDirectory, packPath)),
+        reason: error instanceof Error ? error.message : String(error),
+        note: 'Pack will be validated separately; achievement events from this pack may be missing.',
+      }, false));
       continue;
     }
 
@@ -1133,8 +1146,11 @@ async function fileExists(targetPath: string): Promise<boolean> {
   try {
     await fs.access(targetPath);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -1186,4 +1202,8 @@ function normalizeError(error: unknown): NormalizedError {
     message,
     stack: undefined,
   };
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }

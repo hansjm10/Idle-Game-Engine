@@ -607,14 +607,17 @@ async function ensureCoreDistRuntimeEventManifest({
   );
   try {
     await fs.access(corePackageJsonPath);
-  } catch {
-    return {
-      action: 'skipped',
-      path: CORE_DIST_MANIFEST_RELATIVE_PATH,
-      expectedHash,
-      actualHash: undefined,
-      reason: 'missing core package.json',
-    };
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return {
+        action: 'skipped',
+        path: CORE_DIST_MANIFEST_RELATIVE_PATH,
+        expectedHash,
+        actualHash: undefined,
+        reason: 'missing core package.json',
+      };
+    }
+    throw error;
   }
 
   const distManifestPath = path.join(
@@ -837,8 +840,11 @@ async function writeDeterministicJsonFile(
 async function readFileIfExists(targetPath: string): Promise<string | undefined> {
   try {
     return await fs.readFile(targetPath, 'utf8');
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
   }
 }
 
@@ -972,6 +978,10 @@ function normalizeError(error: unknown): NormalizedError {
     message,
     stack: undefined,
   };
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
 }
 
 type ExecuteFn = (context?: ExecuteContext) => Promise<PipelineOutcome>;
