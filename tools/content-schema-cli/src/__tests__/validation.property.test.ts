@@ -49,7 +49,31 @@ const FORMULA_REFERENCE_POOLS = {
   prestigeLayer: [] as const,
 };
 
-const PROPERTY_MANIFEST_DEFINITIONS = [{ type: 'runtime.event.property' }];
+interface ManifestDefinition {
+  channel: number;
+  type: string;
+  version: number;
+  packSlug: string;
+  schema?: string;
+}
+
+interface CapturedEvent {
+  event?: string;
+  packSlug?: string;
+  path?: string;
+  warningCount?: number;
+  balanceWarningCount?: number;
+  balanceErrorCount?: number;
+  errorCount?: number;
+  balanceWarnings?: Array<{ code?: string }>;
+  balanceErrors?: Array<{ code?: string }>;
+  issues?: Array<{ message?: string }>;
+  [key: string]: unknown;
+}
+
+const PROPERTY_MANIFEST_DEFINITIONS: ManifestDefinition[] = [
+  { channel: 0, type: 'runtime.event.property', version: 1, packSlug: '@idle-engine/core' },
+];
 
 const PROPERTY_NUM_RUNS = 32;
 
@@ -100,9 +124,10 @@ describe('validateContentPacks property suites', () => {
             expect(validationEvent?.warningCount ?? 0).toBe(0);
 
             const normalizedContext = cloneContext(context);
+            const level = normalizedContext.variables?.level ?? 0;
             const levelFloor = Math.max(
               0,
-              Math.floor(normalizedContext.variables.level),
+              Math.floor(level),
             );
             const lowContext = setContextLevel(normalizedContext, levelFloor);
             const highContext = setContextLevel(normalizedContext, levelFloor + 1);
@@ -156,8 +181,8 @@ describe('validateContentPacks property suites', () => {
           const summary = (caught as ContentPackValidationError).failures[0];
           expect(summary).toBeDefined();
 
-          const issueMessages =
-            summary?.issues?.map((issue: { message?: string }) => issue?.message) ?? [];
+          const issues = (summary?.issues ?? []) as Array<{ message?: string }>;
+          const issueMessages = issues.map((issue) => issue?.message);
           expect(
             issueMessages.some(
               (message) =>
@@ -259,16 +284,20 @@ describe('validateContentPacks balance logging', () => {
   });
 });
 
-const captureConsole = () => {
-  const events: unknown[] = [];
-  const errors: unknown[] = [];
+const captureConsole = (): {
+  events: CapturedEvent[];
+  errors: CapturedEvent[];
+  restore: () => void;
+} => {
+  const events: CapturedEvent[] = [];
+  const errors: CapturedEvent[] = [];
 
-  const parsePayload = (value: unknown) => {
+  const parsePayload = (value: unknown): CapturedEvent => {
     const serialized = typeof value === 'string' ? value : String(value);
     try {
-      return JSON.parse(serialized);
+      return JSON.parse(serialized) as CapturedEvent;
     } catch {
-      return serialized;
+      return { raw: serialized } as CapturedEvent;
     }
   };
 

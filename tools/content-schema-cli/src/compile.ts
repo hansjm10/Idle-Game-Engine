@@ -6,7 +6,14 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
+import type { FSWatcher } from 'chokidar';
 import chokidar from 'chokidar';
+
+import type {
+  CompileLogEvent,
+  FileWriteOperation,
+  WorkspaceCompileResult,
+} from '@idle-engine/content-compiler';
 
 import {
   buildRuntimeEventManifest,
@@ -39,14 +46,77 @@ const DEBOUNCE_MS = 150;
 const WATCH_EVENT_TYPES = new Set(['add', 'change', 'unlink']);
 const MAX_TRIGGER_PATHS = 10;
 
+interface CliOptions {
+  check: boolean;
+  clean: boolean;
+  pretty: boolean;
+  watch: boolean;
+  summary: string | undefined;
+  cwd: string | undefined;
+}
+
+interface ExecuteContext {
+  mode: 'watch';
+  iteration: number;
+  triggers?: WatchTrigger[];
+}
+
+interface WatchTrigger {
+  event: string;
+  path?: string;
+}
+
+interface RunSummary {
+  packTotals: {
+    total: number;
+    compiled: number;
+    failed: number;
+    withWarnings: number;
+  };
+  artifactActions: {
+    total: number;
+    changed: number;
+    byAction: Record<string, number>;
+  };
+  changedPacks: string[];
+  failedPacks: string[];
+  hasChanges: boolean;
+  summaryAction: string;
+  manifestAction: string;
+}
+
+interface PipelineOutcome {
+  success: boolean;
+  drift: boolean;
+  runSummary: RunSummary | undefined;
+}
+
+type Logger = (event: CompileLogEvent) => void;
+
+interface CompileWorkspacePacksFn {
+  (
+    options: { rootDirectory: string },
+    compileOptions: {
+      check?: boolean;
+      clean?: boolean;
+      schema: unknown;
+      summaryOutputPath?: string;
+    },
+  ): Promise<WorkspaceCompileResult>;
+}
+
+interface CreateLoggerFn {
+  (options: { pretty?: boolean }): Logger;
+}
+
 void run().catch((error) => {
   console.error(error instanceof Error ? error.stack ?? error.message : error);
   process.exitCode = 1;
 });
 
-async function run() {
+async function run(): Promise<void> {
   const args = process.argv.slice(2);
-  let options;
+  let options: CliOptions;
   try {
     options = parseArgs(args);
   } catch (error) {
@@ -63,12 +133,15 @@ async function run() {
   }
 
   const workspaceRoot = options.cwd ?? REPO_ROOT;
-  const { compileWorkspacePacks, createLogger } = await loadContentCompiler({
+  const { compileWorkspacePacks, createLogger } = (await loadContentCompiler({
     projectRoot: REPO_ROOT,
-  });
+  })) as {
+    compileWorkspacePacks: CompileWorkspacePacksFn;
+    createLogger: CreateLoggerFn;
+  };
   const logger = createLogger({ pretty: options.pretty });
 
-  const execute = async (context = undefined) => {
+  const execute = async (context: ExecuteContext | undefined = undefined): Promise<PipelineOutcome> => {
     const startTime = performance.now();
     const outcome = await executePipeline(
       options,
@@ -126,12 +199,12 @@ async function run() {
 }
 
 async function executePipeline(
-  options,
-  logger,
-  workspaceRoot,
-  compileWorkspacePacks,
-) {
-  let manifest;
+  options: CliOptions,
+  logger: Logger,
+  workspaceRoot: string,
+  compileWorkspacePacks: CompileWorkspacePacksFn,
+): Promise<PipelineOutcome> {
+  let manifest: Awaited<ReturnType<typeof buildRuntimeEventManifest>>;
   try {
     manifest = await buildRuntimeEventManifest({
       rootDirectory: workspaceRoot,
@@ -210,7 +283,7 @@ async function executePipeline(
       const cleanMode = options.clean === true;
       try {
         const summaryOutcome = await persistValidationFailureSummary({
-          failures: error.failures,
+          failures: error.failures as ValidationFailureSummaryEntry[],
           rootDirectory: workspaceRoot,
           summaryOverride: options.summary,
           clean: cleanMode,
@@ -222,7 +295,7 @@ async function executePipeline(
           success: false,
           drift: summaryDrift,
           runSummary: createValidationFailureRunSummary({
-            failures: error.failures,
+            failures: error.failures as ValidationFailureSummaryEntry[],
             summaryAction: summaryOutcome.action,
           }),
         };
@@ -245,13 +318,19 @@ async function executePipeline(
   }
 }
 
-function emitCompileEvents({ compileResult, logger, check }) {
-  const operationsBySlug = new Map();
+interface EmitCompileEventsInput {
+  compileResult: WorkspaceCompileResult;
+  logger: Logger;
+  check: boolean;
+}
+
+function emitCompileEvents({ compileResult, logger, check }: EmitCompileEventsInput): void {
+  const operationsBySlug = new Map<string, FileWriteOperation[]>();
   for (const operation of compileResult.artifacts.operations) {
     if (!operationsBySlug.has(operation.slug)) {
       operationsBySlug.set(operation.slug, []);
     }
-    operationsBySlug.get(operation.slug).push(operation);
+    operationsBySlug.get(operation.slug)!.push(operation);
   }
 
   for (const result of compileResult.packs) {
@@ -262,11 +341,11 @@ function emitCompileEvents({ compileResult, logger, check }) {
     const balanceWarnings =
       result.status === 'compiled'
         ? result.balanceWarnings.length
-        : result.balanceWarnings?.length ?? 0;
+        : (result as { balanceWarnings?: unknown[] }).balanceWarnings?.length ?? 0;
     const balanceErrors =
       result.status === 'compiled'
         ? result.balanceErrors.length
-        : result.balanceErrors?.length ?? 0;
+        : (result as { balanceErrors?: unknown[] }).balanceErrors?.length ?? 0;
 
     if (result.status === 'compiled') {
       const warnings = result.warnings.length;
@@ -287,7 +366,7 @@ function emitCompileEvents({ compileResult, logger, check }) {
           balanceErrors,
           artifacts,
           check,
-        });
+        } as CompileLogEvent);
       } else {
         logger({
           name: 'content_pack.compiled',
@@ -300,7 +379,7 @@ function emitCompileEvents({ compileResult, logger, check }) {
           balanceErrors,
           artifacts,
           check,
-        });
+        } as CompileLogEvent);
       }
     } else {
       logger({
@@ -316,7 +395,7 @@ function emitCompileEvents({ compileResult, logger, check }) {
         stack: result.error.stack,
         artifacts,
         check,
-      });
+      } as CompileLogEvent);
     }
 
     const prunedArtifacts = artifacts.filter(
@@ -330,9 +409,8 @@ function emitCompileEvents({ compileResult, logger, check }) {
         timestamp: new Date().toISOString(),
         artifacts: prunedArtifacts,
         check,
-      });
+      } as CompileLogEvent);
     }
-
   }
 
   for (const [slug, operations] of operationsBySlug.entries()) {
@@ -351,13 +429,18 @@ function emitCompileEvents({ compileResult, logger, check }) {
       timestamp: new Date().toISOString(),
       artifacts: prunedArtifacts,
       check,
-    });
+    } as CompileLogEvent);
   }
 }
 
-function createRunSummary({ compileResult, manifestAction }) {
-  const actionCounts = Object.create(null);
-  const changedPacks = new Set();
+interface CreateRunSummaryInput {
+  compileResult: WorkspaceCompileResult;
+  manifestAction: string;
+}
+
+function createRunSummary({ compileResult, manifestAction }: CreateRunSummaryInput): RunSummary {
+  const actionCounts: Record<string, number> = Object.create(null);
+  const changedPacks = new Set<string>();
 
   for (const operation of compileResult.artifacts.operations) {
     actionCounts[operation.action] =
@@ -381,7 +464,7 @@ function createRunSummary({ compileResult, manifestAction }) {
   let compiledCount = 0;
   let failedCount = 0;
   let packsWithWarnings = 0;
-  const failedPacks = [];
+  const failedPacks: string[] = [];
 
   for (const packResult of compileResult.packs) {
     if (packResult.status === 'compiled') {
@@ -426,7 +509,7 @@ function createRunSummary({ compileResult, manifestAction }) {
   };
 }
 
-function isChangeAction(action) {
+function isChangeAction(action: string): boolean {
   return (
     action === 'written' ||
     action === 'deleted' ||
@@ -435,7 +518,13 @@ function isChangeAction(action) {
   );
 }
 
-function formatOperation(operation) {
+interface FormattedOperation {
+  kind: string;
+  path: string;
+  action: string;
+}
+
+function formatOperation(operation: FileWriteOperation): FormattedOperation {
   return {
     kind: operation.kind,
     path: operation.path,
@@ -443,7 +532,15 @@ function formatOperation(operation) {
   };
 }
 
-function logManifestResult(result, options) {
+interface LogManifestResultOptions {
+  pretty: boolean;
+  check: boolean;
+}
+
+function logManifestResult(
+  result: { action: string; path: string },
+  options: LogManifestResultOptions,
+): void {
   const eventSuffix =
     result.action === 'would-write' ? 'drift' : result.action;
   const payload = {
@@ -461,10 +558,21 @@ function logManifestResult(result, options) {
   console.log(serialized);
 }
 
-function logCoreDistRuntimeManifestResult(result, options) {
+interface CoreDistManifestResult {
+  action: 'unchanged' | 'built' | 'would-build' | 'skipped';
+  path: string;
+  expectedHash: string;
+  actualHash?: string;
+  reason?: string;
+}
+
+function logCoreDistRuntimeManifestResult(
+  result: CoreDistManifestResult,
+  options: LogManifestResultOptions,
+): void {
   const eventSuffix =
     result.action === 'would-build' ? 'drift' : result.action;
-  const payload = {
+  const payload: Record<string, unknown> = {
     event: `runtime_manifest.core_dist.${eventSuffix}`,
     path: result.path,
     action: result.action,
@@ -482,11 +590,17 @@ function logCoreDistRuntimeManifestResult(result, options) {
   console.log(serialized);
 }
 
+interface EnsureCoreDistManifestOptions {
+  rootDirectory: string;
+  expectedHash: string;
+  check: boolean;
+}
+
 async function ensureCoreDistRuntimeEventManifest({
   rootDirectory,
   expectedHash,
   check,
-}) {
+}: EnsureCoreDistManifestOptions): Promise<CoreDistManifestResult> {
   const corePackageJsonPath = path.join(
     rootDirectory,
     CORE_PACKAGE_JSON_RELATIVE_PATH,
@@ -563,7 +677,7 @@ async function ensureCoreDistRuntimeEventManifest({
         'Re-run `pnpm generate` or build core manually to update `packages/core/dist/`.',
         output ? `\n\n${output}` : undefined,
       ]
-        .filter((line) => line !== undefined)
+        .filter((line): line is string => line !== undefined)
         .join('\n'),
     );
   }
@@ -592,39 +706,52 @@ async function ensureCoreDistRuntimeEventManifest({
   };
 }
 
-function extractRuntimeEventManifestHash(source) {
+function extractRuntimeEventManifestHash(source: string): string | undefined {
   const match = source.match(/hash\s*:\s*['"]([0-9a-f]{8})['"]/i);
   return typeof match?.[1] === 'string' ? match[1].toLowerCase() : undefined;
 }
 
-async function spawnProcess(command, args, options) {
-  const spawnOptions = {
-    cwd: options.cwd,
-    env: options.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  };
+interface SpawnProcessResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
 
+interface SpawnProcessOptions {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}
+
+async function spawnProcess(
+  command: string,
+  args: string[],
+  options: SpawnProcessOptions,
+): Promise<SpawnProcessResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, spawnOptions);
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk;
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk;
     });
 
     child.on('error', reject);
-    child.on('exit', (code) => {
+    child.on('exit', (code: number | null) => {
       resolve({ code, stdout, stderr });
     });
   });
 }
 
-function formatProcessOutput(result) {
+function formatProcessOutput(result: SpawnProcessResult): string {
   const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
   if (combined.length === 0) {
     return '';
@@ -639,12 +766,27 @@ function formatProcessOutput(result) {
   return clipped.trim();
 }
 
+interface ValidationFailureSummaryEntry {
+  packSlug: string;
+  packVersion?: string;
+  path: string;
+  message: string;
+  issues?: unknown[];
+}
+
+interface PersistValidationFailureSummaryOptions {
+  failures: readonly ValidationFailureSummaryEntry[];
+  rootDirectory: string;
+  summaryOverride?: string;
+  clean: boolean;
+}
+
 async function persistValidationFailureSummary({
   failures,
   rootDirectory,
   summaryOverride,
   clean,
-}) {
+}: PersistValidationFailureSummaryOptions): Promise<{ action: string; path: string }> {
   const summary = createValidationFailureSummary(failures);
   const absoluteSummaryPath = resolveSummaryOutputPath(
     rootDirectory,
@@ -664,7 +806,16 @@ async function persistValidationFailureSummary({
   };
 }
 
-async function writeDeterministicJsonFile(targetPath, data, options) {
+interface WriteDeterministicJsonFileOptions {
+  check: boolean;
+  clean: boolean;
+}
+
+async function writeDeterministicJsonFile(
+  targetPath: string,
+  data: unknown,
+  options: WriteDeterministicJsonFileOptions,
+): Promise<{ action: string }> {
   const serialized = `${JSON.stringify(data, null, 2)}\n`;
   const existing = await readFileIfExists(targetPath);
 
@@ -683,7 +834,7 @@ async function writeDeterministicJsonFile(targetPath, data, options) {
   return { action: 'written' };
 }
 
-async function readFileIfExists(targetPath) {
+async function readFileIfExists(targetPath: string): Promise<string | undefined> {
   try {
     return await fs.readFile(targetPath, 'utf8');
   } catch {
@@ -691,14 +842,20 @@ async function readFileIfExists(targetPath) {
   }
 }
 
-function createValidationFailureSummary(failures) {
+interface BalanceIssue {
+  code?: string;
+}
+
+function createValidationFailureSummary(
+  failures: readonly ValidationFailureSummaryEntry[],
+): { packs: unknown[] } {
   const packs = failures
     .map((failure) => ({
       slug: failure.packSlug ?? failure.path,
       status: 'failed',
       ...(failure.packVersion ? { version: failure.packVersion } : {}),
       warnings: [],
-      ...(deriveBalanceFromIssues(failure.issues) ?? {}),
+      ...(deriveBalanceFromIssues(failure.issues as BalanceIssue[] | undefined) ?? {}),
       dependencies: emptySummaryDependencies(),
       artifacts: emptySummaryArtifacts(),
       error: failure.message,
@@ -713,7 +870,11 @@ function createValidationFailureSummary(failures) {
   return { packs };
 }
 
-function emptySummaryDependencies() {
+function emptySummaryDependencies(): {
+  requires: never[];
+  optional: never[];
+  conflicts: never[];
+} {
   return {
     requires: [],
     optional: [],
@@ -721,16 +882,22 @@ function emptySummaryDependencies() {
   };
 }
 
-function emptySummaryArtifacts() {
+function emptySummaryArtifacts(): Record<string, never> {
   return {};
 }
 
-function createValidationFailureRunSummary({ failures, summaryAction }) {
+function createValidationFailureRunSummary({
+  failures,
+  summaryAction,
+}: {
+  failures: readonly ValidationFailureSummaryEntry[];
+  summaryAction: string;
+}): RunSummary {
   const failedSlugs = Array.from(
     new Set(
       failures
         .map((failure) => failure.packSlug)
-        .filter((slug) => typeof slug === 'string' && slug.length > 0),
+        .filter((slug): slug is string => typeof slug === 'string' && slug.length > 0),
     ),
   ).sort();
 
@@ -757,7 +924,7 @@ function createValidationFailureRunSummary({ failures, summaryAction }) {
   };
 }
 
-function resolveSummaryOutputPath(rootDirectory, overridePath) {
+function resolveSummaryOutputPath(rootDirectory: string, overridePath?: string): string {
   if (overridePath) {
     return path.isAbsolute(overridePath)
       ? overridePath
@@ -766,9 +933,9 @@ function resolveSummaryOutputPath(rootDirectory, overridePath) {
   return path.join(rootDirectory, 'content', 'compiled', 'index.json');
 }
 
-function logUnhandledCliError(error, { pretty }) {
+function logUnhandledCliError(error: unknown, { pretty }: { pretty: boolean }): void {
   const normalized = normalizeError(error);
-  const payload = {
+  const payload: Record<string, unknown> = {
     event: 'cli.unhandled_error',
     message: normalized.message,
     timestamp: new Date().toISOString(),
@@ -785,7 +952,13 @@ function logUnhandledCliError(error, { pretty }) {
   console.error(serialized);
 }
 
-function normalizeError(error) {
+interface NormalizedError {
+  name?: string;
+  message: string;
+  stack?: string;
+}
+
+function normalizeError(error: unknown): NormalizedError {
   if (error instanceof Error) {
     return {
       name: error.name,
@@ -801,8 +974,14 @@ function normalizeError(error) {
   };
 }
 
-async function startWatch(_options, execute, workspaceRoot) {
-  const watcher = chokidar.watch(WATCH_GLOBS, {
+type ExecuteFn = (context?: ExecuteContext) => Promise<PipelineOutcome>;
+
+async function startWatch(
+  _options: CliOptions,
+  execute: ExecuteFn,
+  workspaceRoot: string,
+): Promise<void> {
+  const watcher: FSWatcher = chokidar.watch(WATCH_GLOBS, {
     cwd: workspaceRoot,
     ignoreInitial: true,
     ignored: WATCH_IGNORED,
@@ -812,13 +991,13 @@ async function startWatch(_options, execute, workspaceRoot) {
     },
   });
 
-  let timeoutId;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let running = false;
   let queued = false;
   let iteration = 0;
-  const pendingTriggers = [];
+  const pendingTriggers: WatchTrigger[] = [];
 
-  const schedule = () => {
+  const schedule = (): void => {
     queued = true;
     if (timeoutId) {
       clearTimeout(timeoutId);
@@ -847,7 +1026,7 @@ async function startWatch(_options, execute, workspaceRoot) {
     }, DEBOUNCE_MS);
   };
 
-  watcher.on('all', (eventName, targetPath) => {
+  watcher.on('all', (eventName: string, targetPath: string) => {
     if (!WATCH_EVENT_TYPES.has(eventName)) {
       return;
     }
@@ -859,7 +1038,7 @@ async function startWatch(_options, execute, workspaceRoot) {
     schedule();
   });
 
-  const closeWatcher = async () => {
+  const closeWatcher = async (): Promise<void> => {
     await watcher.close();
   };
 
@@ -873,8 +1052,8 @@ async function startWatch(_options, execute, workspaceRoot) {
   });
 }
 
-function parseArgs(argv) {
-  const options = {
+function parseArgs(argv: string[]): CliOptions {
+  const options: CliOptions = {
     check: false,
     clean: false,
     pretty: false,
@@ -937,7 +1116,7 @@ function parseArgs(argv) {
   return options;
 }
 
-function printUsage() {
+function printUsage(): void {
   console.log(
     [
       'Usage: pnpm --filter @idle-engine/content-validation-cli run compile [options]',
@@ -954,8 +1133,8 @@ function printUsage() {
   );
 }
 
-function formatMonitorLog(message, pretty, rootDirectory) {
-  const payload = {
+function formatMonitorLog(message: string, pretty: boolean, rootDirectory?: string): string {
+  const payload: Record<string, unknown> = {
     event: 'watch.status',
     message,
     timestamp: new Date().toISOString(),
@@ -964,7 +1143,7 @@ function formatMonitorLog(message, pretty, rootDirectory) {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
-function formatWatchHintLog(pretty) {
+function formatWatchHintLog(pretty: boolean): string {
   const payload = {
     event: 'watch.hint',
     message: 'Press Ctrl+C to stop watching; structured logs continue until exit.',
@@ -974,9 +1153,17 @@ function formatWatchHintLog(pretty) {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
-function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty }) {
+interface EmitWatchRunEventInput {
+  outcome: PipelineOutcome;
+  durationMs: number;
+  pretty: boolean;
+  iteration: number;
+  triggers: WatchTrigger[];
+}
+
+function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty }: EmitWatchRunEventInput): void {
   const status = determineWatchStatus(outcome);
-  const payload = {
+  const payload: Record<string, unknown> = {
     event: 'watch.run',
     status,
     iteration,
@@ -1015,7 +1202,7 @@ function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty })
   console.log(formatWatchRunLog(payload, pretty));
 }
 
-function determineWatchStatus(outcome) {
+function determineWatchStatus(outcome: PipelineOutcome): 'success' | 'failed' | 'skipped' {
   if (!outcome.success) {
     return 'failed';
   }
@@ -1027,10 +1214,18 @@ function determineWatchStatus(outcome) {
   return 'success';
 }
 
-function summarizeWatchTriggers(triggers) {
-  const eventsByType = Object.create(null);
-  const uniquePaths = [];
-  const seenPaths = new Set();
+interface WatchTriggerSummary {
+  count: number;
+  limit: number;
+  events?: Record<string, number>;
+  paths?: string[];
+  morePaths?: number;
+}
+
+function summarizeWatchTriggers(triggers: WatchTrigger[]): WatchTriggerSummary {
+  const eventsByType: Record<string, number> = Object.create(null);
+  const uniquePaths: string[] = [];
+  const seenPaths = new Set<string>();
 
   for (const trigger of triggers) {
     const { event, path: triggerPath } = trigger ?? {};
@@ -1049,7 +1244,7 @@ function summarizeWatchTriggers(triggers) {
   const limitedPaths = uniquePaths.slice(0, MAX_TRIGGER_PATHS);
   const overflow = uniquePaths.length - limitedPaths.length;
 
-  const summary = {
+  const summary: WatchTriggerSummary = {
     count: triggers.length,
     limit: MAX_TRIGGER_PATHS,
     ...(sortedEventEntries.length > 0
@@ -1065,12 +1260,19 @@ function summarizeWatchTriggers(triggers) {
   return summary;
 }
 
-function formatWatchRunLog(payload, pretty) {
+function formatWatchRunLog(payload: unknown, pretty: boolean): string {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
-function emitRunSummaryEvent({ outcome, pretty, durationMs, mode }) {
-  const payload = {
+interface EmitRunSummaryEventInput {
+  outcome: PipelineOutcome;
+  pretty: boolean;
+  durationMs: number;
+  mode: 'single' | 'watch';
+}
+
+function emitRunSummaryEvent({ outcome, pretty, durationMs, mode }: EmitRunSummaryEventInput): void {
+  const payload: Record<string, unknown> = {
     event: 'cli.run_summary',
     timestamp: new Date().toISOString(),
     success: outcome.success === true,
@@ -1089,11 +1291,11 @@ function emitRunSummaryEvent({ outcome, pretty, durationMs, mode }) {
   console.log(JSON.stringify(payload, undefined, pretty ? 2 : undefined));
 }
 
-function resolveWorkspaceRoot(inputPath) {
+function resolveWorkspaceRoot(inputPath: string): string {
   return path.isAbsolute(inputPath) ? inputPath : path.resolve(process.cwd(), inputPath);
 }
 
-function normalizeWatchTargetPath(workspaceRoot, targetPath) {
+function normalizeWatchTargetPath(workspaceRoot: string, targetPath: string): string {
   if (typeof targetPath !== 'string' || targetPath.length === 0) {
     return '';
   }
@@ -1104,14 +1306,14 @@ function normalizeWatchTargetPath(workspaceRoot, targetPath) {
   return toPosixPath(relativePath);
 }
 
-function toPosixPath(inputPath) {
+function toPosixPath(inputPath: string): string {
   if (inputPath === '') {
     return '';
   }
   return inputPath.split(path.sep).join('/');
 }
 
-function deriveBalanceFromIssues(issues) {
+function deriveBalanceFromIssues(issues: BalanceIssue[] | undefined): { balance: unknown } | undefined {
   if (!Array.isArray(issues)) {
     return undefined;
   }
