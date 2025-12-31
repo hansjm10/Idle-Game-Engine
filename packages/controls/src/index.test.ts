@@ -198,6 +198,18 @@ describe('createControlCommand', () => {
     });
   });
 
+  it('defaults to context priority when action priority is missing', () => {
+    const context: ControlContext = {
+      step: 8,
+      timestamp: 800,
+      priority: CommandPriority.AUTOMATION,
+    };
+
+    const command = createControlCommand(toggleAction, context);
+
+    expect(command.priority).toBe(CommandPriority.AUTOMATION);
+  });
+
   it('defaults to PLAYER priority when none is provided', () => {
     const context: ControlContext = { step: 3, timestamp: 300 };
 
