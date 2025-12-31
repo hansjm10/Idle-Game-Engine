@@ -53,6 +53,25 @@ export type ControlScheme = Readonly<{
   metadata?: Readonly<Record<string, unknown>>;
 }>;
 
+export const CONTROL_SCHEME_VALIDATION_CODES = {
+  DUPLICATE_ACTION_ID: 'controls.scheme.duplicateActionId',
+  DUPLICATE_BINDING_ID: 'controls.scheme.duplicateBindingId',
+  MISSING_ACTION_REFERENCE: 'controls.scheme.missingActionReference',
+} as const;
+
+export type ControlSchemeValidationCode =
+  (typeof CONTROL_SCHEME_VALIDATION_CODES)[keyof typeof CONTROL_SCHEME_VALIDATION_CODES];
+
+export type ControlSchemeValidationIssueSeverity = 'error' | 'warning' | 'info';
+
+export type ControlSchemeValidationIssue = Readonly<{
+  code: ControlSchemeValidationCode;
+  message: string;
+  path: readonly (string | number)[];
+  severity: ControlSchemeValidationIssueSeverity;
+  suggestion?: string;
+}>;
+
 const shouldMatchPhase = (
   binding: ControlBinding,
   phase: ControlEventPhase,
@@ -78,6 +97,115 @@ const buildActionLookup = (
     lookup.set(action.id, action);
   }
   return lookup;
+};
+
+const sortById = <T extends { id: string }>(
+  values: readonly T[],
+): T[] =>
+  values
+    .map((value, index) => ({ value, index }))
+    .sort((left, right) => {
+      const result = left.value.id.localeCompare(right.value.id);
+      return result !== 0 ? result : left.index - right.index;
+    })
+    .map(({ value }) => value);
+
+const normalizePhases = (
+  phases: readonly ControlEventPhase[],
+): readonly ControlEventPhase[] =>
+  Array.from(new Set(phases)).sort((left, right) =>
+    left.localeCompare(right),
+  );
+
+const createValidationIssue = (
+  code: ControlSchemeValidationCode,
+  message: string,
+  path: readonly (string | number)[],
+): ControlSchemeValidationIssue => ({
+  code,
+  message,
+  path,
+  severity: 'error',
+});
+
+export const normalizeControlScheme = (scheme: ControlScheme): ControlScheme => {
+  const actions = sortById(scheme.actions);
+  const bindings = sortById(scheme.bindings).map((binding) => {
+    const phases = binding.phases;
+    if (!phases) {
+      return binding;
+    }
+    const normalizedPhases = normalizePhases(phases);
+    if (
+      normalizedPhases.length === phases.length &&
+      normalizedPhases.every((phase, index) => phase === phases[index])
+    ) {
+      return binding;
+    }
+    return {
+      ...binding,
+      phases: normalizedPhases,
+    };
+  });
+
+  return {
+    ...scheme,
+    actions,
+    bindings,
+  };
+};
+
+export const validateControlScheme = (
+  scheme: ControlScheme,
+): readonly ControlSchemeValidationIssue[] => {
+  const issues: ControlSchemeValidationIssue[] = [];
+
+  const actionIds = new Map<ControlActionId, number>();
+  scheme.actions.forEach((action, index) => {
+    const existing = actionIds.get(action.id);
+    if (existing !== undefined) {
+      issues.push(
+        createValidationIssue(
+          CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_ACTION_ID,
+          `Duplicate control action id "${action.id}" also defined at index ${existing}.`,
+          ['actions', index, 'id'],
+        ),
+      );
+      return;
+    }
+    actionIds.set(action.id, index);
+  });
+
+  const bindingIds = new Map<ControlBindingId, number>();
+  scheme.bindings.forEach((binding, index) => {
+    const existing = bindingIds.get(binding.id);
+    if (existing !== undefined) {
+      issues.push(
+        createValidationIssue(
+          CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_BINDING_ID,
+          `Duplicate control binding id "${binding.id}" also defined at index ${existing}.`,
+          ['bindings', index, 'id'],
+        ),
+      );
+      return;
+    }
+    bindingIds.set(binding.id, index);
+  });
+
+  const actionIdSet = new Set(actionIds.keys());
+  scheme.bindings.forEach((binding, index) => {
+    if (!actionIdSet.has(binding.actionId)) {
+      issues.push(
+        createValidationIssue(
+          CONTROL_SCHEME_VALIDATION_CODES.MISSING_ACTION_REFERENCE,
+          `Control binding "${binding.id}" references missing action id "${binding.actionId}".`,
+          ['bindings', index, 'actionId'],
+        ),
+      );
+    }
+  });
+
+  return issues;
 };
 
 export const resolveControlActions = (

@@ -9,9 +9,12 @@ import type {
   ControlScheme,
 } from './index.js';
 import {
+  CONTROL_SCHEME_VALIDATION_CODES,
   createControlCommand,
   createControlCommands,
+  normalizeControlScheme,
   resolveControlActions,
+  validateControlScheme,
 } from './index.js';
 
 const toggleAction: ControlAction<typeof RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR> =
@@ -226,5 +229,140 @@ describe('createControlCommands', () => {
         requestId: undefined,
       },
     ]);
+  });
+});
+
+describe('normalizeControlScheme', () => {
+  it('sorts actions/bindings by id and normalizes phases', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:normalize',
+      version: '1',
+      actions: [
+        {
+          id: 'action:zeta',
+          commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'gen:zeta', enabled: true },
+        },
+        {
+          id: 'action:alpha',
+          commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'gen:alpha', enabled: false },
+        },
+      ],
+      bindings: [
+        {
+          id: 'binding:zeta',
+          intent: 'toggle',
+          actionId: 'action:zeta',
+          phases: ['repeat', 'start', 'repeat'],
+        },
+        {
+          id: 'binding:alpha',
+          intent: 'toggle',
+          actionId: 'action:alpha',
+          phases: ['end', 'start'],
+        },
+      ],
+    };
+
+    const normalized = normalizeControlScheme(localScheme);
+
+    expect(normalized.actions.map((action) => action.id)).toEqual([
+      'action:alpha',
+      'action:zeta',
+    ]);
+    expect(normalized.bindings.map((binding) => binding.id)).toEqual([
+      'binding:alpha',
+      'binding:zeta',
+    ]);
+    expect(normalized.bindings[0]?.phases).toEqual(['end', 'start']);
+    expect(normalized.bindings[1]?.phases).toEqual(['repeat', 'start']);
+  });
+});
+
+describe('validateControlScheme', () => {
+  it('reports duplicate ids and missing action references', () => {
+    const baseAction: ControlAction<
+      typeof RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR
+    > = {
+      id: 'action:duplicate',
+      commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+      payload: { generatorId: 'gen:alpha', enabled: true },
+    };
+
+    const localScheme: ControlScheme = {
+      id: 'scheme:validation',
+      version: '1',
+      actions: [
+        baseAction,
+        {
+          ...baseAction,
+          payload: { generatorId: 'gen:beta', enabled: false },
+        },
+      ],
+      bindings: [
+        {
+          id: 'binding:duplicate',
+          intent: 'toggle',
+          actionId: baseAction.id,
+        },
+        {
+          id: 'binding:duplicate',
+          intent: 'toggle',
+          actionId: baseAction.id,
+        },
+        {
+          id: 'binding:missing-action',
+          intent: 'toggle',
+          actionId: 'action:missing',
+        },
+      ],
+    };
+
+    expect(validateControlScheme(localScheme)).toEqual([
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_ACTION_ID,
+        message:
+          'Duplicate control action id "action:duplicate" also defined at index 0.',
+        path: ['actions', 1, 'id'],
+        severity: 'error',
+      },
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.DUPLICATE_BINDING_ID,
+        message:
+          'Duplicate control binding id "binding:duplicate" also defined at index 0.',
+        path: ['bindings', 1, 'id'],
+        severity: 'error',
+      },
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.MISSING_ACTION_REFERENCE,
+        message:
+          'Control binding "binding:missing-action" references missing action id "action:missing".',
+        path: ['bindings', 2, 'actionId'],
+        severity: 'error',
+      },
+    ]);
+  });
+
+  it('returns no issues for valid schemes', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:valid',
+      version: '1',
+      actions: [toggleAction, collectStartAction],
+      bindings: [
+        {
+          id: 'binding:toggle',
+          intent: 'toggle',
+          actionId: toggleAction.id,
+        },
+        {
+          id: 'binding:collect',
+          intent: 'collect',
+          actionId: collectStartAction.id,
+        },
+      ],
+    };
+
+    expect(validateControlScheme(localScheme)).toEqual([]);
   });
 });
