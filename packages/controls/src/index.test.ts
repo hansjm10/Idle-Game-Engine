@@ -4,8 +4,10 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 
 import type {
   ControlAction,
+  ControlActionWithResolver,
   ControlContext,
   ControlEvent,
+  ControlPayloadResolverInput,
   ControlScheme,
 } from './index.js';
 import {
@@ -531,5 +533,271 @@ describe('validateControlScheme', () => {
     };
 
     expect(validateControlScheme(localScheme)).toEqual([]);
+  });
+
+  it('reports missing payload or resolver', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:missing-payload',
+      version: '1',
+      actions: [
+        {
+          id: 'action:no-payload',
+          commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+        } as ControlAction<typeof RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR>,
+      ],
+      bindings: [],
+    };
+
+    expect(validateControlScheme(localScheme)).toEqual([
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.MISSING_PAYLOAD_OR_RESOLVER,
+        message:
+          'Control action "action:no-payload" must have either a payload or a payloadResolver.',
+        path: ['actions', 0],
+        severity: 'error',
+      },
+    ]);
+  });
+
+  it('reports both payload and resolver', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:both-payload-resolver',
+      version: '1',
+      actions: [
+        {
+          id: 'action:both',
+          commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'gen:alpha', enabled: true },
+          payloadResolver: () => ({ generatorId: 'gen:beta', enabled: false }),
+        } as unknown as ControlAction<
+          typeof RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR
+        >,
+      ],
+      bindings: [],
+    };
+
+    expect(validateControlScheme(localScheme)).toEqual([
+      {
+        code: CONTROL_SCHEME_VALIDATION_CODES.BOTH_PAYLOAD_AND_RESOLVER,
+        message:
+          'Control action "action:both" cannot have both payload and payloadResolver.',
+        path: ['actions', 0],
+        severity: 'error',
+      },
+    ]);
+  });
+
+  it('accepts valid scheme with payloadResolver', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:with-resolver',
+      version: '1',
+      actions: [
+        {
+          id: 'action:resolver',
+          commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          payloadResolver: () => ({ resourceId: 'res:alpha', amount: 10 }),
+        } as ControlActionWithResolver<
+          typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE
+        >,
+      ],
+      bindings: [
+        {
+          id: 'binding:resolver',
+          intent: 'collect',
+          actionId: 'action:resolver',
+        },
+      ],
+    };
+
+    expect(validateControlScheme(localScheme)).toEqual([]);
+  });
+});
+
+describe('createControlCommand with payloadResolver', () => {
+  it('calls resolver with event and context to compute payload', () => {
+    const resolverAction: ControlActionWithResolver<
+      typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE
+    > = {
+      id: 'action:dynamic-collect',
+      commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payloadResolver: (input: ControlPayloadResolverInput) => ({
+        resourceId: 'res:dynamic',
+        amount: (input.event.value ?? 1) * 10,
+      }),
+    };
+
+    const context: ControlContext = { step: 5, timestamp: 500 };
+    const event: ControlEvent = { intent: 'collect', phase: 'repeat', value: 3 };
+
+    const command = createControlCommand(resolverAction, context, event);
+
+    expect(command).toEqual({
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payload: { resourceId: 'res:dynamic', amount: 30 },
+      priority: CommandPriority.PLAYER,
+      timestamp: 500,
+      step: 5,
+      requestId: undefined,
+    });
+  });
+
+  it('uses event metadata in resolver', () => {
+    const resolverAction: ControlActionWithResolver<
+      typeof RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR
+    > = {
+      id: 'action:selection-based',
+      commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+      payloadResolver: (input: ControlPayloadResolverInput) => ({
+        generatorId: input.event.metadata?.selectedGenerator as string,
+        enabled: true,
+      }),
+    };
+
+    const context: ControlContext = { step: 1, timestamp: 100 };
+    const event: ControlEvent = {
+      intent: 'toggle',
+      phase: 'start',
+      metadata: { selectedGenerator: 'gen:selected' },
+    };
+
+    const command = createControlCommand(resolverAction, context, event);
+
+    expect(command.payload).toEqual({
+      generatorId: 'gen:selected',
+      enabled: true,
+    });
+  });
+
+  it('throws when resolver action is called without event', () => {
+    const resolverAction: ControlActionWithResolver<
+      typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE
+    > = {
+      id: 'action:requires-event',
+      commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payloadResolver: () => ({ resourceId: 'res:alpha', amount: 1 }),
+    };
+
+    const context: ControlContext = { step: 1, timestamp: 100 };
+
+    expect(() => createControlCommand(resolverAction, context)).toThrowError(
+      'Control action "action:requires-event" has a payloadResolver but no event was provided.',
+    );
+  });
+
+  it('static payload actions still work without event', () => {
+    const context: ControlContext = { step: 2, timestamp: 200 };
+
+    const command = createControlCommand(toggleAction, context);
+
+    expect(command.payload).toEqual({
+      generatorId: 'gen:alpha',
+      enabled: true,
+    });
+  });
+
+  it('propagates errors from resolver', () => {
+    const throwingAction: ControlActionWithResolver<
+      typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE
+    > = {
+      id: 'action:throws',
+      commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payloadResolver: () => {
+        throw new Error('Resolver failed');
+      },
+    };
+
+    const context: ControlContext = { step: 1, timestamp: 100 };
+    const event: ControlEvent = { intent: 'collect', phase: 'start' };
+
+    expect(() =>
+      createControlCommand(throwingAction, context, event),
+    ).toThrowError('Resolver failed');
+  });
+});
+
+describe('createControlCommands with payloadResolver', () => {
+  it('resolves dynamic payloads from event context', () => {
+    const dynamicAction: ControlActionWithResolver<
+      typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE
+    > = {
+      id: 'action:dynamic',
+      commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payloadResolver: (input: ControlPayloadResolverInput) => ({
+        resourceId: `res:${input.event.phase}`,
+        amount: input.context.step,
+      }),
+    };
+
+    const localScheme: ControlScheme = {
+      id: 'scheme:dynamic',
+      version: '1',
+      actions: [dynamicAction],
+      bindings: [
+        {
+          id: 'binding:dynamic',
+          intent: 'collect',
+          actionId: dynamicAction.id,
+        },
+      ],
+    };
+
+    const context: ControlContext = { step: 7, timestamp: 700 };
+    const event: ControlEvent = { intent: 'collect', phase: 'repeat' };
+
+    const commands = createControlCommands(localScheme, event, context);
+
+    expect(commands).toHaveLength(1);
+    expect(commands[0]?.payload).toEqual({
+      resourceId: 'res:repeat',
+      amount: 7,
+    });
+  });
+
+  it('mixes static and dynamic payload actions', () => {
+    const dynamicAction: ControlActionWithResolver<
+      typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE
+    > = {
+      id: 'action:dynamic',
+      commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payloadResolver: () => ({
+        resourceId: 'res:dynamic',
+        amount: 99,
+      }),
+    };
+
+    const localScheme: ControlScheme = {
+      id: 'scheme:mixed',
+      version: '1',
+      actions: [collectStartAction, dynamicAction],
+      bindings: [
+        {
+          id: 'binding:static',
+          intent: 'collect',
+          actionId: collectStartAction.id,
+          phases: ['start'],
+        },
+        {
+          id: 'binding:dynamic',
+          intent: 'collect',
+          actionId: dynamicAction.id,
+          phases: ['start'],
+        },
+      ],
+    };
+
+    const context: ControlContext = { step: 1, timestamp: 100 };
+    const event: ControlEvent = { intent: 'collect', phase: 'start' };
+
+    const commands = createControlCommands(localScheme, event, context);
+
+    expect(commands).toHaveLength(2);
+    expect(commands[0]?.payload).toEqual({
+      resourceId: 'res:alpha',
+      amount: 1,
+    });
+    expect(commands[1]?.payload).toEqual({
+      resourceId: 'res:dynamic',
+      amount: 99,
+    });
   });
 });
