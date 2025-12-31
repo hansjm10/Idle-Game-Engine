@@ -33,6 +33,21 @@ const sortById = (values) => values
 })
     .map(({ value }) => value);
 const normalizePhases = (phases) => Array.from(new Set(phases)).sort(compareStrings);
+const normalizeBindingPhases = (binding) => {
+    const phases = binding.phases;
+    if (!phases) {
+        return binding;
+    }
+    const normalizedPhases = normalizePhases(phases);
+    if (normalizedPhases.length === phases.length &&
+        normalizedPhases.every((phase, index) => phase === phases[index])) {
+        return binding;
+    }
+    return {
+        ...binding,
+        phases: normalizedPhases,
+    };
+};
 const createValidationIssue = (code, message, path) => ({
     code,
     message,
@@ -40,22 +55,14 @@ const createValidationIssue = (code, message, path) => ({
     severity: 'error',
 });
 export const normalizeControlScheme = (scheme) => {
+    return {
+        ...scheme,
+        bindings: scheme.bindings.map(normalizeBindingPhases),
+    };
+};
+export const canonicalizeControlScheme = (scheme) => {
     const actions = sortById(scheme.actions);
-    const bindings = sortById(scheme.bindings).map((binding) => {
-        const phases = binding.phases;
-        if (!phases) {
-            return binding;
-        }
-        const normalizedPhases = normalizePhases(phases);
-        if (normalizedPhases.length === phases.length &&
-            normalizedPhases.every((phase, index) => phase === phases[index])) {
-            return binding;
-        }
-        return {
-            ...binding,
-            phases: normalizedPhases,
-        };
-    });
+    const bindings = sortById(scheme.bindings).map(normalizeBindingPhases);
     return {
         ...scheme,
         actions,

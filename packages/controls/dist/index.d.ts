@@ -54,6 +54,7 @@ export type ControlSchemeValidationIssue = Readonly<{
     suggestion?: string;
 }>;
 export declare const normalizeControlScheme: (scheme: ControlScheme) => ControlScheme;
+export declare const canonicalizeControlScheme: (scheme: ControlScheme) => ControlScheme;
 export declare const validateControlScheme: (scheme: ControlScheme) => readonly ControlSchemeValidationIssue[];
 export declare const resolveControlActions: (scheme: ControlScheme, event: ControlEvent) => readonly ControlAction[];
 export declare const createControlCommand: <TType extends RuntimeCommandType = RuntimeCommandType>(action: ControlAction<TType>, context: ControlContext) => RuntimeCommand<TType>;

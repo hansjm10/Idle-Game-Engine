@@ -9,6 +9,7 @@ import type {
   ControlScheme,
 } from './index.js';
 import {
+  canonicalizeControlScheme,
   CONTROL_SCHEME_VALIDATION_CODES,
   createControlCommand,
   createControlCommands,
@@ -233,7 +234,7 @@ describe('createControlCommands', () => {
 });
 
 describe('normalizeControlScheme', () => {
-  it('sorts actions/bindings by id and normalizes phases', () => {
+  it('preserves ordering while normalizing phases', () => {
     const localScheme: ControlScheme = {
       id: 'scheme:normalize',
       version: '1',
@@ -268,15 +269,15 @@ describe('normalizeControlScheme', () => {
     const normalized = normalizeControlScheme(localScheme);
 
     expect(normalized.actions.map((action) => action.id)).toEqual([
-      'action:alpha',
       'action:zeta',
+      'action:alpha',
     ]);
     expect(normalized.bindings.map((binding) => binding.id)).toEqual([
-      'binding:alpha',
       'binding:zeta',
+      'binding:alpha',
     ]);
-    expect(normalized.bindings[0]?.phases).toEqual(['end', 'start']);
-    expect(normalized.bindings[1]?.phases).toEqual(['repeat', 'start']);
+    expect(normalized.bindings[0]?.phases).toEqual(['repeat', 'start']);
+    expect(normalized.bindings[1]?.phases).toEqual(['end', 'start']);
   });
 
   it('preserves missing or empty phases', () => {
@@ -309,6 +310,54 @@ describe('normalizeControlScheme', () => {
 
     expect(emptyBinding?.phases).toEqual([]);
     expect(missingBinding?.phases).toBeUndefined();
+  });
+});
+
+describe('canonicalizeControlScheme', () => {
+  it('sorts actions/bindings by id and normalizes phases', () => {
+    const localScheme: ControlScheme = {
+      id: 'scheme:canonicalize',
+      version: '1',
+      actions: [
+        {
+          id: 'action:zeta',
+          commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'gen:zeta', enabled: true },
+        },
+        {
+          id: 'action:alpha',
+          commandType: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          payload: { generatorId: 'gen:alpha', enabled: false },
+        },
+      ],
+      bindings: [
+        {
+          id: 'binding:zeta',
+          intent: 'toggle',
+          actionId: 'action:zeta',
+          phases: ['repeat', 'start', 'repeat'],
+        },
+        {
+          id: 'binding:alpha',
+          intent: 'toggle',
+          actionId: 'action:alpha',
+          phases: ['end', 'start'],
+        },
+      ],
+    };
+
+    const canonical = canonicalizeControlScheme(localScheme);
+
+    expect(canonical.actions.map((action) => action.id)).toEqual([
+      'action:alpha',
+      'action:zeta',
+    ]);
+    expect(canonical.bindings.map((binding) => binding.id)).toEqual([
+      'binding:alpha',
+      'binding:zeta',
+    ]);
+    expect(canonical.bindings[0]?.phases).toEqual(['end', 'start']);
+    expect(canonical.bindings[1]?.phases).toEqual(['repeat', 'start']);
   });
 });
 

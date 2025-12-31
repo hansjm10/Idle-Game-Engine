@@ -118,6 +118,24 @@ const normalizePhases = (
 ): readonly ControlEventPhase[] =>
   Array.from(new Set(phases)).sort(compareStrings);
 
+const normalizeBindingPhases = (binding: ControlBinding): ControlBinding => {
+  const phases = binding.phases;
+  if (!phases) {
+    return binding;
+  }
+  const normalizedPhases = normalizePhases(phases);
+  if (
+    normalizedPhases.length === phases.length &&
+    normalizedPhases.every((phase, index) => phase === phases[index])
+  ) {
+    return binding;
+  }
+  return {
+    ...binding,
+    phases: normalizedPhases,
+  };
+};
+
 const createValidationIssue = (
   code: ControlSchemeValidationCode,
   message: string,
@@ -130,24 +148,17 @@ const createValidationIssue = (
 });
 
 export const normalizeControlScheme = (scheme: ControlScheme): ControlScheme => {
+  return {
+    ...scheme,
+    bindings: scheme.bindings.map(normalizeBindingPhases),
+  };
+};
+
+export const canonicalizeControlScheme = (
+  scheme: ControlScheme,
+): ControlScheme => {
   const actions = sortById(scheme.actions);
-  const bindings = sortById(scheme.bindings).map((binding) => {
-    const phases = binding.phases;
-    if (!phases) {
-      return binding;
-    }
-    const normalizedPhases = normalizePhases(phases);
-    if (
-      normalizedPhases.length === phases.length &&
-      normalizedPhases.every((phase, index) => phase === phases[index])
-    ) {
-      return binding;
-    }
-    return {
-      ...binding,
-      phases: normalizedPhases,
-    };
-  });
+  const bindings = sortById(scheme.bindings).map(normalizeBindingPhases);
 
   return {
     ...scheme,
