@@ -318,18 +318,11 @@ async function loadAchievementEventDefinitions(rootDirectory: string): Promise<C
     try {
       document = await readContentPackDocument(packPath);
     } catch (error) {
-      // Only skip if file not found; re-throw permission/IO errors
+      // Skip if file not found; re-throw permission/IO errors
       if (isNodeError(error) && error.code === 'ENOENT') {
         continue;
       }
-      // Log non-ENOENT errors so users know why achievement events may be missing
-      console.warn(formatLogPayload({
-        event: 'content_pack.achievement_extraction_skipped',
-        path: toPosixPath(path.relative(rootDirectory, packPath)),
-        reason: error instanceof Error ? error.message : String(error),
-        note: 'Pack will be validated separately; achievement events from this pack may be missing.',
-      }, false));
-      continue;
+      throw error;
     }
 
     const packSlug = document?.metadata?.id;
