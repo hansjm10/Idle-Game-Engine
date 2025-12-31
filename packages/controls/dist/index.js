@@ -3,6 +3,8 @@ export const CONTROL_SCHEME_VALIDATION_CODES = {
     DUPLICATE_ACTION_ID: 'controls.scheme.duplicateActionId',
     DUPLICATE_BINDING_ID: 'controls.scheme.duplicateBindingId',
     MISSING_ACTION_REFERENCE: 'controls.scheme.missingActionReference',
+    MISSING_PAYLOAD_OR_RESOLVER: 'controls.scheme.missingPayloadOrResolver',
+    BOTH_PAYLOAD_AND_RESOLVER: 'controls.scheme.bothPayloadAndResolver',
 };
 const shouldMatchPhase = (binding, phase) => {
     const phases = binding.phases;
@@ -83,6 +85,17 @@ export const validateControlScheme = (scheme) => {
             return;
         }
         actionIds.set(action.id, index);
+        // Validate payload/payloadResolver mutual exclusivity
+        // Capture id before narrowing since TypeScript will narrow to never for invalid states
+        const actionId = action.id;
+        const hasPayload = 'payload' in action && action.payload !== undefined;
+        const hasResolver = 'payloadResolver' in action && action.payloadResolver !== undefined;
+        if (!hasPayload && !hasResolver) {
+            issues.push(createValidationIssue(CONTROL_SCHEME_VALIDATION_CODES.MISSING_PAYLOAD_OR_RESOLVER, `Control action "${actionId}" must have either a payload or a payloadResolver.`, ['actions', index]));
+        }
+        else if (hasPayload && hasResolver) {
+            issues.push(createValidationIssue(CONTROL_SCHEME_VALIDATION_CODES.BOTH_PAYLOAD_AND_RESOLVER, `Control action "${actionId}" cannot have both payload and payloadResolver.`, ['actions', index]));
+        }
     });
     const bindingIds = new Map();
     scheme.bindings.forEach((binding, index) => {
@@ -123,9 +136,29 @@ export const resolveControlActions = (scheme, event) => {
     }
     return resolved;
 };
-export const createControlCommand = (action, context) => ({
+/**
+ * Resolves the payload for a control action.
+ * For static payloads, returns the payload directly.
+ * For dynamic resolvers, calls the resolver with event and context.
+ */
+const resolvePayload = (action, event, context) => {
+    if ('payloadResolver' in action && action.payloadResolver) {
+        if (!event) {
+            throw new Error(`Control action "${action.id}" has a payloadResolver but no event was provided.`);
+        }
+        return action.payloadResolver({ event, context });
+    }
+    // TypeScript cannot narrow after the if-block; the assertion is safe because
+    // the discriminated union ensures exactly one of payload/payloadResolver exists
+    return action.payload;
+};
+/**
+ * Creates a runtime command from a control action.
+ * For actions with a payloadResolver, the event parameter is required.
+ */
+export const createControlCommand = (action, context, event) => ({
     type: action.commandType,
-    payload: action.payload,
+    payload: resolvePayload(action, event, context),
     priority: action.priority ?? context.priority ?? CommandPriority.PLAYER,
     timestamp: context.timestamp,
     step: context.step,
@@ -149,7 +182,7 @@ export const createControlCommands = (scheme, event, context) => {
         if (!action) {
             continue;
         }
-        commands.push(createControlCommand(action, context));
+        commands.push(createControlCommand(action, context, event));
     }
     return commands;
 };

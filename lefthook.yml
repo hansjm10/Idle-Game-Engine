@@ -92,6 +92,11 @@ pre-commit:
         - "packages/core/package.json"
         - "packages/core/src/version.ts"
       run: node tools/scripts/generate-version.mjs --check
+    verify-dist-sync:
+      glob:
+        - "packages/controls/src/**"
+        - "packages/controls/dist/**"
+      run: node tools/scripts/verify-dist-sync.mjs
 
 pre-commit-fast:
   parallel: true
