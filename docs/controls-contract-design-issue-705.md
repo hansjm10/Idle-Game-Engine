@@ -67,7 +67,7 @@ Shell input capture
 ### 6.2 Detailed Design
 - **Runtime Changes**: Issue 705 introduces no runtime changes; `packages/core` remains deterministic and presentation-agnostic (`packages/core/src/command.ts:18`).
 - **Data & Schemas**: Issue 705 defines platform-agnostic contracts aligned to `RuntimeCommandType` payloads, e.g., `ControlEvent`, `ControlAction`, `ControlBinding`, `ControlScheme`, and `ControlContext` in `packages/controls` (follow-up: create `packages/controls/src/index.ts`).
-- **APIs & Contracts**: Issue 705 exports `resolveControlActions`, `createControlCommand`, and `createControlCommands` to resolve actions and create commands, including defaults for priority and step offsets consistent with automation stamping (`packages/core/src/automation-system.ts:862`). Action ids are expected to be unique; helpers reject duplicates.
+- **APIs & Contracts**: Issue 705 exports `resolveControlActions`, `createControlCommand`, and `createControlCommands` to resolve actions and create commands, including defaults for priority and step offsets consistent with automation stamping (`packages/core/src/automation-system.ts:862`). Binding order in a `ControlScheme` is meaningful for execution sequencing, and helpers preserve it; `canonicalizeControlScheme` is intended for deterministic storage/diffing, not execution ordering. Action ids are expected to be unique; helpers reject duplicates.
 - **Tooling & Automation**: Issue 705 adds documentation under `docs/` and updates `packages/docs/sidebars.ts:15`, plus workspace scripts for `packages/controls` (follow-up: define `packages/controls/package.json`).
 
 ### 6.3 Operational Considerations

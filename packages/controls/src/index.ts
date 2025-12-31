@@ -154,6 +154,10 @@ export const normalizeControlScheme = (scheme: ControlScheme): ControlScheme => 
   };
 };
 
+/**
+ * Sorts actions and bindings by id for deterministic storage/diffing.
+ * Do not use this to determine execution order when binding sequence matters.
+ */
 export const canonicalizeControlScheme = (
   scheme: ControlScheme,
 ): ControlScheme => {
@@ -220,6 +224,10 @@ export const validateControlScheme = (
   return issues;
 };
 
+/**
+ * Resolves actions in the order bindings are declared in the scheme.
+ * Binding order is meaningful for execution sequencing.
+ */
 export const resolveControlActions = (
   scheme: ControlScheme,
   event: ControlEvent,
@@ -258,6 +266,10 @@ export const createControlCommand = <
   requestId: context.requestId,
 });
 
+/**
+ * Creates commands in the order bindings are declared in the scheme.
+ * Binding order is meaningful for execution sequencing.
+ */
 export const createControlCommands = (
   scheme: ControlScheme,
   event: ControlEvent,

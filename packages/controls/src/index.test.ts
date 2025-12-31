@@ -220,7 +220,7 @@ describe('createControlCommand', () => {
 });
 
 describe('createControlCommands', () => {
-  it('creates commands for all matching bindings', () => {
+  it('creates commands for all matching bindings in binding order', () => {
     const context: ControlContext = { step: 4, timestamp: 400 };
     const event: ControlEvent = { intent: 'collect', phase: 'repeat' };
 
