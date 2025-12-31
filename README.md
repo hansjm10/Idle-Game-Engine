@@ -69,3 +69,13 @@ Flags:
 - `--include-diagnostics`: Include diagnostic timeline in the JSON payload.
 
 Use `pnpm --silent` (as above) or call `node --import tsx tools/economy-verification/src/index.ts ...` when piping stdout into automation to keep the output to a single JSON object.
+
+## Code Quality (SonarCloud)
+
+This project uses [SonarCloud](https://sonarcloud.io/) for continuous code quality analysis:
+
+- **Configuration**: `sonar-project.properties` in project root
+- **CI integration**: Runs automatically after tests in the quality-gate workflow
+- **Coverage**: LCOV files from each package are sent to SonarCloud
+
+The SonarCloud scan runs in CI after `pnpm coverage:md` generates coverage data. Each package outputs LCOV to `<package>/coverage/lcov.info`.
