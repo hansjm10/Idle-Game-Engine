@@ -5861,3 +5861,702 @@ describe('Integration: prestige confirmationToken validation', () => {
     }
   });
 });
+
+describe('Integration: multi-cost generator error paths', () => {
+  it('reports error when multi-cost generator has invalid costMultiplier on one entry', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost-invalid', {
+      name: 'Multi Cost Invalid Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: -5, costCurve: literalOne }, // Invalid negative costMultiplier
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const costs = (coordinator as any).computeGeneratorCosts('generator.multi-cost-invalid', 0);
+
+    expect(costs).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost-invalid');
+    expect(errors[0].message).toContain('resource.parts');
+    expect(errors[0].message).toContain('costMultiplier is invalid');
+  });
+
+  it('reports error when multi-cost generator cost curve returns negative value', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost-negative', {
+      name: 'Multi Cost Negative Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: 10, costCurve: { kind: 'constant', value: -100 } }, // Negative cost
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const costs = (coordinator as any).computeGeneratorCosts('generator.multi-cost-negative', 0);
+
+    expect(costs).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost-negative');
+    expect(errors[0].message).toContain('resource.parts');
+    expect(errors[0].message).toContain('cost curve evaluation returned');
+  });
+
+  it('reports error when multi-cost generator final cost is non-finite', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost-overflow', {
+      name: 'Multi Cost Overflow Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: 1e308, costCurve: { kind: 'constant', value: 1e308 } }, // Will overflow
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const costs = (coordinator as any).computeGeneratorCosts('generator.multi-cost-overflow', 0);
+
+    expect(costs).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost-overflow');
+    expect(errors[0].message).toContain('final cost is invalid');
+  });
+
+  it('reports error when computeGeneratorCost is called on multi-cost generator', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost', {
+      name: 'Multi Cost Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: 25, costCurve: literalOne },
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    // computeGeneratorCost (singular) should fail for multi-cost generators
+    const cost = (coordinator as any).computeGeneratorCost('generator.multi-cost', 0);
+
+    expect(cost).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost');
+    expect(errors[0].message).toContain('multi-cost purchase definitions require computeGeneratorCosts()');
+  });
+});
+
+describe('Integration: upgrade cost calculation error paths', () => {
+  it('reports error when upgrade has invalid costMultiplier (negative)', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.negative-multiplier', {
+      name: 'Negative Multiplier Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: -10, // Invalid negative
+        costCurve: literalOne,
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.negative-multiplier');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about costMultiplier
+    const multiplierError = errors.find((e) => e.message.includes('costMultiplier is invalid'));
+    expect(multiplierError).toBeDefined();
+    expect(multiplierError!.message).toContain('Upgrade cost calculation failed');
+    expect(multiplierError!.message).toContain('upgrade.negative-multiplier');
+  });
+
+  it('reports error when upgrade cost curve returns negative value', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.negative-curve', {
+      name: 'Negative Curve Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: { kind: 'constant', value: -50 }, // Negative cost curve
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.negative-curve');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about cost curve evaluation
+    const curveError = errors.find((e) => e.message.includes('cost curve evaluation returned'));
+    expect(curveError).toBeDefined();
+    expect(curveError!.message).toContain('Upgrade cost calculation failed');
+    expect(curveError!.message).toContain('upgrade.negative-curve');
+  });
+
+  it('reports error when upgrade final amount overflows to non-finite', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.overflow', {
+      name: 'Overflow Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1e308, // Very large multiplier
+        costCurve: { kind: 'constant', value: 1e308 }, // Very large base
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.overflow');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about final amount
+    const overflowError = errors.find((e) => e.message.includes('final amount is invalid'));
+    expect(overflowError).toBeDefined();
+    expect(overflowError!.message).toContain('Upgrade cost calculation failed');
+    expect(overflowError!.message).toContain('upgrade.overflow');
+  });
+
+  it('reports error when repeatable upgrade cost curve returns negative', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.repeatable-negative', {
+      name: 'Repeatable Negative Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: literalOne,
+      },
+      repeatable: {
+        costCurve: { kind: 'constant', value: -1 }, // Negative repeatable curve
+        maxPurchases: 10,
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.repeatable-negative');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about repeatable cost curve
+    const repeatableError = errors.find((e) => e.message.includes('repeatable cost curve evaluation returned'));
+    expect(repeatableError).toBeDefined();
+    expect(repeatableError!.message).toContain('Upgrade cost calculation failed');
+    expect(repeatableError!.message).toContain('upgrade.repeatable-negative');
+  });
+
+  it('reports error when multi-cost upgrade has invalid entry costMultiplier', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const upgrade = createUpgradeDefinition('upgrade.multi-invalid', {
+      name: 'Multi Invalid Upgrade',
+      cost: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: NaN, costCurve: literalOne }, // Invalid NaN
+        ],
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.multi-invalid');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about costMultiplier
+    const multiplierError = errors.find(
+      (e) => e.message.includes('costMultiplier is invalid') && e.message.includes('resource.parts'),
+    );
+    expect(multiplierError).toBeDefined();
+    expect(multiplierError!.message).toContain('Upgrade cost calculation failed');
+    expect(multiplierError!.message).toContain('upgrade.multi-invalid');
+  });
+});
+
+describe('Integration: upgrade emitEvent effect error handling', () => {
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('records telemetry warning when emitEvent effect fails to publish', () => {
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.emit-fail', {
+      name: 'Emit Fail Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'emitEvent',
+          eventId: 'test.event.fail',
+        },
+      ],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    // Create a mock event publisher that throws
+    const mockPublisher = createMockEventPublisher();
+    vi.spyOn(mockPublisher, 'publish').mockImplementation(() => {
+      throw new Error('Event channel not registered');
+    });
+
+    // Apply purchase with event publisher
+    coordinator.upgradeEvaluator?.applyPurchase('upgrade.emit-fail', {
+      events: mockPublisher,
+    });
+
+    // Verify the warning was recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'UpgradeEmitEventFailed',
+      expect.objectContaining({
+        upgradeId: 'upgrade.emit-fail',
+        eventId: 'test.event.fail',
+        message: 'Event channel not registered',
+      }),
+    );
+  });
+
+  it('continues to emit other events even when one fails', () => {
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.multi-emit', {
+      name: 'Multi Emit Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        { kind: 'emitEvent', eventId: 'test.event.first' },
+        { kind: 'emitEvent', eventId: 'test.event.second' },
+        { kind: 'grantFlag', flagId: 'flag.test', value: true },
+      ],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    const mockPublisher = createMockEventPublisher();
+    let callCount = 0;
+    vi.spyOn(mockPublisher, 'publish').mockImplementation(((eventType: unknown) => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error('First event failed');
+      }
+      // Second event succeeds - return a valid PublishResult
+      return {
+        accepted: true,
+        state: 'accepted' as const,
+        type: eventType,
+        channel: 0,
+        bufferSize: 0,
+        remainingCapacity: 100,
+        dispatchOrder: 0,
+        softLimitActive: false,
+      };
+    }) as typeof mockPublisher.publish);
+
+    coordinator.upgradeEvaluator?.applyPurchase('upgrade.multi-emit', {
+      events: mockPublisher,
+    });
+
+    // Both events should have been attempted
+    expect(mockPublisher.publish).toHaveBeenCalledTimes(2);
+    // Warning should be recorded for the failed one
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'UpgradeEmitEventFailed',
+      expect.objectContaining({
+        eventId: 'test.event.first',
+      }),
+    );
+  });
+});
+
+describe('Integration: prestige reset with missing entities', () => {
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('records telemetry warning when resetGenerators references non-existent generator', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.missing-gen-prestige-count', {
+      name: 'Missing Gen Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.missing-gen', {
+      name: 'Missing Gen Layer',
+      resetTargets: [energy.id],
+      resetGenerators: ['generator.does-not-exist'], // References non-existent generator
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const content = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      generators: [], // No generators defined
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Apply prestige - should log warning but not throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.missing-gen', 'test-token');
+    }).not.toThrow();
+
+    // Verify warning was recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetGeneratorSkipped',
+      expect.objectContaining({
+        layerId: 'prestige.missing-gen',
+        generatorId: 'generator.does-not-exist',
+      }),
+    );
+  });
+
+  it('records telemetry warning when resetUpgrades references non-existent upgrade', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.missing-upgrade-prestige-count', {
+      name: 'Missing Upgrade Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.missing-upgrade', {
+      name: 'Missing Upgrade Layer',
+      resetTargets: [energy.id],
+      resetUpgrades: ['upgrade.does-not-exist'], // References non-existent upgrade
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const content = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      upgrades: [], // No upgrades defined
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Apply prestige - should log warning but not throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.missing-upgrade', 'test-token');
+    }).not.toThrow();
+
+    // Verify warning was recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetUpgradeSkipped',
+      expect.objectContaining({
+        layerId: 'prestige.missing-upgrade',
+        upgradeId: 'upgrade.does-not-exist',
+      }),
+    );
+  });
+
+  it('continues resetting other entities even when some are missing', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.partial-prestige-count', {
+      name: 'Partial Count',
+      startAmount: 0,
+    });
+
+    const validGenerator = createGeneratorDefinition('generator.valid', {
+      purchase: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const validUpgrade = createUpgradeDefinition('upgrade.valid', {
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [],
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.partial', {
+      name: 'Partial Layer',
+      resetTargets: [energy.id],
+      resetGenerators: ['generator.does-not-exist', validGenerator.id],
+      resetUpgrades: ['upgrade.does-not-exist', validUpgrade.id],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const content = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      generators: [validGenerator],
+      upgrades: [validUpgrade],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    }) as unknown as {
+      updateForStep(step: number): void;
+      generatorEvaluator: { applyPurchase(id: string, count: number): void };
+      upgradeEvaluator?: { applyPurchase(id: string): void };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(id: string): { state: { owned: number } } | undefined;
+      getUpgradeRecord(id: string): { purchases: number } | undefined;
+    };
+
+    // Build up state
+    coordinator.generatorEvaluator.applyPurchase(validGenerator.id, 5);
+    coordinator.upgradeEvaluator?.applyPurchase(validUpgrade.id);
+
+    expect(coordinator.getGeneratorRecord(validGenerator.id)?.state.owned).toBe(5);
+    expect(coordinator.getUpgradeRecord(validUpgrade.id)?.purchases).toBe(1);
+
+    // Apply prestige
+    coordinator.prestigeEvaluator?.applyPrestige('prestige.partial', 'test-token');
+
+    // Valid entities should have been reset despite the missing ones
+    expect(coordinator.getGeneratorRecord(validGenerator.id)?.state.owned).toBe(0);
+    expect(coordinator.getUpgradeRecord(validUpgrade.id)?.purchases).toBe(0);
+
+    // Both warnings should be recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetGeneratorSkipped',
+      expect.objectContaining({
+        generatorId: 'generator.does-not-exist',
+      }),
+    );
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetUpgradeSkipped',
+      expect.objectContaining({
+        upgradeId: 'upgrade.does-not-exist',
+      }),
+    );
+  });
+});
