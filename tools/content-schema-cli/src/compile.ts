@@ -93,21 +93,19 @@ interface PipelineOutcome {
 
 type Logger = (event: CompileLogEvent) => void;
 
-interface CompileWorkspacePacksFn {
-  (
-    options: { rootDirectory: string },
-    compileOptions: {
-      check?: boolean;
-      clean?: boolean;
-      schema: unknown;
-      summaryOutputPath?: string;
-    },
-  ): Promise<WorkspaceCompileResult>;
-}
+type CompileWorkspacePacksFn = (
+  options: { rootDirectory: string },
+  compileOptions: {
+    check?: boolean;
+    clean?: boolean;
+    schema: unknown;
+    summaryOutputPath?: string;
+  },
+) => Promise<WorkspaceCompileResult>;
 
-interface CreateLoggerFn {
-  (options: { pretty?: boolean }): Logger;
-}
+type CreateLoggerFn = (options: { pretty?: boolean }) => Logger;
+
+const BOOLEAN_FLAGS: ReadonlySet<string> = new Set(['--check', '--clean', '--pretty', '--watch']);
 
 void run().catch((error) => {
   console.error(error instanceof Error ? error.stack ?? error.message : error);
@@ -179,9 +177,8 @@ async function run(): Promise<void> {
   const initialOutcome = await execute();
 
   if (!options.watch) {
-    if (options.check && initialOutcome.drift) {
-      process.exitCode = 1;
-    } else if (!initialOutcome.success) {
+    const shouldFail = (options.check && initialOutcome.drift) || !initialOutcome.success;
+    if (shouldFail) {
       process.exitCode = 1;
     }
     return;
@@ -324,112 +321,123 @@ interface EmitCompileEventsInput {
   check: boolean;
 }
 
-function emitCompileEvents({ compileResult, logger, check }: EmitCompileEventsInput): void {
+function groupOperationsBySlug(operations: FileWriteOperation[]): Map<string, FileWriteOperation[]> {
   const operationsBySlug = new Map<string, FileWriteOperation[]>();
-  for (const operation of compileResult.artifacts.operations) {
-    if (!operationsBySlug.has(operation.slug)) {
-      operationsBySlug.set(operation.slug, []);
+  for (const operation of operations) {
+    const existing = operationsBySlug.get(operation.slug);
+    if (existing) {
+      existing.push(operation);
+    } else {
+      operationsBySlug.set(operation.slug, [operation]);
     }
-    operationsBySlug.get(operation.slug)!.push(operation);
   }
+  return operationsBySlug;
+}
+
+interface PackBalanceCounts {
+  balanceWarnings: number;
+  balanceErrors: number;
+}
+
+function extractBalanceCounts(result: WorkspaceCompileResult['packs'][number]): PackBalanceCounts {
+  if (result.status === 'compiled') {
+    return {
+      balanceWarnings: result.balanceWarnings.length,
+      balanceErrors: result.balanceErrors.length,
+    };
+  }
+  const maybeBalanceResult = result as { balanceWarnings?: unknown[]; balanceErrors?: unknown[] };
+  return {
+    balanceWarnings: maybeBalanceResult.balanceWarnings?.length ?? 0,
+    balanceErrors: maybeBalanceResult.balanceErrors?.length ?? 0,
+  };
+}
+
+interface FormattedArtifact {
+  action: string;
+  path: string;
+}
+
+function filterPrunedArtifacts(artifacts: FormattedArtifact[]): FormattedArtifact[] {
+  return artifacts.filter(
+    (artifact) => artifact.action === 'deleted' || artifact.action === 'would-delete',
+  );
+}
+
+function emitPackResultEvent(
+  result: WorkspaceCompileResult['packs'][number],
+  artifacts: FormattedArtifact[],
+  balanceCounts: PackBalanceCounts,
+  check: boolean,
+  logger: Logger,
+): void {
+  const timestamp = new Date().toISOString();
+
+  if (result.status === 'compiled') {
+    const onlyUnchanged =
+      check && artifacts.length > 0 && artifacts.every((artifact) => artifact.action === 'unchanged');
+    const eventName = onlyUnchanged ? 'content_pack.skipped' : 'content_pack.compiled';
+    logger({
+      name: eventName,
+      slug: result.packSlug,
+      path: result.document.relativePath,
+      timestamp,
+      durationMs: result.durationMs,
+      warnings: result.warnings.length,
+      balanceWarnings: balanceCounts.balanceWarnings,
+      balanceErrors: balanceCounts.balanceErrors,
+      artifacts,
+      check,
+    } as CompileLogEvent);
+    return;
+  }
+
+  logger({
+    name: 'content_pack.compilation_failed',
+    slug: result.packSlug,
+    path: result.document.relativePath,
+    timestamp,
+    durationMs: result.durationMs,
+    warnings: result.warnings.length,
+    balanceWarnings: balanceCounts.balanceWarnings,
+    balanceErrors: balanceCounts.balanceErrors,
+    message: result.error.message,
+    stack: result.error.stack,
+    artifacts,
+    check,
+  } as CompileLogEvent);
+}
+
+function emitPrunedEvent(slug: string, artifacts: FormattedArtifact[], check: boolean, logger: Logger): void {
+  const prunedArtifacts = filterPrunedArtifacts(artifacts);
+  if (prunedArtifacts.length === 0) {
+    return;
+  }
+  logger({
+    name: 'content_pack.pruned',
+    slug,
+    timestamp: new Date().toISOString(),
+    artifacts: prunedArtifacts,
+    check,
+  } as CompileLogEvent);
+}
+
+function emitCompileEvents({ compileResult, logger, check }: EmitCompileEventsInput): void {
+  const operationsBySlug = groupOperationsBySlug(compileResult.artifacts.operations);
 
   for (const result of compileResult.packs) {
     const operations = operationsBySlug.get(result.packSlug) ?? [];
     operationsBySlug.delete(result.packSlug);
     const artifacts = operations.map(formatOperation);
-    const timestamp = new Date().toISOString();
-    const balanceWarnings =
-      result.status === 'compiled'
-        ? result.balanceWarnings.length
-        : (result as { balanceWarnings?: unknown[] }).balanceWarnings?.length ?? 0;
-    const balanceErrors =
-      result.status === 'compiled'
-        ? result.balanceErrors.length
-        : (result as { balanceErrors?: unknown[] }).balanceErrors?.length ?? 0;
+    const balanceCounts = extractBalanceCounts(result);
 
-    if (result.status === 'compiled') {
-      const warnings = result.warnings.length;
-      const onlyUnchanged =
-        check &&
-        artifacts.length > 0 &&
-        artifacts.every((artifact) => artifact.action === 'unchanged');
-
-      if (onlyUnchanged) {
-        logger({
-          name: 'content_pack.skipped',
-          slug: result.packSlug,
-          path: result.document.relativePath,
-          timestamp,
-          durationMs: result.durationMs,
-          warnings,
-          balanceWarnings,
-          balanceErrors,
-          artifacts,
-          check,
-        } as CompileLogEvent);
-      } else {
-        logger({
-          name: 'content_pack.compiled',
-          slug: result.packSlug,
-          path: result.document.relativePath,
-          timestamp,
-          durationMs: result.durationMs,
-          warnings,
-          balanceWarnings,
-          balanceErrors,
-          artifacts,
-          check,
-        } as CompileLogEvent);
-      }
-    } else {
-      logger({
-        name: 'content_pack.compilation_failed',
-        slug: result.packSlug,
-        path: result.document.relativePath,
-        timestamp,
-        durationMs: result.durationMs,
-        warnings: result.warnings.length,
-        balanceWarnings,
-        balanceErrors,
-        message: result.error.message,
-        stack: result.error.stack,
-        artifacts,
-        check,
-      } as CompileLogEvent);
-    }
-
-    const prunedArtifacts = artifacts.filter(
-      (artifact) =>
-        artifact.action === 'deleted' || artifact.action === 'would-delete',
-    );
-    if (prunedArtifacts.length > 0) {
-      logger({
-        name: 'content_pack.pruned',
-        slug: result.packSlug,
-        timestamp: new Date().toISOString(),
-        artifacts: prunedArtifacts,
-        check,
-      } as CompileLogEvent);
-    }
+    emitPackResultEvent(result, artifacts, balanceCounts, check, logger);
+    emitPrunedEvent(result.packSlug, artifacts, check, logger);
   }
 
   for (const [slug, operations] of operationsBySlug.entries()) {
-    const prunedArtifacts = operations
-      .map(formatOperation)
-      .filter(
-        (artifact) =>
-          artifact.action === 'deleted' || artifact.action === 'would-delete',
-      );
-    if (prunedArtifacts.length === 0) {
-      continue;
-    }
-    logger({
-      name: 'content_pack.pruned',
-      slug,
-      timestamp: new Date().toISOString(),
-      artifacts: prunedArtifacts,
-      check,
-    } as CompileLogEvent);
+    const artifacts = operations.map(formatOperation);
+    emitPrunedEvent(slug, artifacts, check, logger);
   }
 }
 
@@ -710,7 +718,7 @@ async function ensureCoreDistRuntimeEventManifest({
 }
 
 function extractRuntimeEventManifestHash(source: string): string | undefined {
-  const match = source.match(/hash\s*:\s*['"]([0-9a-f]{8})['"]/i);
+  const match = /hash\s*:\s*['"]([0-9a-f]{8})['"]/i.exec(source);
   return typeof match?.[1] === 'string' ? match[1].toLowerCase() : undefined;
 }
 
@@ -861,7 +869,7 @@ function createValidationFailureSummary(
       status: 'failed',
       ...(failure.packVersion ? { version: failure.packVersion } : {}),
       warnings: [],
-      ...(deriveBalanceFromIssues(failure.issues as BalanceIssue[] | undefined) ?? {}),
+      ...deriveBalanceFromIssues(failure.issues as BalanceIssue[] | undefined),
       dependencies: emptySummaryDependencies(),
       artifacts: emptySummaryArtifacts(),
       error: failure.message,
@@ -1062,6 +1070,22 @@ async function startWatch(
   });
 }
 
+interface ParsedValueArg {
+  value: string;
+  skip: number;
+}
+
+function parseValueArg(arg: string, argv: string[], index: number, flagName: string): ParsedValueArg {
+  if (arg.startsWith(`${flagName}=`)) {
+    return { value: arg.slice(flagName.length + 1), skip: 0 };
+  }
+  const nextValue = argv[index + 1];
+  if (!nextValue) {
+    throw new Error(`Missing value for ${flagName}`);
+  }
+  return { value: nextValue, skip: 1 };
+}
+
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     check: false,
@@ -1074,52 +1098,32 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--check') {
-      options.check = true;
+
+    if (BOOLEAN_FLAGS.has(arg)) {
+      const flagKey = arg.slice(2) as keyof Pick<CliOptions, 'check' | 'clean' | 'pretty' | 'watch'>;
+      options[flagKey] = true;
       continue;
     }
-    if (arg === '--clean') {
-      options.clean = true;
+
+    if (arg === '--cwd' || arg === '-C' || arg.startsWith('--cwd=')) {
+      const parsed = parseValueArg(arg, argv, index, '--cwd');
+      options.cwd = resolveWorkspaceRoot(parsed.value);
+      index += parsed.skip;
       continue;
     }
-    if (arg === '--pretty') {
-      options.pretty = true;
+
+    if (arg === '--summary' || arg.startsWith('--summary=')) {
+      const parsed = parseValueArg(arg, argv, index, '--summary');
+      options.summary = parsed.value;
+      index += parsed.skip;
       continue;
     }
-    if (arg === '--watch') {
-      options.watch = true;
-      continue;
-    }
-    if (arg === '--cwd' || arg === '-C') {
-      const value = argv[index + 1];
-      if (!value) {
-        throw new Error('Missing value for --cwd');
-      }
-      options.cwd = resolveWorkspaceRoot(value);
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith('--cwd=')) {
-      options.cwd = resolveWorkspaceRoot(arg.slice('--cwd='.length));
-      continue;
-    }
-    if (arg === '--summary') {
-      const value = argv[index + 1];
-      if (!value) {
-        throw new Error('Missing value for --summary');
-      }
-      options.summary = value;
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith('--summary=')) {
-      options.summary = arg.slice('--summary='.length);
-      continue;
-    }
+
     if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
     }
+
     throw new Error(`Unknown option: ${arg}`);
   }
 
@@ -1148,7 +1152,7 @@ function formatMonitorLog(message: string, pretty: boolean, rootDirectory?: stri
     event: 'watch.status',
     message,
     timestamp: new Date().toISOString(),
-    ...(rootDirectory !== undefined ? { rootDirectory } : {}),
+    ...(rootDirectory !== undefined && { rootDirectory }),
   };
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
@@ -1217,7 +1221,7 @@ function determineWatchStatus(outcome: PipelineOutcome): 'success' | 'failed' | 
     return 'failed';
   }
 
-  if (outcome.runSummary && outcome.runSummary.hasChanges === false) {
+  if (outcome.runSummary?.hasChanges === false) {
     return 'skipped';
   }
 
@@ -1323,9 +1327,9 @@ function toPosixPath(inputPath: string): string {
   return inputPath.split(path.sep).join('/');
 }
 
-function deriveBalanceFromIssues(issues: BalanceIssue[] | undefined): { balance: unknown } | undefined {
+function deriveBalanceFromIssues(issues: BalanceIssue[] | undefined): { balance?: unknown } {
   if (!Array.isArray(issues)) {
-    return undefined;
+    return {};
   }
 
   const balanceErrors = issues.filter(
@@ -1333,7 +1337,7 @@ function deriveBalanceFromIssues(issues: BalanceIssue[] | undefined): { balance:
   );
 
   if (balanceErrors.length === 0) {
-    return undefined;
+    return {};
   }
 
   return {

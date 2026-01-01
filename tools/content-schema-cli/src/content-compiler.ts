@@ -110,10 +110,6 @@ function isCompilerModuleNotFound(error: unknown): boolean {
     return false;
   }
 
-  const message = String(
-    error instanceof Error && error.message !== undefined
-      ? error.message
-      : error,
-  );
+  const message = error instanceof Error ? error.message : String(error);
   return message.includes(PACKAGE_NAME);
 }

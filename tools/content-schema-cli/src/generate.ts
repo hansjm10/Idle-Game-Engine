@@ -3,9 +3,9 @@
 import { BalanceValidationError, createContentPackValidator } from '@idle-engine/content-schema';
 import { RUNTIME_VERSION } from '@idle-engine/core';
 import JSON5 from 'json5';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const DEFAULT_REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -180,7 +180,7 @@ async function loadBaseMetadata(rootDirectory: string): Promise<BaseEventMetadat
   const raw = await fs.readFile(metadataPath, 'utf8');
   const data: unknown = JSON.parse(raw);
   if (!Array.isArray(data)) {
-    throw new Error('Base event metadata must be an array.');
+    throw new TypeError('Base event metadata must be an array.');
   }
 
   return data.map((entry: unknown, index: number) => {
@@ -220,7 +220,7 @@ async function loadBaseMetadata(rootDirectory: string): Promise<BaseEventMetadat
     return {
       type,
       version: version as number,
-      packSlug: (packSlug as string | undefined) ?? '@idle-engine/core',
+      packSlug: packSlug ?? '@idle-engine/core',
       schema: typeof schema === 'string' ? schema : undefined,
     };
   });
@@ -263,12 +263,7 @@ async function loadContentEventDefinitions(rootDirectory: string): Promise<Conte
     );
   }
 
-  definitions.sort((left, right) => {
-    if (left.packSlug !== right.packSlug) {
-      return left.packSlug < right.packSlug ? -1 : 1;
-    }
-    return left.type < right.type ? -1 : left.type > right.type ? 1 : 0;
-  });
+  definitions.sort(compareDefinitions);
 
   return definitions;
 }
@@ -293,6 +288,65 @@ interface ContentPackDocument {
   }>;
 }
 
+interface EventCollector {
+  seenEventTypes: Set<string>;
+  definitions: ContentEventDefinition[];
+}
+
+function addEventDefinition(
+  collector: EventCollector,
+  packSlug: string,
+  eventId: unknown,
+): void {
+  if (typeof eventId !== 'string' || eventId.length === 0) {
+    return;
+  }
+  if (collector.seenEventTypes.has(eventId)) {
+    return;
+  }
+  collector.seenEventTypes.add(eventId);
+  collector.definitions.push({
+    packSlug,
+    type: eventId,
+    version: 1,
+    schema: undefined,
+  });
+}
+
+function extractAchievementEvents(
+  collector: EventCollector,
+  packSlug: string,
+  achievements: ContentPackDocument['achievements'],
+): void {
+  for (const achievement of achievements ?? []) {
+    if (achievement?.reward?.kind === 'emitEvent') {
+      addEventDefinition(collector, packSlug, achievement.reward.eventId);
+    }
+    for (const eventId of achievement?.onUnlockEvents ?? []) {
+      addEventDefinition(collector, packSlug, eventId);
+    }
+  }
+}
+
+async function tryReadContentPackDocument(packPath: string): Promise<ContentPackDocument | undefined> {
+  try {
+    return await readContentPackDocument(packPath);
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function compareDefinitions(left: ContentEventDefinition, right: ContentEventDefinition): number {
+  const packComparison = left.packSlug.localeCompare(right.packSlug);
+  if (packComparison !== 0) {
+    return packComparison;
+  }
+  return left.type.localeCompare(right.type);
+}
+
 /**
  * Extracts event IDs from achievement emitEvent rewards and onUnlockEvents arrays.
  * These are registered as schema-less events with unknown payload type.
@@ -300,8 +354,7 @@ interface ContentPackDocument {
 async function loadAchievementEventDefinitions(rootDirectory: string): Promise<ContentEventDefinition[]> {
   const packagesDir = path.join(rootDirectory, 'packages');
   const directories = await fs.readdir(packagesDir, { withFileTypes: true });
-  const definitions: ContentEventDefinition[] = [];
-  const seenEventTypes = new Set<string>();
+  const collector: EventCollector = { seenEventTypes: new Set(), definitions: [] };
 
   for (const entry of directories) {
     if (!entry.isDirectory()) {
@@ -314,62 +367,17 @@ async function loadAchievementEventDefinitions(rootDirectory: string): Promise<C
       continue;
     }
 
-    let document: ContentPackDocument | undefined;
-    try {
-      document = await readContentPackDocument(packPath);
-    } catch (error) {
-      // Skip if file not found; re-throw permission/IO errors
-      if (isNodeError(error) && error.code === 'ENOENT') {
-        continue;
-      }
-      throw error;
-    }
-
+    const document = await tryReadContentPackDocument(packPath);
     const packSlug = document?.metadata?.id;
     if (typeof packSlug !== 'string' || packSlug.length === 0) {
       continue;
     }
 
-    const achievements = document?.achievements ?? [];
-    for (const achievement of achievements) {
-      // Extract emitEvent reward
-      if (achievement?.reward?.kind === 'emitEvent') {
-        const eventId = achievement.reward.eventId;
-        if (typeof eventId === 'string' && eventId.length > 0 && !seenEventTypes.has(eventId)) {
-          seenEventTypes.add(eventId);
-          definitions.push({
-            packSlug,
-            type: eventId,
-            version: 1,
-            schema: undefined,
-          });
-        }
-      }
-
-      // Extract onUnlockEvents
-      const onUnlockEvents = achievement?.onUnlockEvents ?? [];
-      for (const eventId of onUnlockEvents) {
-        if (typeof eventId === 'string' && eventId.length > 0 && !seenEventTypes.has(eventId)) {
-          seenEventTypes.add(eventId);
-          definitions.push({
-            packSlug,
-            type: eventId,
-            version: 1,
-            schema: undefined,
-          });
-        }
-      }
-    }
+    extractAchievementEvents(collector, packSlug, document?.achievements);
   }
 
-  definitions.sort((left, right) => {
-    if (left.packSlug !== right.packSlug) {
-      return left.packSlug < right.packSlug ? -1 : 1;
-    }
-    return left.type < right.type ? -1 : left.type > right.type ? 1 : 0;
-  });
-
-  return definitions;
+  collector.definitions.sort(compareDefinitions);
+  return collector.definitions;
 }
 
 function buildManifestDefinitions(
@@ -416,6 +424,75 @@ interface EventTypeEntry {
   schema?: unknown;
 }
 
+interface ValidatedManifest {
+  packSlug: string;
+  eventTypes: unknown[];
+}
+
+function validateManifestStructure(
+  manifest: unknown,
+  relativePath: string,
+): ValidatedManifest {
+  if (typeof manifest !== 'object' || manifest === null) {
+    throw new TypeError(`Manifest ${relativePath} must export an object.`);
+  }
+
+  const manifestObj = manifest as EventTypeManifest;
+  const { packSlug, eventTypes } = manifestObj;
+
+  if (typeof packSlug !== 'string' || packSlug.length === 0) {
+    throw new Error(`Manifest ${relativePath} must declare a non-empty packSlug.`);
+  }
+
+  if (!Array.isArray(eventTypes)) {
+    throw new Error(`Manifest ${relativePath} must declare an eventTypes array.`);
+  }
+
+  return { packSlug, eventTypes };
+}
+
+interface ValidatedEventTypeEntry {
+  namespace: string;
+  name: string;
+  version: number;
+  schema: string;
+}
+
+function validateEventTypeEntry(
+  entry: unknown,
+  index: number,
+  relativePath: string,
+): ValidatedEventTypeEntry {
+  if (typeof entry !== 'object' || entry === null) {
+    throw new Error(`Event type at index ${index} in ${relativePath} must be an object.`);
+  }
+
+  const entryObj = entry as EventTypeEntry;
+  const { namespace, name, version, schema } = entryObj;
+
+  if (typeof namespace !== 'string' || namespace.length === 0) {
+    throw new Error(`Event type at index ${index} in ${relativePath} is missing a namespace.`);
+  }
+
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new Error(`Event type at index ${index} in ${relativePath} is missing a name.`);
+  }
+
+  if (!Number.isInteger(version) || (version as number) <= 0) {
+    throw new Error(
+      `Event type ${namespace}:${name} in ${relativePath} must provide a positive integer version.`,
+    );
+  }
+
+  if (typeof schema !== 'string' || schema.length === 0) {
+    throw new Error(
+      `Event type ${namespace}:${name} in ${relativePath} must reference a schema path.`,
+    );
+  }
+
+  return { namespace, name, version: version as number, schema };
+}
+
 async function validateContentManifest(
   manifest: unknown,
   manifestPath: string,
@@ -423,94 +500,30 @@ async function validateContentManifest(
   seenEventTypes: Map<string, string>,
   rootDirectory: string,
 ): Promise<void> {
-  if (typeof manifest !== 'object' || manifest === null) {
-    throw new Error(
-      `Manifest ${toPosixPath(path.relative(rootDirectory, manifestPath))} must export an object.`,
-    );
-  }
-
-  const manifestObj = manifest as EventTypeManifest;
-  const { packSlug, eventTypes } = manifestObj;
-
-  if (typeof packSlug !== 'string' || packSlug.length === 0) {
-    throw new Error(
-      `Manifest ${toPosixPath(path.relative(rootDirectory, manifestPath))} must declare a non-empty packSlug.`,
-    );
-  }
-
-  if (!Array.isArray(eventTypes)) {
-    throw new Error(
-      `Manifest ${toPosixPath(path.relative(rootDirectory, manifestPath))} must declare an eventTypes array.`,
-    );
-  }
-
+  const relativePath = toPosixPath(path.relative(rootDirectory, manifestPath));
+  const { packSlug, eventTypes } = validateManifestStructure(manifest, relativePath);
   const manifestDir = path.dirname(manifestPath);
 
   for (let index = 0; index < eventTypes.length; index += 1) {
-    const entry = eventTypes[index] as unknown;
-    if (typeof entry !== 'object' || entry === null) {
-      throw new Error(
-        `Event type at index ${index} in ${toPosixPath(
-          path.relative(rootDirectory, manifestPath),
-        )} must be an object.`,
-      );
-    }
+    const validated = validateEventTypeEntry(eventTypes[index], index, relativePath);
+    const eventType = `${validated.namespace}:${validated.name}`;
 
-    const entryObj = entry as EventTypeEntry;
-    const { namespace, name, version, schema } = entryObj;
-
-    if (typeof namespace !== 'string' || namespace.length === 0) {
-      throw new Error(
-        `Event type at index ${index} in ${toPosixPath(
-          path.relative(rootDirectory, manifestPath),
-        )} is missing a namespace.`,
-      );
-    }
-
-    if (typeof name !== 'string' || name.length === 0) {
-      throw new Error(
-        `Event type at index ${index} in ${toPosixPath(
-          path.relative(rootDirectory, manifestPath),
-        )} is missing a name.`,
-      );
-    }
-
-    if (!Number.isInteger(version) || (version as number) <= 0) {
-      throw new Error(
-        `Event type ${namespace}:${name} in ${toPosixPath(
-          path.relative(rootDirectory, manifestPath),
-        )} must provide a positive integer version.`,
-      );
-    }
-
-    if (typeof schema !== 'string' || schema.length === 0) {
-      throw new Error(
-        `Event type ${namespace}:${name} in ${toPosixPath(
-          path.relative(rootDirectory, manifestPath),
-        )} must reference a schema path.`,
-      );
-    }
-
-    const eventType = `${namespace}:${name}`;
     const previous = seenEventTypes.get(eventType);
     if (previous) {
+      throw new Error(`Event type ${eventType} is already declared by ${previous}; duplicates are not allowed.`);
+    }
+
+    const schemaPath = path.resolve(manifestDir, validated.schema);
+    if (!(await fileExists(schemaPath))) {
       throw new Error(
-        `Event type ${eventType} is already declared by ${previous}; duplicates are not allowed.`,
+        `Schema ${toPosixPath(path.relative(rootDirectory, schemaPath))} referenced by ${eventType} does not exist.`,
       );
     }
 
-    const schemaPath = path.resolve(manifestDir, schema);
-    if (!(await fileExists(schemaPath))) {
-      throw new Error(
-        `Schema ${toPosixPath(
-          path.relative(rootDirectory, schemaPath),
-        )} referenced by ${eventType} does not exist.`,
-      );
-    }
     definitions.push({
       packSlug,
       type: eventType,
-      version: version as number,
+      version: validated.version,
       schema: toPosixPath(path.relative(rootDirectory, schemaPath)),
     });
     seenEventTypes.set(eventType, packSlug);
@@ -721,8 +734,8 @@ function formatManifestEntries(entries: ManifestEntry[]): string {
 
 function escapeString(value: string): string {
   return String(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'");
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll("'", String.raw`\'`);
 }
 
 interface ContentPackDocumentEntry {
@@ -877,13 +890,10 @@ function extractKnownPackEntries(documents: ContentPackDocumentEntry[]): KnownPa
               .filter((value): value is { packId: string; version?: string } => value !== undefined)
           : undefined;
 
-      return requires && requires.length === 0
-        ? { id, version }
-        : {
-            id,
-            version,
-            requires,
-          };
+      if (requires?.length === 0) {
+        return { id, version };
+      }
+      return { id, version, requires };
     })
     .filter((entry): entry is KnownPackEntry => entry !== undefined);
 }
@@ -924,6 +934,91 @@ export interface ValidateContentPacksResult {
   schemaOptions: SchemaOptions;
 }
 
+interface ValidationSuccessData {
+  pack: { metadata: { id: string; version: string } };
+  warnings: unknown[];
+  balanceWarnings: unknown[];
+  balanceErrors: unknown[];
+}
+
+function logSuccessfulValidation(
+  data: ValidationSuccessData,
+  relativePath: string,
+  pretty: boolean,
+): void {
+  const { pack, warnings, balanceWarnings, balanceErrors } = data;
+  const balanceWarningCount = balanceWarnings.length;
+  const balanceErrorCount = balanceErrors.length;
+  const warningCount = warnings.length + balanceWarningCount + balanceErrorCount;
+
+  if (balanceWarningCount > 0) {
+    console.warn(formatLogPayload({
+      event: 'content_pack.balance_warning',
+      packSlug: pack.metadata.id,
+      packVersion: pack.metadata.version,
+      path: relativePath,
+      warningCount: balanceWarningCount,
+      warnings: balanceWarnings,
+    }, pretty));
+  }
+
+  if (balanceErrorCount > 0) {
+    console.error(formatLogPayload({
+      event: 'content_pack.balance_failed',
+      packSlug: pack.metadata.id,
+      packVersion: pack.metadata.version,
+      path: relativePath,
+      errorCount: balanceErrorCount,
+      errors: balanceErrors,
+    }, pretty));
+  }
+
+  const payload = {
+    event: 'content_pack.validated',
+    packSlug: pack.metadata.id,
+    packVersion: pack.metadata.version,
+    path: relativePath,
+    warningCount,
+    balanceWarningCount,
+    balanceErrorCount,
+    warnings,
+    balanceWarnings,
+    balanceErrors,
+  };
+
+  if (warningCount > 0) {
+    console.warn(formatLogPayload(payload, pretty));
+  } else {
+    console.log(formatLogPayload(payload, pretty));
+  }
+}
+
+function logBalanceValidationError(
+  error: BalanceValidationError,
+  metadata: { packSlug?: string; packVersion?: string } | undefined,
+  relativePath: string,
+  pretty: boolean,
+): void {
+  const balanceIssues = error.issues;
+  if (!balanceIssues || balanceIssues.length === 0) {
+    return;
+  }
+
+  const payload: Record<string, unknown> = {
+    event: 'content_pack.balance_failed',
+    packSlug: metadata?.packSlug ?? inferPackSlugFromRelativePath(relativePath),
+    path: relativePath,
+    errorCount: balanceIssues.length,
+    errors: balanceIssues,
+  };
+
+  if (metadata?.packVersion) {
+    payload.packVersion = metadata.packVersion;
+  }
+
+  console.error(formatLogPayload(payload, pretty));
+}
+
 export async function validateContentPacks(
   manifestDefinitions: ManifestDefinition[],
   options: ValidateContentPacksOptions = {},
@@ -934,9 +1029,7 @@ export async function validateContentPacks(
 
   const documents = await loadContentPackDocuments(rootDirectory);
   const validDocuments = documents.filter((entry) => entry.status === 'ok');
-  const runtimeEventCatalogue = manifestDefinitions.map(
-    (definition) => definition.type,
-  );
+  const runtimeEventCatalogue = manifestDefinitions.map((definition) => definition.type);
   const knownPacks = extractKnownPackEntries(validDocuments);
   const activePackIds = knownPacks.map((entry) => entry.id);
 
@@ -945,24 +1038,18 @@ export async function validateContentPacks(
     activePackIds,
     runtimeEventCatalogue,
     runtimeVersion: RUNTIME_VERSION,
-    ...(balanceOptions !== undefined ? { balance: balanceOptions } : {}),
+    ...(balanceOptions !== undefined && { balance: balanceOptions }),
   };
 
   if (validDocuments.length === 0 && documents.length === 0) {
-    return {
-      schemaOptions,
-    };
+    return { schemaOptions };
   }
 
-  // ContentSchemaOptions uses branded PackId types, but our local SchemaOptions uses plain strings.
-  // The runtime values are compatible; double cast is required to bridge branded type mismatch.
   const validator = createContentPackValidator(schemaOptions as unknown as Parameters<typeof createContentPackValidator>[0]);
   const failures: ValidationFailure[] = [];
 
   for (const entry of documents) {
-    const relativePath = toPosixPath(
-      path.relative(rootDirectory, entry.packPath),
-    );
+    const relativePath = toPosixPath(path.relative(rootDirectory, entry.packPath));
 
     if (entry.status === 'error') {
       const failurePayload = createValidationFailurePayload({
@@ -979,72 +1066,12 @@ export async function validateContentPacks(
 
     const result = validator.safeParse(entry.document);
     if (result.success) {
-      const {
-        pack,
-        warnings,
-        balanceWarnings,
-        balanceErrors,
-      } = result.data;
-      const balanceWarningCount = balanceWarnings.length;
-      const balanceErrorCount = balanceErrors.length;
-      const warningCount = warnings.length + balanceWarningCount + balanceErrorCount;
-      if (balanceWarningCount > 0) {
-        const balanceWarningPayload = {
-          event: 'content_pack.balance_warning',
-          packSlug: pack.metadata.id,
-          packVersion: pack.metadata.version,
-          path: relativePath,
-          warningCount: balanceWarningCount,
-          warnings: balanceWarnings,
-        };
-        console.warn(formatLogPayload(balanceWarningPayload, pretty));
-      }
-      if (balanceErrorCount > 0) {
-        const balanceErrorPayload = {
-          event: 'content_pack.balance_failed',
-          packSlug: pack.metadata.id,
-          packVersion: pack.metadata.version,
-          path: relativePath,
-          errorCount: balanceErrorCount,
-          errors: balanceErrors,
-        };
-        console.error(formatLogPayload(balanceErrorPayload, pretty));
-      }
-      const payload = {
-        event: 'content_pack.validated',
-        packSlug: pack.metadata.id,
-        packVersion: pack.metadata.version,
-        path: relativePath,
-        warningCount,
-        balanceWarningCount,
-        balanceErrorCount,
-        warnings,
-        balanceWarnings,
-        balanceErrors,
-      };
-      if (warningCount > 0) {
-        console.warn(formatLogPayload(payload, pretty));
-      } else {
-        console.log(formatLogPayload(payload, pretty));
-      }
+      logSuccessfulValidation(result.data, relativePath, pretty);
       continue;
     }
 
     if (result.error instanceof BalanceValidationError) {
-      const balanceIssues = result.error.issues;
-      if (balanceIssues && balanceIssues.length > 0) {
-        const balanceErrorPayload = {
-          event: 'content_pack.balance_failed',
-          packSlug: entry.metadata?.packSlug ?? inferPackSlugFromRelativePath(relativePath),
-          ...(entry.metadata?.packVersion
-            ? { packVersion: entry.metadata.packVersion }
-            : {}),
-          path: relativePath,
-          errorCount: balanceIssues.length,
-          errors: balanceIssues,
-        };
-        console.error(formatLogPayload(balanceErrorPayload, pretty));
-      }
+      logBalanceValidationError(result.error, entry.metadata, relativePath, pretty);
     }
 
     const validationError = result.error as { message: string; issues?: unknown[] };
@@ -1066,9 +1093,7 @@ export async function validateContentPacks(
     );
   }
 
-  return {
-    schemaOptions,
-  };
+  return { schemaOptions };
 }
 
 function formatLogPayload(payload: unknown, pretty: boolean): string {
@@ -1104,17 +1129,17 @@ function createValidationFailurePayload({
     event: 'content_pack.validation_failed',
     path: relativePath,
     message,
-    ...(packSlug ? { packSlug } : {}),
-    ...(typeof packVersion === 'string' ? { packVersion } : {}),
-    ...(issues !== undefined ? { issues } : {}),
+    ...(packSlug && { packSlug }),
+    ...(typeof packVersion === 'string' && { packVersion }),
+    ...(issues !== undefined && { issues }),
   };
 
   const summaryEntry: ValidationFailure = {
     packSlug: packSlug ?? inferPackSlugFromRelativePath(relativePath),
-    ...(packVersion ? { packVersion } : {}),
+    ...(packVersion && { packVersion }),
     path: relativePath,
     message,
-    ...(issues !== undefined ? { issues } : {}),
+    ...(issues !== undefined && { issues }),
   };
 
   return {
