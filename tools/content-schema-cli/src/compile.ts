@@ -478,7 +478,7 @@ function createRunSummary({ compileResult, manifestAction }: CreateRunSummaryInp
     }
   }
 
-  failedPacks.sort();
+  failedPacks.sort((a, b) => a.localeCompare(b));
 
   const summaryAction =
     typeof compileResult.summaryAction === 'string'
@@ -501,7 +501,7 @@ function createRunSummary({ compileResult, manifestAction }: CreateRunSummaryInp
       changed: changedActionCount,
       byAction: artifactActionsByType,
     },
-    changedPacks: Array.from(changedPacks).sort(),
+    changedPacks: Array.from(changedPacks).sort((a, b) => a.localeCompare(b)),
     failedPacks,
     hasChanges: changedActionCount > 0 || summaryChanged || manifestChanged,
     summaryAction,
@@ -905,7 +905,7 @@ function createValidationFailureRunSummary({
         .map((failure) => failure.packSlug)
         .filter((slug): slug is string => typeof slug === 'string' && slug.length > 0),
     ),
-  ).sort();
+  ).sort((a, b) => a.localeCompare(b));
 
   const actionChanges =
     summaryAction === 'written' || summaryAction === 'would-write';
