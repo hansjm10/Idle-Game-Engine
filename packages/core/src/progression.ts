@@ -239,6 +239,11 @@ export interface ProgressionSnapshotOptions {
    * data - for example, when deriving long-lived metrics or when multiple consumers
    * need access to the same tick's data.
    *
+   * **Warning:** When set to false, you MUST manually call
+   * `resourceState.resetPerTickAccumulators()` before the next tick's rate
+   * application (e.g., before `finalizeTick`). Failing to do so will cause
+   * rates to accumulate incorrectly, resulting in double-counting bugs.
+   *
    * @default true
    */
   readonly resetAccumulators?: boolean;
@@ -306,6 +311,9 @@ export interface ProgressionAuthoritativeState {
  * "consuming" the accumulator data. Pass `{ resetAccumulators: false }` to build a
  * snapshot without resetting accumulators - useful when deriving long-lived metrics
  * or when multiple consumers need access to the same tick's data.
+ *
+ * **Note:** When using `resetAccumulators: false`, you are responsible for manually
+ * calling `resetPerTickAccumulators()` before the next tick to prevent double-counting.
  *
  * @param step - The current simulation step number
  * @param publishedAt - Timestamp when the snapshot is published (ms since epoch)
