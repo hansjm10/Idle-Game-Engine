@@ -38,6 +38,8 @@ interface ParsedEvent {
   check?: boolean;
   warnings?: unknown[];
   warningCount?: number;
+  balanceWarnings?: number;
+  balanceErrors?: number;
   artifacts?: Array<{ action: string; path?: string }> | { changed?: number; total?: number };
   message?: string;
   stack?: string;
@@ -63,6 +65,7 @@ interface ParsedEvent {
     manifestAction?: string;
   } | null;
   mode?: string;
+  durationMs?: number;
   status?: string;
   iteration?: number;
   triggers?: {
@@ -598,6 +601,486 @@ describe('content schema CLI compile command', () => {
       expect(summaryEvent?.summary?.failedPacks).toEqual(
         expect.arrayContaining(['delta-pack']),
       );
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('rejects --watch combined with --check', async () => {
+    const workspace = await createWorkspace([{ slug: 'test-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--watch', '--check'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('--watch cannot be combined with --check');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('supports -C as shorthand for --cwd', async () => {
+    const workspace = await createWorkspace([{ slug: 'shorthand-pack' }]);
+
+    try {
+      const result = await runCli(['-C', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compileEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.compiled' && entry.slug === 'shorthand-pack',
+      );
+      expect(compileEvent).toBeDefined();
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('rejects unknown CLI options', async () => {
+    const workspace = await createWorkspace([{ slug: 'test-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--unknown-flag'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Unknown option: --unknown-flag');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('forces rewrites in --clean mode even when artifacts are unchanged', async () => {
+    const workspace = await createWorkspace([{ slug: 'clean-pack' }]);
+
+    try {
+      const firstRun = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(firstRun.code).toBe(0);
+
+      const firstEvents = parseEvents(firstRun.stdout, firstRun.stderr);
+      const firstCompile = firstEvents.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'clean-pack',
+      );
+      expect(firstCompile).toBeDefined();
+      const firstArtifacts = firstCompile?.artifacts as Array<{ action: string }> | undefined;
+      expect(firstArtifacts?.some((a) => a.action === 'written')).toBe(true);
+
+      const secondRun = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(secondRun.code).toBe(0);
+
+      const secondEvents = parseEvents(secondRun.stdout, secondRun.stderr);
+      const secondCompile = secondEvents.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'clean-pack',
+      );
+      const secondArtifacts = secondCompile?.artifacts as Array<{ action: string }> | undefined;
+      expect(secondArtifacts?.every((a) => a.action === 'unchanged')).toBe(true);
+
+      const cleanRun = await runCli(['--cwd', workspace.root, '--clean'], { cwd: workspace.root });
+      expect(cleanRun.code).toBe(0);
+
+      const cleanEvents = parseEvents(cleanRun.stdout, cleanRun.stderr);
+      const cleanCompile = cleanEvents.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'clean-pack',
+      );
+      const cleanArtifacts = cleanCompile?.artifacts as Array<{ action: string }> | undefined;
+      expect(cleanArtifacts?.some((a) => a.action === 'written')).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('outputs pretty-printed JSON with --pretty flag', async () => {
+    const workspace = await createWorkspace([{ slug: 'pretty-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root, '--pretty'], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const outputLines = result.stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      const hasMultilineJson = outputLines.some((line) => {
+        return line.trim().startsWith('{') && !line.trim().endsWith('}');
+      });
+      expect(hasMultilineJson).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('writes summary to custom path via --summary flag', async () => {
+    const workspace = await createWorkspace([{ slug: 'summary-pack' }]);
+    const customSummaryPath = path.join(workspace.root, 'custom-output', 'summary.json');
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--summary', customSummaryPath],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      await assertFileExists(customSummaryPath);
+      const summaryRaw = await fs.readFile(customSummaryPath, 'utf8');
+      const summary = JSON.parse(summaryRaw) as { packs: Array<{ slug: string }> };
+      expect(summary.packs.some((p) => p.slug === 'summary-pack')).toBe(true);
+
+      const defaultSummaryPath = path.join(workspace.root, 'content/compiled/index.json');
+      const defaultExists = await pathExists(defaultSummaryPath);
+      expect(defaultExists).toBe(false);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('compiles multiple packs and reports aggregated summary', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'pack-one' },
+      { slug: 'pack-two' },
+      { slug: 'pack-three' },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compiledPacks = events.filter((entry) => entry.name === 'content_pack.compiled');
+      expect(compiledPacks).toHaveLength(3);
+
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.packTotals?.total).toBe(3);
+      expect(summaryEvent?.summary?.packTotals?.compiled).toBe(3);
+      expect(summaryEvent?.summary?.packTotals?.failed).toBe(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('emits content_pack.skipped event when all artifacts are unchanged in check mode', async () => {
+    const workspace = await createWorkspace([{ slug: 'skipped-pack' }]);
+
+    try {
+      await seedWorkspaceOutputs(workspace.root);
+
+      const checkResult = await runCli(
+        ['--cwd', workspace.root, '--check'],
+        { cwd: workspace.root },
+      );
+      expect(checkResult.code).toBe(0);
+
+      const events = parseEvents(checkResult.stdout, checkResult.stderr);
+      const skippedEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.skipped' && entry.slug === 'skipped-pack',
+      );
+      expect(skippedEvent).toBeDefined();
+      expect(skippedEvent?.check).toBe(true);
+
+      const compiledEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.compiled' && entry.slug === 'skipped-pack',
+      );
+      expect(compiledEvent).toBeUndefined();
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('supports --summary=value inline syntax', async () => {
+    const workspace = await createWorkspace([{ slug: 'inline-pack' }]);
+    const customSummaryPath = path.join(workspace.root, 'inline-output', 'summary.json');
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, `--summary=${customSummaryPath}`],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      await assertFileExists(customSummaryPath);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('supports --cwd=value inline syntax', async () => {
+    const workspace = await createWorkspace([{ slug: 'inline-cwd-pack' }]);
+
+    try {
+      const result = await runCli(
+        [`--cwd=${workspace.root}`],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compileEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.compiled' && entry.slug === 'inline-cwd-pack',
+      );
+      expect(compileEvent).toBeDefined();
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('handles mixed success and failure packs in same run', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'valid-pack' },
+      {
+        slug: 'invalid-pack',
+        overrides: {
+          metadata: {
+            dependencies: {
+              requires: [{ packId: 'nonexistent-dep' }],
+            },
+          },
+        } as Partial<ContentPackDocument>,
+      },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(1);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const validatedEvents = events.filter(
+        (entry) => entry.event === 'content_pack.validated',
+      );
+      expect(validatedEvents).toHaveLength(2);
+
+      const compiledEvent = events.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'valid-pack',
+      );
+      expect(compiledEvent).toBeDefined();
+
+      const failedEvent = events.find(
+        (entry) => entry.name === 'content_pack.compilation_failed' && entry.slug === 'invalid-pack',
+      );
+      expect(failedEvent).toBeDefined();
+
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.packTotals?.compiled).toBe(1);
+      expect(summaryEvent?.summary?.packTotals?.failed).toBe(1);
+      expect(summaryEvent?.summary?.failedPacks).toEqual(['invalid-pack']);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('resolves relative summary path correctly', async () => {
+    const workspace = await createWorkspace([{ slug: 'relative-summary-pack' }]);
+    const relativePath = 'custom-dir/my-summary.json';
+    const absolutePath = path.join(workspace.root, relativePath);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--summary', relativePath],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      await assertFileExists(absolutePath);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports error when --summary flag is missing value', async () => {
+    const workspace = await createWorkspace([{ slug: 'missing-value-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--summary'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Missing value for --summary');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports error when --cwd flag is missing value', async () => {
+    const workspace = await createWorkspace([{ slug: 'missing-cwd-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Missing value for --cwd');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('includes duration in run summary', async () => {
+    const workspace = await createWorkspace([{ slug: 'duration-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent).toBeDefined();
+      expect(typeof summaryEvent?.durationMs).toBe('number');
+      expect((summaryEvent?.durationMs as number) > 0).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports sorted failed packs in summary', async () => {
+    const workspace = await createWorkspace([
+      {
+        slug: 'zebra-pack',
+        overrides: {
+          metadata: {
+            dependencies: { requires: [{ packId: 'missing' }] },
+          },
+        } as Partial<ContentPackDocument>,
+      },
+      {
+        slug: 'alpha-fail-pack',
+        overrides: {
+          metadata: {
+            dependencies: { requires: [{ packId: 'missing' }] },
+          },
+        } as Partial<ContentPackDocument>,
+      },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(1);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.failedPacks).toEqual([
+        'alpha-fail-pack',
+        'zebra-pack',
+      ]);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('tracks changed packs in summary', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'changed-pack-one' },
+      { slug: 'changed-pack-two' },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.changedPacks).toEqual(
+        expect.arrayContaining(['changed-pack-one', 'changed-pack-two']),
+      );
+      expect(summaryEvent?.summary?.hasChanges).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports artifact action counts by type in summary', async () => {
+    const workspace = await createWorkspace([{ slug: 'action-count-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.artifactActions?.byAction).toBeDefined();
+      expect(summaryEvent?.summary?.artifactActions?.byAction?.written).toBeGreaterThan(0);
+      expect(summaryEvent?.summary?.artifactActions?.total).toBeGreaterThan(0);
+      expect(summaryEvent?.summary?.artifactActions?.changed).toBeGreaterThan(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('skips core dist manifest when core package.json is missing', async () => {
+    const workspace = await createWorkspace([{ slug: 'no-core-pack' }]);
+    const corePackageJsonPath = path.join(workspace.root, 'packages/core/package.json');
+
+    try {
+      if (await pathExists(corePackageJsonPath)) {
+        await fs.rm(corePackageJsonPath);
+      }
+
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const coreDistEvent = events.find(
+        (entry) => entry.event === 'runtime_manifest.core_dist.skipped',
+      );
+      expect(coreDistEvent).toBeDefined();
+      expect(coreDistEvent?.reason).toBe('missing core package.json');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('includes balance counts in compiled pack events', async () => {
+    const workspace = await createWorkspace([{ slug: 'balance-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compileEvent = events.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'balance-pack',
+      );
+      expect(compileEvent).toBeDefined();
+      expect(typeof compileEvent?.balanceWarnings).toBe('number');
+      expect(typeof compileEvent?.balanceErrors).toBe('number');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports manifest action in summary', async () => {
+    const workspace = await createWorkspace([{ slug: 'manifest-action-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.manifestAction).toBe('written');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports unchanged manifest action on subsequent runs', async () => {
+    const workspace = await createWorkspace([{ slug: 'unchanged-manifest-pack' }]);
+
+    try {
+      await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+
+      const secondResult = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(secondResult.code).toBe(0);
+
+      const events = parseEvents(secondResult.stdout, secondResult.stderr);
+      const manifestEvent = events.find(
+        (entry) => entry.event === 'runtime_manifest.unchanged',
+      );
+      expect(manifestEvent).toBeDefined();
+      expect(manifestEvent?.action).toBe('unchanged');
     } finally {
       await workspace.cleanup();
     }
