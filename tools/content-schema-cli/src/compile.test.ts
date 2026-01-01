@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -13,11 +14,144 @@ import {
   buildRuntimeEventManifest,
   validateContentPacks,
   writeRuntimeEventManifest,
-} from '../generate.js';
+} from './generate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CLI_PATH = path.resolve(__dirname, '../compile.js');
+const CLI_PATH = path.resolve(__dirname, './compile.ts');
+const TSX_PATH = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
 const CLI_TEST_TIMEOUT_MS = 30000;
+
+interface CliResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+interface ParsedEvent {
+  event?: string;
+  name?: string;
+  slug?: string;
+  packSlug?: string;
+  packVersion?: string;
+  path?: string;
+  action?: string;
+  check?: boolean;
+  warnings?: unknown[];
+  warningCount?: number;
+  balanceWarnings?: number;
+  balanceErrors?: number;
+  artifacts?: Array<{ action: string; path?: string }> | { changed?: number; total?: number };
+  message?: string;
+  stack?: string;
+  fatal?: boolean;
+  success?: boolean;
+  drift?: boolean;
+  summary?: {
+    packTotals?: {
+      total?: number;
+      compiled?: number;
+      failed?: number;
+      withWarnings?: number;
+    };
+    artifactActions?: {
+      total?: number;
+      changed?: number;
+      byAction?: Record<string, number>;
+    };
+    changedPacks?: string[];
+    failedPacks?: string[];
+    hasChanges?: boolean;
+    summaryAction?: string;
+    manifestAction?: string;
+  } | null;
+  mode?: string;
+  durationMs?: number;
+  status?: string;
+  iteration?: number;
+  triggers?: {
+    count?: number;
+    limit?: number;
+    events?: Record<string, number>;
+    paths?: string[];
+    morePaths?: number;
+  };
+  packs?: {
+    total?: number;
+    compiled?: number;
+    failed?: number;
+    withWarnings?: number;
+    changed?: number;
+  };
+  changedPacks?: string[];
+  failedPacks?: string[];
+  reason?: string;
+  [key: string]: unknown;
+}
+
+interface PackConfig {
+  slug: string;
+  format?: 'json' | 'json5';
+  document?: ContentPackDocument;
+  overrides?: Partial<ContentPackDocument>;
+  eventTypes?: EventManifest | false;
+  json5Source?: string;
+}
+
+interface ContentPackDocument {
+  metadata: {
+    id: string;
+    title: { default: string; variants: Record<string, unknown> };
+    version: string;
+    engine: string;
+    defaultLocale: string;
+    supportedLocales: string[];
+    dependencies?: {
+      requires?: Array<{ packId: string; version?: string }>;
+    };
+  };
+  resources: unknown[];
+  generators: unknown[];
+  upgrades: unknown[];
+  metrics: unknown[];
+  achievements: unknown[];
+  automations: unknown[];
+  transforms: unknown[];
+  prestigeLayers: unknown[];
+  runtimeEvents: unknown[];
+}
+
+interface EventManifest {
+  packSlug: string;
+  eventTypes: Array<{
+    namespace: string;
+    name: string;
+    version: number;
+    schema: string;
+  }>;
+}
+
+interface Workspace {
+  root: string;
+  cleanup: () => Promise<void>;
+}
+
+interface PackFile {
+  path: string;
+  format: 'json' | 'json5';
+  document: ContentPackDocument;
+}
+
+interface EventCollector {
+  push: (event: ParsedEvent) => void;
+  waitForEvent: (matcher: (event: ParsedEvent) => boolean, timeoutMs?: number) => Promise<ParsedEvent>;
+  history: () => ParsedEvent[];
+}
+
+interface WatchProcess {
+  child: ChildProcess;
+  events: EventCollector;
+  stop: (signal?: NodeJS.Signals) => Promise<void>;
+}
 
 describe('content schema CLI compile command', () => {
   it('compiles packs and emits structured events', async () => {
@@ -99,7 +233,7 @@ describe('content schema CLI compile command', () => {
         path.join(workspace.root, 'content/compiled/index.json'),
         'utf8',
       );
-      const summary = JSON.parse(summaryRaw);
+      const summary = JSON.parse(summaryRaw) as { packs: Array<{ slug: string; balance?: { warningCount?: number; errorCount?: number } }> };
       const summaryEntry = summary.packs.find(
         (entry) => entry.slug === 'alpha-pack',
       );
@@ -183,7 +317,7 @@ describe('content schema CLI compile command', () => {
       {
         slug: 'invalid-pack',
         overrides: {
-          resources: null,
+          resources: null as unknown as unknown[],
         },
       },
     ]);
@@ -214,7 +348,7 @@ describe('content schema CLI compile command', () => {
 
       const summaryPath = path.join(workspace.root, 'content/compiled/index.json');
       const summaryRaw = await fs.readFile(summaryPath, 'utf8');
-      const summary = JSON.parse(summaryRaw);
+      const summary = JSON.parse(summaryRaw) as { packs: Array<{ slug: string; status?: string; error?: string }> };
       const summaryEntry = summary.packs.find(
         (pack) => pack.slug === 'invalid-pack',
       );
@@ -230,7 +364,7 @@ describe('content schema CLI compile command', () => {
       {
         slug: 'invalid-pack',
         overrides: {
-          resources: null,
+          resources: null as unknown as unknown[],
         },
       },
     ]);
@@ -266,7 +400,7 @@ describe('content schema CLI compile command', () => {
         'content/compiled/index.json',
       );
       const summaryRaw = await fs.readFile(summaryPath, 'utf8');
-      const summary = JSON.parse(summaryRaw);
+      const summary = JSON.parse(summaryRaw) as { packs: Array<{ slug: string; status?: string; error?: string }> };
       const summaryEntry = summary.packs.find(
         (pack) => pack.slug === 'invalid-pack',
       );
@@ -304,8 +438,9 @@ describe('content schema CLI compile command', () => {
           entry.name === 'content_pack.compiled' && entry.slug === 'beta-pack',
       );
       expect(compileEvent?.check).toBe(true);
+      const compileArtifacts = compileEvent?.artifacts as Array<{ action: string }> | undefined;
       expect(
-        compileEvent?.artifacts.some((artifact) => artifact.action === 'would-write'),
+        compileArtifacts?.some((artifact) => artifact.action === 'would-write'),
       ).toBe(true);
 
       const skippedEvent = events.find(
@@ -435,7 +570,7 @@ describe('content schema CLI compile command', () => {
               requires: [{ packId: 'missing-pack' }],
             },
           },
-        },
+        } as Partial<ContentPackDocument>,
       },
     ]);
 
@@ -466,6 +601,486 @@ describe('content schema CLI compile command', () => {
       expect(summaryEvent?.summary?.failedPacks).toEqual(
         expect.arrayContaining(['delta-pack']),
       );
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('rejects --watch combined with --check', async () => {
+    const workspace = await createWorkspace([{ slug: 'test-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--watch', '--check'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('--watch cannot be combined with --check');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('supports -C as shorthand for --cwd', async () => {
+    const workspace = await createWorkspace([{ slug: 'shorthand-pack' }]);
+
+    try {
+      const result = await runCli(['-C', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compileEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.compiled' && entry.slug === 'shorthand-pack',
+      );
+      expect(compileEvent).toBeDefined();
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('rejects unknown CLI options', async () => {
+    const workspace = await createWorkspace([{ slug: 'test-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--unknown-flag'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Unknown option: --unknown-flag');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('forces rewrites in --clean mode even when artifacts are unchanged', async () => {
+    const workspace = await createWorkspace([{ slug: 'clean-pack' }]);
+
+    try {
+      const firstRun = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(firstRun.code).toBe(0);
+
+      const firstEvents = parseEvents(firstRun.stdout, firstRun.stderr);
+      const firstCompile = firstEvents.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'clean-pack',
+      );
+      expect(firstCompile).toBeDefined();
+      const firstArtifacts = firstCompile?.artifacts as Array<{ action: string }> | undefined;
+      expect(firstArtifacts?.some((a) => a.action === 'written')).toBe(true);
+
+      const secondRun = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(secondRun.code).toBe(0);
+
+      const secondEvents = parseEvents(secondRun.stdout, secondRun.stderr);
+      const secondCompile = secondEvents.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'clean-pack',
+      );
+      const secondArtifacts = secondCompile?.artifacts as Array<{ action: string }> | undefined;
+      expect(secondArtifacts?.every((a) => a.action === 'unchanged')).toBe(true);
+
+      const cleanRun = await runCli(['--cwd', workspace.root, '--clean'], { cwd: workspace.root });
+      expect(cleanRun.code).toBe(0);
+
+      const cleanEvents = parseEvents(cleanRun.stdout, cleanRun.stderr);
+      const cleanCompile = cleanEvents.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'clean-pack',
+      );
+      const cleanArtifacts = cleanCompile?.artifacts as Array<{ action: string }> | undefined;
+      expect(cleanArtifacts?.some((a) => a.action === 'written')).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('outputs pretty-printed JSON with --pretty flag', async () => {
+    const workspace = await createWorkspace([{ slug: 'pretty-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root, '--pretty'], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const outputLines = result.stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      const hasMultilineJson = outputLines.some((line) => {
+        return line.trim().startsWith('{') && !line.trim().endsWith('}');
+      });
+      expect(hasMultilineJson).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('writes summary to custom path via --summary flag', async () => {
+    const workspace = await createWorkspace([{ slug: 'summary-pack' }]);
+    const customSummaryPath = path.join(workspace.root, 'custom-output', 'summary.json');
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--summary', customSummaryPath],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      await assertFileExists(customSummaryPath);
+      const summaryRaw = await fs.readFile(customSummaryPath, 'utf8');
+      const summary = JSON.parse(summaryRaw) as { packs: Array<{ slug: string }> };
+      expect(summary.packs.some((p) => p.slug === 'summary-pack')).toBe(true);
+
+      const defaultSummaryPath = path.join(workspace.root, 'content/compiled/index.json');
+      const defaultExists = await pathExists(defaultSummaryPath);
+      expect(defaultExists).toBe(false);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('compiles multiple packs and reports aggregated summary', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'pack-one' },
+      { slug: 'pack-two' },
+      { slug: 'pack-three' },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compiledPacks = events.filter((entry) => entry.name === 'content_pack.compiled');
+      expect(compiledPacks).toHaveLength(3);
+
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.packTotals?.total).toBe(3);
+      expect(summaryEvent?.summary?.packTotals?.compiled).toBe(3);
+      expect(summaryEvent?.summary?.packTotals?.failed).toBe(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('emits content_pack.skipped event when all artifacts are unchanged in check mode', async () => {
+    const workspace = await createWorkspace([{ slug: 'skipped-pack' }]);
+
+    try {
+      await seedWorkspaceOutputs(workspace.root);
+
+      const checkResult = await runCli(
+        ['--cwd', workspace.root, '--check'],
+        { cwd: workspace.root },
+      );
+      expect(checkResult.code).toBe(0);
+
+      const events = parseEvents(checkResult.stdout, checkResult.stderr);
+      const skippedEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.skipped' && entry.slug === 'skipped-pack',
+      );
+      expect(skippedEvent).toBeDefined();
+      expect(skippedEvent?.check).toBe(true);
+
+      const compiledEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.compiled' && entry.slug === 'skipped-pack',
+      );
+      expect(compiledEvent).toBeUndefined();
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('supports --summary=value inline syntax', async () => {
+    const workspace = await createWorkspace([{ slug: 'inline-pack' }]);
+    const customSummaryPath = path.join(workspace.root, 'inline-output', 'summary.json');
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, `--summary=${customSummaryPath}`],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      await assertFileExists(customSummaryPath);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('supports --cwd=value inline syntax', async () => {
+    const workspace = await createWorkspace([{ slug: 'inline-cwd-pack' }]);
+
+    try {
+      const result = await runCli(
+        [`--cwd=${workspace.root}`],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compileEvent = events.find(
+        (entry) =>
+          entry.name === 'content_pack.compiled' && entry.slug === 'inline-cwd-pack',
+      );
+      expect(compileEvent).toBeDefined();
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('handles mixed success and failure packs in same run', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'valid-pack' },
+      {
+        slug: 'invalid-pack',
+        overrides: {
+          metadata: {
+            dependencies: {
+              requires: [{ packId: 'nonexistent-dep' }],
+            },
+          },
+        } as Partial<ContentPackDocument>,
+      },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(1);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const validatedEvents = events.filter(
+        (entry) => entry.event === 'content_pack.validated',
+      );
+      expect(validatedEvents).toHaveLength(2);
+
+      const compiledEvent = events.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'valid-pack',
+      );
+      expect(compiledEvent).toBeDefined();
+
+      const failedEvent = events.find(
+        (entry) => entry.name === 'content_pack.compilation_failed' && entry.slug === 'invalid-pack',
+      );
+      expect(failedEvent).toBeDefined();
+
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.packTotals?.compiled).toBe(1);
+      expect(summaryEvent?.summary?.packTotals?.failed).toBe(1);
+      expect(summaryEvent?.summary?.failedPacks).toEqual(['invalid-pack']);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('resolves relative summary path correctly', async () => {
+    const workspace = await createWorkspace([{ slug: 'relative-summary-pack' }]);
+    const relativePath = 'custom-dir/my-summary.json';
+    const absolutePath = path.join(workspace.root, relativePath);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--summary', relativePath],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(0);
+
+      await assertFileExists(absolutePath);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports error when --summary flag is missing value', async () => {
+    const workspace = await createWorkspace([{ slug: 'missing-value-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd', workspace.root, '--summary'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Missing value for --summary');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports error when --cwd flag is missing value', async () => {
+    const workspace = await createWorkspace([{ slug: 'missing-cwd-pack' }]);
+
+    try {
+      const result = await runCli(
+        ['--cwd'],
+        { cwd: workspace.root },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Missing value for --cwd');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('includes duration in run summary', async () => {
+    const workspace = await createWorkspace([{ slug: 'duration-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent).toBeDefined();
+      expect(typeof summaryEvent?.durationMs).toBe('number');
+      expect((summaryEvent?.durationMs as number) > 0).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports sorted failed packs in summary', async () => {
+    const workspace = await createWorkspace([
+      {
+        slug: 'zebra-pack',
+        overrides: {
+          metadata: {
+            dependencies: { requires: [{ packId: 'missing' }] },
+          },
+        } as Partial<ContentPackDocument>,
+      },
+      {
+        slug: 'alpha-fail-pack',
+        overrides: {
+          metadata: {
+            dependencies: { requires: [{ packId: 'missing' }] },
+          },
+        } as Partial<ContentPackDocument>,
+      },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(1);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.failedPacks).toEqual([
+        'alpha-fail-pack',
+        'zebra-pack',
+      ]);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('tracks changed packs in summary', async () => {
+    const workspace = await createWorkspace([
+      { slug: 'changed-pack-one' },
+      { slug: 'changed-pack-two' },
+    ]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.changedPacks).toEqual(
+        expect.arrayContaining(['changed-pack-one', 'changed-pack-two']),
+      );
+      expect(summaryEvent?.summary?.hasChanges).toBe(true);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports artifact action counts by type in summary', async () => {
+    const workspace = await createWorkspace([{ slug: 'action-count-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.artifactActions?.byAction).toBeDefined();
+      expect(summaryEvent?.summary?.artifactActions?.byAction?.written).toBeGreaterThan(0);
+      expect(summaryEvent?.summary?.artifactActions?.total).toBeGreaterThan(0);
+      expect(summaryEvent?.summary?.artifactActions?.changed).toBeGreaterThan(0);
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('skips core dist manifest when core package.json is missing', async () => {
+    const workspace = await createWorkspace([{ slug: 'no-core-pack' }]);
+    const corePackageJsonPath = path.join(workspace.root, 'packages/core/package.json');
+
+    try {
+      if (await pathExists(corePackageJsonPath)) {
+        await fs.rm(corePackageJsonPath);
+      }
+
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const coreDistEvent = events.find(
+        (entry) => entry.event === 'runtime_manifest.core_dist.skipped',
+      );
+      expect(coreDistEvent).toBeDefined();
+      expect(coreDistEvent?.reason).toBe('missing core package.json');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('includes balance counts in compiled pack events', async () => {
+    const workspace = await createWorkspace([{ slug: 'balance-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const compileEvent = events.find(
+        (entry) => entry.name === 'content_pack.compiled' && entry.slug === 'balance-pack',
+      );
+      expect(compileEvent).toBeDefined();
+      expect(typeof compileEvent?.balanceWarnings).toBe('number');
+      expect(typeof compileEvent?.balanceErrors).toBe('number');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports manifest action in summary', async () => {
+    const workspace = await createWorkspace([{ slug: 'manifest-action-pack' }]);
+
+    try {
+      const result = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(result.code).toBe(0);
+
+      const events = parseEvents(result.stdout, result.stderr);
+      const summaryEvent = events.find((entry) => entry.event === 'cli.run_summary');
+      expect(summaryEvent?.summary?.manifestAction).toBe('written');
+    } finally {
+      await workspace.cleanup();
+    }
+  }, CLI_TEST_TIMEOUT_MS);
+
+  it('reports unchanged manifest action on subsequent runs', async () => {
+    const workspace = await createWorkspace([{ slug: 'unchanged-manifest-pack' }]);
+
+    try {
+      await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+
+      const secondResult = await runCli(['--cwd', workspace.root], { cwd: workspace.root });
+      expect(secondResult.code).toBe(0);
+
+      const events = parseEvents(secondResult.stdout, secondResult.stderr);
+      const manifestEvent = events.find(
+        (entry) => entry.event === 'runtime_manifest.unchanged',
+      );
+      expect(manifestEvent).toBeDefined();
+      expect(manifestEvent?.action).toBe('unchanged');
     } finally {
       await workspace.cleanup();
     }
@@ -515,7 +1130,8 @@ describe('content schema CLI compile command', () => {
       expect(successRun.changedPacks).toEqual(
         expect.arrayContaining([packSlug]),
       );
-      expect(successRun.artifacts?.changed ?? 0).toBeGreaterThan(0);
+      const successArtifacts = successRun.artifacts as { changed?: number } | undefined;
+      expect(successArtifacts?.changed ?? 0).toBeGreaterThan(0);
       expect(successRun.triggers?.count ?? 0).toBeGreaterThan(1);
       expect(successRun.triggers?.events?.change ?? 0).toBeGreaterThanOrEqual(1);
       expect(successRun.triggers?.events?.add ?? 0).toBeGreaterThanOrEqual(1);
@@ -530,7 +1146,8 @@ describe('content schema CLI compile command', () => {
         (event) =>
           event.event === 'watch.run' && event.status === 'skipped',
       );
-      expect(skippedRun.artifacts?.changed ?? 0).toBe(0);
+      const skippedArtifacts = skippedRun.artifacts as { changed?: number } | undefined;
+      expect(skippedArtifacts?.changed ?? 0).toBe(0);
       expect(skippedRun.triggers?.count ?? 0).toBeGreaterThan(0);
 
       await sleep(200);
@@ -589,8 +1206,8 @@ describe('content schema CLI compile command', () => {
   }, 20000);
 });
 
-function createPackDocument(id, overrides = {}) {
-  const baseDocument = {
+function createPackDocument(id: string, overrides: Partial<ContentPackDocument> = {}): ContentPackDocument {
+  const baseDocument: ContentPackDocument = {
     metadata: {
       id,
       title: { default: `${id} title`, variants: {} },
@@ -621,7 +1238,7 @@ function createPackDocument(id, overrides = {}) {
   };
 }
 
-function createDefaultEventTypes(slug) {
+function createDefaultEventTypes(slug: string): EventManifest {
   return {
     packSlug: slug,
     eventTypes: [
@@ -635,7 +1252,7 @@ function createDefaultEventTypes(slug) {
   };
 }
 
-async function createWorkspace(packs) {
+async function createWorkspace(packs: PackConfig[]): Promise<Workspace> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'content-cli-'));
 
   await writeJson(
@@ -693,18 +1310,18 @@ async function createWorkspace(packs) {
   };
 }
 
-function parseEvents(stdout, stderr) {
+function parseEvents(stdout: string, stderr: string): ParsedEvent[] {
   return [...parseJsonLines(stdout), ...parseJsonLines(stderr)];
 }
 
-function parseJsonLines(output) {
+function parseJsonLines(output: string): ParsedEvent[] {
   return output
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .reduce((events, line) => {
+    .reduce((events: ParsedEvent[], line) => {
       try {
-        events.push(JSON.parse(line));
+        events.push(JSON.parse(line) as ParsedEvent);
       } catch {
         // Ignore non-JSON lines.
       }
@@ -712,10 +1329,10 @@ function parseJsonLines(output) {
     }, []);
 }
 
-async function runCli(args, options) {
+async function runCli(args: string[], options: { cwd: string }): Promise<CliResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(
-      process.execPath,
+      TSX_PATH,
       [CLI_PATH, ...args],
       {
         cwd: options.cwd,
@@ -727,10 +1344,10 @@ async function runCli(args, options) {
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk;
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk;
     });
     child.on('error', (error) => {
@@ -739,10 +1356,10 @@ async function runCli(args, options) {
     child.on('close', (code) => {
       resolve({ code, stdout, stderr });
     });
-  }, CLI_TEST_TIMEOUT_MS);
+  });
 }
 
-async function assertFileExists(filePath) {
+async function assertFileExists(filePath: string): Promise<void> {
   try {
     await fs.access(filePath);
   } catch {
@@ -750,17 +1367,17 @@ async function assertFileExists(filePath) {
   }
 }
 
-async function writeJson(filePath, data) {
+async function writeJson(filePath: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(`${filePath}`, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
 }
 
-function renderJson5Document(document) {
+function renderJson5Document(document: unknown): string {
   const json = JSON.stringify(document, null, 2);
   return `// json5 test document\n${json}`;
 }
 
-async function writeJson5(filePath, data) {
+async function writeJson5(filePath: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const source =
     typeof data === 'string' ? data : renderJson5Document(data);
@@ -768,21 +1385,21 @@ async function writeJson5(filePath, data) {
   await fs.writeFile(filePath, normalized, 'utf8');
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
-async function bumpPackVersion(root, slug, nextVersion) {
+async function bumpPackVersion(root: string, slug: string, nextVersion: string): Promise<void> {
   const packFile = await readPackFile(root, slug);
   packFile.document.metadata.version = nextVersion;
   await writePackFile(packFile.path, packFile.format, packFile.document);
 }
 
-function startWatchCli(args, options) {
+function startWatchCli(args: string[], options: { cwd: string }): WatchProcess {
   const child = spawn(
-    process.execPath,
+    TSX_PATH,
     [CLI_PATH, ...args],
     {
       cwd: options.cwd,
@@ -791,17 +1408,17 @@ function startWatchCli(args, options) {
     },
   );
 
-  const stdoutInterface = readline.createInterface({ input: child.stdout });
-  const stderrInterface = readline.createInterface({ input: child.stderr });
+  const stdoutInterface = readline.createInterface({ input: child.stdout! });
+  const stderrInterface = readline.createInterface({ input: child.stderr! });
   const events = createEventCollector();
 
-  const handleLine = (line) => {
+  const handleLine = (line: string): void => {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
       return;
     }
     try {
-      const parsed = JSON.parse(trimmed);
+      const parsed = JSON.parse(trimmed) as ParsedEvent;
       events.push(parsed);
     } catch {
       // Ignore non-JSON lines.
@@ -811,7 +1428,7 @@ function startWatchCli(args, options) {
   stdoutInterface.on('line', handleLine);
   stderrInterface.on('line', handleLine);
 
-  const cleanup = () => {
+  const cleanup = (): void => {
     stdoutInterface.off('line', handleLine);
     stderrInterface.off('line', handleLine);
     stdoutInterface.close();
@@ -828,10 +1445,10 @@ function startWatchCli(args, options) {
   return {
     child,
     events,
-    async stop(signal = 'SIGINT') {
+    async stop(signal: NodeJS.Signals = 'SIGINT') {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill(signal);
-        await new Promise((resolve) => {
+        await new Promise<void>((resolve) => {
           child.once('exit', () => resolve());
         });
       }
@@ -839,13 +1456,18 @@ function startWatchCli(args, options) {
   };
 }
 
-function createEventCollector() {
-  const bufferedEvents = [];
-  const waiters = [];
-  const history = [];
+interface Waiter {
+  matcher: (event: ParsedEvent) => boolean;
+  resolve: (event: ParsedEvent) => void;
+}
+
+function createEventCollector(): EventCollector {
+  const bufferedEvents: ParsedEvent[] = [];
+  const waiters: Waiter[] = [];
+  const history: ParsedEvent[] = [];
 
   return {
-    push(event) {
+    push(event: ParsedEvent) {
       history.push(event);
       for (let index = 0; index < waiters.length; index += 1) {
         const waiter = waiters[index];
@@ -857,7 +1479,7 @@ function createEventCollector() {
       }
       bufferedEvents.push(event);
     },
-    waitForEvent(matcher, timeoutMs = 10000) {
+    waitForEvent(matcher: (event: ParsedEvent) => boolean, timeoutMs = 10000): Promise<ParsedEvent> {
       const existingIndex = bufferedEvents.findIndex(matcher);
       if (existingIndex !== -1) {
         const [event] = bufferedEvents.splice(existingIndex, 1);
@@ -865,9 +1487,9 @@ function createEventCollector() {
       }
 
       return new Promise((resolve, reject) => {
-        const waiter = {
+        const waiter: Waiter = {
           matcher,
-          resolve: (event) => {
+          resolve: (event: ParsedEvent) => {
             clearTimeout(timeoutId);
             resolve(event);
           },
@@ -892,14 +1514,14 @@ function createEventCollector() {
   };
 }
 
-async function rewritePackWithoutChanges(packPath) {
+async function rewritePackWithoutChanges(packPath: string): Promise<void> {
   const raw = await fs.readFile(packPath, 'utf8');
   const format = packPath.endsWith('.json5') ? 'json5' : 'json';
   const parsed = format === 'json5' ? JSON5.parse(raw) : JSON.parse(raw);
   await writePackFile(packPath, format, parsed);
 }
 
-async function setMissingDependency(root, slug, missingSlug) {
+async function setMissingDependency(root: string, slug: string, missingSlug: string): Promise<void> {
   const packFile = await readPackFile(root, slug);
   packFile.document.metadata.dependencies = {
     requires: [{ packId: missingSlug }],
@@ -907,7 +1529,7 @@ async function setMissingDependency(root, slug, missingSlug) {
   await writePackFile(packFile.path, packFile.format, packFile.document);
 }
 
-async function readPackFile(root, slug) {
+async function readPackFile(root: string, slug: string): Promise<PackFile> {
   const contentDir = path.join(root, 'packages', slug, 'content');
   const jsonPath = path.join(contentDir, 'pack.json');
   const json5Path = path.join(contentDir, 'pack.json5');
@@ -917,7 +1539,7 @@ async function readPackFile(root, slug) {
     return {
       path: jsonPath,
       format: 'json',
-      document: JSON.parse(raw),
+      document: JSON.parse(raw) as ContentPackDocument,
     };
   }
 
@@ -926,14 +1548,14 @@ async function readPackFile(root, slug) {
     return {
       path: json5Path,
       format: 'json5',
-      document: JSON5.parse(raw),
+      document: JSON5.parse(raw) as ContentPackDocument,
     };
   }
 
   throw new Error(`Expected pack document for ${slug}`);
 }
 
-async function pathExists(filePath) {
+async function pathExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
     return true;
@@ -942,7 +1564,7 @@ async function pathExists(filePath) {
   }
 }
 
-async function writePackFile(filePath, format, document) {
+async function writePackFile(filePath: string, format: 'json' | 'json5', document: ContentPackDocument): Promise<void> {
   if (format === 'json5') {
     await writeJson5(filePath, document);
     return;
@@ -950,7 +1572,7 @@ async function writePackFile(filePath, format, document) {
   await writeJson(filePath, document);
 }
 
-async function seedWorkspaceOutputs(rootDirectory) {
+async function seedWorkspaceOutputs(rootDirectory: string): Promise<void> {
   const manifest = await buildRuntimeEventManifest({ rootDirectory });
   const { schemaOptions } = await withMutedConsole(() =>
     validateContentPacks(manifest.manifestDefinitions, { rootDirectory }),
@@ -959,15 +1581,16 @@ async function seedWorkspaceOutputs(rootDirectory) {
   await writeRuntimeEventManifest(manifest.moduleSource, { rootDirectory });
   await compileWorkspacePacks(
     { rootDirectory },
-    { cwd: rootDirectory, schema: schemaOptions },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { cwd: rootDirectory, schema: schemaOptions as any },
   );
 }
 
-async function withMutedConsole(action) {
+async function withMutedConsole<T>(action: () => Promise<T>): Promise<T> {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const originalError = console.error;
-  const noop = () => {};
+  const noop = (): void => {};
 
   console.log = noop;
   console.warn = noop;

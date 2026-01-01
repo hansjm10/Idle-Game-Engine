@@ -306,9 +306,15 @@ importers:
       '@idle-engine/config-vitest':
         specifier: workspace:*
         version: link:../../packages/config-vitest
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.9.1
       fast-check:
         specifier: ^4.3.0
         version: 4.3.0
+      tsx:
+        specifier: ^4.20.6
+        version: 4.20.6
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.9.1)(jiti@1.21.7)(jsdom@25.0.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1)
