@@ -14,11 +14,11 @@ import {
   buildRuntimeEventManifest,
   validateContentPacks,
   writeRuntimeEventManifest,
-} from '../generate.js';
+} from './generate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CLI_PATH = path.resolve(__dirname, '../compile.ts');
-const TSX_PATH = path.resolve(__dirname, '../../../../node_modules/.bin/tsx');
+const CLI_PATH = path.resolve(__dirname, './compile.ts');
+const TSX_PATH = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
 const CLI_TEST_TIMEOUT_MS = 30000;
 
 interface CliResult {
