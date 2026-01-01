@@ -4,9 +4,27 @@ const EMPTY_ARRAY = Object.freeze([]);
 const FLAG_VISIBLE = 1 << 0;
 const FLAG_UNLOCKED = 1 << 1;
 const compareStableStrings = (left, right) => left < right ? -1 : left > right ? 1 : 0;
-export function buildProgressionSnapshot(step, publishedAt, state) {
+/**
+ * Builds a UI-ready progression snapshot from authoritative game state.
+ *
+ * By default, this function resets per-tick accumulators after building the snapshot,
+ * "consuming" the accumulator data. Pass `{ resetAccumulators: false }` to build a
+ * snapshot without resetting accumulators - useful when deriving long-lived metrics
+ * or when multiple consumers need access to the same tick's data.
+ *
+ * **Note:** When using `resetAccumulators: false`, you are responsible for manually
+ * calling `resetPerTickAccumulators()` before the next tick to prevent double-counting.
+ *
+ * @param step - The current simulation step number
+ * @param publishedAt - Timestamp when the snapshot is published (ms since epoch)
+ * @param state - The authoritative game state to snapshot
+ * @param options - Snapshot options (optional)
+ * @returns A frozen ProgressionSnapshot object
+ */
+export function buildProgressionSnapshot(step, publishedAt, state, options) {
+    const resetAccumulators = options?.resetAccumulators ?? true;
     const stepDurationMs = state?.stepDurationMs ?? 100;
-    const resources = createResourceViews(stepDurationMs, state?.resources);
+    const resources = createResourceViews(stepDurationMs, state?.resources, resetAccumulators);
     const resourceAmounts = createResourceAmountLookup(resources);
     const generators = createGeneratorViews(step, state?.generators, state?.generatorPurchases, resourceAmounts);
     const upgrades = createUpgradeViews(state?.upgrades, state?.upgradePurchases, resourceAmounts);
@@ -26,7 +44,7 @@ export function buildProgressionSnapshot(step, publishedAt, state) {
         prestigeLayers,
     });
 }
-function createResourceViews(stepDurationMs, source) {
+function createResourceViews(stepDurationMs, source, resetAccumulators = true) {
     if (!source) {
         return EMPTY_ARRAY;
     }
@@ -55,7 +73,9 @@ function createResourceViews(stepDurationMs, source) {
             views.push(view);
         }
         const frozen = Object.freeze(views);
-        source.state.resetPerTickAccumulators();
+        if (resetAccumulators) {
+            source.state.resetPerTickAccumulators();
+        }
         return frozen;
     }
     if (source.serialized) {

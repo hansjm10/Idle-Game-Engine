@@ -226,6 +226,29 @@ export type ProgressionSnapshot = Readonly<{
   prestigeLayers: readonly PrestigeLayerView[];
 }>;
 
+/**
+ * Options for building a progression snapshot.
+ */
+export interface ProgressionSnapshotOptions {
+  /**
+   * Whether to reset per-tick accumulators (income, expense, netPerSecond, tickDelta)
+   * after building the snapshot. When true (the default), the snapshot "consumes"
+   * the accumulator data, resetting it for the next tick.
+   *
+   * Set to false when you need to build a snapshot without consuming the accumulator
+   * data - for example, when deriving long-lived metrics or when multiple consumers
+   * need access to the same tick's data.
+   *
+   * **Warning:** When set to false, you MUST manually call
+   * `resourceState.resetPerTickAccumulators()` before the next tick's rate
+   * application (e.g., before `finalizeTick`). Failing to do so will cause
+   * rates to accumulate incorrectly, resulting in double-counting bugs.
+   *
+   * @default true
+   */
+  readonly resetAccumulators?: boolean;
+}
+
 export interface ResourceProgressionMetadata {
   readonly displayName?: string;
 }
@@ -281,13 +304,32 @@ export interface ProgressionAuthoritativeState {
   readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
 }
 
+/**
+ * Builds a UI-ready progression snapshot from authoritative game state.
+ *
+ * By default, this function resets per-tick accumulators after building the snapshot,
+ * "consuming" the accumulator data. Pass `{ resetAccumulators: false }` to build a
+ * snapshot without resetting accumulators - useful when deriving long-lived metrics
+ * or when multiple consumers need access to the same tick's data.
+ *
+ * **Note:** When using `resetAccumulators: false`, you are responsible for manually
+ * calling `resetPerTickAccumulators()` before the next tick to prevent double-counting.
+ *
+ * @param step - The current simulation step number
+ * @param publishedAt - Timestamp when the snapshot is published (ms since epoch)
+ * @param state - The authoritative game state to snapshot
+ * @param options - Snapshot options (optional)
+ * @returns A frozen ProgressionSnapshot object
+ */
 export function buildProgressionSnapshot(
   step: number,
   publishedAt: number,
   state?: ProgressionAuthoritativeState,
+  options?: ProgressionSnapshotOptions,
 ): ProgressionSnapshot {
+  const resetAccumulators = options?.resetAccumulators ?? true;
   const stepDurationMs = state?.stepDurationMs ?? 100;
-  const resources = createResourceViews(stepDurationMs, state?.resources);
+  const resources = createResourceViews(stepDurationMs, state?.resources, resetAccumulators);
   const resourceAmounts = createResourceAmountLookup(resources);
   const generators = createGeneratorViews(
     step,
@@ -334,6 +376,7 @@ export function buildProgressionSnapshot(
 function createResourceViews(
   stepDurationMs: number,
   source?: ProgressionResourceState,
+  resetAccumulators = true,
 ): readonly ResourceView[] {
   if (!source) {
     return EMPTY_ARRAY as readonly ResourceView[];
@@ -370,7 +413,9 @@ function createResourceViews(
     }
 
     const frozen = Object.freeze(views);
-    source.state.resetPerTickAccumulators();
+    if (resetAccumulators) {
+      source.state.resetPerTickAccumulators();
+    }
     return frozen;
   }
 

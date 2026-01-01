@@ -1204,6 +1204,7 @@ export {
   type ProgressionAchievementState,
   type ProgressionPrestigeLayerState,
   type ProgressionSnapshot,
+  type ProgressionSnapshotOptions,
   type ResourceView,
   type GeneratorView,
   type GeneratorCostView,

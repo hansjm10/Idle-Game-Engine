@@ -826,4 +826,148 @@ describe('buildProgressionSnapshot', () => {
       });
     });
   });
+
+  describe('resetAccumulators option', () => {
+    it('resets per-tick accumulators by default after building snapshot', () => {
+      const resourceState = createResourceState([
+        { id: 'energy', startAmount: 100, unlocked: true, visible: true },
+      ]);
+
+      const energyIndex = resourceState.requireIndex('energy');
+      resourceState.applyIncome(energyIndex, 10);
+      resourceState.finalizeTick(100);
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        resources: { state: resourceState },
+      };
+
+      // First snapshot - should have the rate data
+      const snapshot1 = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot1.resources[0].perSecond).toBe(10);
+
+      // Second snapshot without re-applying rates - accumulators were reset
+      resourceState.finalizeTick(100);
+      const snapshot2 = buildProgressionSnapshot(2, 200, state);
+      expect(snapshot2.resources[0].perSecond).toBe(0);
+    });
+
+    it('resets accumulators when resetAccumulators is explicitly true', () => {
+      const resourceState = createResourceState([
+        { id: 'energy', startAmount: 100, unlocked: true, visible: true },
+      ]);
+
+      const energyIndex = resourceState.requireIndex('energy');
+      resourceState.applyIncome(energyIndex, 10);
+      resourceState.finalizeTick(100);
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        resources: { state: resourceState },
+      };
+
+      const snapshot1 = buildProgressionSnapshot(1, 100, state, { resetAccumulators: true });
+      expect(snapshot1.resources[0].perSecond).toBe(10);
+
+      // Accumulators were reset
+      resourceState.finalizeTick(100);
+      const snapshot2 = buildProgressionSnapshot(2, 200, state);
+      expect(snapshot2.resources[0].perSecond).toBe(0);
+    });
+
+    it('preserves per-tick accumulators when resetAccumulators is false', () => {
+      const resourceState = createResourceState([
+        { id: 'energy', startAmount: 100, unlocked: true, visible: true },
+      ]);
+
+      const energyIndex = resourceState.requireIndex('energy');
+      resourceState.applyIncome(energyIndex, 10);
+      resourceState.finalizeTick(100);
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        resources: { state: resourceState },
+      };
+
+      // Build snapshot without resetting accumulators
+      const snapshot1 = buildProgressionSnapshot(1, 100, state, { resetAccumulators: false });
+      expect(snapshot1.resources[0].perSecond).toBe(10);
+
+      // Accumulators still have data - can build another snapshot with same data
+      // Must reset manually before the next finalizeTick
+      resourceState.resetPerTickAccumulators();
+
+      // Now apply new rates and finalize
+      resourceState.applyIncome(energyIndex, 5);
+      resourceState.finalizeTick(100);
+
+      const snapshot2 = buildProgressionSnapshot(2, 200, state, { resetAccumulators: false });
+      expect(snapshot2.resources[0].perSecond).toBe(5);
+    });
+
+    it('allows multiple snapshots from same tick when resetAccumulators is false', () => {
+      const resourceState = createResourceState([
+        { id: 'energy', startAmount: 100, unlocked: true, visible: true },
+      ]);
+
+      const energyIndex = resourceState.requireIndex('energy');
+      resourceState.applyIncome(energyIndex, 10);
+      resourceState.finalizeTick(100);
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        resources: { state: resourceState },
+      };
+
+      // Build multiple snapshots without resetting - useful for metrics aggregation
+      const snapshot1 = buildProgressionSnapshot(1, 100, state, { resetAccumulators: false });
+      const snapshot2 = buildProgressionSnapshot(1, 100, state, { resetAccumulators: false });
+      const snapshot3 = buildProgressionSnapshot(1, 100, state, { resetAccumulators: false });
+
+      // All snapshots should have the same accumulator data
+      expect(snapshot1.resources[0].perSecond).toBe(10);
+      expect(snapshot2.resources[0].perSecond).toBe(10);
+      expect(snapshot3.resources[0].perSecond).toBe(10);
+
+      // Final snapshot resets for next tick
+      const snapshot4 = buildProgressionSnapshot(1, 100, state, { resetAccumulators: true });
+      expect(snapshot4.resources[0].perSecond).toBe(10);
+
+      // Now accumulators are reset
+      resourceState.finalizeTick(100);
+      const snapshot5 = buildProgressionSnapshot(2, 200, state);
+      expect(snapshot5.resources[0].perSecond).toBe(0);
+    });
+
+    it('returns correct snapshot data when resetAccumulators is false', () => {
+      const resourceState = createResourceState([
+        { id: 'energy', startAmount: 100, capacity: 500, unlocked: true, visible: true },
+      ]);
+
+      const energyIndex = resourceState.requireIndex('energy');
+      resourceState.applyIncome(energyIndex, 10);
+      resourceState.applyExpense(energyIndex, 3);
+      resourceState.finalizeTick(100);
+
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        resources: {
+          state: resourceState,
+          metadata: new Map([['energy', { displayName: 'Energy' }]]),
+        },
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state, { resetAccumulators: false });
+
+      const resource = snapshot.resources[0];
+      expect(resource.id).toBe('energy');
+      expect(resource.displayName).toBe('Energy');
+      expect(resource.amount).toBeCloseTo(100.7, 5); // 100 + (10 - 3) * 0.1
+      expect(resource.unlocked).toBe(true);
+      expect(resource.visible).toBe(true);
+      expect(resource.capacity).toBe(500);
+      expect(resource.perSecond).toBe(7); // 10 - 3
+      expect(resource.perTick).toBeCloseTo(0.7, 5); // 7 * 0.1
+    });
+  });
 });
