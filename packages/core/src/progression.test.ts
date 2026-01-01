@@ -970,4 +970,223 @@ describe('buildProgressionSnapshot', () => {
       expect(resource.perTick).toBeCloseTo(0.7, 5); // 7 * 0.1
     });
   });
+
+  describe('metrics', () => {
+    it('returns undefined when no metrics provided', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toBeUndefined();
+    });
+
+    it('returns undefined when metrics array is empty', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [],
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toBeUndefined();
+    });
+
+    it('includes all defined metrics in snapshot', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.play-time',
+            displayName: 'Play Time',
+            description: 'Total time played',
+            kind: 'counter',
+            unit: 'seconds',
+            aggregation: 'sum',
+            sourceKind: 'runtime',
+          },
+          {
+            id: 'metric.clicks',
+            displayName: 'Clicks',
+            kind: 'counter',
+            unit: '1',
+            sourceKind: 'content',
+          },
+        ],
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(2);
+      expect(snapshot.metrics![0]).toEqual({
+        id: 'metric.play-time',
+        displayName: 'Play Time',
+        description: 'Total time played',
+        kind: 'counter',
+        unit: 'seconds',
+        aggregation: 'sum',
+        sourceKind: 'runtime',
+      });
+      expect(snapshot.metrics![1]).toEqual({
+        id: 'metric.clicks',
+        displayName: 'Clicks',
+        kind: 'counter',
+        unit: '1',
+        sourceKind: 'content',
+      });
+    });
+
+    it('includes metric values from provider', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.play-time',
+            displayName: 'Play Time',
+            kind: 'counter',
+            unit: 'seconds',
+            sourceKind: 'runtime',
+          },
+        ],
+        metricValueProvider: {
+          getMetricValue: (metricId) =>
+            metricId === 'metric.play-time' ? 3600 : undefined,
+        },
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).toMatchObject({
+        id: 'metric.play-time',
+        value: 3600,
+      });
+    });
+
+    it('omits value when provider returns undefined', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.play-time',
+            displayName: 'Play Time',
+            kind: 'counter',
+            unit: 'seconds',
+            sourceKind: 'runtime',
+          },
+        ],
+        metricValueProvider: {
+          getMetricValue: () => undefined,
+        },
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).not.toHaveProperty('value');
+    });
+
+    it('omits value when provider returns non-finite value', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.play-time',
+            displayName: 'Play Time',
+            kind: 'counter',
+            unit: 'seconds',
+            sourceKind: 'runtime',
+          },
+        ],
+        metricValueProvider: {
+          getMetricValue: () => NaN,
+        },
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).not.toHaveProperty('value');
+    });
+
+    it('uses metric id as displayName when not provided', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.unnamed',
+            kind: 'gauge',
+            unit: '1',
+            sourceKind: 'content',
+          },
+        ],
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).toMatchObject({
+        id: 'metric.unnamed',
+        displayName: 'metric.unnamed',
+      });
+    });
+
+    it('omits description when empty or whitespace-only', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.no-desc',
+            displayName: 'No Description',
+            description: '   ',
+            kind: 'gauge',
+            unit: '1',
+            sourceKind: 'content',
+          },
+        ],
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).not.toHaveProperty('description');
+    });
+
+    it('omits aggregation when not defined', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.gauge',
+            displayName: 'Gauge Metric',
+            kind: 'gauge',
+            unit: '1',
+            sourceKind: 'content',
+          },
+        ],
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).not.toHaveProperty('aggregation');
+    });
+
+    it('works with metrics but no value provider', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.static',
+            displayName: 'Static Metric',
+            kind: 'counter',
+            unit: '1',
+            sourceKind: 'content',
+          },
+        ],
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).toEqual({
+        id: 'metric.static',
+        displayName: 'Static Metric',
+        kind: 'counter',
+        unit: '1',
+        sourceKind: 'content',
+      });
+    });
+  });
 });

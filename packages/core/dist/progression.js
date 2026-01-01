@@ -32,6 +32,7 @@ export function buildProgressionSnapshot(step, publishedAt, state, options) {
     const transforms = createTransformViews(step, publishedAt, stepDurationMs, state?.transforms);
     const achievements = createAchievementViews(state?.achievements);
     const prestigeLayers = createPrestigeLayerViews(state?.prestigeLayers, state?.prestigeSystem);
+    const metrics = createMetricViews(state?.metrics, state?.metricValueProvider);
     return Object.freeze({
         step,
         publishedAt,
@@ -42,6 +43,7 @@ export function buildProgressionSnapshot(step, publishedAt, state, options) {
         transforms,
         ...(achievements ? { achievements } : {}),
         prestigeLayers,
+        ...(metrics ? { metrics } : {}),
     });
 }
 function createResourceViews(stepDurationMs, source, resetAccumulators = true) {
@@ -423,5 +425,30 @@ function evaluatePrestigeQuote(evaluator, layerId) {
     catch {
         return undefined;
     }
+}
+function createMetricViews(metrics, valueProvider) {
+    if (!metrics || metrics.length === 0) {
+        return undefined;
+    }
+    const views = [];
+    for (const metric of metrics) {
+        const value = valueProvider?.getMetricValue(metric.id);
+        const description = typeof metric.description === 'string' && metric.description.trim().length > 0
+            ? metric.description
+            : undefined;
+        const aggregation = metric.aggregation;
+        const view = Object.freeze({
+            id: metric.id,
+            displayName: metric.displayName ?? metric.id,
+            ...(description ? { description } : {}),
+            kind: metric.kind,
+            unit: metric.unit,
+            ...(aggregation ? { aggregation } : {}),
+            sourceKind: metric.sourceKind,
+            ...(value !== undefined && Number.isFinite(value) ? { value } : {}),
+        });
+        views.push(view);
+    }
+    return views.length > 0 ? Object.freeze(views) : undefined;
 }
 //# sourceMappingURL=progression.js.map
