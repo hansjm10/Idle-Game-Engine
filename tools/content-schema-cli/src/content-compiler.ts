@@ -68,10 +68,13 @@ export function isModuleNotFoundError(
   }
 
   const errorWithMessage = error as { message?: unknown };
+  const stringified = String(error);
   const message =
     typeof errorWithMessage.message === 'string'
       ? errorWithMessage.message
-      : String(error);
+      : stringified !== '[object Object]'
+        ? stringified
+        : JSON.stringify(error);
   return message.includes(packageName);
 }
 

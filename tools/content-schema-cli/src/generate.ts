@@ -445,7 +445,7 @@ function validateManifestStructure(
   }
 
   if (!Array.isArray(eventTypes)) {
-    throw new Error(`Manifest ${relativePath} must declare an eventTypes array.`);
+    throw new TypeError(`Manifest ${relativePath} must declare an eventTypes array.`);
   }
 
   return { packSlug, eventTypes };
@@ -551,7 +551,7 @@ function computeManifestHash(entries: ManifestEntry[]): string {
 function fnv1a(input: string): number {
   let hash = 0x811c9dc5;
   for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
+    hash ^= input.codePointAt(index) ?? 0;
     hash = Math.imul(hash, 0x01000193);
     hash >>>= 0;
   }
@@ -814,9 +814,9 @@ async function findContentPackPath(packageRoot: string): Promise<string | undefi
 async function readContentPackDocument(packPath: string): Promise<ContentPackDocument> {
   const raw = await fs.readFile(packPath, 'utf8');
   if (packPath.toLowerCase().endsWith('.json5')) {
-    return JSON5.parse(raw) as ContentPackDocument;
+    return JSON5.parse(raw);
   }
-  return JSON.parse(raw) as ContentPackDocument;
+  return JSON.parse(raw);
 }
 
 function extractDocumentMetadata(document: ContentPackDocument | undefined): {
@@ -1173,10 +1173,12 @@ async function fileExists(targetPath: string): Promise<boolean> {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
-  runGenerate().catch((error) => {
+  try {
+    await runGenerate();
+  } catch (error) {
     logUnhandledError(error, false);
     process.exitCode = 1;
-  });
+  }
 }
 
 function isExecutedDirectly(moduleUrl: string): boolean {

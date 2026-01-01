@@ -142,8 +142,10 @@ export function parseArgs(argv: string[], resolveCwd: (p: string) => string): Cl
     cwd: undefined,
   };
 
-  for (let index = 0; index < argv.length; index += 1) {
+  let index = 0;
+  while (index < argv.length) {
     const arg = argv[index];
+    index += 1;
 
     if (BOOLEAN_FLAGS.has(arg)) {
       const flagKey = arg.slice(2) as keyof Pick<
@@ -155,14 +157,14 @@ export function parseArgs(argv: string[], resolveCwd: (p: string) => string): Cl
     }
 
     if (arg === '--cwd' || arg === '-C' || arg.startsWith('--cwd=')) {
-      const parsed = parseValueArg(arg, argv, index, '--cwd');
+      const parsed = parseValueArg(arg, argv, index - 1, '--cwd');
       options.cwd = resolveCwd(parsed.value);
       index += parsed.skip;
       continue;
     }
 
     if (arg === '--summary' || arg.startsWith('--summary=')) {
-      const parsed = parseValueArg(arg, argv, index, '--summary');
+      const parsed = parseValueArg(arg, argv, index - 1, '--summary');
       options.summary = parsed.value;
       index += parsed.skip;
       continue;

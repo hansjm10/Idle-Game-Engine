@@ -54,10 +54,12 @@ interface ExecuteContext {
 
 type CreateLoggerFn = (options: { pretty?: boolean }) => Logger;
 
-void run().catch((error) => {
+try {
+  await run();
+} catch (error) {
   console.error(error instanceof Error ? error.stack ?? error.message : error);
   process.exitCode = 1;
-});
+}
 
 async function run(): Promise<void> {
   const args = process.argv.slice(2);
@@ -314,8 +316,10 @@ function parseCliArgs(argv: string[]): CliOptions {
     cwd: undefined,
   };
 
-  for (let index = 0; index < argv.length; index += 1) {
+  let index = 0;
+  while (index < argv.length) {
     const arg = argv[index];
+    index += 1;
 
     if (BOOLEAN_FLAGS.has(arg)) {
       const flagKey = arg.slice(2) as keyof Pick<CliOptions, 'check' | 'clean' | 'pretty' | 'watch'>;
@@ -324,14 +328,14 @@ function parseCliArgs(argv: string[]): CliOptions {
     }
 
     if (arg === '--cwd' || arg === '-C' || arg.startsWith('--cwd=')) {
-      const parsed = parseValueArg(arg, argv, index, '--cwd');
+      const parsed = parseValueArg(arg, argv, index - 1, '--cwd');
       options.cwd = resolveWorkspaceRoot(parsed.value);
       index += parsed.skip;
       continue;
     }
 
     if (arg === '--summary' || arg.startsWith('--summary=')) {
-      const parsed = parseValueArg(arg, argv, index, '--summary');
+      const parsed = parseValueArg(arg, argv, index - 1, '--summary');
       options.summary = parsed.value;
       index += parsed.skip;
       continue;
