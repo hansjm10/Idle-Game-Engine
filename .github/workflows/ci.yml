@@ -80,6 +80,9 @@ jobs:
           NODE_OPTIONS: '--dns-result-order=ipv4first'
         run: pnpm test:ci
 
+      - name: Validation Benchmark (regression check)
+        run: pnpm --filter @idle-engine/content-schema bench:check
+
       - name: Upload coverage markdown
         uses: actions/upload-artifact@v4
         with:

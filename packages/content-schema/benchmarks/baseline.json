@@ -1,0 +1,141 @@
+{
+  "event": "benchmark_run_end",
+  "schemaVersion": 1,
+  "benchmark": {
+    "name": "content-pack-validation"
+  },
+  "config": {
+    "warmupIterations": 3,
+    "measureIterations": 10,
+    "runs": 3,
+    "targets": {
+      "tiny": 30,
+      "medium": 100,
+      "large": 500,
+      "cachedSpeedup": 0.05
+    },
+    "enforceTargets": false
+  },
+  "results": {
+    "uncached": [
+      {
+        "label": "uncached-tiny",
+        "preset": "tiny",
+        "shape": {
+          "resources": 20,
+          "generators": 10,
+          "upgrades": 8,
+          "achievements": 2,
+          "automations": 1
+        },
+        "stats": {
+          "meanMs": 13.232267,
+          "medianMs": 12.167638,
+          "stdDevMs": 2.348502,
+          "minMs": 11.040042,
+          "maxMs": 16.489121,
+          "hz": 75.573,
+          "samples": 3,
+          "unit": "ms"
+        },
+        "targetMs": 30,
+        "meanOverTarget": 0.4411,
+        "status": "OK",
+        "enforceTarget": false
+      },
+      {
+        "label": "uncached-medium",
+        "preset": "medium",
+        "shape": {
+          "resources": 80,
+          "generators": 60,
+          "upgrades": 40,
+          "achievements": 15,
+          "automations": 6
+        },
+        "stats": {
+          "meanMs": 52.908346,
+          "medianMs": 52.203007,
+          "stdDevMs": 1.857898,
+          "minMs": 51.069087,
+          "maxMs": 55.452944,
+          "hz": 18.901,
+          "samples": 3,
+          "unit": "ms"
+        },
+        "targetMs": 100,
+        "meanOverTarget": 0.5291,
+        "status": "OK",
+        "enforceTarget": false
+      },
+      {
+        "label": "uncached-large",
+        "preset": "large",
+        "shape": {
+          "resources": 500,
+          "generators": 200,
+          "upgrades": 150,
+          "achievements": 50,
+          "automations": 20
+        },
+        "stats": {
+          "meanMs": 195.964149,
+          "medianMs": 198.927918,
+          "stdDevMs": 5.115479,
+          "minMs": 188.767,
+          "maxMs": 200.197529,
+          "hz": 5.103,
+          "samples": 3,
+          "unit": "ms"
+        },
+        "targetMs": 500,
+        "meanOverTarget": 0.3919,
+        "status": "OK",
+        "enforceTarget": false
+      }
+    ],
+    "cached": [
+      {
+        "label": "cached-medium",
+        "preset": "medium",
+        "shape": {
+          "resources": 80,
+          "generators": 60,
+          "upgrades": 40,
+          "achievements": 15,
+          "automations": 6
+        },
+        "hitStats": {
+          "meanMs": 49.597156,
+          "medianMs": 49.748217,
+          "stdDevMs": 0.261639,
+          "minMs": 49.229106,
+          "maxMs": 49.814145,
+          "hz": 20.162,
+          "samples": 3,
+          "unit": "ms"
+        },
+        "missStats": {
+          "meanMs": 57.01664,
+          "medianMs": 56.842923,
+          "stdDevMs": 0.740414,
+          "minMs": 56.209246,
+          "maxMs": 57.997751,
+          "hz": 17.539,
+          "samples": 3,
+          "unit": "ms"
+        },
+        "speedup": 0.1301,
+        "speedupTarget": 0.05,
+        "status": "OK",
+        "enforceTarget": false
+      }
+    ]
+  },
+  "env": {
+    "nodeVersion": "v22.21.1",
+    "platform": "linux",
+    "arch": "x64",
+    "commitSha": "2338413de5bf84d208e67384c6c77a1e7983facc"
+  }
+}
