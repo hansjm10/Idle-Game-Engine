@@ -1188,5 +1188,33 @@ describe('buildProgressionSnapshot', () => {
         sourceKind: 'content',
       });
     });
+
+    it('handles provider errors gracefully', () => {
+      const state: ProgressionAuthoritativeState = {
+        stepDurationMs: 100,
+        metrics: [
+          {
+            id: 'metric.error',
+            displayName: 'Error Metric',
+            kind: 'gauge',
+            unit: 'seconds',
+            sourceKind: 'runtime',
+          },
+        ],
+        metricValueProvider: {
+          getMetricValue: () => {
+            throw new Error('Provider failed');
+          },
+        },
+      };
+
+      const snapshot = buildProgressionSnapshot(1, 100, state);
+      expect(snapshot.metrics).toHaveLength(1);
+      expect(snapshot.metrics![0]).not.toHaveProperty('value');
+      expect(snapshot.metrics![0]).toMatchObject({
+        id: 'metric.error',
+        displayName: 'Error Metric',
+      });
+    });
   });
 });

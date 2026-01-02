@@ -999,7 +999,13 @@ function createMetricViews(
   const views: MetricView[] = [];
 
   for (const metric of metrics) {
-    const value = valueProvider?.getMetricValue(metric.id);
+    let value: number | undefined;
+    try {
+      value = valueProvider?.getMetricValue(metric.id);
+    } catch {
+      // Silently handle provider errors - metric will be shown without a value
+      value = undefined;
+    }
     const description =
       typeof metric.description === 'string' && metric.description.trim().length > 0
         ? metric.description
