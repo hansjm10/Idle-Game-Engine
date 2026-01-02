@@ -141,5 +141,34 @@ describe('Validation Caching Integration', () => {
       expect(cache.size).toBe(2);
       expect(result1.pack.digest.hash).not.toBe(result2.pack.digest.hash);
     });
+
+    it('invalidates cache when entity fields change', () => {
+      const cache = createValidationCache();
+      const validator = createContentPackValidator({
+        cache,
+        balance: { enabled: false },
+      });
+
+      const pack1 = JSON.parse(JSON.stringify(packInput));
+      const pack2 = JSON.parse(JSON.stringify(packInput));
+      const originalMultiplier = pack1.generators[0].purchase.costMultiplier;
+
+      pack2.generators[0].purchase.costMultiplier = originalMultiplier + 1;
+
+      const result1 = validator.parse(pack1);
+      const result2 = validator.parse(pack2);
+      const result1Purchase = result1.pack.generators[0].purchase;
+      if (!('costMultiplier' in result1Purchase)) {
+        throw new Error('Expected single-currency purchase for cache invalidation test.');
+      }
+      const result2Purchase = result2.pack.generators[0].purchase;
+      if (!('costMultiplier' in result2Purchase)) {
+        throw new Error('Expected single-currency purchase for cache invalidation test.');
+      }
+
+      expect(cache.size).toBe(2);
+      expect(result1Purchase.costMultiplier).toBe(originalMultiplier);
+      expect(result2Purchase.costMultiplier).toBe(originalMultiplier + 1);
+    });
   });
 });

@@ -68,6 +68,7 @@ export interface ValidationCacheOptions {
   /**
    * Maximum number of entries to keep in the cache.
    * When exceeded, the least recently used entries are evicted.
+   * Set to 0 or less to disable caching.
    * @default 100
    */
   readonly maxSize?: number;
@@ -124,7 +125,7 @@ export const validationResultToCachedResult = (
 export const createValidationCache = (
   options: ValidationCacheOptions = {},
 ): ValidationCache => {
-  const maxSize = options.maxSize ?? 100;
+  const maxSize = Math.max(0, options.maxSize ?? 100);
   const cache = new Map<string, CachedValidationResult>();
 
   const get = (key: string): CachedValidationResult | undefined => {
@@ -138,6 +139,9 @@ export const createValidationCache = (
   };
 
   const set = (key: string, result: CachedValidationResult): void => {
+    if (maxSize === 0) {
+      return;
+    }
     // If key exists, delete first to update insertion order
     if (cache.has(key)) {
       cache.delete(key);

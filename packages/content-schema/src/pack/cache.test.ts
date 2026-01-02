@@ -172,6 +172,14 @@ describe('createValidationCache', () => {
       expect(tinyCache.get('key2')).toBeDefined();
     });
 
+    it('treats maxSize of 0 as disabled', () => {
+      const disabledCache = createValidationCache({ maxSize: 0 });
+
+      disabledCache.set('key1', validationResultToCachedResult(createMockValidationResult('pack1')));
+      expect(disabledCache.size).toBe(0);
+      expect(disabledCache.get('key1')).toBeUndefined();
+    });
+
     it('updates existing entry without eviction', () => {
       const smallCache = createValidationCache({ maxSize: 2 });
 
