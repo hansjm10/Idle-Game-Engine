@@ -18,7 +18,7 @@ This design introduces performance benchmarks and validation result caching for 
 - **Background**: The content validation pipeline performs structural validation (Zod), cross-reference checks, cycle detection, balance validation, and normalization. Design docs recommend caching normalized results (content-dsl-schema-design.md §7), but no caching exists today. No performance benchmarks exist to establish baselines or catch regressions.
 - **Problem**: Running complex validation on large content packs could be slow, blocking authoring workflows. Without benchmarks, we cannot measure performance or detect regressions.
 - **Forces**:
-  - Target: <100ms for 100-entity packs, <500ms for 500-entity packs
+  - Target: `<100ms` for 100-entity packs, `<500ms` for 500-entity packs
   - Caching must reduce repeat validation time by >90%
   - CI must catch performance regressions before merge
 
@@ -312,7 +312,7 @@ Regression check: Fail if `current > baseline * 1.25` for any metric.
 - **Performance**:
   - Benchmark suite measures all validation stages
   - CI regression detection with 25% threshold
-  - Target: <100ms for 100 entities, <500ms for 500 entities
+  - Target: `<100ms` for 100 entities, `<500ms` for 500 entities
 
 ## 11. Risks & Mitigations
 
