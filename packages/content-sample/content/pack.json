@@ -360,6 +360,7 @@
     {
       "id": "sample-pack.reactor-insulation",
       "name": { "default": "Reactor Insulation", "variants": {} },
+      "description": { "default": "Increases reactor output by 25% through better heat management.", "variants": {} },
       "category": "generator",
       "targets": [
         { "kind": "generator", "id": "sample-pack.reactor" }
@@ -393,6 +394,7 @@
     {
       "id": "sample-pack.reactor-overclock",
       "name": { "default": "Reactor Overclock", "variants": {} },
+      "description": { "default": "Pushes reactor beyond safe limits for 50% more energy generation.", "variants": {} },
       "category": "generator",
       "targets": [
         { "kind": "generator", "id": "sample-pack.reactor" }
@@ -423,6 +425,7 @@
     {
       "id": "sample-pack.reactor-phase-cooling",
       "name": { "default": "Reactor Phase Cooling", "variants": {} },
+      "description": { "default": "Advanced cooling technology allows for 75% increased reactor efficiency.", "variants": {} },
       "category": "generator",
       "targets": [
         { "kind": "generator", "id": "sample-pack.reactor" }

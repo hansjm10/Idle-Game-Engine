@@ -121,6 +121,7 @@ describe('buildProgressionSnapshot', () => {
       {
         id: 'sample.reactor-insulation',
         displayName: 'Reactor Insulation',
+        description: 'Improves reactor efficiency',
         status: 'available',
         isVisible: true,
         unlockHint: 'Collect more energy',
@@ -209,6 +210,7 @@ describe('buildProgressionSnapshot', () => {
       {
         id: 'sample.reactor-insulation',
         displayName: 'Reactor Insulation',
+        description: 'Improves reactor efficiency',
         status: 'available',
         canAfford: true,
         costs: [
@@ -508,6 +510,41 @@ describe('buildProgressionSnapshot', () => {
         costs: [{ resourceId: 'crystal', amount: 100, canAfford: false }],
       }),
     ]);
+  });
+
+  it('includes upgrade description when provided', () => {
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      upgrades: [
+        {
+          id: 'sample-upgrade',
+          displayName: 'Upgrade',
+          description: 'Boosts efficiency',
+          status: 'locked',
+          isVisible: true,
+        },
+      ],
+    };
+
+    const snapshot = buildProgressionSnapshot(3, 900, state);
+    expect(snapshot.upgrades[0]).toHaveProperty('description', 'Boosts efficiency');
+  });
+
+  it('omits upgrade description when not provided', () => {
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      upgrades: [
+        {
+          id: 'sample-upgrade',
+          displayName: 'Upgrade',
+          status: 'locked',
+          isVisible: true,
+        },
+      ],
+    };
+
+    const snapshot = buildProgressionSnapshot(3, 900, state);
+    expect(snapshot.upgrades[0]).not.toHaveProperty('description');
   });
 
   describe('prestigeLayers', () => {
