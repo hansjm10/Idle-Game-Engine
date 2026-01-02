@@ -24,6 +24,7 @@ import type {
   TransformState,
   TransformView,
 } from './transform-system.js';
+import { telemetry } from './telemetry.js';
 
 const EMPTY_ARRAY: readonly never[] = Object.freeze([]);
 const FLAG_VISIBLE = 1 << 0;
@@ -1002,8 +1003,11 @@ function createMetricViews(
     let value: number | undefined;
     try {
       value = valueProvider?.getMetricValue(metric.id);
-    } catch {
-      // Silently handle provider errors - metric will be shown without a value
+    } catch (error) {
+      telemetry.recordWarning('MetricValueProviderError', {
+        metricId: metric.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
       value = undefined;
     }
     const description =

@@ -7520,4 +7520,81 @@ describe('Metric state building', () => {
     expect(resourcesMetric?.kind).toBe('gauge');
     expect(resourcesMetric?.sourceKind).toBe('content');
   });
+
+  it('provides metric values through buildProgressionSnapshot via metricValueProvider', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const basePack = createContentPack({
+      resources: [energy],
+    });
+
+    const packWithMetrics = {
+      ...basePack,
+      metrics: [
+        {
+          id: 'metric.playtime',
+          name: { default: 'Playtime', variants: {} },
+          description: { default: 'Total time played', variants: {} },
+          kind: 'counter' as const,
+          unit: 'seconds',
+          aggregation: 'sum' as const,
+          attributes: [],
+          source: { kind: 'runtime' as const },
+        },
+        {
+          id: 'metric.clicks',
+          name: { default: 'Click Count', variants: {} },
+          description: { default: 'Total clicks', variants: {} },
+          kind: 'counter' as const,
+          unit: 'count',
+          aggregation: 'sum' as const,
+          attributes: [],
+          source: { kind: 'script' as const, scriptId: 'click-tracker' },
+        },
+      ],
+      lookup: {
+        ...basePack.lookup,
+        metrics: new Map([
+          ['metric.playtime', { id: 'metric.playtime' }],
+          ['metric.clicks', { id: 'metric.clicks' }],
+        ]),
+      },
+    };
+
+    // Create coordinator with getCustomMetricValue callback
+    const metricValues: Record<string, number> = {
+      'metric.playtime': 3600,
+      'metric.clicks': 42,
+    };
+
+    const coordinator = createProgressionCoordinator({
+      content: packWithMetrics as any,
+      stepDurationMs: 100,
+      getCustomMetricValue: (metricId: string) => metricValues[metricId] ?? 0,
+    });
+
+    coordinator.updateForStep(10);
+
+    // Build progression snapshot and verify metric values flow through
+    const snapshot = buildProgressionSnapshot(10, Date.now(), coordinator.state);
+
+    expect(snapshot.metrics).toBeDefined();
+    expect(snapshot.metrics?.length).toBe(2);
+
+    const playtimeView = snapshot.metrics?.find((m) => m.id === 'metric.playtime');
+    expect(playtimeView).toBeDefined();
+    expect(playtimeView?.displayName).toBe('Playtime');
+    expect(playtimeView?.value).toBe(3600);
+    expect(playtimeView?.kind).toBe('counter');
+    expect(playtimeView?.unit).toBe('seconds');
+
+    const clicksView = snapshot.metrics?.find((m) => m.id === 'metric.clicks');
+    expect(clicksView).toBeDefined();
+    expect(clicksView?.displayName).toBe('Click Count');
+    expect(clicksView?.value).toBe(42);
+    expect(clicksView?.sourceKind).toBe('script');
+  });
 });
