@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import type { contentIdSchema, packSlugSchema } from '../base/ids.js';
 import type { upgradeEffectSchema } from '../modules/upgrades.js';
 import type { BalanceValidationOptions } from '../balance.js';
+import type { ValidationCache } from './cache.js';
 import type { ContentSchemaWarning } from '../errors.js';
 import type { ContentPackDigest } from '../runtime-helpers.js';
 import type {
@@ -112,6 +113,15 @@ export interface ContentSchemaOptions {
   readonly activePackIds?: AllowlistEntries;
   readonly warningSink?: (warning: ContentSchemaWarning) => void;
   readonly balance?: BalanceValidationOptions;
+  /**
+   * Optional validation cache for memoizing validation results.
+   * When provided, validation results are cached by content digest,
+   * allowing repeated validations of the same content to return
+   * cached results instead of re-running the full validation pipeline.
+   *
+   * @see createValidationCache
+   */
+  readonly cache?: ValidationCache;
 }
 
 export type KnownPackEntry = NonNullable<ContentSchemaOptions['knownPacks']>[number];

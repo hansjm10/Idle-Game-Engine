@@ -8,6 +8,11 @@ import {
   systemAutomationTargetIdSchema,
 } from '../base/ids.js';
 import { validateContentPackBalance } from '../balance.js';
+import {
+  cachedResultToValidationResult,
+  validationResultToCachedResult,
+} from './cache.js';
+import { computePackDigest, digestToCacheKey } from './digest.js';
 import { BalanceValidationError, type ContentSchemaWarning } from '../errors.js';
 import {
   resolveFeatureViolations,
@@ -36,6 +41,10 @@ import type {
 import { toMutablePath } from './utils.js';
 
 export { contentPackSchema };
+export { createValidationCache } from './cache.js';
+export type { ValidationCache, CachedValidationResult, ValidationCacheOptions } from './cache.js';
+export { computePackDigest, digestToCacheKey } from './digest.js';
+export type { ContentPackDigest } from './digest.js';
 
 export type {
   ContentPackSafeParseFailure,
@@ -176,10 +185,49 @@ const validateFeatureGates = (
   });
 };
 
-const buildContentPackEffectsSchema = (
+/**
+ * Runs validation refinements on a parsed content pack.
+ * This is separated from the Zod schema to enable caching.
+ */
+const runValidationRefinements = (
+  pack: ParsedContentPack,
+  context: CrossReferenceContext,
   options: ContentSchemaOptions,
   warningSink: (warning: ContentSchemaWarning) => void,
-) => {
+): void => {
+  // Collect validation issues
+  const issues: z.ZodIssue[] = [];
+  const ctx: z.RefinementCtx = {
+    addIssue: (issue) => {
+      issues.push({
+        code: issue.code ?? z.ZodIssueCode.custom,
+        path: issue.path ?? [],
+        message: issue.message,
+      } as z.ZodIssue);
+    },
+    path: [],
+  };
+
+  // Run all validation refinements
+  validateCrossReferences(pack, ctx, context);
+  validateDependencies(pack, ctx, context);
+  validateFeatureGates(pack, ctx, options.runtimeVersion, warningSink);
+  validateTransformCycles(pack, ctx);
+  validateUnlockConditionCycles(pack, ctx);
+
+  // Throw if any validation errors occurred
+  if (issues.length > 0) {
+    throw new z.ZodError(issues);
+  }
+};
+
+/**
+ * Builds the cross-reference context from options.
+ */
+const buildCrossReferenceContext = (
+  options: ContentSchemaOptions,
+  warningSink: (warning: ContentSchemaWarning) => void,
+): CrossReferenceContext => {
   const allowlists: CrossReferenceContext['allowlists'] =
     options.allowlists === undefined
       ? {}
@@ -225,7 +273,7 @@ const buildContentPackEffectsSchema = (
     knownPacks.set(packEntry.id, packEntry);
   });
 
-  const context: CrossReferenceContext = {
+  return {
     allowlists,
     warningSink,
     runtimeEventCatalogue,
@@ -233,23 +281,45 @@ const buildContentPackEffectsSchema = (
     activePackIds,
     knownPacks,
   };
+};
 
-  return contentPackSchema
-    .superRefine((pack, ctx) => {
-      validateCrossReferences(pack, ctx, context);
-      validateDependencies(pack, ctx, context);
-      validateFeatureGates(pack, ctx, options.runtimeVersion, warningSink);
-      // Validate transform chains for cycles
-      validateTransformCycles(pack, ctx);
-      // Validate unlock conditions for cycles
-      validateUnlockConditionCycles(pack, ctx);
-    })
-    .transform((pack) =>
-      normalizeContentPack(pack, {
-        runtimeVersion: options.runtimeVersion,
-        warningSink,
-      }),
-    );
+/**
+ * Core validation logic that can be cached.
+ * Returns the full validation result.
+ */
+const runFullValidation = (
+  parsedPack: ParsedContentPack,
+  options: ContentSchemaOptions,
+  warnings: ContentSchemaWarning[],
+  warningSink: (warning: ContentSchemaWarning) => void,
+): ContentPackValidationResult => {
+  // Build context and run refinements
+  const context = buildCrossReferenceContext(options, warningSink);
+  runValidationRefinements(parsedPack, context, options, warningSink);
+
+  // Normalize the pack
+  const normalizedPack = normalizeContentPack(parsedPack, {
+    runtimeVersion: options.runtimeVersion,
+    warningSink,
+  });
+
+  // Run balance validation
+  const balanceOptions = options.balance ?? {};
+  const balanceResult =
+    balanceOptions.enabled === false
+      ? { warnings: Object.freeze([] as ContentSchemaWarning[]), errors: Object.freeze([] as ContentSchemaWarning[]) }
+      : validateContentPackBalance(normalizedPack, balanceOptions, options.warningSink);
+
+  if (balanceResult.errors.length > 0 && balanceOptions.warnOnly !== true) {
+    throw new BalanceValidationError('Balance validation failed.', balanceResult.errors);
+  }
+
+  return {
+    pack: normalizedPack,
+    warnings,
+    balanceWarnings: balanceResult.warnings,
+    balanceErrors: balanceResult.errors,
+  };
 };
 
 export const createContentPackValidator = (
@@ -262,60 +332,72 @@ export const createContentPackValidator = (
       options.warningSink?.(warning);
     };
 
-    const schema = buildContentPackEffectsSchema(options, sink);
-    const pack = schema.parse(input);
+    // Phase 1: Structural validation with Zod
+    const parsedPack = contentPackSchema.parse(input);
 
-    const balanceOptions = options.balance ?? {};
-    const balanceResult =
-      balanceOptions.enabled === false
-        ? { warnings: Object.freeze([] as ContentSchemaWarning[]), errors: Object.freeze([] as ContentSchemaWarning[]) }
-        : validateContentPackBalance(pack, balanceOptions, options.warningSink);
+    // Phase 2: Check cache if available
+    if (options.cache) {
+      const digest = computePackDigest(parsedPack);
+      const cacheKey = digestToCacheKey(digest);
+      const cached = options.cache.get(cacheKey);
 
-    if (balanceResult.errors.length > 0 && balanceOptions.warnOnly !== true) {
-      throw new BalanceValidationError('Balance validation failed.', balanceResult.errors);
+      if (cached) {
+        // Cache hit - replay warnings to sink and return cached result
+        cached.warnings.forEach((w) => options.warningSink?.(w));
+        cached.balanceWarnings.forEach((w) => options.warningSink?.(w));
+        return cachedResultToValidationResult(cached);
+      }
+
+      // Cache miss - run full validation and cache result
+      const result = runFullValidation(parsedPack, options, warnings, sink);
+      options.cache.set(cacheKey, validationResultToCachedResult(result));
+      return result;
     }
 
-    return {
-      pack,
-      warnings,
-      balanceWarnings: balanceResult.warnings,
-      balanceErrors: balanceResult.errors,
-    };
+    // No cache - run full validation directly
+    return runFullValidation(parsedPack, options, warnings, sink);
   },
+
   safeParse(input: unknown): ContentPackSafeParseResult {
     const warnings: ContentSchemaWarning[] = [];
     const sink = (warning: ContentSchemaWarning) => {
       warnings.push(warning);
       options.warningSink?.(warning);
     };
-    const schema = buildContentPackEffectsSchema(options, sink);
-    const result = schema.safeParse(input);
-    if (result.success) {
-      try {
-        const balanceOptions = options.balance ?? {};
-        const balanceResult =
-          balanceOptions.enabled === false
-            ? { warnings: Object.freeze([] as ContentSchemaWarning[]), errors: Object.freeze([] as ContentSchemaWarning[]) }
-            : validateContentPackBalance(result.data, balanceOptions, options.warningSink);
 
-        if (balanceResult.errors.length > 0 && balanceOptions.warnOnly !== true) {
-          throw new BalanceValidationError('Balance validation failed.', balanceResult.errors);
+    // Phase 1: Structural validation with Zod
+    const parseResult = contentPackSchema.safeParse(input);
+    if (!parseResult.success) {
+      return { success: false, error: parseResult.error };
+    }
+    const parsedPack = parseResult.data;
+
+    try {
+      // Phase 2: Check cache if available
+      if (options.cache) {
+        const digest = computePackDigest(parsedPack);
+        const cacheKey = digestToCacheKey(digest);
+        const cached = options.cache.get(cacheKey);
+
+        if (cached) {
+          // Cache hit - replay warnings to sink and return cached result
+          cached.warnings.forEach((w) => options.warningSink?.(w));
+          cached.balanceWarnings.forEach((w) => options.warningSink?.(w));
+          return { success: true, data: cachedResultToValidationResult(cached) };
         }
 
-        return {
-          success: true,
-          data: {
-            pack: result.data,
-            warnings,
-            balanceWarnings: balanceResult.warnings,
-            balanceErrors: balanceResult.errors,
-          },
-        };
-      } catch (error) {
-        return { success: false, error };
+        // Cache miss - run full validation and cache result
+        const result = runFullValidation(parsedPack, options, warnings, sink);
+        options.cache.set(cacheKey, validationResultToCachedResult(result));
+        return { success: true, data: result };
       }
+
+      // No cache - run full validation directly
+      const result = runFullValidation(parsedPack, options, warnings, sink);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error };
     }
-    return { success: false, error: result.error };
   },
 });
 
