@@ -298,6 +298,10 @@ export interface ProgressionGeneratorState {
 export interface ProgressionUpgradeState {
   readonly id: string;
   readonly displayName?: string;
+  /**
+   * Raw description from content. May be empty or whitespace-only.
+   * View construction normalizes empty/whitespace to undefined.
+   */
   readonly description?: string;
   readonly status?: UpgradeStatus;
   readonly isVisible: boolean;

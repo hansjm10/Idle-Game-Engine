@@ -547,6 +547,42 @@ describe('buildProgressionSnapshot', () => {
     expect(snapshot.upgrades[0]).not.toHaveProperty('description');
   });
 
+  it('omits upgrade description when empty string', () => {
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      upgrades: [
+        {
+          id: 'sample-upgrade',
+          displayName: 'Upgrade',
+          description: '',
+          status: 'locked',
+          isVisible: true,
+        },
+      ],
+    };
+
+    const snapshot = buildProgressionSnapshot(3, 900, state);
+    expect(snapshot.upgrades[0]).not.toHaveProperty('description');
+  });
+
+  it('omits upgrade description when whitespace-only', () => {
+    const state: ProgressionAuthoritativeState = {
+      stepDurationMs: 100,
+      upgrades: [
+        {
+          id: 'sample-upgrade',
+          displayName: 'Upgrade',
+          description: '   ',
+          status: 'locked',
+          isVisible: true,
+        },
+      ],
+    };
+
+    const snapshot = buildProgressionSnapshot(3, 900, state);
+    expect(snapshot.upgrades[0]).not.toHaveProperty('description');
+  });
+
   describe('prestigeLayers', () => {
     it('returns empty array when no prestige layers provided', () => {
       const state: ProgressionAuthoritativeState = {
