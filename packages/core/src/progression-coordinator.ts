@@ -1860,6 +1860,7 @@ function createUpgradeRecord(
     : ({
         id: upgrade.id,
         displayName: getDisplayName(upgrade.name, upgrade.id),
+        description: upgrade.description?.default,
         status: 'locked',
         costs: undefined,
         unlockHint: undefined,
@@ -1868,6 +1869,7 @@ function createUpgradeRecord(
 
   state.id = upgrade.id;
   state.displayName = getDisplayName(upgrade.name, upgrade.id);
+  state.description = upgrade.description?.default;
   state.isVisible = Boolean(state.isVisible);
   state.costs = Array.isArray(state.costs) ? state.costs : undefined;
   state.status = state.status ?? 'locked';

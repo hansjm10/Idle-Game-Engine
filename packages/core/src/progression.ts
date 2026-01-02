@@ -79,6 +79,13 @@ export type UpgradeCostView = Readonly<{
 export type UpgradeView = Readonly<{
   id: string;
   displayName: string;
+  /**
+   * Optional description from the upgrade's content definition.
+   * Unlike AutomationView and TransformView where description is required,
+   * upgrade descriptions are optional in the content schema for backward
+   * compatibility with existing content packs.
+   */
+  description?: string;
   status: UpgradeStatus;
   canAfford: boolean;
   costs?: readonly UpgradeCostView[];
@@ -291,6 +298,11 @@ export interface ProgressionGeneratorState {
 export interface ProgressionUpgradeState {
   readonly id: string;
   readonly displayName?: string;
+  /**
+   * Raw description from content. May be empty or whitespace-only.
+   * View construction normalizes empty/whitespace to undefined.
+   */
+  readonly description?: string;
   readonly status?: UpgradeStatus;
   readonly isVisible: boolean;
   readonly unlockHint?: string;
@@ -584,9 +596,15 @@ function createUpgradeViews(
         : undefined;
     const canAfford = areCostsAffordable(resourceAmounts, normalizedCosts);
 
+    const description =
+      typeof upgrade.description === 'string' && upgrade.description.trim().length > 0
+        ? upgrade.description
+        : undefined;
+
     const view: UpgradeView = Object.freeze({
       id: upgrade.id,
       displayName: upgrade.displayName ?? upgrade.id,
+      ...(description ? { description } : {}),
       status,
       canAfford,
       costs: normalizedCosts.length > 0 ? normalizedCosts : undefined,

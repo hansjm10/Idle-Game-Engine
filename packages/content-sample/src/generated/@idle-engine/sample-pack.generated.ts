@@ -4,7 +4,7 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "29e2d46a481346424d5157ecee75995cec29bc60cbe77dc5278b425153b83c45",
+  "artifactHash": "66b316b0ac5b269ad208cf9a059b10bd069d4ab0b5e7ceb80eb4c08a8fe9ef66",
   "digest": {
     "hash": "fnv1a-437f9e3f",
     "version": 1
@@ -1036,6 +1036,12 @@ const serialized = {
           "costMultiplier": 75,
           "currencyId": "sample-pack.energy"
         },
+        "description": {
+          "default": "Increases reactor output by 25% through better heat management.",
+          "variants": {
+            "en-US": "Increases reactor output by 25% through better heat management."
+          }
+        },
         "effects": [
           {
             "generatorId": "sample-pack.reactor",
@@ -1089,6 +1095,12 @@ const serialized = {
           },
           "costMultiplier": 150,
           "currencyId": "sample-pack.energy"
+        },
+        "description": {
+          "default": "Pushes reactor beyond safe limits for 50% more energy generation.",
+          "variants": {
+            "en-US": "Pushes reactor beyond safe limits for 50% more energy generation."
+          }
         },
         "effects": [
           {
@@ -1145,6 +1157,12 @@ const serialized = {
           },
           "costMultiplier": 400,
           "currencyId": "sample-pack.energy"
+        },
+        "description": {
+          "default": "Advanced cooling technology allows for 75% increased reactor efficiency.",
+          "variants": {
+            "en-US": "Advanced cooling technology allows for 75% increased reactor efficiency."
+          }
         },
         "effects": [
           {

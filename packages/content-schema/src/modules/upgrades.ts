@@ -388,6 +388,7 @@ type RepeatableUpgrade = {
 type UpgradeDefinitionInput = {
   readonly id: z.input<typeof contentIdSchema>;
   readonly name: z.input<typeof localizedTextSchema>;
+  readonly description?: z.input<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly tags?: readonly string[];
   readonly category: 'global' | 'resource' | 'generator' | 'automation' | 'prestige';
@@ -408,6 +409,7 @@ type UpgradeDefinitionInput = {
 type UpgradeDefinition = {
   readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
+  readonly description?: z.infer<typeof localizedTextSchema>;
   readonly icon?: string;
   readonly tags: readonly string[];
   readonly category: 'global' | 'resource' | 'generator' | 'automation' | 'prestige';
@@ -440,6 +442,7 @@ export const upgradeDefinitionSchema: z.ZodType<
   .object({
     id: contentIdSchema,
     name: localizedTextSchema,
+    description: localizedTextSchema.optional(),
     icon: z
       .string()
       .trim()

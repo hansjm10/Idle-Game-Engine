@@ -112,13 +112,19 @@ export const normalizeContentPack = (
   );
 
   const normalizedUpgrades = freezeArray(
-    pack.upgrades.map(
-      (upgrade, index) =>
-        freezeObject({
-          ...upgrade,
-          name: normalize(upgrade.name, ['upgrades', index, 'name']),
-        }) as NormalizedUpgrade,
-    ),
+    pack.upgrades.map((upgrade, index) => {
+      const normalizedDescription = normalizeOptional(
+        upgrade.description,
+        ['upgrades', index, 'description'],
+      );
+      return freezeObject({
+        ...upgrade,
+        name: normalize(upgrade.name, ['upgrades', index, 'name']),
+        ...(normalizedDescription === undefined
+          ? {}
+          : { description: normalizedDescription }),
+      }) as NormalizedUpgrade;
+    }),
   );
 
   const normalizedMetrics = freezeArray(
