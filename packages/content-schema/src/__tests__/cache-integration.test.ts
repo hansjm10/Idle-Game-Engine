@@ -4,7 +4,7 @@
  * and that caching provides significant speedup.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createContentPackValidator,
@@ -85,36 +85,22 @@ describe('Validation Caching Integration', () => {
       expect(cache.size).toBe(1);
     });
 
-    it('provides speedup on repeat validation (cache hit faster than miss)', () => {
+    it('returns cached results on repeat validation', () => {
       const cache = createValidationCache();
+      const getSpy = vi.spyOn(cache, 'get');
+      const setSpy = vi.spyOn(cache, 'set');
       const validator = createContentPackValidator({
         cache,
         balance: { enabled: false },
       });
 
-      // Warmup and first validation (cache miss)
-      validator.parse(packInput);
+      const firstResult = validator.parse(packInput);
+      const secondResult = validator.parse(packInput);
 
-      // Measure cache miss time
-      cache.clear();
-      const missStart = performance.now();
-      validator.parse(packInput);
-      const missTime = performance.now() - missStart;
-
-      // Measure cache hit time
-      const hitStart = performance.now();
-      validator.parse(packInput);
-      const hitTime = performance.now() - hitStart;
-
-      // Cache hit should be significantly faster
-      // Note: We use a relaxed threshold since test environments vary
-      expect(hitTime).toBeLessThan(missTime);
-
-      // In ideal conditions, cache hit should be >90% faster
-      // But for CI stability, we just verify it's faster
-      const speedup = (1 - hitTime / missTime) * 100;
-      // Log for debugging benchmark performance
-      console.log(`Cache speedup: ${speedup.toFixed(1)}% (miss: ${missTime.toFixed(2)}ms, hit: ${hitTime.toFixed(2)}ms)`);
+      expect(cache.size).toBe(1);
+      expect(firstResult.pack).toBe(secondResult.pack);
+      expect(getSpy).toHaveBeenCalledTimes(2);
+      expect(setSpy).toHaveBeenCalledTimes(1);
     });
   });
 
