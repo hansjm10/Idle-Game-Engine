@@ -7,7 +7,7 @@
  *   node benchmarks/run-benchmarks.mjs --update-baseline  # Update baseline file
  *   REGRESSION_THRESHOLD=0.25 node benchmarks/run-benchmarks.mjs  # Custom threshold
  */
-import { execSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +26,7 @@ function runBenchmark() {
     let stdout = '';
     let stderr = '';
 
-    const proc = spawn('node', [BENCHMARK_SCRIPT], {
+    const proc = spawn(process.execPath, [BENCHMARK_SCRIPT], {
       stdio: ['inherit', 'pipe', 'pipe'],
       cwd: dirname(BENCHMARK_SCRIPT),
     });

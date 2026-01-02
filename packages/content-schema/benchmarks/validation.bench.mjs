@@ -5,8 +5,10 @@
  *
  * Run: node benchmarks/validation.bench.mjs
  */
-import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, parse } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 
 import {
   createContentPackValidator,
@@ -21,6 +23,8 @@ const BENCHMARK_SCHEMA_VERSION = 1;
 const WARMUP_ITERATIONS = 3;
 const MEASURE_ITERATIONS = 10;
 const RUNS = 3;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Target times in milliseconds
 // Note: Cache only skips refinements/normalization/balance, NOT Zod structural validation.
@@ -85,6 +89,85 @@ function computeStats(samples) {
   };
 }
 
+function resolveGitDir(startDir) {
+  let currentDir = startDir;
+  const { root } = parse(startDir);
+
+  while (true) {
+    const gitPath = join(currentDir, '.git');
+    if (existsSync(gitPath)) {
+      try {
+        const stats = statSync(gitPath);
+        if (stats.isDirectory()) {
+          return gitPath;
+        }
+        if (stats.isFile()) {
+          const content = readFileSync(gitPath, 'utf-8').trim();
+          const match = content.match(/^gitdir:\s*(.+)$/i);
+          if (match) {
+            const gitDirPath = match[1].trim();
+            return isAbsolute(gitDirPath)
+              ? gitDirPath
+              : join(currentDir, gitDirPath);
+          }
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    if (currentDir === root) {
+      return null;
+    }
+
+    currentDir = dirname(currentDir);
+  }
+}
+
+function resolveCommitShaFromGitDir(gitDir) {
+  if (!gitDir) {
+    return null;
+  }
+
+  const headPath = join(gitDir, 'HEAD');
+  if (!existsSync(headPath)) {
+    return null;
+  }
+
+  const head = readFileSync(headPath, 'utf-8').trim();
+  if (!head) {
+    return null;
+  }
+
+  if (!head.startsWith('ref:')) {
+    return /^[0-9a-f]{40}$/i.test(head) ? head : null;
+  }
+
+  const ref = head.slice('ref:'.length).trim();
+  const refPath = join(gitDir, ref);
+  if (existsSync(refPath)) {
+    return readFileSync(refPath, 'utf-8').trim() || null;
+  }
+
+  const packedRefsPath = join(gitDir, 'packed-refs');
+  if (!existsSync(packedRefsPath)) {
+    return null;
+  }
+
+  const packedRefs = readFileSync(packedRefsPath, 'utf-8').split('\n');
+  for (const line of packedRefs) {
+    if (!line || line.startsWith('#') || line.startsWith('^')) {
+      continue;
+    }
+    const [sha, refName] = line.split(' ');
+    if (refName === ref) {
+      return sha;
+    }
+  }
+
+  return null;
+}
+
 function resolveCommitSha() {
   const envSha =
     process.env.GITHUB_SHA ??
@@ -94,12 +177,10 @@ function resolveCommitSha() {
   if (envSha) {
     return envSha;
   }
+
   try {
-    return execSync('git rev-parse HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
+    const gitDir = resolveGitDir(__dirname);
+    return resolveCommitShaFromGitDir(gitDir);
   } catch {
     return null;
   }
