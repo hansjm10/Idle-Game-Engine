@@ -103,9 +103,12 @@ function resolveGitDir(startDir) {
         }
         if (stats.isFile()) {
           const content = readFileSync(gitPath, 'utf-8').trim();
-          const match = content.match(/^gitdir:\s*(.+)$/i);
-          if (match) {
-            const gitDirPath = match[1].trim();
+          const prefix = 'gitdir:';
+          if (content.toLowerCase().startsWith(prefix)) {
+            const gitDirPath = content.slice(prefix.length).trim();
+            if (!gitDirPath) {
+              return null;
+            }
             return isAbsolute(gitDirPath)
               ? gitDirPath
               : join(currentDir, gitDirPath);
