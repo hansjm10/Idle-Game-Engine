@@ -17,9 +17,39 @@ const BASELINE_PATH = join(__dirname, 'baseline.json');
 const BENCHMARK_SCRIPT = join(__dirname, 'validation.bench.mjs');
 
 // Default regression threshold: fail if >25% slower than baseline
-const REGRESSION_THRESHOLD = parseFloat(
+const REGRESSION_THRESHOLD = Number.parseFloat(
   process.env.REGRESSION_THRESHOLD ?? '0.25',
 );
+
+const formatPercent = (value) => `${(value * 100).toFixed(1)}%`;
+
+const formatDeltaPercent = (value) => {
+  const percent = (value * 100).toFixed(1);
+  return value >= 0 ? `+${percent}%` : `${percent}%`;
+};
+
+const classifyChange = (change) => {
+  if (change > REGRESSION_THRESHOLD) {
+    return 'REGRESSION';
+  }
+  if (change < -0.1) {
+    return 'IMPROVED';
+  }
+  return 'OK';
+};
+
+const classifySpeedupChange = (speedupChange) => {
+  if (speedupChange < -REGRESSION_THRESHOLD) {
+    return 'REGRESSION';
+  }
+  if (speedupChange > 0.05) {
+    return 'IMPROVED';
+  }
+  return 'OK';
+};
+
+const findScenario = (scenarios, label) =>
+  scenarios.find((scenario) => scenario.label === label);
 
 function runBenchmark() {
   return new Promise((resolve, reject) => {
@@ -81,18 +111,22 @@ function saveBaseline(results) {
   console.log(`\nBaseline saved to ${BASELINE_PATH}`);
 }
 
-function compareResults(current, baseline) {
-  const regressions = [];
-  const improvements = [];
-
-  // Compare uncached scenarios
-  for (const currentScenario of current.results.uncached) {
-    const baselineScenario = baseline.results.uncached.find(
-      (s) => s.label === currentScenario.label,
+function compareUncachedResults(
+  currentScenarios,
+  baselineScenarios,
+  regressions,
+  improvements,
+) {
+  for (const currentScenario of currentScenarios) {
+    const baselineScenario = findScenario(
+      baselineScenarios,
+      currentScenario.label,
     );
 
     if (!baselineScenario) {
-      console.log(`  [new] ${currentScenario.label}: ${currentScenario.stats.meanMs.toFixed(2)}ms`);
+      console.log(
+        `  [new] ${currentScenario.label}: ${currentScenario.stats.meanMs.toFixed(2)}ms`,
+      );
       continue;
     }
 
@@ -100,9 +134,8 @@ function compareResults(current, baseline) {
     const currentMean = currentScenario.stats.meanMs;
     const change = (currentMean - baselineMean) / baselineMean;
 
-    const changeStr =
-      change >= 0 ? `+${(change * 100).toFixed(1)}%` : `${(change * 100).toFixed(1)}%`;
-    const status = change > REGRESSION_THRESHOLD ? 'REGRESSION' : change < -0.1 ? 'IMPROVED' : 'OK';
+    const changeStr = formatDeltaPercent(change);
+    const status = classifyChange(change);
 
     console.log(
       `  ${currentScenario.label}: ${currentMean.toFixed(2)}ms (baseline: ${baselineMean.toFixed(2)}ms, ${changeStr}) [${status}]`,
@@ -124,15 +157,19 @@ function compareResults(current, baseline) {
       });
     }
   }
+}
 
-  // Compare cached scenarios
-  for (const currentScenario of current.results.cached) {
-    const baselineScenario = baseline.results.cached.find(
-      (s) => s.label === currentScenario.label,
+function compareCachedResults(currentScenarios, baselineScenarios, regressions) {
+  for (const currentScenario of currentScenarios) {
+    const baselineScenario = findScenario(
+      baselineScenarios,
+      currentScenario.label,
     );
 
     if (!baselineScenario) {
-      console.log(`  [new] ${currentScenario.label}: speedup=${(currentScenario.speedup * 100).toFixed(1)}%`);
+      console.log(
+        `  [new] ${currentScenario.label}: speedup=${formatPercent(currentScenario.speedup)}`,
+      );
       continue;
     }
 
@@ -141,11 +178,10 @@ function compareResults(current, baseline) {
 
     // For speedup, regression means current speedup is lower than baseline
     const speedupChange = currentSpeedup - baselineSpeedup;
-    const status =
-      speedupChange < -REGRESSION_THRESHOLD ? 'REGRESSION' : speedupChange > 0.05 ? 'IMPROVED' : 'OK';
+    const status = classifySpeedupChange(speedupChange);
 
     console.log(
-      `  ${currentScenario.label}: speedup=${(currentSpeedup * 100).toFixed(1)}% (baseline: ${(baselineSpeedup * 100).toFixed(1)}%) [${status}]`,
+      `  ${currentScenario.label}: speedup=${formatPercent(currentSpeedup)} (baseline: ${formatPercent(baselineSpeedup)}) [${status}]`,
     );
 
     if (speedupChange < -REGRESSION_THRESHOLD) {
@@ -158,6 +194,24 @@ function compareResults(current, baseline) {
       });
     }
   }
+}
+
+function compareResults(current, baseline) {
+  const regressions = [];
+  const improvements = [];
+
+  compareUncachedResults(
+    current.results.uncached,
+    baseline.results.uncached,
+    regressions,
+    improvements,
+  );
+
+  compareCachedResults(
+    current.results.cached,
+    baseline.results.cached,
+    regressions,
+  );
 
   return { regressions, improvements };
 }
@@ -212,7 +266,9 @@ async function main() {
   console.log('\nPASSED: No regressions detected.');
 }
 
-main().catch((err) => {
+try {
+  await main();
+} catch (err) {
   console.error(err);
   process.exit(1);
-});
+}

@@ -89,34 +89,52 @@ function computeStats(samples) {
   };
 }
 
+function resolveGitDirFromFile(gitPath, currentDir) {
+  const content = readFileSync(gitPath, 'utf-8').trim();
+  const prefix = 'gitdir:';
+  if (!content.toLowerCase().startsWith(prefix)) {
+    return null;
+  }
+
+  const gitDirPath = content.slice(prefix.length).trim();
+  if (!gitDirPath) {
+    return null;
+  }
+
+  return isAbsolute(gitDirPath)
+    ? gitDirPath
+    : join(currentDir, gitDirPath);
+}
+
+function resolveGitDirEntry(gitPath, currentDir) {
+  if (!existsSync(gitPath)) {
+    return null;
+  }
+
+  const stats = statSync(gitPath);
+  if (stats.isDirectory()) {
+    return gitPath;
+  }
+  if (stats.isFile()) {
+    return resolveGitDirFromFile(gitPath, currentDir);
+  }
+
+  return null;
+}
+
 function resolveGitDir(startDir) {
   let currentDir = startDir;
   const { root } = parse(startDir);
 
   while (true) {
     const gitPath = join(currentDir, '.git');
-    if (existsSync(gitPath)) {
-      try {
-        const stats = statSync(gitPath);
-        if (stats.isDirectory()) {
-          return gitPath;
-        }
-        if (stats.isFile()) {
-          const content = readFileSync(gitPath, 'utf-8').trim();
-          const prefix = 'gitdir:';
-          if (content.toLowerCase().startsWith(prefix)) {
-            const gitDirPath = content.slice(prefix.length).trim();
-            if (!gitDirPath) {
-              return null;
-            }
-            return isAbsolute(gitDirPath)
-              ? gitDirPath
-              : join(currentDir, gitDirPath);
-          }
-        }
-      } catch {
-        return null;
+    try {
+      const gitDir = resolveGitDirEntry(gitPath, currentDir);
+      if (gitDir) {
+        return gitDir;
       }
+    } catch {
+      return null;
     }
 
     if (currentDir === root) {
@@ -309,11 +327,10 @@ function runUncachedScenario(presetName, preset) {
   const stats = computeStats(samplesMs);
   const targetMs = TARGETS[presetName];
   const passesTarget = targetMs ? stats.meanMs <= targetMs : true;
-  const status = targetMs
-    ? passesTarget
-      ? 'OK'
-      : 'ABOVE_TARGET'
-    : 'INFO';
+  let status = 'INFO';
+  if (targetMs) {
+    status = passesTarget ? 'OK' : 'ABOVE_TARGET';
+  }
 
   console.log(
     `  mean=${stats.meanMs.toFixed(2)}ms median=${stats.medianMs.toFixed(2)}ms stddev=${stats.stdDevMs.toFixed(2)}ms`,

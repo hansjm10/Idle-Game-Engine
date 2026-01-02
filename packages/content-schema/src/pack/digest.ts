@@ -7,29 +7,40 @@
  */
 
 import {
-  type ContentPackDigest,
   CONTENT_PACK_DIGEST_VERSION,
+  type ContentPackDigest,
 } from '../runtime-helpers.js';
 import type { ParsedContentPack } from './schema.js';
 
-export type { ContentPackDigest };
-export { CONTENT_PACK_DIGEST_VERSION };
+export type { ContentPackDigest } from '../runtime-helpers.js';
+export { CONTENT_PACK_DIGEST_VERSION } from '../runtime-helpers.js';
 
 const FNV1A_OFFSET_BASIS = 0x811c9dc5;
 const FNV1A_PRIME = 0x01000193;
 
 const fnv1a = (input: string): number => {
   let hash = FNV1A_OFFSET_BASIS;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
+  for (const char of input) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined) {
+      continue;
+    }
+    hash ^= codePoint;
     hash = Math.imul(hash, FNV1A_PRIME);
     hash >>>= 0;
   }
   return hash >>> 0;
 };
 
-const compareKeys = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0;
+const compareKeys = (left: string, right: string): number => {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+};
 
 const stableStringify = (value: unknown): string => {
   if (value === null || typeof value !== 'object') {

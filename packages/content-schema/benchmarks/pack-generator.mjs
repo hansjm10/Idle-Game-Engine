@@ -127,6 +127,71 @@ const UPGRADE_CATEGORIES = ['global', 'resource', 'generator', 'automation', 'pr
 // Automation target types (excluding 'system' for simplicity)
 const AUTOMATION_TARGET_TYPES = ['generator', 'upgrade', 'purchaseGenerator'];
 
+const FORMULA_RANGES = {
+  cost: {
+    constant: [10, 1000],
+    linearBase: [5, 100],
+    linearSlope: [1, 50],
+    polynomial: [1, 20],
+    exponentialBase: [5, 50],
+  },
+  threshold: {
+    constant: [100, 10000],
+    linearBase: [50, 500],
+    linearSlope: [10, 100],
+    polynomial: [5, 50],
+    exponentialBase: [50, 200],
+  },
+  rate: {
+    constant: [0.1, 10],
+    linearBase: [1, 5],
+    linearSlope: [0.1, 2],
+    polynomial: [0.1, 2],
+    exponentialBase: [1, 3],
+  },
+};
+
+function generateConstantFormula(rng, context) {
+  const [min, max] = FORMULA_RANGES[context].constant;
+  const value = rng.float(min, max);
+  return { kind: 'constant', value: Math.round(value * 100) / 100 };
+}
+
+function generateLinearFormula(rng, context) {
+  const [baseMin, baseMax] = FORMULA_RANGES[context].linearBase;
+  const [slopeMin, slopeMax] = FORMULA_RANGES[context].linearSlope;
+  const base = rng.float(baseMin, baseMax);
+  const slope = rng.float(slopeMin, slopeMax);
+
+  return {
+    kind: 'linear',
+    base: Math.round(base * 100) / 100,
+    slope: Math.round(slope * 100) / 100,
+  };
+}
+
+function generatePolynomialFormula(rng, context) {
+  const [min, max] = FORMULA_RANGES[context].polynomial;
+  const degree = rng.int(2, 3);
+  const coefficients = [];
+  for (let i = 0; i <= degree; i++) {
+    const coef = rng.float(min, max) / (i + 1);
+    coefficients.push(Math.round(coef * 1000) / 1000);
+  }
+  return { kind: 'polynomial', coefficients };
+}
+
+function generateExponentialFormula(rng, context) {
+  const [min, max] = FORMULA_RANGES[context].exponentialBase;
+  const base = rng.float(min, max);
+  const growth = rng.float(1.01, 1.15);
+  return {
+    kind: 'exponential',
+    base: Math.round(base * 100) / 100,
+    growth: Math.round(growth * 10000) / 10000,
+  };
+}
+
 /**
  * Generate a random numeric formula.
  * Uses a mix of constant, linear, polynomial, and exponential formulas.
@@ -139,65 +204,21 @@ function generateFormula(rng, context = 'rate') {
 
   // 40% constant
   if (roll < 0.4) {
-    const value =
-      context === 'cost'
-        ? rng.float(10, 1000)
-        : context === 'threshold'
-          ? rng.float(100, 10000)
-          : rng.float(0.1, 10);
-    return { kind: 'constant', value: Math.round(value * 100) / 100 };
+    return generateConstantFormula(rng, context);
   }
 
   // 30% linear
   if (roll < 0.7) {
-    const base =
-      context === 'cost'
-        ? rng.float(5, 100)
-        : context === 'threshold'
-          ? rng.float(50, 500)
-          : rng.float(1, 5);
-    const slope =
-      context === 'cost'
-        ? rng.float(1, 50)
-        : context === 'threshold'
-          ? rng.float(10, 100)
-          : rng.float(0.1, 2);
-    return {
-      kind: 'linear',
-      base: Math.round(base * 100) / 100,
-      slope: Math.round(slope * 100) / 100,
-    };
+    return generateLinearFormula(rng, context);
   }
 
   // 20% polynomial (degree 2 or 3)
   if (roll < 0.9) {
-    const degree = rng.int(2, 3);
-    const coefficients = [];
-    for (let i = 0; i <= degree; i++) {
-      const coef =
-        context === 'cost'
-          ? rng.float(1, 20) / (i + 1)
-          : context === 'threshold'
-            ? rng.float(5, 50) / (i + 1)
-            : rng.float(0.1, 2) / (i + 1);
-      coefficients.push(Math.round(coef * 1000) / 1000);
-    }
-    return { kind: 'polynomial', coefficients };
+    return generatePolynomialFormula(rng, context);
   }
 
   // 10% exponential
-  const base =
-    context === 'cost'
-      ? rng.float(5, 50)
-      : context === 'threshold'
-        ? rng.float(50, 200)
-        : rng.float(1, 3);
-  const growth = rng.float(1.01, 1.15);
-  return {
-    kind: 'exponential',
-    base: Math.round(base * 100) / 100,
-    growth: Math.round(growth * 10000) / 10000,
-  };
+  return generateExponentialFormula(rng, context);
 }
 
 /**
@@ -248,48 +269,16 @@ function generateCondition(rng, resourceIds, generatorIds, upgradeIds) {
   return { kind: 'always' };
 }
 
-/**
- * @typedef {object} GenerateSyntheticPackOptions
- * @property {number} resources - Number of resources to generate.
- * @property {number} generators - Number of generators to generate.
- * @property {number} upgrades - Number of upgrades to generate.
- * @property {number} [achievements] - Number of achievements (defaults to resources / 10).
- * @property {number} [automations] - Number of automations (defaults to generators / 10).
- * @property {number} [seed] - Seed for reproducible generation (defaults to 12345).
- */
-
-/**
- * Generate a synthetic content pack with the specified entity counts.
- *
- * @param {GenerateSyntheticPackOptions} options
- * @returns {object} A valid ContentPack object.
- */
-export function generateSyntheticPack(options) {
-  const {
-    resources: resourceCount,
-    generators: generatorCount,
-    upgrades: upgradeCount,
-    achievements: achievementCount = Math.max(1, Math.floor(resourceCount / 10)),
-    automations: automationCount = Math.max(1, Math.floor(generatorCount / 10)),
-    seed = 12345,
-  } = options;
-
-  const rng = new SeededRandom(seed);
-
-  // Generate pack ID
-  const packId = `synth-pack-${seed}`;
-
-  // ===================
-  // Generate Resources
-  // ===================
+function generateResources(rng, resourceCount) {
   const resources = [];
   const resourceIds = [];
+  const tierSize = Math.max(1, Math.ceil(resourceCount / 5));
 
   for (let i = 0; i < resourceCount; i++) {
     const id = `res_${i}`;
     resourceIds.push(id);
 
-    const tier = Math.floor(i / Math.max(1, Math.ceil(resourceCount / 5))) + 1;
+    const tier = Math.floor(i / tierSize) + 1;
     const category = rng.pick(RESOURCE_CATEGORIES);
 
     resources.push({
@@ -297,19 +286,21 @@ export function generateSyntheticPack(options) {
       name: localized(`Resource ${i}`),
       category,
       tier,
-      startAmount: i === 0 ? 100 : 0, // First resource starts with some amount
+      startAmount: i === 0 ? 100 : 0,
       capacity: rng.chance(0.3) ? rng.int(1000, 100000) : null,
       visible: true,
-      unlocked: i < 5, // First few are unlocked
+      unlocked: i < 5,
       order: i,
     });
   }
 
-  // ===================
-  // Generate Generators
-  // ===================
+  return { resources, resourceIds };
+}
+
+function generateGenerators(rng, generatorCount, resourceIds) {
   const generators = [];
   const generatorIds = [];
+  const resourceCount = resourceIds.length;
 
   for (let i = 0; i < generatorCount; i++) {
     const id = `gen_${i}`;
@@ -348,15 +339,15 @@ export function generateSyntheticPack(options) {
     };
 
     // Base unlock condition
-    const baseUnlock =
-      i < 3
-        ? { kind: 'always' }
-        : generateCondition(
-            rng,
-            resourceIds.slice(0, Math.min(i, resourceIds.length)),
-            generatorIds.slice(0, i),
-            [],
-          );
+    let baseUnlock = { kind: 'always' };
+    if (i >= 3) {
+      baseUnlock = generateCondition(
+        rng,
+        resourceIds.slice(0, Math.min(i, resourceIds.length)),
+        generatorIds.slice(0, i),
+        [],
+      );
+    }
 
     generators.push({
       id,
@@ -371,9 +362,85 @@ export function generateSyntheticPack(options) {
     });
   }
 
-  // ===================
-  // Generate Upgrades
-  // ===================
+  return { generators, generatorIds };
+}
+
+function resolveUpgradeTargets(category, rng, resourceIds, generatorIds) {
+  switch (category) {
+    case 'global':
+      return [{ kind: 'global' }];
+    case 'resource':
+      return [{ kind: 'resource', id: rng.pick(resourceIds) }];
+    case 'generator':
+      if (generatorIds.length > 0) {
+        return [{ kind: 'generator', id: rng.pick(generatorIds) }];
+      }
+      return [{ kind: 'global' }];
+    default:
+      return [{ kind: 'global' }];
+  }
+}
+
+function generateUpgradeEffects(rng, resourceIds, generatorIds) {
+  const effects = [];
+  const effectCount = rng.int(1, 2);
+
+  for (let j = 0; j < effectCount; j++) {
+    const effectRoll = rng.random();
+
+    if (effectRoll < 0.4 && resourceIds.length > 0) {
+      effects.push({
+        kind: 'modifyResourceRate',
+        resourceId: rng.pick(resourceIds),
+        operation: rng.pick(['add', 'multiply']),
+        value: generateFormula(rng, 'rate'),
+      });
+    } else if (effectRoll < 0.7 && generatorIds.length > 0) {
+      effects.push({
+        kind: 'modifyGeneratorRate',
+        generatorId: rng.pick(generatorIds),
+        operation: rng.pick(['add', 'multiply']),
+        value: generateFormula(rng, 'rate'),
+      });
+    } else if (effectRoll < 0.85 && generatorIds.length > 0) {
+      effects.push({
+        kind: 'modifyGeneratorCost',
+        generatorId: rng.pick(generatorIds),
+        operation: 'multiply',
+        value: { kind: 'constant', value: rng.float(0.8, 0.95) },
+      });
+    } else {
+      // Default fallback effect
+      effects.push({
+        kind: 'modifyResourceRate',
+        resourceId: rng.pick(resourceIds),
+        operation: 'multiply',
+        value: { kind: 'constant', value: rng.float(1.1, 1.5) },
+      });
+    }
+  }
+
+  return effects;
+}
+
+function generateUpgradePrerequisites(rng, upgradeIds, index) {
+  if (index <= 5 || upgradeIds.length <= 1 || !rng.chance(0.5)) {
+    return [];
+  }
+
+  // Add 1-2 prerequisite upgrades from earlier upgrades
+  const availablePrereqs = upgradeIds.slice(0, index);
+  const prereqCount = rng.int(1, Math.min(2, availablePrereqs.length));
+  const prereqIds = rng.pickMultiple(availablePrereqs, prereqCount);
+
+  return prereqIds.map((prereqId) => ({
+    kind: 'upgradeOwned',
+    upgradeId: prereqId,
+    requiredPurchases: 1,
+  }));
+}
+
+function generateUpgrades(rng, upgradeCount, resourceIds, generatorIds) {
   const upgrades = [];
   const upgradeIds = [];
 
@@ -384,23 +451,7 @@ export function generateSyntheticPack(options) {
     const category = rng.pick(UPGRADE_CATEGORIES);
 
     // Determine targets based on category
-    let targets;
-    switch (category) {
-      case 'global':
-        targets = [{ kind: 'global' }];
-        break;
-      case 'resource':
-        targets = [{ kind: 'resource', id: rng.pick(resourceIds) }];
-        break;
-      case 'generator':
-        targets =
-          generatorIds.length > 0
-            ? [{ kind: 'generator', id: rng.pick(generatorIds) }]
-            : [{ kind: 'global' }];
-        break;
-      default:
-        targets = [{ kind: 'global' }];
-    }
+    const targets = resolveUpgradeTargets(category, rng, resourceIds, generatorIds);
 
     // Cost
     const costCurrencyId = rng.pick(resourceIds);
@@ -411,67 +462,19 @@ export function generateSyntheticPack(options) {
     };
 
     // Effects - generate 1-2 effects
-    const effects = [];
-    const effectCount = rng.int(1, 2);
-
-    for (let j = 0; j < effectCount; j++) {
-      const effectRoll = rng.random();
-
-      if (effectRoll < 0.4 && resourceIds.length > 0) {
-        effects.push({
-          kind: 'modifyResourceRate',
-          resourceId: rng.pick(resourceIds),
-          operation: rng.pick(['add', 'multiply']),
-          value: generateFormula(rng, 'rate'),
-        });
-      } else if (effectRoll < 0.7 && generatorIds.length > 0) {
-        effects.push({
-          kind: 'modifyGeneratorRate',
-          generatorId: rng.pick(generatorIds),
-          operation: rng.pick(['add', 'multiply']),
-          value: generateFormula(rng, 'rate'),
-        });
-      } else if (effectRoll < 0.85 && generatorIds.length > 0) {
-        effects.push({
-          kind: 'modifyGeneratorCost',
-          generatorId: rng.pick(generatorIds),
-          operation: 'multiply',
-          value: { kind: 'constant', value: rng.float(0.8, 0.95) },
-        });
-      } else {
-        // Default fallback effect
-        effects.push({
-          kind: 'modifyResourceRate',
-          resourceId: rng.pick(resourceIds),
-          operation: 'multiply',
-          value: { kind: 'constant', value: rng.float(1.1, 1.5) },
-        });
-      }
-    }
+    const effects = generateUpgradeEffects(rng, resourceIds, generatorIds);
 
     // Prerequisites (only for upgrades after the first few)
-    const prerequisites = [];
-    if (i > 5 && upgradeIds.length > 1 && rng.chance(0.5)) {
-      // Add 1-2 prerequisite upgrades from earlier upgrades
-      const availablePrereqs = upgradeIds.slice(0, i);
-      const prereqCount = rng.int(1, Math.min(2, availablePrereqs.length));
-      const prereqIds = rng.pickMultiple(availablePrereqs, prereqCount);
-      prereqIds.forEach((prereqId) => {
-        prerequisites.push({
-          kind: 'upgradeOwned',
-          upgradeId: prereqId,
-          requiredPurchases: 1,
-        });
-      });
-    }
+    const prerequisites = generateUpgradePrerequisites(rng, upgradeIds, i);
 
     // Repeatable config (30% of upgrades)
-    const repeatable = rng.chance(0.3)
-      ? {
-          maxPurchases: rng.int(5, 20),
-          costCurve: generateFormula(rng, 'cost'),
-        }
-      : undefined;
+    let repeatable;
+    if (rng.chance(0.3)) {
+      repeatable = {
+        maxPurchases: rng.int(5, 20),
+        costCurve: generateFormula(rng, 'cost'),
+      };
+    }
 
     upgrades.push({
       id,
@@ -486,9 +489,51 @@ export function generateSyntheticPack(options) {
     });
   }
 
-  // ===================
-  // Generate Achievements
-  // ===================
+  return { upgrades, upgradeIds };
+}
+
+function generateAchievementTrack(rng, resourceIds, generatorIds, upgradeIds) {
+  const trackRoll = rng.random();
+
+  if (trackRoll < 0.6 && resourceIds.length > 0) {
+    return {
+      kind: 'resource',
+      resourceId: rng.pick(resourceIds),
+      threshold: generateFormula(rng, 'threshold'),
+      comparator: 'gte',
+    };
+  }
+  if (trackRoll < 0.9 && generatorIds.length > 0) {
+    return {
+      kind: 'generator-level',
+      generatorId: rng.pick(generatorIds),
+      level: { kind: 'constant', value: rng.int(5, 50) },
+    };
+  }
+  if (upgradeIds.length > 0) {
+    return {
+      kind: 'upgrade-owned',
+      upgradeId: rng.pick(upgradeIds),
+      purchases: { kind: 'constant', value: 1 },
+    };
+  }
+
+  // Fallback to resource if we somehow have no generators/upgrades
+  return {
+    kind: 'resource',
+    resourceId: rng.pick(resourceIds),
+    threshold: { kind: 'constant', value: 100 },
+    comparator: 'gte',
+  };
+}
+
+function generateAchievements(
+  rng,
+  achievementCount,
+  resourceIds,
+  generatorIds,
+  upgradeIds,
+) {
   const achievements = [];
 
   for (let i = 0; i < achievementCount; i++) {
@@ -498,37 +543,12 @@ export function generateSyntheticPack(options) {
     const tier = rng.pick(ACHIEVEMENT_TIERS);
 
     // Track - typically resource threshold
-    let track;
-    const trackRoll = rng.random();
-
-    if (trackRoll < 0.6 && resourceIds.length > 0) {
-      track = {
-        kind: 'resource',
-        resourceId: rng.pick(resourceIds),
-        threshold: generateFormula(rng, 'threshold'),
-        comparator: 'gte',
-      };
-    } else if (trackRoll < 0.9 && generatorIds.length > 0) {
-      track = {
-        kind: 'generator-level',
-        generatorId: rng.pick(generatorIds),
-        level: { kind: 'constant', value: rng.int(5, 50) },
-      };
-    } else if (upgradeIds.length > 0) {
-      track = {
-        kind: 'upgrade-owned',
-        upgradeId: rng.pick(upgradeIds),
-        purchases: { kind: 'constant', value: 1 },
-      };
-    } else {
-      // Fallback to resource if we somehow have no generators/upgrades
-      track = {
-        kind: 'resource',
-        resourceId: rng.pick(resourceIds),
-        threshold: { kind: 'constant', value: 100 },
-        comparator: 'gte',
-      };
-    }
+    const track = generateAchievementTrack(
+      rng,
+      resourceIds,
+      generatorIds,
+      upgradeIds,
+    );
 
     achievements.push({
       id,
@@ -541,9 +561,26 @@ export function generateSyntheticPack(options) {
     });
   }
 
-  // ===================
-  // Generate Automations
-  // ===================
+  return achievements;
+}
+
+function resolveAutomationTargetId(rng, targetType, generatorIds, upgradeIds) {
+  if (targetType === 'generator' || targetType === 'purchaseGenerator') {
+    return generatorIds.length > 0 ? rng.pick(generatorIds) : undefined;
+  }
+  if (targetType === 'upgrade') {
+    return upgradeIds.length > 0 ? rng.pick(upgradeIds) : undefined;
+  }
+  return undefined;
+}
+
+function generateAutomations(
+  rng,
+  automationCount,
+  resourceIds,
+  generatorIds,
+  upgradeIds,
+) {
   const automations = [];
 
   for (let i = 0; i < automationCount; i++) {
@@ -551,18 +588,12 @@ export function generateSyntheticPack(options) {
 
     const targetType = rng.pick(AUTOMATION_TARGET_TYPES);
 
-    let targetId;
-    switch (targetType) {
-      case 'generator':
-      case 'purchaseGenerator':
-        targetId = generatorIds.length > 0 ? rng.pick(generatorIds) : undefined;
-        break;
-      case 'upgrade':
-        targetId = upgradeIds.length > 0 ? rng.pick(upgradeIds) : undefined;
-        break;
-      default:
-        targetId = undefined;
-    }
+    const targetId = resolveAutomationTargetId(
+      rng,
+      targetType,
+      generatorIds,
+      upgradeIds,
+    );
 
     // Skip if we don't have a valid target
     if (!targetId) {
@@ -576,16 +607,23 @@ export function generateSyntheticPack(options) {
     };
 
     // Unlock condition
-    const unlockCondition =
-      i < 2
-        ? { kind: 'always' }
-        : generateCondition(rng, resourceIds, generatorIds, upgradeIds.slice(0, Math.floor(upgradeIds.length / 2)));
+    let unlockCondition = { kind: 'always' };
+    if (i >= 2) {
+      unlockCondition = generateCondition(
+        rng,
+        resourceIds,
+        generatorIds,
+        upgradeIds.slice(0, Math.floor(upgradeIds.length / 2)),
+      );
+    }
+
+    const actionLabel = targetType === 'generator' ? 'toggles' : 'purchases';
 
     // Build automation object based on target type
     const automation = {
       id,
       name: localized(`Automation ${i}`),
-      description: localized(`Automatically ${targetType === 'generator' ? 'toggles' : 'purchases'} ${targetId}.`),
+      description: localized(`Automatically ${actionLabel} ${targetId}.`),
       targetType,
       targetId,
       trigger,
@@ -603,6 +641,67 @@ export function generateSyntheticPack(options) {
 
     automations.push(automation);
   }
+
+  return automations;
+}
+
+/**
+ * @typedef {object} GenerateSyntheticPackOptions
+ * @property {number} resources - Number of resources to generate.
+ * @property {number} generators - Number of generators to generate.
+ * @property {number} upgrades - Number of upgrades to generate.
+ * @property {number} [achievements] - Number of achievements (defaults to resources / 10).
+ * @property {number} [automations] - Number of automations (defaults to generators / 10).
+ * @property {number} [seed] - Seed for reproducible generation (defaults to 12345).
+ */
+
+/**
+ * Generate a synthetic content pack with the specified entity counts.
+ *
+ * @param {GenerateSyntheticPackOptions} options
+ * @returns {object} A valid ContentPack object.
+ */
+export function generateSyntheticPack(options) {
+  const {
+    resources: resourceCount,
+    generators: generatorCount,
+    upgrades: upgradeCount,
+    achievements: achievementCount = Math.max(1, Math.floor(resourceCount / 10)),
+    automations: automationCount = Math.max(1, Math.floor(generatorCount / 10)),
+    seed = 12345,
+  } = options;
+
+  const rng = new SeededRandom(seed);
+
+  // Generate pack ID
+  const packId = `synth-pack-${seed}`;
+
+  const { resources, resourceIds } = generateResources(rng, resourceCount);
+  const { generators, generatorIds } = generateGenerators(
+    rng,
+    generatorCount,
+    resourceIds,
+  );
+  const { upgrades, upgradeIds } = generateUpgrades(
+    rng,
+    upgradeCount,
+    resourceIds,
+    generatorIds,
+  );
+  const achievements = generateAchievements(
+    rng,
+    achievementCount,
+    resourceIds,
+    generatorIds,
+    upgradeIds,
+  );
+  const automations = generateAutomations(
+    rng,
+    automationCount,
+    resourceIds,
+    generatorIds,
+    upgradeIds,
+  );
 
   // ===================
   // Build Content Pack
