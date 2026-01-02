@@ -120,9 +120,9 @@ export const normalizeContentPack = (
       return freezeObject({
         ...upgrade,
         name: normalize(upgrade.name, ['upgrades', index, 'name']),
-        ...(normalizedDescription !== undefined
-          ? { description: normalizedDescription }
-          : {}),
+        ...(normalizedDescription === undefined
+          ? {}
+          : { description: normalizedDescription }),
       }) as NormalizedUpgrade;
     }),
   );
