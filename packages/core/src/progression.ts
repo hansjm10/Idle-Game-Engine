@@ -178,6 +178,21 @@ export type PrestigeLayerView = Readonly<{
   retainedTargets: readonly string[];
 }>;
 
+export type MetricKind = 'counter' | 'gauge' | 'histogram' | 'upDownCounter';
+export type MetricAggregation = 'sum' | 'delta' | 'cumulative' | 'distribution';
+export type MetricSourceKind = 'runtime' | 'script' | 'content';
+
+export type MetricView = Readonly<{
+  id: string;
+  displayName: string;
+  description?: string;
+  kind: MetricKind;
+  unit: string;
+  aggregation?: MetricAggregation;
+  sourceKind: MetricSourceKind;
+  value?: number;
+}>;
+
 /**
  * Quote returned by PrestigeSystemEvaluator for a specific prestige layer.
  * Contains the current status, calculated reward, and reset/retention targets.
@@ -224,6 +239,7 @@ export type ProgressionSnapshot = Readonly<{
   transforms: readonly TransformView[];
   achievements?: readonly AchievementView[];
   prestigeLayers: readonly PrestigeLayerView[];
+  metrics?: readonly MetricView[];
 }>;
 
 /**
@@ -290,6 +306,31 @@ export interface ProgressionPrestigeLayerState {
   readonly unlockHint?: string;
 }
 
+/**
+ * Metric state for inclusion in progression snapshots.
+ * Contains static definition data and optional runtime value.
+ */
+export interface ProgressionMetricState {
+  readonly id: string;
+  readonly displayName?: string;
+  readonly description?: string;
+  readonly kind: MetricKind;
+  readonly unit: string;
+  readonly aggregation?: MetricAggregation;
+  readonly sourceKind: MetricSourceKind;
+}
+
+/**
+ * Provider interface for metric values.
+ * Implementations supply current values for metrics by ID.
+ */
+export interface MetricValueProvider {
+  /**
+   * Returns the current value for a metric, or undefined if not available.
+   */
+  getMetricValue(metricId: string): number | undefined;
+}
+
 export interface ProgressionAuthoritativeState {
   readonly stepDurationMs: number;
   readonly resources?: ProgressionResourceState;
@@ -302,6 +343,8 @@ export interface ProgressionAuthoritativeState {
   readonly achievements?: readonly ProgressionAchievementState[];
   readonly prestigeSystem?: PrestigeSystemEvaluator;
   readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
+  readonly metrics?: readonly ProgressionMetricState[];
+  readonly metricValueProvider?: MetricValueProvider;
 }
 
 /**
@@ -359,6 +402,10 @@ export function buildProgressionSnapshot(
     state?.prestigeLayers,
     state?.prestigeSystem,
   );
+  const metrics = createMetricViews(
+    state?.metrics,
+    state?.metricValueProvider,
+  );
 
   return Object.freeze({
     step,
@@ -370,6 +417,7 @@ export function buildProgressionSnapshot(
     transforms,
     ...(achievements ? { achievements } : {}),
     prestigeLayers,
+    ...(metrics ? { metrics } : {}),
   });
 }
 
@@ -938,4 +986,45 @@ function evaluatePrestigeQuote(
   } catch {
     return undefined;
   }
+}
+
+function createMetricViews(
+  metrics: readonly ProgressionMetricState[] | undefined,
+  valueProvider: MetricValueProvider | undefined,
+): readonly MetricView[] | undefined {
+  if (!metrics || metrics.length === 0) {
+    return undefined;
+  }
+
+  const views: MetricView[] = [];
+
+  for (const metric of metrics) {
+    let value: number | undefined;
+    try {
+      value = valueProvider?.getMetricValue(metric.id);
+    } catch {
+      // Silently handle provider errors - metric will be shown without a value
+      value = undefined;
+    }
+    const description =
+      typeof metric.description === 'string' && metric.description.trim().length > 0
+        ? metric.description
+        : undefined;
+    const aggregation = metric.aggregation;
+
+    const view: MetricView = Object.freeze({
+      id: metric.id,
+      displayName: metric.displayName ?? metric.id,
+      ...(description ? { description } : {}),
+      kind: metric.kind,
+      unit: metric.unit,
+      ...(aggregation ? { aggregation } : {}),
+      sourceKind: metric.sourceKind,
+      ...(value !== undefined && Number.isFinite(value) ? { value } : {}),
+    });
+
+    views.push(view);
+  }
+
+  return views.length > 0 ? Object.freeze(views) : undefined;
 }

@@ -5861,3 +5861,1663 @@ describe('Integration: prestige confirmationToken validation', () => {
     }
   });
 });
+
+describe('Integration: multi-cost generator error paths', () => {
+  it('reports error when multi-cost generator has invalid costMultiplier on one entry', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost-invalid', {
+      name: 'Multi Cost Invalid Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: -5, costCurve: literalOne }, // Invalid negative costMultiplier
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const costs = (coordinator as any).computeGeneratorCosts('generator.multi-cost-invalid', 0);
+
+    expect(costs).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost-invalid');
+    expect(errors[0].message).toContain('resource.parts');
+    expect(errors[0].message).toContain('costMultiplier is invalid');
+  });
+
+  it('reports error when multi-cost generator cost curve returns negative value', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost-negative', {
+      name: 'Multi Cost Negative Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: 10, costCurve: { kind: 'constant', value: -100 } }, // Negative cost
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const costs = (coordinator as any).computeGeneratorCosts('generator.multi-cost-negative', 0);
+
+    expect(costs).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost-negative');
+    expect(errors[0].message).toContain('resource.parts');
+    expect(errors[0].message).toContain('cost curve evaluation returned');
+  });
+
+  it('reports error when multi-cost generator final cost is non-finite', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost-overflow', {
+      name: 'Multi Cost Overflow Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: 1e308, costCurve: { kind: 'constant', value: 1e308 } }, // Will overflow
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const costs = (coordinator as any).computeGeneratorCosts('generator.multi-cost-overflow', 0);
+
+    expect(costs).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost-overflow');
+    expect(errors[0].message).toContain('final cost is invalid');
+  });
+
+  it('reports error when computeGeneratorCost is called on multi-cost generator', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const generator = createGeneratorDefinition('generator.multi-cost', {
+      name: 'Multi Cost Generator',
+      purchase: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: 25, costCurve: literalOne },
+        ],
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      generators: [generator],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    // computeGeneratorCost (singular) should fail for multi-cost generators
+    const cost = (coordinator as any).computeGeneratorCost('generator.multi-cost', 0);
+
+    expect(cost).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Generator cost calculation failed');
+    expect(errors[0].message).toContain('generator.multi-cost');
+    expect(errors[0].message).toContain('multi-cost purchase definitions require computeGeneratorCosts()');
+  });
+});
+
+describe('Integration: upgrade cost calculation error paths', () => {
+  it('reports error when upgrade has invalid costMultiplier (negative)', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.negative-multiplier', {
+      name: 'Negative Multiplier Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: -10, // Invalid negative
+        costCurve: literalOne,
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.negative-multiplier');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about costMultiplier
+    const multiplierError = errors.find((e) => e.message.includes('costMultiplier is invalid'));
+    expect(multiplierError).toBeDefined();
+    expect(multiplierError!.message).toContain('Upgrade cost calculation failed');
+    expect(multiplierError!.message).toContain('upgrade.negative-multiplier');
+  });
+
+  it('reports error when upgrade cost curve returns negative value', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.negative-curve', {
+      name: 'Negative Curve Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: { kind: 'constant', value: -50 }, // Negative cost curve
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.negative-curve');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about cost curve evaluation
+    const curveError = errors.find((e) => e.message.includes('cost curve evaluation returned'));
+    expect(curveError).toBeDefined();
+    expect(curveError!.message).toContain('Upgrade cost calculation failed');
+    expect(curveError!.message).toContain('upgrade.negative-curve');
+  });
+
+  it('reports error when upgrade final amount overflows to non-finite', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.overflow', {
+      name: 'Overflow Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1e308, // Very large multiplier
+        costCurve: { kind: 'constant', value: 1e308 }, // Very large base
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.overflow');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about final amount
+    const overflowError = errors.find((e) => e.message.includes('final amount is invalid'));
+    expect(overflowError).toBeDefined();
+    expect(overflowError!.message).toContain('Upgrade cost calculation failed');
+    expect(overflowError!.message).toContain('upgrade.overflow');
+  });
+
+  it('reports error when repeatable upgrade cost curve returns negative', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.repeatable-negative', {
+      name: 'Repeatable Negative Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: literalOne,
+      },
+      repeatable: {
+        costCurve: { kind: 'constant', value: -1 }, // Negative repeatable curve
+        maxPurchases: 10,
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.repeatable-negative');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about repeatable cost curve
+    const repeatableError = errors.find((e) => e.message.includes('repeatable cost curve evaluation returned'));
+    expect(repeatableError).toBeDefined();
+    expect(repeatableError!.message).toContain('Upgrade cost calculation failed');
+    expect(repeatableError!.message).toContain('upgrade.repeatable-negative');
+  });
+
+  it('reports error when multi-cost upgrade has invalid entry costMultiplier', () => {
+    const errors: Error[] = [];
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+    const parts = createResourceDefinition('resource.parts', { name: 'Parts' });
+
+    const upgrade = createUpgradeDefinition('upgrade.multi-invalid', {
+      name: 'Multi Invalid Upgrade',
+      cost: {
+        costs: [
+          { resourceId: energy.id, costMultiplier: 10, costCurve: literalOne },
+          { resourceId: parts.id, costMultiplier: NaN, costCurve: literalOne }, // Invalid NaN
+        ],
+      },
+      effects: [],
+    });
+
+    const content = createContentPack({
+      resources: [energy, parts],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const upgradeRecord = (coordinator as any).upgrades.get('upgrade.multi-invalid');
+    const costs = (coordinator as any).computeUpgradeCosts(upgradeRecord);
+
+    expect(costs).toBeUndefined();
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    // Find the specific error about costMultiplier
+    const multiplierError = errors.find(
+      (e) => e.message.includes('costMultiplier is invalid') && e.message.includes('resource.parts'),
+    );
+    expect(multiplierError).toBeDefined();
+    expect(multiplierError!.message).toContain('Upgrade cost calculation failed');
+    expect(multiplierError!.message).toContain('upgrade.multi-invalid');
+  });
+});
+
+describe('Integration: upgrade emitEvent effect error handling', () => {
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('records telemetry warning when emitEvent effect fails to publish', () => {
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.emit-fail', {
+      name: 'Emit Fail Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'emitEvent',
+          eventId: 'test.event.fail',
+        },
+      ],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    // Create a mock event publisher that throws
+    const mockPublisher = createMockEventPublisher();
+    vi.spyOn(mockPublisher, 'publish').mockImplementation(() => {
+      throw new Error('Event channel not registered');
+    });
+
+    // Apply purchase with event publisher
+    coordinator.upgradeEvaluator?.applyPurchase('upgrade.emit-fail', {
+      events: mockPublisher,
+    });
+
+    // Verify the warning was recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'UpgradeEmitEventFailed',
+      expect.objectContaining({
+        upgradeId: 'upgrade.emit-fail',
+        eventId: 'test.event.fail',
+        message: 'Event channel not registered',
+      }),
+    );
+  });
+
+  it('continues to emit other events even when one fails', () => {
+    const energy = createResourceDefinition('resource.energy', { name: 'Energy' });
+
+    const upgrade = createUpgradeDefinition('upgrade.multi-emit', {
+      name: 'Multi Emit Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        { kind: 'emitEvent', eventId: 'test.event.first' },
+        { kind: 'emitEvent', eventId: 'test.event.second' },
+        { kind: 'grantFlag', flagId: 'flag.test', value: true },
+      ],
+    });
+
+    const content = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    const mockPublisher = createMockEventPublisher();
+    let callCount = 0;
+    vi.spyOn(mockPublisher, 'publish').mockImplementation(((eventType: unknown) => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error('First event failed');
+      }
+      // Second event succeeds - return a valid PublishResult
+      return {
+        accepted: true,
+        state: 'accepted' as const,
+        type: eventType,
+        channel: 0,
+        bufferSize: 0,
+        remainingCapacity: 100,
+        dispatchOrder: 0,
+        softLimitActive: false,
+      };
+    }) as typeof mockPublisher.publish);
+
+    coordinator.upgradeEvaluator?.applyPurchase('upgrade.multi-emit', {
+      events: mockPublisher,
+    });
+
+    // Both events should have been attempted
+    expect(mockPublisher.publish).toHaveBeenCalledTimes(2);
+    // Warning should be recorded for the failed one
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'UpgradeEmitEventFailed',
+      expect.objectContaining({
+        eventId: 'test.event.first',
+      }),
+    );
+  });
+});
+
+describe('Integration: prestige reset with missing entities', () => {
+  let telemetryStub: TelemetryFacade;
+
+  beforeEach(() => {
+    telemetryStub = {
+      recordError: vi.fn(),
+      recordWarning: vi.fn(),
+      recordProgress: vi.fn(),
+      recordCounters: vi.fn(),
+      recordTick: vi.fn(),
+    };
+    setTelemetry(telemetryStub);
+  });
+
+  afterEach(() => {
+    resetTelemetry();
+    vi.restoreAllMocks();
+  });
+
+  it('records telemetry warning when resetGenerators references non-existent generator', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.missing-gen-prestige-count', {
+      name: 'Missing Gen Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.missing-gen', {
+      name: 'Missing Gen Layer',
+      resetTargets: [energy.id],
+      resetGenerators: ['generator.does-not-exist'], // References non-existent generator
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const content = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      generators: [], // No generators defined
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Apply prestige - should log warning but not throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.missing-gen', 'test-token');
+    }).not.toThrow();
+
+    // Verify warning was recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetGeneratorSkipped',
+      expect.objectContaining({
+        layerId: 'prestige.missing-gen',
+        generatorId: 'generator.does-not-exist',
+      }),
+    );
+  });
+
+  it('records telemetry warning when resetUpgrades references non-existent upgrade', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.missing-upgrade-prestige-count', {
+      name: 'Missing Upgrade Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.missing-upgrade', {
+      name: 'Missing Upgrade Layer',
+      resetTargets: [energy.id],
+      resetUpgrades: ['upgrade.does-not-exist'], // References non-existent upgrade
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const content = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      upgrades: [], // No upgrades defined
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Apply prestige - should log warning but not throw
+    expect(() => {
+      coordinator.prestigeEvaluator!.applyPrestige('prestige.missing-upgrade', 'test-token');
+    }).not.toThrow();
+
+    // Verify warning was recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetUpgradeSkipped',
+      expect.objectContaining({
+        layerId: 'prestige.missing-upgrade',
+        upgradeId: 'upgrade.does-not-exist',
+      }),
+    );
+  });
+
+  it('continues resetting other entities even when some are missing', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.partial-prestige-count', {
+      name: 'Partial Count',
+      startAmount: 0,
+    });
+
+    const validGenerator = createGeneratorDefinition('generator.valid', {
+      purchase: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const validUpgrade = createUpgradeDefinition('upgrade.valid', {
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [],
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.partial', {
+      name: 'Partial Layer',
+      resetTargets: [energy.id],
+      resetGenerators: ['generator.does-not-exist', validGenerator.id],
+      resetUpgrades: ['upgrade.does-not-exist', validUpgrade.id],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: prestigeFlux.id,
+        baseReward: literalOne,
+      },
+    });
+
+    const content = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      generators: [validGenerator],
+      upgrades: [validUpgrade],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 100,
+    }) as unknown as {
+      updateForStep(step: number): void;
+      generatorEvaluator: { applyPurchase(id: string, count: number): void };
+      upgradeEvaluator?: { applyPurchase(id: string): void };
+      prestigeEvaluator?: { applyPrestige(layerId: string, token?: string): void };
+      getGeneratorRecord(id: string): { state: { owned: number } } | undefined;
+      getUpgradeRecord(id: string): { purchases: number } | undefined;
+    };
+
+    // Build up state
+    coordinator.generatorEvaluator.applyPurchase(validGenerator.id, 5);
+    coordinator.upgradeEvaluator?.applyPurchase(validUpgrade.id);
+
+    expect(coordinator.getGeneratorRecord(validGenerator.id)?.state.owned).toBe(5);
+    expect(coordinator.getUpgradeRecord(validUpgrade.id)?.purchases).toBe(1);
+
+    // Apply prestige
+    coordinator.prestigeEvaluator?.applyPrestige('prestige.partial', 'test-token');
+
+    // Valid entities should have been reset despite the missing ones
+    expect(coordinator.getGeneratorRecord(validGenerator.id)?.state.owned).toBe(0);
+    expect(coordinator.getUpgradeRecord(validUpgrade.id)?.purchases).toBe(0);
+
+    // Both warnings should be recorded
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetGeneratorSkipped',
+      expect.objectContaining({
+        generatorId: 'generator.does-not-exist',
+      }),
+    );
+    expect(telemetryStub.recordWarning).toHaveBeenCalledWith(
+      'PrestigeResetUpgradeSkipped',
+      expect.objectContaining({
+        upgradeId: 'upgrade.does-not-exist',
+      }),
+    );
+  });
+});
+
+describe('Achievement track types', () => {
+  it('tracks flag-based achievements when flag is set via upgrade effect', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100,
+    });
+
+    const flagUpgrade = createUpgradeDefinition('upgrade.flag-granter', {
+      name: 'Flag Granter',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.test-flag',
+          value: true,
+        },
+      ],
+    });
+
+    const flagAchievement = createAchievementDefinition('achievement.flag-track', {
+      track: {
+        kind: 'flag' as const,
+        flagId: 'flag.test-flag',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [flagUpgrade],
+      achievements: [flagAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot1 = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+
+    // Purchase the upgrade to grant the flag
+    coordinator.upgradeEvaluator!.applyPurchase(flagUpgrade.id);
+    coordinator.updateForStep(1);
+    const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+
+  it('tracks script-based achievements when script condition evaluates to true', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const scriptAchievement = createAchievementDefinition('achievement.script-track', {
+      track: {
+        kind: 'script' as const,
+        scriptId: 'script.test-condition',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [scriptAchievement],
+    });
+
+    let scriptResult = false;
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      evaluateScriptCondition: (scriptId: string) =>
+        scriptId === 'script.test-condition' && scriptResult,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot1 = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+
+    scriptResult = true;
+    coordinator.updateForStep(1);
+    const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+
+  it('tracks custom-metric achievements using getCustomMetricValue callback', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const metricAchievement = createAchievementDefinition('achievement.metric-track', {
+      track: {
+        kind: 'custom-metric' as const,
+        metricId: 'metric.playtime',
+        threshold: { kind: 'constant' as const, value: 10 },
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: { kind: 'constant' as const, value: 10 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [metricAchievement],
+    });
+
+    let metricValue = 5;
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      getCustomMetricValue: (metricId: string) =>
+        metricId === 'metric.playtime' ? metricValue : 0,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot1 = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+
+    metricValue = 15;
+    coordinator.updateForStep(1);
+    const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+
+  it('returns 0 for custom-metric when callback returns non-finite value', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const metricAchievement = createAchievementDefinition('achievement.metric-track', {
+      track: {
+        kind: 'custom-metric' as const,
+        metricId: 'metric.broken',
+        threshold: { kind: 'constant' as const, value: 1 },
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: { kind: 'constant' as const, value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [metricAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      getCustomMetricValue: () => NaN,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot.achievements?.[0]?.completions).toBe(0);
+    expect(snapshot.achievements?.[0]?.progress).toBe(0);
+  });
+
+  it('returns 0 for flag track when flag is not set', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const flagAchievement = createAchievementDefinition('achievement.flag-unset', {
+      track: {
+        kind: 'flag' as const,
+        flagId: 'flag.unset-flag',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [flagAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot.achievements?.[0]?.completions).toBe(0);
+    expect(snapshot.achievements?.[0]?.progress).toBe(0);
+  });
+
+  it('returns 0 for script track when evaluateScriptCondition callback is not provided', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const scriptAchievement = createAchievementDefinition('achievement.script-no-callback', {
+      track: {
+        kind: 'script' as const,
+        scriptId: 'script.missing-callback',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [scriptAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot.achievements?.[0]?.completions).toBe(0);
+    expect(snapshot.achievements?.[0]?.progress).toBe(0);
+  });
+
+  it('tracks upgrade-owned achievements', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 100,
+    });
+
+    const upgrade = createUpgradeDefinition('upgrade.tracker', {
+      name: 'Tracked Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1,
+        costCurve: literalOne,
+      },
+    });
+
+    const upgradeAchievement = createAchievementDefinition('achievement.upgrade-owned', {
+      track: {
+        kind: 'upgrade-owned' as const,
+        upgradeId: upgrade.id,
+        purchases: literalOne,
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [upgrade],
+      achievements: [upgradeAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot1 = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+
+    coordinator.upgradeEvaluator!.applyPurchase(upgrade.id);
+    coordinator.updateForStep(1);
+    const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+});
+
+describe('Achievement reward types', () => {
+  it('grants an upgrade when achievement with grantUpgrade reward completes', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const grantedUpgrade = createUpgradeDefinition('upgrade.granted', {
+      name: 'Granted Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 1000,
+        costCurve: literalOne,
+      },
+      effects: [
+        {
+          kind: 'grantFlag',
+          flagId: 'flag.upgrade-granted',
+          value: true,
+        },
+      ],
+    });
+
+    const grantUpgradeAchievement = createAchievementDefinition('achievement.grant-upgrade', {
+      reward: {
+        kind: 'grantUpgrade' as const,
+        upgradeId: grantedUpgrade.id,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      upgrades: [grantedUpgrade],
+      achievements: [grantUpgradeAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 1);
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot.achievements?.[0]?.completions).toBe(1);
+    // Verify the upgrade was granted as a reward
+    expect(
+      coordinator.getConditionContext().getUpgradePurchases(grantedUpgrade.id),
+    ).toBe(1);
+  });
+
+  it('unlocks automation when achievement with unlockAutomation reward completes', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const unlockAutomationAchievement = createAchievementDefinition('achievement.unlock-automation', {
+      reward: {
+        kind: 'unlockAutomation' as const,
+        automationId: 'automation.auto-collect',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [unlockAutomationAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 1);
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot.achievements?.[0]?.completions).toBe(1);
+    expect(coordinator.getGrantedAutomationIds().has('automation.auto-collect')).toBe(true);
+  });
+
+  it('sets flag when achievement with grantFlag reward completes', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const grantFlagAchievement = createAchievementDefinition('achievement.grant-flag', {
+      reward: {
+        kind: 'grantFlag' as const,
+        flagId: 'flag.achievement-unlocked',
+        value: true,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [grantFlagAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 1);
+    coordinator.updateForStep(0);
+
+    const snapshot = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot.achievements?.[0]?.completions).toBe(1);
+    // The flag should be set in the internal conditionContext
+    expect(coordinator.getConditionContext().isFlagSet?.('flag.achievement-unlocked')).toBe(true);
+  });
+
+  it('emits onUnlockEvents when achievement completes', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const achievementWithEvents = createAchievementDefinition('achievement.with-events', {
+      onUnlockEvents: ['sample:reactor-primed'],
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [achievementWithEvents],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    const runtime = new IdleEngineRuntime({ stepSizeMs: 100, initialStep: 0 });
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+
+    runtime.addSystem({
+      id: 'progression-coordinator',
+      tick: ({ step, events }) => {
+        if (step === 0) {
+          coordinator.resourceState.addAmount(energyIndex, 1);
+        }
+        coordinator.updateForStep(step, { events });
+      },
+    });
+
+    const manifest = runtime.getEventBus().getManifest();
+    const entry = manifest.entries.find((e) => e.type === 'sample:reactor-primed');
+    expect(entry).toBeDefined();
+
+    runtime.tick(100);
+
+    const buffer = runtime.getEventBus().getOutboundBuffer(entry!.channel);
+    expect(buffer.length).toBe(1);
+    expect(buffer.at(0).type).toBe('sample:reactor-primed');
+  });
+
+  it('calls onError when grantResource references unknown resource', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const badRewardAchievement = createAchievementDefinition('achievement.bad-reward', {
+      reward: {
+        kind: 'grantResource' as const,
+        resourceId: 'resource.nonexistent',
+        amount: { kind: 'constant' as const, value: 100 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [badRewardAchievement],
+    });
+
+    const errors: Error[] = [];
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      onError: (error) => errors.push(error),
+    });
+
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 1);
+    coordinator.updateForStep(0);
+
+    expect(errors.length).toBe(1);
+    expect(errors[0]?.message).toContain('resource.nonexistent');
+    expect(errors[0]?.message).toContain('grantResource references unknown resource');
+  });
+});
+
+describe('Achievement hydration with derived rewards', () => {
+  it('rebuilds grantFlag rewards from completed achievements on hydration', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const flagAchievement = createAchievementDefinition('achievement.flag-reward', {
+      reward: {
+        kind: 'grantFlag' as const,
+        flagId: 'flag.from-achievement',
+        value: true,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [flagAchievement],
+    });
+
+    // Create coordinator with pre-completed achievement state
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      initialState: {
+        stepDurationMs: 100,
+        achievements: [
+          {
+            id: flagAchievement.id,
+            category: flagAchievement.category,
+            tier: flagAchievement.tier,
+            mode: flagAchievement.progress.mode,
+            isVisible: true,
+            completions: 1,
+            lastCompletedStep: 5,
+            nextRepeatableAtStep: undefined,
+            progress: 1,
+            target: 1,
+          },
+        ],
+      },
+    });
+
+    coordinator.updateForStep(10);
+
+    // Flag should be set from hydrated achievement
+    expect(coordinator.getConditionContext().isFlagSet?.('flag.from-achievement')).toBe(true);
+  });
+
+  it('rebuilds unlockAutomation rewards from completed achievements on hydration', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const automationAchievement = createAchievementDefinition('achievement.automation-reward', {
+      reward: {
+        kind: 'unlockAutomation' as const,
+        automationId: 'automation.hydrated',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [automationAchievement],
+    });
+
+    // Create coordinator with pre-completed achievement state
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      initialState: {
+        stepDurationMs: 100,
+        achievements: [
+          {
+            id: automationAchievement.id,
+            category: automationAchievement.category,
+            tier: automationAchievement.tier,
+            mode: automationAchievement.progress.mode,
+            isVisible: true,
+            completions: 1,
+            lastCompletedStep: 3,
+            nextRepeatableAtStep: undefined,
+            progress: 1,
+            target: 1,
+          },
+        ],
+      },
+    });
+
+    coordinator.updateForStep(10);
+
+    expect(coordinator.getGrantedAutomationIds().has('automation.hydrated')).toBe(true);
+  });
+
+  it('sorts hydrated achievements by completedAtStep then index for deterministic replay', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    // Create achievements that grant flags with specific ordering
+    const achievement1 = createAchievementDefinition('achievement.first', {
+      reward: {
+        kind: 'grantFlag' as const,
+        flagId: 'flag.first',
+        value: true,
+      },
+    });
+
+    const achievement2 = createAchievementDefinition('achievement.second', {
+      reward: {
+        kind: 'grantFlag' as const,
+        flagId: 'flag.second',
+        value: true,
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [achievement1, achievement2],
+    });
+
+    // Create with achievement2 completed before achievement1 (by step)
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      initialState: {
+        stepDurationMs: 100,
+        achievements: [
+          {
+            id: achievement1.id,
+            category: achievement1.category,
+            tier: achievement1.tier,
+            mode: achievement1.progress.mode,
+            isVisible: true,
+            completions: 1,
+            lastCompletedStep: 10,
+            nextRepeatableAtStep: undefined,
+            progress: 1,
+            target: 1,
+          },
+          {
+            id: achievement2.id,
+            category: achievement2.category,
+            tier: achievement2.tier,
+            mode: achievement2.progress.mode,
+            isVisible: true,
+            completions: 1,
+            lastCompletedStep: 5,
+            nextRepeatableAtStep: undefined,
+            progress: 1,
+            target: 1,
+          },
+        ],
+      },
+    });
+
+    coordinator.updateForStep(15);
+
+    // Both flags should be set
+    expect(coordinator.getConditionContext().isFlagSet?.('flag.first')).toBe(true);
+    expect(coordinator.getConditionContext().isFlagSet?.('flag.second')).toBe(true);
+  });
+});
+
+describe('Prestige retention targets', () => {
+  it('computes retained generators in prestige quote preview', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const retainedGenerator = createGeneratorDefinition('generator.retained', {
+      name: 'Retained Generator',
+      purchase: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: literalOne,
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const resetGenerator = createGeneratorDefinition('generator.reset', {
+      name: 'Reset Generator',
+      purchase: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: literalOne,
+      },
+      produces: [{ resourceId: energy.id, rate: literalOne }],
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      resetGenerators: ['generator.retained', 'generator.reset'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      retention: [
+        {
+          kind: 'generator',
+          generatorId: 'generator.retained',
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      generators: [retainedGenerator, resetGenerator],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: purchase both generators
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+
+    coordinator.generatorEvaluator.applyPurchase(retainedGenerator.id, 5);
+    coordinator.generatorEvaluator.applyPurchase(resetGenerator.id, 3);
+    coordinator.updateForStep(1);
+
+    // Verify both generators are purchased
+    expect(coordinator.state.generators?.[0]?.owned).toBe(5);
+    expect(coordinator.state.generators?.[1]?.owned).toBe(3);
+
+    // Get prestige quote and verify retained targets includes the generator
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote?.retainedTargets).toContain('generator.retained');
+    expect(quote?.retainedTargets).not.toContain('generator.reset');
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
+
+    // Retained generator should still have its level
+    expect(coordinator.state.generators?.[0]?.owned).toBe(5);
+    // Reset generator should be reset
+    expect(coordinator.state.generators?.[1]?.owned).toBe(0);
+  });
+
+  it('applies prestige reward multiplier curve when defined', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 1000,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 10 },
+        multiplierCurve: { kind: 'constant', value: 2 }, // 2x multiplier
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Get prestige quote and verify reward amount includes multiplier
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    // Base reward 10 * multiplier 2 = 20
+    expect(quote?.reward.amount).toBe(20);
+  });
+
+  it('computes retained upgrades in prestige quote preview', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const prestigeFlux = createResourceDefinition('resource.prestige-flux', {
+      name: 'Prestige Flux',
+      startAmount: 0,
+    });
+
+    const prestigeCount = createResourceDefinition('prestige.ascension-prestige-count', {
+      name: 'Ascension Count',
+      startAmount: 0,
+    });
+
+    const retainedUpgrade = createUpgradeDefinition('upgrade.retained', {
+      name: 'Retained Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: literalOne,
+      },
+    });
+
+    const resetUpgrade = createUpgradeDefinition('upgrade.reset', {
+      name: 'Reset Upgrade',
+      cost: {
+        currencyId: energy.id,
+        costMultiplier: 10,
+        costCurve: literalOne,
+      },
+    });
+
+    const prestigeLayer = createPrestigeLayerDefinition('prestige.ascension', {
+      name: 'Ascension',
+      resetTargets: ['resource.energy'],
+      resetUpgrades: ['upgrade.retained', 'upgrade.reset'],
+      unlockCondition: { kind: 'always' },
+      reward: {
+        resourceId: 'resource.prestige-flux',
+        baseReward: { kind: 'constant', value: 1 },
+      },
+      retention: [
+        {
+          kind: 'upgrade',
+          upgradeId: 'upgrade.retained',
+        },
+      ],
+    });
+
+    const pack = createContentPack({
+      resources: [energy, prestigeFlux, prestigeCount],
+      upgrades: [retainedUpgrade, resetUpgrade],
+      prestigeLayers: [prestigeLayer],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    // Setup: purchase both upgrades
+    const energyIndex = coordinator.resourceState.requireIndex(energy.id);
+    coordinator.resourceState.addAmount(energyIndex, 100);
+    coordinator.updateForStep(0);
+
+    coordinator.upgradeEvaluator!.applyPurchase(retainedUpgrade.id);
+    coordinator.upgradeEvaluator!.applyPurchase(resetUpgrade.id);
+    coordinator.updateForStep(1);
+
+    // Verify both upgrades are purchased
+    expect(
+      coordinator.getConditionContext().getUpgradePurchases(retainedUpgrade.id),
+    ).toBe(1);
+    expect(
+      coordinator.getConditionContext().getUpgradePurchases(resetUpgrade.id),
+    ).toBe(1);
+
+    // Get prestige quote and verify retained targets includes the upgrade
+    const quote = coordinator.prestigeEvaluator!.getPrestigeQuote('prestige.ascension');
+    expect(quote?.retainedTargets).toContain('upgrade.retained');
+    expect(quote?.retainedTargets).not.toContain('upgrade.reset');
+
+    // Apply prestige
+    coordinator.prestigeEvaluator!.applyPrestige('prestige.ascension', 'test-token');
+
+    // Retained upgrade should still be purchased
+    expect(
+      coordinator.getConditionContext().getUpgradePurchases(retainedUpgrade.id),
+    ).toBe(1);
+    // Reset upgrade should be reset
+    expect(
+      coordinator.getConditionContext().getUpgradePurchases(resetUpgrade.id),
+    ).toBe(0);
+  });
+});
+
+describe('Metric state building', () => {
+  it('builds metric states from content pack definitions', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    // Create a pack with metrics manually
+    const basePack = createContentPack({
+      resources: [energy],
+    });
+
+    // Add metrics to the pack
+    const packWithMetrics = {
+      ...basePack,
+      metrics: [
+        {
+          id: 'metric.playtime',
+          name: { default: 'Playtime', variants: {} },
+          description: { default: 'Total time played', variants: {} },
+          kind: 'counter' as const,
+          unit: 'seconds',
+          aggregation: 'sum' as const,
+          attributes: [],
+          source: { kind: 'runtime' as const },
+        },
+        {
+          id: 'metric.resources-gained',
+          name: { default: 'Resources Gained', variants: {} },
+          description: 'Total resources accumulated',
+          kind: 'gauge' as const,
+          unit: '1',
+          aggregation: 'cumulative' as const,
+          attributes: [],
+          source: { kind: 'content' as const },
+        },
+      ],
+      lookup: {
+        ...basePack.lookup,
+        metrics: new Map([
+          ['metric.playtime', { id: 'metric.playtime' }],
+          ['metric.resources-gained', { id: 'metric.resources-gained' }],
+        ]),
+      },
+    };
+
+    const coordinator = createProgressionCoordinator({
+      content: packWithMetrics as any,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+
+    // Verify metric states are built
+    const metricStates = coordinator.state.metrics;
+    expect(metricStates).toBeDefined();
+    expect(metricStates?.length).toBe(2);
+
+    const playtimeMetric = metricStates?.find((m) => m.id === 'metric.playtime');
+    expect(playtimeMetric?.displayName).toBe('Playtime');
+    expect(playtimeMetric?.description).toBe('Total time played');
+    expect(playtimeMetric?.kind).toBe('counter');
+    expect(playtimeMetric?.unit).toBe('seconds');
+    expect(playtimeMetric?.aggregation).toBe('sum');
+    expect(playtimeMetric?.sourceKind).toBe('runtime');
+
+    const resourcesMetric = metricStates?.find((m) => m.id === 'metric.resources-gained');
+    expect(resourcesMetric?.displayName).toBe('Resources Gained');
+    expect(resourcesMetric?.description).toBe('Total resources accumulated');
+    expect(resourcesMetric?.kind).toBe('gauge');
+    expect(resourcesMetric?.sourceKind).toBe('content');
+  });
+});

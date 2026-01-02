@@ -3,6 +3,7 @@ import type {
   NormalizedContentPack,
   NormalizedAchievement,
   NormalizedGenerator,
+  NormalizedMetric,
   NormalizedPrestigeLayer,
   NormalizedResource,
   NormalizedUpgrade,
@@ -32,12 +33,14 @@ import {
 } from './resource-command-handlers.js';
 import {
   type GeneratorRateView,
+  type MetricValueProvider,
   type PrestigeQuote,
   type PrestigeRewardPreview,
   type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
   type ProgressionAchievementState,
   type ProgressionGeneratorState,
+  type ProgressionMetricState,
   type ProgressionPrestigeLayerState,
   type ProgressionResourceState,
   type ProgressionUpgradeState,
@@ -326,6 +329,8 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly achievementList: AchievementRecord[];
   private readonly prestigeLayers: Map<string, PrestigeLayerRecord>;
   private readonly prestigeLayerList: PrestigeLayerRecord[];
+  private readonly metricStates: readonly ProgressionMetricState[];
+  private readonly metricValueProvider: MetricValueProvider | undefined;
   private readonly conditionContext: ConditionContext;
   private readonly onError?: (error: Error) => void;
   private readonly getCustomMetricValue?: (metricId: string) => number;
@@ -488,6 +493,19 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
       }
     }
 
+    // Build metric states from content pack definitions
+    this.metricStates = buildMetricStates(options.content.metrics);
+    this.metricValueProvider = options.getCustomMetricValue
+      ? {
+          getMetricValue: (metricId: string) => {
+            const value = options.getCustomMetricValue?.(metricId);
+            return typeof value === 'number' && Number.isFinite(value)
+              ? value
+              : undefined;
+          },
+        }
+      : undefined;
+
     this.conditionContext = {
       getResourceAmount: (resourceId) => {
         const index = this.resourceState.getIndex(resourceId);
@@ -547,6 +565,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     state.prestigeSystem =
       this.prestigeLayerList.length > 0 ? this.prestigeEvaluator : undefined;
     state.prestigeLayers = this.prestigeLayerList.map((record) => record.state);
+    state.metrics =
+      this.metricStates.length > 0 ? this.metricStates : undefined;
+    state.metricValueProvider = this.metricValueProvider;
 
     this.state = state;
 
@@ -2441,4 +2462,36 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       },
     };
   }
+}
+
+function buildMetricStates(
+  metrics: readonly NormalizedMetric[],
+): readonly ProgressionMetricState[] {
+  if (!metrics || metrics.length === 0) {
+    return Object.freeze([]);
+  }
+
+  const states: ProgressionMetricState[] = [];
+
+  for (const metric of metrics) {
+    const displayName = getDisplayName(metric.name, metric.id);
+    const description =
+      typeof metric.description === 'object' && metric.description !== null
+        ? metric.description.default
+        : metric.description;
+
+    const state: ProgressionMetricState = {
+      id: metric.id,
+      displayName,
+      description: description ?? undefined,
+      kind: metric.kind,
+      unit: metric.unit,
+      aggregation: metric.aggregation,
+      sourceKind: metric.source.kind,
+    };
+
+    states.push(state);
+  }
+
+  return Object.freeze(states);
 }

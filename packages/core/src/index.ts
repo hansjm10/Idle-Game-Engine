@@ -1195,6 +1195,12 @@ export {
   type PrestigeRewardContribution,
   type PrestigeQuote,
   type PrestigeSystemEvaluator,
+  type MetricKind,
+  type MetricAggregation,
+  type MetricSourceKind,
+  type MetricView,
+  type ProgressionMetricState,
+  type MetricValueProvider,
 } from './progression.js';
 export {
   selectAvailableUpgrades,
