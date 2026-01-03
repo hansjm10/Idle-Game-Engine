@@ -89,6 +89,7 @@ function createSummaryLiteral(): string {
     '  artifactHash: serialized.artifactHash,',
     '  warningCount: serialized.warnings.length,',
     '  resourceIds: serialized.modules.resources.map((resource) => resource.id),',
+    '  entityIds: serialized.modules.entities.map((entity) => entity.id),',
     '})',
   ].join('\n');
 }

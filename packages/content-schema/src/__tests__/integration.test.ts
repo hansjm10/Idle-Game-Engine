@@ -33,6 +33,8 @@ import {
   featureGateViolationFixture,
   invalidAllowlistReferenceFixture,
   invalidEntityFormulaReferencesFixture,
+  invalidEntityMaxCountFormulaReferencesFixture,
+  invalidEntityStatGrowthFormulaReferencesFixture,
   invalidEntityExperienceFixture,
   invalidFormulaReferencesFixture,
   invalidRuntimeEventContributionsFixture,
@@ -195,6 +197,40 @@ describe('Integration: Missing References', () => {
         expect.objectContaining({
           message: expect.stringContaining('missing-formula-resource'),
           path: expect.arrayContaining(['entities']),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity maxCount formulas referencing undefined resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityMaxCountFormulaReferencesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-maxcount-resource'),
+          path: expect.arrayContaining(['entities', 0, 'maxCount']),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity statGrowth formulas referencing undefined resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityStatGrowthFormulaReferencesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-statgrowth-resource'),
+          path: expect.arrayContaining(['entities', 0, 'progression', 'statGrowth', 'speed']),
         }),
       ]),
     );

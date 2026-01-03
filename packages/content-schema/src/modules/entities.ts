@@ -113,10 +113,8 @@ const compareOrderable = (
   left: EntityDefinitionShape,
   right: EntityDefinitionShape,
 ) => {
-  const leftOrder =
-    left.order === undefined ? Number.POSITIVE_INFINITY : left.order;
-  const rightOrder =
-    right.order === undefined ? Number.POSITIVE_INFINITY : right.order;
+  const leftOrder = left.order ?? Number.POSITIVE_INFINITY;
+  const rightOrder = right.order ?? Number.POSITIVE_INFINITY;
   if (leftOrder !== rightOrder) {
     return leftOrder - rightOrder;
   }
@@ -193,15 +191,15 @@ export const entityCollectionSchema = z
     const seen = new Map<string, number>();
     entities.forEach((entity, index) => {
       const existingIndex = seen.get(entity.id);
-      if (existingIndex !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [index, 'id'],
-          message: `Duplicate entity id "${entity.id}" also defined at index ${existingIndex}.`,
-        });
-      } else {
+      if (existingIndex === undefined) {
         seen.set(entity.id, index);
+        return;
       }
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, 'id'],
+        message: `Duplicate entity id "${entity.id}" also defined at index ${existingIndex}.`,
+      });
     });
   })
   .transform((entities) =>

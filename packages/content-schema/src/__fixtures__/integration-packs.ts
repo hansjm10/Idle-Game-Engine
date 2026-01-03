@@ -724,6 +724,107 @@ export const invalidEntityFormulaReferencesFixture = {
 };
 
 /**
+ * INVALID ENTITY MAX COUNT REFERENCES: Entity maxCount formula references unknown resource
+ */
+export const invalidEntityMaxCountFormulaReferencesFixture = {
+  metadata: {
+    id: 'invalid-entity-maxcount',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'energy',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+      maxCount: {
+        kind: 'expression' as const,
+        expression: {
+          kind: 'ref' as const,
+          target: {
+            type: 'resource' as const,
+            id: 'missing-maxcount-resource',
+          },
+        },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
+ * INVALID ENTITY STAT GROWTH REFERENCES: Entity statGrowth formula references unknown resource
+ */
+export const invalidEntityStatGrowthFormulaReferencesFixture = {
+  metadata: {
+    id: 'invalid-entity-statgrowth',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'energy',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+      progression: {
+        levelFormula: { kind: 'constant', value: 10 },
+        statGrowth: {
+          speed: {
+            kind: 'expression' as const,
+            expression: {
+              kind: 'ref' as const,
+              target: {
+                type: 'resource' as const,
+                id: 'missing-statgrowth-resource',
+              },
+            },
+          },
+        },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
  * INVALID ENTITY REFERENCES: Entity progression references unknown resource
  */
 export const invalidEntityExperienceFixture = {
