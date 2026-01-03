@@ -52,6 +52,44 @@ const createManualTransform = (
   ...overrides,
 });
 
+const createResources = (...ids: string[]) => ids.map((id) => createResource(id));
+
+const constantAmount = (value: number): TransformAmount => ({
+  kind: 'constant',
+  value,
+});
+
+const linearAmount = (base: number, slope: number): TransformAmount => ({
+  kind: 'linear',
+  base,
+  slope,
+});
+
+const constantIO = (resourceId: string, value: number): TransformIO => ({
+  resourceId,
+  amount: constantAmount(value),
+});
+
+const linearIO = (resourceId: string, base: number, slope: number): TransformIO => ({
+  resourceId,
+  amount: linearAmount(base, slope),
+});
+
+const createConstantTransform = (
+  id: string,
+  inputResourceId: string,
+  inputValue: number,
+  outputResourceId: string,
+  outputValue: number,
+  overrides: Record<string, unknown> = {},
+) =>
+  createManualTransform(
+    id,
+    [constantIO(inputResourceId, inputValue)],
+    [constantIO(outputResourceId, outputValue)],
+    overrides,
+  );
+
 /**
  * SUCCESS CASE: Valid pack with comprehensive module coverage
  */
@@ -870,43 +908,12 @@ export const runtimeEventCollisionFixture = {
  */
 export const cyclicTransformDirectFixture = {
   metadata: createMetadata('cyclic-transform-direct'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 120 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 120),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 110),
   ],
 };
 
@@ -917,43 +924,12 @@ export const cyclicTransformDirectFixture = {
  */
 export const netLossTransformCycleFixture = {
   metadata: createMetadata('net-loss-transform-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 80),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -965,43 +941,12 @@ export const netLossTransformCycleFixture = {
  */
 export const neutralTransformCycleFixture = {
   metadata: createMetadata('neutral-transform-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 100),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 100),
   ],
 };
 
@@ -1014,59 +959,13 @@ export const neutralTransformCycleFixture = {
  */
 export const netLossIndirectTransformCycleFixture = {
   metadata: createMetadata('net-loss-indirect-transform-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-z'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-z'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-c',
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 90),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-z', 90),
+    createConstantTransform('transform-c', 'resource-z', 100, 'resource-x', 90),
   ],
 };
 
@@ -1076,48 +975,19 @@ export const netLossIndirectTransformCycleFixture = {
  */
 export const nonSimpleTransformCycleFixture = {
   metadata: createMetadata('non-simple-transform-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-catalyst'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-catalyst'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'transform-a',
       [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-        {
-          resourceId: 'resource-catalyst',
-          amount: { kind: 'constant', value: 10 },
-        },
+        constantIO('resource-x', 100),
+        constantIO('resource-catalyst', 10),
       ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
+      [constantIO('resource-y', 80)],
     ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -1128,44 +998,27 @@ export const nonSimpleTransformCycleFixture = {
  */
 export const epsilonBelowThresholdCycleFixture = {
   metadata: createMetadata('epsilon-below-threshold-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'transform-a',
       [
-        {
-          resourceId: 'resource-x',
-          // Using large numbers to achieve precise ratio
-          amount: { kind: 'constant', value: 1000000000 },
-        },
+        // Using large numbers to achieve precise ratio
+        constantIO('resource-x', 1000000000),
       ],
       [
-        {
-          resourceId: 'resource-y',
-          // Ratio = 1.000000001 (1e-9 above 1.0)
-          amount: { kind: 'constant', value: 1000000001 },
-        },
+        // Ratio = 1.000000001 (1e-9 above 1.0)
+        constantIO('resource-y', 1000000001),
       ],
     ),
     createManualTransform(
       'transform-b',
+      [constantIO('resource-y', 1000000000)],
       [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1000000000 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          // Ratio = 1.0
-          amount: { kind: 'constant', value: 1000000000 },
-        },
+        // Ratio = 1.0
+        constantIO('resource-x', 1000000000),
       ],
     ),
   ],
@@ -1178,43 +1031,24 @@ export const epsilonBelowThresholdCycleFixture = {
  */
 export const epsilonAboveThresholdCycleFixture = {
   metadata: createMetadata('epsilon-above-threshold-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'transform-a',
+      [constantIO('resource-x', 100000000)],
       [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100000000 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          // Ratio = 1.00000002 (2e-8 above 1.0)
-          amount: { kind: 'constant', value: 100000002 },
-        },
+        // Ratio = 1.00000002 (2e-8 above 1.0)
+        constantIO('resource-y', 100000002),
       ],
     ),
     createManualTransform(
       'transform-b',
+      [constantIO('resource-y', 100000000)],
       [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100000000 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          // Ratio = 1.0
-          amount: { kind: 'constant', value: 100000000 },
-        },
+        // Ratio = 1.0
+        constantIO('resource-x', 100000000),
       ],
     ),
   ],
@@ -1226,44 +1060,19 @@ export const epsilonAboveThresholdCycleFixture = {
  */
 export const nonConstantFormulaCycleFixture = {
   metadata: createMetadata('non-constant-formula-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'transform-a',
+      [constantIO('resource-x', 100)],
       [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          // Linear formula instead of constant - profitability cannot be evaluated
-          amount: { kind: 'linear', base: 80, slope: 1 },
-        },
+        // Linear formula instead of constant - profitability cannot be evaluated
+        linearIO('resource-y', 80, 1),
       ],
     ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -1275,59 +1084,13 @@ export const nonConstantFormulaCycleFixture = {
  */
 export const cyclicTransformIndirectFixture = {
   metadata: createMetadata('cyclic-transform-indirect'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-z'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-z'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-c',
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 110),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-z', 110),
+    createConstantTransform('transform-c', 'resource-z', 100, 'resource-x', 110),
   ],
 };
 
@@ -1339,63 +1102,20 @@ export const cyclicTransformIndirectFixture = {
  */
 export const cyclicTransformMultiResourceFixture = {
   metadata: createMetadata('cyclic-transform-multi'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-z'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-z'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'transform-a',
       [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
+        constantIO('resource-x', 1),
+        constantIO('resource-y', 1),
       ],
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
+      [constantIO('resource-z', 1)],
     ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-c',
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-b', 'resource-z', 1, 'resource-x', 1),
+    createConstantTransform('transform-c', 'resource-z', 1, 'resource-y', 1),
   ],
 };
 
@@ -1408,60 +1128,13 @@ export const cyclicTransformMultiResourceFixture = {
  */
 export const linearTransformChainFixture = {
   metadata: createMetadata('linear-transform-chain'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-z'),
-    createResource('resource-w'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-z', 'resource-w'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-c',
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-w',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 1, 'resource-y', 1),
+    createConstantTransform('transform-b', 'resource-y', 1, 'resource-z', 1),
+    createConstantTransform('transform-c', 'resource-z', 1, 'resource-w', 1),
   ],
 };
 
@@ -1474,60 +1147,13 @@ export const linearTransformChainFixture = {
  */
 export const convergentTransformTreeFixture = {
   metadata: createMetadata('convergent-transform-tree'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-z'),
-    createResource('resource-w'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-z', 'resource-w'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-c',
-      [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 2 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-w',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 1, 'resource-z', 1),
+    createConstantTransform('transform-b', 'resource-y', 1, 'resource-z', 1),
+    createConstantTransform('transform-c', 'resource-z', 2, 'resource-w', 1),
   ],
 };
 
@@ -1538,32 +1164,17 @@ export const convergentTransformTreeFixture = {
  */
 export const resourceSinkTransformFixture = {
   metadata: createMetadata('resource-sink-transform'),
-  resources: [
-    createResource('mana'),
-    createResource('essence'),
-    createResource('boost-item'),
-  ],
+  resources: createResources('mana', 'essence', 'boost-item'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'craft-boost',
       [
-        {
-          resourceId: 'mana',
-          amount: { kind: 'constant', value: 100 },
-        },
-        {
-          resourceId: 'essence',
-          amount: { kind: 'constant', value: 10 },
-        },
+        constantIO('mana', 100),
+        constantIO('essence', 10),
       ],
-      [
-        {
-          resourceId: 'boost-item',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
+      [constantIO('boost-item', 1)],
     ),
   ],
 };
@@ -1575,27 +1186,11 @@ export const resourceSinkTransformFixture = {
  */
 export const selfReferencingTransformFixture = {
   metadata: createMetadata('self-referencing-transform'),
-  resources: [
-    createResource('resource-x'),
-  ],
+  resources: createResources('resource-x'),
   generators: [],
   upgrades: [],
   transforms: [
-    createManualTransform(
-      'transform-a',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 0.8 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a', 'resource-x', 1, 'resource-x', 0.8),
   ],
 };
 
@@ -1605,44 +1200,19 @@ export const selfReferencingTransformFixture = {
  */
 export const zeroAmountTransformCycleFixture = {
   metadata: createMetadata('zero-amount-transform-cycle'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-  ],
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
     createManualTransform(
       'transform-a',
       [
-        {
-          resourceId: 'resource-x',
-          // Zero amount - should be treated as non-simple
-          amount: { kind: 'constant', value: 0 },
-        },
+        // Zero amount - should be treated as non-simple
+        constantIO('resource-x', 0),
       ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
+      [constantIO('resource-y', 80)],
     ),
-    createManualTransform(
-      'transform-b',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -1653,77 +1223,16 @@ export const zeroAmountTransformCycleFixture = {
  */
 export const disjointCyclesFixture = {
   metadata: createMetadata('disjoint-cycles'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-a'),
-    createResource('resource-b'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-a', 'resource-b'),
   generators: [],
   upgrades: [],
   transforms: [
     // Net-positive cycle: X <-> Y (ratio = 1.2 * 1.1 = 1.32)
-    createManualTransform(
-      'transform-x-to-y',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 120 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-y-to-x',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-x-to-y', 'resource-x', 100, 'resource-y', 120),
+    createConstantTransform('transform-y-to-x', 'resource-y', 100, 'resource-x', 110),
     // Net-loss cycle: A <-> B (ratio = 0.8 * 0.9 = 0.72)
-    createManualTransform(
-      'transform-a-to-b',
-      [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b-to-a',
-      [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a-to-b', 'resource-a', 100, 'resource-b', 80),
+    createConstantTransform('transform-b-to-a', 'resource-b', 100, 'resource-a', 90),
   ],
 };
 
@@ -1733,77 +1242,16 @@ export const disjointCyclesFixture = {
  */
 export const disjointNetLossCyclesFixture = {
   metadata: createMetadata('disjoint-net-loss-cycles'),
-  resources: [
-    createResource('resource-x'),
-    createResource('resource-y'),
-    createResource('resource-a'),
-    createResource('resource-b'),
-  ],
+  resources: createResources('resource-x', 'resource-y', 'resource-a', 'resource-b'),
   generators: [],
   upgrades: [],
   transforms: [
     // Net-loss cycle 1: X <-> Y (ratio = 0.8 * 0.9 = 0.72)
-    createManualTransform(
-      'transform-x-to-y',
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-y-to-x',
-      [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-x-to-y', 'resource-x', 100, 'resource-y', 80),
+    createConstantTransform('transform-y-to-x', 'resource-y', 100, 'resource-x', 90),
     // Net-loss cycle 2: A <-> B (ratio = 0.7 * 0.85 = 0.595)
-    createManualTransform(
-      'transform-a-to-b',
-      [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 70 },
-        },
-      ],
-    ),
-    createManualTransform(
-      'transform-b-to-a',
-      [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 85 },
-        },
-      ],
-    ),
+    createConstantTransform('transform-a-to-b', 'resource-a', 100, 'resource-b', 70),
+    createConstantTransform('transform-b-to-a', 'resource-b', 100, 'resource-a', 85),
   ],
 };
 
