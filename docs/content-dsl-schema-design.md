@@ -74,6 +74,7 @@ The monorepo lacks an enforceable schema for content packs. Authors cannot valid
 - Schema must validate content packs targeting different runtime versions
 - Backward compatibility through `metadata.engine` semver ranges
 - Forward compatibility through feature gates aligned with runtime milestones
+- Entity feature gate is tracked separately in #738
 
 ## 5. Current State
 
