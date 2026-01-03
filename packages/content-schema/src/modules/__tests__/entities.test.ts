@@ -49,6 +49,17 @@ describe('entityDefinitionSchema', () => {
     ).toThrowError(/duplicate stat id/i);
   });
 
+  it('rejects empty stats arrays', () => {
+    expect(() =>
+      entityDefinitionSchema.parse({
+        id: 'scout',
+        name: { default: 'Scout', variants: {} },
+        description: { default: 'No stats', variants: {} },
+        stats: [],
+      }),
+    ).toThrowError(/at least one stat/i);
+  });
+
   it('rejects stat growth entries that are not declared stats', () => {
     expect(() =>
       entityDefinitionSchema.parse({
@@ -131,6 +142,40 @@ describe('entityCollectionSchema', () => {
           },
         ],
         order: 0,
+      },
+    ]);
+
+    expect(collection[0].id).toBe('alpha');
+    expect(collection[1].id).toBe('beta');
+  });
+
+  it('sorts by id when order values tie', () => {
+    const collection = entityCollectionSchema.parse([
+      {
+        id: 'beta',
+        name: { default: 'Beta', variants: {} },
+        description: { default: 'Beta entity', variants: {} },
+        stats: [
+          {
+            id: 'speed',
+            name: { default: 'Speed', variants: {} },
+            baseValue: { kind: 'constant', value: 10 },
+          },
+        ],
+        order: 1,
+      },
+      {
+        id: 'alpha',
+        name: { default: 'Alpha', variants: {} },
+        description: { default: 'Alpha entity', variants: {} },
+        stats: [
+          {
+            id: 'speed',
+            name: { default: 'Speed', variants: {} },
+            baseValue: { kind: 'constant', value: 10 },
+          },
+        ],
+        order: 1,
       },
     ]);
 

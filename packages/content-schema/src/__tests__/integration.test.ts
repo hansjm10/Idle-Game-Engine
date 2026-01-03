@@ -32,6 +32,7 @@ import {
   duplicateResourceIdsFixture,
   featureGateViolationFixture,
   invalidAllowlistReferenceFixture,
+  invalidEntityFormulaReferencesFixture,
   invalidEntityExperienceFixture,
   invalidFormulaReferencesFixture,
   invalidRuntimeEventContributionsFixture,
@@ -177,6 +178,23 @@ describe('Integration: Missing References', () => {
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringContaining('non-existent-resource'),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity formulas referencing undefined resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityFormulaReferencesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-formula-resource'),
+          path: expect.arrayContaining(['entities']),
         }),
       ]),
     );

@@ -677,6 +677,53 @@ export const invalidFormulaReferencesFixture = {
 };
 
 /**
+ * INVALID ENTITY FORMULA REFERENCES: Entity formulas reference unknown resources
+ */
+export const invalidEntityFormulaReferencesFixture = {
+  metadata: {
+    id: 'invalid-entity-formula',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'energy',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: {
+            kind: 'expression' as const,
+            expression: {
+              kind: 'ref' as const,
+              target: {
+                type: 'resource' as const,
+                id: 'missing-formula-resource',
+              },
+            },
+          },
+        },
+      ],
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
  * INVALID ENTITY REFERENCES: Entity progression references unknown resource
  */
 export const invalidEntityExperienceFixture = {
