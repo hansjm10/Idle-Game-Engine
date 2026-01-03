@@ -599,6 +599,39 @@ describe('restoreGameRuntimeFromSnapshot', () => {
     expect(getRNGState()).toBe(snapshot.runtime.rngState);
   });
 
+  it('defaults applyViaFinalizeTick to true when generators are present', () => {
+    const content = createTestContent();
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      initialStep: INITIAL_STEP,
+    });
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+    });
+
+    expect(restored.runtime.getMaxStepsPerFrame()).toBe(1);
+    expect(restored.systems.map((system) => system.id)).toEqual([
+      'production',
+      'resource-finalize',
+      'progression-coordinator',
+    ]);
+  });
+
   it('respects applyViaFinalizeTick override when restoring', () => {
     const content = createTestContent();
 

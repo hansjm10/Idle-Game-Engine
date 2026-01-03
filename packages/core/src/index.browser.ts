@@ -830,21 +830,29 @@ export type WireGameRuntimeOptions =
 export type GameRuntimeSerializeOptions = GameRuntimeSerializeOptionsBase;
 export type GameRuntimeHydrateOptions = GameRuntimeHydrateOptionsBase;
 
-export type CreateGameRuntimeOptions = Readonly<{
-  readonly content: NormalizedContentPack;
-  readonly stepSizeMs?: number;
-  readonly maxStepsPerFrame?: number;
-  readonly initialStep?: number;
-  readonly initialProgressionState?: ProgressionAuthoritativeState;
-  readonly enableProduction?: boolean;
-  readonly enableAutomation?: boolean;
-  readonly enableTransforms?: boolean;
-  readonly enableEntities?: boolean;
-  readonly production?: {
-    readonly applyViaFinalizeTick?: boolean;
-  };
-  readonly registerOfflineCatchup?: boolean;
-}>;
+type CreateGameRuntimeToggles = Readonly<
+  Pick<
+    WireGameRuntimeOptions,
+    | 'enableProduction'
+    | 'enableAutomation'
+    | 'enableTransforms'
+    | 'enableEntities'
+  >
+>;
+
+export type CreateGameRuntimeOptions = Readonly<
+  {
+    readonly content: NormalizedContentPack;
+    readonly stepSizeMs?: number;
+    readonly maxStepsPerFrame?: number;
+    readonly initialStep?: number;
+    readonly initialProgressionState?: ProgressionAuthoritativeState;
+    readonly production?: {
+      readonly applyViaFinalizeTick?: boolean;
+    };
+    readonly registerOfflineCatchup?: boolean;
+  } & CreateGameRuntimeToggles
+>;
 
 export function createGameRuntime(
   options: CreateGameRuntimeOptions,

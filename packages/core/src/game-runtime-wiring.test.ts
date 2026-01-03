@@ -338,6 +338,26 @@ describe('createGameRuntime', () => {
 });
 
 describe('wireGameRuntime', () => {
+  it('throws when coordinator step duration is not a positive finite number', () => {
+    const content = createContentPack({
+      resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],
+    });
+
+    const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+    const coordinator = createProgressionCoordinator({
+      content,
+      stepDurationMs: 0,
+    });
+
+    expect(() =>
+      wireGameRuntime({
+        content,
+        runtime,
+        coordinator,
+      }),
+    ).toThrow(/positive, finite number/);
+  });
+
   it('throws when coordinator step duration mismatches runtime step size', () => {
     const content = createContentPack({
       resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],

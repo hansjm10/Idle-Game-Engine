@@ -378,4 +378,15 @@ describe('game-state-save', () => {
     expect(decoded.runtime.step).toBe(0);
     expect(decoded.resources.ids.length).toBe(resourceCount);
   });
+
+  it('rejects unsupported compression headers when decoding', async () => {
+    const payload = new TextEncoder().encode(JSON.stringify({}));
+    const encoded = new Uint8Array(payload.length + 1);
+    encoded[0] = 9;
+    encoded.set(payload, 1);
+
+    await expect(decodeGameStateSave(encoded)).rejects.toThrow(
+      /Unsupported save compression header/,
+    );
+  });
 });

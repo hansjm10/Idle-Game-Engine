@@ -132,4 +132,74 @@ describe('entity command handlers', () => {
 
     expect(entitySystem.getEntityState('entity.runner')?.availableCount).toBe(0);
   });
+
+  it('rejects assign entity payloads with invalid return step', () => {
+    const definition = createEntityDefinition('entity.runner', {
+      trackInstances: true,
+    });
+    const entitySystem = new EntitySystem([definition], { nextInt: () => 1 });
+    const dispatcher = new CommandDispatcher();
+    registerEntityCommandHandlers({ dispatcher, entitySystem });
+
+    const instance = entitySystem.createInstance('entity.runner', 1);
+    const handler = dispatcher.getHandler(
+      RUNTIME_COMMAND_TYPES.ASSIGN_ENTITY_TO_MISSION,
+    );
+    const result = handler?.(
+      {
+        instanceId: instance.instanceId,
+        missionId: 'mission.alpha',
+        batchId: 'batch.1',
+        returnStep: 1,
+      },
+      {
+        step: 2,
+        timestamp: 1,
+        priority: CommandPriority.PLAYER,
+        events: createEventPublisher(),
+      },
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_RETURN_STEP',
+        message: 'Return step must be >= current step.',
+      },
+    });
+  });
+
+  it('rejects invalid entity experience payloads', () => {
+    const definition = createEntityDefinition('entity.scout', {
+      trackInstances: true,
+    });
+    const entitySystem = new EntitySystem([definition], { nextInt: () => 1 });
+    const dispatcher = new CommandDispatcher();
+    registerEntityCommandHandlers({ dispatcher, entitySystem });
+
+    const instance = entitySystem.createInstance('entity.scout', 1);
+    const handler = dispatcher.getHandler(
+      RUNTIME_COMMAND_TYPES.ADD_ENTITY_EXPERIENCE,
+    );
+    const result = handler?.(
+      {
+        instanceId: instance.instanceId,
+        amount: 0,
+      },
+      {
+        step: 2,
+        timestamp: 1,
+        priority: CommandPriority.PLAYER,
+        events: createEventPublisher(),
+      },
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_EXPERIENCE_AMOUNT',
+        message: 'Experience amount must be a positive number.',
+      },
+    });
+  });
 });

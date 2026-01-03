@@ -7,13 +7,16 @@ import type {
 } from '@idle-engine/content-schema';
 import {
   buildProgressionSnapshot,
+  type ProgressionAchievementState,
   type PrestigeQuote,
   type PrestigeSystemEvaluator,
   type ProgressionAuthoritativeState,
+  type ProgressionEntityState,
   type ProgressionGeneratorState,
   type ProgressionPrestigeLayerState,
   type ProgressionUpgradeState,
 } from './progression.js';
+import { createEntityDefinition } from './content-test-helpers.js';
 import {
   createResourceState,
 } from './resource-state.js';
@@ -28,6 +31,7 @@ import type {
   UpgradePurchaseEvaluator,
   UpgradePurchaseQuote,
 } from './resource-command-handlers.js';
+import type { EntityInstanceState, EntityState } from './entity-system.js';
 import type { TransformState } from './transform-system.js';
 
 const literal = (value: number): NumericFormula => ({ kind: 'constant', value });
@@ -225,6 +229,137 @@ describe('buildProgressionSnapshot', () => {
         visible: true,
       },
     ]);
+  });
+
+  it('builds achievement and entity views with normalized values', () => {
+    const achievements: ProgressionAchievementState[] = [
+      {
+        id: 'achievement.first',
+        displayName: 'First Steps',
+        description: 'Reach the first milestone',
+        category: 'progression',
+        tier: 'bronze',
+        mode: 'repeatable',
+        isVisible: true,
+        completions: 2.4,
+        progress: 5.5,
+        target: 10,
+        nextRepeatableAtStep: 9.9,
+        lastCompletedStep: -1,
+      },
+      {
+        id: 'achievement.hidden',
+        category: 'collection',
+        tier: 'silver',
+        mode: 'oneShot',
+        isVisible: false,
+        completions: Number.NaN,
+        progress: Number.NaN,
+        target: Number.POSITIVE_INFINITY,
+      },
+    ];
+
+    const alphaDefinition = createEntityDefinition('entity.alpha', {
+      name: 'Alpha',
+      description: 'Alpha unit',
+      trackInstances: true,
+      unlocked: true,
+      visible: false,
+      order: 2,
+    });
+    const betaDefinition = createEntityDefinition('entity.beta', {
+      name: 'Beta',
+      description: 'Beta unit',
+      trackInstances: false,
+      unlocked: false,
+      visible: true,
+      order: 1,
+    });
+
+    const alphaInstanceA: EntityInstanceState = {
+      instanceId: 'alpha-1',
+      entityId: 'entity.alpha',
+      level: 1,
+      experience: 10,
+      stats: { power: 3 },
+      assignment: null,
+    };
+    const alphaInstanceB: EntityInstanceState = {
+      instanceId: 'alpha-2',
+      entityId: 'entity.alpha',
+      level: 2,
+      experience: 30,
+      stats: { power: 5 },
+      assignment: null,
+    };
+
+    const betaState: EntityState = {
+      id: 'entity.beta',
+      count: -4,
+      availableCount: -1,
+      unlocked: false,
+      visible: false,
+    };
+
+    const entityState: ProgressionEntityState = {
+      definitions: [alphaDefinition, betaDefinition],
+      state: new Map([['entity.beta', betaState]]),
+      instances: new Map([
+        [alphaInstanceA.instanceId, alphaInstanceA],
+        [alphaInstanceB.instanceId, alphaInstanceB],
+      ]),
+      entityInstances: new Map([
+        ['entity.alpha', [alphaInstanceA.instanceId, alphaInstanceB.instanceId]],
+      ]),
+    };
+
+    const snapshot = buildProgressionSnapshot(4, 400, {
+      stepDurationMs: 100,
+      achievements,
+      entities: entityState,
+    });
+
+    expect(snapshot.achievements).toHaveLength(2);
+    expect(snapshot.achievements?.[0]).toMatchObject({
+      id: 'achievement.first',
+      displayName: 'First Steps',
+      unlocked: true,
+      completions: 2,
+      progress: 5.5,
+      target: 10,
+      nextRepeatableAtStep: 9,
+    });
+    expect(snapshot.achievements?.[0]).not.toHaveProperty('lastCompletedStep');
+    expect(snapshot.achievements?.[1]).toMatchObject({
+      id: 'achievement.hidden',
+      displayName: 'achievement.hidden',
+      description: '',
+      unlocked: false,
+      completions: 0,
+      progress: 0,
+      target: 0,
+    });
+
+    expect(snapshot.entities).toHaveLength(2);
+    expect(snapshot.entities[0]).toMatchObject({
+      id: 'entity.beta',
+      displayName: 'Beta',
+      description: 'Beta unit',
+      count: 0,
+      availableCount: 0,
+      visible: false,
+    });
+    expect(snapshot.entities[0]).not.toHaveProperty('instances');
+    expect(snapshot.entities[1]).toMatchObject({
+      id: 'entity.alpha',
+      displayName: 'Alpha',
+      description: 'Alpha unit',
+      count: 2,
+      availableCount: 2,
+      unlocked: true,
+      visible: false,
+    });
+    expect(snapshot.entities[1].instances).toHaveLength(2);
   });
 
   it('builds automation and transform views from runtime state', () => {
