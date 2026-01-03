@@ -11,6 +11,7 @@ Use this as a fast lookup. For narrative guidance and full examples, see
 | Type | Required fields |
 | --- | --- |
 | Resource | `id`, `name`, `category`, `tier` |
+| Entity | `id`, `name`, `description`, `stats` |
 | Generator | `id`, `name`, `produces`, `purchase`, `baseUnlock` |
 | Upgrade | `id`, `name`, `category`, `targets`, `cost`, `effects` |
 | Achievement | `id`, `name`, `description`, `category`, `tier`, `track` |
@@ -59,6 +60,19 @@ Resource
   "name": { "default": "Resource" },
   "category": "currency",
   "tier": 1
+}
+```
+
+Entity
+
+```json
+{
+  "id": "pack.entity-id",
+  "name": { "default": "Entity" },
+  "description": { "default": "A unit with stats." },
+  "stats": [
+    { "id": "stat.health", "name": { "default": "Health" }, "baseValue": { "kind": "constant", "value": 10 } }
+  ]
 }
 ```
 

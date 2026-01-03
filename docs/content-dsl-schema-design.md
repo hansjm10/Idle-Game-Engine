@@ -17,7 +17,7 @@ This design document specifies the canonical Zod schema contract for Idle Engine
 
 ## 1. Summary
 
-The Idle Engine content DSL bridges designer-authored data and the deterministic runtime. Today, sample packs provide ad-hoc TypeScript interfaces, but the monorepo lacks an enforceable schema. This document specifies the Zod schemas, normalisation rules, and validation flow that future CLI tooling will use before content is compiled into runtime-ready definitions. The goal is to deliver a single package that validates metadata, resources, generators, upgrades, metrics, achievements, prestige layers, automations, transforms, runtime event extensions, and pack dependency metadata while providing strong typing for TypeScript consumers.
+The Idle Engine content DSL bridges designer-authored data and the deterministic runtime. Today, sample packs provide ad-hoc TypeScript interfaces, but the monorepo lacks an enforceable schema. This document specifies the Zod schemas, normalisation rules, and validation flow that future CLI tooling will use before content is compiled into runtime-ready definitions. The goal is to deliver a single package that validates metadata, resources, entities, generators, upgrades, metrics, achievements, prestige layers, automations, transforms, runtime event extensions, and pack dependency metadata while providing strong typing for TypeScript consumers.
 
 ## 2. Context & Problem Statement
 
@@ -112,6 +112,7 @@ packages/content-schema/
     modules/
       metadata.ts
       resources.ts
+      entities.ts
       generators.ts
       upgrades.ts
       metrics.ts
@@ -374,6 +375,25 @@ When authors pass `ContentSchemaOptions.runtimeVersion`, `validateCrossReference
 
 `.superRefine` performs per-definition checks including `startAmount ≤ capacity` when capacity is finite.
 
+**Entity Schema**:
+
+`entityDefinitionSchema` captures units, heroes, or NPCs with stats and progression:
+- `id`: `contentIdSchema`
+- `name`: `localizedTextSchema`
+- `description`: `localizedSummarySchema`
+- `stats`: non-empty array of `{ id, name, baseValue, minValue?, maxValue? }` using `numericFormulaSchema`
+- `maxCount`: optional `NumericFormula`
+- `startCount`: non-negative integer defaulting to `0`
+- `trackInstances`: boolean default `false`
+- `progression`: optional block `{ experienceResource?, levelFormula, maxLevel?, statGrowth }`
+- `unlockCondition` / `visibilityCondition`: `conditionSchema`
+- `unlocked`: boolean default `false`
+- `visible`: boolean default `true`
+- `tags`: array of slugs
+- `order`: optional float for deterministic ordering
+
+The schema enforces unique stat ids and rejects `statGrowth` keys that do not match declared stats. Tags are lowercased, de-duplicated, and sorted; entities are ordered by `order` then `id`.
+
 **Generator Schema**:
 
 `generatorDefinitionSchema` models production structures:
@@ -608,7 +628,8 @@ export const FEATURE_GATES = [
 `validateCrossReferences` performs:
 - Id uniqueness within each module
 - Ensuring conditions reference defined ids
-- Verifying generator/upgrade/metric/achievement/automation/transform references resolve against declared entities
+- Verifying generator/upgrade/metric/achievement/automation/transform/entity references resolve against declared content ids
+- Validating entity progression references (`experienceResource`, stat growth keys, and formula references)
 - Enforcing runtime feature gates
 - Validating `metadata.dependencies`
 - Detecting orphaned prestige currencies
@@ -630,6 +651,7 @@ export const FEATURE_GATES = [
 interface NormalizedContentPack {
   readonly metadata: NormalizedMetadata;
   readonly resources: readonly NormalizedResource[];
+  readonly entities: readonly NormalizedEntity[];
   readonly generators: readonly NormalizedGenerator[];
   readonly upgrades: readonly NormalizedUpgrade[];
   readonly metrics: readonly NormalizedMetric[];
@@ -640,6 +662,7 @@ interface NormalizedContentPack {
   readonly runtimeEvents: readonly NormalizedRuntimeEventContribution[];
   readonly lookup: {
     readonly resources: ReadonlyMap<ContentId, NormalizedResource>;
+    readonly entities: ReadonlyMap<ContentId, NormalizedEntity>;
     readonly generators: ReadonlyMap<ContentId, NormalizedGenerator>;
     readonly upgrades: ReadonlyMap<ContentId, NormalizedUpgrade>;
     readonly metrics: ReadonlyMap<ContentId, NormalizedMetric>;
@@ -651,6 +674,7 @@ interface NormalizedContentPack {
   };
   readonly serializedLookup: {
     readonly resourceById: Readonly<Record<string, NormalizedResource>>;
+    readonly entityById: Readonly<Record<string, NormalizedEntity>>;
     readonly generatorById: Readonly<Record<string, NormalizedGenerator>>;
     readonly upgradeById: Readonly<Record<string, NormalizedUpgrade>>;
     readonly metricById: Readonly<Record<string, NormalizedMetric>>;
@@ -675,7 +699,7 @@ The package exports:
 - `contentPackSchema`: base Zod schema for structural validation
 - `createContentPackValidator(options)`: factory that returns `{ parse, safeParse }` with cross-reference validation
 - `parseContentPack(input, options)`: convenience helper
-- Individual module schemas: `resourceDefinitionSchema`, `metricDefinitionSchema`, etc.
+- Individual module schemas: `resourceDefinitionSchema`, `entityDefinitionSchema`, `metricDefinitionSchema`, etc.
 - Type exports: `NormalizedContentPack`, `SchemaWarning`, `ContentSchemaOptions`, etc.
 - Scalar schemas: `contentIdSchema`, `packSlugSchema`, `numericFormulaSchema`, `conditionSchema`, etc.
 
