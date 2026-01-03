@@ -5,6 +5,10 @@ import {
   type Resource,
 } from './modules/resources.js';
 import {
+  entityDefinitionSchema,
+  type EntityDefinition,
+} from './modules/entities.js';
+import {
   generatorDefinitionSchema,
   type Generator,
 } from './modules/generators.js';
@@ -42,6 +46,9 @@ import {
 
 /** Input type for creating a resource definition. */
 export type ResourceInput = z.input<typeof resourceDefinitionSchema>;
+
+/** Input type for creating an entity definition. */
+export type EntityInput = z.input<typeof entityDefinitionSchema>;
 
 /** Input type for creating a generator definition. */
 export type GeneratorInput = z.input<typeof generatorDefinitionSchema>;
@@ -86,6 +93,25 @@ export type PrestigeLayerInput = z.input<typeof prestigeLayerSchema>;
  */
 export function createResource(input: ResourceInput): Resource {
   return resourceDefinitionSchema.parse(input);
+}
+
+/**
+ * Creates a normalized entity definition from plain input.
+ *
+ * @example
+ * ```typescript
+ * const scout = createEntity({
+ *   id: 'my-pack.scout',
+ *   name: { default: 'Scout' },
+ *   description: { default: 'Fast reconnaissance unit' },
+ *   stats: [
+ *     { id: 'speed', name: { default: 'Speed' }, baseValue: { kind: 'constant', value: 10 } },
+ *   ],
+ * });
+ * ```
+ */
+export function createEntity(input: EntityInput): EntityDefinition {
+  return entityDefinitionSchema.parse(input);
 }
 
 /**

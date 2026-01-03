@@ -17,6 +17,7 @@ const textEncoder = new TextEncoder();
 
 const EMPTY_MODULES: SerializedNormalizedModules = {
   resources: Object.freeze([]) as SerializedNormalizedModules['resources'],
+  entities: Object.freeze([]) as SerializedNormalizedModules['entities'],
   generators: Object.freeze([]) as SerializedNormalizedModules['generators'],
   upgrades: Object.freeze([]) as SerializedNormalizedModules['upgrades'],
   metrics: Object.freeze([]) as SerializedNormalizedModules['metrics'],
@@ -149,6 +150,7 @@ function resolveSerializedModules(
 
   return {
     resources: pack.resources,
+    entities: pack.entities,
     generators: pack.generators,
     upgrades: pack.upgrades,
     metrics: pack.metrics,

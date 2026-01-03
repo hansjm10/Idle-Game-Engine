@@ -3,6 +3,7 @@ import type {
   NormalizedAutomation,
   NormalizedAchievement,
   NormalizedGenerator,
+  NormalizedEntity,
   NormalizedPrestigeLayer,
   NormalizedResource,
   NormalizedTransform,
@@ -86,6 +87,7 @@ export function createTestDigest(overrides?: Partial<NormalizedContentPack['dige
  */
 export function createContentPack(config: {
   resources?: NormalizedResource[];
+  entities?: NormalizedEntity[];
   automations?: NormalizedAutomation[];
   achievements?: NormalizedAchievement[];
   transforms?: NormalizedTransform[];
@@ -97,6 +99,7 @@ export function createContentPack(config: {
 }): NormalizedContentPack {
   const {
     resources = [],
+    entities = [],
     automations = [],
     achievements = [],
     transforms = [],
@@ -109,6 +112,7 @@ export function createContentPack(config: {
 
   // Build lookup maps
   const resourcesMap = new Map(resources.map((r) => [r.id, r]));
+  const entitiesMap = new Map(entities.map((entity) => [entity.id, entity]));
   const automationsMap = new Map(automations.map((a) => [a.id, a]));
   const achievementsMap = new Map(achievements.map((a) => [a.id, a]));
   const transformsMap = new Map(transforms.map((t) => [t.id, t]));
@@ -118,6 +122,7 @@ export function createContentPack(config: {
 
   // Build serialized lookup objects
   const resourceById = Object.fromEntries(resources.map((r) => [r.id, r]));
+  const entityById = Object.fromEntries(entities.map((entity) => [entity.id, entity]));
   const automationById = Object.fromEntries(automations.map((a) => [a.id, a]));
   const achievementById = Object.fromEntries(achievements.map((a) => [a.id, a]));
   const transformById = Object.fromEntries(transforms.map((t) => [t.id, t]));
@@ -130,6 +135,7 @@ export function createContentPack(config: {
       metadata as Partial<NormalizedContentPack['metadata']>,
     ),
     resources,
+    entities,
     generators,
     upgrades,
     metrics: [],
@@ -140,6 +146,7 @@ export function createContentPack(config: {
     runtimeEvents: [],
     lookup: {
       resources: resourcesMap,
+      entities: entitiesMap,
       generators: generatorsMap,
       upgrades: upgradesMap,
       metrics: new Map(),
@@ -151,6 +158,7 @@ export function createContentPack(config: {
     },
     serializedLookup: {
       resourceById,
+      entityById,
       generatorById,
       upgradeById,
       metricById: {},

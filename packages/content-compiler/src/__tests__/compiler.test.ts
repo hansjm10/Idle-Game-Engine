@@ -30,6 +30,7 @@ const createSchemaDocument = () =>
       supportedLocales: ['en-US'],
     },
     resources: [],
+    entities: [],
     generators: [],
     upgrades: [],
     metrics: [],
@@ -45,6 +46,7 @@ const BASE_METADATA = baseSchemaPack.metadata;
 
 const EMPTY_MODULES: SerializedNormalizedModules = {
   resources: [] as SerializedNormalizedModules['resources'],
+  entities: [] as SerializedNormalizedModules['entities'],
   generators: [] as SerializedNormalizedModules['generators'],
   upgrades: [] as SerializedNormalizedModules['upgrades'],
   metrics: [] as SerializedNormalizedModules['metrics'],
@@ -60,6 +62,7 @@ function createModules(
 ): SerializedNormalizedModules {
   return {
     resources: overrides.resources ?? EMPTY_MODULES.resources,
+    entities: overrides.entities ?? EMPTY_MODULES.entities,
     generators: overrides.generators ?? EMPTY_MODULES.generators,
     upgrades: overrides.upgrades ?? EMPTY_MODULES.upgrades,
     metrics: overrides.metrics ?? EMPTY_MODULES.metrics,
@@ -119,6 +122,7 @@ describe('content compiler scaffolding', () => {
     const indices = createModuleIndices(pack);
 
     expect(indices.resources.get(resource.id)).toBe(0);
+    expect(indices.entities.size).toBe(0);
     expect(indices.generators.size).toBe(0);
   });
 
@@ -168,13 +172,14 @@ describe('content compiler scaffolding', () => {
         engine: '^1.0.0',
         defaultLocale: 'en-US',
         supportedLocales: ['en-US'],
-      },
-      resources: [],
-      generators: [],
-      upgrades: [],
-      metrics: [],
-      achievements: [],
-      automations: [],
+    },
+    resources: [],
+    entities: [],
+    generators: [],
+    upgrades: [],
+    metrics: [],
+    achievements: [],
+    automations: [],
       transforms: [],
       prestigeLayers: [],
       runtimeEvents: [],
@@ -185,6 +190,7 @@ describe('content compiler scaffolding', () => {
 
     expect(result.serialized.metadata).toEqual(pack.metadata);
     expect(result.serialized.modules.resources).toBe(pack.resources);
+    expect(result.serialized.modules.entities).toBe(pack.entities);
     expect(result.serialized.modules.generators).toBe(pack.generators);
     expect(result.serialized.warnings).toEqual(warnings);
     expect(result.serialized.digest).toEqual(pack.digest);

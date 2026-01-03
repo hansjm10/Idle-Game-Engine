@@ -531,6 +531,136 @@ export const validateCrossReferences = (
     }
   });
 
+  pack.entities.forEach((entity, index) => {
+    entity.stats.forEach((stat, statIndex) => {
+      collectFormulaEntityReferences(stat.baseValue, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['entities', index, 'stats', statIndex, 'baseValue'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+      if (stat.minValue) {
+        collectFormulaEntityReferences(stat.minValue, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['entities', index, 'stats', statIndex, 'minValue'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
+      }
+      if (stat.maxValue) {
+        collectFormulaEntityReferences(stat.maxValue, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['entities', index, 'stats', statIndex, 'maxValue'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
+      }
+    });
+
+    if (entity.maxCount) {
+      collectFormulaEntityReferences(entity.maxCount, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['entities', index, 'maxCount'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+    }
+
+    if (entity.progression) {
+      if (entity.progression.experienceResource) {
+        ensureContentReference(
+          resourceIndex,
+          entity.progression.experienceResource,
+          ['entities', index, 'progression', 'experienceResource'],
+          `Entity "${entity.id}" references unknown experience resource "${entity.progression.experienceResource}".`,
+        );
+      }
+
+      collectFormulaEntityReferences(entity.progression.levelFormula, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['entities', index, 'progression', 'levelFormula'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+
+      Object.entries(entity.progression.statGrowth).forEach(
+        ([statId, formula]) => {
+          if (!formula) {
+            return;
+          }
+          collectFormulaEntityReferences(formula, (reference) => {
+            ensureFormulaReference(
+              reference,
+              ['entities', index, 'progression', 'statGrowth', statId],
+              ctx,
+              resourceIndex,
+              generatorIndex,
+              upgradeIndex,
+              automationIndex,
+              prestigeIndex,
+            );
+          });
+        },
+      );
+    }
+
+    if (entity.unlockCondition) {
+      validateConditionNode(
+        entity.unlockCondition,
+        ['entities', index, 'unlockCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
+
+    if (entity.visibilityCondition) {
+      validateConditionNode(
+        entity.visibilityCondition,
+        ['entities', index, 'visibilityCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
+  });
+
   pack.runtimeEvents.forEach((event, index) => {
     if (context.runtimeEventCatalogue.has(event.id)) {
       ctx.addIssue({

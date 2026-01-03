@@ -10,6 +10,7 @@ import type {
   AchievementDefinition,
 } from '../modules/achievements.js';
 import type { AutomationDefinition } from '../modules/automations.js';
+import type { EntityDefinition } from '../modules/entities.js';
 import type { Generator } from '../modules/generators.js';
 import type { Metadata } from '../modules/metadata.js';
 import type { MetricDefinition } from '../modules/metrics.js';
@@ -29,6 +30,7 @@ export type UpgradeEffect = z.infer<typeof upgradeEffectSchema>;
 
 export type NormalizedMetadata = Metadata;
 export type NormalizedResource = Resource;
+export type NormalizedEntity = EntityDefinition;
 export type NormalizedGenerator = Generator;
 export type NormalizedUpgrade = UpgradeDefinition;
 export type NormalizedMetric = MetricDefinition;
@@ -41,6 +43,7 @@ export type NormalizedRuntimeEventContribution = RuntimeEventContribution;
 export type NormalizedContentPackModules = {
   readonly metadata: NormalizedMetadata;
   readonly resources: readonly NormalizedResource[];
+  readonly entities: readonly NormalizedEntity[];
   readonly generators: readonly NormalizedGenerator[];
   readonly upgrades: readonly NormalizedUpgrade[];
   readonly metrics: readonly NormalizedMetric[];
@@ -54,6 +57,7 @@ export type NormalizedContentPackModules = {
 export interface NormalizedContentPack extends NormalizedContentPackModules {
   readonly lookup: {
     readonly resources: ReadonlyMap<ContentId, NormalizedResource>;
+    readonly entities: ReadonlyMap<ContentId, NormalizedEntity>;
     readonly generators: ReadonlyMap<ContentId, NormalizedGenerator>;
     readonly upgrades: ReadonlyMap<ContentId, NormalizedUpgrade>;
     readonly metrics: ReadonlyMap<ContentId, NormalizedMetric>;
@@ -65,6 +69,7 @@ export interface NormalizedContentPack extends NormalizedContentPackModules {
   };
   readonly serializedLookup: {
     readonly resourceById: Readonly<Record<string, NormalizedResource>>;
+    readonly entityById: Readonly<Record<string, NormalizedEntity>>;
     readonly generatorById: Readonly<Record<string, NormalizedGenerator>>;
     readonly upgradeById: Readonly<Record<string, NormalizedUpgrade>>;
     readonly metricById: Readonly<Record<string, NormalizedMetric>>;

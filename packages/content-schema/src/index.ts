@@ -7,6 +7,7 @@ export {
   type NormalizedContentPack,
   type NormalizedMetadata,
   type NormalizedResource,
+  type NormalizedEntity,
   type NormalizedGenerator,
   type NormalizedUpgrade,
   type NormalizedMetric,
@@ -41,6 +42,7 @@ export * from './base/conditions.js';
 
 export * from './modules/metadata.js';
 export * from './modules/resources.js';
+export * from './modules/entities.js';
 export * from './modules/generators.js';
 export * from './modules/upgrades.js';
 export * from './modules/metrics.js';
@@ -62,7 +64,9 @@ export {
   createAutomation,
   createTransform,
   createPrestigeLayer,
+  createEntity,
   type ResourceInput,
+  type EntityInput,
   type GeneratorInput,
   type UpgradeInput,
   type MetricInput,

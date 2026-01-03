@@ -21,6 +21,7 @@ function extractModules(input: DigestInput): SerializedNormalizedModules {
   if ('resources' in input) {
     return {
       resources: input.resources,
+      entities: input.entities,
       generators: input.generators,
       upgrades: input.upgrades,
       metrics: input.metrics,
@@ -51,6 +52,7 @@ export function computeContentDigest(input: DigestInput): SerializedContentDiges
   const digestInput = {
     metadata,
     resources: modules.resources,
+    entities: modules.entities,
     generators: modules.generators,
     upgrades: modules.upgrades,
     metrics: modules.metrics,

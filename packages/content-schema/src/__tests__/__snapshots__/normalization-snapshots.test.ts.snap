@@ -94,6 +94,9 @@ exports[`Normalization Snapshots > normalizes lookup maps structure > lookup-map
   "achievements": [
     "first-energy",
   ],
+  "entities": [
+    "scout",
+  ],
   "generators": [
     "solar-panel",
   ],
@@ -112,6 +115,9 @@ exports[`Normalization Snapshots > normalizes lookup maps structure > lookup-map
 
 exports[`Normalization Snapshots > normalizes lookup maps structure > serialized-lookup-keys 1`] = `
 {
+  "entities": [
+    "scout",
+  ],
   "generators": [
     "solar-panel",
   ],
@@ -218,14 +224,14 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
 
 exports[`Normalization Snapshots > produces consistent digest hashes for equivalent packs > digest-format 1`] = `
 {
-  "hash": "fnv1a-9a511b4e",
+  "hash": "fnv1a-ef656c29",
   "version": 1,
 }
 `;
 
 exports[`Normalization Snapshots > produces deterministic output for comprehensive pack > pack-digest 1`] = `
 {
-  "hash": "fnv1a-72ed8b6a",
+  "hash": "fnv1a-2fc55ff1",
   "version": 1,
 }
 `;
@@ -274,9 +280,93 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
   ],
   "automations": [],
   "digest": {
-    "hash": "fnv1a-72ed8b6a",
+    "hash": "fnv1a-2fc55ff1",
     "version": 1,
   },
+  "entities": [
+    {
+      "description": {
+        "default": "Fast reconnaissance unit",
+        "variants": {
+          "en-US": "Fast reconnaissance unit",
+        },
+      },
+      "id": "scout",
+      "maxCount": {
+        "kind": "constant",
+        "value": 10,
+      },
+      "name": {
+        "default": "Scout",
+        "variants": {
+          "en-US": "Scout",
+        },
+      },
+      "progression": {
+        "experienceResource": "energy",
+        "levelFormula": {
+          "base": 100,
+          "kind": "linear",
+          "slope": 25,
+        },
+        "maxLevel": 50,
+        "statGrowth": {
+          "perception": {
+            "kind": "constant",
+            "value": 0.5,
+          },
+          "speed": {
+            "kind": "constant",
+            "value": 1,
+          },
+        },
+      },
+      "startCount": 1,
+      "stats": [
+        {
+          "baseValue": {
+            "kind": "constant",
+            "value": 10,
+          },
+          "id": "speed",
+          "name": {
+            "default": "Speed",
+            "variants": {
+              "en-US": "Speed",
+            },
+          },
+        },
+        {
+          "baseValue": {
+            "kind": "constant",
+            "value": 8,
+          },
+          "id": "perception",
+          "name": {
+            "default": "Perception",
+            "variants": {
+              "en-US": "Perception",
+            },
+          },
+        },
+      ],
+      "tags": [
+        "recon",
+      ],
+      "trackInstances": false,
+      "unlockCondition": {
+        "amount": {
+          "kind": "constant",
+          "value": 100,
+        },
+        "comparator": "gte",
+        "kind": "resourceThreshold",
+        "resourceId": "energy",
+      },
+      "unlocked": false,
+      "visible": true,
+    },
+  ],
   "generators": [
     {
       "baseUnlock": {
@@ -359,6 +449,90 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       },
     },
     "automations": Map {},
+    "entities": Map {
+      "scout" => {
+        "description": {
+          "default": "Fast reconnaissance unit",
+          "variants": {
+            "en-US": "Fast reconnaissance unit",
+          },
+        },
+        "id": "scout",
+        "maxCount": {
+          "kind": "constant",
+          "value": 10,
+        },
+        "name": {
+          "default": "Scout",
+          "variants": {
+            "en-US": "Scout",
+          },
+        },
+        "progression": {
+          "experienceResource": "energy",
+          "levelFormula": {
+            "base": 100,
+            "kind": "linear",
+            "slope": 25,
+          },
+          "maxLevel": 50,
+          "statGrowth": {
+            "perception": {
+              "kind": "constant",
+              "value": 0.5,
+            },
+            "speed": {
+              "kind": "constant",
+              "value": 1,
+            },
+          },
+        },
+        "startCount": 1,
+        "stats": [
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 10,
+            },
+            "id": "speed",
+            "name": {
+              "default": "Speed",
+              "variants": {
+                "en-US": "Speed",
+              },
+            },
+          },
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 8,
+            },
+            "id": "perception",
+            "name": {
+              "default": "Perception",
+              "variants": {
+                "en-US": "Perception",
+              },
+            },
+          },
+        ],
+        "tags": [
+          "recon",
+        ],
+        "trackInstances": false,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+        "unlocked": false,
+        "visible": true,
+      },
+    },
     "generators": Map {
       "solar-panel" => {
         "baseUnlock": {
@@ -696,6 +870,90 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       },
     },
     "automationById": {},
+    "entityById": {
+      "scout": {
+        "description": {
+          "default": "Fast reconnaissance unit",
+          "variants": {
+            "en-US": "Fast reconnaissance unit",
+          },
+        },
+        "id": "scout",
+        "maxCount": {
+          "kind": "constant",
+          "value": 10,
+        },
+        "name": {
+          "default": "Scout",
+          "variants": {
+            "en-US": "Scout",
+          },
+        },
+        "progression": {
+          "experienceResource": "energy",
+          "levelFormula": {
+            "base": 100,
+            "kind": "linear",
+            "slope": 25,
+          },
+          "maxLevel": 50,
+          "statGrowth": {
+            "perception": {
+              "kind": "constant",
+              "value": 0.5,
+            },
+            "speed": {
+              "kind": "constant",
+              "value": 1,
+            },
+          },
+        },
+        "startCount": 1,
+        "stats": [
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 10,
+            },
+            "id": "speed",
+            "name": {
+              "default": "Speed",
+              "variants": {
+                "en-US": "Speed",
+              },
+            },
+          },
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 8,
+            },
+            "id": "perception",
+            "name": {
+              "default": "Perception",
+              "variants": {
+                "en-US": "Perception",
+              },
+            },
+          },
+        ],
+        "tags": [
+          "recon",
+        ],
+        "trackInstances": false,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100,
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "energy",
+        },
+        "unlocked": false,
+        "visible": true,
+      },
+    },
     "generatorById": {
       "solar-panel": {
         "baseUnlock": {

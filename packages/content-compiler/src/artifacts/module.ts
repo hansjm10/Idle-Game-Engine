@@ -63,6 +63,7 @@ export function createModuleIndices(
 ): ModuleIndexTables {
   return {
     resources: buildIndex(pack.resources),
+    entities: buildIndex(pack.entities),
     generators: buildIndex(pack.generators),
     upgrades: buildIndex(pack.upgrades),
     metrics: buildIndex(pack.metrics),

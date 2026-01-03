@@ -25,6 +25,7 @@ const createMockNormalizedPack = (id: string): NormalizedContentPack =>
       links: [],
     },
     resources: [],
+    entities: [],
     generators: [],
     upgrades: [],
     metrics: [],
@@ -35,6 +36,7 @@ const createMockNormalizedPack = (id: string): NormalizedContentPack =>
     runtimeEvents: [],
     lookup: {
       resources: new Map(),
+      entities: new Map(),
       generators: new Map(),
       upgrades: new Map(),
       metrics: new Map(),
@@ -46,6 +48,7 @@ const createMockNormalizedPack = (id: string): NormalizedContentPack =>
     },
     serializedLookup: {
       resourceById: {},
+      entityById: {},
       generatorById: {},
       upgradeById: {},
       metricById: {},

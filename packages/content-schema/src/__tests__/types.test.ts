@@ -73,6 +73,7 @@ describe('Type Assertions: NormalizedContentPack', () => {
   it('NormalizedContentPack has correct structure with readonly fields', () => {
     expectTypeOf<NormalizedContentPack>().toHaveProperty('metadata');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('resources');
+    expectTypeOf<NormalizedContentPack>().toHaveProperty('entities');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('generators');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('upgrades');
     expectTypeOf<NormalizedContentPack>().toHaveProperty('metrics');
@@ -89,6 +90,7 @@ describe('Type Assertions: NormalizedContentPack', () => {
     expectTypeOf<NormalizedContentPack>().toMatchTypeOf<{
       readonly metadata: unknown;
       readonly resources: readonly unknown[];
+      readonly entities: readonly unknown[];
       readonly generators: readonly unknown[];
       readonly upgrades: readonly unknown[];
     }>();
@@ -100,6 +102,10 @@ describe('Type Assertions: NormalizedContentPack', () => {
     expectTypeOf<
       NormalizedContentPack['lookup']['resources']
     >().toEqualTypeOf<ReadonlyMap<ContentId, NormalizedContentPack['resources'][number]>>();
+
+    expectTypeOf<
+      NormalizedContentPack['lookup']['entities']
+    >().toEqualTypeOf<ReadonlyMap<ContentId, NormalizedContentPack['entities'][number]>>();
 
     expectTypeOf<
       NormalizedContentPack['lookup']['generators']
@@ -115,6 +121,12 @@ describe('Type Assertions: NormalizedContentPack', () => {
       NormalizedContentPack['serializedLookup']['resourceById']
     >().toEqualTypeOf<
       Readonly<Record<string, NormalizedContentPack['resources'][number]>>
+    >();
+
+    expectTypeOf<
+      NormalizedContentPack['serializedLookup']['entityById']
+    >().toEqualTypeOf<
+      Readonly<Record<string, NormalizedContentPack['entities'][number]>>
     >();
 
     expectTypeOf<
@@ -300,6 +312,14 @@ describe('Type Assertions: Module Definition Types', () => {
 
     expectTypeOf<Resource>().toHaveProperty('id');
     expectTypeOf<Resource['id']>().toMatchTypeOf<ContentId>();
+  });
+
+  it('NormalizedEntity has required branded ID field', () => {
+    type ContentId = z.infer<typeof contentIdSchema>;
+    type Entity = NormalizedContentPack['entities'][number];
+
+    expectTypeOf<Entity>().toHaveProperty('id');
+    expectTypeOf<Entity['id']>().toMatchTypeOf<ContentId>();
   });
 
   it('NormalizedGenerator has required branded ID field', () => {

@@ -4,9 +4,9 @@ import {
 } from '@idle-engine/content-compiler/runtime';
 
 const serialized = {
-  "artifactHash": "66b316b0ac5b269ad208cf9a059b10bd069d4ab0b5e7ceb80eb4c08a8fe9ef66",
+  "artifactHash": "e6adf3be76002ed6a97b152add6df56e5d1cc72b617f4a355e109d2755a3dc23",
   "digest": {
-    "hash": "fnv1a-437f9e3f",
+    "hash": "fnv1a-1dbda158",
     "version": 1
   },
   "formatVersion": 1,
@@ -280,6 +280,7 @@ const serialized = {
         }
       }
     ],
+    "entities": [],
     "generators": [
       {
         "baseUnlock": {

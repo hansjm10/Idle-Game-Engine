@@ -77,6 +77,50 @@ export const validComprehensivePackFixture = {
       order: 2,
     },
   ],
+  entities: [
+    {
+      id: 'scout',
+      name: {
+        default: 'Scout',
+        variants: {},
+      },
+      description: {
+        default: 'Fast reconnaissance unit',
+        variants: {},
+      },
+      stats: [
+        {
+          id: 'speed',
+          name: { default: 'Speed', variants: {} },
+          baseValue: { kind: 'constant', value: 10 },
+        },
+        {
+          id: 'perception',
+          name: { default: 'Perception', variants: {} },
+          baseValue: { kind: 'constant', value: 8 },
+        },
+      ],
+      maxCount: { kind: 'constant', value: 10 },
+      startCount: 1,
+      trackInstances: false,
+      progression: {
+        experienceResource: 'energy',
+        levelFormula: { kind: 'linear', base: 100, slope: 25 },
+        maxLevel: 50,
+        statGrowth: {
+          speed: { kind: 'constant', value: 1 },
+          perception: { kind: 'constant', value: 0.5 },
+        },
+      },
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 100 },
+      },
+      tags: ['recon'],
+    },
+  ],
   generators: [
     {
       id: 'solar-panel',
@@ -629,6 +673,48 @@ export const invalidFormulaReferencesFixture = {
       baseUnlock: { kind: 'always' as const },
     },
   ],
+  upgrades: [],
+};
+
+/**
+ * INVALID ENTITY REFERENCES: Entity progression references unknown resource
+ */
+export const invalidEntityExperienceFixture = {
+  metadata: {
+    id: 'invalid-entity-experience',
+    title: baseTitle,
+    version: '1.0.0',
+    engine: '^1.0.0',
+    defaultLocale: 'en-US',
+    supportedLocales: ['en-US'],
+  },
+  resources: [
+    {
+      id: 'energy',
+      name: baseTitle,
+      category: 'primary' as const,
+      tier: 1,
+    },
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+      progression: {
+        experienceResource: 'missing-resource',
+        levelFormula: { kind: 'constant', value: 10 },
+      },
+    },
+  ],
+  generators: [],
   upgrades: [],
 };
 

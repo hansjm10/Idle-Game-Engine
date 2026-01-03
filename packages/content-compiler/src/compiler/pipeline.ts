@@ -376,6 +376,7 @@ function withSerializedModules(
 ): NormalizedContentPack {
   const modules: SerializedNormalizedModules = {
     resources: pack.resources,
+    entities: pack.entities,
     generators: pack.generators,
     upgrades: pack.upgrades,
     metrics: pack.metrics,
