@@ -1850,5 +1850,6 @@ export const PACK__U40_IDLE_U2D_ENGINE_U2F_SAMPLE_U2D_PACK_SUMMARY = Object.free
   artifactHash: serialized.artifactHash,
   warningCount: serialized.warnings.length,
   resourceIds: serialized.modules.resources.map((resource) => resource.id),
+  entityIds: serialized.modules.entities.map((entity) => entity.id),
 });
 
