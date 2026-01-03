@@ -32,6 +32,10 @@ import {
   duplicateResourceIdsFixture,
   featureGateViolationFixture,
   invalidAllowlistReferenceFixture,
+  invalidEntityFormulaReferencesFixture,
+  invalidEntityMaxCountFormulaReferencesFixture,
+  invalidEntityStatGrowthFormulaReferencesFixture,
+  invalidEntityExperienceFixture,
   invalidFormulaReferencesFixture,
   invalidRuntimeEventContributionsFixture,
   linearTransformChainFixture,
@@ -77,6 +81,7 @@ describe('Integration: Success Cases', () => {
 
     // Verify all modules are present and normalized
     expect(pack.resources).toHaveLength(2);
+    expect(pack.entities).toHaveLength(1);
     expect(pack.generators).toHaveLength(1);
     expect(pack.upgrades).toHaveLength(1);
     expect(pack.metrics).toHaveLength(1);
@@ -85,10 +90,12 @@ describe('Integration: Success Cases', () => {
     // Verify lookups are populated
     expect(pack.lookup.resources.get('energy' as ContentId)).toBeDefined();
     expect(pack.lookup.resources.get('crystals' as ContentId)).toBeDefined();
+    expect(pack.lookup.entities.get('scout' as ContentId)).toBeDefined();
     expect(pack.lookup.generators.get('solar-panel' as ContentId)).toBeDefined();
 
     // Verify serialized lookups
     expect(pack.serializedLookup.resourceById.energy).toBeDefined();
+    expect(pack.serializedLookup.entityById.scout).toBeDefined();
     expect(pack.serializedLookup.generatorById['solar-panel']).toBeDefined();
 
     // Verify digest is generated
@@ -173,6 +180,73 @@ describe('Integration: Missing References', () => {
       expect.arrayContaining([
         expect.objectContaining({
           message: expect.stringContaining('non-existent-resource'),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity formulas referencing undefined resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityFormulaReferencesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-formula-resource'),
+          path: expect.arrayContaining(['entities']),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity maxCount formulas referencing undefined resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityMaxCountFormulaReferencesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-maxcount-resource'),
+          path: expect.arrayContaining(['entities', 0, 'maxCount']),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity statGrowth formulas referencing undefined resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityStatGrowthFormulaReferencesFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-statgrowth-resource'),
+          path: expect.arrayContaining(['entities', 0, 'progression', 'statGrowth', 'speed']),
+        }),
+      ]),
+    );
+  });
+
+  it('rejects entity progression referencing unknown experience resources', () => {
+    const validator = createContentPackValidator();
+    const result = validator.safeParse(invalidEntityExperienceFixture);
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(getZodIssues(result.error)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('missing-resource'),
         }),
       ]),
     );

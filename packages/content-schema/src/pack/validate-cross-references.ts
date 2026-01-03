@@ -11,6 +11,40 @@ import type {
 } from './types.js';
 import { toMutablePath } from './utils.js';
 
+type UpgradeEffectByKind<K extends UpgradeEffect['kind']> = Extract<
+  UpgradeEffect,
+  { kind: K }
+>;
+type ConditionByKind<K extends Condition['kind']> = Extract<Condition, { kind: K }>;
+type RuntimeEventEmitter = ParsedContentPack['runtimeEvents'][number]['emits'][number];
+type RuntimeEventEmitterBySource<K extends RuntimeEventEmitter['source']> =
+  RuntimeEventEmitter & { source: K };
+type UpgradeTarget = ParsedContentPack['upgrades'][number]['targets'][number];
+type UpgradeTargetByKind<K extends UpgradeTarget['kind']> = Extract<
+  UpgradeTarget,
+  { kind: K }
+>;
+type AchievementTrack = ParsedContentPack['achievements'][number]['track'];
+type AchievementTrackByKind<K extends AchievementTrack['kind']> = Extract<
+  AchievementTrack,
+  { kind: K }
+>;
+type AchievementReward = NonNullable<ParsedContentPack['achievements'][number]['reward']>;
+type AchievementRewardByKind<K extends AchievementReward['kind']> = Extract<
+  AchievementReward,
+  { kind: K }
+>;
+type AutomationTrigger = ParsedContentPack['automations'][number]['trigger'];
+type AutomationTriggerByKind<K extends AutomationTrigger['kind']> = Extract<
+  AutomationTrigger,
+  { kind: K }
+>;
+type TransformTrigger = ParsedContentPack['transforms'][number]['trigger'];
+type TransformTriggerByKind<K extends TransformTrigger['kind']> = Extract<
+  TransformTrigger,
+  { kind: K }
+>;
+
 const assertAllowlisted = (
   spec: NormalizedAllowlistSpec | undefined,
   id: string,
@@ -198,92 +232,126 @@ const validateUpgradeEffect = (
     }
   };
 
-  switch (effect.kind) {
-    case 'modifyResourceRate':
-    case 'modifyResourceCapacity':
-    case 'unlockResource':
-    case 'alterDirtyTolerance':
+  const ensureFormulaReferences = (formula: NumericFormula) => {
+    collectFormulaEntityReferences(formula, (reference) => {
+      ensureFormulaReference(
+        reference,
+        path,
+        ctx,
+        resources,
+        generators,
+        upgrades,
+        automations,
+        prestigeLayers,
+      );
+    });
+  };
+
+  const handlers = {
+    modifyResourceRate: (entry: UpgradeEffectByKind<'modifyResourceRate'>) => {
       ensureReference(
         resources,
-        effect.resourceId,
-        `Effect references unknown resource "${effect.resourceId}".`,
+        entry.resourceId,
+        `Effect references unknown resource "${entry.resourceId}".`,
       );
-      if ('value' in effect) {
-        collectFormulaEntityReferences(effect.value, (reference) => {
-          ensureFormulaReference(
-            reference,
-            path,
-            ctx,
-            resources,
-            generators,
-            upgrades,
-            automations,
-            prestigeLayers,
-          );
-        });
-      }
-      break;
-    case 'modifyGeneratorRate':
-    case 'modifyGeneratorCost':
-    case 'modifyGeneratorConsumption':
-    case 'unlockGenerator':
+      ensureFormulaReferences(entry.value);
+    },
+    modifyResourceCapacity: (entry: UpgradeEffectByKind<'modifyResourceCapacity'>) => {
+      ensureReference(
+        resources,
+        entry.resourceId,
+        `Effect references unknown resource "${entry.resourceId}".`,
+      );
+      ensureFormulaReferences(entry.value);
+    },
+    unlockResource: (entry: UpgradeEffectByKind<'unlockResource'>) => {
+      ensureReference(
+        resources,
+        entry.resourceId,
+        `Effect references unknown resource "${entry.resourceId}".`,
+      );
+    },
+    alterDirtyTolerance: (entry: UpgradeEffectByKind<'alterDirtyTolerance'>) => {
+      ensureReference(
+        resources,
+        entry.resourceId,
+        `Effect references unknown resource "${entry.resourceId}".`,
+      );
+      ensureFormulaReferences(entry.value);
+    },
+    modifyGeneratorRate: (entry: UpgradeEffectByKind<'modifyGeneratorRate'>) => {
       ensureReference(
         generators,
-        effect.generatorId,
-        `Effect references unknown generator "${effect.generatorId}".`,
+        entry.generatorId,
+        `Effect references unknown generator "${entry.generatorId}".`,
       );
-      if ('resourceId' in effect && effect.resourceId !== undefined) {
+      ensureFormulaReferences(entry.value);
+    },
+    modifyGeneratorCost: (entry: UpgradeEffectByKind<'modifyGeneratorCost'>) => {
+      ensureReference(
+        generators,
+        entry.generatorId,
+        `Effect references unknown generator "${entry.generatorId}".`,
+      );
+      ensureFormulaReferences(entry.value);
+    },
+    modifyGeneratorConsumption: (
+      entry: UpgradeEffectByKind<'modifyGeneratorConsumption'>,
+    ) => {
+      ensureReference(
+        generators,
+        entry.generatorId,
+        `Effect references unknown generator "${entry.generatorId}".`,
+      );
+      if (entry.resourceId !== undefined) {
         ensureReference(
           resources,
-          effect.resourceId,
-          `Effect references unknown resource "${effect.resourceId}".`,
+          entry.resourceId,
+          `Effect references unknown resource "${entry.resourceId}".`,
         );
       }
-      if ('value' in effect) {
-        collectFormulaEntityReferences(effect.value, (reference) => {
-          ensureFormulaReference(
-            reference,
-            path,
-            ctx,
-            resources,
-            generators,
-            upgrades,
-            automations,
-            prestigeLayers,
-          );
-        });
-      }
-      break;
-    case 'grantAutomation':
+      ensureFormulaReferences(entry.value);
+    },
+    unlockGenerator: (entry: UpgradeEffectByKind<'unlockGenerator'>) => {
+      ensureReference(
+        generators,
+        entry.generatorId,
+        `Effect references unknown generator "${entry.generatorId}".`,
+      );
+    },
+    grantAutomation: (entry: UpgradeEffectByKind<'grantAutomation'>) => {
       ensureReference(
         automations,
-        effect.automationId,
-        `Effect references unknown automation "${effect.automationId}".`,
+        entry.automationId,
+        `Effect references unknown automation "${entry.automationId}".`,
       );
-      break;
-    case 'grantFlag':
+    },
+    grantFlag: (entry: UpgradeEffectByKind<'grantFlag'>) => {
       assertAllowlisted(
         context.allowlists.flags,
-        effect.flagId,
+        entry.flagId,
         [...path, 'flagId'] as const,
         ctx,
         context.warningSink,
         'allowlist.flag.missing',
-        `Effect references flag "${effect.flagId}" that is not in the flags allowlist.`,
+        `Effect references flag "${entry.flagId}" that is not in the flags allowlist.`,
       );
-      break;
-    case 'emitEvent':
-      if (!runtimeEvents.has(effect.eventId)) {
+    },
+    emitEvent: (entry: UpgradeEffectByKind<'emitEvent'>) => {
+      if (!runtimeEvents.has(entry.eventId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: toMutablePath(path),
-          message: `Effect references unknown runtime event "${effect.eventId}".`,
+          message: `Effect references unknown runtime event "${entry.eventId}".`,
         });
       }
-      break;
-    default:
-      break;
-  }
+    },
+  } satisfies {
+    [K in UpgradeEffect['kind']]: (entry: UpgradeEffectByKind<K>) => void;
+  };
+
+  const handler = handlers[effect.kind] as (entry: UpgradeEffect) => void;
+  handler(effect);
 };
 
 const validateConditionNode = (
@@ -300,120 +368,169 @@ const validateConditionNode = (
     return;
   }
 
-  const visit = (node: Condition, currentPath: readonly (string | number)[]) => {
-    switch (node.kind) {
-      case 'resourceThreshold':
-        if (!resources.has(node.resourceId)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: toMutablePath([...currentPath, 'resourceId'] as const),
-            message: `Condition references unknown resource "${node.resourceId}".`,
-          });
-        }
-        collectFormulaEntityReferences(node.amount, (reference) => {
-          ensureFormulaReference(
-            reference,
-            currentPath,
-            ctx,
-            resources,
-            generators,
-            upgrades,
-            new Map(),
-            prestigeLayers,
-          );
+  const emptyAutomationIndex = new Map<string, { index: number }>();
+
+  const ensureConditionFormulaReferences = (
+    formula: NumericFormula,
+    currentPath: readonly (string | number)[],
+  ) => {
+    collectFormulaEntityReferences(formula, (reference) => {
+      ensureFormulaReference(
+        reference,
+        currentPath,
+        ctx,
+        resources,
+        generators,
+        upgrades,
+        emptyAutomationIndex,
+        prestigeLayers,
+      );
+    });
+  };
+
+  const handlers = {
+    always: () => undefined,
+    never: () => undefined,
+    resourceThreshold: (
+      node: ConditionByKind<'resourceThreshold'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      if (!resources.has(node.resourceId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([...currentPath, 'resourceId'] as const),
+          message: `Condition references unknown resource "${node.resourceId}".`,
         });
-        break;
-      case 'generatorLevel':
-        if (!generators.has(node.generatorId)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: toMutablePath([...currentPath, 'generatorId'] as const),
-            message: `Condition references unknown generator "${node.generatorId}".`,
-          });
-        }
-        collectFormulaEntityReferences(node.level, (reference) => {
-          ensureFormulaReference(
-            reference,
-            currentPath,
-            ctx,
-            resources,
-            generators,
-            upgrades,
-            new Map(),
-            prestigeLayers,
-          );
+      }
+      ensureConditionFormulaReferences(node.amount, currentPath);
+    },
+    generatorLevel: (
+      node: ConditionByKind<'generatorLevel'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      if (!generators.has(node.generatorId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([...currentPath, 'generatorId'] as const),
+          message: `Condition references unknown generator "${node.generatorId}".`,
         });
-        break;
-      case 'upgradeOwned':
-        if (!upgrades.has(node.upgradeId)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: toMutablePath([...currentPath, 'upgradeId'] as const),
-            message: `Condition references unknown upgrade "${node.upgradeId}".`,
-          });
-        }
-        break;
-      case 'prestigeCountThreshold':
-        if (!prestigeLayers.has(node.prestigeLayerId)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
-            message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
-          });
-        }
-        break;
-      case 'prestigeCompleted':
-        if (!prestigeLayers.has(node.prestigeLayerId)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
-            message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
-          });
-        }
-        break;
-      case 'prestigeUnlocked':
-        if (!prestigeLayers.has(node.prestigeLayerId)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
-            message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
-          });
-        }
-        break;
-      case 'flag':
-        assertAllowlisted(
-          context.allowlists.flags,
-          node.flagId,
-          [...currentPath, 'flagId'],
-          ctx,
-          context.warningSink,
-          'allowlist.flag.missing',
-          `Condition references flag "${node.flagId}" that is not in the flags allowlist.`,
-        );
-        break;
-      case 'script':
-        assertAllowlisted(
-          context.allowlists.scripts,
-          node.scriptId,
-          [...currentPath, 'scriptId'],
-          ctx,
-          context.warningSink,
-          'allowlist.script.missing',
-          `Condition references script "${node.scriptId}" that is not in the scripts allowlist.`,
-        );
-        break;
-      case 'allOf':
-      case 'anyOf':
-        node.conditions.forEach((child, childIndex) =>
-          visit(child, [...currentPath, 'conditions', childIndex]),
-        );
-        break;
-      case 'not':
-        visit(node.condition, [...currentPath, 'condition']);
-        break;
-      default:
-        break;
-    }
+      }
+      ensureConditionFormulaReferences(node.level, currentPath);
+    },
+    upgradeOwned: (
+      node: ConditionByKind<'upgradeOwned'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      if (!upgrades.has(node.upgradeId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([...currentPath, 'upgradeId'] as const),
+          message: `Condition references unknown upgrade "${node.upgradeId}".`,
+        });
+      }
+    },
+    prestigeCountThreshold: (
+      node: ConditionByKind<'prestigeCountThreshold'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      if (!prestigeLayers.has(node.prestigeLayerId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
+          message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
+        });
+      }
+    },
+    prestigeCompleted: (
+      node: ConditionByKind<'prestigeCompleted'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      if (!prestigeLayers.has(node.prestigeLayerId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
+          message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
+        });
+      }
+    },
+    prestigeUnlocked: (
+      node: ConditionByKind<'prestigeUnlocked'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      if (!prestigeLayers.has(node.prestigeLayerId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([...currentPath, 'prestigeLayerId'] as const),
+          message: `Condition references unknown prestige layer "${node.prestigeLayerId}".`,
+        });
+      }
+    },
+    flag: (
+      node: ConditionByKind<'flag'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      assertAllowlisted(
+        context.allowlists.flags,
+        node.flagId,
+        [...currentPath, 'flagId'],
+        ctx,
+        context.warningSink,
+        'allowlist.flag.missing',
+        `Condition references flag "${node.flagId}" that is not in the flags allowlist.`,
+      );
+    },
+    script: (
+      node: ConditionByKind<'script'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      assertAllowlisted(
+        context.allowlists.scripts,
+        node.scriptId,
+        [...currentPath, 'scriptId'],
+        ctx,
+        context.warningSink,
+        'allowlist.script.missing',
+        `Condition references script "${node.scriptId}" that is not in the scripts allowlist.`,
+      );
+    },
+    allOf: (
+      node: ConditionByKind<'allOf'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      node.conditions.forEach((child, childIndex) =>
+        visit(child, [...currentPath, 'conditions', childIndex]),
+      );
+    },
+    anyOf: (
+      node: ConditionByKind<'anyOf'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      node.conditions.forEach((child, childIndex) =>
+        visit(child, [...currentPath, 'conditions', childIndex]),
+      );
+    },
+    not: (
+      node: ConditionByKind<'not'>,
+      currentPath: readonly (string | number)[],
+    ) => {
+      visit(node.condition, [...currentPath, 'condition']);
+    },
+  } satisfies {
+    [K in Condition['kind']]: (
+      node: ConditionByKind<K>,
+      currentPath: readonly (string | number)[],
+    ) => void;
+  };
+
+  const visit = (
+    node: Condition,
+    currentPath: readonly (string | number)[],
+  ) => {
+    const handler = handlers[node.kind] as (
+      entry: Condition,
+      path: readonly (string | number)[],
+    ) => void;
+    handler(node, currentPath);
   };
 
   visit(condition, path);
@@ -479,6 +596,75 @@ export const validateCrossReferences = (
     });
   };
 
+  const runtimeEventSeverity: 'error' | 'warning' =
+    context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning';
+
+  const runtimeEventEmitterHandlers = {
+    achievement: (
+      emitter: RuntimeEventEmitterBySource<'achievement'>,
+      path: readonly (string | number)[],
+    ) => {
+      ensureContentReference(
+        achievementIndex,
+        emitter.id,
+        path,
+        `Runtime event emitter references unknown achievement "${emitter.id}".`,
+      );
+    },
+    upgrade: (
+      emitter: RuntimeEventEmitterBySource<'upgrade'>,
+      path: readonly (string | number)[],
+    ) => {
+      ensureContentReference(
+        upgradeIndex,
+        emitter.id,
+        path,
+        `Runtime event emitter references unknown upgrade "${emitter.id}".`,
+      );
+    },
+    transform: (
+      emitter: RuntimeEventEmitterBySource<'transform'>,
+      path: readonly (string | number)[],
+    ) => {
+      ensureContentReference(
+        transformIndex,
+        emitter.id,
+        path,
+        `Runtime event emitter references unknown transform "${emitter.id}".`,
+      );
+    },
+    script: (
+      emitter: RuntimeEventEmitterBySource<'script'>,
+      path: readonly (string | number)[],
+    ) => {
+      assertAllowlisted(
+        context.allowlists.scripts,
+        emitter.id,
+        path,
+        ctx,
+        warn,
+        'allowlist.script.missing',
+        `Script "${emitter.id}" is not declared in the scripts allowlist.`,
+      );
+    },
+  } satisfies {
+    [K in RuntimeEventEmitter['source']]: (
+      emitter: RuntimeEventEmitterBySource<K>,
+      path: readonly (string | number)[],
+    ) => void;
+  };
+
+  const handleRuntimeEventEmitter = (
+    emitter: RuntimeEventEmitter,
+    path: readonly (string | number)[],
+  ) => {
+    const handler = runtimeEventEmitterHandlers[emitter.source] as (
+      entry: RuntimeEventEmitter,
+      currentPath: readonly (string | number)[],
+    ) => void;
+    handler(emitter, path);
+  };
+
   pack.resources.forEach((resource, index) => {
     if (resource.unlockCondition) {
       validateConditionNode(
@@ -531,6 +717,136 @@ export const validateCrossReferences = (
     }
   });
 
+  pack.entities.forEach((entity, index) => {
+    entity.stats.forEach((stat, statIndex) => {
+      collectFormulaEntityReferences(stat.baseValue, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['entities', index, 'stats', statIndex, 'baseValue'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+      if (stat.minValue) {
+        collectFormulaEntityReferences(stat.minValue, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['entities', index, 'stats', statIndex, 'minValue'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
+      }
+      if (stat.maxValue) {
+        collectFormulaEntityReferences(stat.maxValue, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['entities', index, 'stats', statIndex, 'maxValue'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
+      }
+    });
+
+    if (entity.maxCount) {
+      collectFormulaEntityReferences(entity.maxCount, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['entities', index, 'maxCount'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+    }
+
+    if (entity.progression) {
+      if (entity.progression.experienceResource) {
+        ensureContentReference(
+          resourceIndex,
+          entity.progression.experienceResource,
+          ['entities', index, 'progression', 'experienceResource'],
+          `Entity "${entity.id}" references unknown experience resource "${entity.progression.experienceResource}".`,
+        );
+      }
+
+      collectFormulaEntityReferences(entity.progression.levelFormula, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['entities', index, 'progression', 'levelFormula'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+
+      Object.entries(entity.progression.statGrowth).forEach(
+        ([statId, formula]) => {
+          if (!formula) {
+            return;
+          }
+          collectFormulaEntityReferences(formula, (reference) => {
+            ensureFormulaReference(
+              reference,
+              ['entities', index, 'progression', 'statGrowth', statId],
+              ctx,
+              resourceIndex,
+              generatorIndex,
+              upgradeIndex,
+              automationIndex,
+              prestigeIndex,
+            );
+          });
+        },
+      );
+    }
+
+    if (entity.unlockCondition) {
+      validateConditionNode(
+        entity.unlockCondition,
+        ['entities', index, 'unlockCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
+
+    if (entity.visibilityCondition) {
+      validateConditionNode(
+        entity.visibilityCondition,
+        ['entities', index, 'visibilityCondition'],
+        ctx,
+        context,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        prestigeIndex,
+      );
+    }
+  });
+
   pack.runtimeEvents.forEach((event, index) => {
     if (context.runtimeEventCatalogue.has(event.id)) {
       ctx.addIssue({
@@ -541,45 +857,10 @@ export const validateCrossReferences = (
     }
 
     event.emits.forEach((emitter, emitterIndex) => {
-      switch (emitter.source) {
-        case 'achievement':
-          ensureContentReference(
-            achievementIndex,
-            emitter.id,
-            toMutablePath(['runtimeEvents', index, 'emits', emitterIndex, 'id'] as const),
-            `Runtime event emitter references unknown achievement "${emitter.id}".`,
-          );
-          break;
-        case 'upgrade':
-          ensureContentReference(
-            upgradeIndex,
-            emitter.id,
-            toMutablePath(['runtimeEvents', index, 'emits', emitterIndex, 'id'] as const),
-            `Runtime event emitter references unknown upgrade "${emitter.id}".`,
-          );
-          break;
-        case 'transform':
-          ensureContentReference(
-            transformIndex,
-            emitter.id,
-            toMutablePath(['runtimeEvents', index, 'emits', emitterIndex, 'id'] as const),
-            `Runtime event emitter references unknown transform "${emitter.id}".`,
-          );
-          break;
-        case 'script':
-          assertAllowlisted(
-            context.allowlists.scripts,
-            emitter.id,
-            toMutablePath(['runtimeEvents', index, 'emits', emitterIndex, 'id'] as const),
-            ctx,
-            warn,
-            'allowlist.script.missing',
-            `Script "${emitter.id}" is not declared in the scripts allowlist.`,
-          );
-          break;
-        default:
-          break;
-      }
+      handleRuntimeEventEmitter(
+        emitter,
+        ['runtimeEvents', index, 'emits', emitterIndex, 'id'],
+      );
     });
   });
 
@@ -713,44 +994,84 @@ export const validateCrossReferences = (
     });
   });
 
+  const upgradeTargetHandlers = {
+    resource: (
+      target: UpgradeTargetByKind<'resource'>,
+      path: readonly (string | number)[],
+      upgradeId: string,
+    ) => {
+      ensureContentReference(
+        resourceIndex,
+        target.id,
+        path,
+        `Upgrade "${upgradeId}" targets unknown resource "${target.id}".`,
+      );
+    },
+    generator: (
+      target: UpgradeTargetByKind<'generator'>,
+      path: readonly (string | number)[],
+      upgradeId: string,
+    ) => {
+      ensureContentReference(
+        generatorIndex,
+        target.id,
+        path,
+        `Upgrade "${upgradeId}" targets unknown generator "${target.id}".`,
+      );
+    },
+    automation: (
+      target: UpgradeTargetByKind<'automation'>,
+      path: readonly (string | number)[],
+      upgradeId: string,
+    ) => {
+      ensureContentReference(
+        automationIndex,
+        target.id,
+        path,
+        `Upgrade "${upgradeId}" targets unknown automation "${target.id}".`,
+      );
+    },
+    prestigeLayer: (
+      target: UpgradeTargetByKind<'prestigeLayer'>,
+      path: readonly (string | number)[],
+      upgradeId: string,
+    ) => {
+      ensureContentReference(
+        prestigeIndex,
+        target.id,
+        path,
+        `Upgrade "${upgradeId}" targets unknown prestige layer "${target.id}".`,
+      );
+    },
+    global: () => undefined,
+  } satisfies {
+    [K in UpgradeTarget['kind']]: (
+      target: UpgradeTargetByKind<K>,
+      path: readonly (string | number)[],
+      upgradeId: string,
+    ) => void;
+  };
+
+  const handleUpgradeTarget = (
+    target: UpgradeTarget,
+    path: readonly (string | number)[],
+    upgradeId: string,
+  ) => {
+    const handler = upgradeTargetHandlers[target.kind] as (
+      entry: UpgradeTarget,
+      currentPath: readonly (string | number)[],
+      currentUpgradeId: string,
+    ) => void;
+    handler(target, path, upgradeId);
+  };
+
   pack.upgrades.forEach((upgrade, index) => {
     upgrade.targets.forEach((target, targetIndex) => {
-      switch (target.kind) {
-        case 'resource':
-          ensureContentReference(
-            resourceIndex,
-            target.id,
-            ['upgrades', index, 'targets', targetIndex, 'id'],
-            `Upgrade "${upgrade.id}" targets unknown resource "${target.id}".`,
-          );
-          break;
-        case 'generator':
-          ensureContentReference(
-            generatorIndex,
-            target.id,
-            ['upgrades', index, 'targets', targetIndex, 'id'],
-            `Upgrade "${upgrade.id}" targets unknown generator "${target.id}".`,
-          );
-          break;
-        case 'automation':
-          ensureContentReference(
-            automationIndex,
-            target.id,
-            ['upgrades', index, 'targets', targetIndex, 'id'],
-            `Upgrade "${upgrade.id}" targets unknown automation "${target.id}".`,
-          );
-          break;
-        case 'prestigeLayer':
-          ensureContentReference(
-            prestigeIndex,
-            target.id,
-            ['upgrades', index, 'targets', targetIndex, 'id'],
-            `Upgrade "${upgrade.id}" targets unknown prestige layer "${target.id}".`,
-          );
-          break;
-        default:
-          break;
-      }
+      handleUpgradeTarget(
+        target,
+        ['upgrades', index, 'targets', targetIndex, 'id'],
+        upgrade.id,
+      );
     });
     if ('costs' in upgrade.cost) {
       upgrade.cost.costs.forEach((cost, costIndex) => {
@@ -859,174 +1180,235 @@ export const validateCrossReferences = (
     }
   });
 
-  pack.achievements.forEach((achievement, index) => {
-    switch (achievement.track.kind) {
-      case 'resource':
-        ensureContentReference(
-          resourceIndex,
-          achievement.track.resourceId,
-          ['achievements', index, 'track', 'resourceId'],
-          `Achievement "${achievement.id}" references unknown resource "${achievement.track.resourceId}".`,
-        );
-        collectFormulaEntityReferences(achievement.track.threshold, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['achievements', index, 'track', 'threshold'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-        break;
-      case 'generator-level':
-        ensureContentReference(
-          generatorIndex,
-          achievement.track.generatorId,
-          ['achievements', index, 'track', 'generatorId'],
-          `Achievement "${achievement.id}" references unknown generator "${achievement.track.generatorId}".`,
-        );
-        collectFormulaEntityReferences(achievement.track.level, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['achievements', index, 'track', 'level'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-        break;
-      case 'upgrade-owned':
-        ensureContentReference(
-          upgradeIndex,
-          achievement.track.upgradeId,
-          ['achievements', index, 'track', 'upgradeId'],
-          `Achievement "${achievement.id}" references unknown upgrade "${achievement.track.upgradeId}".`,
-        );
-        if (achievement.track.purchases) {
-          collectFormulaEntityReferences(achievement.track.purchases, (reference) => {
-            ensureFormulaReference(
-              reference,
-              ['achievements', index, 'track', 'purchases'],
-              ctx,
-              resourceIndex,
-              generatorIndex,
-              upgradeIndex,
-              automationIndex,
-              prestigeIndex,
-            );
-          });
-        }
-        break;
-      case 'flag':
-        assertAllowlisted(
-          context.allowlists.flags,
-          achievement.track.flagId,
-          ['achievements', index, 'track', 'flagId'],
-          ctx,
-          warn,
-          'allowlist.flag.missing',
-          `Achievement "${achievement.id}" references flag "${achievement.track.flagId}" that is not in the flags allowlist.`,
-        );
-        break;
-      case 'script':
-        assertAllowlisted(
-          context.allowlists.scripts,
-          achievement.track.scriptId,
-          ['achievements', index, 'track', 'scriptId'],
-          ctx,
-          warn,
-          'allowlist.script.missing',
-          `Achievement "${achievement.id}" references script "${achievement.track.scriptId}" that is not in the scripts allowlist.`,
-        );
-        break;
-      case 'custom-metric':
-        ensureContentReference(
-          metricIndex,
-          achievement.track.metricId,
-          ['achievements', index, 'track', 'metricId'],
-          `Achievement "${achievement.id}" references unknown metric "${achievement.track.metricId}".`,
-        );
-        collectFormulaEntityReferences(achievement.track.threshold, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['achievements', index, 'track', 'threshold'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-        break;
-      default:
-        break;
-    }
-    if (achievement.reward) {
-      switch (achievement.reward.kind) {
-        case 'grantResource':
-          ensureContentReference(
-            resourceIndex,
-            achievement.reward.resourceId,
-            ['achievements', index, 'reward', 'resourceId'],
-            `Achievement "${achievement.id}" grants unknown resource "${achievement.reward.resourceId}".`,
-          );
-          collectFormulaEntityReferences(achievement.reward.amount, (reference) => {
-            ensureFormulaReference(
-              reference,
-              ['achievements', index, 'reward', 'amount'],
-              ctx,
-              resourceIndex,
-              generatorIndex,
-              upgradeIndex,
-              automationIndex,
-              prestigeIndex,
-            );
-          });
-          break;
-        case 'grantUpgrade':
-          ensureContentReference(
-            upgradeIndex,
-            achievement.reward.upgradeId,
-            ['achievements', index, 'reward', 'upgradeId'],
-            `Achievement "${achievement.id}" grants unknown upgrade "${achievement.reward.upgradeId}".`,
-          );
-          break;
-        case 'emitEvent':
-          ensureRuntimeEventKnown(
-            achievement.reward.eventId,
-            ['achievements', index, 'reward', 'eventId'],
-            context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning',
-          );
-          break;
-        case 'unlockAutomation':
-          ensureContentReference(
-            automationIndex,
-            achievement.reward.automationId,
-            ['achievements', index, 'reward', 'automationId'],
-            `Achievement "${achievement.id}" unlocks unknown automation "${achievement.reward.automationId}".`,
-          );
-          break;
-        case 'grantFlag':
-          assertAllowlisted(
-            context.allowlists.flags,
-            achievement.reward.flagId,
-            ['achievements', index, 'reward', 'flagId'],
-            ctx,
-            warn,
-            'allowlist.flag.missing',
-            `Achievement "${achievement.id}" grants flag "${achievement.reward.flagId}" that is not in the flags allowlist.`,
-          );
-          break;
-        default:
-          break;
+  const ensureAchievementFormulaReferences = (
+    formula: NumericFormula,
+    path: readonly (string | number)[],
+  ) => {
+    collectFormulaEntityReferences(formula, (reference) => {
+      ensureFormulaReference(
+        reference,
+        path,
+        ctx,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        automationIndex,
+        prestigeIndex,
+      );
+    });
+  };
+
+  const achievementTrackHandlers = {
+    resource: (
+      track: AchievementTrackByKind<'resource'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        resourceIndex,
+        track.resourceId,
+        [...trackPath, 'resourceId'],
+        `Achievement "${achievementId}" references unknown resource "${track.resourceId}".`,
+      );
+      ensureAchievementFormulaReferences(track.threshold, [
+        ...trackPath,
+        'threshold',
+      ]);
+    },
+    'generator-level': (
+      track: AchievementTrackByKind<'generator-level'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        generatorIndex,
+        track.generatorId,
+        [...trackPath, 'generatorId'],
+        `Achievement "${achievementId}" references unknown generator "${track.generatorId}".`,
+      );
+      ensureAchievementFormulaReferences(track.level, [
+        ...trackPath,
+        'level',
+      ]);
+    },
+    'upgrade-owned': (
+      track: AchievementTrackByKind<'upgrade-owned'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        upgradeIndex,
+        track.upgradeId,
+        [...trackPath, 'upgradeId'],
+        `Achievement "${achievementId}" references unknown upgrade "${track.upgradeId}".`,
+      );
+      if (track.purchases) {
+        ensureAchievementFormulaReferences(track.purchases, [
+          ...trackPath,
+          'purchases',
+        ]);
       }
+    },
+    flag: (
+      track: AchievementTrackByKind<'flag'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      assertAllowlisted(
+        context.allowlists.flags,
+        track.flagId,
+        [...trackPath, 'flagId'],
+        ctx,
+        warn,
+        'allowlist.flag.missing',
+        `Achievement "${achievementId}" references flag "${track.flagId}" that is not in the flags allowlist.`,
+      );
+    },
+    script: (
+      track: AchievementTrackByKind<'script'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      assertAllowlisted(
+        context.allowlists.scripts,
+        track.scriptId,
+        [...trackPath, 'scriptId'],
+        ctx,
+        warn,
+        'allowlist.script.missing',
+        `Achievement "${achievementId}" references script "${track.scriptId}" that is not in the scripts allowlist.`,
+      );
+    },
+    'custom-metric': (
+      track: AchievementTrackByKind<'custom-metric'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        metricIndex,
+        track.metricId,
+        [...trackPath, 'metricId'],
+        `Achievement "${achievementId}" references unknown metric "${track.metricId}".`,
+      );
+      ensureAchievementFormulaReferences(track.threshold, [
+        ...trackPath,
+        'threshold',
+      ]);
+    },
+  } satisfies {
+    [K in AchievementTrack['kind']]: (
+      track: AchievementTrackByKind<K>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => void;
+  };
+
+  const handleAchievementTrack = (
+    track: AchievementTrack,
+    trackPath: readonly (string | number)[],
+    achievementId: string,
+  ) => {
+    const handler = achievementTrackHandlers[track.kind] as (
+      entry: AchievementTrack,
+      currentPath: readonly (string | number)[],
+      currentAchievementId: string,
+    ) => void;
+    handler(track, trackPath, achievementId);
+  };
+
+  const achievementRewardHandlers = {
+    grantResource: (
+      reward: AchievementRewardByKind<'grantResource'>,
+      rewardPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        resourceIndex,
+        reward.resourceId,
+        [...rewardPath, 'resourceId'],
+        `Achievement "${achievementId}" grants unknown resource "${reward.resourceId}".`,
+      );
+      ensureAchievementFormulaReferences(reward.amount, [
+        ...rewardPath,
+        'amount',
+      ]);
+    },
+    grantUpgrade: (
+      reward: AchievementRewardByKind<'grantUpgrade'>,
+      rewardPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        upgradeIndex,
+        reward.upgradeId,
+        [...rewardPath, 'upgradeId'],
+        `Achievement "${achievementId}" grants unknown upgrade "${reward.upgradeId}".`,
+      );
+    },
+    emitEvent: (
+      reward: AchievementRewardByKind<'emitEvent'>,
+      rewardPath: readonly (string | number)[],
+    ) => {
+      ensureRuntimeEventKnown(
+        reward.eventId,
+        [...rewardPath, 'eventId'],
+        runtimeEventSeverity,
+      );
+    },
+    unlockAutomation: (
+      reward: AchievementRewardByKind<'unlockAutomation'>,
+      rewardPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      ensureContentReference(
+        automationIndex,
+        reward.automationId,
+        [...rewardPath, 'automationId'],
+        `Achievement "${achievementId}" unlocks unknown automation "${reward.automationId}".`,
+      );
+    },
+    grantFlag: (
+      reward: AchievementRewardByKind<'grantFlag'>,
+      rewardPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      assertAllowlisted(
+        context.allowlists.flags,
+        reward.flagId,
+        [...rewardPath, 'flagId'],
+        ctx,
+        warn,
+        'allowlist.flag.missing',
+        `Achievement "${achievementId}" grants flag "${reward.flagId}" that is not in the flags allowlist.`,
+      );
+    },
+  } satisfies {
+    [K in AchievementReward['kind']]: (
+      reward: AchievementRewardByKind<K>,
+      rewardPath: readonly (string | number)[],
+      achievementId: string,
+    ) => void;
+  };
+
+  const handleAchievementReward = (
+    reward: AchievementReward,
+    rewardPath: readonly (string | number)[],
+    achievementId: string,
+  ) => {
+    const handler = achievementRewardHandlers[reward.kind] as (
+      entry: AchievementReward,
+      currentPath: readonly (string | number)[],
+      currentAchievementId: string,
+    ) => void;
+    handler(reward, rewardPath, achievementId);
+  };
+
+  pack.achievements.forEach((achievement, index) => {
+    const trackPath = ['achievements', index, 'track'] as const;
+    handleAchievementTrack(achievement.track, trackPath, achievement.id);
+    if (achievement.reward) {
+      const rewardPath = ['achievements', index, 'reward'] as const;
+      handleAchievementReward(achievement.reward, rewardPath, achievement.id);
     }
     if (achievement.unlockCondition) {
       validateConditionNode(
@@ -1056,7 +1438,7 @@ export const validateCrossReferences = (
       ensureRuntimeEventKnown(
         eventId,
         ['achievements', index, 'onUnlockEvents', eventIndex],
-        context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning',
+        runtimeEventSeverity,
       );
     });
   });
@@ -1167,18 +1549,22 @@ export const validateCrossReferences = (
         );
       });
     }
-    switch (automation.trigger.kind) {
-      case 'resourceThreshold':
+    const automationTriggerHandlers = {
+      resourceThreshold: (
+        trigger: AutomationTriggerByKind<'resourceThreshold'>,
+        triggerPath: readonly (string | number)[],
+        automationId: string,
+      ) => {
         ensureContentReference(
           resourceIndex,
-          automation.trigger.resourceId,
-          ['automations', index, 'trigger', 'resourceId'],
-          `Automation "${automation.id}" trigger references unknown resource "${automation.trigger.resourceId}".`,
+          trigger.resourceId,
+          [...triggerPath, 'resourceId'],
+          `Automation "${automationId}" trigger references unknown resource "${trigger.resourceId}".`,
         );
-        collectFormulaEntityReferences(automation.trigger.threshold, (reference) => {
+        collectFormulaEntityReferences(trigger.threshold, (reference) => {
           ensureFormulaReference(
             reference,
-            ['automations', index, 'trigger', 'threshold'],
+            [...triggerPath, 'threshold'],
             ctx,
             resourceIndex,
             generatorIndex,
@@ -1187,17 +1573,45 @@ export const validateCrossReferences = (
             prestigeIndex,
           );
         });
-        break;
-      case 'event':
+      },
+      event: (
+        trigger: AutomationTriggerByKind<'event'>,
+        triggerPath: readonly (string | number)[],
+      ) => {
         ensureRuntimeEventKnown(
-          automation.trigger.eventId,
-          ['automations', index, 'trigger', 'eventId'],
-          context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning',
+          trigger.eventId,
+          [...triggerPath, 'eventId'],
+          runtimeEventSeverity,
         );
-        break;
-      default:
-        break;
-    }
+      },
+      interval: () => undefined,
+      commandQueueEmpty: () => undefined,
+    } satisfies {
+      [K in AutomationTrigger['kind']]: (
+        trigger: AutomationTriggerByKind<K>,
+        triggerPath: readonly (string | number)[],
+        automationId: string,
+      ) => void;
+    };
+
+    const handleAutomationTrigger = (
+      trigger: AutomationTrigger,
+      triggerPath: readonly (string | number)[],
+      automationId: string,
+    ) => {
+      const handler = automationTriggerHandlers[trigger.kind] as (
+        entry: AutomationTrigger,
+        currentPath: readonly (string | number)[],
+        currentAutomationId: string,
+      ) => void;
+      handler(trigger, triggerPath, automationId);
+    };
+
+    handleAutomationTrigger(
+      automation.trigger,
+      ['automations', index, 'trigger'],
+      automation.id,
+    );
     if (automation.scriptId) {
       assertAllowlisted(
         context.allowlists.scripts,
@@ -1302,19 +1716,26 @@ export const validateCrossReferences = (
         );
       });
     }
-    switch (transform.trigger.kind) {
-      case 'automation':
+    const transformTriggerHandlers = {
+      automation: (
+        trigger: TransformTriggerByKind<'automation'>,
+        triggerPath: readonly (string | number)[],
+        transformId: string,
+      ) => {
         ensureContentReference(
           automationIndex,
-          transform.trigger.automationId,
-          ['transforms', index, 'trigger', 'automationId'],
-          `Transform "${transform.id}" references unknown automation "${transform.trigger.automationId}".`,
+          trigger.automationId,
+          [...triggerPath, 'automationId'],
+          `Transform "${transformId}" references unknown automation "${trigger.automationId}".`,
         );
-        break;
-      case 'condition':
+      },
+      condition: (
+        trigger: TransformTriggerByKind<'condition'>,
+        triggerPath: readonly (string | number)[],
+      ) => {
         validateConditionNode(
-          transform.trigger.condition,
-          ['transforms', index, 'trigger', 'condition'],
+          trigger.condition,
+          [...triggerPath, 'condition'],
           ctx,
           context,
           resourceIndex,
@@ -1322,17 +1743,44 @@ export const validateCrossReferences = (
           upgradeIndex,
           prestigeIndex,
         );
-        break;
-      case 'event':
+      },
+      event: (
+        trigger: TransformTriggerByKind<'event'>,
+        triggerPath: readonly (string | number)[],
+      ) => {
         ensureRuntimeEventKnown(
-          transform.trigger.eventId,
-          ['transforms', index, 'trigger', 'eventId'],
-          context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning',
+          trigger.eventId,
+          [...triggerPath, 'eventId'],
+          runtimeEventSeverity,
         );
-        break;
-      default:
-        break;
-    }
+      },
+      manual: () => undefined,
+    } satisfies {
+      [K in TransformTrigger['kind']]: (
+        trigger: TransformTriggerByKind<K>,
+        triggerPath: readonly (string | number)[],
+        transformId: string,
+      ) => void;
+    };
+
+    const handleTransformTrigger = (
+      trigger: TransformTrigger,
+      triggerPath: readonly (string | number)[],
+      transformId: string,
+    ) => {
+      const handler = transformTriggerHandlers[trigger.kind] as (
+        entry: TransformTrigger,
+        currentPath: readonly (string | number)[],
+        currentTransformId: string,
+      ) => void;
+      handler(trigger, triggerPath, transformId);
+    };
+
+    handleTransformTrigger(
+      transform.trigger,
+      ['transforms', index, 'trigger'],
+      transform.id,
+    );
     if (transform.automation) {
       ensureContentReference(
         automationIndex,

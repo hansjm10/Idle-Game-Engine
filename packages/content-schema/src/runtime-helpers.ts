@@ -11,6 +11,7 @@ export interface ContentPackDigestModules {
     readonly version: string;
   };
   readonly resources: readonly IdentifiedEntity[];
+  readonly entities: readonly IdentifiedEntity[];
   readonly generators: readonly IdentifiedEntity[];
   readonly upgrades: readonly IdentifiedEntity[];
   readonly metrics: readonly IdentifiedEntity[];
@@ -44,6 +45,7 @@ export const createContentPackDigest = <Modules extends ContentPackDigestModules
     version: pack.metadata.version,
     modules: {
       resources: pack.resources.map((resource) => resource.id),
+      entities: pack.entities.map((entity) => entity.id),
       generators: pack.generators.map((generator) => generator.id),
       upgrades: pack.upgrades.map((upgrade) => upgrade.id),
       metrics: pack.metrics.map((metric) => metric.id),

@@ -56,6 +56,7 @@ function cloneDigest(digest: SerializedContentDigest): SerializedContentDigest {
 
 const LOOKUP_PROPERTY: Record<ModuleName, LookupKey> = {
   resources: 'resources',
+  entities: 'entities',
   generators: 'generators',
   upgrades: 'upgrades',
   metrics: 'metrics',
@@ -68,6 +69,7 @@ const LOOKUP_PROPERTY: Record<ModuleName, LookupKey> = {
 
 const SERIALIZED_LOOKUP_PROPERTY: Record<ModuleName, SerializedLookupKey> = {
   resources: 'resourceById',
+  entities: 'entityById',
   generators: 'generatorById',
   upgrades: 'upgradeById',
   metrics: 'metricById',
@@ -165,6 +167,7 @@ function resolveModulesObject(
 ): SerializedNormalizedModules {
   return Object.freeze({
     resources: packModules.resources,
+    entities: packModules.entities,
     generators: packModules.generators,
     upgrades: packModules.upgrades,
     metrics: packModules.metrics,
@@ -233,6 +236,7 @@ export function rehydrateNormalizedPack(
   const pack: NormalizedContentPack = Object.freeze({
     metadata: serialized.metadata,
     resources: clonedModules.resources,
+    entities: clonedModules.entities,
     generators: clonedModules.generators,
     upgrades: clonedModules.upgrades,
     metrics: clonedModules.metrics,

@@ -56,6 +56,7 @@ export type {
   NormalizedContentPack,
   NormalizedMetadata,
   NormalizedResource,
+  NormalizedEntity,
   NormalizedGenerator,
   NormalizedUpgrade,
   NormalizedMetric,

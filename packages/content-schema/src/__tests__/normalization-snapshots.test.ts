@@ -287,6 +287,7 @@ describe('Normalization Snapshots', () => {
     // Snapshot lookup map keys
     const lookupKeys = {
       resources: Array.from(result.pack.lookup.resources.keys()),
+      entities: Array.from(result.pack.lookup.entities.keys()),
       generators: Array.from(result.pack.lookup.generators.keys()),
       upgrades: Array.from(result.pack.lookup.upgrades.keys()),
       metrics: Array.from(result.pack.lookup.metrics.keys()),
@@ -298,6 +299,7 @@ describe('Normalization Snapshots', () => {
     // Snapshot serialized lookup keys
     const serializedLookupKeys = {
       resources: Object.keys(result.pack.serializedLookup.resourceById),
+      entities: Object.keys(result.pack.serializedLookup.entityById),
       generators: Object.keys(result.pack.serializedLookup.generatorById),
       upgrades: Object.keys(result.pack.serializedLookup.upgradeById),
     };

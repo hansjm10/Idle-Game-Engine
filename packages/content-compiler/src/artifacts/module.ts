@@ -63,6 +63,7 @@ export function createModuleIndices(
 ): ModuleIndexTables {
   return {
     resources: buildIndex(pack.resources),
+    entities: buildIndex(pack.entities),
     generators: buildIndex(pack.generators),
     upgrades: buildIndex(pack.upgrades),
     metrics: buildIndex(pack.metrics),
@@ -88,6 +89,7 @@ function createSummaryLiteral(): string {
     '  artifactHash: serialized.artifactHash,',
     '  warningCount: serialized.warnings.length,',
     '  resourceIds: serialized.modules.resources.map((resource) => resource.id),',
+    '  entityIds: serialized.modules.entities.map((entity) => entity.id),',
     '})',
   ].join('\n');
 }

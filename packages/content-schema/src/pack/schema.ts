@@ -6,6 +6,9 @@ import type {
 import type {
   AutomationDefinition,
 } from '../modules/automations.js';
+import type {
+  EntityDefinition,
+} from '../modules/entities.js';
 import type { Generator } from '../modules/generators.js';
 import type { Metadata } from '../modules/metadata.js';
 import type { MetricDefinition } from '../modules/metrics.js';
@@ -26,6 +29,9 @@ import {
 import {
   automationCollectionSchema,
 } from '../modules/automations.js';
+import {
+  entityCollectionSchema,
+} from '../modules/entities.js';
 import { generatorCollectionSchema } from '../modules/generators.js';
 import { metadataSchema } from '../modules/metadata.js';
 import { metricCollectionSchema } from '../modules/metrics.js';
@@ -44,6 +50,7 @@ import { upgradeCollectionSchema } from '../modules/upgrades.js';
 export interface ParsedContentPack {
   readonly metadata: Metadata;
   readonly resources: readonly Resource[];
+  readonly entities: readonly EntityDefinition[];
   readonly generators: readonly Generator[];
   readonly upgrades: readonly Upgrade[];
   readonly metrics: readonly MetricDefinition[];
@@ -58,6 +65,7 @@ const baseContentPackSchema: z.ZodType<ParsedContentPack, z.ZodTypeDef, unknown>
   .object({
     metadata: metadataSchema,
     resources: resourceCollectionSchema.default([]),
+    entities: entityCollectionSchema.default([]),
     generators: generatorCollectionSchema.default([]),
     upgrades: upgradeCollectionSchema.default([]),
     metrics: metricCollectionSchema.default([]),

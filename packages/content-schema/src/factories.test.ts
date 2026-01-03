@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createResource,
+  createEntity,
   createGenerator,
   createUpgrade,
   createMetric,
@@ -10,6 +11,7 @@ import {
   createTransform,
   createPrestigeLayer,
   type ResourceInput,
+  type EntityInput,
   type GeneratorInput,
   type UpgradeInput,
   type MetricInput,
@@ -85,6 +87,38 @@ describe('createResource', () => {
         tier: 1,
       }),
     ).toThrow();
+  });
+});
+
+describe('createEntity', () => {
+  it('creates a normalized entity from plain input', () => {
+    const input: EntityInput = {
+      id: 'test.scout',
+      name: { default: 'Scout' },
+      description: { default: 'Fast reconnaissance unit' },
+      stats: [
+        {
+          id: 'speed',
+          name: { default: 'Speed' },
+          baseValue: { kind: 'constant', value: 10 },
+        },
+      ],
+      tags: ['Recon', 'recon'],
+      progression: {
+        levelFormula: { kind: 'constant', value: 100 },
+        statGrowth: {
+          speed: { kind: 'constant', value: 1 },
+        },
+      },
+    };
+
+    const result = createEntity(input);
+
+    expect(result.id).toBe('test.scout');
+    expect(result.stats[0]?.id).toBe('speed');
+    expect(result.startCount).toBe(0);
+    expect(result.trackInstances).toBe(false);
+    expect(result.tags).toEqual(['recon']);
   });
 });
 

@@ -9,6 +9,87 @@ const baseTitle = {
   variants: {},
 } as const;
 
+type TransformAmount =
+  | { kind: 'constant'; value: number }
+  | { kind: 'linear'; base: number; slope: number };
+
+type TransformIO = {
+  resourceId: string;
+  amount: TransformAmount;
+};
+
+const createMetadata = (id: string, overrides: Record<string, unknown> = {}) => ({
+  id,
+  title: baseTitle,
+  version: '1.0.0',
+  engine: '^1.0.0',
+  defaultLocale: 'en-US',
+  supportedLocales: ['en-US'],
+  ...overrides,
+});
+
+const createResource = (id: string, overrides: Record<string, unknown> = {}) => ({
+  id,
+  name: baseTitle,
+  category: 'primary' as const,
+  tier: 1,
+  ...overrides,
+});
+
+const createManualTransform = (
+  id: string,
+  inputs: TransformIO[],
+  outputs: TransformIO[],
+  overrides: Record<string, unknown> = {},
+) => ({
+  id,
+  name: baseTitle,
+  description: baseTitle,
+  inputs,
+  outputs,
+  trigger: { kind: 'manual' as const },
+  mode: 'instant' as const,
+  ...overrides,
+});
+
+const createResources = (...ids: string[]) => ids.map((id) => createResource(id));
+
+const constantAmount = (value: number): TransformAmount => ({
+  kind: 'constant',
+  value,
+});
+
+const linearAmount = (base: number, slope: number): TransformAmount => ({
+  kind: 'linear',
+  base,
+  slope,
+});
+
+const constantIO = (resourceId: string, value: number): TransformIO => ({
+  resourceId,
+  amount: constantAmount(value),
+});
+
+const linearIO = (resourceId: string, base: number, slope: number): TransformIO => ({
+  resourceId,
+  amount: linearAmount(base, slope),
+});
+
+const createConstantTransform = (
+  id: string,
+  inputResourceId: string,
+  inputValue: number,
+  outputResourceId: string,
+  outputValue: number,
+  overrides: Record<string, unknown> = {},
+) =>
+  createManualTransform(
+    id,
+    [constantIO(inputResourceId, inputValue)],
+    [constantIO(outputResourceId, outputValue)],
+    overrides,
+  );
+
 /**
  * SUCCESS CASE: Valid pack with comprehensive module coverage
  */
@@ -75,6 +156,50 @@ export const validComprehensivePackFixture = {
         amount: { kind: 'constant', value: 100 },
       },
       order: 2,
+    },
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: {
+        default: 'Scout',
+        variants: {},
+      },
+      description: {
+        default: 'Fast reconnaissance unit',
+        variants: {},
+      },
+      stats: [
+        {
+          id: 'speed',
+          name: { default: 'Speed', variants: {} },
+          baseValue: { kind: 'constant', value: 10 },
+        },
+        {
+          id: 'perception',
+          name: { default: 'Perception', variants: {} },
+          baseValue: { kind: 'constant', value: 8 },
+        },
+      ],
+      maxCount: { kind: 'constant', value: 10 },
+      startCount: 1,
+      trackInstances: false,
+      progression: {
+        experienceResource: 'energy',
+        levelFormula: { kind: 'linear', base: 100, slope: 25 },
+        maxLevel: 50,
+        statGrowth: {
+          speed: { kind: 'constant', value: 1 },
+          perception: { kind: 'constant', value: 0.5 },
+        },
+      },
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'energy',
+        comparator: 'gte',
+        amount: { kind: 'constant', value: 100 },
+      },
+      tags: ['recon'],
     },
   ],
   generators: [
@@ -199,21 +324,9 @@ export const validComprehensivePackFixture = {
  * MISSING REFERENCES: Generator produces non-existent resource
  */
 export const missingResourceReferenceFixture = {
-  metadata: {
-    id: 'missing-ref-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('missing-ref-pack'),
   resources: [
-    {
-      id: 'energy',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
+    createResource('energy'),
   ],
   generators: [
     {
@@ -241,39 +354,24 @@ export const missingResourceReferenceFixture = {
  * CYCLIC UNLOCK CONDITIONS: Resource A unlocks Resource B which unlocks Resource A
  */
 export const cyclicUnlockConditionsFixture = {
-  metadata: {
-    id: 'cyclic-unlock-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('cyclic-unlock-pack'),
   resources: [
-    {
-      id: 'resource-a',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    createResource('resource-a', {
       unlockCondition: {
         kind: 'resourceThreshold' as const,
         resourceId: 'resource-b',
         comparator: 'gte' as const,
         amount: { kind: 'constant', value: 10 },
       },
-    },
-    {
-      id: 'resource-b',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    }),
+    createResource('resource-b', {
       unlockCondition: {
         kind: 'resourceThreshold' as const,
         resourceId: 'resource-a',
         comparator: 'gte' as const,
         amount: { kind: 'constant', value: 10 },
       },
-    },
+    }),
   ],
   generators: [],
   upgrades: [],
@@ -284,27 +382,16 @@ export const cyclicUnlockConditionsFixture = {
  * Resource unlocks via generator threshold, generator unlocks via resource threshold
  */
 export const cyclicUnlockCrossEntityFixture = {
-  metadata: {
-    id: 'cyclic-unlock-cross-entity',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('cyclic-unlock-cross-entity'),
   resources: [
-    {
-      id: 'energy',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    createResource('energy', {
       unlockCondition: {
         kind: 'generatorLevel' as const,
         generatorId: 'solar-panel',
         comparator: 'gte' as const,
         level: { kind: 'constant', value: 1 },
       },
-    },
+    }),
   ],
   generators: [
     {
@@ -342,20 +429,9 @@ export const cyclicUnlockCrossEntityFixture = {
  * This should not be treated as an unlock dependency cycle.
  */
 export const selfThresholdUnlockConditionsFixture = {
-  metadata: {
-    id: 'self-threshold-unlock-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('self-threshold-unlock-pack'),
   resources: [
-    {
-      id: 'hidden-ore',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    createResource('hidden-ore', {
       visible: false,
       unlocked: false,
       unlockCondition: {
@@ -370,7 +446,7 @@ export const selfThresholdUnlockConditionsFixture = {
         comparator: 'gte' as const,
         amount: { kind: 'constant', value: 1 },
       },
-    },
+    }),
   ],
   generators: [],
   upgrades: [],
@@ -380,20 +456,9 @@ export const selfThresholdUnlockConditionsFixture = {
  * ANYOF UNLOCK CONDITIONS: Alternative branch should not register dependency edges.
  */
 export const anyOfUnlockBreaksCycleFixture = {
-  metadata: {
-    id: 'anyof-unlock-breaks-cycle-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('anyof-unlock-breaks-cycle-pack'),
   resources: [
-    {
-      id: 'resource-a',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    createResource('resource-a', {
       unlockCondition: {
         kind: 'anyOf' as const,
         conditions: [
@@ -406,19 +471,15 @@ export const anyOfUnlockBreaksCycleFixture = {
           },
         ],
       },
-    },
-    {
-      id: 'resource-b',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    }),
+    createResource('resource-b', {
       unlockCondition: {
         kind: 'resourceThreshold' as const,
         resourceId: 'resource-a',
         comparator: 'gte' as const,
         amount: { kind: 'constant', value: 1 },
       },
-    },
+    }),
   ],
   generators: [],
   upgrades: [],
@@ -428,8 +489,7 @@ export const anyOfUnlockBreaksCycleFixture = {
  * LOCALIZATION GAPS: Missing translations for declared supported locales
  */
 export const localizationGapsFixture = {
-  metadata: {
-    id: 'localization-gap-pack',
+  metadata: createMetadata('localization-gap-pack', {
     title: {
       default: 'Localization Test',
       variants: {
@@ -437,14 +497,10 @@ export const localizationGapsFixture = {
         // Missing 'es-ES' variant
       },
     },
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
     supportedLocales: ['en-US', 'fr-FR', 'es-ES'], // Claims to support es-ES
-  },
+  }),
   resources: [
-    {
-      id: 'energy',
+    createResource('energy', {
       name: {
         default: 'Energy',
         variants: {
@@ -452,20 +508,15 @@ export const localizationGapsFixture = {
           // Missing 'es-ES' variant
         },
       },
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'crystals',
+    }),
+    createResource('crystals', {
       name: {
         default: 'Crystals',
         variants: {
           // Missing both 'fr-FR' and 'es-ES' variants
         },
       },
-      category: 'primary' as const,
-      tier: 1,
-    },
+    }),
   ],
   generators: [],
   upgrades: [],
@@ -475,19 +526,11 @@ export const localizationGapsFixture = {
  * DEPENDENCY LOOPS: Pack declares dependency cycle
  */
 export const dependencyLoopFixture = {
-  metadata: {
-    id: 'pack-a',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
+  metadata: createMetadata('pack-a', {
     dependencies: {
-      requires: [
-        { packId: 'pack-b', version: '^1.0.0' },
-      ],
+      requires: [{ packId: 'pack-b', version: '^1.0.0' }],
     },
-  },
+  }),
   resources: [],
   generators: [],
   upgrades: [],
@@ -495,19 +538,11 @@ export const dependencyLoopFixture = {
 
 // Companion pack for dependency loop testing
 export const dependencyLoopFixturePackB = {
-  metadata: {
-    id: 'pack-b',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
+  metadata: createMetadata('pack-b', {
     dependencies: {
-      requires: [
-        { packId: 'pack-a', version: '^1.0.0' },
-      ],
+      requires: [{ packId: 'pack-a', version: '^1.0.0' }],
     },
-  },
+  }),
   resources: [],
   generators: [],
   upgrades: [],
@@ -517,19 +552,11 @@ export const dependencyLoopFixturePackB = {
  * SELF-REFERENCING DEPENDENCY: Pack depends on itself
  */
 export const selfReferencingDependencyFixture = {
-  metadata: {
-    id: 'self-ref-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
+  metadata: createMetadata('self-ref-pack', {
     dependencies: {
-      requires: [
-        { packId: 'self-ref-pack', version: '^1.0.0' },
-      ],
+      requires: [{ packId: 'self-ref-pack', version: '^1.0.0' }],
     },
-  },
+  }),
   resources: [],
   generators: [],
   upgrades: [],
@@ -539,14 +566,7 @@ export const selfReferencingDependencyFixture = {
  * INVALID RUNTIME EVENT CONTRIBUTIONS: Missing schema path, duplicate IDs
  */
 export const invalidRuntimeEventContributionsFixture = {
-  metadata: {
-    id: 'invalid-events-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('invalid-events-pack'),
   resources: [],
   generators: [],
   upgrades: [],
@@ -585,21 +605,9 @@ export const invalidRuntimeEventContributionsFixture = {
  * INVALID FORMULA REFERENCES: Formula references non-existent entities
  */
 export const invalidFormulaReferencesFixture = {
-  metadata: {
-    id: 'invalid-formula-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('invalid-formula-pack'),
   resources: [
-    {
-      id: 'energy',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
+    createResource('energy'),
   ],
   generators: [
     {
@@ -633,24 +641,154 @@ export const invalidFormulaReferencesFixture = {
 };
 
 /**
+ * INVALID ENTITY FORMULA REFERENCES: Entity formulas reference unknown resources
+ */
+export const invalidEntityFormulaReferencesFixture = {
+  metadata: createMetadata('invalid-entity-formula'),
+  resources: [
+    createResource('energy'),
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: {
+            kind: 'expression' as const,
+            expression: {
+              kind: 'ref' as const,
+              target: {
+                type: 'resource' as const,
+                id: 'missing-formula-resource',
+              },
+            },
+          },
+        },
+      ],
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
+ * INVALID ENTITY MAX COUNT REFERENCES: Entity maxCount formula references unknown resource
+ */
+export const invalidEntityMaxCountFormulaReferencesFixture = {
+  metadata: createMetadata('invalid-entity-maxcount'),
+  resources: [
+    createResource('energy'),
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+      maxCount: {
+        kind: 'expression' as const,
+        expression: {
+          kind: 'ref' as const,
+          target: {
+            type: 'resource' as const,
+            id: 'missing-maxcount-resource',
+          },
+        },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
+ * INVALID ENTITY STAT GROWTH REFERENCES: Entity statGrowth formula references unknown resource
+ */
+export const invalidEntityStatGrowthFormulaReferencesFixture = {
+  metadata: createMetadata('invalid-entity-statgrowth'),
+  resources: [
+    createResource('energy'),
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+      progression: {
+        levelFormula: { kind: 'constant', value: 10 },
+        statGrowth: {
+          speed: {
+            kind: 'expression' as const,
+            expression: {
+              kind: 'ref' as const,
+              target: {
+                type: 'resource' as const,
+                id: 'missing-statgrowth-resource',
+              },
+            },
+          },
+        },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
+ * INVALID ENTITY REFERENCES: Entity progression references unknown resource
+ */
+export const invalidEntityExperienceFixture = {
+  metadata: createMetadata('invalid-entity-experience'),
+  resources: [
+    createResource('energy'),
+  ],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+      progression: {
+        experienceResource: 'missing-resource',
+        levelFormula: { kind: 'constant', value: 10 },
+      },
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
  * FEATURE GATE VIOLATIONS: Pack uses modules not supported by target runtime
  */
 export const featureGateViolationFixture = {
-  metadata: {
-    id: 'feature-gate-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^0.1.0', // Targets old runtime
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('feature-gate-pack', { engine: '^0.1.0' }), // Targets old runtime
   resources: [
-    {
-      id: 'energy',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
+    createResource('energy'),
   ],
   generators: [],
   upgrades: [],
@@ -677,27 +815,14 @@ export const featureGateViolationFixture = {
  * DUPLICATE IDS: Multiple resources with same ID
  */
 export const duplicateResourceIdsFixture = {
-  metadata: {
-    id: 'duplicate-ids-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('duplicate-ids-pack'),
   resources: [
-    {
-      id: 'energy',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'energy', // Duplicate ID
+    createResource('energy'),
+    // Duplicate ID
+    createResource('energy', {
       name: { default: 'Energy 2', variants: {} },
-      category: 'primary' as const,
       tier: 2,
-    },
+    }),
   ],
   generators: [],
   upgrades: [],
@@ -707,14 +832,7 @@ export const duplicateResourceIdsFixture = {
  * MISSING METRIC REFERENCE: Achievement tracks non-existent custom metric
  */
 export const missingMetricReferenceFixture = {
-  metadata: {
-    id: 'missing-metric-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('missing-metric-pack'),
   resources: [],
   generators: [],
   upgrades: [],
@@ -749,25 +867,14 @@ export const missingMetricReferenceFixture = {
  * INVALID ALLOWLIST REFERENCES: Condition references flag/script not in allowlist
  */
 export const invalidAllowlistReferenceFixture = {
-  metadata: {
-    id: 'invalid-allowlist-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('invalid-allowlist-pack'),
   resources: [
-    {
-      id: 'energy',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
+    createResource('energy', {
       unlockCondition: {
         kind: 'flag' as const,
         flagId: 'undefined-flag', // Not in allowlist
       },
-    },
+    }),
   ],
   generators: [],
   upgrades: [],
@@ -777,14 +884,7 @@ export const invalidAllowlistReferenceFixture = {
  * RUNTIME EVENT CATALOG COLLISION: Pack event collides with core event
  */
 export const runtimeEventCollisionFixture = {
-  metadata: {
-    id: 'event-collision-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('event-collision-pack'),
   resources: [],
   generators: [],
   upgrades: [],
@@ -807,69 +907,13 @@ export const runtimeEventCollisionFixture = {
  * Transform B consumes Y, produces X
  */
 export const cyclicTransformDirectFixture = {
-  metadata: {
-    id: 'cyclic-transform-direct',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('cyclic-transform-direct'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 120 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 120),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 110),
   ],
 };
 
@@ -879,69 +923,13 @@ export const cyclicTransformDirectFixture = {
  * Transform B consumes Y, produces X
  */
 export const netLossTransformCycleFixture = {
-  metadata: {
-    id: 'net-loss-transform-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('net-loss-transform-cycle'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 80),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -952,69 +940,13 @@ export const netLossTransformCycleFixture = {
  * Transform B: 100 Y → 100 X (ratio 1.0)
  */
 export const neutralTransformCycleFixture = {
-  metadata: {
-    id: 'neutral-transform-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('neutral-transform-cycle'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 100),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 100),
   ],
 };
 
@@ -1026,94 +958,14 @@ export const neutralTransformCycleFixture = {
  * Transform C: 100 Z → 90 X (ratio 0.9)
  */
 export const netLossIndirectTransformCycleFixture = {
-  metadata: {
-    id: 'net-loss-indirect-transform-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-z',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('net-loss-indirect-transform-cycle'),
+  resources: createResources('resource-x', 'resource-y', 'resource-z'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-c',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 90),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-z', 90),
+    createConstantTransform('transform-c', 'resource-z', 100, 'resource-x', 90),
   ],
 };
 
@@ -1122,79 +974,20 @@ export const netLossIndirectTransformCycleFixture = {
  * Should be rejected because cycle profitability cannot be evaluated
  */
 export const nonSimpleTransformCycleFixture = {
-  metadata: {
-    id: 'non-simple-transform-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-catalyst',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('non-simple-transform-cycle'),
+  resources: createResources('resource-x', 'resource-y', 'resource-catalyst'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-        {
-          resourceId: 'resource-catalyst',
-          amount: { kind: 'constant', value: 10 },
-        },
+    createManualTransform(
+      'transform-a',
+      [
+        constantIO('resource-x', 100),
+        constantIO('resource-catalyst', 10),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+      [constantIO('resource-y', 80)],
+    ),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -1204,72 +997,30 @@ export const nonSimpleTransformCycleFixture = {
  * Should be ALLOWED.
  */
 export const epsilonBelowThresholdCycleFixture = {
-  metadata: {
-    id: 'epsilon-below-threshold-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('epsilon-below-threshold-cycle'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          // Using large numbers to achieve precise ratio
-          amount: { kind: 'constant', value: 1000000000 },
-        },
+    createManualTransform(
+      'transform-a',
+      [
+        // Using large numbers to achieve precise ratio
+        constantIO('resource-x', 1000000000),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          // Ratio = 1.000000001 (1e-9 above 1.0)
-          amount: { kind: 'constant', value: 1000000001 },
-        },
+      [
+        // Ratio = 1.000000001 (1e-9 above 1.0)
+        constantIO('resource-y', 1000000001),
       ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1000000000 },
-        },
+    ),
+    createManualTransform(
+      'transform-b',
+      [constantIO('resource-y', 1000000000)],
+      [
+        // Ratio = 1.0
+        constantIO('resource-x', 1000000000),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          // Ratio = 1.0
-          amount: { kind: 'constant', value: 1000000000 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    ),
   ],
 };
 
@@ -1279,71 +1030,27 @@ export const epsilonBelowThresholdCycleFixture = {
  * Should be REJECTED.
  */
 export const epsilonAboveThresholdCycleFixture = {
-  metadata: {
-    id: 'epsilon-above-threshold-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('epsilon-above-threshold-cycle'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100000000 },
-        },
+    createManualTransform(
+      'transform-a',
+      [constantIO('resource-x', 100000000)],
+      [
+        // Ratio = 1.00000002 (2e-8 above 1.0)
+        constantIO('resource-y', 100000002),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          // Ratio = 1.00000002 (2e-8 above 1.0)
-          amount: { kind: 'constant', value: 100000002 },
-        },
+    ),
+    createManualTransform(
+      'transform-b',
+      [constantIO('resource-y', 100000000)],
+      [
+        // Ratio = 1.0
+        constantIO('resource-x', 100000000),
       ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100000000 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          // Ratio = 1.0
-          amount: { kind: 'constant', value: 100000000 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    ),
   ],
 };
 
@@ -1352,70 +1059,20 @@ export const epsilonAboveThresholdCycleFixture = {
  * Should be rejected because cycle profitability cannot be evaluated for non-constant formulas.
  */
 export const nonConstantFormulaCycleFixture = {
-  metadata: {
-    id: 'non-constant-formula-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('non-constant-formula-cycle'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
+    createManualTransform(
+      'transform-a',
+      [constantIO('resource-x', 100)],
+      [
+        // Linear formula instead of constant - profitability cannot be evaluated
+        linearIO('resource-y', 80, 1),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          // Linear formula instead of constant - profitability cannot be evaluated
-          amount: { kind: 'linear', base: 80, slope: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    ),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -1426,94 +1083,14 @@ export const nonConstantFormulaCycleFixture = {
  * Transform C consumes Z, produces X
  */
 export const cyclicTransformIndirectFixture = {
-  metadata: {
-    id: 'cyclic-transform-indirect',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-z',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('cyclic-transform-indirect'),
+  resources: createResources('resource-x', 'resource-y', 'resource-z'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-c',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 100, 'resource-y', 110),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-z', 110),
+    createConstantTransform('transform-c', 'resource-z', 100, 'resource-x', 110),
   ],
 };
 
@@ -1524,98 +1101,21 @@ export const cyclicTransformIndirectFixture = {
  * Transform C consumes Z, produces Y
  */
 export const cyclicTransformMultiResourceFixture = {
-  metadata: {
-    id: 'cyclic-transform-multi',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-z',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('cyclic-transform-multi'),
+  resources: createResources('resource-x', 'resource-y', 'resource-z'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
+    createManualTransform(
+      'transform-a',
+      [
+        constantIO('resource-x', 1),
+        constantIO('resource-y', 1),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-c',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+      [constantIO('resource-z', 1)],
+    ),
+    createConstantTransform('transform-b', 'resource-z', 1, 'resource-x', 1),
+    createConstantTransform('transform-c', 'resource-z', 1, 'resource-y', 1),
   ],
 };
 
@@ -1627,100 +1127,14 @@ export const cyclicTransformMultiResourceFixture = {
  * This is a valid non-cyclic chain.
  */
 export const linearTransformChainFixture = {
-  metadata: {
-    id: 'linear-transform-chain',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-z',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-w',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('linear-transform-chain'),
+  resources: createResources('resource-x', 'resource-y', 'resource-z', 'resource-w'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-c',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-w',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 1, 'resource-y', 1),
+    createConstantTransform('transform-b', 'resource-y', 1, 'resource-z', 1),
+    createConstantTransform('transform-c', 'resource-z', 1, 'resource-w', 1),
   ],
 };
 
@@ -1732,100 +1146,14 @@ export const linearTransformChainFixture = {
  * Multiple streams converge but never loop back.
  */
 export const convergentTransformTreeFixture = {
-  metadata: {
-    id: 'convergent-transform-tree',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-z',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-w',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('convergent-transform-tree'),
+  resources: createResources('resource-x', 'resource-y', 'resource-z', 'resource-w'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-c',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-z',
-          amount: { kind: 'constant', value: 2 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-w',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 1, 'resource-z', 1),
+    createConstantTransform('transform-b', 'resource-y', 1, 'resource-z', 1),
+    createConstantTransform('transform-c', 'resource-z', 2, 'resource-w', 1),
   ],
 };
 
@@ -1835,60 +1163,19 @@ export const convergentTransformTreeFixture = {
  * This creates a one-way flow with no cycles.
  */
 export const resourceSinkTransformFixture = {
-  metadata: {
-    id: 'resource-sink-transform',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'mana',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'essence',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'boost-item',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('resource-sink-transform'),
+  resources: createResources('mana', 'essence', 'boost-item'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'craft-boost',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'mana',
-          amount: { kind: 'constant', value: 100 },
-        },
-        {
-          resourceId: 'essence',
-          amount: { kind: 'constant', value: 10 },
-        },
+    createManualTransform(
+      'craft-boost',
+      [
+        constantIO('mana', 100),
+        constantIO('essence', 10),
       ],
-      outputs: [
-        {
-          resourceId: 'boost-item',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+      [constantIO('boost-item', 1)],
+    ),
   ],
 };
 
@@ -1898,44 +1185,12 @@ export const resourceSinkTransformFixture = {
  * This creates a self-loop.
  */
 export const selfReferencingTransformFixture = {
-  metadata: {
-    id: 'self-referencing-transform',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('self-referencing-transform'),
+  resources: createResources('resource-x'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 1 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 0.8 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a', 'resource-x', 1, 'resource-x', 0.8),
   ],
 };
 
@@ -1944,70 +1199,20 @@ export const selfReferencingTransformFixture = {
  * Should be treated as non-simple (profitability cannot be evaluated) and rejected if in a cycle.
  */
 export const zeroAmountTransformCycleFixture = {
-  metadata: {
-    id: 'zero-amount-transform-cycle',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('zero-amount-transform-cycle'),
+  resources: createResources('resource-x', 'resource-y'),
   generators: [],
   upgrades: [],
   transforms: [
-    {
-      id: 'transform-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          // Zero amount - should be treated as non-simple
-          amount: { kind: 'constant', value: 0 },
-        },
+    createManualTransform(
+      'transform-a',
+      [
+        // Zero amount - should be treated as non-simple
+        constantIO('resource-x', 0),
       ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+      [constantIO('resource-y', 80)],
+    ),
+    createConstantTransform('transform-b', 'resource-y', 100, 'resource-x', 90),
   ],
 };
 
@@ -2017,121 +1222,17 @@ export const zeroAmountTransformCycleFixture = {
  * Should be rejected because of the net-positive cycle.
  */
 export const disjointCyclesFixture = {
-  metadata: {
-    id: 'disjoint-cycles',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-a',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-b',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('disjoint-cycles'),
+  resources: createResources('resource-x', 'resource-y', 'resource-a', 'resource-b'),
   generators: [],
   upgrades: [],
   transforms: [
     // Net-positive cycle: X <-> Y (ratio = 1.2 * 1.1 = 1.32)
-    {
-      id: 'transform-x-to-y',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 120 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-y-to-x',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 110 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-x-to-y', 'resource-x', 100, 'resource-y', 120),
+    createConstantTransform('transform-y-to-x', 'resource-y', 100, 'resource-x', 110),
     // Net-loss cycle: A <-> B (ratio = 0.8 * 0.9 = 0.72)
-    {
-      id: 'transform-a-to-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b-to-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a-to-b', 'resource-a', 100, 'resource-b', 80),
+    createConstantTransform('transform-b-to-a', 'resource-b', 100, 'resource-a', 90),
   ],
 };
 
@@ -2140,121 +1241,17 @@ export const disjointCyclesFixture = {
  * Both should be allowed since neither is net-positive.
  */
 export const disjointNetLossCyclesFixture = {
-  metadata: {
-    id: 'disjoint-net-loss-cycles',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
-  resources: [
-    {
-      id: 'resource-x',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-y',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-a',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-    {
-      id: 'resource-b',
-      name: baseTitle,
-      category: 'primary' as const,
-      tier: 1,
-    },
-  ],
+  metadata: createMetadata('disjoint-net-loss-cycles'),
+  resources: createResources('resource-x', 'resource-y', 'resource-a', 'resource-b'),
   generators: [],
   upgrades: [],
   transforms: [
     // Net-loss cycle 1: X <-> Y (ratio = 0.8 * 0.9 = 0.72)
-    {
-      id: 'transform-x-to-y',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 80 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-y-to-x',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-y',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-x',
-          amount: { kind: 'constant', value: 90 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-x-to-y', 'resource-x', 100, 'resource-y', 80),
+    createConstantTransform('transform-y-to-x', 'resource-y', 100, 'resource-x', 90),
     // Net-loss cycle 2: A <-> B (ratio = 0.7 * 0.85 = 0.595)
-    {
-      id: 'transform-a-to-b',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 70 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
-    {
-      id: 'transform-b-to-a',
-      name: baseTitle,
-      description: baseTitle,
-      inputs: [
-        {
-          resourceId: 'resource-b',
-          amount: { kind: 'constant', value: 100 },
-        },
-      ],
-      outputs: [
-        {
-          resourceId: 'resource-a',
-          amount: { kind: 'constant', value: 85 },
-        },
-      ],
-      trigger: { kind: 'manual' as const },
-      mode: 'instant' as const,
-    },
+    createConstantTransform('transform-a-to-b', 'resource-a', 100, 'resource-b', 70),
+    createConstantTransform('transform-b-to-a', 'resource-b', 100, 'resource-a', 85),
   ],
 };
 
@@ -2263,28 +1260,17 @@ export const disjointNetLossCyclesFixture = {
  * Should fail validation with a clear error message.
  */
 export const missingPrestigeCountResourceFixture = {
-  metadata: {
-    id: 'prestige-test-pack',
-    title: baseTitle,
-    version: '1.0.0',
-    engine: '^1.0.0',
-    defaultLocale: 'en-US',
-    supportedLocales: ['en-US'],
-  },
+  metadata: createMetadata('prestige-test-pack'),
   resources: [
-    {
-      id: 'prestige-test-pack.energy',
+    createResource('prestige-test-pack.energy', {
       name: { default: 'Energy', variants: {} },
-      category: 'primary' as const,
-      tier: 1,
       startAmount: 100,
-    },
-    {
-      id: 'prestige-test-pack.prestige-points',
+    }),
+    createResource('prestige-test-pack.prestige-points', {
       name: { default: 'Prestige Points', variants: {} },
       category: 'prestige' as const,
       tier: 2,
-    },
+    }),
     // Note: Missing 'prestige-test-pack.ascension-prestige-count' resource
   ],
   generators: [],

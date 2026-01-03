@@ -3,6 +3,7 @@ import type {
   NormalizedAchievement,
   NormalizedAutomation,
   NormalizedContentPack as SchemaNormalizedContentPack,
+  NormalizedEntity,
   NormalizedGenerator,
   NormalizedMetadata,
   NormalizedMetric,
@@ -96,6 +97,7 @@ export type SerializedContentSchemaWarning = ContentSchemaWarning;
 
 export const MODULE_NAMES = [
   'resources',
+  'entities',
   'generators',
   'upgrades',
   'metrics',
@@ -110,6 +112,7 @@ export type ModuleName = (typeof MODULE_NAMES)[number];
 
 interface ModuleTypeMap {
   readonly resources: NormalizedResource;
+  readonly entities: NormalizedEntity;
   readonly generators: NormalizedGenerator;
   readonly upgrades: NormalizedUpgrade;
   readonly metrics: NormalizedMetric;
@@ -153,6 +156,7 @@ export interface SerializedPackArtifact {
 
 export interface ModuleIndexTables {
   readonly resources: ReadonlyMap<string, number>;
+  readonly entities: ReadonlyMap<string, number>;
   readonly generators: ReadonlyMap<string, number>;
   readonly upgrades: ReadonlyMap<string, number>;
   readonly metrics: ReadonlyMap<string, number>;

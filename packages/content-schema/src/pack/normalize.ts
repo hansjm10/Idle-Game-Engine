@@ -17,6 +17,7 @@ import type {
   NormalizedAutomation,
   NormalizedContentPack,
   NormalizedContentPackModules,
+  NormalizedEntity,
   NormalizedGenerator,
   NormalizedMetadata,
   NormalizedMetric,
@@ -99,6 +100,25 @@ export const normalizeContentPack = (
           name: normalize(resource.name, ['resources', index, 'name']),
         }) as NormalizedResource,
     ),
+  );
+
+  const normalizedEntities = freezeArray(
+    pack.entities.map((entity, index) => {
+      const normalizedStats = Object.freeze(
+        entity.stats.map((stat, statIndex) =>
+          freezeObject({
+            ...stat,
+            name: normalize(stat.name, ['entities', index, 'stats', statIndex, 'name']),
+          }),
+        ),
+      );
+      return freezeObject({
+        ...entity,
+        name: normalize(entity.name, ['entities', index, 'name']),
+        description: normalize(entity.description, ['entities', index, 'description']),
+        stats: normalizedStats,
+      }) as NormalizedEntity;
+    }),
   );
 
   const normalizedGenerators = freezeArray(
@@ -203,6 +223,7 @@ export const normalizeContentPack = (
   const normalizedModules: NormalizedContentPackModules = {
     metadata: normalizedMetadata,
     resources: normalizedResources,
+    entities: normalizedEntities,
     generators: normalizedGenerators,
     upgrades: normalizedUpgrades,
     metrics: normalizedMetrics,
@@ -215,6 +236,7 @@ export const normalizeContentPack = (
 
   const lookup = freezeObject({
     resources: freezeMap(normalizedModules.resources),
+    entities: freezeMap(normalizedModules.entities),
     generators: freezeMap(normalizedModules.generators),
     upgrades: freezeMap(normalizedModules.upgrades),
     metrics: freezeMap(normalizedModules.metrics),
@@ -227,6 +249,7 @@ export const normalizeContentPack = (
 
   const serializedLookup = freezeObject({
     resourceById: freezeRecord(normalizedModules.resources),
+    entityById: freezeRecord(normalizedModules.entities),
     generatorById: freezeRecord(normalizedModules.generators),
     upgradeById: freezeRecord(normalizedModules.upgrades),
     metricById: freezeRecord(normalizedModules.metrics),
