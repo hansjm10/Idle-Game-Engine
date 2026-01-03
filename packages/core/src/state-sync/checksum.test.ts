@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CommandPriority } from '../command.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
+import type { SerializedEntitySystemState } from '../entity-system.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type { SerializedResourceState } from '../resource-state.js';
 import type { GameStateSnapshot } from './types.js';
@@ -50,6 +51,12 @@ const commandQueueB: SerializedCommandQueueV1 = {
   schemaVersion: 1,
 };
 
+const entities: SerializedEntitySystemState = {
+  entities: [],
+  instances: [],
+  entityInstances: [],
+};
+
 const snapshotA: GameStateSnapshot = {
   version: 1,
   capturedAt: 111,
@@ -63,6 +70,7 @@ const snapshotA: GameStateSnapshot = {
   progression: progressionA,
   automation: [],
   transforms: [],
+  entities,
   commandQueue: commandQueueA,
 };
 
@@ -79,6 +87,7 @@ const snapshotB: GameStateSnapshot = {
   progression: progressionB,
   automation: [],
   transforms: [],
+  entities,
   commandQueue: commandQueueB,
 };
 

@@ -816,6 +816,7 @@ export type CreateGameRuntimeOptions = Readonly<{
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
   readonly enableTransforms?: boolean;
+  readonly enableEntities?: boolean;
   readonly production?: {
     readonly applyViaFinalizeTick?: boolean;
   };
@@ -862,6 +863,7 @@ export function createGameRuntime(
     enableProduction,
     enableAutomation: options.enableAutomation,
     enableTransforms: options.enableTransforms,
+    enableEntities: options.enableEntities,
     production: productionOptions,
     registerOfflineCatchup: options.registerOfflineCatchup,
   });
@@ -1175,6 +1177,7 @@ export {
   type ProgressionUpgradeState,
   type ProgressionAutomationState,
   type ProgressionTransformState,
+  type ProgressionEntityState,
   type ProgressionAchievementState,
   type ProgressionPrestigeLayerState,
   type ProgressionSnapshot,
@@ -1186,6 +1189,8 @@ export {
   type UpgradeCostView,
   type UpgradeView,
   type AutomationView,
+  type EntityView,
+  type EntityInstanceView,
   type AchievementCategory,
   type AchievementTier,
   type AchievementProgressMode,
@@ -1332,6 +1337,25 @@ export {
   type TransformCommandHandlerOptions,
 } from './transform-command-handlers.js';
 export {
+  EntitySystem,
+  createSeededRng,
+  serializeEntitySystemState,
+  type EntitySystemOptions,
+  type EntityAssignment,
+  type EntityInstanceState,
+  type EntityState,
+  type EntitySystemState,
+  type SeededRNG,
+  type SerializedEntityInstanceState,
+  type SerializedEntityInstancesByEntity,
+  type SerializedEntityState,
+  type SerializedEntitySystemState,
+} from './entity-system.js';
+export {
+  registerEntityCommandHandlers,
+  type EntityCommandHandlerOptions,
+} from './entity-command-handlers.js';
+export {
   applyPrestigeReset,
   type PrestigeResetContext,
   type PrestigeResetTarget,
@@ -1417,6 +1441,8 @@ export type {
   AutomationDiff,
   CommandQueueDiff,
   CommandQueueEntryDiff,
+  EntityDiff,
+  EntityInstanceDiff,
   GeneratorDiff,
   ProductionAccumulatorDiff,
   ProgressionDiff,

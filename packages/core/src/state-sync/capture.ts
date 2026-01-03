@@ -1,6 +1,8 @@
 import type { AutomationState } from '../automation-system.js';
 import { serializeAutomationState } from '../automation-system.js';
 import type { CommandQueue } from '../command-queue.js';
+import type { EntitySystemState } from '../entity-system.js';
+import { serializeEntitySystemState } from '../entity-system.js';
 import type { IdleEngineRuntime } from '../index.js';
 import type { SerializedProductionAccumulators } from '../production-system.js';
 import type { ProgressionCoordinator } from '../progression-coordinator.js';
@@ -21,6 +23,8 @@ export interface CaptureSnapshotOptions {
   readonly getAutomationState: () => ReadonlyMap<string, AutomationState>;
   /** Transform system state extractor. */
   readonly getTransformState: () => ReadonlyMap<string, TransformState>;
+  /** Entity system state extractor. */
+  readonly getEntityState: () => EntitySystemState;
   /** Command queue to capture. */
   readonly commandQueue: CommandQueue;
   /** Optional production system for accumulators. */
@@ -45,6 +49,7 @@ export interface CaptureSnapshotOptions {
  *   commandQueue: runtime.getCommandQueue(),
  *   getAutomationState: () => getAutomationState(automationSystem),
  *   getTransformState: () => getTransformState(transformSystem),
+ *   getEntityState: () => entitySystem.getState(),
  *   capturedAt: 0,
  * });
  * ```
@@ -58,12 +63,14 @@ export function captureGameStateSnapshot(
     capturedAt,
     getAutomationState,
     getTransformState,
+    getEntityState,
     commandQueue,
     productionSystem,
   } = options;
 
   const automationState = getAutomationState();
   const transformState = getTransformState();
+  const entityState = getEntityState();
 
   return {
     version: 1,
@@ -81,6 +88,7 @@ export function captureGameStateSnapshot(
     ),
     automation: serializeAutomationState(automationState),
     transforms: serializeTransformState(transformState),
+    entities: serializeEntitySystemState(entityState),
     commandQueue: commandQueue.exportForSave(),
   };
 }

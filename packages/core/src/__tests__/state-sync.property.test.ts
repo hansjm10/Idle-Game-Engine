@@ -9,6 +9,7 @@ import type {
   SerializedProgressionUpgradeStateV1,
 } from '../progression-coordinator-save.js';
 import type { ResourceDefinition } from '../resource-state.js';
+import type { EntitySystemState } from '../entity-system.js';
 import type { GameStateSnapshot } from '../state-sync/types.js';
 
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '../command.js';
@@ -48,6 +49,12 @@ const propertyConfig = (offset: number): fc.Parameters<unknown> => ({
   seed: PROPERTY_SEED + offset,
   numRuns: PROPERTY_RUNS,
   endOnFailure: true,
+});
+
+const createEmptyEntityState = (): EntitySystemState => ({
+  entities: new Map(),
+  instances: new Map(),
+  entityInstances: new Map(),
 });
 
 type ResourceEntry = Readonly<{
@@ -374,6 +381,7 @@ const buildSnapshotFromSeed = (
     capturedAt: 0,
     getAutomationState: () => emptyAutomationState,
     getTransformState: () => emptyTransformState,
+    getEntityState: createEmptyEntityState,
     commandQueue,
   });
 
@@ -420,6 +428,7 @@ const roundTripSnapshot = (
     capturedAt: 0,
     getAutomationState: () => emptyAutomationState,
     getTransformState: () => emptyTransformState,
+    getEntityState: createEmptyEntityState,
     commandQueue: restored.commandQueue,
   });
 };
@@ -471,6 +480,7 @@ const buildEmptySnapshot = (): {
     capturedAt: 0,
     getAutomationState: () => emptyAutomationState,
     getTransformState: () => emptyTransformState,
+    getEntityState: createEmptyEntityState,
     commandQueue: runtime.getCommandQueue(),
   });
 

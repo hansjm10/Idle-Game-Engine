@@ -18,6 +18,7 @@ import type { SerializedResourceState } from './resource-state.js';
 import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
 import type { SerializedTransformState, TransformState } from './transform-system.js';
 import { serializeTransformState } from './transform-system.js';
+import type { EntitySystem, SerializedEntitySystemState } from './entity-system.js';
 
 export const GAME_STATE_SAVE_SCHEMA_VERSION = 1;
 
@@ -33,6 +34,7 @@ export type GameStateSaveFormatV1 = Readonly<{
   readonly progression: SerializedProgressionCoordinatorState;
   readonly automation: readonly SerializedAutomationState[];
   readonly transforms: readonly SerializedTransformState[];
+  readonly entities: SerializedEntitySystemState;
   readonly commandQueue: SerializedCommandQueue;
   readonly runtime: GameStateSaveRuntime;
 }>;
@@ -155,6 +157,12 @@ function migrateLegacyV0ToV1(value: unknown): GameStateSaveFormatV1 {
       ? (embeddedAutomation as SerializedAutomationState[])
       : [];
 
+  const entities: SerializedEntitySystemState = {
+    entities: [],
+    instances: [],
+    entityInstances: [],
+  };
+
   return {
     version: GAME_STATE_SAVE_SCHEMA_VERSION,
     savedAt,
@@ -162,6 +170,7 @@ function migrateLegacyV0ToV1(value: unknown): GameStateSaveFormatV1 {
     progression,
     automation,
     transforms: Array.isArray(legacy.transforms) ? legacy.transforms : [],
+    entities,
     commandQueue: legacy.commandQueue,
     runtime,
   };
@@ -266,6 +275,19 @@ function validateSaveFormatV1(value: unknown): GameStateSaveFormatV1 {
     transforms: Array.isArray(value.transforms)
       ? (value.transforms as SerializedTransformState[])
       : [],
+    entities: isRecord(value.entities)
+      ? {
+          entities: Array.isArray(value.entities.entities)
+            ? (value.entities.entities as SerializedEntitySystemState['entities'])
+            : [],
+          instances: Array.isArray(value.entities.instances)
+            ? (value.entities.instances as SerializedEntitySystemState['instances'])
+            : [],
+          entityInstances: Array.isArray(value.entities.entityInstances)
+            ? (value.entities.entityInstances as SerializedEntitySystemState['entityInstances'])
+            : [],
+        }
+      : { entities: [], instances: [], entityInstances: [] },
     commandQueue: value.commandQueue as SerializedCommandQueue,
     runtime,
   };
@@ -326,6 +348,7 @@ export interface SerializeGameStateSaveFormatOptions {
   };
   readonly automationState?: ReadonlyMap<string, AutomationState>;
   readonly transformState?: ReadonlyMap<string, TransformState>;
+  readonly entitySystem?: EntitySystem;
   readonly commandQueue: CommandQueue;
 }
 
@@ -350,6 +373,9 @@ export function serializeGameStateSaveFormat(
     transforms: options.transformState
       ? serializeTransformState(options.transformState)
       : [],
+    entities: options.entitySystem
+      ? options.entitySystem.exportForSave()
+      : { entities: [], instances: [], entityInstances: [] },
     commandQueue: options.commandQueue.exportForSave(),
     runtime: {
       step: runtimeStep,
@@ -376,6 +402,7 @@ export interface HydrateGameStateSaveFormatOptions {
       options?: { savedWorkerStep?: number; currentStep?: number },
     ) => void;
   };
+  readonly entitySystem?: EntitySystem;
   readonly commandQueue?: CommandQueue;
   readonly currentStep?: number;
   readonly applyRngSeed?: boolean;
@@ -408,6 +435,13 @@ export function hydrateGameStateSaveFormat(
 
   if (options.transformSystem) {
     options.transformSystem.restoreState(save.transforms, {
+      savedWorkerStep: save.runtime.step,
+      currentStep,
+    });
+  }
+
+  if (options.entitySystem) {
+    options.entitySystem.restoreState(save.entities, {
       savedWorkerStep: save.runtime.step,
       currentStep,
     });

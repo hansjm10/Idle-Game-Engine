@@ -360,6 +360,7 @@ describe('game-state-save', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: { schemaVersion: 1, entries: [] },
       runtime: { step: 0, rngSeed: 1 },
     } as const;

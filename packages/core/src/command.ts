@@ -114,6 +114,13 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   OFFLINE_CATCHUP: 'OFFLINE_CATCHUP',
   APPLY_MIGRATION: 'APPLY_MIGRATION',
   RUN_TRANSFORM: 'RUN_TRANSFORM',
+  ADD_ENTITY: 'ADD_ENTITY',
+  REMOVE_ENTITY: 'REMOVE_ENTITY',
+  CREATE_ENTITY_INSTANCE: 'CREATE_ENTITY_INSTANCE',
+  DESTROY_ENTITY_INSTANCE: 'DESTROY_ENTITY_INSTANCE',
+  ASSIGN_ENTITY_TO_MISSION: 'ASSIGN_ENTITY_TO_MISSION',
+  RETURN_ENTITY_FROM_MISSION: 'RETURN_ENTITY_FROM_MISSION',
+  ADD_ENTITY_EXPERIENCE: 'ADD_ENTITY_EXPERIENCE',
 } as const);
 
 export type RuntimeCommandType =
@@ -201,6 +208,61 @@ export interface RunTransformPayload {
 }
 
 /**
+ * Add entities by count (for non-instance tracked entities).
+ */
+export interface AddEntityPayload {
+  readonly entityId: string;
+  readonly count: number;
+}
+
+/**
+ * Remove entities by count (for non-instance tracked entities).
+ */
+export interface RemoveEntityPayload {
+  readonly entityId: string;
+  readonly count: number;
+}
+
+/**
+ * Create a tracked entity instance.
+ */
+export interface CreateEntityInstancePayload {
+  readonly entityId: string;
+}
+
+/**
+ * Destroy a tracked entity instance.
+ */
+export interface DestroyEntityInstancePayload {
+  readonly instanceId: string;
+}
+
+/**
+ * Assign a tracked entity instance to a mission.
+ */
+export interface AssignEntityToMissionPayload {
+  readonly instanceId: string;
+  readonly missionId: string;
+  readonly batchId: string;
+  readonly returnStep: number;
+}
+
+/**
+ * Return a tracked entity instance from its mission.
+ */
+export interface ReturnEntityFromMissionPayload {
+  readonly instanceId: string;
+}
+
+/**
+ * Add experience to a tracked entity instance.
+ */
+export interface AddEntityExperiencePayload {
+  readonly instanceId: string;
+  readonly amount: number;
+}
+
+/**
  * Mapping between runtime command identifiers and their strongly typed payloads.
  */
 export interface RuntimeCommandPayloads {
@@ -213,6 +275,13 @@ export interface RuntimeCommandPayloads {
   readonly OFFLINE_CATCHUP: OfflineCatchupPayload;
   readonly APPLY_MIGRATION: ApplyMigrationPayload;
   readonly RUN_TRANSFORM: RunTransformPayload;
+  readonly ADD_ENTITY: AddEntityPayload;
+  readonly REMOVE_ENTITY: RemoveEntityPayload;
+  readonly CREATE_ENTITY_INSTANCE: CreateEntityInstancePayload;
+  readonly DESTROY_ENTITY_INSTANCE: DestroyEntityInstancePayload;
+  readonly ASSIGN_ENTITY_TO_MISSION: AssignEntityToMissionPayload;
+  readonly RETURN_ENTITY_FROM_MISSION: ReturnEntityFromMissionPayload;
+  readonly ADD_ENTITY_EXPERIENCE: AddEntityExperiencePayload;
 }
 
 /**
@@ -309,5 +378,51 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     rationale:
       'Manual transforms are player-initiated or system-driven; automation trigger path is implemented separately.',
     unauthorizedEvent: 'UnauthorizedTransformCommand',
+  },
+  ADD_ENTITY: {
+    type: RUNTIME_COMMAND_TYPES.ADD_ENTITY,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Entity additions may originate from any priority tier for manual, system, or automation-driven acquisition.',
+  },
+  REMOVE_ENTITY: {
+    type: RUNTIME_COMMAND_TYPES.REMOVE_ENTITY,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Entity removal may originate from any priority tier for sacrifices, retirements, or system-driven deductions.',
+  },
+  CREATE_ENTITY_INSTANCE: {
+    type: RUNTIME_COMMAND_TYPES.CREATE_ENTITY_INSTANCE,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Entity instance creation may originate from any priority tier for deterministic tracking.',
+  },
+  DESTROY_ENTITY_INSTANCE: {
+    type: RUNTIME_COMMAND_TYPES.DESTROY_ENTITY_INSTANCE,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Entity instance destruction may originate from any priority tier for manual or system cleanup.',
+  },
+  ASSIGN_ENTITY_TO_MISSION: {
+    type: RUNTIME_COMMAND_TYPES.ASSIGN_ENTITY_TO_MISSION,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Mission assignments may originate from player actions, automation strategies, or system-driven story events.',
+  },
+  RETURN_ENTITY_FROM_MISSION: {
+    type: RUNTIME_COMMAND_TYPES.RETURN_ENTITY_FROM_MISSION,
+    allowedPriorities: COMMAND_PRIORITY_ORDER,
+    rationale:
+      'Mission recalls may originate from player actions, automation strategies, or system-driven completions.',
+  },
+  ADD_ENTITY_EXPERIENCE: {
+    type: RUNTIME_COMMAND_TYPES.ADD_ENTITY_EXPERIENCE,
+    allowedPriorities: Object.freeze([
+      CommandPriority.SYSTEM,
+      CommandPriority.AUTOMATION,
+    ]),
+    rationale:
+      'Experience grants are system-driven or automation-driven; manual grants are not permitted.',
+    unauthorizedEvent: 'UnauthorizedEntityExperienceGrant',
   },
 });

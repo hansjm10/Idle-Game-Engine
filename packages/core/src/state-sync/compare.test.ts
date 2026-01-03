@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SerializedAutomationState } from '../automation-system.js';
 import { CommandPriority } from '../command.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
+import type { SerializedEntitySystemState } from '../entity-system.js';
 import type { SerializedProductionAccumulators } from '../production-system.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type {
@@ -97,6 +98,12 @@ const baseTransforms: SerializedTransformState[] = [
   },
 ];
 
+const baseEntities: SerializedEntitySystemState = {
+  entities: [],
+  instances: [],
+  entityInstances: [],
+};
+
 const baseCommandQueue: SerializedCommandQueueV1 = {
   schemaVersion: 1,
   entries: [
@@ -132,6 +139,7 @@ const createSnapshot = (): GameStateSnapshot => {
     progression,
     automation: clone(baseAutomation),
     transforms: clone(baseTransforms),
+    entities: clone(baseEntities),
     commandQueue: clone(baseCommandQueue),
   };
 };

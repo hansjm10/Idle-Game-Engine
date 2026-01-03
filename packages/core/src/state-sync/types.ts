@@ -1,5 +1,6 @@
 import type { SerializedAutomationState } from '../automation-system.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
+import type { SerializedEntitySystemState } from '../entity-system.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type { SerializedResourceState } from '../resource-state.js';
 import type { SerializedTransformState } from '../transform-system.js';
@@ -40,6 +41,9 @@ export interface GameStateSnapshot {
 
   /** Serialized transform states. */
   readonly transforms: readonly SerializedTransformState[];
+
+  /** Serialized entity system state. */
+  readonly entities: SerializedEntitySystemState;
 
   /** Serialized command queue. */
   readonly commandQueue: SerializedCommandQueueV1;

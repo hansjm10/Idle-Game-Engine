@@ -19,6 +19,7 @@ export type RestoreGameRuntimeFromSnapshotOptions = Readonly<{
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
   readonly enableTransforms?: boolean;
+  readonly enableEntities?: boolean;
   readonly production?: {
     readonly applyViaFinalizeTick?: boolean;
   };
@@ -108,6 +109,7 @@ export function restoreGameRuntimeFromSnapshot(
     enableProduction,
     enableAutomation: options.enableAutomation,
     enableTransforms: options.enableTransforms,
+    enableEntities: options.enableEntities,
     production: productionOptions,
   });
 
@@ -128,6 +130,13 @@ export function restoreGameRuntimeFromSnapshot(
 
   if (wiring.transformSystem) {
     wiring.transformSystem.restoreState(snapshot.transforms, {
+      savedWorkerStep: snapshot.runtime.step,
+      currentStep,
+    });
+  }
+
+  if (wiring.entitySystem) {
+    wiring.entitySystem.restoreState(snapshot.entities, {
       savedWorkerStep: snapshot.runtime.step,
       currentStep,
     });

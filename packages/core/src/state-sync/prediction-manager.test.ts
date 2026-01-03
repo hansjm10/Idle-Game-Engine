@@ -11,6 +11,7 @@ import type { SerializedCommandQueueV1 } from '../command-queue.js';
 import type { EventPublisher } from '../events/event-bus.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type { SerializedResourceState } from '../resource-state.js';
+import type { EntitySystemState } from '../entity-system.js';
 import {
   captureGameStateSnapshot,
   createGameRuntime,
@@ -43,6 +44,12 @@ type RecordedTelemetry = Readonly<{
   event: string;
   data?: TelemetryEventData;
 }>;
+
+const createEmptyEntityState = (): EntitySystemState => ({
+  entities: new Map(),
+  instances: new Map(),
+  entityInstances: new Map(),
+});
 
 const createTelemetryRecorder = (
   context: TelemetryEventData = {},
@@ -153,6 +160,7 @@ const createSnapshot = (
     },
     automation: [],
     transforms: [],
+    entities: { entities: [], instances: [], entityInstances: [] },
     commandQueue: {
       ...baseCommandQueue,
       entries: options.queueEntries ?? baseCommandQueue.entries,
@@ -173,6 +181,7 @@ const captureWiringSnapshot = (
       wiring.automationSystem?.getState() ?? emptyState,
     getTransformState: () =>
       wiring.transformSystem?.getState() ?? emptyState,
+    getEntityState: createEmptyEntityState,
     ...(wiring.productionSystem
       ? { productionSystem: wiring.productionSystem }
       : {}),

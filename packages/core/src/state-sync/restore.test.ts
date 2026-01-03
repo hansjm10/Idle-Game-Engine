@@ -39,10 +39,17 @@ import {
 import type { ResourceDefinition } from '../resource-state.js';
 import { createTransformSystem } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
+import type { EntitySystemState } from '../entity-system.js';
 
 const STEP_SIZE_MS = 100;
 const INITIAL_STEP = 12;
 const CAPTURE_TIME = 1_700_000_123;
+
+const createEmptyEntityState = (): EntitySystemState => ({
+  entities: new Map(),
+  instances: new Map(),
+  entityInstances: new Map(),
+});
 
 const literal = (value: number): NumericFormula => ({
   kind: 'constant',
@@ -237,6 +244,7 @@ describe('restoreFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => automationSystem.getState(),
       getTransformState: () => transformSystem.getState(),
+      getEntityState: createEmptyEntityState,
       commandQueue,
       productionSystem,
     });
@@ -317,6 +325,7 @@ describe('restoreFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => restoredAutomationSystem.getState(),
       getTransformState: () => restoredTransformSystem.getState(),
+      getEntityState: createEmptyEntityState,
       commandQueue: restored.commandQueue,
       productionSystem: restoredProductionSystem,
     });
@@ -356,6 +365,7 @@ describe('restoreFromSnapshot', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: {
         schemaVersion: 1,
         entries: [],
@@ -411,6 +421,7 @@ describe('restoreFromSnapshot', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: {
         schemaVersion: 1,
         entries: [],
@@ -486,6 +497,7 @@ describe('restoreFromSnapshot', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue,
     };
 
@@ -556,6 +568,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
       getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: wiring.commandQueue,
       productionSystem: wiring.productionSystem,
     });
@@ -575,6 +588,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => restored.automationSystem?.getState() ?? new Map(),
       getTransformState: () => restored.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: restored.commandQueue,
       productionSystem: restored.productionSystem,
     });
@@ -599,6 +613,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
       getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: wiring.commandQueue,
       productionSystem: wiring.productionSystem,
     });
@@ -677,6 +692,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
       getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: wiring.commandQueue,
       productionSystem: wiring.productionSystem,
     });
@@ -752,6 +768,7 @@ describe('restorePartial', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue,
     };
 
@@ -820,6 +837,7 @@ describe('restorePartial', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue,
     };
 
@@ -866,6 +884,7 @@ describe('restorePartial', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: {
         schemaVersion: 1,
         entries: [],
