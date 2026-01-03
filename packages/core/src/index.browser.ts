@@ -1474,6 +1474,7 @@ export type {
   CommandQueueEntryDiff,
   EntityDiff,
   EntityInstanceDiff,
+  EntityInstanceListDiff,
   GeneratorDiff,
   ProductionAccumulatorDiff,
   ProgressionDiff,

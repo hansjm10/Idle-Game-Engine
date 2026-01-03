@@ -268,6 +268,72 @@ describe('compareStates', () => {
       remote: { value: 2 },
     });
   });
+
+  it('reports entity instance list differences', () => {
+    const local = createSnapshot();
+    const localEntities: SerializedEntitySystemState = {
+      entities: [
+        {
+          id: 'entity.worker',
+          count: 2,
+          availableCount: 2,
+          unlocked: true,
+          visible: true,
+        },
+      ],
+      instances: [
+        {
+          instanceId: 'worker-1',
+          entityId: 'entity.worker',
+          level: 1,
+          experience: 0,
+          stats: {},
+          assignment: null,
+        },
+        {
+          instanceId: 'worker-2',
+          entityId: 'entity.worker',
+          level: 1,
+          experience: 0,
+          stats: {},
+          assignment: null,
+        },
+      ],
+      entityInstances: [
+        {
+          entityId: 'entity.worker',
+          instanceIds: ['worker-1', 'worker-2'],
+        },
+      ],
+    };
+    const remoteEntities: SerializedEntitySystemState = {
+      ...localEntities,
+      entityInstances: [
+        {
+          entityId: 'entity.worker',
+          instanceIds: ['worker-2', 'worker-1'],
+        },
+      ],
+    };
+    const remote: GameStateSnapshot = {
+      ...local,
+      entities: remoteEntities,
+    };
+
+    const diff = compareStates(
+      { ...local, entities: localEntities },
+      remote,
+    );
+
+    expect(diff.identical).toBe(false);
+    expect(
+      diff.entityInstanceLists?.get('entity.worker')?.instanceIds,
+    ).toEqual({
+      local: ['worker-1', 'worker-2'],
+      remote: ['worker-2', 'worker-1'],
+    });
+    expect(diff.entityInstances).toBeUndefined();
+  });
 });
 
 describe('hasStateDiverged', () => {
