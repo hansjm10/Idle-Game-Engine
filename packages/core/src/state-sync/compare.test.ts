@@ -144,6 +144,23 @@ const createSnapshot = (): GameStateSnapshot => {
   };
 };
 
+const createSnapshotWithQueue = (
+  entries: SerializedCommandQueueV1['entries'],
+): GameStateSnapshot => ({
+  ...createSnapshot(),
+  commandQueue: {
+    ...clone(baseCommandQueue),
+    entries: clone(entries),
+  },
+});
+
+const createQueueEntry = (
+  overrides: Partial<SerializedCommandQueueV1['entries'][number]> = {},
+): SerializedCommandQueueV1['entries'][number] => ({
+  ...clone(baseCommandQueue.entries[0]),
+  ...overrides,
+});
+
 describe('compareStates', () => {
   it('returns identical for matching snapshots and ignores capturedAt', () => {
     const local = createSnapshot();
@@ -267,6 +284,47 @@ describe('compareStates', () => {
       local: { value: 1 },
       remote: { value: 2 },
     });
+  });
+
+  it.each([
+    {
+      label: 'missing local entries',
+      localEntries: [createQueueEntry()],
+      remoteEntries: [
+        createQueueEntry(),
+        createQueueEntry({ type: 'command.extra', timestamp: 200, step: 6 }),
+      ],
+      expectedMissingInLocal: ['command.extra'],
+      expectedMissingInRemote: [],
+    },
+    {
+      label: 'missing remote entries',
+      localEntries: [
+        createQueueEntry(),
+        createQueueEntry({ type: 'command.extra', timestamp: 200, step: 6 }),
+      ],
+      remoteEntries: [createQueueEntry()],
+      expectedMissingInLocal: [],
+      expectedMissingInRemote: ['command.extra'],
+    },
+  ])('reports $label in command queue diff', ({
+    localEntries,
+    remoteEntries,
+    expectedMissingInLocal,
+    expectedMissingInRemote,
+  }) => {
+    const local = createSnapshotWithQueue(localEntries);
+    const remote = createSnapshotWithQueue(remoteEntries);
+
+    const diff = compareStates(local, remote);
+
+    expect(diff.identical).toBe(false);
+    expect(diff.commandQueue?.entryCountDiff).toEqual({
+      local: localEntries.length,
+      remote: remoteEntries.length,
+    });
+    expect(diff.commandQueue?.missingInLocal).toEqual(expectedMissingInLocal);
+    expect(diff.commandQueue?.missingInRemote).toEqual(expectedMissingInRemote);
   });
 
   it('reports entity instance list differences', () => {

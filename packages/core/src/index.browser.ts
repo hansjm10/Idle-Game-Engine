@@ -1016,6 +1016,7 @@ export {
   type OfflineCatchupPayload,
   type MigrationStep,
   type ApplyMigrationPayload,
+  type RunTransformPayload,
   type RuntimeCommandPayloads,
   type RuntimeCommand,
   type CommandAuthorizationPolicy,

@@ -8,7 +8,12 @@ import {
   type ReturnEntityFromMissionPayload,
   type AddEntityExperiencePayload,
 } from './command.js';
-import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
+import type {
+  CommandDispatcher,
+  CommandHandler,
+  CommandHandlerResult,
+  ExecutionContext,
+} from './command-dispatcher.js';
 import type { EntityAssignment, EntitySystem } from './entity-system.js';
 import { telemetry } from './telemetry.js';
 
@@ -62,35 +67,35 @@ const createAddEntityHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<AddEntityPayload> =>
   (payload, context) => {
-    if (typeof payload.entityId !== 'string' || payload.entityId.trim().length === 0) {
-      telemetry.recordError('AddEntityInvalidId', {
-        entityId: payload.entityId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ENTITY_ID',
-          message: 'Entity id must be a non-empty string.',
-        },
-      };
+    const invalidId = validateNonEmptyString(
+      payload.entityId,
+      context,
+      'AddEntityInvalidId',
+      { entityId: payload.entityId },
+      {
+        code: 'INVALID_ENTITY_ID',
+        message: 'Entity id must be a non-empty string.',
+      },
+    );
+    if (invalidId) {
+      return invalidId;
     }
 
-    if (!Number.isInteger(payload.count) || payload.count <= 0) {
-      telemetry.recordError('AddEntityInvalidCount', {
+    const invalidCount = validatePositiveInteger(
+      payload.count,
+      context,
+      'AddEntityInvalidCount',
+      {
         entityId: payload.entityId,
         count: payload.count,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ENTITY_COUNT',
-          message: 'Entity count must be a positive integer.',
-        },
-      };
+      },
+      {
+        code: 'INVALID_ENTITY_COUNT',
+        message: 'Entity count must be a positive integer.',
+      },
+    );
+    if (invalidCount) {
+      return invalidCount;
     }
 
     try {
@@ -117,35 +122,35 @@ const createRemoveEntityHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<RemoveEntityPayload> =>
   (payload, context) => {
-    if (typeof payload.entityId !== 'string' || payload.entityId.trim().length === 0) {
-      telemetry.recordError('RemoveEntityInvalidId', {
-        entityId: payload.entityId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ENTITY_ID',
-          message: 'Entity id must be a non-empty string.',
-        },
-      };
+    const invalidId = validateNonEmptyString(
+      payload.entityId,
+      context,
+      'RemoveEntityInvalidId',
+      { entityId: payload.entityId },
+      {
+        code: 'INVALID_ENTITY_ID',
+        message: 'Entity id must be a non-empty string.',
+      },
+    );
+    if (invalidId) {
+      return invalidId;
     }
 
-    if (!Number.isInteger(payload.count) || payload.count <= 0) {
-      telemetry.recordError('RemoveEntityInvalidCount', {
+    const invalidCount = validatePositiveInteger(
+      payload.count,
+      context,
+      'RemoveEntityInvalidCount',
+      {
         entityId: payload.entityId,
         count: payload.count,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ENTITY_COUNT',
-          message: 'Entity count must be a positive integer.',
-        },
-      };
+      },
+      {
+        code: 'INVALID_ENTITY_COUNT',
+        message: 'Entity count must be a positive integer.',
+      },
+    );
+    if (invalidCount) {
+      return invalidCount;
     }
 
     try {
@@ -172,19 +177,18 @@ const createCreateEntityInstanceHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<CreateEntityInstancePayload> =>
   (payload, context) => {
-    if (typeof payload.entityId !== 'string' || payload.entityId.trim().length === 0) {
-      telemetry.recordError('CreateEntityInstanceInvalidId', {
-        entityId: payload.entityId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_ENTITY_ID',
-          message: 'Entity id must be a non-empty string.',
-        },
-      };
+    const invalidId = validateNonEmptyString(
+      payload.entityId,
+      context,
+      'CreateEntityInstanceInvalidId',
+      { entityId: payload.entityId },
+      {
+        code: 'INVALID_ENTITY_ID',
+        message: 'Entity id must be a non-empty string.',
+      },
+    );
+    if (invalidId) {
+      return invalidId;
     }
 
     try {
@@ -210,19 +214,18 @@ const createDestroyEntityInstanceHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<DestroyEntityInstancePayload> =>
   (payload, context) => {
-    if (typeof payload.instanceId !== 'string' || payload.instanceId.trim().length === 0) {
-      telemetry.recordError('DestroyEntityInstanceInvalidId', {
-        instanceId: payload.instanceId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: 'Entity instance id must be a non-empty string.',
-        },
-      };
+    const invalidId = validateNonEmptyString(
+      payload.instanceId,
+      context,
+      'DestroyEntityInstanceInvalidId',
+      { instanceId: payload.instanceId },
+      {
+        code: 'INVALID_INSTANCE_ID',
+        message: 'Entity instance id must be a non-empty string.',
+      },
+    );
+    if (invalidId) {
+      return invalidId;
     }
 
     try {
@@ -248,64 +251,58 @@ const createAssignEntityToMissionHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<AssignEntityToMissionPayload> =>
   (payload, context) => {
-    if (typeof payload.instanceId !== 'string' || payload.instanceId.trim().length === 0) {
-      telemetry.recordError('AssignEntityInvalidInstanceId', {
-        instanceId: payload.instanceId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: 'Entity instance id must be a non-empty string.',
-        },
-      };
+    const invalidInstanceId = validateNonEmptyString(
+      payload.instanceId,
+      context,
+      'AssignEntityInvalidInstanceId',
+      { instanceId: payload.instanceId },
+      {
+        code: 'INVALID_INSTANCE_ID',
+        message: 'Entity instance id must be a non-empty string.',
+      },
+    );
+    if (invalidInstanceId) {
+      return invalidInstanceId;
     }
 
-    if (typeof payload.missionId !== 'string' || payload.missionId.trim().length === 0) {
-      telemetry.recordError('AssignEntityInvalidMissionId', {
-        missionId: payload.missionId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_MISSION_ID',
-          message: 'Mission id must be a non-empty string.',
-        },
-      };
+    const invalidMissionId = validateNonEmptyString(
+      payload.missionId,
+      context,
+      'AssignEntityInvalidMissionId',
+      { missionId: payload.missionId },
+      {
+        code: 'INVALID_MISSION_ID',
+        message: 'Mission id must be a non-empty string.',
+      },
+    );
+    if (invalidMissionId) {
+      return invalidMissionId;
     }
 
-    if (typeof payload.batchId !== 'string' || payload.batchId.trim().length === 0) {
-      telemetry.recordError('AssignEntityInvalidBatchId', {
-        batchId: payload.batchId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_BATCH_ID',
-          message: 'Batch id must be a non-empty string.',
-        },
-      };
+    const invalidBatchId = validateNonEmptyString(
+      payload.batchId,
+      context,
+      'AssignEntityInvalidBatchId',
+      { batchId: payload.batchId },
+      {
+        code: 'INVALID_BATCH_ID',
+        message: 'Batch id must be a non-empty string.',
+      },
+    );
+    if (invalidBatchId) {
+      return invalidBatchId;
     }
 
-    if (!Number.isFinite(payload.returnStep) || payload.returnStep < context.step) {
-      telemetry.recordError('AssignEntityInvalidReturnStep', {
-        returnStep: payload.returnStep,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_RETURN_STEP',
-          message: 'Return step must be >= current step.',
-        },
-      };
+    const invalidReturnStep = validateReturnStep(
+      payload.returnStep,
+      context,
+      {
+        code: 'INVALID_RETURN_STEP',
+        message: 'Return step must be >= current step.',
+      },
+    );
+    if (invalidReturnStep) {
+      return invalidReturnStep;
     }
 
     const assignment: EntityAssignment = {
@@ -339,19 +336,18 @@ const createReturnEntityFromMissionHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<ReturnEntityFromMissionPayload> =>
   (payload, context) => {
-    if (typeof payload.instanceId !== 'string' || payload.instanceId.trim().length === 0) {
-      telemetry.recordError('ReturnEntityInvalidInstanceId', {
-        instanceId: payload.instanceId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: 'Entity instance id must be a non-empty string.',
-        },
-      };
+    const invalidId = validateNonEmptyString(
+      payload.instanceId,
+      context,
+      'ReturnEntityInvalidInstanceId',
+      { instanceId: payload.instanceId },
+      {
+        code: 'INVALID_INSTANCE_ID',
+        message: 'Entity instance id must be a non-empty string.',
+      },
+    );
+    if (invalidId) {
+      return invalidId;
     }
 
     try {
@@ -377,35 +373,35 @@ const createAddEntityExperienceHandler = (
   entitySystem: EntitySystem,
 ): CommandHandler<AddEntityExperiencePayload> =>
   (payload, context) => {
-    if (typeof payload.instanceId !== 'string' || payload.instanceId.trim().length === 0) {
-      telemetry.recordError('AddEntityExperienceInvalidInstanceId', {
-        instanceId: payload.instanceId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_INSTANCE_ID',
-          message: 'Entity instance id must be a non-empty string.',
-        },
-      };
+    const invalidId = validateNonEmptyString(
+      payload.instanceId,
+      context,
+      'AddEntityExperienceInvalidInstanceId',
+      { instanceId: payload.instanceId },
+      {
+        code: 'INVALID_INSTANCE_ID',
+        message: 'Entity instance id must be a non-empty string.',
+      },
+    );
+    if (invalidId) {
+      return invalidId;
     }
 
-    if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
-      telemetry.recordError('AddEntityExperienceInvalidAmount', {
+    const invalidAmount = validatePositiveNumber(
+      payload.amount,
+      context,
+      'AddEntityExperienceInvalidAmount',
+      {
         instanceId: payload.instanceId,
         amount: payload.amount,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_EXPERIENCE_AMOUNT',
-          message: 'Experience amount must be a positive number.',
-        },
-      };
+      },
+      {
+        code: 'INVALID_EXPERIENCE_AMOUNT',
+        message: 'Experience amount must be a positive number.',
+      },
+    );
+    if (invalidAmount) {
+      return invalidAmount;
     }
 
     try {
@@ -427,3 +423,100 @@ const createAddEntityExperienceHandler = (
       };
     }
   };
+
+type ValidationError = Readonly<{
+  code: string;
+  message: string;
+}>;
+
+const recordValidationError = (
+  eventName: string,
+  context: ExecutionContext,
+  details: Record<string, unknown>,
+): void => {
+  telemetry.recordError(eventName, {
+    ...details,
+    step: context.step,
+    priority: context.priority,
+  });
+};
+
+const createValidationFailure = (
+  error: ValidationError,
+): CommandHandlerResult => ({
+  success: false,
+  error,
+});
+
+const validateField = (
+  isValid: boolean,
+  context: ExecutionContext,
+  eventName: string,
+  details: Record<string, unknown>,
+  error: ValidationError,
+): CommandHandlerResult | undefined => {
+  if (isValid) {
+    return undefined;
+  }
+
+  recordValidationError(eventName, context, details);
+  return createValidationFailure(error);
+};
+
+const validateNonEmptyString = (
+  value: unknown,
+  context: ExecutionContext,
+  eventName: string,
+  details: Record<string, unknown>,
+  error: ValidationError,
+): CommandHandlerResult | undefined =>
+  validateField(
+    typeof value === 'string' && value.trim().length > 0,
+    context,
+    eventName,
+    details,
+    error,
+  );
+
+const validatePositiveInteger = (
+  value: unknown,
+  context: ExecutionContext,
+  eventName: string,
+  details: Record<string, unknown>,
+  error: ValidationError,
+): CommandHandlerResult | undefined =>
+  validateField(
+    Number.isInteger(value) && (value as number) > 0,
+    context,
+    eventName,
+    details,
+    error,
+  );
+
+const validatePositiveNumber = (
+  value: unknown,
+  context: ExecutionContext,
+  eventName: string,
+  details: Record<string, unknown>,
+  error: ValidationError,
+): CommandHandlerResult | undefined =>
+  validateField(
+    typeof value === 'number' && Number.isFinite(value) && value > 0,
+    context,
+    eventName,
+    details,
+    error,
+  );
+
+const validateReturnStep = (
+  value: number,
+  context: ExecutionContext,
+  error: ValidationError,
+): CommandHandlerResult | undefined =>
+  validateField(
+    Number.isFinite(value) && value >= context.step,
+    context,
+    'AssignEntityInvalidReturnStep',
+    { returnStep: value },
+    error,
+  );
