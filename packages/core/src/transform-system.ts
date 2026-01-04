@@ -783,7 +783,7 @@ export function createTransformSystem(
     step: number,
     formulaContext: FormulaEvaluationContext,
   ): TransformExecutionResult => {
-    if (transform.mode === 'continuous') {
+    if (transform.mode === 'continuous' || transform.mode === 'mission') {
       return {
         success: false,
         error: {
