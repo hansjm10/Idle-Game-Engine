@@ -7,7 +7,11 @@ import {
   localizedTextSchema,
 } from '../base/localization.js';
 import { numericFormulaSchema } from '../base/formulas.js';
-import { finiteNumberSchema, positiveIntSchema } from '../base/numbers.js';
+import {
+  finiteNumberSchema,
+  percentSchema,
+  positiveIntSchema,
+} from '../base/numbers.js';
 
 const tagSchema: z.ZodString = z
   .string()
@@ -38,6 +42,79 @@ const cooldownSchema: z.ZodType<
     typeof value === 'number' ? { kind: 'constant', value } : value,
   );
 
+const missionEntityRequirementSchema = z
+  .object({
+    entityId: contentIdSchema,
+    count: numericFormulaSchema,
+    minStats: z.record(contentIdSchema, numericFormulaSchema).optional(),
+    preferHighStats: z.array(contentIdSchema).optional(),
+    returnOnComplete: z.boolean().default(true),
+  })
+  .strict();
+
+const missionSuccessRateModifierSchema = z
+  .object({
+    stat: contentIdSchema,
+    weight: numericFormulaSchema,
+    entityScope: z.enum(['average', 'sum', 'min', 'max'] as const).default('average'),
+  })
+  .strict();
+
+const missionSuccessRateSchema = z
+  .object({
+    baseRate: numericFormulaSchema,
+    statModifiers: z.array(missionSuccessRateModifierSchema).optional(),
+    usePRD: z.boolean().default(false),
+  })
+  .strict()
+  .superRefine((successRate, ctx) => {
+    if (successRate.baseRate.kind !== 'constant') {
+      return;
+    }
+    const result = percentSchema.safeParse(successRate.baseRate.value);
+    if (result.success) {
+      return;
+    }
+    const issue = result.error.issues[0];
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['baseRate'],
+      message: issue?.message ?? 'Value must be between 0 and 1 inclusive.',
+    });
+  });
+
+const missionOutcomeSchema = z
+  .object({
+    outputs: z.array(endpointSchema),
+    entityExperience: numericFormulaSchema.optional(),
+    entityDamage: numericFormulaSchema.optional(),
+    message: localizedTextSchema.optional(),
+  })
+  .strict();
+
+const missionOutcomesSchema = z
+  .object({
+    success: missionOutcomeSchema,
+    failure: missionOutcomeSchema.optional(),
+    critical: missionOutcomeSchema
+      .extend({
+        chance: numericFormulaSchema,
+      })
+      .optional(),
+  })
+  .strict();
+
+type MissionFields = {
+  readonly entityRequirements: z.infer<typeof missionEntityRequirementSchema>[];
+  readonly successRate?: z.infer<typeof missionSuccessRateSchema>;
+  readonly outcomes: z.infer<typeof missionOutcomesSchema>;
+};
+
+type MissionFieldsInput = {
+  readonly entityRequirements: z.input<typeof missionEntityRequirementSchema>[];
+  readonly successRate?: z.input<typeof missionSuccessRateSchema>;
+  readonly outcomes: z.input<typeof missionOutcomesSchema>;
+};
 
 type TransformSafetyInput = {
   readonly maxRunsPerTick?: z.input<typeof positiveIntSchema>;
@@ -65,7 +142,7 @@ type TransformDefinitionInput = {
   readonly id: z.input<typeof contentIdSchema>;
   readonly name: z.input<typeof localizedTextSchema>;
   readonly description: z.input<typeof localizedSummarySchema>;
-  readonly mode: 'instant' | 'continuous' | 'batch';
+  readonly mode: 'instant' | 'continuous' | 'batch' | 'mission';
   readonly inputs: readonly z.input<typeof endpointSchema>[];
   readonly outputs: readonly z.input<typeof endpointSchema>[];
   readonly duration?: z.input<typeof numericFormulaSchema>;
@@ -77,13 +154,13 @@ type TransformDefinitionInput = {
   readonly tags?: readonly z.input<typeof tagSchema>[];
   readonly safety?: TransformSafetyInput;
   readonly order?: z.input<typeof finiteNumberSchema>;
-};
+} & Partial<MissionFieldsInput>;
 
 type TransformDefinitionModel = {
   readonly id: ContentId;
   readonly name: z.infer<typeof localizedTextSchema>;
   readonly description: z.infer<typeof localizedSummarySchema>;
-  readonly mode: 'instant' | 'continuous' | 'batch';
+  readonly mode: 'instant' | 'continuous' | 'batch' | 'mission';
   readonly inputs: readonly z.infer<typeof endpointSchema>[];
   readonly outputs: readonly z.infer<typeof endpointSchema>[];
   readonly duration?: z.infer<typeof numericFormulaSchema>;
@@ -95,7 +172,7 @@ type TransformDefinitionModel = {
   readonly tags: readonly string[];
   readonly safety?: TransformSafety;
   readonly order?: number;
-};
+} & Partial<MissionFields>;
 
 const normalizeTags = (tags: readonly string[]): readonly string[] =>
   Object.freeze(
@@ -113,15 +190,16 @@ export const transformDefinitionSchema: z.ZodType<
     id: contentIdSchema,
     name: localizedTextSchema,
     description: localizedSummarySchema,
-    mode: z.enum(['instant', 'continuous', 'batch'] as const),
+    mode: z.enum(['instant', 'continuous', 'batch', 'mission'] as const),
     inputs: z.array(endpointSchema).min(1, {
       message: 'Transforms must consume at least one resource.',
     }),
-    outputs: z.array(endpointSchema).min(1, {
-      message: 'Transforms must produce at least one resource.',
-    }),
+    outputs: z.array(endpointSchema),
     duration: numericFormulaSchema.optional(),
     cooldown: cooldownSchema.optional(),
+    entityRequirements: z.array(missionEntityRequirementSchema).optional(),
+    successRate: missionSuccessRateSchema.optional(),
+    outcomes: missionOutcomesSchema.optional(),
     trigger: z.union([
       z
         .object({
@@ -167,12 +245,46 @@ export const transformDefinitionSchema: z.ZodType<
   })
   .strict()
   .superRefine((transform, ctx) => {
+    if (transform.mode !== 'mission' && transform.outputs.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['outputs'],
+        message: 'Transforms must produce at least one resource.',
+      });
+    }
+
     if (transform.mode === 'batch' && transform.duration === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['duration'],
         message: 'Batch transforms must declare a duration.',
       });
+    }
+
+    if (transform.mode === 'mission') {
+      if (transform.duration === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['duration'],
+          message: 'Mission transforms must declare a duration.',
+        });
+      }
+
+      if (!transform.entityRequirements || transform.entityRequirements.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['entityRequirements'],
+          message: 'Mission transforms must declare entity requirements.',
+        });
+      }
+
+      if (!transform.outcomes) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['outcomes'],
+          message: 'Mission transforms must declare outcomes.',
+        });
+      }
     }
 
     if (transform.trigger.kind === 'automation') {

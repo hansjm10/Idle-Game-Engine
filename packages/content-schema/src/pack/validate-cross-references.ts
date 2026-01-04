@@ -542,6 +542,7 @@ export const validateCrossReferences = (
   context: CrossReferenceContext,
 ) => {
   const resourceIndex = getIndexMap(pack.resources);
+  const entityIndex = getIndexMap(pack.entities);
   const generatorIndex = getIndexMap(pack.generators);
   const upgradeIndex = getIndexMap(pack.upgrades);
   const metricIndex = getIndexMap(pack.metrics);
@@ -1716,6 +1717,34 @@ export const validateCrossReferences = (
         );
       });
     }
+    if (transform.successRate) {
+      collectFormulaEntityReferences(transform.successRate.baseRate, (reference) => {
+        ensureFormulaReference(
+          reference,
+          ['transforms', index, 'successRate', 'baseRate'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
+      });
+      transform.successRate.statModifiers?.forEach((modifier, modifierIndex) => {
+        collectFormulaEntityReferences(modifier.weight, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['transforms', index, 'successRate', 'statModifiers', modifierIndex, 'weight'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
+      });
+    }
     const transformTriggerHandlers = {
       automation: (
         trigger: TransformTriggerByKind<'automation'>,
@@ -1812,6 +1841,220 @@ export const validateCrossReferences = (
         upgradeIndex,
         prestigeIndex,
       );
+    }
+
+    if (transform.mode === 'mission' && transform.entityRequirements) {
+      const availableStats = new Set<string>();
+      transform.entityRequirements.forEach((requirement, requirementIndex) => {
+        const entry = entityIndex.get(requirement.entityId);
+        if (!entry) {
+          ensureContentReference(
+            entityIndex,
+            requirement.entityId,
+            ['transforms', index, 'entityRequirements', requirementIndex, 'entityId'],
+            `Transform "${transform.id}" references unknown entity "${requirement.entityId}".`,
+          );
+          return;
+        }
+
+        const statIds = new Set<string>(
+          entry.value.stats.map((stat) => stat.id as string),
+        );
+        entry.value.stats.forEach((stat) => {
+          availableStats.add(stat.id);
+        });
+
+        collectFormulaEntityReferences(requirement.count, (reference) => {
+          ensureFormulaReference(
+            reference,
+            ['transforms', index, 'entityRequirements', requirementIndex, 'count'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
+        });
+
+        if (requirement.minStats) {
+          Object.entries(requirement.minStats).forEach(([statId, formula]) => {
+            if (!statIds.has(statId)) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: toMutablePath([
+                  'transforms',
+                  index,
+                  'entityRequirements',
+                  requirementIndex,
+                  'minStats',
+                  statId,
+                ]),
+                message: `Transform "${transform.id}" references unknown stat "${statId}" for entity "${requirement.entityId}".`,
+              });
+            }
+            if (!formula) {
+              return;
+            }
+            collectFormulaEntityReferences(formula, (reference) => {
+              ensureFormulaReference(
+                reference,
+                [
+                  'transforms',
+                  index,
+                  'entityRequirements',
+                  requirementIndex,
+                  'minStats',
+                  statId,
+                ],
+                ctx,
+                resourceIndex,
+                generatorIndex,
+                upgradeIndex,
+                automationIndex,
+                prestigeIndex,
+              );
+            });
+          });
+        }
+
+        requirement.preferHighStats?.forEach((statId, statIndex) => {
+          if (!statIds.has(statId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: toMutablePath([
+                'transforms',
+                index,
+                'entityRequirements',
+                requirementIndex,
+                'preferHighStats',
+                statIndex,
+              ]),
+              message: `Transform "${transform.id}" references unknown stat "${statId}" for entity "${requirement.entityId}".`,
+            });
+          }
+        });
+      });
+
+      if (transform.successRate?.statModifiers) {
+        transform.successRate.statModifiers.forEach((modifier, modifierIndex) => {
+          if (!availableStats.has(modifier.stat)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: toMutablePath([
+                'transforms',
+                index,
+                'successRate',
+                'statModifiers',
+                modifierIndex,
+                'stat',
+              ]),
+              message: `Transform "${transform.id}" references unknown stat "${modifier.stat}" in success rate modifiers.`,
+            });
+          }
+        });
+      }
+
+      const validateOutcome = (
+        outcome:
+          | {
+              outputs: readonly { resourceId: string; amount: NumericFormula }[];
+              entityExperience?: NumericFormula;
+              entityDamage?: NumericFormula;
+            }
+          | undefined,
+        outcomePath: readonly (string | number)[],
+      ) => {
+        if (!outcome) {
+          return;
+        }
+        outcome.outputs.forEach((output, outputIndex) => {
+          ensureContentReference(
+            resourceIndex,
+            output.resourceId,
+            [...outcomePath, 'outputs', outputIndex, 'resourceId'],
+            `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
+          );
+          collectFormulaEntityReferences(output.amount, (reference) => {
+            ensureFormulaReference(
+              reference,
+              [...outcomePath, 'outputs', outputIndex, 'amount'],
+              ctx,
+              resourceIndex,
+              generatorIndex,
+              upgradeIndex,
+              automationIndex,
+              prestigeIndex,
+            );
+          });
+        });
+        if (outcome.entityExperience) {
+          collectFormulaEntityReferences(outcome.entityExperience, (reference) => {
+            ensureFormulaReference(
+              reference,
+              [...outcomePath, 'entityExperience'],
+              ctx,
+              resourceIndex,
+              generatorIndex,
+              upgradeIndex,
+              automationIndex,
+              prestigeIndex,
+            );
+          });
+        }
+        if (outcome.entityDamage) {
+          collectFormulaEntityReferences(outcome.entityDamage, (reference) => {
+            ensureFormulaReference(
+              reference,
+              [...outcomePath, 'entityDamage'],
+              ctx,
+              resourceIndex,
+              generatorIndex,
+              upgradeIndex,
+              automationIndex,
+              prestigeIndex,
+            );
+          });
+        }
+      };
+
+      if (transform.outcomes) {
+        validateOutcome(transform.outcomes.success, [
+          'transforms',
+          index,
+          'outcomes',
+          'success',
+        ]);
+        validateOutcome(transform.outcomes.failure, [
+          'transforms',
+          index,
+          'outcomes',
+          'failure',
+        ]);
+        validateOutcome(transform.outcomes.critical, [
+          'transforms',
+          index,
+          'outcomes',
+          'critical',
+        ]);
+        if (transform.outcomes.critical?.chance) {
+          collectFormulaEntityReferences(
+            transform.outcomes.critical.chance,
+            (reference) => {
+              ensureFormulaReference(
+                reference,
+                ['transforms', index, 'outcomes', 'critical', 'chance'],
+                ctx,
+                resourceIndex,
+                generatorIndex,
+                upgradeIndex,
+                automationIndex,
+                prestigeIndex,
+              );
+            },
+          );
+        }
+      }
     }
   });
 

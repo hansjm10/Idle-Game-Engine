@@ -584,4 +584,142 @@ describe('validateCrossReferences', () => {
       ]),
     );
   });
+
+  it('reports missing mission entity references', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:missing',
+              count: { kind: 'constant', value: 1 },
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = createContentPackValidator().safeParse(pack);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('unknown entity "entity:missing"'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports missing mission stat references', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      entities: [
+        {
+          id: 'entity:scout',
+          name: { default: 'Scout' },
+          description: { default: 'Scout' },
+          stats: [
+            {
+              id: 'perception',
+              name: { default: 'Perception' },
+              baseValue: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:scout',
+              count: { kind: 'constant', value: 1 },
+              minStats: {
+                luck: { kind: 'constant', value: 1 },
+              },
+              preferHighStats: ['luck'],
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = createContentPackValidator().safeParse(pack);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('unknown stat "luck"'),
+        }),
+      ]),
+    );
+  });
 });

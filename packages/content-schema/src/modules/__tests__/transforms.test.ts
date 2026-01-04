@@ -34,6 +34,66 @@ describe('transformDefinitionSchema', () => {
     ).toThrowError(/declare a duration/i);
   });
 
+  it('requires mission transforms to declare outcomes', () => {
+    expect(() =>
+      transformDefinitionSchema.parse({
+        ...baseTransform,
+        mode: 'mission',
+        outputs: [],
+        duration: { kind: 'constant', value: 60000 },
+        entityRequirements: [
+          { entityId: 'scout', count: { kind: 'constant', value: 1 } },
+        ],
+      }),
+    ).toThrowError(/declare outcomes/i);
+  });
+
+  it('accepts mission transforms with empty outputs', () => {
+    const transform = transformDefinitionSchema.parse({
+      ...baseTransform,
+      mode: 'mission',
+      outputs: [],
+      duration: { kind: 'constant', value: 60000 },
+      entityRequirements: [
+        { entityId: 'scout', count: { kind: 'constant', value: 1 } },
+      ],
+      outcomes: {
+        success: {
+          outputs: [
+            { resourceId: 'bar', amount: { kind: 'constant', value: 1 } },
+          ],
+          entityExperience: { kind: 'constant', value: 10 },
+        },
+      },
+    });
+
+    expect(transform.outputs).toEqual([]);
+  });
+
+  it('rejects mission success rates outside [0, 1]', () => {
+    expect(() =>
+      transformDefinitionSchema.parse({
+        ...baseTransform,
+        mode: 'mission',
+        outputs: [],
+        duration: { kind: 'constant', value: 5000 },
+        entityRequirements: [
+          { entityId: 'scout', count: { kind: 'constant', value: 1 } },
+        ],
+        successRate: {
+          baseRate: { kind: 'constant', value: 1.5 },
+        },
+        outcomes: {
+          success: {
+            outputs: [
+              { resourceId: 'bar', amount: { kind: 'constant', value: 1 } },
+            ],
+          },
+        },
+      }),
+    ).toThrowError(/between 0 and 1/i);
+  });
+
   it('accepts numeric cooldown shorthand', () => {
     const transform = transformDefinitionSchema.parse({
       ...baseTransform,
