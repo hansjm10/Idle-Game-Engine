@@ -181,6 +181,70 @@ const normalizeTags = (tags: readonly string[]): readonly string[] =>
     ),
   );
 
+const reportTransformIssue = (
+  ctx: z.RefinementCtx,
+  path: readonly (string | number)[],
+  message: string,
+): void => {
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: [...path],
+    message,
+  });
+};
+
+const validateMissionTransform = (
+  transform: TransformDefinitionModel,
+  ctx: z.RefinementCtx,
+): void => {
+  if (transform.duration === undefined) {
+    reportTransformIssue(
+      ctx,
+      ['duration'],
+      'Mission transforms must declare a duration.',
+    );
+  }
+
+  if (!transform.entityRequirements || transform.entityRequirements.length === 0) {
+    reportTransformIssue(
+      ctx,
+      ['entityRequirements'],
+      'Mission transforms must declare entity requirements.',
+    );
+  }
+
+  if (!transform.outcomes) {
+    reportTransformIssue(
+      ctx,
+      ['outcomes'],
+      'Mission transforms must declare outcomes.',
+    );
+  }
+};
+
+const validateAutomationTrigger = (
+  transform: TransformDefinitionModel,
+  triggerAutomationId: ContentId,
+  ctx: z.RefinementCtx,
+): void => {
+  if (!transform.automation) {
+    reportTransformIssue(
+      ctx,
+      ['automation'],
+      'Automation-triggered transforms must declare a matching automation reference.',
+    );
+    return;
+  }
+
+  if (transform.automation.automationId !== triggerAutomationId) {
+    reportTransformIssue(
+      ctx,
+      ['automation', 'automationId'],
+      'Automation id must match the trigger automation id.',
+    );
+  }
+};
+
 export const transformDefinitionSchema: z.ZodType<
   TransformDefinitionModel,
   z.ZodTypeDef,
@@ -246,65 +310,27 @@ export const transformDefinitionSchema: z.ZodType<
   .strict()
   .superRefine((transform, ctx) => {
     if (transform.mode !== 'mission' && transform.outputs.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['outputs'],
-        message: 'Transforms must produce at least one resource.',
-      });
+      reportTransformIssue(
+        ctx,
+        ['outputs'],
+        'Transforms must produce at least one resource.',
+      );
     }
 
     if (transform.mode === 'batch' && transform.duration === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['duration'],
-        message: 'Batch transforms must declare a duration.',
-      });
+      reportTransformIssue(
+        ctx,
+        ['duration'],
+        'Batch transforms must declare a duration.',
+      );
     }
 
     if (transform.mode === 'mission') {
-      if (transform.duration === undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['duration'],
-          message: 'Mission transforms must declare a duration.',
-        });
-      }
-
-      if (!transform.entityRequirements || transform.entityRequirements.length === 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['entityRequirements'],
-          message: 'Mission transforms must declare entity requirements.',
-        });
-      }
-
-      if (!transform.outcomes) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['outcomes'],
-          message: 'Mission transforms must declare outcomes.',
-        });
-      }
+      validateMissionTransform(transform, ctx);
     }
 
     if (transform.trigger.kind === 'automation') {
-      if (!transform.automation) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['automation'],
-          message:
-            'Automation-triggered transforms must declare a matching automation reference.',
-        });
-        return;
-      }
-
-      if (transform.automation.automationId !== transform.trigger.automationId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['automation', 'automationId'],
-          message: 'Automation id must match the trigger automation id.',
-        });
-      }
+      validateAutomationTrigger(transform, transform.trigger.automationId, ctx);
     }
   })
   .transform((transform) => ({

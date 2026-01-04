@@ -1636,11 +1636,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
 
     const unlockCondition = record.definition.unlockCondition;
-    return unlockCondition
-      ? evaluateCondition(unlockCondition, this.conditionContext)
-        ? 'available'
-        : 'locked'
-      : ('available' as UpgradeStatus);
+    if (!unlockCondition) {
+      return 'available';
+    }
+    return evaluateCondition(unlockCondition, this.conditionContext)
+      ? 'available'
+      : 'locked';
   }
 }
 

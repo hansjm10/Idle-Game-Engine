@@ -52,19 +52,23 @@ function parseArgs(argv: string[]): CliArgs {
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--snapshot') {
-      args.snapshotPath = argv[++index];
+      index += 1;
+      args.snapshotPath = argv[index];
       continue;
     }
     if (value === '--ticks') {
-      args.ticks = Number(argv[++index]);
+      index += 1;
+      args.ticks = Number(argv[index]);
       continue;
     }
     if (value === '--offline-ms') {
-      args.offlineMs = Number(argv[++index]);
+      index += 1;
+      args.offlineMs = Number(argv[index]);
       continue;
     }
     if (value === '--definitions') {
-      args.definitionsPath = argv[++index];
+      index += 1;
+      args.definitionsPath = argv[index];
       continue;
     }
     if (value === '--include-diagnostics') {

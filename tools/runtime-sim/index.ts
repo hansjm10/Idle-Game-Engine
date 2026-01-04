@@ -130,19 +130,25 @@ function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--ticks') {
-      args.ticks = Number(argv[++i]);
+      i += 1;
+      args.ticks = Number(argv[i]);
     } else if (a === '--step-ms') {
-      args.stepMs = Number(argv[++i]);
+      i += 1;
+      args.stepMs = Number(argv[i]);
     } else if (a === '--max-steps-per-frame') {
-      args.maxStepsPerFrame = Number(argv[++i]);
+      i += 1;
+      args.maxStepsPerFrame = Number(argv[i]);
     } else if (a === '--fail-on-slow') {
       args.failOnSlow = true;
     } else if (a === '--queue-backlog-cap') {
-      args.queueBacklogCap = Number(argv[++i]);
+      i += 1;
+      args.queueBacklogCap = Number(argv[i]);
     } else if (a === '--slow-tick-budget-ms') {
-      args.slowTickBudgetMs = Number(argv[++i]);
+      i += 1;
+      args.slowTickBudgetMs = Number(argv[i]);
     } else if (a === '--scenario' || a === '--scenarios') {
-      const value = argv[++i];
+      i += 1;
+      const value = argv[i];
       if (value) {
         args.scenarios.push(
           ...value
@@ -152,11 +158,14 @@ function parseArgs(argv: string[]): CliArgs {
         );
       }
     } else if (a === '--warmup-ticks') {
-      args.warmupTicks = Number(argv[++i]);
+      i += 1;
+      args.warmupTicks = Number(argv[i]);
     } else if (a === '--measure-ticks') {
-      args.measureTicks = Number(argv[++i]);
+      i += 1;
+      args.measureTicks = Number(argv[i]);
     } else if (a === '--seed') {
-      args.seed = Number(argv[++i]);
+      i += 1;
+      args.seed = Number(argv[i]);
     } else if (a === '--include-memory') {
       args.includeMemory = true;
     } else if (a === '--list-scenarios') {

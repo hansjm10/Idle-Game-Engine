@@ -1878,7 +1878,7 @@ export const validateCrossReferences = (
         });
 
         if (requirement.minStats) {
-          Object.entries(requirement.minStats).forEach(([statId, formula]) => {
+          for (const [statId, formula] of Object.entries(requirement.minStats)) {
             if (!statIds.has(statId)) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
@@ -1894,7 +1894,7 @@ export const validateCrossReferences = (
               });
             }
             if (!formula) {
-              return;
+              continue;
             }
             collectFormulaEntityReferences(formula, (reference) => {
               ensureFormulaReference(
@@ -1915,7 +1915,7 @@ export const validateCrossReferences = (
                 prestigeIndex,
               );
             });
-          });
+          }
         }
 
         requirement.preferHighStats?.forEach((statId, statIndex) => {
@@ -1968,7 +1968,7 @@ export const validateCrossReferences = (
         if (!outcome) {
           return;
         }
-        outcome.outputs.forEach((output, outputIndex) => {
+        for (const [outputIndex, output] of outcome.outputs.entries()) {
           ensureContentReference(
             resourceIndex,
             output.resourceId,
@@ -1987,7 +1987,7 @@ export const validateCrossReferences = (
               prestigeIndex,
             );
           });
-        });
+        }
         if (outcome.entityExperience) {
           collectFormulaEntityReferences(outcome.entityExperience, (reference) => {
             ensureFormulaReference(
