@@ -8,8 +8,12 @@ import { fnv1a32 } from '../state-sync/checksum.js';
 
 const DEFAULT_DEDUPER_CAPACITY = 10_000;
 const utf8Encoder = new TextEncoder();
-const compareDeterministicKeys = (left: string, right: string): number =>
-  left.localeCompare(right, 'en');
+const compareDeterministicKeys = (left: string, right: string): number => {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+};
 
 export type SerializedRuntimeEvent = RuntimeEventObjectRecord;
 
