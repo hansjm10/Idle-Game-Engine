@@ -206,6 +206,30 @@ const ensureFormulaReference = (
   }
 };
 
+const ensureFormulaReferencesAtPath = (
+  formula: NumericFormula,
+  path: readonly (string | number)[],
+  ctx: z.RefinementCtx,
+  resources: Map<string, { index: number }>,
+  generators: Map<string, { index: number }>,
+  upgrades: Map<string, { index: number }>,
+  automations: Map<string, { index: number }>,
+  prestigeLayers: Map<string, { index: number }>,
+): void => {
+  collectFormulaEntityReferences(formula, (reference) => {
+    ensureFormulaReference(
+      reference,
+      path,
+      ctx,
+      resources,
+      generators,
+      upgrades,
+      automations,
+      prestigeLayers,
+    );
+  });
+};
+
 const validateUpgradeEffect = (
   effect: UpgradeEffect,
   path: readonly (string | number)[],
@@ -1648,7 +1672,7 @@ export const validateCrossReferences = (
     }
   });
 
-  pack.transforms.forEach((transform, index) => {
+  for (const [index, transform] of pack.transforms.entries()) {
     transform.inputs.forEach((input, inputIndex) => {
       ensureContentReference(
         resourceIndex,
@@ -1656,18 +1680,16 @@ export const validateCrossReferences = (
         ['transforms', index, 'inputs', inputIndex, 'resourceId'],
         `Transform "${transform.id}" consumes unknown resource "${input.resourceId}".`,
       );
-      collectFormulaEntityReferences(input.amount, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['transforms', index, 'inputs', inputIndex, 'amount'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
+      ensureFormulaReferencesAtPath(
+        input.amount,
+        ['transforms', index, 'inputs', inputIndex, 'amount'],
+        ctx,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        automationIndex,
+        prestigeIndex,
+      );
     });
     transform.outputs.forEach((output, outputIndex) => {
       ensureContentReference(
@@ -1676,52 +1698,56 @@ export const validateCrossReferences = (
         ['transforms', index, 'outputs', outputIndex, 'resourceId'],
         `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
       );
-      collectFormulaEntityReferences(output.amount, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['transforms', index, 'outputs', outputIndex, 'amount'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
+      ensureFormulaReferencesAtPath(
+        output.amount,
+        ['transforms', index, 'outputs', outputIndex, 'amount'],
+        ctx,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        automationIndex,
+        prestigeIndex,
+      );
     });
     if (transform.duration) {
-      collectFormulaEntityReferences(transform.duration, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['transforms', index, 'duration'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
+      ensureFormulaReferencesAtPath(
+        transform.duration,
+        ['transforms', index, 'duration'],
+        ctx,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        automationIndex,
+        prestigeIndex,
+      );
     }
     if (transform.cooldown) {
-      collectFormulaEntityReferences(transform.cooldown, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['transforms', index, 'cooldown'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
+      ensureFormulaReferencesAtPath(
+        transform.cooldown,
+        ['transforms', index, 'cooldown'],
+        ctx,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        automationIndex,
+        prestigeIndex,
+      );
     }
     if (transform.successRate) {
-      collectFormulaEntityReferences(transform.successRate.baseRate, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['transforms', index, 'successRate', 'baseRate'],
+      ensureFormulaReferencesAtPath(
+        transform.successRate.baseRate,
+        ['transforms', index, 'successRate', 'baseRate'],
+        ctx,
+        resourceIndex,
+        generatorIndex,
+        upgradeIndex,
+        automationIndex,
+        prestigeIndex,
+      );
+      transform.successRate.statModifiers?.forEach((modifier, modifierIndex) => {
+        ensureFormulaReferencesAtPath(
+          modifier.weight,
+          ['transforms', index, 'successRate', 'statModifiers', modifierIndex, 'weight'],
           ctx,
           resourceIndex,
           generatorIndex,
@@ -1729,20 +1755,6 @@ export const validateCrossReferences = (
           automationIndex,
           prestigeIndex,
         );
-      });
-      transform.successRate.statModifiers?.forEach((modifier, modifierIndex) => {
-        collectFormulaEntityReferences(modifier.weight, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['transforms', index, 'successRate', 'statModifiers', modifierIndex, 'weight'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
       });
     }
     const transformTriggerHandlers = {
@@ -1864,18 +1876,16 @@ export const validateCrossReferences = (
           availableStats.add(stat.id);
         });
 
-        collectFormulaEntityReferences(requirement.count, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['transforms', index, 'entityRequirements', requirementIndex, 'count'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
+        ensureFormulaReferencesAtPath(
+          requirement.count,
+          ['transforms', index, 'entityRequirements', requirementIndex, 'count'],
+          ctx,
+          resourceIndex,
+          generatorIndex,
+          upgradeIndex,
+          automationIndex,
+          prestigeIndex,
+        );
 
         if (requirement.minStats) {
           for (const [statId, formula] of Object.entries(requirement.minStats)) {
@@ -1896,25 +1906,23 @@ export const validateCrossReferences = (
             if (!formula) {
               continue;
             }
-            collectFormulaEntityReferences(formula, (reference) => {
-              ensureFormulaReference(
-                reference,
-                [
-                  'transforms',
-                  index,
-                  'entityRequirements',
-                  requirementIndex,
-                  'minStats',
-                  statId,
-                ],
-                ctx,
-                resourceIndex,
-                generatorIndex,
-                upgradeIndex,
-                automationIndex,
-                prestigeIndex,
-              );
-            });
+            ensureFormulaReferencesAtPath(
+              formula,
+              [
+                'transforms',
+                index,
+                'entityRequirements',
+                requirementIndex,
+                'minStats',
+                statId,
+              ],
+              ctx,
+              resourceIndex,
+              generatorIndex,
+              upgradeIndex,
+              automationIndex,
+              prestigeIndex,
+            );
           }
         }
 
@@ -1975,46 +1983,40 @@ export const validateCrossReferences = (
             [...outcomePath, 'outputs', outputIndex, 'resourceId'],
             `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
           );
-          collectFormulaEntityReferences(output.amount, (reference) => {
-            ensureFormulaReference(
-              reference,
-              [...outcomePath, 'outputs', outputIndex, 'amount'],
-              ctx,
-              resourceIndex,
-              generatorIndex,
-              upgradeIndex,
-              automationIndex,
-              prestigeIndex,
-            );
-          });
+          ensureFormulaReferencesAtPath(
+            output.amount,
+            [...outcomePath, 'outputs', outputIndex, 'amount'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
         }
         if (outcome.entityExperience) {
-          collectFormulaEntityReferences(outcome.entityExperience, (reference) => {
-            ensureFormulaReference(
-              reference,
-              [...outcomePath, 'entityExperience'],
-              ctx,
-              resourceIndex,
-              generatorIndex,
-              upgradeIndex,
-              automationIndex,
-              prestigeIndex,
-            );
-          });
+          ensureFormulaReferencesAtPath(
+            outcome.entityExperience,
+            [...outcomePath, 'entityExperience'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
         }
         if (outcome.entityDamage) {
-          collectFormulaEntityReferences(outcome.entityDamage, (reference) => {
-            ensureFormulaReference(
-              reference,
-              [...outcomePath, 'entityDamage'],
-              ctx,
-              resourceIndex,
-              generatorIndex,
-              upgradeIndex,
-              automationIndex,
-              prestigeIndex,
-            );
-          });
+          ensureFormulaReferencesAtPath(
+            outcome.entityDamage,
+            [...outcomePath, 'entityDamage'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
+          );
         }
       };
 
@@ -2038,25 +2040,20 @@ export const validateCrossReferences = (
           'critical',
         ]);
         if (transform.outcomes.critical?.chance) {
-          collectFormulaEntityReferences(
+          ensureFormulaReferencesAtPath(
             transform.outcomes.critical.chance,
-            (reference) => {
-              ensureFormulaReference(
-                reference,
-                ['transforms', index, 'outcomes', 'critical', 'chance'],
-                ctx,
-                resourceIndex,
-                generatorIndex,
-                upgradeIndex,
-                automationIndex,
-                prestigeIndex,
-              );
-            },
+            ['transforms', index, 'outcomes', 'critical', 'chance'],
+            ctx,
+            resourceIndex,
+            generatorIndex,
+            upgradeIndex,
+            automationIndex,
+            prestigeIndex,
           );
         }
       }
     }
-  });
+  }
 
   pack.prestigeLayers.forEach((layer, index) => {
     layer.resetTargets.forEach((target, targetIndex) => {

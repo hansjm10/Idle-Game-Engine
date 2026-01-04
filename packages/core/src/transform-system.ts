@@ -861,9 +861,7 @@ export function createTransformSystem(
         };
       }
 
-      if (!state.batches) {
-        state.batches = [];
-      }
+      state.batches ??= [];
       const batchQueue = state.batches as TransformBatchQueueEntry[];
       const maxOutstanding = getEffectiveMaxOutstandingBatches(transform);
       if (batchQueue.length >= maxOutstanding) {

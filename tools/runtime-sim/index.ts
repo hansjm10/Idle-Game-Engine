@@ -127,50 +127,51 @@ function parseArgs(argv: string[]): CliArgs {
     helpRequested: false,
   };
 
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a === '--ticks') {
-      i += 1;
-      args.ticks = Number(argv[i]);
-    } else if (a === '--step-ms') {
-      i += 1;
-      args.stepMs = Number(argv[i]);
-    } else if (a === '--max-steps-per-frame') {
-      i += 1;
-      args.maxStepsPerFrame = Number(argv[i]);
-    } else if (a === '--fail-on-slow') {
+  const iterator = argv[Symbol.iterator]();
+  for (let entry = iterator.next(); !entry.done; entry = iterator.next()) {
+    const arg = entry.value;
+    if (arg === '--ticks') {
+      const next = iterator.next();
+      args.ticks = Number(next.value);
+    } else if (arg === '--step-ms') {
+      const next = iterator.next();
+      args.stepMs = Number(next.value);
+    } else if (arg === '--max-steps-per-frame') {
+      const next = iterator.next();
+      args.maxStepsPerFrame = Number(next.value);
+    } else if (arg === '--fail-on-slow') {
       args.failOnSlow = true;
-    } else if (a === '--queue-backlog-cap') {
-      i += 1;
-      args.queueBacklogCap = Number(argv[i]);
-    } else if (a === '--slow-tick-budget-ms') {
-      i += 1;
-      args.slowTickBudgetMs = Number(argv[i]);
-    } else if (a === '--scenario' || a === '--scenarios') {
-      i += 1;
-      const value = argv[i];
+    } else if (arg === '--queue-backlog-cap') {
+      const next = iterator.next();
+      args.queueBacklogCap = Number(next.value);
+    } else if (arg === '--slow-tick-budget-ms') {
+      const next = iterator.next();
+      args.slowTickBudgetMs = Number(next.value);
+    } else if (arg === '--scenario' || arg === '--scenarios') {
+      const next = iterator.next();
+      const value = next.value;
       if (value) {
         args.scenarios.push(
           ...value
             .split(',')
-            .map((entry) => entry.trim())
-            .filter((entry) => entry.length > 0),
+            .map((entryValue) => entryValue.trim())
+            .filter((entryValue) => entryValue.length > 0),
         );
       }
-    } else if (a === '--warmup-ticks') {
-      i += 1;
-      args.warmupTicks = Number(argv[i]);
-    } else if (a === '--measure-ticks') {
-      i += 1;
-      args.measureTicks = Number(argv[i]);
-    } else if (a === '--seed') {
-      i += 1;
-      args.seed = Number(argv[i]);
-    } else if (a === '--include-memory') {
+    } else if (arg === '--warmup-ticks') {
+      const next = iterator.next();
+      args.warmupTicks = Number(next.value);
+    } else if (arg === '--measure-ticks') {
+      const next = iterator.next();
+      args.measureTicks = Number(next.value);
+    } else if (arg === '--seed') {
+      const next = iterator.next();
+      args.seed = Number(next.value);
+    } else if (arg === '--include-memory') {
       args.includeMemory = true;
-    } else if (a === '--list-scenarios') {
+    } else if (arg === '--list-scenarios') {
       args.listScenarios = true;
-    } else if (a === '--help' || a === '-h') {
+    } else if (arg === '--help' || arg === '-h') {
       args.helpRequested = true;
     }
   }

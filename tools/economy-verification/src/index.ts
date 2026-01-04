@@ -49,26 +49,27 @@ function parseArgs(argv: string[]): CliArgs {
     helpRequested: false,
   };
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const value = argv[index];
+  const iterator = argv[Symbol.iterator]();
+  for (let entry = iterator.next(); !entry.done; entry = iterator.next()) {
+    const value = entry.value;
     if (value === '--snapshot') {
-      index += 1;
-      args.snapshotPath = argv[index];
+      const next = iterator.next();
+      args.snapshotPath = next.value;
       continue;
     }
     if (value === '--ticks') {
-      index += 1;
-      args.ticks = Number(argv[index]);
+      const next = iterator.next();
+      args.ticks = Number(next.value);
       continue;
     }
     if (value === '--offline-ms') {
-      index += 1;
-      args.offlineMs = Number(argv[index]);
+      const next = iterator.next();
+      args.offlineMs = Number(next.value);
       continue;
     }
     if (value === '--definitions') {
-      index += 1;
-      args.definitionsPath = argv[index];
+      const next = iterator.next();
+      args.definitionsPath = next.value;
       continue;
     }
     if (value === '--include-diagnostics') {

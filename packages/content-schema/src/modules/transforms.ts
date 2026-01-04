@@ -193,6 +193,32 @@ const reportTransformIssue = (
   });
 };
 
+const validateNonMissionOutputs = (
+  transform: TransformDefinitionModel,
+  ctx: z.RefinementCtx,
+): void => {
+  if (transform.mode !== 'mission' && transform.outputs.length === 0) {
+    reportTransformIssue(
+      ctx,
+      ['outputs'],
+      'Transforms must produce at least one resource.',
+    );
+  }
+};
+
+const validateBatchTransform = (
+  transform: TransformDefinitionModel,
+  ctx: z.RefinementCtx,
+): void => {
+  if (transform.mode === 'batch' && transform.duration === undefined) {
+    reportTransformIssue(
+      ctx,
+      ['duration'],
+      'Batch transforms must declare a duration.',
+    );
+  }
+};
+
 const validateMissionTransform = (
   transform: TransformDefinitionModel,
   ctx: z.RefinementCtx,
@@ -309,22 +335,8 @@ export const transformDefinitionSchema: z.ZodType<
   })
   .strict()
   .superRefine((transform, ctx) => {
-    if (transform.mode !== 'mission' && transform.outputs.length === 0) {
-      reportTransformIssue(
-        ctx,
-        ['outputs'],
-        'Transforms must produce at least one resource.',
-      );
-    }
-
-    if (transform.mode === 'batch' && transform.duration === undefined) {
-      reportTransformIssue(
-        ctx,
-        ['duration'],
-        'Batch transforms must declare a duration.',
-      );
-    }
-
+    validateNonMissionOutputs(transform, ctx);
+    validateBatchTransform(transform, ctx);
     if (transform.mode === 'mission') {
       validateMissionTransform(transform, ctx);
     }
