@@ -171,8 +171,10 @@ async function exists(target) {
   }
 }
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error('[benchmarks] Failed to generate benchmark artifacts.');
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
-});
+}

@@ -671,9 +671,12 @@ export const validateUnlockConditionCycles = (
     const typeList = Array.from(involvedTypes)
       .sort(compareIds)
       .join(', ');
-    const typeContext = involvedTypes.size > 0
-      ? ` (involves ${involvedTypes.size === 1 ? typeList : `entity types: ${typeList}`})`
-      : '';
+    let typeContext = '';
+    if (involvedTypes.size > 0) {
+      const typeDescription =
+        involvedTypes.size === 1 ? typeList : `entity types: ${typeList}`;
+      typeContext = ` (involves ${typeDescription})`;
+    }
 
     if (entityInfo) {
       const pathPrefix = [entityTypePaths[entityInfo.type], entityInfo.index] as const;

@@ -1,13 +1,14 @@
 import type { ProgressionCoordinator } from './progression-coordinator.js';
 
+const compareDeterministicKeys = (left: string, right: string): number =>
+  left.localeCompare(right, 'en');
+
 export function applyOfflineResourceDeltas(
   coordinator: ProgressionCoordinator,
   resourceDeltas: Readonly<Record<string, number>>,
 ): void {
   const resourceState = coordinator.resourceState;
-  const resourceIds = Object.keys(resourceDeltas).sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const resourceIds = Object.keys(resourceDeltas).sort(compareDeterministicKeys);
 
   for (const resourceId of resourceIds) {
     const delta = resourceDeltas[resourceId];

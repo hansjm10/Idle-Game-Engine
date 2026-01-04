@@ -22,13 +22,15 @@ export default function remarkLintNoAngleBrackets() {
         message.source = 'remark-lint';
         message.fatal = true;
 
-        if (node.position && match.index != null) {
+        const startPosition = node.position?.start;
+        if (startPosition && match.index != null) {
+          const startOffset = startPosition.offset;
           const start = {
-            line: node.position.start.line,
-            column: node.position.start.column + match.index,
+            line: startPosition.line,
+            column: startPosition.column + match.index,
             offset:
-              node.position.start.offset != null
-                ? node.position.start.offset + match.index
+              startOffset != null
+                ? startOffset + match.index
                 : undefined,
           };
           const end = {

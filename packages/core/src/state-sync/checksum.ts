@@ -3,6 +3,8 @@ import type { GameStateSnapshot } from './types.js';
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5;
 const FNV_PRIME_32 = 0x01000193;
 const utf8Encoder = new TextEncoder();
+const compareDeterministicKeys = (left: string, right: string): number =>
+  left.localeCompare(right, 'en');
 
 function normalizeForDeterministicJson(value: unknown): unknown {
   if (value === null || typeof value !== 'object') {
@@ -14,7 +16,7 @@ function normalizeForDeterministicJson(value: unknown): unknown {
   }
 
   const result: Record<string, unknown> = {};
-  const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
+  const keys = Object.keys(value).sort(compareDeterministicKeys);
   for (const key of keys) {
     result[key] = normalizeForDeterministicJson(
       (value as Record<string, unknown>)[key],

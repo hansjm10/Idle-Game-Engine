@@ -831,7 +831,7 @@ const buildFlagResourceLookup = (
 
   pack.achievements.forEach((achievement) => {
     const reward = achievement.reward;
-    if (!reward || reward.kind !== 'grantFlag') {
+    if (reward?.kind !== 'grantFlag') {
       return;
     }
     if (reward.value === false) {
