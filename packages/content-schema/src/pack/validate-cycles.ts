@@ -18,6 +18,7 @@ type TransformConversion = {
 };
 
 const PROFIT_EPSILON = 1e-8;
+const compareIds = (left: string, right: string) => left.localeCompare(right);
 
 /**
  * Normalizes a cycle path to its canonical form for deduplication.
@@ -404,7 +405,9 @@ export const validateTransformCycles = (
       }
     }
 
-    const resourceList = Array.from(involvedResources).sort().join(', ');
+    const resourceList = Array.from(involvedResources)
+      .sort(compareIds)
+      .join(', ');
     const resourceContext = involvedResources.size > 0
       ? ` (involves resources: ${resourceList})`
       : '';
@@ -665,7 +668,9 @@ export const validateUnlockConditionCycles = (
       }
     });
 
-    const typeList = Array.from(involvedTypes).sort().join(', ');
+    const typeList = Array.from(involvedTypes)
+      .sort(compareIds)
+      .join(', ');
     const typeContext = involvedTypes.size > 0
       ? ` (involves ${involvedTypes.size === 1 ? typeList : `entity types: ${typeList}`})`
       : '';

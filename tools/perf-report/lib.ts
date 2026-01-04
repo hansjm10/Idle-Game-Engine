@@ -43,7 +43,8 @@ export async function collectBenchmarkArtifacts(): Promise<BenchmarkArtifact[]> 
   }
 
   const artifacts = [];
-  for (const filePath of files.sort()) {
+  const sortedFiles = [...files].sort((a, b) => a.localeCompare(b));
+  for (const filePath of sortedFiles) {
     const raw = JSON.parse(await fs.readFile(filePath, 'utf8'));
     const payload = parseBenchmarkPayload(raw, filePath);
     const packageName = derivePackageName(filePath);

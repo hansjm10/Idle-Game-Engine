@@ -132,37 +132,7 @@ if (affectedPackages.size === 0) {
   process.exit(0);
 }
 
-const nonVitestPackages = new Set();
-const vitestPackages = [];
-const otherPackages = [];
-
-for (const pkg of affectedPackages) {
-  if (nonVitestPackages.has(pkg)) {
-    otherPackages.push(pkg);
-  } else {
-    vitestPackages.push(pkg);
-  }
-}
-
-const runPackages = (packages, extraArgs = [], labelSuffix = '') => {
-  if (packages.length === 0) {
-    return;
-  }
-
-  const filterArgs = [];
-  for (const pkg of packages) {
-    filterArgs.push('--filter', pkg);
-  }
-
-  const command = ['pnpm', ...filterArgs, 'run', '--if-present', 'test:ci'];
-  if (extraArgs.length > 0) {
-    command.push('--', ...extraArgs);
-  }
-
-  const label = labelSuffix ? ` ${labelSuffix}` : '';
-  console.log(`test:fast: running ${packages.join(', ')}${label}.`);
-  execSync(command.join(' '), { stdio: 'inherit' });
-};
+const vitestPackages = [...affectedPackages];
 
 const runVitestPackages = (packages) => {
   for (const pkg of packages) {
@@ -180,4 +150,3 @@ const runVitestPackages = (packages) => {
 };
 
 runVitestPackages(vitestPackages);
-runPackages(otherPackages);

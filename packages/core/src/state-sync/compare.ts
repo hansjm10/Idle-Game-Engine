@@ -221,7 +221,7 @@ const normalizeForComparison = (value: unknown): unknown => {
   }
 
   const result: Record<string, unknown> = {};
-  const keys = Object.keys(value).sort();
+  const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
   for (const key of keys) {
     result[key] = normalizeForComparison(
       (value as Record<string, unknown>)[key],
@@ -289,7 +289,7 @@ const collectSortedIds = (
   for (const id of remoteIds) {
     ids.add(id);
   }
-  return Array.from(ids).sort();
+  return Array.from(ids).sort((a, b) => a.localeCompare(b));
 };
 
 const buildIndexById = (ids: readonly string[]): Map<string, number> => {

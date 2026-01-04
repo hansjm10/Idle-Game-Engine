@@ -545,7 +545,7 @@ function normalizeForDeterministicJson(value: unknown): unknown {
   }
 
   const result: Record<string, unknown> = {};
-  const keys = Object.keys(value).sort();
+  const keys = Object.keys(value).sort((a, b) => a.localeCompare(b));
   for (const key of keys) {
     result[key] = normalizeForDeterministicJson(
       (value as Record<string, unknown>)[key],
