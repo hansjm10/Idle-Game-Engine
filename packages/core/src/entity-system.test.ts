@@ -273,4 +273,75 @@ describe('EntitySystem', () => {
     expect(state?.count).toBe(1);
     expect(system.getInstancesForEntity('entity.builder')).toHaveLength(1);
   });
+
+  it('falls back to deterministic ids when rng collisions persist', () => {
+    const definition = createEntityDefinition('entity.builder', {
+      trackInstances: true,
+    });
+    const rng = { nextInt: () => 0 };
+    const system = new EntitySystem([definition], rng);
+
+    const first = system.createInstance('entity.builder', 0);
+    const second = system.createInstance('entity.builder', 0);
+
+    expect(first.instanceId).toBe('entity.builder_0_000000');
+    expect(second.instanceId).toBe('entity.builder_0_000001');
+  });
+
+  it('throws when removing more instances than available', () => {
+    const definition = createEntityDefinition('entity.scout', {
+      trackInstances: true,
+    });
+    const rng = { nextInt: () => 1 };
+    const system = new EntitySystem([definition], rng);
+
+    const first = system.createInstance('entity.scout', 0);
+    system.createInstance('entity.scout', 0);
+    system.assignToMission(first.instanceId, {
+      missionId: 'mission.alpha',
+      batchId: 'batch.1',
+      deployedAtStep: 0,
+      returnStep: 2,
+    });
+
+    expect(() => system.removeEntity('entity.scout', 2)).toThrow(
+      'Entity "entity.scout" lacks 2 available instances.',
+    );
+  });
+
+  it('rejects assignments with return steps before deployment', () => {
+    const definition = createEntityDefinition('entity.ranger', {
+      trackInstances: true,
+    });
+    const system = new EntitySystem([definition], { nextInt: () => 1 });
+    const instance = system.createInstance('entity.ranger', 3);
+
+    expect(() =>
+      system.assignToMission(instance.instanceId, {
+        missionId: 'mission.alpha',
+        batchId: 'batch.1',
+        deployedAtStep: 3,
+        returnStep: 2,
+      }),
+    ).toThrow('Assignment returnStep must be >= deployedAtStep.');
+  });
+
+  it('retains experience when level formula is non-positive', () => {
+    const definition = createEntityDefinition('entity.mage', {
+      trackInstances: true,
+      progression: {
+        experienceResource: 'resource.exp',
+        levelFormula: literal(0),
+        statGrowth: {},
+      },
+    });
+    const system = new EntitySystem([definition], { nextInt: () => 1 });
+
+    const instance = system.createInstance('entity.mage', 0);
+    system.addExperience(instance.instanceId, 12, 0);
+
+    const updated = system.getInstanceState(instance.instanceId)!;
+    expect(updated.level).toBe(1);
+    expect(updated.experience).toBe(12);
+  });
 });

@@ -14,6 +14,13 @@ import type {
   CommandHandlerResult,
   ExecutionContext,
 } from './command-dispatcher.js';
+import {
+  validateField,
+  validateNonEmptyString,
+  validatePositiveInteger,
+  validatePositiveNumber,
+  type ValidationError,
+} from './command-validation.js';
 import type { EntityAssignment, EntitySystem } from './entity-system.js';
 import { telemetry } from './telemetry.js';
 
@@ -423,90 +430,6 @@ const createAddEntityExperienceHandler = (
       };
     }
   };
-
-type ValidationError = Readonly<{
-  code: string;
-  message: string;
-}>;
-
-const recordValidationError = (
-  eventName: string,
-  context: ExecutionContext,
-  details: Record<string, unknown>,
-): void => {
-  telemetry.recordError(eventName, {
-    ...details,
-    step: context.step,
-    priority: context.priority,
-  });
-};
-
-const createValidationFailure = (
-  error: ValidationError,
-): CommandHandlerResult => ({
-  success: false,
-  error,
-});
-
-const validateField = (
-  isValid: boolean,
-  context: ExecutionContext,
-  eventName: string,
-  details: Record<string, unknown>,
-  error: ValidationError,
-): CommandHandlerResult | undefined => {
-  if (isValid) {
-    return undefined;
-  }
-
-  recordValidationError(eventName, context, details);
-  return createValidationFailure(error);
-};
-
-const validateNonEmptyString = (
-  value: unknown,
-  context: ExecutionContext,
-  eventName: string,
-  details: Record<string, unknown>,
-  error: ValidationError,
-): CommandHandlerResult | undefined =>
-  validateField(
-    typeof value === 'string' && value.trim().length > 0,
-    context,
-    eventName,
-    details,
-    error,
-  );
-
-const validatePositiveInteger = (
-  value: unknown,
-  context: ExecutionContext,
-  eventName: string,
-  details: Record<string, unknown>,
-  error: ValidationError,
-): CommandHandlerResult | undefined =>
-  validateField(
-    Number.isInteger(value) && (value as number) > 0,
-    context,
-    eventName,
-    details,
-    error,
-  );
-
-const validatePositiveNumber = (
-  value: unknown,
-  context: ExecutionContext,
-  eventName: string,
-  details: Record<string, unknown>,
-  error: ValidationError,
-): CommandHandlerResult | undefined =>
-  validateField(
-    typeof value === 'number' && Number.isFinite(value) && value > 0,
-    context,
-    eventName,
-    details,
-    error,
-  );
 
 const validateReturnStep = (
   value: number,

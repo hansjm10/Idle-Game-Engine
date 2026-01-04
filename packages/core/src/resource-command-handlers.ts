@@ -12,6 +12,10 @@ import type { EventPublisher } from './events/event-bus.js';
 import type { PrestigeSystemEvaluator } from './progression.js';
 import type { ResourceState, ResourceSpendAttemptContext } from './resource-state.js';
 import { telemetry } from './telemetry.js';
+import {
+  validateBoolean,
+  validateNonEmptyString,
+} from './command-validation.js';
 
 export interface GeneratorResourceCost {
   readonly resourceId: string;
@@ -148,35 +152,35 @@ function createToggleGeneratorHandler(
   generatorToggles: GeneratorToggleEvaluator | undefined,
 ): CommandHandler<ToggleGeneratorPayload> {
   return (payload, context) => {
-    if (typeof payload.generatorId !== 'string' || payload.generatorId.trim().length === 0) {
-      telemetry.recordError('ToggleGeneratorInvalidId', {
-        generatorId: payload.generatorId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_GENERATOR_ID',
-          message: 'Generator id must be a non-empty string.',
-        },
-      };
+    const invalidGeneratorId = validateNonEmptyString(
+      payload.generatorId,
+      context,
+      'ToggleGeneratorInvalidId',
+      { generatorId: payload.generatorId },
+      {
+        code: 'INVALID_GENERATOR_ID',
+        message: 'Generator id must be a non-empty string.',
+      },
+    );
+    if (invalidGeneratorId) {
+      return invalidGeneratorId;
     }
 
-    if (typeof payload.enabled !== 'boolean') {
-      telemetry.recordError('ToggleGeneratorInvalidEnabled', {
+    const invalidEnabled = validateBoolean(
+      payload.enabled,
+      context,
+      'ToggleGeneratorInvalidEnabled',
+      {
         generatorId: payload.generatorId,
         enabled: payload.enabled,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_TOGGLE_STATE',
-          message: 'Generator enabled flag must be a boolean.',
-        },
-      };
+      },
+      {
+        code: 'INVALID_TOGGLE_STATE',
+        message: 'Generator enabled flag must be a boolean.',
+      },
+    );
+    if (invalidEnabled) {
+      return invalidEnabled;
     }
 
     if (!generatorToggles) {
@@ -405,22 +409,18 @@ function createPurchaseUpgradeHandler(
   const { automationSystemId } = options;
 
   return (payload, context) => {
-    if (
-      typeof payload.upgradeId !== 'string' ||
-      payload.upgradeId.trim().length === 0
-    ) {
-      telemetry.recordError('UpgradePurchaseInvalidId', {
-        upgradeId: payload.upgradeId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_UPGRADE_ID',
-          message: 'Upgrade id must be a non-empty string.',
-        },
-      };
+    const invalidUpgradeId = validateNonEmptyString(
+      payload.upgradeId,
+      context,
+      'UpgradePurchaseInvalidId',
+      { upgradeId: payload.upgradeId },
+      {
+        code: 'INVALID_UPGRADE_ID',
+        message: 'Upgrade id must be a non-empty string.',
+      },
+    );
+    if (invalidUpgradeId) {
+      return invalidUpgradeId;
     }
 
     const upgradeId = payload.upgradeId.trim();
@@ -607,22 +607,18 @@ function createPrestigeResetHandler(
   prestigeSystem: PrestigeSystemEvaluator,
 ): CommandHandler<PrestigeResetPayload> {
   return (payload, context) => {
-    if (
-      typeof payload.layerId !== 'string' ||
-      payload.layerId.trim().length === 0
-    ) {
-      telemetry.recordError('PrestigeResetInvalidLayer', {
-        layerId: payload.layerId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_PRESTIGE_LAYER',
-          message: 'Prestige layer id must be a non-empty string.',
-        },
-      };
+    const invalidLayerId = validateNonEmptyString(
+      payload.layerId,
+      context,
+      'PrestigeResetInvalidLayer',
+      { layerId: payload.layerId },
+      {
+        code: 'INVALID_PRESTIGE_LAYER',
+        message: 'Prestige layer id must be a non-empty string.',
+      },
+    );
+    if (invalidLayerId) {
+      return invalidLayerId;
     }
 
     const layerId = payload.layerId.trim();

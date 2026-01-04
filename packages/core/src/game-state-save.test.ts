@@ -21,6 +21,7 @@ import {
   hydrateGameStateSaveFormat,
   loadGameStateSaveFormat,
   serializeGameStateSaveFormat,
+  type SchemaMigration,
 } from './game-state-save.js';
 import { IdleEngineRuntime } from './index.js';
 import { createProductionSystem } from './production-system.js';
@@ -432,5 +433,63 @@ describe('game-state-save', () => {
     expect(() => loadGameStateSaveFormat({})).toThrow(
       'Unable to determine game state save version.',
     );
+  });
+
+  it('rejects saves without a migration path', () => {
+    const save = createSerializedSave(0);
+    const unsupported = { ...save, version: 2 };
+
+    expect(() =>
+      loadGameStateSaveFormat(unsupported, {
+        migrations: [],
+      }),
+    ).toThrow(/No migration path/);
+  });
+
+  it('rejects migrations that do not update the save version', () => {
+    const save = createSerializedSave(0);
+    const migrations: SchemaMigration[] = [
+      {
+        fromVersion: 1,
+        toVersion: 2,
+        migrate: (value) => value,
+      },
+    ];
+
+    expect(() =>
+      loadGameStateSaveFormat(save, {
+        targetVersion: 2,
+        migrations,
+      }),
+    ).toThrow(/did not set the expected version/);
+  });
+
+  it('rejects empty or non-Uint8Array save payloads', async () => {
+    await expect(decodeGameStateSave(new Uint8Array())).rejects.toThrow(
+      'Encoded save must be a non-empty Uint8Array.',
+    );
+
+    await expect(
+      decodeGameStateSave('invalid' as unknown as Uint8Array),
+    ).rejects.toThrow('Encoded save must be a non-empty Uint8Array.');
+  });
+
+  it('skips rng seed application when disabled', () => {
+    setRNGSeed(4242);
+    const save = createSerializedSave(0);
+
+    setRNGSeed(777);
+    const coordinator = createProgressionCoordinator({
+      content: createTestContent(),
+      stepDurationMs: STEP_SIZE_MS,
+    });
+
+    hydrateGameStateSaveFormat({
+      save,
+      coordinator,
+      applyRngSeed: false,
+    });
+
+    expect(getCurrentRNGSeed()).toBe(777);
   });
 });

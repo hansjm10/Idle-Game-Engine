@@ -203,6 +203,94 @@ describe('entity command handlers', () => {
     });
   });
 
+  it('rejects non-integer entity counts', () => {
+    const definition = createEntityDefinition('entity.worker', {
+      trackInstances: false,
+    });
+    const entitySystem = new EntitySystem([definition], { nextInt: () => 1 });
+    const dispatcher = new CommandDispatcher();
+    registerEntityCommandHandlers({ dispatcher, entitySystem });
+
+    const handler = dispatcher.getHandler(RUNTIME_COMMAND_TYPES.ADD_ENTITY);
+    const result = handler?.(
+      { entityId: 'entity.worker', count: 1.5 },
+      {
+        step: 1,
+        timestamp: 1,
+        priority: CommandPriority.PLAYER,
+        events: createEventPublisher(),
+      },
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_ENTITY_COUNT',
+        message: 'Entity count must be a positive integer.',
+      },
+    });
+  });
+
+  it('rejects assign payloads with invalid mission or batch ids', () => {
+    const definition = createEntityDefinition('entity.runner', {
+      trackInstances: true,
+    });
+    const entitySystem = new EntitySystem([definition], { nextInt: () => 1 });
+    const dispatcher = new CommandDispatcher();
+    registerEntityCommandHandlers({ dispatcher, entitySystem });
+
+    const instance = entitySystem.createInstance('entity.runner', 1);
+    const handler = dispatcher.getHandler(
+      RUNTIME_COMMAND_TYPES.ASSIGN_ENTITY_TO_MISSION,
+    );
+
+    const invalidMission = handler?.(
+      {
+        instanceId: instance.instanceId,
+        missionId: ' ',
+        batchId: 'batch.1',
+        returnStep: 4,
+      },
+      {
+        step: 2,
+        timestamp: 1,
+        priority: CommandPriority.PLAYER,
+        events: createEventPublisher(),
+      },
+    );
+
+    expect(invalidMission).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_MISSION_ID',
+        message: 'Mission id must be a non-empty string.',
+      },
+    });
+
+    const invalidBatch = handler?.(
+      {
+        instanceId: instance.instanceId,
+        missionId: 'mission.alpha',
+        batchId: '',
+        returnStep: 4,
+      },
+      {
+        step: 2,
+        timestamp: 1,
+        priority: CommandPriority.PLAYER,
+        events: createEventPublisher(),
+      },
+    );
+
+    expect(invalidBatch).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_BATCH_ID',
+        message: 'Batch id must be a non-empty string.',
+      },
+    });
+  });
+
   it('returns failures when entity system operations throw', () => {
     const entitySystem = {
       addEntity: () => {

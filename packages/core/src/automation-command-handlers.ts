@@ -1,6 +1,10 @@
 import { RUNTIME_COMMAND_TYPES, type ToggleAutomationPayload } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
 import type { createAutomationSystem } from './automation-system.js';
+import {
+  validateBoolean,
+  validateNonEmptyString,
+} from './command-validation.js';
 import { telemetry } from './telemetry.js';
 
 /**
@@ -52,38 +56,35 @@ function createToggleAutomationHandler(
 ): CommandHandler<ToggleAutomationPayload> {
   return (payload, context) => {
     // Validate payload
-    if (
-      typeof payload.automationId !== 'string' ||
-      payload.automationId.trim().length === 0
-    ) {
-      telemetry.recordError('ToggleAutomationInvalidId', {
-        automationId: payload.automationId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_AUTOMATION_ID',
-          message: 'Automation id must be a non-empty string.',
-        },
-      };
+    const invalidAutomationId = validateNonEmptyString(
+      payload.automationId,
+      context,
+      'ToggleAutomationInvalidId',
+      { automationId: payload.automationId },
+      {
+        code: 'INVALID_AUTOMATION_ID',
+        message: 'Automation id must be a non-empty string.',
+      },
+    );
+    if (invalidAutomationId) {
+      return invalidAutomationId;
     }
 
-    if (typeof payload.enabled !== 'boolean') {
-      telemetry.recordError('ToggleAutomationInvalidEnabled', {
+    const invalidEnabled = validateBoolean(
+      payload.enabled,
+      context,
+      'ToggleAutomationInvalidEnabled',
+      {
         automationId: payload.automationId,
         enabled: payload.enabled,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_AUTOMATION_ENABLED',
-          message: 'Automation enabled flag must be a boolean.',
-        },
-      };
+      },
+      {
+        code: 'INVALID_AUTOMATION_ENABLED',
+        message: 'Automation enabled flag must be a boolean.',
+      },
+    );
+    if (invalidEnabled) {
+      return invalidEnabled;
     }
 
     // Get automation state
