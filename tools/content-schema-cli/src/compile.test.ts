@@ -19,7 +19,9 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, './compile.ts');
 const TSX_PATH = path.resolve(__dirname, '../../../node_modules/.bin/tsx');
-const CLI_TEST_TIMEOUT_MS = 30000;
+const CLI_TEST_TIMEOUT_MS = Number(
+  process.env.CLI_TEST_TIMEOUT_MS ?? (process.env.CI ? 60000 : 30000),
+);
 
 interface CliResult {
   code: number | null;

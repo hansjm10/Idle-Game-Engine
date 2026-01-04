@@ -43,7 +43,8 @@ export async function collectBenchmarkArtifacts(): Promise<BenchmarkArtifact[]> 
   }
 
   const artifacts = [];
-  for (const filePath of files.sort()) {
+  const sortedFiles = [...files].sort((a, b) => a.localeCompare(b));
+  for (const filePath of sortedFiles) {
     const raw = JSON.parse(await fs.readFile(filePath, 'utf8'));
     const payload = parseBenchmarkPayload(raw, filePath);
     const packageName = derivePackageName(filePath);
@@ -190,8 +191,9 @@ function renderDiagnosticTimelineOverhead(results: Record<string, unknown>): str
     const name = readString(record.name) ?? 'unknown';
     const diagnosticsEnabled = readBoolean(record.diagnosticsEnabled);
     const stats = readStats(record.stats);
-    const rme = readNumber((asRecord(record.stats) ?? {}).rmePercent);
-    const samples = readNumber((asRecord(record.stats) ?? {}).samples);
+    const statsRecord = asRecord(record.stats);
+    const rme = readNumber(statsRecord?.rmePercent);
+    const samples = readNumber(statsRecord?.samples);
 
     return formatRow([
       name,
@@ -447,53 +449,50 @@ function formatCount(value: number | null): string {
   return String(value);
 }
 
-function formatMs(value: number | null): string {
+const formatFixed = (value: number | null, digits: number): string => {
   if (value === null || !Number.isFinite(value)) {
     return 'n/a';
   }
-  return value.toFixed(4);
+  return value.toFixed(digits);
+};
+
+const formatScaled = (
+  value: number | null,
+  scale: number,
+  digits: number,
+): string => {
+  if (value === null || !Number.isFinite(value)) {
+    return 'n/a';
+  }
+  return (value / scale).toFixed(digits);
+};
+
+function formatMs(value: number | null): string {
+  return formatFixed(value, 4);
 }
 
 function formatHz(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'n/a';
-  }
-  return value.toFixed(2);
+  return formatFixed(value, 2);
 }
 
 function formatUs(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'n/a';
-  }
-  return value.toFixed(2);
+  return formatFixed(value, 2);
 }
 
 function formatKilobytes(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'n/a';
-  }
-  return (value / 1024).toFixed(2);
+  return formatScaled(value, 1024, 2);
 }
 
 function formatMegabytes(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'n/a';
-  }
-  return (value / (1024 * 1024)).toFixed(2);
+  return formatScaled(value, 1024 * 1024, 2);
 }
 
 function formatRatio(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'n/a';
-  }
-  return value.toFixed(3);
+  return formatFixed(value, 3);
 }
 
 function formatPercent(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'n/a';
-  }
-  return value.toFixed(2);
+  return formatFixed(value, 2);
 }
 
 function formatShape(shape: Record<string, unknown> | null): string {

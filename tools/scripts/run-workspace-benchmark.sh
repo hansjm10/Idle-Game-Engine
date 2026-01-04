@@ -14,6 +14,7 @@ Examples:
   pnpm benchmark --filter @idle-engine/core
   pnpm benchmark -- --help
 EOF
+  return 0
 }
 
 for arg in "$@"; do

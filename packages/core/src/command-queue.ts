@@ -815,9 +815,10 @@ function makeImmutableObject(
   seen: WeakMap<object, unknown>,
 ): Record<PropertyKey, unknown> {
   const proto = Object.getPrototypeOf(source);
+  const clonePrototype = proto === null ? null : proto;
   const clone = Array.isArray(source)
     ? []
-    : Object.create(proto === null ? null : proto);
+    : Object.create(clonePrototype);
 
   seen.set(source, clone);
 
