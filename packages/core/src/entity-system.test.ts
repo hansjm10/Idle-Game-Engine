@@ -6,11 +6,39 @@ import {
   createEntityDefinition,
   literalOne,
 } from './content-test-helpers.js';
+import type {
+  EventPublisher,
+  PublishMetadata,
+  PublishResult,
+} from './events/event-bus.js';
+import type {
+  RuntimeEventPayload,
+  RuntimeEventType,
+} from './events/runtime-event.js';
 import { EntitySystem, type EntityAssignment } from './entity-system.js';
 
 const literal = (value: number): NumericFormula => ({
   kind: 'constant',
   value,
+});
+
+const createEventPublisher = (): EventPublisher => ({
+  publish<TType extends RuntimeEventType>(
+    eventType: TType,
+    _payload: RuntimeEventPayload<TType>,
+    _metadata?: PublishMetadata,
+  ): PublishResult<TType> {
+    return {
+      accepted: true,
+      state: 'accepted',
+      type: eventType,
+      channel: 0,
+      bufferSize: 0,
+      remainingCapacity: 0,
+      dispatchOrder: 0,
+      softLimitActive: false,
+    };
+  },
 });
 
 describe('EntitySystem', () => {
@@ -133,5 +161,116 @@ describe('EntitySystem', () => {
     const restoredInstance = restored.getInstanceState(instance.instanceId)!;
     expect(restoredInstance.assignment?.deployedAtStep).toBe(5);
     expect(restoredInstance.assignment?.returnStep).toBe(7);
+  });
+
+  it('updates visibility, unlocks entities, and returns assignments on tick', () => {
+    const definition = createEntityDefinition('entity.scout', {
+      trackInstances: true,
+      visible: false,
+      unlocked: false,
+      unlockCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy' as any,
+        comparator: 'gte',
+        amount: literal(1),
+      },
+      visibilityCondition: {
+        kind: 'resourceThreshold',
+        resourceId: 'resource.energy' as any,
+        comparator: 'gte',
+        amount: literal(2),
+      },
+      stats: ([
+        {
+          id: 'stat.range',
+          name: { default: 'Range', variants: {} },
+          baseValue: literalOne,
+        },
+      ] as unknown as NormalizedEntity['stats']),
+    });
+    const conditionContext = {
+      getResourceAmount: () => 5,
+      getGeneratorLevel: () => 0,
+      getUpgradePurchases: () => 0,
+    };
+    const system = new EntitySystem(
+      [definition],
+      { nextInt: () => 1 },
+      { conditionContext },
+    );
+
+    const instance = system.createInstance('entity.scout', 0);
+    system.assignToMission(instance.instanceId, {
+      missionId: 'mission.alpha',
+      batchId: 'batch.1',
+      deployedAtStep: 0,
+      returnStep: 1,
+    });
+
+    expect(system.getEntityState('entity.scout')?.availableCount).toBe(0);
+
+    system.tick({ step: 1, deltaMs: 100, events: createEventPublisher() });
+
+    const state = system.getEntityState('entity.scout');
+    expect(state?.visible).toBe(true);
+    expect(state?.unlocked).toBe(true);
+    expect(state?.availableCount).toBe(1);
+    expect(system.getInstanceState(instance.instanceId)?.assignment).toBeNull();
+  });
+
+  it('rebuilds entity instance lists when restoring legacy state', () => {
+    const definition = createEntityDefinition('entity.medic', {
+      trackInstances: true,
+      stats: ([
+        {
+          id: 'stat.heal',
+          name: { default: 'Heal', variants: {} },
+          baseValue: literalOne,
+        },
+      ] as unknown as NormalizedEntity['stats']),
+    });
+    const system = new EntitySystem([definition], { nextInt: () => 7 });
+    const instance = system.createInstance('entity.medic', 0);
+    system.assignToMission(instance.instanceId, {
+      missionId: 'mission.delta',
+      batchId: 'batch.9',
+      deployedAtStep: 2,
+      returnStep: 5,
+    });
+
+    const serialized = system.exportForSave();
+    const legacySerialized = {
+      ...serialized,
+      entityInstances: [],
+    };
+
+    const restored = new EntitySystem([definition], { nextInt: () => 7 });
+    restored.restoreState(legacySerialized);
+
+    const restoredState = restored.getEntityState('entity.medic');
+    expect(restoredState?.count).toBe(1);
+    expect(restoredState?.availableCount).toBe(0);
+    expect(restored.getInstancesForEntity('entity.medic')).toHaveLength(1);
+  });
+
+  it('applies max count when initializing instance-tracked entities', () => {
+    const definition = createEntityDefinition('entity.builder', {
+      trackInstances: true,
+      startCount: 3,
+      maxCount: literal(1),
+      stats: ([
+        {
+          id: 'stat.build',
+          name: { default: 'Build', variants: {} },
+          baseValue: literalOne,
+        },
+      ] as unknown as NormalizedEntity['stats']),
+    });
+
+    const system = new EntitySystem([definition], { nextInt: () => 4 });
+    const state = system.getEntityState('entity.builder');
+
+    expect(state?.count).toBe(1);
+    expect(system.getInstancesForEntity('entity.builder')).toHaveLength(1);
   });
 });

@@ -184,6 +184,19 @@ function createHarness(initialStep = 0) {
   };
 }
 
+function createSerializedSave(savedAt = 0) {
+  const harness = createHarness(0);
+  return serializeGameStateSaveFormat({
+    runtimeStep: 0,
+    savedAt,
+    coordinator: harness.coordinator,
+    productionSystem: harness.productionSystem,
+    automationState: harness.automationSystem.getState(),
+    transformState: harness.transformSystem.getState(),
+    commandQueue: harness.commandQueue,
+  });
+}
+
 function advanceSteps(
   runtime: IdleEngineRuntime,
   coordinator: ReturnType<typeof createProgressionCoordinator>,
@@ -387,6 +400,37 @@ describe('game-state-save', () => {
 
     await expect(decodeGameStateSave(encoded)).rejects.toThrow(
       /Unsupported save compression header/,
+    );
+  });
+
+  it('rejects saves with invalid timestamps', () => {
+    const save = createSerializedSave(5);
+
+    expect(() => loadGameStateSaveFormat({ ...save, savedAt: -1 })).toThrow(
+      'Save data has an invalid savedAt timestamp.',
+    );
+  });
+
+  it('requires core save fields when loading', () => {
+    const save = createSerializedSave(5);
+    const { resources: _resources, ...missingResources } = save as any;
+    const { progression: _progression, ...missingProgression } = save as any;
+    const { commandQueue: _commandQueue, ...missingCommandQueue } = save as any;
+
+    expect(() => loadGameStateSaveFormat(missingResources)).toThrow(
+      'Save data is missing resources.',
+    );
+    expect(() => loadGameStateSaveFormat(missingProgression)).toThrow(
+      'Save data is missing progression state.',
+    );
+    expect(() => loadGameStateSaveFormat(missingCommandQueue)).toThrow(
+      'Save data is missing command queue state.',
+    );
+  });
+
+  it('rejects saves without a detectable version', () => {
+    expect(() => loadGameStateSaveFormat({})).toThrow(
+      'Unable to determine game state save version.',
     );
   });
 });
