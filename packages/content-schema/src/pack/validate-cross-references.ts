@@ -44,6 +44,54 @@ type TransformTriggerByKind<K extends TransformTrigger['kind']> = Extract<
   TransformTrigger,
   { kind: K }
 >;
+type TransformEntityRequirement = NonNullable<
+  ParsedContentPack['transforms'][number]['entityRequirements']
+>[number];
+
+type IndexEntry<Value> = { readonly index: number; readonly value: Value };
+type IndexMap<Value> = Map<string, IndexEntry<Value>>;
+
+type FormulaReferenceMaps = {
+  resources: IndexMap<ParsedContentPack['resources'][number]>;
+  generators: IndexMap<ParsedContentPack['generators'][number]>;
+  upgrades: IndexMap<ParsedContentPack['upgrades'][number]>;
+  automations: IndexMap<ParsedContentPack['automations'][number]>;
+  prestigeLayers: IndexMap<ParsedContentPack['prestigeLayers'][number]>;
+};
+
+type ReferenceIndexes = {
+  resources: IndexMap<ParsedContentPack['resources'][number]>;
+  entities: IndexMap<ParsedContentPack['entities'][number]>;
+  generators: IndexMap<ParsedContentPack['generators'][number]>;
+  upgrades: IndexMap<ParsedContentPack['upgrades'][number]>;
+  metrics: IndexMap<ParsedContentPack['metrics'][number]>;
+  achievements: IndexMap<ParsedContentPack['achievements'][number]>;
+  automations: IndexMap<ParsedContentPack['automations'][number]>;
+  transforms: IndexMap<ParsedContentPack['transforms'][number]>;
+  prestigeLayers: IndexMap<ParsedContentPack['prestigeLayers'][number]>;
+};
+
+type CrossReferenceState = {
+  pack: ParsedContentPack;
+  ctx: z.RefinementCtx;
+  context: CrossReferenceContext;
+  indexes: ReferenceIndexes;
+  formulaMaps: FormulaReferenceMaps;
+  knownRuntimeEvents: Set<string>;
+  runtimeEventSeverity: 'error' | 'warning';
+  warn: (warning: ContentSchemaWarning) => void;
+  ensureContentReference: (
+    map: IndexMap<unknown>,
+    id: string,
+    path: readonly (string | number)[],
+    message: string,
+  ) => void;
+  ensureRuntimeEventKnown: (
+    id: string,
+    path: readonly (string | number)[],
+    severity: 'error' | 'warning',
+  ) => void;
+};
 
 const assertAllowlisted = (
   spec: NormalizedAllowlistSpec | undefined,
@@ -137,8 +185,8 @@ const collectFormulaEntityReferences = (
 
 const getIndexMap = <Value extends { readonly id: string }>(
   values: readonly Value[],
-): Map<string, { readonly index: number; readonly value: Value }> => {
-  const indexMap = new Map<string, { readonly index: number; readonly value: Value }>();
+): IndexMap<Value> => {
+  const indexMap: IndexMap<Value> = new Map();
   values.forEach((value, index) => {
     indexMap.set(value.id, { index, value });
   });
@@ -149,11 +197,11 @@ const ensureFormulaReference = (
   reference: { readonly type: string; readonly id: string },
   path: readonly (string | number)[],
   ctx: z.RefinementCtx,
-  resources: Map<string, { index: number }>,
-  generators: Map<string, { index: number }>,
-  upgrades: Map<string, { index: number }>,
-  automations: Map<string, { index: number }>,
-  prestigeLayers: Map<string, { index: number }>,
+  resources: IndexMap<ParsedContentPack['resources'][number]>,
+  generators: IndexMap<ParsedContentPack['generators'][number]>,
+  upgrades: IndexMap<ParsedContentPack['upgrades'][number]>,
+  automations: IndexMap<ParsedContentPack['automations'][number]>,
+  prestigeLayers: IndexMap<ParsedContentPack['prestigeLayers'][number]>,
 ) => {
   switch (reference.type) {
     case 'resource':
@@ -210,22 +258,18 @@ const ensureFormulaReferencesAtPath = (
   formula: NumericFormula,
   path: readonly (string | number)[],
   ctx: z.RefinementCtx,
-  resources: Map<string, { index: number }>,
-  generators: Map<string, { index: number }>,
-  upgrades: Map<string, { index: number }>,
-  automations: Map<string, { index: number }>,
-  prestigeLayers: Map<string, { index: number }>,
+  maps: FormulaReferenceMaps,
 ): void => {
   collectFormulaEntityReferences(formula, (reference) => {
     ensureFormulaReference(
       reference,
       path,
       ctx,
-      resources,
-      generators,
-      upgrades,
-      automations,
-      prestigeLayers,
+      maps.resources,
+      maps.generators,
+      maps.upgrades,
+      maps.automations,
+      maps.prestigeLayers,
     );
   });
 };
@@ -235,15 +279,22 @@ const validateUpgradeEffect = (
   path: readonly (string | number)[],
   ctx: z.RefinementCtx,
   context: CrossReferenceContext,
-  resources: Map<string, { index: number }>,
-  generators: Map<string, { index: number }>,
-  upgrades: Map<string, { index: number }>,
-  automations: Map<string, { index: number }>,
-  prestigeLayers: Map<string, { index: number }>,
+  resources: IndexMap<ParsedContentPack['resources'][number]>,
+  generators: IndexMap<ParsedContentPack['generators'][number]>,
+  upgrades: IndexMap<ParsedContentPack['upgrades'][number]>,
+  automations: IndexMap<ParsedContentPack['automations'][number]>,
+  prestigeLayers: IndexMap<ParsedContentPack['prestigeLayers'][number]>,
   runtimeEvents: ReadonlySet<string>,
 ) => {
+  const formulaReferenceMaps: FormulaReferenceMaps = {
+    resources,
+    generators,
+    upgrades,
+    automations,
+    prestigeLayers,
+  };
   const ensureReference = (
-    map: Map<string, { index: number }>,
+    map: IndexMap<unknown>,
     id: string,
     message: string,
   ) => {
@@ -257,18 +308,7 @@ const validateUpgradeEffect = (
   };
 
   const ensureFormulaReferences = (formula: NumericFormula) => {
-    collectFormulaEntityReferences(formula, (reference) => {
-      ensureFormulaReference(
-        reference,
-        path,
-        ctx,
-        resources,
-        generators,
-        upgrades,
-        automations,
-        prestigeLayers,
-      );
-    });
+    ensureFormulaReferencesAtPath(formula, path, ctx, formulaReferenceMaps);
   };
 
   const handlers = {
@@ -383,16 +423,17 @@ const validateConditionNode = (
   path: readonly (string | number)[],
   ctx: z.RefinementCtx,
   context: CrossReferenceContext,
-  resources: Map<string, { index: number }>,
-  generators: Map<string, { index: number }>,
-  upgrades: Map<string, { index: number }>,
-  prestigeLayers: Map<string, { index: number }>,
+  resources: IndexMap<ParsedContentPack['resources'][number]>,
+  generators: IndexMap<ParsedContentPack['generators'][number]>,
+  upgrades: IndexMap<ParsedContentPack['upgrades'][number]>,
+  prestigeLayers: IndexMap<ParsedContentPack['prestigeLayers'][number]>,
 ) => {
   if (!condition) {
     return;
   }
 
-  const emptyAutomationIndex = new Map<string, { index: number }>();
+  const emptyAutomationIndex: IndexMap<ParsedContentPack['automations'][number]> =
+    new Map();
 
   const ensureConditionFormulaReferences = (
     formula: NumericFormula,
@@ -560,135 +601,15 @@ const validateConditionNode = (
   visit(condition, path);
 };
 
-export const validateCrossReferences = (
-  pack: ParsedContentPack,
-  ctx: z.RefinementCtx,
-  context: CrossReferenceContext,
-) => {
-  const resourceIndex = getIndexMap(pack.resources);
-  const entityIndex = getIndexMap(pack.entities);
-  const generatorIndex = getIndexMap(pack.generators);
-  const upgradeIndex = getIndexMap(pack.upgrades);
-  const metricIndex = getIndexMap(pack.metrics);
-  const achievementIndex = getIndexMap(pack.achievements);
-  const automationIndex = getIndexMap(pack.automations);
-  const transformIndex = getIndexMap(pack.transforms);
-  const prestigeIndex = getIndexMap(pack.prestigeLayers);
-  const knownRuntimeEvents = new Set<string>(context.runtimeEventCatalogue);
-  pack.runtimeEvents.forEach((event) => {
-    knownRuntimeEvents.add(event.id);
-  });
-
-  const warn = context.warningSink;
-
-  const ensureRuntimeEventKnown = (
-    id: string,
-    path: readonly (string | number)[],
-    severity: 'error' | 'warning',
-  ) => {
-    if (knownRuntimeEvents.has(id)) {
-      return;
-    }
-    if (severity === 'warning') {
-      warn({
-        code: 'runtimeEvent.unknown',
-        message: `Runtime event "${id}" is not present in the known catalogue.`,
-        path: toMutablePath(path),
-        severity,
-      });
-      return;
-    }
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: toMutablePath(path),
-      message: `Runtime event "${id}" must exist in the known event catalogue.`,
-    });
-  };
-
-  const ensureContentReference = (
-    map: Map<string, { index: number }>,
-    id: string,
-    path: readonly (string | number)[],
-    message: string,
-  ) => {
-    if (map.has(id)) {
-      return;
-    }
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: toMutablePath(path),
-      message,
-    });
-  };
-
-  const runtimeEventSeverity: 'error' | 'warning' =
-    context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning';
-
-  const runtimeEventEmitterHandlers = {
-    achievement: (
-      emitter: RuntimeEventEmitterBySource<'achievement'>,
-      path: readonly (string | number)[],
-    ) => {
-      ensureContentReference(
-        achievementIndex,
-        emitter.id,
-        path,
-        `Runtime event emitter references unknown achievement "${emitter.id}".`,
-      );
-    },
-    upgrade: (
-      emitter: RuntimeEventEmitterBySource<'upgrade'>,
-      path: readonly (string | number)[],
-    ) => {
-      ensureContentReference(
-        upgradeIndex,
-        emitter.id,
-        path,
-        `Runtime event emitter references unknown upgrade "${emitter.id}".`,
-      );
-    },
-    transform: (
-      emitter: RuntimeEventEmitterBySource<'transform'>,
-      path: readonly (string | number)[],
-    ) => {
-      ensureContentReference(
-        transformIndex,
-        emitter.id,
-        path,
-        `Runtime event emitter references unknown transform "${emitter.id}".`,
-      );
-    },
-    script: (
-      emitter: RuntimeEventEmitterBySource<'script'>,
-      path: readonly (string | number)[],
-    ) => {
-      assertAllowlisted(
-        context.allowlists.scripts,
-        emitter.id,
-        path,
-        ctx,
-        warn,
-        'allowlist.script.missing',
-        `Script "${emitter.id}" is not declared in the scripts allowlist.`,
-      );
-    },
-  } satisfies {
-    [K in RuntimeEventEmitter['source']]: (
-      emitter: RuntimeEventEmitterBySource<K>,
-      path: readonly (string | number)[],
-    ) => void;
-  };
-
-  const handleRuntimeEventEmitter = (
-    emitter: RuntimeEventEmitter,
-    path: readonly (string | number)[],
-  ) => {
-    const handler = runtimeEventEmitterHandlers[emitter.source] as (
-      entry: RuntimeEventEmitter,
-      currentPath: readonly (string | number)[],
-    ) => void;
-    handler(emitter, path);
-  };
+const validateResources = (state: CrossReferenceState) => {
+  const { pack, ctx, context, indexes, ensureContentReference } = state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
 
   pack.resources.forEach((resource, index) => {
     if (resource.unlockCondition) {
@@ -741,6 +662,17 @@ export const validateCrossReferences = (
       }
     }
   });
+};
+
+const validateEntities = (state: CrossReferenceState) => {
+  const { pack, ctx, context, indexes, ensureContentReference } = state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
 
   pack.entities.forEach((entity, index) => {
     entity.stats.forEach((stat, statIndex) => {
@@ -871,6 +803,81 @@ export const validateCrossReferences = (
       );
     }
   });
+};
+
+const validateRuntimeEvents = (state: CrossReferenceState) => {
+  const { pack, ctx, context, indexes, ensureContentReference, warn } = state;
+  const {
+    achievements: achievementIndex,
+    upgrades: upgradeIndex,
+    transforms: transformIndex,
+  } = indexes;
+
+  const runtimeEventEmitterHandlers = {
+    achievement: (
+      emitter: RuntimeEventEmitterBySource<'achievement'>,
+      path: readonly (string | number)[],
+    ) => {
+      ensureContentReference(
+        achievementIndex,
+        emitter.id,
+        path,
+        `Runtime event emitter references unknown achievement "${emitter.id}".`,
+      );
+    },
+    upgrade: (
+      emitter: RuntimeEventEmitterBySource<'upgrade'>,
+      path: readonly (string | number)[],
+    ) => {
+      ensureContentReference(
+        upgradeIndex,
+        emitter.id,
+        path,
+        `Runtime event emitter references unknown upgrade "${emitter.id}".`,
+      );
+    },
+    transform: (
+      emitter: RuntimeEventEmitterBySource<'transform'>,
+      path: readonly (string | number)[],
+    ) => {
+      ensureContentReference(
+        transformIndex,
+        emitter.id,
+        path,
+        `Runtime event emitter references unknown transform "${emitter.id}".`,
+      );
+    },
+    script: (
+      emitter: RuntimeEventEmitterBySource<'script'>,
+      path: readonly (string | number)[],
+    ) => {
+      assertAllowlisted(
+        context.allowlists.scripts,
+        emitter.id,
+        path,
+        ctx,
+        warn,
+        'allowlist.script.missing',
+        `Script "${emitter.id}" is not declared in the scripts allowlist.`,
+      );
+    },
+  } satisfies {
+    [K in RuntimeEventEmitter['source']]: (
+      emitter: RuntimeEventEmitterBySource<K>,
+      path: readonly (string | number)[],
+    ) => void;
+  };
+
+  const handleRuntimeEventEmitter = (
+    emitter: RuntimeEventEmitter,
+    path: readonly (string | number)[],
+  ) => {
+    const handler = runtimeEventEmitterHandlers[emitter.source] as (
+      entry: RuntimeEventEmitter,
+      currentPath: readonly (string | number)[],
+    ) => void;
+    handler(emitter, path);
+  };
 
   pack.runtimeEvents.forEach((event, index) => {
     if (context.runtimeEventCatalogue.has(event.id)) {
@@ -888,6 +895,18 @@ export const validateCrossReferences = (
       );
     });
   });
+};
+
+const validateGenerators = (state: CrossReferenceState) => {
+  const { pack, ctx, context, indexes, ensureContentReference, knownRuntimeEvents } =
+    state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
 
   pack.generators.forEach((generator, index) => {
     generator.produces.forEach((entry, produceIndex) => {
@@ -1018,6 +1037,18 @@ export const validateCrossReferences = (
       );
     });
   });
+};
+
+const validateUpgrades = (state: CrossReferenceState) => {
+  const { pack, ctx, context, indexes, ensureContentReference, knownRuntimeEvents } =
+    state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
 
   const upgradeTargetHandlers = {
     resource: (
@@ -1190,6 +1221,10 @@ export const validateCrossReferences = (
       );
     }
   });
+};
+
+const validateMetrics = (state: CrossReferenceState) => {
+  const { pack, ctx, context, warn } = state;
 
   pack.metrics.forEach((metric, index) => {
     if (metric.source.kind === 'script') {
@@ -1204,6 +1239,27 @@ export const validateCrossReferences = (
       );
     }
   });
+};
+
+const validateAchievements = (state: CrossReferenceState) => {
+  const {
+    pack,
+    ctx,
+    context,
+    indexes,
+    ensureContentReference,
+    ensureRuntimeEventKnown,
+    runtimeEventSeverity,
+  } = state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    metrics: metricIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
+  const warn = context.warningSink;
 
   const ensureAchievementFormulaReferences = (
     formula: NumericFormula,
@@ -1467,190 +1523,231 @@ export const validateCrossReferences = (
       );
     });
   });
+};
 
-  pack.automations.forEach((automation, index) => {
-    if (
-      automation.targetType === 'generator' ||
-      automation.targetType === 'purchaseGenerator'
-    ) {
-      if (automation.targetId) {
-        ensureContentReference(
-          generatorIndex,
-          automation.targetId,
-          ['automations', index, 'targetId'],
-          `Automation "${automation.id}" references unknown generator "${automation.targetId}".`,
-        );
-      }
-      if (automation.targetType === 'purchaseGenerator' && automation.targetCount) {
-        collectFormulaEntityReferences(automation.targetCount, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['automations', index, 'targetCount'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-      }
-    } else if (automation.targetType === 'upgrade') {
-      if (automation.targetId) {
-        ensureContentReference(
-          upgradeIndex,
-          automation.targetId,
-          ['automations', index, 'targetId'],
-          `Automation "${automation.id}" references unknown upgrade "${automation.targetId}".`,
-        );
-      }
-    } else if (automation.targetType === 'collectResource') {
-      if (automation.targetId) {
-        ensureContentReference(
-          resourceIndex,
-          automation.targetId,
-          ['automations', index, 'targetId'],
-          `Automation "${automation.id}" references unknown resource "${automation.targetId}".`,
-        );
-      }
-      if (automation.targetAmount) {
-        collectFormulaEntityReferences(automation.targetAmount, (reference) => {
-          ensureFormulaReference(
-            reference,
-            ['automations', index, 'targetAmount'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-      }
-    } else if (automation.targetType === 'system') {
-      if (automation.systemTargetId) {
-        assertAllowlisted(
-          context.allowlists.systemAutomationTargets,
-          automation.systemTargetId,
-          ['automations', index, 'systemTargetId'],
-          ctx,
-          warn,
-          'allowlist.systemAutomationTarget.missing',
-          `Automation "${automation.id}" references system target "${automation.systemTargetId}" not present in the allowlist.`,
-        );
-      }
+const validateAutomationTarget = (
+  state: CrossReferenceState,
+  automation: ParsedContentPack['automations'][number],
+  index: number,
+) => {
+  const { ctx, context, indexes, formulaMaps, ensureContentReference } = state;
+  const { resources: resourceIndex, generators: generatorIndex, upgrades: upgradeIndex } =
+    indexes;
+  const warn = context.warningSink;
+
+  if (
+    automation.targetType === 'generator' ||
+    automation.targetType === 'purchaseGenerator'
+  ) {
+    if (automation.targetId) {
+      ensureContentReference(
+        generatorIndex,
+        automation.targetId,
+        ['automations', index, 'targetId'],
+        `Automation "${automation.id}" references unknown generator "${automation.targetId}".`,
+      );
     }
-    if (automation.resourceCost) {
+    if (automation.targetType === 'purchaseGenerator' && automation.targetCount) {
+      ensureFormulaReferencesAtPath(
+        automation.targetCount,
+        ['automations', index, 'targetCount'],
+        ctx,
+        formulaMaps,
+      );
+    }
+    return;
+  }
+
+  if (automation.targetType === 'upgrade') {
+    if (automation.targetId) {
+      ensureContentReference(
+        upgradeIndex,
+        automation.targetId,
+        ['automations', index, 'targetId'],
+        `Automation "${automation.id}" references unknown upgrade "${automation.targetId}".`,
+      );
+    }
+    return;
+  }
+
+  if (automation.targetType === 'collectResource') {
+    if (automation.targetId) {
       ensureContentReference(
         resourceIndex,
-        automation.resourceCost.resourceId,
-        ['automations', index, 'resourceCost', 'resourceId'],
-        `Automation "${automation.id}" references unknown resource "${automation.resourceCost.resourceId}".`,
+        automation.targetId,
+        ['automations', index, 'targetId'],
+        `Automation "${automation.id}" references unknown resource "${automation.targetId}".`,
       );
-      collectFormulaEntityReferences(automation.resourceCost.rate, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['automations', index, 'resourceCost', 'rate'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
     }
-    if (automation.cooldown) {
-      collectFormulaEntityReferences(automation.cooldown, (reference) => {
-        ensureFormulaReference(
-          reference,
-          ['automations', index, 'cooldown'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
+    if (automation.targetAmount) {
+      ensureFormulaReferencesAtPath(
+        automation.targetAmount,
+        ['automations', index, 'targetAmount'],
+        ctx,
+        formulaMaps,
+      );
     }
-    const automationTriggerHandlers = {
-      resourceThreshold: (
-        trigger: AutomationTriggerByKind<'resourceThreshold'>,
-        triggerPath: readonly (string | number)[],
-        automationId: string,
-      ) => {
-        ensureContentReference(
-          resourceIndex,
-          trigger.resourceId,
-          [...triggerPath, 'resourceId'],
-          `Automation "${automationId}" trigger references unknown resource "${trigger.resourceId}".`,
-        );
-        collectFormulaEntityReferences(trigger.threshold, (reference) => {
-          ensureFormulaReference(
-            reference,
-            [...triggerPath, 'threshold'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        });
-      },
-      event: (
-        trigger: AutomationTriggerByKind<'event'>,
-        triggerPath: readonly (string | number)[],
-      ) => {
-        ensureRuntimeEventKnown(
-          trigger.eventId,
-          [...triggerPath, 'eventId'],
-          runtimeEventSeverity,
-        );
-      },
-      interval: () => undefined,
-      commandQueueEmpty: () => undefined,
-    } satisfies {
-      [K in AutomationTrigger['kind']]: (
-        trigger: AutomationTriggerByKind<K>,
-        triggerPath: readonly (string | number)[],
-        automationId: string,
-      ) => void;
-    };
+    return;
+  }
 
-    const handleAutomationTrigger = (
-      trigger: AutomationTrigger,
+  if (automation.targetType === 'system' && automation.systemTargetId) {
+    assertAllowlisted(
+      context.allowlists.systemAutomationTargets,
+      automation.systemTargetId,
+      ['automations', index, 'systemTargetId'],
+      ctx,
+      warn,
+      'allowlist.systemAutomationTarget.missing',
+      `Automation "${automation.id}" references system target "${automation.systemTargetId}" not present in the allowlist.`,
+    );
+  }
+};
+
+const validateAutomationCosts = (
+  state: CrossReferenceState,
+  automation: ParsedContentPack['automations'][number],
+  index: number,
+) => {
+  const { ctx, indexes, formulaMaps, ensureContentReference } = state;
+  const { resources: resourceIndex } = indexes;
+
+  if (automation.resourceCost) {
+    ensureContentReference(
+      resourceIndex,
+      automation.resourceCost.resourceId,
+      ['automations', index, 'resourceCost', 'resourceId'],
+      `Automation "${automation.id}" references unknown resource "${automation.resourceCost.resourceId}".`,
+    );
+    ensureFormulaReferencesAtPath(
+      automation.resourceCost.rate,
+      ['automations', index, 'resourceCost', 'rate'],
+      ctx,
+      formulaMaps,
+    );
+  }
+  if (automation.cooldown) {
+    ensureFormulaReferencesAtPath(
+      automation.cooldown,
+      ['automations', index, 'cooldown'],
+      ctx,
+      formulaMaps,
+    );
+  }
+};
+
+const validateAutomationTrigger = (
+  state: CrossReferenceState,
+  automation: ParsedContentPack['automations'][number],
+  index: number,
+) => {
+  const {
+    ctx,
+    indexes,
+    formulaMaps,
+    ensureContentReference,
+    ensureRuntimeEventKnown,
+    runtimeEventSeverity,
+  } = state;
+  const { resources: resourceIndex } = indexes;
+
+  const automationTriggerHandlers = {
+    resourceThreshold: (
+      trigger: AutomationTriggerByKind<'resourceThreshold'>,
       triggerPath: readonly (string | number)[],
       automationId: string,
     ) => {
-      const handler = automationTriggerHandlers[trigger.kind] as (
-        entry: AutomationTrigger,
-        currentPath: readonly (string | number)[],
-        currentAutomationId: string,
-      ) => void;
-      handler(trigger, triggerPath, automationId);
-    };
-
-    handleAutomationTrigger(
-      automation.trigger,
-      ['automations', index, 'trigger'],
-      automation.id,
-    );
-    if (automation.scriptId) {
-      assertAllowlisted(
-        context.allowlists.scripts,
-        automation.scriptId,
-        ['automations', index, 'scriptId'],
-        ctx,
-        warn,
-        'allowlist.script.missing',
-        `Automation "${automation.id}" references script "${automation.scriptId}" that is not in the scripts allowlist.`,
+      ensureContentReference(
+        resourceIndex,
+        trigger.resourceId,
+        [...triggerPath, 'resourceId'],
+        `Automation "${automationId}" trigger references unknown resource "${trigger.resourceId}".`,
       );
-    }
+      ensureFormulaReferencesAtPath(
+        trigger.threshold,
+        [...triggerPath, 'threshold'],
+        ctx,
+        formulaMaps,
+      );
+    },
+    event: (
+      trigger: AutomationTriggerByKind<'event'>,
+      triggerPath: readonly (string | number)[],
+    ) => {
+      ensureRuntimeEventKnown(
+        trigger.eventId,
+        [...triggerPath, 'eventId'],
+        runtimeEventSeverity,
+      );
+    },
+    interval: () => undefined,
+    commandQueueEmpty: () => undefined,
+  } satisfies {
+    [K in AutomationTrigger['kind']]: (
+      trigger: AutomationTriggerByKind<K>,
+      triggerPath: readonly (string | number)[],
+      automationId: string,
+    ) => void;
+  };
+
+  const handleAutomationTrigger = (
+    trigger: AutomationTrigger,
+    triggerPath: readonly (string | number)[],
+    automationId: string,
+  ) => {
+    const handler = automationTriggerHandlers[trigger.kind] as (
+      entry: AutomationTrigger,
+      currentPath: readonly (string | number)[],
+      currentAutomationId: string,
+    ) => void;
+    handler(trigger, triggerPath, automationId);
+  };
+
+  handleAutomationTrigger(
+    automation.trigger,
+    ['automations', index, 'trigger'],
+    automation.id,
+  );
+};
+
+const validateAutomationConditions = (
+  state: CrossReferenceState,
+  automation: ParsedContentPack['automations'][number],
+  index: number,
+) => {
+  const { ctx, context, indexes } = state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
+  const warn = context.warningSink;
+
+  if (automation.scriptId) {
+    assertAllowlisted(
+      context.allowlists.scripts,
+      automation.scriptId,
+      ['automations', index, 'scriptId'],
+      ctx,
+      warn,
+      'allowlist.script.missing',
+      `Automation "${automation.id}" references script "${automation.scriptId}" that is not in the scripts allowlist.`,
+    );
+  }
+  validateConditionNode(
+    automation.unlockCondition,
+    ['automations', index, 'unlockCondition'],
+    ctx,
+    context,
+    resourceIndex,
+    generatorIndex,
+    upgradeIndex,
+    prestigeIndex,
+  );
+  if (automation.visibilityCondition) {
     validateConditionNode(
-      automation.unlockCondition,
-      ['automations', index, 'unlockCondition'],
+      automation.visibilityCondition,
+      ['automations', index, 'visibilityCondition'],
       ctx,
       context,
       resourceIndex,
@@ -1658,182 +1755,130 @@ export const validateCrossReferences = (
       upgradeIndex,
       prestigeIndex,
     );
-    if (automation.visibilityCondition) {
-      validateConditionNode(
-        automation.visibilityCondition,
-        ['automations', index, 'visibilityCondition'],
-        ctx,
-        context,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        prestigeIndex,
-      );
-    }
+  }
+};
+
+const validateAutomations = (state: CrossReferenceState) => {
+  const { pack } = state;
+
+  pack.automations.forEach((automation, index) => {
+    validateAutomationTarget(state, automation, index);
+    validateAutomationCosts(state, automation, index);
+    validateAutomationTrigger(state, automation, index);
+    validateAutomationConditions(state, automation, index);
   });
+};
 
-  for (const [index, transform] of pack.transforms.entries()) {
-    transform.inputs.forEach((input, inputIndex) => {
-      ensureContentReference(
-        resourceIndex,
-        input.resourceId,
-        ['transforms', index, 'inputs', inputIndex, 'resourceId'],
-        `Transform "${transform.id}" consumes unknown resource "${input.resourceId}".`,
-      );
+const validateTransformBasics = (
+  state: CrossReferenceState,
+  transform: ParsedContentPack['transforms'][number],
+  index: number,
+) => {
+  const {
+    ctx,
+    context,
+    indexes,
+    formulaMaps,
+    ensureContentReference,
+    ensureRuntimeEventKnown,
+    runtimeEventSeverity,
+  } = state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
+
+  transform.inputs.forEach((input, inputIndex) => {
+    ensureContentReference(
+      resourceIndex,
+      input.resourceId,
+      ['transforms', index, 'inputs', inputIndex, 'resourceId'],
+      `Transform "${transform.id}" consumes unknown resource "${input.resourceId}".`,
+    );
+    ensureFormulaReferencesAtPath(
+      input.amount,
+      ['transforms', index, 'inputs', inputIndex, 'amount'],
+      ctx,
+      formulaMaps,
+    );
+  });
+  transform.outputs.forEach((output, outputIndex) => {
+    ensureContentReference(
+      resourceIndex,
+      output.resourceId,
+      ['transforms', index, 'outputs', outputIndex, 'resourceId'],
+      `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
+    );
+    ensureFormulaReferencesAtPath(
+      output.amount,
+      ['transforms', index, 'outputs', outputIndex, 'amount'],
+      ctx,
+      formulaMaps,
+    );
+  });
+  if (transform.duration) {
+    ensureFormulaReferencesAtPath(
+      transform.duration,
+      ['transforms', index, 'duration'],
+      ctx,
+      formulaMaps,
+    );
+  }
+  if (transform.cooldown) {
+    ensureFormulaReferencesAtPath(
+      transform.cooldown,
+      ['transforms', index, 'cooldown'],
+      ctx,
+      formulaMaps,
+    );
+  }
+  if (transform.successRate) {
+    ensureFormulaReferencesAtPath(
+      transform.successRate.baseRate,
+      ['transforms', index, 'successRate', 'baseRate'],
+      ctx,
+      formulaMaps,
+    );
+    transform.successRate.statModifiers?.forEach((modifier, modifierIndex) => {
       ensureFormulaReferencesAtPath(
-        input.amount,
-        ['transforms', index, 'inputs', inputIndex, 'amount'],
+        modifier.weight,
+        [
+          'transforms',
+          index,
+          'successRate',
+          'statModifiers',
+          modifierIndex,
+          'weight',
+        ],
         ctx,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        automationIndex,
-        prestigeIndex,
+        formulaMaps,
       );
     });
-    transform.outputs.forEach((output, outputIndex) => {
-      ensureContentReference(
-        resourceIndex,
-        output.resourceId,
-        ['transforms', index, 'outputs', outputIndex, 'resourceId'],
-        `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
-      );
-      ensureFormulaReferencesAtPath(
-        output.amount,
-        ['transforms', index, 'outputs', outputIndex, 'amount'],
-        ctx,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        automationIndex,
-        prestigeIndex,
-      );
-    });
-    if (transform.duration) {
-      ensureFormulaReferencesAtPath(
-        transform.duration,
-        ['transforms', index, 'duration'],
-        ctx,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        automationIndex,
-        prestigeIndex,
-      );
-    }
-    if (transform.cooldown) {
-      ensureFormulaReferencesAtPath(
-        transform.cooldown,
-        ['transforms', index, 'cooldown'],
-        ctx,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        automationIndex,
-        prestigeIndex,
-      );
-    }
-    if (transform.successRate) {
-      ensureFormulaReferencesAtPath(
-        transform.successRate.baseRate,
-        ['transforms', index, 'successRate', 'baseRate'],
-        ctx,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        automationIndex,
-        prestigeIndex,
-      );
-      transform.successRate.statModifiers?.forEach((modifier, modifierIndex) => {
-        ensureFormulaReferencesAtPath(
-          modifier.weight,
-          ['transforms', index, 'successRate', 'statModifiers', modifierIndex, 'weight'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
-      });
-    }
-    const transformTriggerHandlers = {
-      automation: (
-        trigger: TransformTriggerByKind<'automation'>,
-        triggerPath: readonly (string | number)[],
-        transformId: string,
-      ) => {
-        ensureContentReference(
-          automationIndex,
-          trigger.automationId,
-          [...triggerPath, 'automationId'],
-          `Transform "${transformId}" references unknown automation "${trigger.automationId}".`,
-        );
-      },
-      condition: (
-        trigger: TransformTriggerByKind<'condition'>,
-        triggerPath: readonly (string | number)[],
-      ) => {
-        validateConditionNode(
-          trigger.condition,
-          [...triggerPath, 'condition'],
-          ctx,
-          context,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          prestigeIndex,
-        );
-      },
-      event: (
-        trigger: TransformTriggerByKind<'event'>,
-        triggerPath: readonly (string | number)[],
-      ) => {
-        ensureRuntimeEventKnown(
-          trigger.eventId,
-          [...triggerPath, 'eventId'],
-          runtimeEventSeverity,
-        );
-      },
-      manual: () => undefined,
-    } satisfies {
-      [K in TransformTrigger['kind']]: (
-        trigger: TransformTriggerByKind<K>,
-        triggerPath: readonly (string | number)[],
-        transformId: string,
-      ) => void;
-    };
+  }
 
-    const handleTransformTrigger = (
-      trigger: TransformTrigger,
+  const transformTriggerHandlers = {
+    automation: (
+      trigger: TransformTriggerByKind<'automation'>,
       triggerPath: readonly (string | number)[],
       transformId: string,
     ) => {
-      const handler = transformTriggerHandlers[trigger.kind] as (
-        entry: TransformTrigger,
-        currentPath: readonly (string | number)[],
-        currentTransformId: string,
-      ) => void;
-      handler(trigger, triggerPath, transformId);
-    };
-
-    handleTransformTrigger(
-      transform.trigger,
-      ['transforms', index, 'trigger'],
-      transform.id,
-    );
-    if (transform.automation) {
       ensureContentReference(
         automationIndex,
-        transform.automation.automationId,
-        ['transforms', index, 'automation', 'automationId'],
-        `Transform "${transform.id}" references unknown automation "${transform.automation.automationId}".`,
+        trigger.automationId,
+        [...triggerPath, 'automationId'],
+        `Transform "${transformId}" references unknown automation "${trigger.automationId}".`,
       );
-    }
-    if (transform.unlockCondition) {
+    },
+    condition: (
+      trigger: TransformTriggerByKind<'condition'>,
+      triggerPath: readonly (string | number)[],
+    ) => {
       validateConditionNode(
-        transform.unlockCondition,
-        ['transforms', index, 'unlockCondition'],
+        trigger.condition,
+        [...triggerPath, 'condition'],
         ctx,
         context,
         resourceIndex,
@@ -1841,219 +1886,325 @@ export const validateCrossReferences = (
         upgradeIndex,
         prestigeIndex,
       );
-    }
-    if (transform.visibilityCondition) {
-      validateConditionNode(
-        transform.visibilityCondition,
-        ['transforms', index, 'visibilityCondition'],
-        ctx,
-        context,
-        resourceIndex,
-        generatorIndex,
-        upgradeIndex,
-        prestigeIndex,
+    },
+    event: (
+      trigger: TransformTriggerByKind<'event'>,
+      triggerPath: readonly (string | number)[],
+    ) => {
+      ensureRuntimeEventKnown(
+        trigger.eventId,
+        [...triggerPath, 'eventId'],
+        runtimeEventSeverity,
       );
-    }
+    },
+    manual: () => undefined,
+  } satisfies {
+    [K in TransformTrigger['kind']]: (
+      trigger: TransformTriggerByKind<K>,
+      triggerPath: readonly (string | number)[],
+      transformId: string,
+    ) => void;
+  };
 
-    if (transform.mode === 'mission' && transform.entityRequirements) {
-      const availableStats = new Set<string>();
-      transform.entityRequirements.forEach((requirement, requirementIndex) => {
-        const entry = entityIndex.get(requirement.entityId);
-        if (!entry) {
-          ensureContentReference(
-            entityIndex,
-            requirement.entityId,
-            ['transforms', index, 'entityRequirements', requirementIndex, 'entityId'],
-            `Transform "${transform.id}" references unknown entity "${requirement.entityId}".`,
-          );
-          return;
-        }
+  const handleTransformTrigger = (
+    trigger: TransformTrigger,
+    triggerPath: readonly (string | number)[],
+    transformId: string,
+  ) => {
+    const handler = transformTriggerHandlers[trigger.kind] as (
+      entry: TransformTrigger,
+      currentPath: readonly (string | number)[],
+      currentTransformId: string,
+    ) => void;
+    handler(trigger, triggerPath, transformId);
+  };
 
-        const statIds = new Set<string>(
-          entry.value.stats.map((stat) => stat.id as string),
-        );
-        entry.value.stats.forEach((stat) => {
-          availableStats.add(stat.id);
-        });
+  handleTransformTrigger(
+    transform.trigger,
+    ['transforms', index, 'trigger'],
+    transform.id,
+  );
+  if (transform.automation) {
+    ensureContentReference(
+      automationIndex,
+      transform.automation.automationId,
+      ['transforms', index, 'automation', 'automationId'],
+      `Transform "${transform.id}" references unknown automation "${transform.automation.automationId}".`,
+    );
+  }
+  if (transform.unlockCondition) {
+    validateConditionNode(
+      transform.unlockCondition,
+      ['transforms', index, 'unlockCondition'],
+      ctx,
+      context,
+      resourceIndex,
+      generatorIndex,
+      upgradeIndex,
+      prestigeIndex,
+    );
+  }
+  if (transform.visibilityCondition) {
+    validateConditionNode(
+      transform.visibilityCondition,
+      ['transforms', index, 'visibilityCondition'],
+      ctx,
+      context,
+      resourceIndex,
+      generatorIndex,
+      upgradeIndex,
+      prestigeIndex,
+    );
+  }
+};
 
-        ensureFormulaReferencesAtPath(
-          requirement.count,
-          ['transforms', index, 'entityRequirements', requirementIndex, 'count'],
-          ctx,
-          resourceIndex,
-          generatorIndex,
-          upgradeIndex,
-          automationIndex,
-          prestigeIndex,
-        );
+const validateTransformEntityRequirement = (
+  state: CrossReferenceState,
+  transform: ParsedContentPack['transforms'][number],
+  index: number,
+  requirement: TransformEntityRequirement,
+  requirementIndex: number,
+  availableStats: Set<string>,
+) => {
+  const { ctx, indexes, formulaMaps, ensureContentReference } = state;
+  const { entities: entityIndex } = indexes;
 
-        if (requirement.minStats) {
-          for (const [statId, formula] of Object.entries(requirement.minStats)) {
-            if (!statIds.has(statId)) {
-              ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: toMutablePath([
-                  'transforms',
-                  index,
-                  'entityRequirements',
-                  requirementIndex,
-                  'minStats',
-                  statId,
-                ]),
-                message: `Transform "${transform.id}" references unknown stat "${statId}" for entity "${requirement.entityId}".`,
-              });
-            }
-            if (!formula) {
-              continue;
-            }
-            ensureFormulaReferencesAtPath(
-              formula,
-              [
-                'transforms',
-                index,
-                'entityRequirements',
-                requirementIndex,
-                'minStats',
-                statId,
-              ],
-              ctx,
-              resourceIndex,
-              generatorIndex,
-              upgradeIndex,
-              automationIndex,
-              prestigeIndex,
-            );
-          }
-        }
+  const entry = entityIndex.get(requirement.entityId);
+  if (!entry) {
+    ensureContentReference(
+      entityIndex,
+      requirement.entityId,
+      ['transforms', index, 'entityRequirements', requirementIndex, 'entityId'],
+      `Transform "${transform.id}" references unknown entity "${requirement.entityId}".`,
+    );
+    return;
+  }
 
-        requirement.preferHighStats?.forEach((statId, statIndex) => {
-          if (!statIds.has(statId)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: toMutablePath([
-                'transforms',
-                index,
-                'entityRequirements',
-                requirementIndex,
-                'preferHighStats',
-                statIndex,
-              ]),
-              message: `Transform "${transform.id}" references unknown stat "${statId}" for entity "${requirement.entityId}".`,
-            });
-          }
-        });
-      });
+  const statIds = new Set<string>(entry.value.stats.map((stat) => stat.id as string));
+  entry.value.stats.forEach((stat) => {
+    availableStats.add(stat.id);
+  });
 
-      if (transform.successRate?.statModifiers) {
-        transform.successRate.statModifiers.forEach((modifier, modifierIndex) => {
-          if (!availableStats.has(modifier.stat)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: toMutablePath([
-                'transforms',
-                index,
-                'successRate',
-                'statModifiers',
-                modifierIndex,
-                'stat',
-              ]),
-              message: `Transform "${transform.id}" references unknown stat "${modifier.stat}" in success rate modifiers.`,
-            });
-          }
+  ensureFormulaReferencesAtPath(
+    requirement.count,
+    ['transforms', index, 'entityRequirements', requirementIndex, 'count'],
+    ctx,
+    formulaMaps,
+  );
+
+  if (requirement.minStats) {
+    for (const [statId, formula] of Object.entries(requirement.minStats)) {
+      if (!statIds.has(statId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: toMutablePath([
+            'transforms',
+            index,
+            'entityRequirements',
+            requirementIndex,
+            'minStats',
+            statId,
+          ]),
+          message: `Transform "${transform.id}" references unknown stat "${statId}" for entity "${requirement.entityId}".`,
         });
       }
-
-      const validateOutcome = (
-        outcome:
-          | {
-              outputs: readonly { resourceId: string; amount: NumericFormula }[];
-              entityExperience?: NumericFormula;
-              entityDamage?: NumericFormula;
-            }
-          | undefined,
-        outcomePath: readonly (string | number)[],
-      ) => {
-        if (!outcome) {
-          return;
-        }
-        for (const [outputIndex, output] of outcome.outputs.entries()) {
-          ensureContentReference(
-            resourceIndex,
-            output.resourceId,
-            [...outcomePath, 'outputs', outputIndex, 'resourceId'],
-            `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
-          );
-          ensureFormulaReferencesAtPath(
-            output.amount,
-            [...outcomePath, 'outputs', outputIndex, 'amount'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        }
-        if (outcome.entityExperience) {
-          ensureFormulaReferencesAtPath(
-            outcome.entityExperience,
-            [...outcomePath, 'entityExperience'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        }
-        if (outcome.entityDamage) {
-          ensureFormulaReferencesAtPath(
-            outcome.entityDamage,
-            [...outcomePath, 'entityDamage'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        }
-      };
-
-      if (transform.outcomes) {
-        validateOutcome(transform.outcomes.success, [
-          'transforms',
-          index,
-          'outcomes',
-          'success',
-        ]);
-        validateOutcome(transform.outcomes.failure, [
-          'transforms',
-          index,
-          'outcomes',
-          'failure',
-        ]);
-        validateOutcome(transform.outcomes.critical, [
-          'transforms',
-          index,
-          'outcomes',
-          'critical',
-        ]);
-        if (transform.outcomes.critical?.chance) {
-          ensureFormulaReferencesAtPath(
-            transform.outcomes.critical.chance,
-            ['transforms', index, 'outcomes', 'critical', 'chance'],
-            ctx,
-            resourceIndex,
-            generatorIndex,
-            upgradeIndex,
-            automationIndex,
-            prestigeIndex,
-          );
-        }
+      if (!formula) {
+        continue;
       }
+      ensureFormulaReferencesAtPath(
+        formula,
+        [
+          'transforms',
+          index,
+          'entityRequirements',
+          requirementIndex,
+          'minStats',
+          statId,
+        ],
+        ctx,
+        formulaMaps,
+      );
     }
   }
+
+  requirement.preferHighStats?.forEach((statId, statIndex) => {
+    if (!statIds.has(statId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: toMutablePath([
+          'transforms',
+          index,
+          'entityRequirements',
+          requirementIndex,
+          'preferHighStats',
+          statIndex,
+        ]),
+        message: `Transform "${transform.id}" references unknown stat "${statId}" for entity "${requirement.entityId}".`,
+      });
+    }
+  });
+};
+
+const validateTransformSuccessRateModifiers = (
+  state: CrossReferenceState,
+  transform: ParsedContentPack['transforms'][number],
+  index: number,
+  availableStats: Set<string>,
+) => {
+  const { ctx } = state;
+
+  if (!transform.successRate?.statModifiers) {
+    return;
+  }
+  transform.successRate.statModifiers.forEach((modifier, modifierIndex) => {
+    if (!availableStats.has(modifier.stat)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: toMutablePath([
+          'transforms',
+          index,
+          'successRate',
+          'statModifiers',
+          modifierIndex,
+          'stat',
+        ]),
+        message: `Transform "${transform.id}" references unknown stat "${modifier.stat}" in success rate modifiers.`,
+      });
+    }
+  });
+};
+
+const validateTransformOutcome = (
+  state: CrossReferenceState,
+  transform: ParsedContentPack['transforms'][number],
+  outcome:
+    | {
+        outputs: readonly { resourceId: string; amount: NumericFormula }[];
+        entityExperience?: NumericFormula;
+        entityDamage?: NumericFormula;
+      }
+    | undefined,
+  outcomePath: readonly (string | number)[],
+) => {
+  const { ctx, indexes, formulaMaps, ensureContentReference } = state;
+  const { resources: resourceIndex } = indexes;
+
+  if (!outcome) {
+    return;
+  }
+  for (const [outputIndex, output] of outcome.outputs.entries()) {
+    ensureContentReference(
+      resourceIndex,
+      output.resourceId,
+      [...outcomePath, 'outputs', outputIndex, 'resourceId'],
+      `Transform "${transform.id}" produces unknown resource "${output.resourceId}".`,
+    );
+    ensureFormulaReferencesAtPath(
+      output.amount,
+      [...outcomePath, 'outputs', outputIndex, 'amount'],
+      ctx,
+      formulaMaps,
+    );
+  }
+  if (outcome.entityExperience) {
+    ensureFormulaReferencesAtPath(
+      outcome.entityExperience,
+      [...outcomePath, 'entityExperience'],
+      ctx,
+      formulaMaps,
+    );
+  }
+  if (outcome.entityDamage) {
+    ensureFormulaReferencesAtPath(
+      outcome.entityDamage,
+      [...outcomePath, 'entityDamage'],
+      ctx,
+      formulaMaps,
+    );
+  }
+};
+
+const validateTransformOutcomes = (
+  state: CrossReferenceState,
+  transform: ParsedContentPack['transforms'][number],
+  index: number,
+) => {
+  const { ctx, formulaMaps } = state;
+
+  if (!transform.outcomes) {
+    return;
+  }
+  validateTransformOutcome(state, transform, transform.outcomes.success, [
+    'transforms',
+    index,
+    'outcomes',
+    'success',
+  ]);
+  validateTransformOutcome(state, transform, transform.outcomes.failure, [
+    'transforms',
+    index,
+    'outcomes',
+    'failure',
+  ]);
+  validateTransformOutcome(state, transform, transform.outcomes.critical, [
+    'transforms',
+    index,
+    'outcomes',
+    'critical',
+  ]);
+  if (transform.outcomes.critical?.chance) {
+    ensureFormulaReferencesAtPath(
+      transform.outcomes.critical.chance,
+      ['transforms', index, 'outcomes', 'critical', 'chance'],
+      ctx,
+      formulaMaps,
+    );
+  }
+};
+
+const validateTransformMissionRequirements = (
+  state: CrossReferenceState,
+  transform: ParsedContentPack['transforms'][number],
+  index: number,
+) => {
+  if (transform.mode !== 'mission' || !transform.entityRequirements) {
+    return;
+  }
+
+  const availableStats = new Set<string>();
+  transform.entityRequirements.forEach((requirement, requirementIndex) => {
+    validateTransformEntityRequirement(
+      state,
+      transform,
+      index,
+      requirement,
+      requirementIndex,
+      availableStats,
+    );
+  });
+
+  validateTransformSuccessRateModifiers(state, transform, index, availableStats);
+  validateTransformOutcomes(state, transform, index);
+};
+
+const validateTransforms = (state: CrossReferenceState) => {
+  const { pack } = state;
+
+  for (const [index, transform] of pack.transforms.entries()) {
+    validateTransformBasics(state, transform, index);
+    validateTransformMissionRequirements(state, transform, index);
+  }
+};
+
+const validatePrestigeLayers = (state: CrossReferenceState) => {
+  const { pack, ctx, context, indexes, ensureContentReference } = state;
+  const {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  } = indexes;
 
   pack.prestigeLayers.forEach((layer, index) => {
     layer.resetTargets.forEach((target, targetIndex) => {
@@ -2163,4 +2314,114 @@ export const validateCrossReferences = (
         `Add this resource to your content pack's resources array.`,
     );
   });
+};
+
+export const validateCrossReferences = (
+  pack: ParsedContentPack,
+  ctx: z.RefinementCtx,
+  context: CrossReferenceContext,
+) => {
+  const resourceIndex = getIndexMap(pack.resources);
+  const entityIndex = getIndexMap(pack.entities);
+  const generatorIndex = getIndexMap(pack.generators);
+  const upgradeIndex = getIndexMap(pack.upgrades);
+  const metricIndex = getIndexMap(pack.metrics);
+  const achievementIndex = getIndexMap(pack.achievements);
+  const automationIndex = getIndexMap(pack.automations);
+  const transformIndex = getIndexMap(pack.transforms);
+  const prestigeIndex = getIndexMap(pack.prestigeLayers);
+  const knownRuntimeEvents = new Set<string>(context.runtimeEventCatalogue);
+  pack.runtimeEvents.forEach((event) => {
+    knownRuntimeEvents.add(event.id);
+  });
+
+  const warn = context.warningSink;
+
+  const ensureRuntimeEventKnown = (
+    id: string,
+    path: readonly (string | number)[],
+    severity: 'error' | 'warning',
+  ) => {
+    if (knownRuntimeEvents.has(id)) {
+      return;
+    }
+    if (severity === 'warning') {
+      warn({
+        code: 'runtimeEvent.unknown',
+        message: `Runtime event "${id}" is not present in the known catalogue.`,
+        path: toMutablePath(path),
+        severity,
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: toMutablePath(path),
+      message: `Runtime event "${id}" must exist in the known event catalogue.`,
+    });
+  };
+
+  const ensureContentReference = (
+    map: IndexMap<unknown>,
+    id: string,
+    path: readonly (string | number)[],
+    message: string,
+  ) => {
+    if (map.has(id)) {
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: toMutablePath(path),
+      message,
+    });
+  };
+
+  const runtimeEventSeverity: 'error' | 'warning' =
+    context.runtimeEventCatalogue.size > 0 ? 'error' : 'warning';
+
+  const indexes: ReferenceIndexes = {
+    resources: resourceIndex,
+    entities: entityIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    metrics: metricIndex,
+    achievements: achievementIndex,
+    automations: automationIndex,
+    transforms: transformIndex,
+    prestigeLayers: prestigeIndex,
+  };
+
+  const formulaMaps: FormulaReferenceMaps = {
+    resources: resourceIndex,
+    generators: generatorIndex,
+    upgrades: upgradeIndex,
+    automations: automationIndex,
+    prestigeLayers: prestigeIndex,
+  };
+
+  const state: CrossReferenceState = {
+    pack,
+    ctx,
+    context,
+    indexes,
+    formulaMaps,
+    knownRuntimeEvents,
+    runtimeEventSeverity,
+    warn,
+    ensureContentReference,
+    ensureRuntimeEventKnown,
+  };
+
+  validateResources(state);
+  validateEntities(state);
+  validateRuntimeEvents(state);
+  validateGenerators(state);
+  validateUpgrades(state);
+  validateMetrics(state);
+  validateAchievements(state);
+  validateAutomations(state);
+  validateTransforms(state);
+  validatePrestigeLayers(state);
+
 };
