@@ -26,6 +26,8 @@ import type {
   WorkspaceFS,
 } from '../types.js';
 
+const compareSlugs = (left: string, right: string) => left.localeCompare(right);
+
 export async function compileContentPack(
   document: ContentDocument,
   options: CompileOptions,
@@ -135,7 +137,7 @@ export async function compileWorkspacePacks(
   const remainingCycleSlugs = Array.from(topo.cycleSlugs).filter(
     (slug) => !failed.has(slug),
   );
-  remainingCycleSlugs.sort();
+  remainingCycleSlugs.sort(compareSlugs);
 
   if (remainingCycleSlugs.length > 0) {
     const cycleMessage = createCycleErrorMessage(remainingCycleSlugs);
@@ -274,7 +276,7 @@ function topologicallySortDocuments(
       zeroInDegree.push(slug);
     }
   });
-  zeroInDegree.sort();
+  zeroInDegree.sort(compareSlugs);
 
   const ordered: string[] = [];
   const inDegreeMutable = new Map(inDegree);
@@ -289,7 +291,7 @@ function topologicallySortDocuments(
     if (!neighbours) {
       continue;
     }
-    const sortedNeighbours = Array.from(neighbours).sort();
+    const sortedNeighbours = Array.from(neighbours).sort(compareSlugs);
     for (const neighbour of sortedNeighbours) {
       const current = inDegreeMutable.get(neighbour);
       if (current === undefined) {
@@ -299,7 +301,7 @@ function topologicallySortDocuments(
       inDegreeMutable.set(neighbour, next);
       if (next === 0) {
         zeroInDegree.push(neighbour);
-        zeroInDegree.sort();
+        zeroInDegree.sort(compareSlugs);
       }
     }
   }

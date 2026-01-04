@@ -151,11 +151,12 @@ function migrateLegacyV0ToV1(value: unknown): GameStateSaveFormatV1 {
     ? (legacy.resources as { automationState?: unknown }).automationState
     : undefined;
 
-  const automation = Array.isArray(legacy.automation)
-    ? legacy.automation
-    : Array.isArray(embeddedAutomation)
-      ? (embeddedAutomation as SerializedAutomationState[])
-      : [];
+  let automation: readonly SerializedAutomationState[] = [];
+  if (Array.isArray(legacy.automation)) {
+    automation = legacy.automation;
+  } else if (Array.isArray(embeddedAutomation)) {
+    automation = embeddedAutomation as SerializedAutomationState[];
+  }
 
   const entities: SerializedEntitySystemState = {
     entities: [],

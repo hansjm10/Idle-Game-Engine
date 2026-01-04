@@ -85,7 +85,7 @@ export class CommandDispatcher {
   }
 
   execute(command: Command): void {
-    void this.executeWithResult(command);
+    this.executeWithResult(command);
   }
 
   executeWithResult(command: Command): CommandResult | Promise<CommandResult> {

@@ -219,16 +219,10 @@ export const runtimeEventContributionSchema: z.ZodType<
       ? dedupeAndSortTags(value.tags.map((tag) => normalizeTag(tag)))
       : Object.freeze<string[]>([]);
 
-    const normalizedPayload =
-      value.payload.kind === 'zod'
-        ? Object.freeze({
-            kind: value.payload.kind,
-            schemaPath: value.payload.schemaPath,
-          } as const)
-        : Object.freeze({
-            kind: value.payload.kind,
-            schemaPath: value.payload.schemaPath,
-          } as const);
+    const normalizedPayload = Object.freeze({
+      kind: value.payload.kind,
+      schemaPath: value.payload.schemaPath,
+    } as const);
 
     return Object.freeze({
       id: canonicalId,

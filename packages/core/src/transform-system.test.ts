@@ -1990,5 +1990,43 @@ describe('TransformSystem', () => {
       expect(result.success).toBe(false);
       expect(result.error?.code).toBe('UNSUPPORTED_MODE');
     });
+
+    it('should reject mission mode transforms without spending resources', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:mission' as any,
+          name: { default: 'Mission', variants: {} },
+          description: { default: 'Mission transform', variants: {} },
+          mode: 'mission',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      // Tick to initialize
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:mission', 0);
+
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('UNSUPPORTED_MODE');
+      expect(resourceState.getAmount(0)).toBe(100);
+      expect(resourceState.getAmount(1)).toBe(0);
+    });
   });
 });

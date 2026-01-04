@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 
 import type { contentIdSchema, packSlugSchema } from '../base/ids.js';
-import type { upgradeEffectSchema } from '../modules/upgrades.js';
+import type { upgradeEffectSchema, Upgrade } from '../modules/upgrades.js';
 import type { BalanceValidationOptions } from '../balance.js';
 import type { ValidationCache } from './cache.js';
 import type { ContentSchemaWarning } from '../errors.js';
@@ -20,11 +20,9 @@ import type {
   RuntimeEventContribution,
 } from '../modules/runtime-events.js';
 import type { TransformDefinition } from '../modules/transforms.js';
-import type { Upgrade } from '../modules/upgrades.js';
 
 type PackId = z.infer<typeof packSlugSchema>;
 type ContentId = z.infer<typeof contentIdSchema>;
-type UpgradeDefinition = Upgrade;
 
 export type UpgradeEffect = z.infer<typeof upgradeEffectSchema>;
 
@@ -32,7 +30,7 @@ export type NormalizedMetadata = Metadata;
 export type NormalizedResource = Resource;
 export type NormalizedEntity = EntityDefinition;
 export type NormalizedGenerator = Generator;
-export type NormalizedUpgrade = UpgradeDefinition;
+export type NormalizedUpgrade = Upgrade;
 export type NormalizedMetric = MetricDefinition;
 export type NormalizedAchievement = AchievementDefinition;
 export type NormalizedAutomation = AutomationDefinition;

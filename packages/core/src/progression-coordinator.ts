@@ -339,10 +339,10 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   private readonly baseDirtyToleranceByIndex: Float64Array;
   private readonly dirtyToleranceOverrideIds = new Set<string>();
   private readonly flagState = new Map<string, boolean>();
-  private readonly grantedAutomationIds = new Set<string>();
+  private readonly upgradeGrantedAutomationIds = new Set<string>();
   private readonly achievementFlagState = new Map<string, boolean>();
   private readonly achievementGrantedAutomationIds = new Set<string>();
-  private readonly combinedGrantedAutomationIds = new Set<string>();
+  private readonly grantedAutomationIds = new Set<string>();
   private upgradePurchasesRevision = 0;
   private upgradeEffectsCache:
     | {
@@ -640,9 +640,9 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 	      this.flagState.set(flagId, value);
 	    }
 
-	    this.grantedAutomationIds.clear();
+	    this.upgradeGrantedAutomationIds.clear();
 	    for (const automationId of effects.grantedAutomations) {
-	      this.grantedAutomationIds.add(automationId);
+	      this.upgradeGrantedAutomationIds.add(automationId);
 	    }
 	    this.rebuildCombinedAutomationIds();
 
@@ -891,12 +891,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
   }
 
   private rebuildCombinedAutomationIds(): void {
-    this.combinedGrantedAutomationIds.clear();
-    for (const automationId of this.grantedAutomationIds) {
-      this.combinedGrantedAutomationIds.add(automationId);
+    this.grantedAutomationIds.clear();
+    for (const automationId of this.upgradeGrantedAutomationIds) {
+      this.grantedAutomationIds.add(automationId);
     }
     for (const automationId of this.achievementGrantedAutomationIds) {
-      this.combinedGrantedAutomationIds.add(automationId);
+      this.grantedAutomationIds.add(automationId);
     }
   }
 
@@ -1339,7 +1339,7 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
 		  }
 
 	  getGrantedAutomationIds(): ReadonlySet<string> {
-	    return this.combinedGrantedAutomationIds;
+	    return this.grantedAutomationIds;
 	  }
 
 	  getConditionContext(): ConditionContext {
@@ -1636,11 +1636,12 @@ class ProgressionCoordinatorImpl implements ProgressionCoordinator {
     }
 
     const unlockCondition = record.definition.unlockCondition;
-    return unlockCondition
-      ? evaluateCondition(unlockCondition, this.conditionContext)
-        ? 'available'
-        : 'locked'
-      : ('available' as UpgradeStatus);
+    if (!unlockCondition) {
+      return 'available';
+    }
+    return evaluateCondition(unlockCondition, this.conditionContext)
+      ? 'available'
+      : 'locked';
   }
 }
 

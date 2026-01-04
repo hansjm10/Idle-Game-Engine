@@ -490,14 +490,21 @@ export const upgradeDefinitionSchema: z.ZodType<
     }
     const seenEffectKinds = new Map<string, number>();
     upgrade.effects.forEach((effect, index) => {
-      const key =
-        effect.kind === 'grantFlag'
-          ? `grantFlag:${effect.flagId}`
-          : effect.kind === 'grantAutomation'
-          ? `grantAutomation:${effect.automationId}`
-          : effect.kind === 'emitEvent'
-          ? `emitEvent:${effect.eventId}`
-          : undefined;
+      let key: string | undefined;
+      switch (effect.kind) {
+        case 'grantFlag':
+          key = `grantFlag:${effect.flagId}`;
+          break;
+        case 'grantAutomation':
+          key = `grantAutomation:${effect.automationId}`;
+          break;
+        case 'emitEvent':
+          key = `emitEvent:${effect.eventId}`;
+          break;
+        default:
+          key = undefined;
+          break;
+      }
       if (key) {
         const existing = seenEffectKinds.get(key);
         if (existing !== undefined) {

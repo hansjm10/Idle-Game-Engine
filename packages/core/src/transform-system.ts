@@ -77,8 +77,15 @@ const HARD_CAP_MAX_OUTSTANDING_BATCHES = 1000;
  */
 const STATIC_TRANSFORM_FORMULA_LEVEL = 0;
 
-const compareStableStrings = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0;
+const compareStableStrings = (left: string, right: string): number => {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+};
 
 /**
  * Internal state for a single transform.
@@ -783,7 +790,7 @@ export function createTransformSystem(
     step: number,
     formulaContext: FormulaEvaluationContext,
   ): TransformExecutionResult => {
-    if (transform.mode === 'continuous') {
+    if (transform.mode === 'continuous' || transform.mode === 'mission') {
       return {
         success: false,
         error: {
@@ -854,7 +861,8 @@ export function createTransformSystem(
         };
       }
 
-      const batchQueue = (state.batches ??= []) as TransformBatchQueueEntry[];
+      state.batches ??= [];
+      const batchQueue = state.batches as TransformBatchQueueEntry[];
       const maxOutstanding = getEffectiveMaxOutstandingBatches(transform);
       if (batchQueue.length >= maxOutstanding) {
         return {
@@ -1444,11 +1452,12 @@ export function buildTransformSnapshot(
     const outputs = toEndpointViews(
       evaluateOutputAmounts(transform, formulaContext),
     );
-    const canAfford = inputCosts
-      ? options.resourceState
+    let canAfford = false;
+    if (inputCosts) {
+      canAfford = options.resourceState
         ? canAffordInputs(inputCosts, options.resourceState)
-        : isZeroInputCost(inputCosts)
-      : false;
+        : isZeroInputCost(inputCosts);
+    }
     const isOnCooldown = cooldownRemainingMs > 0;
 
     const batches = state?.batches ?? [];

@@ -159,7 +159,7 @@ function sanitizeFileName(value) {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^(?:-+)|(?:-+)$/g, '');
 }
 
 async function exists(target) {
@@ -171,8 +171,10 @@ async function exists(target) {
   }
 }
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error('[benchmarks] Failed to generate benchmark artifacts.');
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
-});
+}

@@ -140,8 +140,15 @@ export interface SerializedAutomationState {
   readonly lastThresholdSatisfied?: boolean;
 }
 
-const compareStableStrings = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0;
+const compareStableStrings = (left: string, right: string): number => {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+};
 
 export function serializeAutomationState(
   state: ReadonlyMap<string, AutomationState>,

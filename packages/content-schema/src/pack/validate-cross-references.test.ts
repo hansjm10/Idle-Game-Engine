@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
+import type { IssueData, RefinementCtx } from 'zod';
 
 import { createContentPackValidator } from '../index.js';
+import { validateCrossReferences } from './validate-cross-references.js';
+import type { ParsedContentPack } from './schema.js';
+import type { CrossReferenceContext } from './types.js';
 
 const createBasePack = () => ({
   metadata: {
@@ -28,6 +32,14 @@ const getZodIssues = (error: unknown) => {
   expect(error).toBeInstanceOf(ZodError);
   return (error as ZodError).issues;
 };
+
+const createCrossReferenceContext = (): CrossReferenceContext => ({
+  allowlists: {},
+  warningSink: () => undefined,
+  runtimeEventCatalogue: new Set(),
+  activePackIds: new Set(),
+  knownPacks: new Map(),
+});
 
 const baseAchievement = {
   name: { default: 'Test Achievement' },
@@ -583,5 +595,484 @@ describe('validateCrossReferences', () => {
         }),
       ]),
     );
+  });
+
+  it('reports missing mission entity references', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:missing',
+              count: { kind: 'constant', value: 1 },
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = createContentPackValidator().safeParse(pack);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('unknown entity "entity:missing"'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports missing mission stat references', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      entities: [
+        {
+          id: 'entity:scout',
+          name: { default: 'Scout' },
+          description: { default: 'Scout' },
+          stats: [
+            {
+              id: 'perception',
+              name: { default: 'Perception' },
+              baseValue: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:scout',
+              count: { kind: 'constant', value: 1 },
+              minStats: {
+                luck: { kind: 'constant', value: 1 },
+              },
+              preferHighStats: ['luck'],
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = createContentPackValidator().safeParse(pack);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining('unknown stat "luck"'),
+        }),
+      ]),
+    );
+  });
+
+  it('reports mission formula references in requirements and success rates', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      entities: [
+        {
+          id: 'entity:scout',
+          name: { default: 'Scout' },
+          description: { default: 'Scout' },
+          stats: [
+            {
+              id: 'perception',
+              name: { default: 'Perception' },
+              baseValue: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:scout',
+              count: {
+                kind: 'expression',
+                expression: {
+                  kind: 'ref',
+                  target: { type: 'generator', id: 'generator:missing' },
+                },
+              },
+              minStats: {
+                perception: {
+                  kind: 'expression',
+                  expression: {
+                    kind: 'ref',
+                    target: { type: 'upgrade', id: 'upgrade:missing' },
+                  },
+                },
+              },
+            },
+          ],
+          successRate: {
+            baseRate: {
+              kind: 'expression',
+              expression: {
+                kind: 'ref',
+                target: { type: 'automation', id: 'automation:missing' },
+              },
+            },
+            statModifiers: [
+              {
+                stat: 'luck',
+                weight: {
+                  kind: 'expression',
+                  expression: {
+                    kind: 'ref',
+                    target: { type: 'prestigeLayer', id: 'prestige:missing' },
+                  },
+                },
+              },
+            ],
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const result = createContentPackValidator().safeParse(pack);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown generator "generator:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown upgrade "upgrade:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown automation "automation:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown prestige layer "prestige:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'unknown stat "luck" in success rate modifiers',
+          ),
+        }),
+      ]),
+    );
+  });
+
+  it('reports mission outcome resource and formula references', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      entities: [
+        {
+          id: 'entity:scout',
+          name: { default: 'Scout' },
+          description: { default: 'Scout' },
+          stats: [
+            {
+              id: 'perception',
+              name: { default: 'Perception' },
+              baseValue: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:scout',
+              count: { kind: 'constant', value: 1 },
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:missing',
+                  amount: {
+                    kind: 'expression',
+                    expression: {
+                      kind: 'ref',
+                      target: { type: 'generator', id: 'generator:missing' },
+                    },
+                  },
+                },
+              ],
+              entityExperience: {
+                kind: 'expression',
+                expression: {
+                  kind: 'ref',
+                  target: { type: 'upgrade', id: 'upgrade:missing' },
+                },
+              },
+              entityDamage: {
+                kind: 'expression',
+                expression: {
+                  kind: 'ref',
+                  target: { type: 'automation', id: 'automation:missing' },
+                },
+              },
+            },
+            critical: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+              chance: {
+                kind: 'expression',
+                expression: {
+                  kind: 'ref',
+                  target: { type: 'prestigeLayer', id: 'prestige:missing' },
+                },
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    const result = createContentPackValidator().safeParse(pack);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    const issues = getZodIssues(result.error);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'produces unknown resource "resource:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown generator "generator:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown upgrade "upgrade:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown automation "automation:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'Formula references unknown prestige layer "prestige:missing"',
+          ),
+        }),
+      ]),
+    );
+  });
+
+  it('ignores undefined mission minStat formulas when validating cross references', () => {
+    const pack = {
+      ...createBasePack(),
+      resources: [
+        {
+          id: 'resource:energy',
+          name: { default: 'Energy' },
+          category: 'primary',
+          tier: 1,
+        },
+      ],
+      entities: [
+        {
+          id: 'entity:scout',
+          name: { default: 'Scout' },
+          description: { default: 'Scout' },
+          stats: [
+            {
+              id: 'perception',
+              name: { default: 'Perception' },
+              baseValue: { kind: 'constant', value: 1 },
+            },
+          ],
+        },
+      ],
+      transforms: [
+        {
+          id: 'transform:mission',
+          name: { default: 'Mission' },
+          description: { default: 'Mission' },
+          mode: 'mission',
+          duration: { kind: 'constant', value: 60000 },
+          inputs: [
+            {
+              resourceId: 'resource:energy',
+              amount: { kind: 'constant', value: 1 },
+            },
+          ],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          entityRequirements: [
+            {
+              entityId: 'entity:scout',
+              count: { kind: 'constant', value: 1 },
+              minStats: {
+                perception: undefined,
+              },
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'resource:energy',
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const issues: IssueData[] = [];
+    const ctx: RefinementCtx = {
+      addIssue: (issue) => issues.push(issue),
+      path: [],
+    };
+
+    validateCrossReferences(
+      pack as unknown as ParsedContentPack,
+      ctx,
+      createCrossReferenceContext(),
+    );
+
+    expect(issues).toHaveLength(0);
   });
 });

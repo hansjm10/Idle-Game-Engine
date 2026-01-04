@@ -280,18 +280,19 @@ function computeSliceBounds(
   begin?: number,
   end?: number,
 ): [number, number] {
-  const start =
-    begin === undefined
-      ? 0
-      : begin < 0
-        ? Math.max(length + begin, 0)
-        : Math.min(begin, length);
-  const rawEnd =
-    end === undefined
-      ? length
-      : end < 0
-        ? Math.max(length + end, 0)
-        : Math.min(end, length);
+  let start = 0;
+  if (begin !== undefined) {
+    start = begin < 0
+      ? Math.max(length + begin, 0)
+      : Math.min(begin, length);
+  }
+
+  let rawEnd = length;
+  if (end !== undefined) {
+    rawEnd = end < 0
+      ? Math.max(length + end, 0)
+      : Math.min(end, length);
+  }
   const finish = Math.max(0, Math.min(rawEnd, length));
   return [start, Math.max(start, finish)];
 }

@@ -38,6 +38,9 @@ type MissingDiff = Readonly<{
   readonly remote: boolean;
 }>;
 
+const compareDeterministicKeys = (left: string, right: string): number =>
+  left.localeCompare(right, 'en');
+
 export interface StateDiff {
   /** Whether states are identical */
   readonly identical: boolean;
@@ -221,7 +224,7 @@ const normalizeForComparison = (value: unknown): unknown => {
   }
 
   const result: Record<string, unknown> = {};
-  const keys = Object.keys(value).sort();
+  const keys = Object.keys(value).sort(compareDeterministicKeys);
   for (const key of keys) {
     result[key] = normalizeForComparison(
       (value as Record<string, unknown>)[key],
@@ -289,7 +292,7 @@ const collectSortedIds = (
   for (const id of remoteIds) {
     ids.add(id);
   }
-  return Array.from(ids).sort();
+  return Array.from(ids).sort(compareDeterministicKeys);
 };
 
 const buildIndexById = (ids: readonly string[]): Map<string, number> => {
