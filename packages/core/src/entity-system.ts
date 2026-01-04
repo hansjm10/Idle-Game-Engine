@@ -86,8 +86,15 @@ const INSTANCE_SUFFIX_LENGTH = 6;
 const MAX_INSTANCE_ID_ATTEMPTS = 5;
 const MIN_LEVEL = 1;
 
-const compareStableStrings = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0;
+const compareStableStrings = (left: string, right: string): number => {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
+};
 
 const normalizeNonNegativeInt = (value: unknown): number => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
@@ -328,37 +335,56 @@ export class EntitySystem implements System {
     const { step } = context;
     this.currentStep = step;
 
-    if (this.conditionContext) {
-      for (const definition of this.definitions) {
-        const state = this.entityStates.get(definition.id);
-        if (!state) {
-          continue;
-        }
-
-        const visible = definition.visibilityCondition
-          ? evaluateCondition(definition.visibilityCondition, this.conditionContext)
-          : definition.visible;
-        state.visible = visible;
-
-        if (!state.unlocked) {
-          if (definition.unlocked) {
-            state.unlocked = true;
-          } else if (definition.unlockCondition) {
-            if (evaluateCondition(definition.unlockCondition, this.conditionContext)) {
-              state.unlocked = true;
-            }
-          } else {
-            state.unlocked = true;
-          }
-        }
-      }
+    const conditionContext = this.conditionContext;
+    if (conditionContext) {
+      this.refreshEntityVisibility(conditionContext);
     }
 
-    for (const instance of this.instanceStates.values()) {
-      if (!instance.assignment) {
+    this.processReturningMissions(step);
+  }
+
+  private refreshEntityVisibility(conditionContext: ConditionContext): void {
+    for (const definition of this.definitions) {
+      const state = this.entityStates.get(definition.id);
+      if (!state) {
         continue;
       }
-      if (instance.assignment.returnStep <= step) {
+
+      state.visible = this.resolveVisibility(definition, conditionContext);
+
+      if (!state.unlocked) {
+        state.unlocked = this.resolveUnlocked(definition, conditionContext);
+      }
+    }
+  }
+
+  private resolveVisibility(
+    definition: EntityDefinition,
+    conditionContext: ConditionContext,
+  ): boolean {
+    if (definition.visibilityCondition) {
+      return evaluateCondition(definition.visibilityCondition, conditionContext);
+    }
+    return definition.visible;
+  }
+
+  private resolveUnlocked(
+    definition: EntityDefinition,
+    conditionContext: ConditionContext,
+  ): boolean {
+    if (definition.unlocked || definition.unlockCondition === undefined) {
+      return true;
+    }
+    return evaluateCondition(definition.unlockCondition, conditionContext);
+  }
+
+  private processReturningMissions(step: number): void {
+    for (const instance of this.instanceStates.values()) {
+      const assignment = instance.assignment;
+      if (!assignment) {
+        continue;
+      }
+      if (assignment.returnStep <= step) {
         this.returnFromMission(instance.instanceId);
       }
     }
@@ -456,30 +482,48 @@ export class EntitySystem implements System {
     }
 
     if (definition.trackInstances) {
-      const instanceIds = this.entityInstances.get(entityId) ?? [];
-      const available: string[] = [];
-      for (let index = instanceIds.length - 1; index >= 0; index -= 1) {
-        const instanceId = instanceIds[index];
-        const instance = this.instanceStates.get(instanceId);
-        if (instance && !instance.assignment) {
-          available.push(instanceId);
-          if (available.length >= normalizedCount) {
-            break;
-          }
-        }
-      }
-
-      if (available.length < normalizedCount) {
-        throw new Error(`Entity "${entityId}" lacks ${normalizedCount} available instances.`);
-      }
-
-      for (const instanceId of available) {
-        this.destroyInstance(instanceId);
-      }
-
+      this.removeEntityInstances(entityId, normalizedCount);
       return;
     }
 
+    this.removeEntityCount(entityId, state, normalizedCount);
+  }
+
+  private removeEntityInstances(entityId: string, normalizedCount: number): void {
+    const instanceIds = this.entityInstances.get(entityId) ?? [];
+    const available = this.collectAvailableInstances(instanceIds, normalizedCount);
+    if (available.length < normalizedCount) {
+      throw new Error(`Entity "${entityId}" lacks ${normalizedCount} available instances.`);
+    }
+
+    for (const instanceId of available) {
+      this.destroyInstance(instanceId);
+    }
+  }
+
+  private collectAvailableInstances(
+    instanceIds: readonly string[],
+    count: number,
+  ): string[] {
+    const available: string[] = [];
+    for (let index = instanceIds.length - 1; index >= 0; index -= 1) {
+      const instanceId = instanceIds[index];
+      const instance = this.instanceStates.get(instanceId);
+      if (instance && !instance.assignment) {
+        available.push(instanceId);
+        if (available.length >= count) {
+          break;
+        }
+      }
+    }
+    return available;
+  }
+
+  private removeEntityCount(
+    entityId: string,
+    state: Mutable<EntityState>,
+    normalizedCount: number,
+  ): void {
     if (state.count < normalizedCount) {
       throw new Error(`Entity "${entityId}" lacks ${normalizedCount} count.`);
     }
@@ -627,10 +671,10 @@ export class EntitySystem implements System {
     }
 
     let level = Math.max(MIN_LEVEL, Math.floor(instance.level));
-    const maxLevel =
-      progression.maxLevel !== undefined
-        ? Math.max(MIN_LEVEL, progression.maxLevel)
-        : Number.POSITIVE_INFINITY;
+    const maxLevel = Math.max(
+      MIN_LEVEL,
+      progression.maxLevel ?? Number.POSITIVE_INFINITY,
+    );
     let experience = instance.experience;
 
     while (level < maxLevel) {
@@ -755,7 +799,7 @@ export class EntitySystem implements System {
       const list = this.entityInstances.get(definition.id) ?? [];
       const assignedCount = list.reduce((count, instanceId) => {
         const instance = this.instanceStates.get(instanceId);
-        return instance && instance.assignment ? count + 1 : count;
+        return instance?.assignment ? count + 1 : count;
       }, 0);
       const stateEntry = this.entityStates.get(definition.id);
       if (!stateEntry) {

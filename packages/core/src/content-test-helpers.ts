@@ -255,18 +255,12 @@ export function createEntityDefinition(
   overrides?: EntityOverrides,
 ): NormalizedEntity {
   const defaultName = id.split('.').pop() || id;
-  const rawName = overrides?.name as
-    | string
-    | NormalizedEntity['name']
-    | undefined;
+  const rawName = overrides?.name;
   const normalizedName = ensureLocalizedName<NormalizedEntity['name']>(
     rawName,
     defaultName,
   );
-  const rawDescription = overrides?.description as
-    | string
-    | NormalizedEntity['description']
-    | undefined;
+  const rawDescription = overrides?.description;
   const normalizedDescription = ensureLocalizedName<NormalizedEntity['description']>(
     rawDescription,
     defaultName,

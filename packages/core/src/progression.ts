@@ -803,6 +803,79 @@ const resolveLocalizedText = (
   return fallback;
 };
 
+const normalizeViewCount = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+
+const resolveEntityCounts = (
+  definition: EntityDefinition,
+  state: EntityState | undefined,
+  instanceViews: readonly EntityInstanceView[],
+): { count: number; availableCount: number } => {
+  const fallbackCount = definition.trackInstances ? instanceViews.length : 0;
+  const count = state?.count ?? fallbackCount;
+  const availableCount = state?.availableCount ?? count;
+  return { count, availableCount };
+};
+
+function createEntityInstanceViews(
+  definition: EntityDefinition,
+  source: ProgressionEntityState,
+): EntityInstanceView[] {
+  if (!definition.trackInstances) {
+    return [];
+  }
+
+  const instanceIds = source.entityInstances.get(definition.id) ?? [];
+  if (instanceIds.length === 0) {
+    return [];
+  }
+
+  const instanceViews: EntityInstanceView[] = [];
+
+  for (const instanceId of instanceIds) {
+    const instance = source.instances.get(instanceId);
+    if (!instance) {
+      continue;
+    }
+    instanceViews.push({
+      instanceId: instance.instanceId,
+      entityId: instance.entityId,
+      level: instance.level,
+      experience: instance.experience,
+      stats: instance.stats,
+      assignment: instance.assignment,
+    });
+  }
+
+  return instanceViews;
+}
+
+function createEntityView(
+  definition: EntityDefinition,
+  source: ProgressionEntityState,
+): EntityView {
+  const state = source.state.get(definition.id);
+  const instanceViews = createEntityInstanceViews(definition, source);
+  const { count, availableCount } = resolveEntityCounts(
+    definition,
+    state,
+    instanceViews,
+  );
+
+  return Object.freeze({
+    id: definition.id,
+    displayName: resolveLocalizedText(definition.name, definition.id),
+    description: resolveLocalizedText(definition.description, ''),
+    count: normalizeViewCount(count),
+    availableCount: normalizeViewCount(availableCount),
+    unlocked: state?.unlocked ?? definition.unlocked ?? false,
+    visible: state?.visible ?? definition.visible ?? true,
+    ...(definition.trackInstances
+      ? { instances: Object.freeze(instanceViews) }
+      : {}),
+  });
+}
+
 function createEntityViews(
   source: ProgressionEntityState | undefined,
 ): readonly EntityView[] {
@@ -819,51 +892,7 @@ function createEntityViews(
     return compareStableStrings(left.id, right.id);
   });
 
-  const views: EntityView[] = [];
-
-  for (const definition of sorted) {
-    const state = source.state.get(definition.id);
-    const instanceIds = source.entityInstances.get(definition.id) ?? [];
-    const instanceViews: EntityInstanceView[] = [];
-
-    if (definition.trackInstances) {
-      for (const instanceId of instanceIds) {
-        const instance = source.instances.get(instanceId);
-        if (!instance) {
-          continue;
-        }
-        instanceViews.push({
-          instanceId: instance.instanceId,
-          entityId: instance.entityId,
-          level: instance.level,
-          experience: instance.experience,
-          stats: instance.stats,
-          assignment: instance.assignment,
-        });
-      }
-    }
-
-    const count =
-      state?.count ?? (definition.trackInstances ? instanceViews.length : 0);
-    const availableCount = state?.availableCount ?? count;
-
-    views.push(
-      Object.freeze({
-        id: definition.id,
-        displayName: resolveLocalizedText(definition.name, definition.id),
-        description: resolveLocalizedText(definition.description, ''),
-        count: Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0,
-        availableCount: Number.isFinite(availableCount)
-          ? Math.max(0, Math.floor(availableCount))
-          : 0,
-        unlocked: state?.unlocked ?? definition.unlocked ?? false,
-        visible: state?.visible ?? definition.visible ?? true,
-        ...(definition.trackInstances
-          ? { instances: Object.freeze(instanceViews) }
-          : {}),
-      }),
-    );
-  }
+  const views = sorted.map((definition) => createEntityView(definition, source));
 
   return Object.freeze(views);
 }
