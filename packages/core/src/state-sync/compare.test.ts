@@ -140,6 +140,7 @@ const createSnapshot = (): GameStateSnapshot => {
     automation: clone(baseAutomation),
     transforms: clone(baseTransforms),
     entities: clone(baseEntities),
+    prd: {},
     commandQueue: clone(baseCommandQueue),
   };
 };

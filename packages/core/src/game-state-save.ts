@@ -15,7 +15,8 @@ import {
   type SerializedProgressionCoordinatorState,
 } from './progression-coordinator-save.js';
 import type { SerializedResourceState } from './resource-state.js';
-import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
+import { getCurrentRNGSeed, getRNGState, setRNGSeed, setRNGState } from './rng.js';
+import type { PRDRegistry, SerializedPRDRegistryState } from './rng.js';
 import type { SerializedTransformState, TransformState } from './transform-system.js';
 import { serializeTransformState } from './transform-system.js';
 import type { EntitySystem, SerializedEntitySystemState } from './entity-system.js';
@@ -25,6 +26,7 @@ export const GAME_STATE_SAVE_SCHEMA_VERSION = 1;
 export type GameStateSaveRuntime = Readonly<{
   step: number;
   rngSeed?: number;
+  rngState?: number;
 }>;
 
 export type GameStateSaveFormatV1 = Readonly<{
@@ -35,6 +37,7 @@ export type GameStateSaveFormatV1 = Readonly<{
   readonly automation: readonly SerializedAutomationState[];
   readonly transforms: readonly SerializedTransformState[];
   readonly entities: SerializedEntitySystemState;
+  readonly prd?: SerializedPRDRegistryState;
   readonly commandQueue: SerializedCommandQueue;
   readonly runtime: GameStateSaveRuntime;
 }>;
@@ -53,6 +56,7 @@ interface LegacyGameStateSaveFormatV0 {
   readonly progression: SerializedProgressionCoordinatorState;
   readonly automation?: readonly SerializedAutomationState[];
   readonly transforms?: readonly SerializedTransformState[];
+  readonly prd?: SerializedPRDRegistryState;
   readonly commandQueue: SerializedCommandQueue;
   readonly runtime?: GameStateSaveRuntime;
 }
@@ -121,10 +125,12 @@ function normalizeRuntime(value: unknown): GameStateSaveRuntime {
 
   const step = readNonNegativeInt(value.step) ?? 0;
   const rngSeed = readFiniteNumber(value.rngSeed);
+  const rngState = readFiniteNumber(value.rngState);
 
   return {
     step,
     ...(rngSeed !== undefined ? { rngSeed } : {}),
+    ...(rngState !== undefined ? { rngState } : {}),
   };
 }
 
@@ -289,6 +295,9 @@ function validateSaveFormatV1(value: unknown): GameStateSaveFormatV1 {
             : [],
         }
       : { entities: [], instances: [], entityInstances: [] },
+    prd: isRecord(value.prd)
+      ? (value.prd as SerializedPRDRegistryState)
+      : undefined,
     commandQueue: value.commandQueue as SerializedCommandQueue,
     runtime,
   };
@@ -344,6 +353,7 @@ export interface SerializeGameStateSaveFormatOptions {
   readonly savedAt?: number;
   readonly rngSeed?: number;
   readonly coordinator: ProgressionCoordinator;
+  readonly prdRegistry?: PRDRegistry;
   readonly productionSystem?: {
     exportAccumulators: () => SerializedProductionAccumulators;
   };
@@ -358,7 +368,9 @@ export function serializeGameStateSaveFormat(
 ): GameStateSaveFormatV1 {
   const savedAt = readFiniteNumber(options.savedAt) ?? Date.now();
   const runtimeStep = readNonNegativeInt(options.runtimeStep) ?? 0;
-  const rngSeed = options.rngSeed ?? getCurrentRNGSeed();
+  const currentSeed = getCurrentRNGSeed();
+  const rngSeed = options.rngSeed ?? currentSeed;
+  const rngState = rngSeed === currentSeed ? getRNGState() : undefined;
 
   return {
     version: GAME_STATE_SAVE_SCHEMA_VERSION,
@@ -377,10 +389,12 @@ export function serializeGameStateSaveFormat(
     entities: options.entitySystem
       ? options.entitySystem.exportForSave()
       : { entities: [], instances: [], entityInstances: [] },
+    ...(options.prdRegistry ? { prd: options.prdRegistry.captureState() } : {}),
     commandQueue: options.commandQueue.exportForSave(),
     runtime: {
       step: runtimeStep,
       ...(rngSeed !== undefined ? { rngSeed } : {}),
+      ...(rngState !== undefined ? { rngState } : {}),
     },
   };
 }
@@ -404,6 +418,7 @@ export interface HydrateGameStateSaveFormatOptions {
     ) => void;
   };
   readonly entitySystem?: EntitySystem;
+  readonly prdRegistry?: PRDRegistry;
   readonly commandQueue?: CommandQueue;
   readonly currentStep?: number;
   readonly applyRngSeed?: boolean;
@@ -417,6 +432,9 @@ export function hydrateGameStateSaveFormat(
 
   if (options.applyRngSeed !== false && save.runtime.rngSeed !== undefined) {
     setRNGSeed(save.runtime.rngSeed);
+  }
+  if (options.applyRngSeed !== false && save.runtime.rngState !== undefined) {
+    setRNGState(save.runtime.rngState);
   }
 
   options.coordinator.hydrateResources(save.resources);
@@ -446,6 +464,10 @@ export function hydrateGameStateSaveFormat(
       savedWorkerStep: save.runtime.step,
       currentStep,
     });
+  }
+
+  if (options.prdRegistry) {
+    options.prdRegistry.restoreState(save.prd);
   }
 
   if (options.commandQueue) {

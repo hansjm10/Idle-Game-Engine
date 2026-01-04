@@ -3,6 +3,7 @@ import type { SerializedCommandQueueV1 } from '../command-queue.js';
 import type { SerializedEntitySystemState } from '../entity-system.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type { SerializedResourceState } from '../resource-state.js';
+import type { SerializedPRDRegistryState } from '../rng.js';
 import type { SerializedTransformState } from '../transform-system.js';
 
 /**
@@ -44,6 +45,9 @@ export interface GameStateSnapshot {
 
   /** Serialized entity system state. */
   readonly entities: SerializedEntitySystemState;
+
+  /** Serialized PRD registry state. */
+  readonly prd?: SerializedPRDRegistryState;
 
   /** Serialized command queue. */
   readonly commandQueue: SerializedCommandQueueV1;

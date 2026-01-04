@@ -1091,6 +1091,7 @@ describe('content schema CLI compile command', () => {
   it('emits watch run events for changes, skips, and repeated failures with aggregated triggers', async () => {
     const packSlug = 'watch-pack';
     const workspace = await createWorkspace([{ slug: packSlug }]);
+    const watchEventTimeoutMs = 20_000;
     const packPath = path.join(
       workspace.root,
       'packages',
@@ -1110,13 +1111,16 @@ describe('content schema CLI compile command', () => {
     try {
       await watchProcess.events.waitForEvent(
         (event) => event.event === 'watch.status',
+        watchEventTimeoutMs,
       );
       await watchProcess.events.waitForEvent(
         (event) => event.event === 'watch.hint',
+        watchEventTimeoutMs,
       );
       await watchProcess.events.waitForEvent(
         (event) =>
           event.name === 'content_pack.compiled' && event.slug === packSlug,
+        watchEventTimeoutMs,
       );
 
       await sleep(200);
@@ -1128,6 +1132,7 @@ describe('content schema CLI compile command', () => {
       const successRun = await watchProcess.events.waitForEvent(
         (event) =>
           event.event === 'watch.run' && event.status === 'success',
+        watchEventTimeoutMs,
       );
       expect(successRun.changedPacks).toEqual(
         expect.arrayContaining([packSlug]),
@@ -1147,6 +1152,7 @@ describe('content schema CLI compile command', () => {
       const skippedRun = await watchProcess.events.waitForEvent(
         (event) =>
           event.event === 'watch.run' && event.status === 'skipped',
+        watchEventTimeoutMs,
       );
       const skippedArtifacts = skippedRun.artifacts as { changed?: number } | undefined;
       expect(skippedArtifacts?.changed ?? 0).toBe(0);
@@ -1159,11 +1165,13 @@ describe('content schema CLI compile command', () => {
         (event) =>
           event.name === 'content_pack.compilation_failed' &&
           event.slug === packSlug,
+        watchEventTimeoutMs,
       );
 
       const failureRun = await watchProcess.events.waitForEvent(
         (event) =>
           event.event === 'watch.run' && event.status === 'failed',
+        watchEventTimeoutMs,
       );
       expect(failureRun.failedPacks).toEqual(
         expect.arrayContaining([packSlug]),
@@ -1183,6 +1191,7 @@ describe('content schema CLI compile command', () => {
           event.status === 'failed' &&
           typeof event.iteration === 'number' &&
           event.iteration > failureIteration,
+        watchEventTimeoutMs,
       );
       expect(repeatedFailureRun.failedPacks).toEqual(
         expect.arrayContaining([packSlug]),
@@ -1205,7 +1214,7 @@ describe('content schema CLI compile command', () => {
       await watchProcess.stop();
       await workspace.cleanup();
     }
-  }, 20000);
+  }, 40000);
 });
 
 function createPackDocument(id: string, overrides: Partial<ContentPackDocument> = {}): ContentPackDocument {

@@ -231,6 +231,7 @@ describe('captureGameStateSnapshot', () => {
       automation: expectedAutomation,
       transforms: expectedTransforms,
       entities: expectedEntities,
+      prd: {},
       commandQueue: expectedCommandQueue,
     });
 

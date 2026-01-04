@@ -30,12 +30,15 @@
 import type {
   TransformDefinition,
   FormulaEvaluationContext,
+  NumericFormulaModel,
 } from '@idle-engine/content-schema';
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 import { evaluateCondition } from './condition-evaluator.js';
 import type { ConditionContext } from './condition-evaluator.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
+import { PRDRegistry, seededRandom } from './rng.js';
+import type { EntitySystem } from './entity-system.js';
 import type { ResourceStateAccessor } from './automation-system.js';
 import { telemetry } from './telemetry.js';
 
@@ -107,6 +110,8 @@ export interface TransformBatchOutput {
 export interface TransformBatchState {
   readonly completeAtStep: number;
   readonly outputs: readonly TransformBatchOutput[];
+  readonly entityInstanceIds?: readonly string[];
+  readonly entityExperience?: number;
 }
 
 type TransformBatchQueueEntry = TransformBatchState & {
@@ -120,6 +125,8 @@ export interface SerializedTransformState {
   readonly batches?: readonly {
     readonly completeAtStep: number;
     readonly outputs: readonly TransformBatchOutput[];
+    readonly entityInstanceIds?: readonly string[];
+    readonly entityExperience?: number;
   }[];
 }
 
@@ -144,16 +151,37 @@ export function serializeTransformState(
     const batches = entry.batches ?? [];
     const serializedBatches =
       batches.length > 0
-        ? batches.map((batch) => ({
-            completeAtStep: normalizeNonNegativeInt(batch.completeAtStep),
-            outputs: batch.outputs.map((output) => ({
-              resourceId: output.resourceId,
-              amount:
-                typeof output.amount === 'number' && Number.isFinite(output.amount)
-                  ? Math.max(0, output.amount)
-                  : 0,
-            })),
-          }))
+        ? batches.map((batch) => {
+            const entityInstanceIds =
+              batch.entityInstanceIds && batch.entityInstanceIds.length > 0
+                ? batch.entityInstanceIds.filter(
+                    (id) => typeof id === 'string' && id.trim().length > 0,
+                  )
+                : undefined;
+            const entityExperience =
+              typeof batch.entityExperience === 'number' &&
+              Number.isFinite(batch.entityExperience)
+                ? Math.max(0, batch.entityExperience)
+                : undefined;
+
+            return {
+              completeAtStep: normalizeNonNegativeInt(batch.completeAtStep),
+              outputs: batch.outputs.map((output) => ({
+                resourceId: output.resourceId,
+                amount:
+                  typeof output.amount === 'number' &&
+                  Number.isFinite(output.amount)
+                    ? Math.max(0, output.amount)
+                    : 0,
+              })),
+              ...(entityInstanceIds && entityInstanceIds.length > 0
+                ? { entityInstanceIds }
+                : {}),
+              ...(entityExperience !== undefined
+                ? { entityExperience }
+                : {}),
+            };
+          })
         : undefined;
 
     return {
@@ -173,6 +201,8 @@ export interface TransformSystemOptions {
   readonly stepDurationMs: number;
   readonly resourceState: TransformResourceState;
   readonly conditionContext?: ConditionContext;
+  readonly entitySystem?: EntitySystem;
+  readonly prdRegistry?: PRDRegistry;
 }
 
 /**
@@ -445,6 +475,188 @@ function evaluateOutputAmounts(
   return outputs;
 }
 
+const clampProbability = (value: number): number =>
+  Math.min(1, Math.max(0, value));
+
+const normalizeFiniteNumber = (value: number): number =>
+  Number.isFinite(value) ? value : 0;
+
+type MissionAssignmentResult =
+  | {
+      readonly ok: true;
+      readonly instanceIds: readonly string[];
+      readonly assignments: ReadonlyMap<string, boolean>;
+    }
+  | {
+      readonly ok: false;
+      readonly error: TransformExecutionResult['error'];
+    };
+
+type MissionOutcome = NonNullable<TransformDefinition['outcomes']>['success'];
+
+const selectMissionEntities = (
+  transform: TransformDefinition,
+  entitySystem: EntitySystem,
+  formulaContext: FormulaEvaluationContext,
+): MissionAssignmentResult => {
+  const requirements = transform.entityRequirements ?? [];
+  if (requirements.length === 0) {
+    return {
+      ok: false,
+      error: {
+        code: 'MISSING_ENTITY_REQUIREMENTS',
+        message: 'Mission transforms must declare entity requirements.',
+        details: { transformId: transform.id },
+      },
+    };
+  }
+
+  const usedIds = new Set<string>();
+  const assignedIds: string[] = [];
+  const returnOnCompleteByInstance = new Map<string, boolean>();
+
+  for (const requirement of requirements) {
+    const rawCount = evaluateNumericFormula(requirement.count, formulaContext);
+    if (!Number.isFinite(rawCount)) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ENTITY_COUNT',
+          message: 'Mission entity requirement count is non-finite.',
+          details: { transformId: transform.id, entityId: requirement.entityId },
+        },
+      };
+    }
+    const count = Math.max(0, Math.floor(rawCount));
+    if (count === 0) {
+      continue;
+    }
+
+    let candidates = entitySystem
+      .getAvailableInstances(requirement.entityId)
+      .filter((instance) => !usedIds.has(instance.instanceId));
+
+    if (requirement.minStats) {
+      const minStats = Object.entries(requirement.minStats)
+        .filter((entry): entry is [string, NumericFormulaModel] =>
+          Boolean(entry[1]),
+        )
+        .map(([statId, formula]) => {
+          const value = evaluateNumericFormula(formula, formulaContext);
+          if (!Number.isFinite(value)) {
+            return null;
+          }
+          return { statId, value };
+        });
+      if (minStats.some((entry) => entry === null)) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_ENTITY_STAT_REQUIREMENT',
+            message: 'Mission stat requirement evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      candidates = candidates.filter((instance) =>
+        (minStats as Array<{ statId: string; value: number }>).every(
+          ({ statId, value }) => (instance.stats[statId] ?? 0) >= value,
+        ),
+      );
+    }
+
+    const preferHighStats = requirement.preferHighStats ?? [];
+    candidates.sort((left, right) => {
+      for (const statId of preferHighStats) {
+        const diff = (right.stats[statId] ?? 0) - (left.stats[statId] ?? 0);
+        if (diff !== 0) {
+          return diff > 0 ? 1 : -1;
+        }
+      }
+      return compareStableStrings(left.instanceId, right.instanceId);
+    });
+
+    if (candidates.length < count) {
+      return {
+        ok: false,
+        error: {
+          code: 'INSUFFICIENT_ENTITIES',
+          message: 'Not enough available entities for mission requirements.',
+          details: {
+            transformId: transform.id,
+            entityId: requirement.entityId,
+            required: count,
+            available: candidates.length,
+          },
+        },
+      };
+    }
+
+    for (const instance of candidates.slice(0, count)) {
+      usedIds.add(instance.instanceId);
+      assignedIds.push(instance.instanceId);
+      returnOnCompleteByInstance.set(
+        instance.instanceId,
+        requirement.returnOnComplete !== false,
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    instanceIds: assignedIds,
+    assignments: returnOnCompleteByInstance,
+  };
+};
+
+const evaluateMissionOutcomeOutputs = (
+  transform: TransformDefinition,
+  outcome: MissionOutcome | undefined,
+  formulaContext: FormulaEvaluationContext,
+): Map<string, number> | null => {
+  if (!outcome) {
+    return new Map();
+  }
+
+  const outputs = new Map<string, number>();
+  for (const output of outcome.outputs) {
+    const amountRaw = evaluateNumericFormula(output.amount, formulaContext);
+    if (!Number.isFinite(amountRaw)) {
+      telemetry.recordWarning('TransformOutputNonFinite', {
+        transformId: transform.id,
+        resourceId: output.resourceId,
+        value: amountRaw,
+      });
+      return null;
+    }
+    const amount = Math.max(0, amountRaw);
+    const existing = outputs.get(output.resourceId) ?? 0;
+    outputs.set(output.resourceId, existing + amount);
+  }
+
+  return outputs;
+};
+
+const evaluateMissionOutcomeExperience = (
+  transform: TransformDefinition,
+  outcome: MissionOutcome | undefined,
+  formulaContext: FormulaEvaluationContext,
+): number | null => {
+  if (!outcome?.entityExperience) {
+    return 0;
+  }
+  const value = evaluateNumericFormula(outcome.entityExperience, formulaContext);
+  if (!Number.isFinite(value)) {
+    telemetry.recordWarning('MissionOutcomeExperienceNonFinite', {
+      transformId: transform.id,
+      value,
+    });
+    return null;
+  }
+  return Math.max(0, value);
+};
+
 /**
  * Checks if all input costs are affordable.
  */
@@ -673,6 +885,7 @@ function deliverDueBatches(
   resourceState: TransformResourceState,
   transformId: string,
   step: number,
+  entitySystem?: EntitySystem,
 ): void {
   if (batches.length === 0) {
     return;
@@ -683,6 +896,22 @@ function deliverDueBatches(
     const entry = batches[readIndex];
     if (entry.completeAtStep <= step) {
       applyBatchOutputs(entry.outputs, resourceState, transformId);
+      if (
+        entry.entityExperience &&
+        entry.entityExperience > 0 &&
+        entry.entityInstanceIds &&
+        entry.entityInstanceIds.length > 0
+      ) {
+        if (!entitySystem) {
+          telemetry.recordWarning('MissionOutcomeExperienceMissingEntitySystem', {
+            transformId,
+          });
+        } else {
+          for (const instanceId of entry.entityInstanceIds) {
+            entitySystem.addExperience(instanceId, entry.entityExperience, step);
+          }
+        }
+      }
       continue;
     }
 
@@ -733,7 +962,11 @@ export function createTransformSystem(
     stepDurationMs,
     resourceState,
     conditionContext,
+    entitySystem,
+    prdRegistry: providedPrdRegistry,
   } = options;
+
+  const prdRegistry = providedPrdRegistry ?? new PRDRegistry(seededRandom);
 
   const transformStates = new Map<string, TransformState>();
   const transformById = new Map<string, TransformDefinition>();
@@ -762,7 +995,9 @@ export function createTransformSystem(
       visible: true,
       cooldownExpiresStep: 0,
       runsThisTick: 0,
-      ...(transform.mode === 'batch' ? { batches: [] } : {}),
+      ...(transform.mode === 'batch' || transform.mode === 'mission'
+        ? { batches: [] }
+        : {}),
     });
     batchSequences.set(transform.id, 0);
   }
@@ -790,7 +1025,7 @@ export function createTransformSystem(
     step: number,
     formulaContext: FormulaEvaluationContext,
   ): TransformExecutionResult => {
-    if (transform.mode === 'continuous' || transform.mode === 'mission') {
+    if (transform.mode === 'continuous') {
       return {
         success: false,
         error: {
@@ -799,6 +1034,233 @@ export function createTransformSystem(
           details: { transformId: transform.id, mode: transform.mode },
         },
       };
+    }
+
+    if (transform.mode === 'mission') {
+      if (!entitySystem) {
+        return {
+          success: false,
+          error: {
+            code: 'MISSING_ENTITY_SYSTEM',
+            message: 'Mission transforms require an entity system.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const durationSteps = evaluateBatchDurationSteps(
+        transform,
+        stepDurationMs,
+        formulaContext,
+      );
+      if (durationSteps === null) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_DURATION_FORMULA',
+            message: 'Transform duration formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const assignmentResult = selectMissionEntities(
+        transform,
+        entitySystem,
+        formulaContext,
+      );
+      if (!assignmentResult.ok) {
+        return { success: false, error: assignmentResult.error };
+      }
+
+      // Evaluate input costs
+      const costs = evaluateInputCosts(transform, formulaContext);
+      if (costs === null) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT_FORMULA',
+            message: 'Transform input formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      if (!canAffordInputs(costs, resourceState)) {
+        return {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_RESOURCES',
+            message: 'Cannot afford transform input costs.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const successRate = transform.successRate;
+      let baseRate = 1;
+      if (successRate?.baseRate) {
+        const raw = evaluateNumericFormula(successRate.baseRate, formulaContext);
+        if (!Number.isFinite(raw)) {
+          return {
+            success: false,
+            error: {
+              code: 'INVALID_SUCCESS_RATE',
+              message: 'Mission success rate evaluated to non-finite value.',
+              details: { transformId: transform.id },
+            },
+          };
+        }
+        baseRate = clampProbability(raw);
+      }
+
+      if (successRate?.statModifiers) {
+        for (const modifier of successRate.statModifiers) {
+          const weightRaw = evaluateNumericFormula(
+            modifier.weight,
+            formulaContext,
+          );
+          if (!Number.isFinite(weightRaw)) {
+            return {
+              success: false,
+              error: {
+                code: 'INVALID_SUCCESS_RATE',
+                message: 'Mission success rate modifier evaluated to non-finite value.',
+                details: { transformId: transform.id, statId: modifier.stat },
+              },
+            };
+          }
+
+          const values = assignmentResult.instanceIds.map((id) => {
+            const instance = entitySystem.getInstanceState(id);
+            return instance?.stats[modifier.stat] ?? 0;
+          });
+          const statValue =
+            values.length === 0
+              ? 0
+              : modifier.entityScope === 'sum'
+                ? values.reduce((sum, value) => sum + value, 0)
+                : modifier.entityScope === 'min'
+                  ? Math.min(...values)
+                  : modifier.entityScope === 'max'
+                    ? Math.max(...values)
+                    : values.reduce((sum, value) => sum + value, 0) /
+                      values.length;
+
+          baseRate += normalizeFiniteNumber(weightRaw) * statValue;
+        }
+        baseRate = clampProbability(baseRate);
+      }
+
+      const success = successRate?.usePRD
+        ? prdRegistry.getOrCreate(transform.id, baseRate).roll()
+        : seededRandom() < baseRate;
+
+      const outcome = success
+        ? transform.outcomes?.success
+        : transform.outcomes?.failure;
+      const outputs = evaluateMissionOutcomeOutputs(
+        transform,
+        outcome,
+        formulaContext,
+      );
+      if (outputs === null) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_OUTPUT_FORMULA',
+            message: 'Transform output formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const experience = evaluateMissionOutcomeExperience(
+        transform,
+        outcome,
+        formulaContext,
+      );
+      if (experience === null) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_OUTPUT_FORMULA',
+            message: 'Mission experience formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const preparedOutputs = prepareOutputs(outputs, resourceState, transform.id);
+      if (!preparedOutputs.ok) {
+        return { success: false, error: preparedOutputs.error };
+      }
+
+      state.batches ??= [];
+      const batchQueue = state.batches as TransformBatchQueueEntry[];
+      const maxOutstanding = getEffectiveMaxOutstandingBatches(transform);
+      if (batchQueue.length >= maxOutstanding) {
+        return {
+          success: false,
+          error: {
+            code: 'MAX_OUTSTANDING_BATCHES',
+            message: 'Transform has reached the outstanding batch cap.',
+            details: {
+              transformId: transform.id,
+              maxOutstandingBatches: maxOutstanding,
+              outstandingBatches: batchQueue.length,
+            },
+          },
+        };
+      }
+
+      const spendSuccess = spendInputs(costs, resourceState, transform.id);
+      if (!spendSuccess) {
+        return {
+          success: false,
+          error: {
+            code: 'SPEND_FAILED',
+            message: 'Failed to spend transform inputs.',
+            details: { transformId: transform.id },
+          },
+        };
+      }
+
+      const completeAtStep = step + durationSteps;
+      const sequence = batchSequences.get(transform.id) ?? 0;
+      batchSequences.set(transform.id, sequence + 1);
+
+      for (const instanceId of assignmentResult.instanceIds) {
+        const returnOnComplete =
+          assignmentResult.assignments.get(instanceId) ?? true;
+        const returnStep = returnOnComplete
+          ? completeAtStep
+          : Number.MAX_SAFE_INTEGER;
+        entitySystem.assignToMission(instanceId, {
+          missionId: transform.id,
+          batchId: `${sequence}`,
+          deployedAtStep: step,
+          returnStep,
+        });
+      }
+
+      const batchEntry: TransformBatchQueueEntry = {
+        completeAtStep,
+        sequence,
+        outputs: preparedOutputs.outputs.map((output) => ({
+          resourceId: output.resourceId,
+          amount: output.amount,
+        })),
+        ...(assignmentResult.instanceIds.length > 0
+          ? { entityInstanceIds: assignmentResult.instanceIds }
+          : {}),
+        ...(experience && experience > 0 ? { entityExperience: experience } : {}),
+      };
+
+      insertBatch(batchQueue, batchEntry);
+      updateTransformCooldown(transform, state, step, stepDurationMs, formulaContext);
+      state.runsThisTick += 1;
+      return { success: true };
     }
 
     // Evaluate input costs
@@ -1174,6 +1636,19 @@ export function createTransformSystem(
             const outputsValue = batchRecord.outputs;
             const outputsArray = Array.isArray(outputsValue) ? outputsValue : [];
             const outputs: TransformBatchOutput[] = [];
+            const entityInstanceIdsValue = batchRecord.entityInstanceIds;
+            const entityInstanceIds = Array.isArray(entityInstanceIdsValue)
+              ? entityInstanceIdsValue.filter(
+                  (id): id is string =>
+                    typeof id === 'string' && id.trim().length > 0,
+                )
+              : undefined;
+            const entityExperienceValue = batchRecord.entityExperience;
+            const entityExperience =
+              typeof entityExperienceValue === 'number' &&
+              Number.isFinite(entityExperienceValue)
+                ? Math.max(0, entityExperienceValue)
+                : undefined;
 
             for (const outputEntry of outputsArray) {
               if (!outputEntry || typeof outputEntry !== 'object') {
@@ -1201,6 +1676,12 @@ export function createTransformSystem(
             restoredBatches.push({
               completeAtStep: rebasedCompleteAtStep,
               outputs,
+              ...(entityInstanceIds && entityInstanceIds.length > 0
+                ? { entityInstanceIds }
+                : {}),
+              ...(entityExperience !== undefined
+                ? { entityExperience }
+                : {}),
               sequence,
             });
             sequence += 1;
@@ -1254,7 +1735,7 @@ export function createTransformSystem(
         const state = transformStates.get(transform.id);
         const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
         if (batches.length === 0) continue;
-        deliverDueBatches(batches, resourceState, transform.id, step);
+        deliverDueBatches(batches, resourceState, transform.id, step, entitySystem);
       }
 
       // Collect event triggers to retain across ticks when blocked
@@ -1370,7 +1851,7 @@ export function createTransformSystem(
         const state = transformStates.get(transform.id);
         const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
         if (batches.length === 0) continue;
-        deliverDueBatches(batches, resourceState, transform.id, step);
+        deliverDueBatches(batches, resourceState, transform.id, step, entitySystem);
       }
 
       // Clear and repopulate pending event triggers with retained items only
@@ -1462,7 +1943,8 @@ export function buildTransformSnapshot(
 
     const batches = state?.batches ?? [];
     const nextBatchReadyAtStep =
-      transform.mode === 'batch' && batches.length > 0
+      (transform.mode === 'batch' || transform.mode === 'mission') &&
+      batches.length > 0
         ? batches[0].completeAtStep
         : undefined;
 
@@ -1479,7 +1961,7 @@ export function buildTransformSnapshot(
         canAfford,
         inputs,
         outputs,
-        ...(transform.mode === 'batch'
+        ...(transform.mode === 'batch' || transform.mode === 'mission'
           ? {
               outstandingBatches: batches.length,
               ...(nextBatchReadyAtStep !== undefined

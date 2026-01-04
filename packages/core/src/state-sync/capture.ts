@@ -8,6 +8,7 @@ import type { SerializedProductionAccumulators } from '../production-system.js';
 import type { ProgressionCoordinator } from '../progression-coordinator.js';
 import { serializeProgressionCoordinatorState } from '../progression-coordinator-save.js';
 import { getCurrentRNGSeed, getRNGState } from '../rng.js';
+import type { SerializedPRDRegistryState } from '../rng.js';
 import type { TransformState } from '../transform-system.js';
 import { serializeTransformState } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
@@ -25,6 +26,8 @@ export interface CaptureSnapshotOptions {
   readonly getTransformState: () => ReadonlyMap<string, TransformState>;
   /** Entity system state extractor. */
   readonly getEntityState: () => EntitySystemState;
+  /** Optional PRD state extractor. */
+  readonly getPrdState?: () => SerializedPRDRegistryState;
   /** Command queue to capture. */
   readonly commandQueue: CommandQueue;
   /** Optional production system for accumulators. */
@@ -64,6 +67,7 @@ export function captureGameStateSnapshot(
     getAutomationState,
     getTransformState,
     getEntityState,
+    getPrdState,
     commandQueue,
     productionSystem,
   } = options;
@@ -71,6 +75,7 @@ export function captureGameStateSnapshot(
   const automationState = getAutomationState();
   const transformState = getTransformState();
   const entityState = getEntityState();
+  const prdState = getPrdState?.() ?? {};
 
   return {
     version: 1,
@@ -89,6 +94,7 @@ export function captureGameStateSnapshot(
     automation: serializeAutomationState(automationState),
     transforms: serializeTransformState(transformState),
     entities: serializeEntitySystemState(entityState),
+    prd: prdState,
     commandQueue: commandQueue.exportForSave(),
   };
 }

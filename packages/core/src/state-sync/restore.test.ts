@@ -367,6 +367,7 @@ describe('restoreFromSnapshot', () => {
       automation: [],
       transforms: [],
       entities: { entities: [], instances: [], entityInstances: [] },
+      prd: {},
       commandQueue: {
         schemaVersion: 1,
         entries: [],

@@ -10,6 +10,9 @@ import type { TransformState } from './transform-system.js';
 import { createAutomationSystem, type ResourceStateAccessor } from './automation-system.js';
 import type { ConditionContext } from './condition-evaluator.js';
 import { IdleEngineRuntime } from './index.js';
+import { createEntityDefinition } from './content-test-helpers.js';
+import { EntitySystem } from './entity-system.js';
+import { PRDRegistry } from './rng.js';
 
 describe('TransformSystem', () => {
   const stepDurationMs = 100;
@@ -1991,7 +1994,7 @@ describe('TransformSystem', () => {
       expect(result.error?.code).toBe('UNSUPPORTED_MODE');
     });
 
-    it('should reject mission mode transforms without spending resources', () => {
+    it('should execute mission mode transforms and apply PRD rolls', () => {
       const transforms: TransformDefinition[] = [
         {
           id: 'transform:mission' as any,
@@ -1999,7 +2002,27 @@ describe('TransformSystem', () => {
           description: { default: 'Mission transform', variants: {} },
           mode: 'mission',
           inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
-          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          outputs: [],
+          duration: { kind: 'constant', value: 100 },
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: true,
+            },
+          ],
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: true,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+              entityExperience: { kind: 'constant', value: 5 },
+            },
+          },
           trigger: { kind: 'manual' },
           tags: [],
         },
@@ -2012,21 +2035,51 @@ describe('TransformSystem', () => {
         ]),
       );
 
+      const entityDefinition = createEntityDefinition('entity.scout', {
+        trackInstances: true,
+        startCount: 1,
+        unlocked: true,
+      });
+      const entitySystem = new EntitySystem([entityDefinition], {
+        nextInt: () => 1,
+      });
+      const prdRegistry = new PRDRegistry(() => 0);
+
       const system = createTransformSystem({
         transforms,
         stepDurationMs,
         resourceState,
+        entitySystem,
+        prdRegistry,
       });
 
       // Tick to initialize
       system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
 
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]
+        ?.instanceId;
+      expect(instanceId).toBeTruthy();
+
       const result = system.executeTransform('transform:mission', 0);
 
-      expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('UNSUPPORTED_MODE');
-      expect(resourceState.getAmount(0)).toBe(100);
-      expect(resourceState.getAmount(1)).toBe(0);
+      expect(result.success).toBe(true);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(Object.keys(prdRegistry.captureState())).toContain('transform:mission');
+      const assigned = instanceId
+        ? entitySystem.getInstanceState(instanceId)?.assignment
+        : null;
+      expect(assigned?.missionId).toBe('transform:mission');
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(1)).toBe(1);
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(5);
+      }
+
+      entitySystem.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.assignment).toBeNull();
+      }
     });
   });
 });

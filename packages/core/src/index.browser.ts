@@ -1172,7 +1172,12 @@ export {
   setRNGState,
   seededRandom,
   resetRNG,
+  calculatePRDConstant,
+  calculatePRDAverageProbability,
+  PseudoRandomDistribution,
+  PRDRegistry,
 } from './rng.js';
+export type { PRDState, SerializedPRDRegistryState } from './rng.js';
 export {
   getGameState,
   setGameState,
