@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SerializedAutomationState } from '../automation-system.js';
 import { CommandPriority } from '../command.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
+import type { SerializedEntitySystemState } from '../entity-system.js';
 import type { SerializedProductionAccumulators } from '../production-system.js';
 import type { SerializedProgressionCoordinatorStateV2 } from '../progression-coordinator-save.js';
 import type {
@@ -97,6 +98,12 @@ const baseTransforms: SerializedTransformState[] = [
   },
 ];
 
+const baseEntities: SerializedEntitySystemState = {
+  entities: [],
+  instances: [],
+  entityInstances: [],
+};
+
 const baseCommandQueue: SerializedCommandQueueV1 = {
   schemaVersion: 1,
   entries: [
@@ -132,9 +139,27 @@ const createSnapshot = (): GameStateSnapshot => {
     progression,
     automation: clone(baseAutomation),
     transforms: clone(baseTransforms),
+    entities: clone(baseEntities),
     commandQueue: clone(baseCommandQueue),
   };
 };
+
+const createSnapshotWithQueue = (
+  entries: SerializedCommandQueueV1['entries'],
+): GameStateSnapshot => ({
+  ...createSnapshot(),
+  commandQueue: {
+    ...clone(baseCommandQueue),
+    entries: clone(entries),
+  },
+});
+
+const createQueueEntry = (
+  overrides: Partial<SerializedCommandQueueV1['entries'][number]> = {},
+): SerializedCommandQueueV1['entries'][number] => ({
+  ...clone(baseCommandQueue.entries[0]),
+  ...overrides,
+});
 
 describe('compareStates', () => {
   it('returns identical for matching snapshots and ignores capturedAt', () => {
@@ -259,6 +284,113 @@ describe('compareStates', () => {
       local: { value: 1 },
       remote: { value: 2 },
     });
+  });
+
+  it.each([
+    {
+      label: 'missing local entries',
+      localEntries: [createQueueEntry()],
+      remoteEntries: [
+        createQueueEntry(),
+        createQueueEntry({ type: 'command.extra', timestamp: 200, step: 6 }),
+      ],
+      expectedMissingInLocal: ['command.extra'],
+      expectedMissingInRemote: [],
+    },
+    {
+      label: 'missing remote entries',
+      localEntries: [
+        createQueueEntry(),
+        createQueueEntry({ type: 'command.extra', timestamp: 200, step: 6 }),
+      ],
+      remoteEntries: [createQueueEntry()],
+      expectedMissingInLocal: [],
+      expectedMissingInRemote: ['command.extra'],
+    },
+  ])('reports $label in command queue diff', ({
+    localEntries,
+    remoteEntries,
+    expectedMissingInLocal,
+    expectedMissingInRemote,
+  }) => {
+    const local = createSnapshotWithQueue(localEntries);
+    const remote = createSnapshotWithQueue(remoteEntries);
+
+    const diff = compareStates(local, remote);
+
+    expect(diff.identical).toBe(false);
+    expect(diff.commandQueue?.entryCountDiff).toEqual({
+      local: localEntries.length,
+      remote: remoteEntries.length,
+    });
+    expect(diff.commandQueue?.missingInLocal).toEqual(expectedMissingInLocal);
+    expect(diff.commandQueue?.missingInRemote).toEqual(expectedMissingInRemote);
+  });
+
+  it('reports entity instance list differences', () => {
+    const local = createSnapshot();
+    const localEntities: SerializedEntitySystemState = {
+      entities: [
+        {
+          id: 'entity.worker',
+          count: 2,
+          availableCount: 2,
+          unlocked: true,
+          visible: true,
+        },
+      ],
+      instances: [
+        {
+          instanceId: 'worker-1',
+          entityId: 'entity.worker',
+          level: 1,
+          experience: 0,
+          stats: {},
+          assignment: null,
+        },
+        {
+          instanceId: 'worker-2',
+          entityId: 'entity.worker',
+          level: 1,
+          experience: 0,
+          stats: {},
+          assignment: null,
+        },
+      ],
+      entityInstances: [
+        {
+          entityId: 'entity.worker',
+          instanceIds: ['worker-1', 'worker-2'],
+        },
+      ],
+    };
+    const remoteEntities: SerializedEntitySystemState = {
+      ...localEntities,
+      entityInstances: [
+        {
+          entityId: 'entity.worker',
+          instanceIds: ['worker-2', 'worker-1'],
+        },
+      ],
+    };
+    const remote: GameStateSnapshot = {
+      ...local,
+      entities: remoteEntities,
+    };
+
+    const diff = compareStates(
+      { ...local, entities: localEntities },
+      remote,
+    );
+
+    expect(diff.identical).toBe(false);
+    expect(
+      diff.entityInstanceLists?.get('entity.worker')?.instanceIds,
+    ).toEqual({
+      local: ['worker-1', 'worker-2'],
+      remote: ['worker-2', 'worker-1'],
+    });
+    expect(diff.entityInstances).toBeUndefined();
   });
 });
 

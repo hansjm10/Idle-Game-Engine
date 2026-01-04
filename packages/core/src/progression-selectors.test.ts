@@ -85,6 +85,7 @@ function createSnapshot(
     upgrades: overrides.upgrades ?? Object.freeze([]),
     automations: overrides.automations ?? Object.freeze([]),
     transforms: overrides.transforms ?? Object.freeze([]),
+    entities: overrides.entities ?? Object.freeze([]),
     prestigeLayers: overrides.prestigeLayers ?? Object.freeze([]),
     ...(overrides.achievements ? { achievements: overrides.achievements } : {}),
   });

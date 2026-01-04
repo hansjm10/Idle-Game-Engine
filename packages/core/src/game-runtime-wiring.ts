@@ -15,6 +15,9 @@ import { createProductionSystem } from './production-system.js';
 import { createTransformSystem } from './transform-system.js';
 import { registerTransformCommandHandlers } from './transform-command-handlers.js';
 import { registerResourceCommandHandlers } from './resource-command-handlers.js';
+import { EntitySystem, createSeededRng } from './entity-system.js';
+import { registerEntityCommandHandlers } from './entity-command-handlers.js';
+import type { ProgressionAuthoritativeState, ProgressionEntityState } from './progression.js';
 
 export interface RuntimeWiringRuntime {
   getStepSizeMs(): number;
@@ -46,6 +49,7 @@ export type GameRuntimeWiring<
   readonly productionSystem?: ProductionSystem;
   readonly automationSystem?: ReturnType<typeof createAutomationSystem>;
   readonly transformSystem?: ReturnType<typeof createTransformSystem>;
+  readonly entitySystem?: EntitySystem;
   readonly systems: readonly System[];
   readonly serialize: (options?: GameRuntimeSerializeOptions) => GameStateSaveFormat;
   readonly hydrate: (
@@ -63,6 +67,7 @@ export type WireGameRuntimeOptions<
   readonly enableProduction?: boolean;
   readonly enableAutomation?: boolean;
   readonly enableTransforms?: boolean;
+  readonly enableEntities?: boolean;
   readonly production?: {
     readonly applyViaFinalizeTick?: boolean;
   };
@@ -101,6 +106,8 @@ export function wireGameRuntime<
     options.enableAutomation ?? content.automations.length > 0;
   const enableTransforms =
     options.enableTransforms ?? content.transforms.length > 0;
+  const enableEntities =
+    options.enableEntities ?? content.entities.length > 0;
   const registerOfflineCatchup = options.registerOfflineCatchup ?? true;
 
   const systems: System[] = [];
@@ -128,6 +135,14 @@ export function wireGameRuntime<
           transforms: content.transforms,
           stepDurationMs: runtimeStepSizeMs,
           resourceState: resourceStateAdapter,
+          conditionContext: coordinator.getConditionContext(),
+        })
+      : undefined;
+
+  const entitySystem =
+    enableEntities && content.entities.length > 0
+      ? new EntitySystem(content.entities, createSeededRng(), {
+          stepDurationMs: runtimeStepSizeMs,
           conditionContext: coordinator.getConditionContext(),
         })
       : undefined;
@@ -192,6 +207,21 @@ export function wireGameRuntime<
     systems.push(transformSystem);
   }
 
+  if (entitySystem) {
+    runtime.addSystem(entitySystem);
+    systems.push(entitySystem);
+
+    const coordinatorState = coordinator.state as ProgressionAuthoritativeState & {
+      entities?: ProgressionEntityState;
+    };
+    coordinatorState.entities = {
+      definitions: content.entities,
+      state: entitySystem.getState().entities,
+      instances: entitySystem.getState().instances,
+      entityInstances: entitySystem.getState().entityInstances,
+    };
+  }
+
   const coordinatorUpdateSystem: System = {
     id: 'progression-coordinator',
     tick: ({ step, events }) => {
@@ -216,6 +246,13 @@ export function wireGameRuntime<
     });
   }
 
+  if (entitySystem) {
+    registerEntityCommandHandlers({
+      dispatcher: runtime.getCommandDispatcher(),
+      entitySystem,
+    });
+  }
+
   const serialize = (
     serializeOptions?: GameRuntimeSerializeOptions,
   ): GameStateSaveFormat =>
@@ -227,6 +264,7 @@ export function wireGameRuntime<
       productionSystem,
       automationState: automationSystem?.getState(),
       transformState: transformSystem?.getState(),
+      entitySystem,
       commandQueue: runtime.getCommandQueue(),
     });
 
@@ -240,6 +278,7 @@ export function wireGameRuntime<
       productionSystem,
       automationSystem,
       transformSystem,
+      entitySystem,
       commandQueue: runtime.getCommandQueue(),
       currentStep: hydrateOptions?.currentStep,
       applyRngSeed: hydrateOptions?.applyRngSeed,
@@ -254,6 +293,7 @@ export function wireGameRuntime<
     productionSystem,
     automationSystem,
     transformSystem,
+    entitySystem,
     systems,
     serialize,
     hydrate,

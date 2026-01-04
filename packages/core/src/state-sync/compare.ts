@@ -4,6 +4,10 @@ import type {
   SerializedCommandQueueEntryV1,
   SerializedCommandQueueV1,
 } from '../command-queue.js';
+import type {
+  SerializedEntityInstancesByEntity,
+  SerializedEntitySystemState,
+} from '../entity-system.js';
 import type { SerializedProductionAccumulators } from '../production-system.js';
 import type {
   SerializedProgressionAchievementStateV2,
@@ -59,6 +63,15 @@ export interface StateDiff {
   /** Transform differences */
   readonly transforms?: ReadonlyMap<string, TransformDiff>;
 
+  /** Entity differences */
+  readonly entities?: ReadonlyMap<string, EntityDiff>;
+
+  /** Entity instance differences */
+  readonly entityInstances?: ReadonlyMap<string, EntityInstanceDiff>;
+
+  /** Entity instance list differences by entity ID */
+  readonly entityInstanceLists?: ReadonlyMap<string, EntityInstanceListDiff>;
+
   /** Command queue differences */
   readonly commandQueue?: CommandQueueDiff;
 }
@@ -78,6 +91,31 @@ export interface ResourceDiff {
   readonly unlocked?: ValueDiff<boolean | undefined>;
   readonly visible?: ValueDiff<boolean | undefined>;
   readonly flags?: ValueDiff<number | undefined>;
+}
+
+export interface EntityDiff {
+  readonly id: string;
+  readonly missing?: MissingDiff;
+  readonly count?: ValueDiff<number | undefined>;
+  readonly availableCount?: ValueDiff<number | undefined>;
+  readonly unlocked?: ValueDiff<boolean | undefined>;
+  readonly visible?: ValueDiff<boolean | undefined>;
+}
+
+export interface EntityInstanceDiff {
+  readonly id: string;
+  readonly missing?: MissingDiff;
+  readonly entityId?: ValueDiff<string | undefined>;
+  readonly level?: ValueDiff<number | undefined>;
+  readonly experience?: ValueDiff<number | undefined>;
+  readonly stats?: ValueDiff<Record<string, number> | undefined>;
+  readonly assignment?: ValueDiff<unknown>;
+}
+
+export interface EntityInstanceListDiff {
+  readonly id: string;
+  readonly missing?: MissingDiff;
+  readonly instanceIds?: ValueDiff<readonly string[] | undefined>;
 }
 
 export interface ProgressionDiff {
@@ -706,6 +744,198 @@ const compareAutomation = (
   return diffs;
 };
 
+const mapInstancesById = <T extends { instanceId: string }>(
+  entries: readonly T[],
+): Map<string, T> => {
+  const map = new Map<string, T>();
+  for (const entry of entries) {
+    if (!map.has(entry.instanceId)) {
+      map.set(entry.instanceId, entry);
+    }
+  }
+  return map;
+};
+
+const mapEntityInstancesByEntityId = (
+  entries: readonly SerializedEntityInstancesByEntity[],
+): Map<string, SerializedEntityInstancesByEntity> => {
+  const map = new Map<string, SerializedEntityInstancesByEntity>();
+  for (const entry of entries) {
+    if (!map.has(entry.entityId)) {
+      map.set(entry.entityId, entry);
+    }
+  }
+  return map;
+};
+
+const compareEntities = (
+  local: SerializedEntitySystemState,
+  remote: SerializedEntitySystemState,
+): ReadonlyMap<string, EntityDiff> => {
+  const diffs = new Map<string, EntityDiff>();
+  const localMap = mapById(local.entities);
+  const remoteMap = mapById(remote.entities);
+  const ids = collectSortedIds(
+    Array.from(localMap.keys()),
+    Array.from(remoteMap.keys()),
+  );
+
+  for (const id of ids) {
+    const localEntry = localMap.get(id);
+    const remoteEntry = remoteMap.get(id);
+    const diff: Mutable<EntityDiff> = { id };
+    let hasDiff = false;
+
+    hasDiff =
+      recordMissingDiff(
+        diff,
+        localEntry !== undefined,
+        remoteEntry !== undefined,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(diff, 'count', localEntry?.count, remoteEntry?.count) ||
+      hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'availableCount',
+        localEntry?.availableCount,
+        remoteEntry?.availableCount,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'unlocked',
+        localEntry?.unlocked,
+        remoteEntry?.unlocked,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'visible',
+        localEntry?.visible,
+        remoteEntry?.visible,
+      ) || hasDiff;
+
+    if (hasDiff) {
+      diffs.set(id, diff);
+    }
+  }
+
+  return diffs;
+};
+
+const compareEntityInstances = (
+  local: SerializedEntitySystemState,
+  remote: SerializedEntitySystemState,
+): ReadonlyMap<string, EntityInstanceDiff> => {
+  const diffs = new Map<string, EntityInstanceDiff>();
+  const localMap = mapInstancesById(local.instances);
+  const remoteMap = mapInstancesById(remote.instances);
+  const ids = collectSortedIds(
+    Array.from(localMap.keys()),
+    Array.from(remoteMap.keys()),
+  );
+
+  for (const id of ids) {
+    const localEntry = localMap.get(id);
+    const remoteEntry = remoteMap.get(id);
+    const diff: Mutable<EntityInstanceDiff> = { id };
+    let hasDiff = false;
+
+    hasDiff =
+      recordMissingDiff(
+        diff,
+        localEntry !== undefined,
+        remoteEntry !== undefined,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'entityId',
+        localEntry?.entityId,
+        remoteEntry?.entityId,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'level',
+        localEntry?.level,
+        remoteEntry?.level,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'experience',
+        localEntry?.experience,
+        remoteEntry?.experience,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'stats',
+        localEntry?.stats,
+        remoteEntry?.stats,
+        valuesEqual,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'assignment',
+        localEntry?.assignment,
+        remoteEntry?.assignment,
+        valuesEqual,
+      ) || hasDiff;
+
+    if (hasDiff) {
+      diffs.set(id, diff);
+    }
+  }
+
+  return diffs;
+};
+
+const compareEntityInstanceLists = (
+  local: SerializedEntitySystemState,
+  remote: SerializedEntitySystemState,
+): ReadonlyMap<string, EntityInstanceListDiff> => {
+  const diffs = new Map<string, EntityInstanceListDiff>();
+  const localMap = mapEntityInstancesByEntityId(local.entityInstances);
+  const remoteMap = mapEntityInstancesByEntityId(remote.entityInstances);
+  const ids = collectSortedIds(
+    Array.from(localMap.keys()),
+    Array.from(remoteMap.keys()),
+  );
+
+  for (const id of ids) {
+    const localEntry = localMap.get(id);
+    const remoteEntry = remoteMap.get(id);
+    const diff: Mutable<EntityInstanceListDiff> = { id };
+    let hasDiff = false;
+
+    hasDiff =
+      recordMissingDiff(
+        diff,
+        localEntry !== undefined,
+        remoteEntry !== undefined,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'instanceIds',
+        localEntry?.instanceIds,
+        remoteEntry?.instanceIds,
+        valuesEqual,
+      ) || hasDiff;
+
+    if (hasDiff) {
+      diffs.set(id, diff);
+    }
+  }
+
+  return diffs;
+};
+
 const compareTransformOutputs = (
   local: readonly { resourceId: string; amount: number }[],
   remote: readonly { resourceId: string; amount: number }[],
@@ -1017,6 +1247,30 @@ export function compareStates(
   const transformDiff = compareTransforms(local.transforms, remote.transforms);
   if (transformDiff.size > 0) {
     result.transforms = transformDiff;
+    identical = false;
+  }
+
+  const entityDiff = compareEntities(local.entities, remote.entities);
+  if (entityDiff.size > 0) {
+    result.entities = entityDiff;
+    identical = false;
+  }
+
+  const entityInstanceDiff = compareEntityInstances(
+    local.entities,
+    remote.entities,
+  );
+  if (entityInstanceDiff.size > 0) {
+    result.entityInstances = entityInstanceDiff;
+    identical = false;
+  }
+
+  const entityInstanceListDiff = compareEntityInstanceLists(
+    local.entities,
+    remote.entities,
+  );
+  if (entityInstanceListDiff.size > 0) {
+    result.entityInstanceLists = entityInstanceListDiff;
     identical = false;
   }
 

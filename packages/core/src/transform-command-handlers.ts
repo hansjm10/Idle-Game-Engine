@@ -1,5 +1,9 @@
 import { RUNTIME_COMMAND_TYPES, type RunTransformPayload } from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
+import {
+  validateNonEmptyString,
+  validatePositiveInteger,
+} from './command-validation.js';
 import type { createTransformSystem } from './transform-system.js';
 import { telemetry } from './telemetry.js';
 
@@ -52,45 +56,37 @@ function createRunTransformHandler(
 ): CommandHandler<RunTransformPayload> {
   return (payload, context) => {
     // Validate payload
-    if (
-      typeof payload.transformId !== 'string' ||
-      payload.transformId.trim().length === 0
-    ) {
-      telemetry.recordError('RunTransformInvalidId', {
-        transformId: payload.transformId,
-        step: context.step,
-        priority: context.priority,
-      });
-      return {
-        success: false,
-        error: {
-          code: 'INVALID_TRANSFORM_ID',
-          message: 'Transform id must be a non-empty string.',
-        },
-      };
+    const invalidTransformId = validateNonEmptyString(
+      payload.transformId,
+      context,
+      'RunTransformInvalidId',
+      { transformId: payload.transformId },
+      {
+        code: 'INVALID_TRANSFORM_ID',
+        message: 'Transform id must be a non-empty string.',
+      },
+    );
+    if (invalidTransformId) {
+      return invalidTransformId;
     }
 
     // Validate runs parameter if provided
     if (payload.runs !== undefined) {
-      if (
-        typeof payload.runs !== 'number' ||
-        !Number.isFinite(payload.runs) ||
-        !Number.isInteger(payload.runs) ||
-        payload.runs < 1
-      ) {
-        telemetry.recordError('RunTransformInvalidRuns', {
+      const invalidRuns = validatePositiveInteger(
+        payload.runs,
+        context,
+        'RunTransformInvalidRuns',
+        {
           transformId: payload.transformId,
           runs: payload.runs,
-          step: context.step,
-          priority: context.priority,
-        });
-        return {
-          success: false,
-          error: {
-            code: 'INVALID_RUNS',
-            message: 'Runs must be a positive integer.',
-          },
-        };
+        },
+        {
+          code: 'INVALID_RUNS',
+          message: 'Runs must be a positive integer.',
+        },
+      );
+      if (invalidRuns) {
+        return invalidRuns;
       }
     }
 

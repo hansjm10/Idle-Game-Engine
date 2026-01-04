@@ -21,6 +21,7 @@ import { createProgressionCoordinator } from '../progression-coordinator.js';
 import { serializeProgressionCoordinatorState } from '../progression-coordinator-save.js';
 import { resetRNG, setRNGSeed } from '../rng.js';
 import { createTransformSystem, serializeTransformState } from '../transform-system.js';
+import type { EntitySystemState } from '../entity-system.js';
 
 const STEP_SIZE_MS = 100;
 const INITIAL_STEP = 12;
@@ -30,6 +31,12 @@ const OVERRIDE_NOW = 1_700_000_123;
 const literal = (value: number): NumericFormula => ({
   kind: 'constant',
   value,
+});
+
+const createEmptyEntityState = (): EntitySystemState => ({
+  entities: new Map(),
+  instances: new Map(),
+  entityInstances: new Map(),
 });
 
 function createTestContent() {
@@ -195,6 +202,7 @@ describe('captureGameStateSnapshot', () => {
       capturedAt: OVERRIDE_NOW,
       getAutomationState: () => automationState,
       getTransformState: () => transformState,
+      getEntityState: createEmptyEntityState,
       commandQueue,
       productionSystem,
     });
@@ -206,6 +214,7 @@ describe('captureGameStateSnapshot', () => {
     );
     const expectedAutomation = serializeAutomationState(automationState);
     const expectedTransforms = serializeTransformState(transformState);
+    const expectedEntities = { entities: [], instances: [], entityInstances: [] };
     const expectedCommandQueue = commandQueue.exportForSave();
 
     expect(snapshot).toEqual({
@@ -221,6 +230,7 @@ describe('captureGameStateSnapshot', () => {
       progression: expectedProgression,
       automation: expectedAutomation,
       transforms: expectedTransforms,
+      entities: expectedEntities,
       commandQueue: expectedCommandQueue,
     });
 

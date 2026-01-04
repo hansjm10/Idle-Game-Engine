@@ -18,6 +18,11 @@ type ResourceOverrides = Record<string, unknown> & {
 type GeneratorOverrides = Record<string, unknown> & {
   readonly name?: string | NormalizedGenerator['name'];
 };
+type EntityOverrides = Record<string, unknown> & {
+  readonly name?: string | NormalizedEntity['name'];
+  readonly description?: string | NormalizedEntity['description'];
+  readonly stats?: NormalizedEntity['stats'];
+};
 type UpgradeOverrides = Record<string, unknown> & {
   readonly name?: string | NormalizedUpgrade['name'];
 };
@@ -240,6 +245,48 @@ export function createGeneratorDefinition(
     ...overrides,
     name: normalizedName,
   } as unknown as NormalizedGenerator;
+}
+
+/**
+ * Creates a basic entity definition for testing
+ */
+export function createEntityDefinition(
+  id: string,
+  overrides?: EntityOverrides,
+): NormalizedEntity {
+  const defaultName = id.split('.').pop() || id;
+  const rawName = overrides?.name;
+  const normalizedName = ensureLocalizedName<NormalizedEntity['name']>(
+    rawName,
+    defaultName,
+  );
+  const rawDescription = overrides?.description;
+  const normalizedDescription = ensureLocalizedName<NormalizedEntity['description']>(
+    rawDescription,
+    defaultName,
+  );
+  const stats =
+    overrides?.stats ??
+    ([
+      {
+        id: `${id}.stat`,
+        name: normalizedName,
+        baseValue: literalOne,
+      },
+    ] as unknown as NormalizedEntity['stats']);
+
+  return {
+    id,
+    name: normalizedName,
+    description: normalizedDescription,
+    stats,
+    startCount: 0,
+    trackInstances: false,
+    unlocked: false,
+    visible: true,
+    tags: [],
+    ...overrides,
+  } as unknown as NormalizedEntity;
 }
 
 /**

@@ -12,6 +12,7 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '../command.js';
 import type { SerializedCommandQueueV1 } from '../command-queue.js';
 import {
   createContentPack,
+  createEntityDefinition,
   createGeneratorDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
@@ -39,10 +40,17 @@ import {
 import type { ResourceDefinition } from '../resource-state.js';
 import { createTransformSystem } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
+import type { EntitySystemState } from '../entity-system.js';
 
 const STEP_SIZE_MS = 100;
 const INITIAL_STEP = 12;
 const CAPTURE_TIME = 1_700_000_123;
+
+const createEmptyEntityState = (): EntitySystemState => ({
+  entities: new Map(),
+  instances: new Map(),
+  entityInstances: new Map(),
+});
 
 const literal = (value: number): NumericFormula => ({
   kind: 'constant',
@@ -237,6 +245,7 @@ describe('restoreFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => automationSystem.getState(),
       getTransformState: () => transformSystem.getState(),
+      getEntityState: createEmptyEntityState,
       commandQueue,
       productionSystem,
     });
@@ -317,6 +326,7 @@ describe('restoreFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => restoredAutomationSystem.getState(),
       getTransformState: () => restoredTransformSystem.getState(),
+      getEntityState: createEmptyEntityState,
       commandQueue: restored.commandQueue,
       productionSystem: restoredProductionSystem,
     });
@@ -356,6 +366,7 @@ describe('restoreFromSnapshot', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: {
         schemaVersion: 1,
         entries: [],
@@ -411,6 +422,7 @@ describe('restoreFromSnapshot', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: {
         schemaVersion: 1,
         entries: [],
@@ -486,6 +498,7 @@ describe('restoreFromSnapshot', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue,
     };
 
@@ -556,6 +569,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
       getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: wiring.commandQueue,
       productionSystem: wiring.productionSystem,
     });
@@ -575,6 +589,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => restored.automationSystem?.getState() ?? new Map(),
       getTransformState: () => restored.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: restored.commandQueue,
       productionSystem: restored.productionSystem,
     });
@@ -582,6 +597,39 @@ describe('restoreGameRuntimeFromSnapshot', () => {
     expect(roundTrip).toEqual(snapshot);
     expect(getCurrentRNGSeed()).toBe(snapshot.runtime.rngSeed);
     expect(getRNGState()).toBe(snapshot.runtime.rngState);
+  });
+
+  it('defaults applyViaFinalizeTick to true when generators are present', () => {
+    const content = createTestContent();
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      initialStep: INITIAL_STEP,
+    });
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+    });
+
+    expect(restored.runtime.getMaxStepsPerFrame()).toBe(1);
+    expect(restored.systems.map((system) => system.id)).toEqual([
+      'production',
+      'resource-finalize',
+      'progression-coordinator',
+    ]);
   });
 
   it('respects applyViaFinalizeTick override when restoring', () => {
@@ -599,6 +647,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
       getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: wiring.commandQueue,
       productionSystem: wiring.productionSystem,
     });
@@ -677,6 +726,7 @@ describe('restoreGameRuntimeFromSnapshot', () => {
       capturedAt: CAPTURE_TIME,
       getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
       getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: createEmptyEntityState,
       commandQueue: wiring.commandQueue,
       productionSystem: wiring.productionSystem,
     });
@@ -706,6 +756,94 @@ describe('restoreGameRuntimeFromSnapshot', () => {
     expect(restoredTransform.cooldownExpiresStep).toBe(
       transformCooldown + rebaseDelta,
     );
+  });
+
+  it('rebases entity assignment steps when restoring into a later step', () => {
+    const content = createContentPack({
+      resources: [
+        createResourceDefinition('resource.energy', {
+          startAmount: 0,
+          capacity: null,
+          unlocked: true,
+          visible: true,
+        }),
+      ],
+      entities: [
+        createEntityDefinition('entity.scout', {
+          trackInstances: true,
+          startCount: 1,
+          unlocked: true,
+          visible: true,
+        }),
+      ],
+    });
+
+    const savedStep = 10;
+    const rebaseDelta = 4;
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: STEP_SIZE_MS,
+      initialStep: savedStep,
+    });
+
+    const entitySystem = wiring.entitySystem;
+    if (!entitySystem) {
+      throw new Error('Expected entity system to be wired.');
+    }
+
+    const [instance] = entitySystem.getInstancesForEntity('entity.scout');
+    if (!instance) {
+      throw new Error('Expected entity instance to be created.');
+    }
+
+    const assignment = {
+      missionId: 'mission.alpha',
+      batchId: 'batch-1',
+      deployedAtStep: savedStep - 1,
+      returnStep: savedStep + 3,
+    };
+
+    entitySystem.assignToMission(instance.instanceId, assignment);
+
+    const snapshot = captureGameStateSnapshot({
+      runtime: wiring.runtime,
+      progressionCoordinator: wiring.coordinator,
+      capturedAt: CAPTURE_TIME,
+      getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+      getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+      getEntityState: () => entitySystem.getState(),
+      commandQueue: wiring.commandQueue,
+      productionSystem: wiring.productionSystem,
+    });
+
+    const targetStep = savedStep + rebaseDelta;
+    const restored = restoreGameRuntimeFromSnapshot({
+      content,
+      snapshot,
+      runtimeOptions: { initialStep: targetStep },
+    });
+
+    const restoredEntitySystem = restored.entitySystem;
+    if (!restoredEntitySystem) {
+      throw new Error('Expected entity system to be wired.');
+    }
+
+    const [restoredInstance] =
+      restoredEntitySystem.getInstancesForEntity('entity.scout');
+    if (!restoredInstance?.assignment) {
+      throw new Error('Expected entity assignment to be restored.');
+    }
+
+    expect(restored.runtime.getCurrentStep()).toBe(targetStep);
+    expect(restoredInstance.assignment).toEqual({
+      missionId: assignment.missionId,
+      batchId: assignment.batchId,
+      deployedAtStep: assignment.deployedAtStep + rebaseDelta,
+      returnStep: assignment.returnStep + rebaseDelta,
+    });
+    expect(
+      restoredEntitySystem.getEntityState('entity.scout')?.availableCount,
+    ).toBe(0);
   });
 });
 
@@ -752,6 +890,7 @@ describe('restorePartial', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue,
     };
 
@@ -820,6 +959,7 @@ describe('restorePartial', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue,
     };
 
@@ -866,6 +1006,7 @@ describe('restorePartial', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: {
         schemaVersion: 1,
         entries: [],

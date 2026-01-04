@@ -21,6 +21,7 @@ import {
   hydrateGameStateSaveFormat,
   loadGameStateSaveFormat,
   serializeGameStateSaveFormat,
+  type SchemaMigration,
 } from './game-state-save.js';
 import { IdleEngineRuntime } from './index.js';
 import { createProductionSystem } from './production-system.js';
@@ -182,6 +183,19 @@ function createHarness(initialStep = 0) {
     transformSystem,
     commandQueue,
   };
+}
+
+function createSerializedSave(savedAt = 0) {
+  const harness = createHarness(0);
+  return serializeGameStateSaveFormat({
+    runtimeStep: 0,
+    savedAt,
+    coordinator: harness.coordinator,
+    productionSystem: harness.productionSystem,
+    automationState: harness.automationSystem.getState(),
+    transformState: harness.transformSystem.getState(),
+    commandQueue: harness.commandQueue,
+  });
 }
 
 function advanceSteps(
@@ -360,6 +374,7 @@ describe('game-state-save', () => {
       },
       automation: [],
       transforms: [],
+      entities: { entities: [], instances: [], entityInstances: [] },
       commandQueue: { schemaVersion: 1, entries: [] },
       runtime: { step: 0, rngSeed: 1 },
     } as const;
@@ -376,5 +391,105 @@ describe('game-state-save', () => {
     const decoded = await decodeGameStateSave(compressed);
     expect(decoded.runtime.step).toBe(0);
     expect(decoded.resources.ids.length).toBe(resourceCount);
+  });
+
+  it('rejects unsupported compression headers when decoding', async () => {
+    const payload = new TextEncoder().encode(JSON.stringify({}));
+    const encoded = new Uint8Array(payload.length + 1);
+    encoded[0] = 9;
+    encoded.set(payload, 1);
+
+    await expect(decodeGameStateSave(encoded)).rejects.toThrow(
+      /Unsupported save compression header/,
+    );
+  });
+
+  it('rejects saves with invalid timestamps', () => {
+    const save = createSerializedSave(5);
+
+    expect(() => loadGameStateSaveFormat({ ...save, savedAt: -1 })).toThrow(
+      'Save data has an invalid savedAt timestamp.',
+    );
+  });
+
+  it('requires core save fields when loading', () => {
+    const save = createSerializedSave(5);
+    const { resources: _resources, ...missingResources } = save as any;
+    const { progression: _progression, ...missingProgression } = save as any;
+    const { commandQueue: _commandQueue, ...missingCommandQueue } = save as any;
+
+    expect(() => loadGameStateSaveFormat(missingResources)).toThrow(
+      'Save data is missing resources.',
+    );
+    expect(() => loadGameStateSaveFormat(missingProgression)).toThrow(
+      'Save data is missing progression state.',
+    );
+    expect(() => loadGameStateSaveFormat(missingCommandQueue)).toThrow(
+      'Save data is missing command queue state.',
+    );
+  });
+
+  it('rejects saves without a detectable version', () => {
+    expect(() => loadGameStateSaveFormat({})).toThrow(
+      'Unable to determine game state save version.',
+    );
+  });
+
+  it('rejects saves without a migration path', () => {
+    const save = createSerializedSave(0);
+    const unsupported = { ...save, version: 2 };
+
+    expect(() =>
+      loadGameStateSaveFormat(unsupported, {
+        migrations: [],
+      }),
+    ).toThrow(/No migration path/);
+  });
+
+  it('rejects migrations that do not update the save version', () => {
+    const save = createSerializedSave(0);
+    const migrations: SchemaMigration[] = [
+      {
+        fromVersion: 1,
+        toVersion: 2,
+        migrate: (value) => value,
+      },
+    ];
+
+    expect(() =>
+      loadGameStateSaveFormat(save, {
+        targetVersion: 2,
+        migrations,
+      }),
+    ).toThrow(/did not set the expected version/);
+  });
+
+  it('rejects empty or non-Uint8Array save payloads', async () => {
+    await expect(decodeGameStateSave(new Uint8Array())).rejects.toThrow(
+      'Encoded save must be a non-empty Uint8Array.',
+    );
+
+    await expect(
+      decodeGameStateSave('invalid' as unknown as Uint8Array),
+    ).rejects.toThrow('Encoded save must be a non-empty Uint8Array.');
+  });
+
+  it('skips rng seed application when disabled', () => {
+    setRNGSeed(4242);
+    const save = createSerializedSave(0);
+
+    setRNGSeed(777);
+    const coordinator = createProgressionCoordinator({
+      content: createTestContent(),
+      stepDurationMs: STEP_SIZE_MS,
+    });
+
+    hydrateGameStateSaveFormat({
+      save,
+      coordinator,
+      applyRngSeed: false,
+    });
+
+    expect(getCurrentRNGSeed()).toBe(777);
   });
 });

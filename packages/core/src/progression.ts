@@ -9,9 +9,15 @@ import type {
 } from './resource-command-handlers.js';
 import type {
   AutomationDefinition,
+  EntityDefinition,
   TransformDefinition,
 } from '@idle-engine/content-schema';
 import type { AutomationState } from './automation-system.js';
+import type {
+  EntityAssignment,
+  EntityInstanceState,
+  EntityState,
+} from './entity-system.js';
 import { evaluateCondition } from './condition-evaluator.js';
 import type { ConditionContext } from './condition-evaluator.js';
 import type {
@@ -131,6 +137,26 @@ export type AutomationView = Readonly<{
   isOnCooldown: boolean;
 }>;
 
+export type EntityInstanceView = Readonly<{
+  instanceId: string;
+  entityId: string;
+  level: number;
+  experience: number;
+  stats: Readonly<Record<string, number>>;
+  assignment: EntityAssignment | null;
+}>;
+
+export type EntityView = Readonly<{
+  id: string;
+  displayName: string;
+  description: string;
+  count: number;
+  availableCount: number;
+  unlocked: boolean;
+  visible: boolean;
+  instances?: readonly EntityInstanceView[];
+}>;
+
 export interface ProgressionAchievementState {
   readonly id: string;
   readonly displayName?: string;
@@ -157,6 +183,13 @@ export interface ProgressionTransformState {
   readonly state: ReadonlyMap<string, TransformState>;
   readonly resourceState: TransformResourceState;
   readonly conditionContext?: ConditionContext;
+}
+
+export interface ProgressionEntityState {
+  readonly definitions: readonly EntityDefinition[];
+  readonly state: ReadonlyMap<string, EntityState>;
+  readonly instances: ReadonlyMap<string, EntityInstanceState>;
+  readonly entityInstances: ReadonlyMap<string, readonly string[]>;
 }
 
 export type PrestigeRewardContribution = Readonly<{
@@ -244,6 +277,7 @@ export type ProgressionSnapshot = Readonly<{
   upgrades: readonly UpgradeView[];
   automations: readonly AutomationView[];
   transforms: readonly TransformView[];
+  entities: readonly EntityView[];
   achievements?: readonly AchievementView[];
   prestigeLayers: readonly PrestigeLayerView[];
   metrics?: readonly MetricView[];
@@ -352,6 +386,7 @@ export interface ProgressionAuthoritativeState {
   readonly upgrades?: readonly ProgressionUpgradeState[];
   readonly automations?: ProgressionAutomationState;
   readonly transforms?: ProgressionTransformState;
+  readonly entities?: ProgressionEntityState;
   readonly achievements?: readonly ProgressionAchievementState[];
   readonly prestigeSystem?: PrestigeSystemEvaluator;
   readonly prestigeLayers?: readonly ProgressionPrestigeLayerState[];
@@ -409,6 +444,7 @@ export function buildProgressionSnapshot(
     stepDurationMs,
     state?.transforms,
   );
+  const entities = createEntityViews(state?.entities);
   const achievements = createAchievementViews(state?.achievements);
   const prestigeLayers = createPrestigeLayerViews(
     state?.prestigeLayers,
@@ -427,6 +463,7 @@ export function buildProgressionSnapshot(
     upgrades,
     automations,
     transforms,
+    entities,
     ...(achievements ? { achievements } : {}),
     prestigeLayers,
     ...(metrics ? { metrics } : {}),
@@ -751,6 +788,113 @@ function createTransformViews(
   });
 
   return snapshot.transforms;
+}
+
+const resolveLocalizedText = (
+  value: { readonly default?: string } | string | undefined,
+  fallback: string,
+): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value.default === 'string') {
+    return value.default;
+  }
+  return fallback;
+};
+
+const normalizeViewCount = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+
+const resolveEntityCounts = (
+  definition: EntityDefinition,
+  state: EntityState | undefined,
+  instanceViews: readonly EntityInstanceView[],
+): { count: number; availableCount: number } => {
+  const fallbackCount = definition.trackInstances ? instanceViews.length : 0;
+  const count = state?.count ?? fallbackCount;
+  const availableCount = state?.availableCount ?? count;
+  return { count, availableCount };
+};
+
+function createEntityInstanceViews(
+  definition: EntityDefinition,
+  source: ProgressionEntityState,
+): EntityInstanceView[] {
+  if (!definition.trackInstances) {
+    return [];
+  }
+
+  const instanceIds = source.entityInstances.get(definition.id) ?? [];
+  if (instanceIds.length === 0) {
+    return [];
+  }
+
+  const instanceViews: EntityInstanceView[] = [];
+
+  for (const instanceId of instanceIds) {
+    const instance = source.instances.get(instanceId);
+    if (!instance) {
+      continue;
+    }
+    instanceViews.push({
+      instanceId: instance.instanceId,
+      entityId: instance.entityId,
+      level: instance.level,
+      experience: instance.experience,
+      stats: instance.stats,
+      assignment: instance.assignment,
+    });
+  }
+
+  return instanceViews;
+}
+
+function createEntityView(
+  definition: EntityDefinition,
+  source: ProgressionEntityState,
+): EntityView {
+  const state = source.state.get(definition.id);
+  const instanceViews = createEntityInstanceViews(definition, source);
+  const { count, availableCount } = resolveEntityCounts(
+    definition,
+    state,
+    instanceViews,
+  );
+
+  return Object.freeze({
+    id: definition.id,
+    displayName: resolveLocalizedText(definition.name, definition.id),
+    description: resolveLocalizedText(definition.description, ''),
+    count: normalizeViewCount(count),
+    availableCount: normalizeViewCount(availableCount),
+    unlocked: state?.unlocked ?? definition.unlocked ?? false,
+    visible: state?.visible ?? definition.visible ?? true,
+    ...(definition.trackInstances
+      ? { instances: Object.freeze(instanceViews) }
+      : {}),
+  });
+}
+
+function createEntityViews(
+  source: ProgressionEntityState | undefined,
+): readonly EntityView[] {
+  if (!source || source.definitions.length === 0) {
+    return EMPTY_ARRAY as readonly EntityView[];
+  }
+
+  const sorted = [...source.definitions].sort((left, right) => {
+    const orderA = left.order ?? Number.POSITIVE_INFINITY;
+    const orderB = right.order ?? Number.POSITIVE_INFINITY;
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    return compareStableStrings(left.id, right.id);
+  });
+
+  const views = sorted.map((definition) => createEntityView(definition, source));
+
+  return Object.freeze(views);
 }
 
 function createResourceAmountLookup(

@@ -830,20 +830,29 @@ export type WireGameRuntimeOptions =
 export type GameRuntimeSerializeOptions = GameRuntimeSerializeOptionsBase;
 export type GameRuntimeHydrateOptions = GameRuntimeHydrateOptionsBase;
 
-export type CreateGameRuntimeOptions = Readonly<{
-  readonly content: NormalizedContentPack;
-  readonly stepSizeMs?: number;
-  readonly maxStepsPerFrame?: number;
-  readonly initialStep?: number;
-  readonly initialProgressionState?: ProgressionAuthoritativeState;
-  readonly enableProduction?: boolean;
-  readonly enableAutomation?: boolean;
-  readonly enableTransforms?: boolean;
-  readonly production?: {
-    readonly applyViaFinalizeTick?: boolean;
-  };
-  readonly registerOfflineCatchup?: boolean;
-}>;
+type CreateGameRuntimeToggles = Readonly<
+  Pick<
+    WireGameRuntimeOptions,
+    | 'enableProduction'
+    | 'enableAutomation'
+    | 'enableTransforms'
+    | 'enableEntities'
+  >
+>;
+
+export type CreateGameRuntimeOptions = Readonly<
+  {
+    readonly content: NormalizedContentPack;
+    readonly stepSizeMs?: number;
+    readonly maxStepsPerFrame?: number;
+    readonly initialStep?: number;
+    readonly initialProgressionState?: ProgressionAuthoritativeState;
+    readonly production?: {
+      readonly applyViaFinalizeTick?: boolean;
+    };
+    readonly registerOfflineCatchup?: boolean;
+  } & CreateGameRuntimeToggles
+>;
 
 export function createGameRuntime(
   options: CreateGameRuntimeOptions,
@@ -885,6 +894,7 @@ export function createGameRuntime(
     enableProduction,
     enableAutomation: options.enableAutomation,
     enableTransforms: options.enableTransforms,
+    enableEntities: options.enableEntities,
     production: productionOptions,
     registerOfflineCatchup: options.registerOfflineCatchup,
   });
@@ -1014,6 +1024,7 @@ export {
   type OfflineCatchupPayload,
   type MigrationStep,
   type ApplyMigrationPayload,
+  type RunTransformPayload,
   type RuntimeCommandPayloads,
   type RuntimeCommand,
   type CommandAuthorizationPolicy,
@@ -1201,6 +1212,7 @@ export {
   type ProgressionUpgradeState,
   type ProgressionAutomationState,
   type ProgressionTransformState,
+  type ProgressionEntityState,
   type ProgressionAchievementState,
   type ProgressionPrestigeLayerState,
   type ProgressionSnapshot,
@@ -1212,6 +1224,8 @@ export {
   type UpgradeCostView,
   type UpgradeView,
   type AutomationView,
+  type EntityView,
+  type EntityInstanceView,
   type AchievementCategory,
   type AchievementTier,
   type AchievementProgressMode,
@@ -1355,6 +1369,25 @@ export {
   type TransformCommandHandlerOptions,
 } from './transform-command-handlers.js';
 export {
+  EntitySystem,
+  createSeededRng,
+  serializeEntitySystemState,
+  type EntitySystemOptions,
+  type EntityAssignment,
+  type EntityInstanceState,
+  type EntityState,
+  type EntitySystemState,
+  type SeededRNG,
+  type SerializedEntityInstanceState,
+  type SerializedEntityInstancesByEntity,
+  type SerializedEntityState,
+  type SerializedEntitySystemState,
+} from './entity-system.js';
+export {
+  registerEntityCommandHandlers,
+  type EntityCommandHandlerOptions,
+} from './entity-command-handlers.js';
+export {
   applyPrestigeReset,
   type PrestigeResetContext,
   type PrestigeResetTarget,
@@ -1448,6 +1481,9 @@ export type {
   AutomationDiff,
   CommandQueueDiff,
   CommandQueueEntryDiff,
+  EntityDiff,
+  EntityInstanceDiff,
+  EntityInstanceListDiff,
   GeneratorDiff,
   ProductionAccumulatorDiff,
   ProgressionDiff,
