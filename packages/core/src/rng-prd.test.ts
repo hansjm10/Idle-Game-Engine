@@ -46,6 +46,15 @@ describe('PseudoRandomDistribution', () => {
     expect(actual).toBeCloseTo(target, 6);
   });
 
+  it('matches stated probability in the tiny-probability approximation regime', () => {
+    const target = 1e-13;
+    const constant = calculatePRDConstant(target);
+    const actual = calculatePRDAverageProbability(constant);
+    const relativeError = Math.abs(actual - target) / target;
+
+    expect(relativeError).toBeLessThan(1e-6);
+  });
+
   it('converges for low base probabilities', () => {
     setRNGSeed(67890);
     const prd = new PseudoRandomDistribution(0.01);

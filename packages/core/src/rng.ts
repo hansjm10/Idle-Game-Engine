@@ -120,6 +120,15 @@ export function calculatePRDConstant(probability: number): number {
     return normalizedProbability;
   }
 
+  const approximationConstant =
+    (Math.PI / 2) * normalizedProbability * normalizedProbability;
+  if (
+    approximationConstant > 0 &&
+    Math.ceil(1 / approximationConstant) > PRD_MAX_ATTEMPTS
+  ) {
+    return approximationConstant;
+  }
+
   let low = 0;
   let high = normalizedProbability;
 
