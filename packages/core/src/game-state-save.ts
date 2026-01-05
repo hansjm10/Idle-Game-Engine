@@ -134,6 +134,41 @@ function normalizeRuntime(value: unknown): GameStateSaveRuntime {
   };
 }
 
+function assertHasProperties(
+  value: Record<string, unknown>,
+  required: readonly (readonly [property: string, message: string])[],
+): void {
+  for (const [property, message] of required) {
+    if (!(property in value)) {
+      throw new Error(message);
+    }
+  }
+}
+
+function normalizeEntitySystemState(value: unknown): SerializedEntitySystemState {
+  if (!isRecord(value)) {
+    return { entities: [], instances: [], entityInstances: [] };
+  }
+
+  return {
+    entities: Array.isArray(value.entities)
+      ? (value.entities as SerializedEntitySystemState['entities'])
+      : [],
+    instances: Array.isArray(value.instances)
+      ? (value.instances as SerializedEntitySystemState['instances'])
+      : [],
+    entityInstances: Array.isArray(value.entityInstances)
+      ? (value.entityInstances as SerializedEntitySystemState['entityInstances'])
+      : [],
+  };
+}
+
+function normalizePrdRegistryState(
+  value: unknown,
+): SerializedPRDRegistryState | undefined {
+  return isRecord(value) ? (value as SerializedPRDRegistryState) : undefined;
+}
+
 function migrateLegacyV0ToV1(value: unknown): GameStateSaveFormatV1 {
   if (!hasLegacyV0Shape(value)) {
     throw new Error('Unsupported legacy game state save format.');
@@ -265,11 +300,7 @@ function validateSaveFormatV1(value: unknown): GameStateSaveFormatV1 {
     ['commandQueue', 'Save data is missing command queue state.'],
   ] as const;
 
-  for (const [property, message] of requiredProperties) {
-    if (!(property in value)) {
-      throw new Error(message);
-    }
-  }
+  assertHasProperties(value, requiredProperties);
 
   return {
     version: GAME_STATE_SAVE_SCHEMA_VERSION,
@@ -282,22 +313,8 @@ function validateSaveFormatV1(value: unknown): GameStateSaveFormatV1 {
     transforms: Array.isArray(value.transforms)
       ? (value.transforms as SerializedTransformState[])
       : [],
-    entities: isRecord(value.entities)
-      ? {
-          entities: Array.isArray(value.entities.entities)
-            ? (value.entities.entities as SerializedEntitySystemState['entities'])
-            : [],
-          instances: Array.isArray(value.entities.instances)
-            ? (value.entities.instances as SerializedEntitySystemState['instances'])
-            : [],
-          entityInstances: Array.isArray(value.entities.entityInstances)
-            ? (value.entities.entityInstances as SerializedEntitySystemState['entityInstances'])
-            : [],
-        }
-      : { entities: [], instances: [], entityInstances: [] },
-    prd: isRecord(value.prd)
-      ? (value.prd as SerializedPRDRegistryState)
-      : undefined,
+    entities: normalizeEntitySystemState(value.entities),
+    prd: normalizePrdRegistryState(value.prd),
     commandQueue: value.commandQueue as SerializedCommandQueue,
     runtime,
   };
