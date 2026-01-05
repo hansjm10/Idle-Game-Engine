@@ -129,8 +129,8 @@ function normalizeRuntime(value: unknown): GameStateSaveRuntime {
 
   return {
     step,
-    ...(rngSeed !== undefined ? { rngSeed } : {}),
-    ...(rngState !== undefined ? { rngState } : {}),
+    ...(rngSeed === undefined ? {} : { rngSeed }),
+    ...(rngState === undefined ? {} : { rngState }),
   };
 }
 
@@ -259,16 +259,16 @@ function validateSaveFormatV1(value: unknown): GameStateSaveFormatV1 {
 
   const runtime = normalizeRuntime(value.runtime);
 
-  if (!('resources' in value)) {
-    throw new Error('Save data is missing resources.');
-  }
+  const requiredProperties = [
+    ['resources', 'Save data is missing resources.'],
+    ['progression', 'Save data is missing progression state.'],
+    ['commandQueue', 'Save data is missing command queue state.'],
+  ] as const;
 
-  if (!('progression' in value)) {
-    throw new Error('Save data is missing progression state.');
-  }
-
-  if (!('commandQueue' in value)) {
-    throw new Error('Save data is missing command queue state.');
+  for (const [property, message] of requiredProperties) {
+    if (!(property in value)) {
+      throw new Error(message);
+    }
   }
 
   return {
@@ -393,8 +393,8 @@ export function serializeGameStateSaveFormat(
     commandQueue: options.commandQueue.exportForSave(),
     runtime: {
       step: runtimeStep,
-      ...(rngSeed !== undefined ? { rngSeed } : {}),
-      ...(rngState !== undefined ? { rngState } : {}),
+      ...(rngSeed === undefined ? {} : { rngSeed }),
+      ...(rngState === undefined ? {} : { rngState }),
     },
   };
 }
