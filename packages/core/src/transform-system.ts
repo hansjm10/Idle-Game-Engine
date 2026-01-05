@@ -908,7 +908,17 @@ function deliverDueBatches(
           });
         } else {
           for (const instanceId of entry.entityInstanceIds) {
-            entitySystem.addExperience(instanceId, entry.entityExperience, step);
+            try {
+              entitySystem.addExperience(instanceId, entry.entityExperience, step);
+            } catch (error) {
+              telemetry.recordWarning('MissionOutcomeExperienceGrantFailed', {
+                transformId,
+                instanceId,
+                step,
+                amount: entry.entityExperience,
+                error: String(error),
+              });
+            }
           }
         }
       }

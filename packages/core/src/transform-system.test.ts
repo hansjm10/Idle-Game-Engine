@@ -2712,5 +2712,51 @@ describe('TransformSystem', () => {
 
       expect(resourceState.getAmount(0)).toBe(2);
     });
+
+    it('skips mission experience when entity instances are missing', () => {
+      const transforms = [createMissionTransform()];
+      const resourceState = createMockResourceState(
+        new Map([['res:gold', { amount: 0 }]]),
+      );
+      const entitySystem = createEntitySystemWithStats([{ power: 1 }]);
+      const instances = entitySystem.getInstancesForEntity('entity.scout');
+      expect(instances).toHaveLength(1);
+      const existingInstanceId = instances[0]?.instanceId;
+      if (!existingInstanceId) {
+        throw new Error('Expected entity instance for mission experience test.');
+      }
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        entitySystem,
+      });
+
+      system.restoreState([
+        {
+          id: 'transform:mission',
+          unlocked: true,
+          cooldownExpiresStep: 0,
+          batches: [
+            {
+              completeAtStep: 0,
+              outputs: [
+                {
+                  resourceId: 'res:gold' as any,
+                  amount: 2,
+                },
+              ],
+              entityInstanceIds: [`${existingInstanceId}_missing`],
+              entityExperience: 5,
+            },
+          ],
+        },
+      ]);
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      expect(resourceState.getAmount(0)).toBe(2);
+      expect(entitySystem.getInstanceState(existingInstanceId)?.experience).toBe(0);
+    });
   });
 });
