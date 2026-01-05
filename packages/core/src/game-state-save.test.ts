@@ -340,6 +340,20 @@ describe('game-state-save', () => {
     expect(restoredRegistry.captureState()).toEqual(save.prd);
   });
 
+  it('loads PRD registry state from save format', () => {
+    const save = createSerializedSave(123);
+    const prdState = {
+      'mission.alpha': { attempts: 2, constant: 0.5 },
+    };
+
+    const loaded = loadGameStateSaveFormat({
+      ...save,
+      prd: prdState,
+    });
+
+    expect(loaded.prd).toEqual(prdState);
+  });
+
   it('loads legacy v0 saves via migration', () => {
     const harness = createHarness(0);
     setRNGSeed(123);

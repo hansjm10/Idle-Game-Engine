@@ -393,6 +393,34 @@ describe('compareStates', () => {
     });
     expect(diff.entityInstances).toBeUndefined();
   });
+
+  it('reports PRD registry differences', () => {
+    const local = {
+      ...createSnapshot(),
+      prd: {
+        'mission.alpha': { attempts: 1, constant: 0.25 },
+      },
+    };
+    const remote = {
+      ...createSnapshot(),
+      prd: {
+        'mission.alpha': { attempts: 2, constant: 0.25 },
+        'mission.beta': { attempts: 1, constant: 0.5 },
+      },
+    };
+
+    const diff = compareStates(local, remote);
+
+    expect(diff.identical).toBe(false);
+    expect(diff.prd?.get('mission.alpha')?.attempts).toEqual({
+      local: 1,
+      remote: 2,
+    });
+    expect(diff.prd?.get('mission.beta')?.missing).toEqual({
+      local: true,
+      remote: false,
+    });
+  });
 });
 
 describe('hasStateDiverged', () => {

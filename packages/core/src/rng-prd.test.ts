@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   PRDRegistry,
@@ -6,6 +6,7 @@ import {
   calculatePRDAverageProbability,
   calculatePRDConstant,
   resetRNG,
+  setRNGState,
   setRNGSeed,
 } from './rng.js';
 
@@ -90,9 +91,73 @@ describe('PseudoRandomDistribution', () => {
 
     expect(results1).toEqual(results2);
   });
+
+  it('reports current and base probabilities from state', () => {
+    const prd = new PseudoRandomDistribution(0.1, () => 0.99);
+    prd.roll();
+
+    const state = prd.getState();
+    expect(prd.getCurrentProbability()).toBeCloseTo(
+      Math.min(1, state.constant * (state.attempts + 1)),
+      8,
+    );
+    expect(prd.getBaseProbability()).toBeCloseTo(
+      calculatePRDAverageProbability(state.constant),
+      8,
+    );
+  });
+
+  it('keeps attempt counts when base rate changes are insignificant', () => {
+    const prd = new PseudoRandomDistribution(0.5, () => 0.99);
+    prd.roll();
+    prd.roll();
+    const attempts = prd.getState().attempts;
+
+    prd.updateBaseProbability(0.5);
+    expect(prd.getState().attempts).toBe(attempts);
+
+    prd.updateBaseProbability(0.5000001);
+    expect(prd.getState().attempts).toBe(attempts);
+  });
+
+  it('resets attempts explicitly', () => {
+    const prd = new PseudoRandomDistribution(0.5, () => 0.99);
+    prd.roll();
+    expect(prd.getState().attempts).toBe(1);
+
+    prd.reset();
+    expect(prd.getState().attempts).toBe(0);
+  });
+
+  it('normalizes non-finite state on restore', () => {
+    const prd = PseudoRandomDistribution.fromState(
+      {
+        attempts: Number.NaN,
+        constant: Number.NaN,
+      },
+      () => 0.5,
+    );
+
+    expect(prd.getState()).toEqual({ attempts: 0, constant: 0 });
+  });
+
+  it('returns zero when expected attempts never accumulate', () => {
+    const ceilSpy = vi.spyOn(Math, 'ceil').mockReturnValue(0);
+    try {
+      expect(calculatePRDAverageProbability(0.5)).toBe(0);
+    } finally {
+      ceilSpy.mockRestore();
+    }
+  });
 });
 
 describe('PRDRegistry', () => {
+  it('rejects non-finite RNG state values', () => {
+    expect(() => setRNGState(Number.NaN)).toThrow(
+      'RNG state must be a finite number.',
+    );
+  });
+
   it('captures and restores PRD state', () => {
     setRNGSeed(7);
     const registry = new PRDRegistry();
@@ -128,5 +193,13 @@ describe('PRDRegistry', () => {
       calculatePRDConstant(tinyRate),
       8,
     );
+  });
+
+  it('clears state when restoring an empty registry', () => {
+    const registry = new PRDRegistry(() => 0.99);
+    registry.getOrCreate('mission.alpha', 0.5);
+
+    registry.restoreState(undefined);
+    expect(registry.captureState()).toEqual({});
   });
 });
