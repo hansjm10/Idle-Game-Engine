@@ -237,6 +237,8 @@ const captureSnapshot = (): GameStateSnapshot =>
     commandQueue,
     getAutomationState: () => automationSystem?.getState() ?? new Map(),
     getTransformState: () => transformSystem?.getState() ?? new Map(),
+    getEntityState: () => entitySystem?.getState() ?? { entities: [], instances: [], entityInstances: [] },
+    getPrdState: () => prdRegistry.captureState(),
     ...(productionSystem ? { productionSystem } : {}),
   });
 
@@ -260,6 +262,9 @@ const prediction = createPredictionManager({
           wiring.automationSystem?.getState() ?? new Map(),
         getTransformState: () =>
           wiring.transformSystem?.getState() ?? new Map(),
+        getEntityState: () =>
+          wiring.entitySystem?.getState() ?? { entities: [], instances: [], entityInstances: [] },
+        getPrdState: () => wiring.prdRegistry.captureState(),
         ...(wiring.productionSystem
           ? { productionSystem: wiring.productionSystem }
           : {}),

@@ -203,6 +203,7 @@ describe('captureGameStateSnapshot', () => {
       getAutomationState: () => automationState,
       getTransformState: () => transformState,
       getEntityState: createEmptyEntityState,
+      getPrdState: () => ({}),
       commandQueue,
       productionSystem,
     });

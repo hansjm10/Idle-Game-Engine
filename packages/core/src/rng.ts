@@ -215,9 +215,20 @@ export class PseudoRandomDistribution {
       return;
     }
 
+    const previousConstant = this.constant;
     this.baseProbability = normalized;
     this.constant = calculatePRDConstant(normalized);
-    this.attempts = 0;
+
+    // If we cross an edge probability, reset attempts so we don't "bank" pity across
+    // an impossible/guaranteed configuration.
+    if (
+      previousConstant === 0 ||
+      previousConstant === 1 ||
+      this.constant === 0 ||
+      this.constant === 1
+    ) {
+      this.attempts = 0;
+    }
   }
 
   /**

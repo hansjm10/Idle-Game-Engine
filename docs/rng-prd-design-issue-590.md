@@ -100,7 +100,7 @@ Mission success (and similar chance-based mechanics) is currently modelled as re
     - `roll()` increments attempts, computes `threshold = min(1, C * attempts)`, and resets attempts on success.
     - `getState()` returns `{ attempts, constant }` for persistence.
     - `restore(state)` normalizes non-finite values and derives `baseProbability` from the restored constant.
-    - `updateBaseProbability(baseProbability)` recalculates `C` and resets attempts when the base rate meaningfully changes; tiny deltas (including near zero) are ignored via mixed relative/absolute tolerances.
+    - `updateBaseProbability(baseProbability)` recalculates `C` when the base rate meaningfully changes; tiny deltas (including near zero) are ignored via mixed relative/absolute tolerances. Attempt counters are preserved across significant base-rate changes, except when crossing edge probabilities (0 or 1), where attempts reset to avoid “banking” pity across impossible/guaranteed configurations.
   - `PRDRegistry`:
     - `getOrCreate(id, baseProbability)` returns a stable PRD instance per ID and updates the base probability if re-requested.
     - `captureState()` and `restoreState(states | undefined)` serialize/restore a JSON record keyed by ID.
@@ -108,7 +108,7 @@ Mission success (and similar chance-based mechanics) is currently modelled as re
 #### Data & Schemas
 - `packages/core`
   - Save format adds optional `prd?: SerializedPRDRegistryState` where each entry stores `attempts` and `constant`.
-  - State-sync snapshot (`GameStateSnapshot`) adds optional `prd?: SerializedPRDRegistryState`.
+  - State-sync snapshot (`GameStateSnapshot`) includes `prd: SerializedPRDRegistryState` as an authoritative snapshot field (empty `{}` when no PRD state exists).
 - `packages/content-schema/src/modules/transforms.ts`
   - `successRate.usePRD: boolean` (default `false`) allows content to opt into PRD for mission success rolls.
 

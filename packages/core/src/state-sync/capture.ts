@@ -26,8 +26,8 @@ export interface CaptureSnapshotOptions {
   readonly getTransformState: () => ReadonlyMap<string, TransformState>;
   /** Entity system state extractor. */
   readonly getEntityState: () => EntitySystemState;
-  /** Optional PRD state extractor. */
-  readonly getPrdState?: () => SerializedPRDRegistryState;
+  /** PRD state extractor (snapshots are authoritative, so this must be explicit). */
+  readonly getPrdState: () => SerializedPRDRegistryState;
   /** Command queue to capture. */
   readonly commandQueue: CommandQueue;
   /** Optional production system for accumulators. */
@@ -53,6 +53,7 @@ export interface CaptureSnapshotOptions {
  *   getAutomationState: () => getAutomationState(automationSystem),
  *   getTransformState: () => getTransformState(transformSystem),
  *   getEntityState: () => entitySystem.getState(),
+ *   getPrdState: () => prdRegistry.captureState(),
  *   capturedAt: 0,
  * });
  * ```
@@ -75,7 +76,7 @@ export function captureGameStateSnapshot(
   const automationState = getAutomationState();
   const transformState = getTransformState();
   const entityState = getEntityState();
-  const prdState = getPrdState?.() ?? {};
+  const prdState = getPrdState();
 
   return {
     version: 1,

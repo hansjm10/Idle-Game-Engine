@@ -47,7 +47,7 @@ export interface GameStateSnapshot {
   readonly entities: SerializedEntitySystemState;
 
   /** Serialized PRD registry state. */
-  readonly prd?: SerializedPRDRegistryState;
+  readonly prd: SerializedPRDRegistryState;
 
   /** Serialized command queue. */
   readonly commandQueue: SerializedCommandQueueV1;

@@ -129,6 +129,16 @@ describe('PseudoRandomDistribution', () => {
     expect(prd.getState().attempts).toBe(attempts);
   });
 
+  it('preserves attempt counts across significant base rate changes', () => {
+    const prd = new PseudoRandomDistribution(0.25, () => 0.99);
+    prd.roll();
+    prd.roll();
+    const attempts = prd.getState().attempts;
+
+    prd.updateBaseProbability(0.5);
+    expect(prd.getState().attempts).toBe(attempts);
+  });
+
   it('resets attempts explicitly', () => {
     const prd = new PseudoRandomDistribution(0.5, () => 0.99);
     prd.roll();
