@@ -41,6 +41,7 @@ import { PRDRegistry, seededRandom } from './rng.js';
 import type { EntitySystem } from './entity-system.js';
 import type { ResourceStateAccessor } from './automation-system.js';
 import type { EventPublisher } from './events/event-bus.js';
+import type { MissionOutcomeKind } from './events/runtime-event-catalog.js';
 import { telemetry } from './telemetry.js';
 
 /**
@@ -107,8 +108,6 @@ export interface TransformBatchOutput {
   readonly resourceId: string;
   readonly amount: number;
 }
-
-type MissionOutcomeKind = 'success' | 'failure' | 'critical';
 
 type MissionPreparedOutcome = Readonly<{
   readonly outputs: readonly TransformBatchOutput[];

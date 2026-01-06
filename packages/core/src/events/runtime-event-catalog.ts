@@ -133,6 +133,16 @@ function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
   if (typeof payload.critical !== 'boolean') {
     throw new Error('critical must be a boolean.');
   }
+  // Validate relationship between outcomeKind, success, and critical
+  if (payload.outcomeKind === 'critical' && (!payload.success || !payload.critical)) {
+    throw new Error('outcomeKind "critical" requires success=true and critical=true.');
+  }
+  if (payload.outcomeKind === 'success' && (!payload.success || payload.critical)) {
+    throw new Error('outcomeKind "success" requires success=true and critical=false.');
+  }
+  if (payload.outcomeKind === 'failure' && (payload.success || payload.critical)) {
+    throw new Error('outcomeKind "failure" requires success=false and critical=false.');
+  }
   if (!Array.isArray(payload.outputs)) {
     throw new Error('outputs must be an array.');
   }
