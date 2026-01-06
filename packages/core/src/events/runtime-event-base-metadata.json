@@ -13,5 +13,15 @@
     "type": "automation:fired",
     "version": 1,
     "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "mission:started",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "mission:completed",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
   }
 ]

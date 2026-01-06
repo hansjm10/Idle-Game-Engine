@@ -94,7 +94,7 @@ function createRunTransformHandler(
     const result = transformSystem.executeTransform(
       payload.transformId,
       context.step,
-      { runs: payload.runs },
+      { runs: payload.runs, events: context.events },
     );
 
     if (!result.success) {

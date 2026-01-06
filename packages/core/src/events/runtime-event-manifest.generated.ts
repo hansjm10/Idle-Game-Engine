@@ -58,6 +58,18 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
   },
   {
     channel: 3,
+    type: 'mission:started' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 4,
+    type: 'mission:completed' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 5,
     type: 'sample:reactor-primed' as RuntimeEventType,
     version: 2,
     packSlug: '@idle-engine/sample-pack',
@@ -84,11 +96,21 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
     },
     {
       channel: 3,
+      type: 'mission:started' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 4,
+      type: 'mission:completed' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 5,
       type: 'sample:reactor-primed' as RuntimeEventType,
       version: 2,
     },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: '3c3a64da' as RuntimeEventManifestHash,
+  hash: 'fd1c8f05' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =
