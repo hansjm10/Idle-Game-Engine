@@ -26,7 +26,7 @@ import {
 import { IdleEngineRuntime } from './index.js';
 import { createProductionSystem } from './production-system.js';
 import { createProgressionCoordinator } from './progression-coordinator.js';
-import { getCurrentRNGSeed, resetRNG, setRNGSeed } from './rng.js';
+import { PRDRegistry, getCurrentRNGSeed, resetRNG, setRNGSeed } from './rng.js';
 import { createTransformSystem } from './transform-system.js';
 
 const STEP_SIZE_MS = 100;
@@ -307,6 +307,51 @@ describe('game-state-save', () => {
     });
 
     expect(roundTripped).toEqual(save);
+  });
+
+  it('roundtrips PRD registry state when provided', () => {
+    const harness = createHarness(0);
+    const prdRegistry = new PRDRegistry();
+    setRNGSeed(1);
+
+    const prd = prdRegistry.getOrCreate('mission.alpha', 0);
+    prd.roll();
+    prd.roll();
+
+    const save = serializeGameStateSaveFormat({
+      runtimeStep: harness.runtime.getCurrentStep(),
+      savedAt: 123,
+      coordinator: harness.coordinator,
+      prdRegistry,
+      commandQueue: harness.commandQueue,
+    });
+
+    const restored = createHarness(save.runtime.step);
+    const restoredRegistry = new PRDRegistry();
+
+    hydrateGameStateSaveFormat({
+      save,
+      coordinator: restored.coordinator,
+      commandQueue: restored.commandQueue,
+      prdRegistry: restoredRegistry,
+    });
+
+    expect(save.prd).toBeDefined();
+    expect(restoredRegistry.captureState()).toEqual(save.prd);
+  });
+
+  it('loads PRD registry state from save format', () => {
+    const save = createSerializedSave(123);
+    const prdState = {
+      'mission.alpha': { attempts: 2, constant: 0.5 },
+    };
+
+    const loaded = loadGameStateSaveFormat({
+      ...save,
+      prd: prdState,
+    });
+
+    expect(loaded.prd).toEqual(prdState);
   });
 
   it('loads legacy v0 saves via migration', () => {

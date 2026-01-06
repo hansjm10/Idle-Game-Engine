@@ -19,6 +19,7 @@ import type {
   ResourceDefinitionDigest,
   SerializedResourceState,
 } from '../resource-state.js';
+import type { SerializedPRDRegistryState } from '../rng.js';
 import type { SerializedTransformState } from '../transform-system.js';
 import type { GameStateSnapshot } from './types.js';
 
@@ -75,6 +76,9 @@ export interface StateDiff {
   /** Entity instance list differences by entity ID */
   readonly entityInstanceLists?: ReadonlyMap<string, EntityInstanceListDiff>;
 
+  /** PRD registry differences */
+  readonly prd?: ReadonlyMap<string, PRDDiff>;
+
   /** Command queue differences */
   readonly commandQueue?: CommandQueueDiff;
 }
@@ -119,6 +123,13 @@ export interface EntityInstanceListDiff {
   readonly id: string;
   readonly missing?: MissingDiff;
   readonly instanceIds?: ValueDiff<readonly string[] | undefined>;
+}
+
+export interface PRDDiff {
+  readonly id: string;
+  readonly missing?: MissingDiff;
+  readonly attempts?: ValueDiff<number | undefined>;
+  readonly constant?: ValueDiff<number | undefined>;
 }
 
 export interface ProgressionDiff {
@@ -186,6 +197,8 @@ export interface TransformBatchDiff {
   readonly index: number;
   readonly missing?: MissingDiff;
   readonly completeAtStep?: ValueDiff<number | undefined>;
+  readonly entityInstanceIds?: ValueDiff<readonly string[] | undefined>;
+  readonly entityExperience?: ValueDiff<number | undefined>;
   readonly outputs?: readonly TransformBatchOutputDiff[];
 }
 
@@ -985,10 +998,14 @@ const compareTransformBatches = (
   local: readonly {
     completeAtStep: number;
     outputs: readonly { resourceId: string; amount: number }[];
+    entityInstanceIds?: readonly string[];
+    entityExperience?: number;
   }[],
   remote: readonly {
     completeAtStep: number;
     outputs: readonly { resourceId: string; amount: number }[];
+    entityInstanceIds?: readonly string[];
+    entityExperience?: number;
   }[],
 ): readonly TransformBatchDiff[] | undefined => {
   const diffs: TransformBatchDiff[] = [];
@@ -1012,6 +1029,20 @@ const compareTransformBatches = (
         'completeAtStep',
         localBatch?.completeAtStep,
         remoteBatch?.completeAtStep,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'entityInstanceIds',
+        localBatch?.entityInstanceIds,
+        remoteBatch?.entityInstanceIds,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'entityExperience',
+        localBatch?.entityExperience,
+        remoteBatch?.entityExperience,
       ) || hasDiff;
 
     const outputDiffs = compareTransformOutputs(
@@ -1088,6 +1119,53 @@ const compareTransforms = (
       diff.batches = batchDiffs;
       hasDiff = true;
     }
+
+    if (hasDiff) {
+      diffs.set(id, diff);
+    }
+  }
+
+  return diffs;
+};
+
+const comparePrdRegistry = (
+  local: SerializedPRDRegistryState | undefined,
+  remote: SerializedPRDRegistryState | undefined,
+): ReadonlyMap<string, PRDDiff> => {
+  const diffs = new Map<string, PRDDiff>();
+  const localStates: SerializedPRDRegistryState = local ?? {};
+  const remoteStates: SerializedPRDRegistryState = remote ?? {};
+  const ids = collectSortedIds(
+    Object.keys(localStates),
+    Object.keys(remoteStates),
+  );
+
+  for (const id of ids) {
+    const localEntry = localStates[id];
+    const remoteEntry = remoteStates[id];
+    const diff: Mutable<PRDDiff> = { id };
+    let hasDiff = false;
+
+    hasDiff =
+      recordMissingDiff(
+        diff,
+        localEntry !== undefined,
+        remoteEntry !== undefined,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'attempts',
+        localEntry?.attempts,
+        remoteEntry?.attempts,
+      ) || hasDiff;
+    hasDiff =
+      recordValueDiff(
+        diff,
+        'constant',
+        localEntry?.constant,
+        remoteEntry?.constant,
+      ) || hasDiff;
 
     if (hasDiff) {
       diffs.set(id, diff);
@@ -1274,6 +1352,12 @@ export function compareStates(
   );
   if (entityInstanceListDiff.size > 0) {
     result.entityInstanceLists = entityInstanceListDiff;
+    identical = false;
+  }
+
+  const prdDiff = comparePrdRegistry(local.prd, remote.prd);
+  if (prdDiff.size > 0) {
+    result.prd = prdDiff;
     identical = false;
   }
 

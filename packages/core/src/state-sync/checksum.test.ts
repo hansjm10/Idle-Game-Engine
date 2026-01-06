@@ -71,6 +71,7 @@ const snapshotA: GameStateSnapshot = {
   automation: [],
   transforms: [],
   entities,
+  prd: {},
   commandQueue: commandQueueA,
 };
 
@@ -88,6 +89,7 @@ const snapshotB: GameStateSnapshot = {
   automation: [],
   transforms: [],
   entities,
+  prd: {},
   commandQueue: commandQueueB,
 };
 

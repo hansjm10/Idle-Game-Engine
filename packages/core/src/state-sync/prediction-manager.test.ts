@@ -143,30 +143,31 @@ const createSnapshot = (
       ? { ...resources, definitionDigest: undefined }
       : { ...resources, definitionDigest: resolvedDefinitionDigest };
 
-  return {
-    version: 1,
-    capturedAt: 0,
-    runtime: {
-      step,
-      stepSizeMs: 100,
-      rngSeed: 1,
-      rngState: 1,
-    },
-    resources: resolvedResources,
-    progression: {
-      ...baseProgression,
-      step,
-      resources: resolvedResources,
-    },
-    automation: [],
-    transforms: [],
-    entities: { entities: [], instances: [], entityInstances: [] },
-    commandQueue: {
-      ...baseCommandQueue,
-      entries: options.queueEntries ?? baseCommandQueue.entries,
-    },
-  };
-};
+	  return {
+	    version: 1,
+	    capturedAt: 0,
+	    runtime: {
+	      step,
+	      stepSizeMs: 100,
+	      rngSeed: 1,
+	      rngState: 1,
+	    },
+	    resources: resolvedResources,
+	    progression: {
+	      ...baseProgression,
+	      step,
+	      resources: resolvedResources,
+	    },
+	    automation: [],
+	    transforms: [],
+	    entities: { entities: [], instances: [], entityInstances: [] },
+	    prd: {},
+	    commandQueue: {
+	      ...baseCommandQueue,
+	      entries: options.queueEntries ?? baseCommandQueue.entries,
+	    },
+	  };
+	};
 
 const emptyState = new Map<string, never>();
 
@@ -182,6 +183,7 @@ const captureWiringSnapshot = (
     getTransformState: () =>
       wiring.transformSystem?.getState() ?? emptyState,
     getEntityState: createEmptyEntityState,
+    getPrdState: () => wiring.prdRegistry.captureState(),
     ...(wiring.productionSystem
       ? { productionSystem: wiring.productionSystem }
       : {}),

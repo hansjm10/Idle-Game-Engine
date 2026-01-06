@@ -17,6 +17,7 @@ import { registerTransformCommandHandlers } from './transform-command-handlers.j
 import { registerResourceCommandHandlers } from './resource-command-handlers.js';
 import { EntitySystem, createSeededRng } from './entity-system.js';
 import { registerEntityCommandHandlers } from './entity-command-handlers.js';
+import { PRDRegistry, seededRandom } from './rng.js';
 import type { ProgressionAuthoritativeState, ProgressionEntityState } from './progression.js';
 
 export interface RuntimeWiringRuntime {
@@ -46,6 +47,7 @@ export type GameRuntimeWiring<
   readonly coordinator: ProgressionCoordinator;
   readonly commandQueue: CommandQueue;
   readonly commandDispatcher: CommandDispatcher;
+  readonly prdRegistry: PRDRegistry;
   readonly productionSystem?: ProductionSystem;
   readonly automationSystem?: ReturnType<typeof createAutomationSystem>;
   readonly transformSystem?: ReturnType<typeof createTransformSystem>;
@@ -129,6 +131,16 @@ export function wireGameRuntime<
         })
       : undefined;
 
+  const prdRegistry = new PRDRegistry(seededRandom);
+
+  const entitySystem =
+    enableEntities && content.entities.length > 0
+      ? new EntitySystem(content.entities, createSeededRng(), {
+          stepDurationMs: runtimeStepSizeMs,
+          conditionContext: coordinator.getConditionContext(),
+        })
+      : undefined;
+
   const transformSystem =
     enableTransforms && content.transforms.length > 0
       ? createTransformSystem({
@@ -136,14 +148,8 @@ export function wireGameRuntime<
           stepDurationMs: runtimeStepSizeMs,
           resourceState: resourceStateAdapter,
           conditionContext: coordinator.getConditionContext(),
-        })
-      : undefined;
-
-  const entitySystem =
-    enableEntities && content.entities.length > 0
-      ? new EntitySystem(content.entities, createSeededRng(), {
-          stepDurationMs: runtimeStepSizeMs,
-          conditionContext: coordinator.getConditionContext(),
+          entitySystem,
+          prdRegistry,
         })
       : undefined;
 
@@ -261,6 +267,7 @@ export function wireGameRuntime<
       savedAt: serializeOptions?.savedAt,
       rngSeed: serializeOptions?.rngSeed,
       coordinator,
+      prdRegistry,
       productionSystem,
       automationState: automationSystem?.getState(),
       transformState: transformSystem?.getState(),
@@ -279,6 +286,7 @@ export function wireGameRuntime<
       automationSystem,
       transformSystem,
       entitySystem,
+      prdRegistry,
       commandQueue: runtime.getCommandQueue(),
       currentStep: hydrateOptions?.currentStep,
       applyRngSeed: hydrateOptions?.applyRngSeed,
@@ -290,6 +298,7 @@ export function wireGameRuntime<
     coordinator,
     commandQueue: runtime.getCommandQueue(),
     commandDispatcher: runtime.getCommandDispatcher(),
+    prdRegistry,
     productionSystem,
     automationSystem,
     transformSystem,

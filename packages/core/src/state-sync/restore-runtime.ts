@@ -142,5 +142,7 @@ export function restoreGameRuntimeFromSnapshot(
     });
   }
 
+  wiring.prdRegistry.restoreState(snapshot.prd);
+
   return wiring;
 }

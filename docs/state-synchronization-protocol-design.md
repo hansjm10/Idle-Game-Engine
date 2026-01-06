@@ -210,6 +210,12 @@ export interface GameStateSnapshot {
   /** Serialized transform states */
   readonly transforms: readonly SerializedTransformState[];
 
+  /** Serialized entity system state */
+  readonly entities: SerializedEntitySystemState;
+
+  /** Serialized PRD registry state */
+  readonly prd: SerializedPRDRegistryState;
+
   /** Serialized command queue */
   readonly commandQueue: SerializedCommandQueueV1;
 }
@@ -236,6 +242,12 @@ export interface CaptureSnapshotOptions {
   /** Transform system state extractor */
   readonly getTransformState: () => ReadonlyMap<string, TransformState>;
 
+  /** Entity system state extractor */
+  readonly getEntityState: () => EntitySystemState;
+
+  /** PRD state extractor */
+  readonly getPrdState: () => SerializedPRDRegistryState;
+
   /** Command queue to capture */
   readonly commandQueue: CommandQueue;
 
@@ -252,12 +264,16 @@ export function captureGameStateSnapshot(
     capturedAt,
     getAutomationState,
     getTransformState,
+    getEntityState,
+    getPrdState,
     commandQueue,
     productionSystem,
   } = options;
 
   const automationState = getAutomationState();
   const transformState = getTransformState();
+  const entityState = getEntityState();
+  const prdState = getPrdState();
 
   return {
     version: 1,
@@ -275,6 +291,8 @@ export function captureGameStateSnapshot(
     ),
     automation: serializeAutomationState(automationState),
     transforms: serializeTransformState(transformState),
+    entities: serializeEntitySystemState(entityState),
+    prd: prdState,
     commandQueue: commandQueue.exportForSave(),
   };
 }
@@ -634,6 +652,8 @@ const snapshot = captureGameStateSnapshot({
   commandQueue: runtime.getCommandQueue(),
   getAutomationState: () => getAutomationState(automationSystem),
   getTransformState: () => getTransformState(transformSystem),
+  getEntityState: () => entitySystem.getState(),
+  getPrdState: () => prdRegistry.captureState(),
   capturedAt: 0,
 });
 
@@ -664,6 +684,8 @@ const roundTrip = captureGameStateSnapshot({
   commandQueue: restored.commandQueue,
   getAutomationState: () => getAutomationState(automationSystem),
   getTransformState: () => getTransformState(transformSystem),
+  getEntityState: () => entitySystem.getState(),
+  getPrdState: () => prdRegistry.captureState(),
   capturedAt: 0,
 });
 

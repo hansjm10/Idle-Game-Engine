@@ -68,6 +68,7 @@ export function computeStateChecksum(snapshot: GameStateSnapshot): string {
     automation: snapshot.automation,
     transforms: snapshot.transforms,
     entities: snapshot.entities,
+    prd: snapshot.prd,
     commandQueue: snapshot.commandQueue,
   };
   const json = stringifyDeterministic(checksumSnapshot);

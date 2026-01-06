@@ -10,17 +10,17 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 ## Overall Coverage
 | Metric | Covered | Total | % |
 | --- | --- | --- | --- |
-| Statements | 28853 | 33907 | 85.09% |
-| Branches | 5456 | 6783 | 80.44% |
-| Functions | 1365 | 1516 | 90.04% |
-| Lines | 28853 | 33907 | 85.09% |
+| Statements | 30054 | 35020 | 85.82% |
+| Branches | 5760 | 7088 | 81.26% |
+| Functions | 1432 | 1582 | 90.52% |
+| Lines | 30054 | 35020 | 85.82% |
 
 ## Coverage by Package
 | Package | Statements | Branches | Functions | Lines |
 | --- | --- | --- | --- | --- |
-| @idle-engine/content-compiler | 1356 / 1507 (89.98%) | 231 / 295 (78.31%) | 84 / 88 (95.45%) | 1356 / 1507 (89.98%) |
+| @idle-engine/content-compiler | 1357 / 1508 (89.99%) | 232 / 296 (78.38%) | 85 / 89 (95.51%) | 1357 / 1508 (89.99%) |
 | @idle-engine/content-sample | 17 / 21 (80.95%) | 2 / 3 (66.67%) | 0 / 0 (0.00%) | 17 / 21 (80.95%) |
-| @idle-engine/content-schema | 8187 / 9510 (86.09%) | 1155 / 1362 (84.80%) | 273 / 303 (90.10%) | 8187 / 9510 (86.09%) |
-| @idle-engine/content-validation-cli | 1239 / 2160 (57.36%) | 223 / 303 (73.60%) | 66 / 85 (77.65%) | 1239 / 2160 (57.36%) |
+| @idle-engine/content-schema | 8469 / 9727 (87.07%) | 1172 / 1379 (84.99%) | 299 / 329 (90.88%) | 8469 / 9727 (87.07%) |
+| @idle-engine/content-validation-cli | 1240 / 2162 (57.35%) | 224 / 304 (73.68%) | 66 / 85 (77.65%) | 1240 / 2162 (57.35%) |
 | @idle-engine/controls | 228 / 230 (99.13%) | 67 / 69 (97.10%) | 14 / 14 (100.00%) | 228 / 230 (99.13%) |
-| @idle-engine/core | 17826 / 20479 (87.05%) | 3778 / 4751 (79.52%) | 928 / 1026 (90.45%) | 17826 / 20479 (87.05%) |
+| @idle-engine/core | 18743 / 21372 (87.70%) | 4063 / 5037 (80.66%) | 968 / 1065 (90.89%) | 18743 / 21372 (87.70%) |

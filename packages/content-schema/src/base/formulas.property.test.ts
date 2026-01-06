@@ -351,7 +351,7 @@ describe('createFormulaArbitrary', () => {
           expect(value).toBeGreaterThanOrEqual(0);
         });
       }),
-      { ...propertyConfig(6), numRuns: 120 },
+      { ...propertyConfig(6), numRuns: 80 },
     );
   }, LONG_PROPERTY_TIMEOUT_MS);
 

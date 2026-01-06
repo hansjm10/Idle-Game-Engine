@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  buildTransformSnapshot,
   createTransformSystem,
   getTransformState,
   isTransformCooldownActive,
@@ -10,6 +11,9 @@ import type { TransformState } from './transform-system.js';
 import { createAutomationSystem, type ResourceStateAccessor } from './automation-system.js';
 import type { ConditionContext } from './condition-evaluator.js';
 import { IdleEngineRuntime } from './index.js';
+import { createEntityDefinition } from './content-test-helpers.js';
+import { EntitySystem } from './entity-system.js';
+import { PRDRegistry } from './rng.js';
 
 describe('TransformSystem', () => {
   const stepDurationMs = 100;
@@ -53,6 +57,87 @@ describe('TransformSystem', () => {
     getGeneratorLevel: (id) => generators?.get(id) ?? 0,
     getUpgradePurchases: (id) => upgrades?.get(id) ?? 0,
   });
+
+  const createMissionTransform = (
+    overrides: Partial<TransformDefinition> = {},
+  ): TransformDefinition => ({
+    id: 'transform:mission' as any,
+    name: { default: 'Mission', variants: {} },
+    description: { default: 'Mission transform', variants: {} },
+    mode: 'mission',
+    inputs: [
+      { resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 1 } },
+    ],
+    outputs: [],
+    duration: { kind: 'constant', value: 100 },
+    entityRequirements: [
+      {
+        entityId: 'entity.scout' as any,
+        count: { kind: 'constant', value: 1 },
+        returnOnComplete: true,
+      },
+    ],
+    trigger: { kind: 'manual' },
+    tags: [],
+    ...overrides,
+  });
+
+  const createEntitySystemWithStats = (
+    statsByInstance: Array<Record<string, number>>,
+  ): EntitySystem => {
+    const entityDefinition = createEntityDefinition('entity.scout', {
+      trackInstances: true,
+      startCount: statsByInstance.length,
+      unlocked: true,
+    });
+    const entitySystem = new EntitySystem([entityDefinition], {
+      nextInt: () => 1,
+    });
+    const instances = entitySystem.getInstancesForEntity('entity.scout');
+
+    instances.forEach((instance, index) => {
+      const state = entitySystem.getInstanceState(instance.instanceId) as
+        | { stats: Record<string, number> }
+        | undefined;
+      if (state) {
+        state.stats = { ...statsByInstance[index] };
+      }
+    });
+
+    return entitySystem;
+  };
+
+  const createMissionHarness = ({
+    transformOverrides = {},
+    entitySystem = createEntitySystemWithStats([{ power: 1 }]),
+    resourceState = createMockResourceState(
+      new Map([
+        ['res:gold', { amount: 100 }],
+        ['res:gems', { amount: 0 }],
+      ]),
+    ),
+    prdRegistry,
+  }: {
+    transformOverrides?: Partial<TransformDefinition>;
+    entitySystem?: EntitySystem;
+    resourceState?: ResourceStateAccessor & {
+      addAmount?: (idx: number, amount: number) => number;
+    };
+    prdRegistry?: PRDRegistry;
+  } = {}) => {
+    const transforms = [createMissionTransform(transformOverrides)];
+    const system = createTransformSystem({
+      transforms,
+      stepDurationMs,
+      resourceState,
+      entitySystem,
+      prdRegistry,
+    });
+
+    system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+    return { system, transforms, resourceState, entitySystem };
+  };
 
   describe('initialization', () => {
     it('should create system with correct id', () => {
@@ -1991,7 +2076,7 @@ describe('TransformSystem', () => {
       expect(result.error?.code).toBe('UNSUPPORTED_MODE');
     });
 
-    it('should reject mission mode transforms without spending resources', () => {
+    it('should execute mission mode transforms and apply PRD rolls', () => {
       const transforms: TransformDefinition[] = [
         {
           id: 'transform:mission' as any,
@@ -1999,12 +2084,90 @@ describe('TransformSystem', () => {
           description: { default: 'Mission transform', variants: {} },
           mode: 'mission',
           inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 10 } }],
-          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          outputs: [],
+          duration: { kind: 'constant', value: 100 },
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: true,
+            },
+          ],
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: true,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+              entityExperience: { kind: 'constant', value: 5 },
+            },
+          },
           trigger: { kind: 'manual' },
           tags: [],
         },
       ];
 
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const entityDefinition = createEntityDefinition('entity.scout', {
+        trackInstances: true,
+        startCount: 1,
+        unlocked: true,
+      });
+      const entitySystem = new EntitySystem([entityDefinition], {
+        nextInt: () => 1,
+      });
+      const prdRegistry = new PRDRegistry(() => 0);
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        entitySystem,
+        prdRegistry,
+      });
+
+      // Tick to initialize
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]
+        ?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const result = system.executeTransform('transform:mission', 0);
+
+      expect(result.success).toBe(true);
+      expect(resourceState.getAmount(0)).toBe(90);
+      expect(Object.keys(prdRegistry.captureState())).toContain('transform:mission');
+      const assigned = instanceId
+        ? entitySystem.getInstanceState(instanceId)?.assignment
+        : null;
+      expect(assigned?.missionId).toBe('transform:mission');
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      expect(resourceState.getAmount(1)).toBe(1);
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(5);
+      }
+
+      entitySystem.tick({ deltaMs: stepDurationMs, step: 1, events: { publish: vi.fn() } });
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.assignment).toBeNull();
+      }
+    });
+  });
+
+  describe('mission mode', () => {
+    it('rejects mission transforms without an entity system', () => {
+      const transforms = [createMissionTransform()];
       const resourceState = createMockResourceState(
         new Map([
           ['res:gold', { amount: 100 }],
@@ -2018,15 +2181,582 @@ describe('TransformSystem', () => {
         resourceState,
       });
 
-      // Tick to initialize
       system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
 
       const result = system.executeTransform('transform:mission', 0);
 
       expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('UNSUPPORTED_MODE');
-      expect(resourceState.getAmount(0)).toBe(100);
-      expect(resourceState.getAmount(1)).toBe(0);
+      expect(result.error?.code).toBe('MISSING_ENTITY_SYSTEM');
+    });
+
+    it('serializes mission batches with entity metadata and snapshots next batch time', () => {
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 10 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+      const entitySystem = createEntitySystemWithStats([{ power: 1 }]);
+      const { system, transforms } = createMissionHarness({
+        resourceState,
+        entitySystem,
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: false,
+            },
+          ],
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+              entityExperience: { kind: 'constant', value: 5 },
+            },
+          },
+        },
+      });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]
+        ?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const result = system.executeTransform('transform:mission', 0);
+      expect(result.success).toBe(true);
+
+      if (instanceId) {
+        expect(
+          entitySystem.getInstanceState(instanceId)?.assignment?.returnStep,
+        ).toBe(Number.MAX_SAFE_INTEGER);
+      }
+
+      const state = getTransformState(system).get('transform:mission');
+      expect(state?.batches?.[0].entityInstanceIds).toEqual(
+        instanceId ? [instanceId] : [],
+      );
+      expect(state?.batches?.[0].entityExperience).toBe(5);
+
+      const serialized = serializeTransformState(system.getState());
+      const serializedBatch = serialized[0]?.batches?.[0];
+      expect(serializedBatch?.entityInstanceIds).toEqual(
+        instanceId ? [instanceId] : [],
+      );
+      expect(serializedBatch?.entityExperience).toBe(5);
+
+      const restoredResourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 0 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+      const restored = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState: restoredResourceState,
+      });
+
+      restored.restoreState(serialized);
+
+      const restoredState = getTransformState(restored).get('transform:mission');
+      expect(restoredState?.batches?.[0].entityInstanceIds).toEqual(
+        instanceId ? [instanceId] : [],
+      );
+      expect(restoredState?.batches?.[0].entityExperience).toBe(5);
+
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state: restored.getState(),
+        stepDurationMs,
+        resourceState: restoredResourceState,
+      });
+
+      expect(snapshot.transforms[0]?.nextBatchReadyAtStep).toBe(
+        restoredState?.batches?.[0].completeAtStep,
+      );
+    });
+
+    it('normalizes non-finite batch outputs during serialization', () => {
+      const state = new Map<string, TransformState>();
+      state.set('transform:mission', {
+        id: 'transform:mission',
+        unlocked: true,
+        visible: true,
+        cooldownExpiresStep: 0,
+        runsThisTick: 0,
+        batches: [
+          {
+            completeAtStep: 1,
+            outputs: [
+              {
+                resourceId: 'res:gold' as any,
+                amount: Number.NaN,
+              },
+            ],
+          },
+        ],
+      });
+
+      const serialized = serializeTransformState(state);
+
+      expect(serialized[0]?.batches?.[0].outputs[0]?.amount).toBe(0);
+    });
+
+    it('handles empty assignments and missing outcomes', () => {
+      const { system, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 0 },
+              returnOnComplete: true,
+            },
+          ],
+          successRate: {
+            baseRate: { kind: 'constant', value: 0 },
+            usePRD: false,
+            statModifiers: [
+              {
+                stat: 'power' as any,
+                weight: { kind: 'constant', value: 1 },
+                entityScope: 'average',
+              },
+            ],
+          },
+        },
+      });
+
+      const result = system.executeTransform('transform:mission', 0);
+      expect(result.success).toBe(true);
+
+      const instance = entitySystem.getInstancesForEntity('entity.scout')[0];
+      if (instance) {
+        expect(
+          entitySystem.getInstanceState(instance.instanceId)?.assignment,
+        ).toBeNull();
+      }
+
+      const state = getTransformState(system).get('transform:mission');
+      expect(state?.batches?.[0].outputs).toEqual([]);
+    });
+
+    it('selects mission entities by stats and prefers higher values', () => {
+      const entitySystem = createEntitySystemWithStats([
+        { power: 2 },
+        { power: 5 },
+      ]);
+      const { system } = createMissionHarness({
+        entitySystem,
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: true,
+              minStats: { power: { kind: 'constant', value: 1 } } as any,
+              preferHighStats: ['power' as any],
+            },
+          ],
+        },
+      });
+
+      const result = system.executeTransform('transform:mission', 0);
+      expect(result.success).toBe(true);
+
+      const assigned = entitySystem
+        .getInstancesForEntity('entity.scout')
+        .find((instance) =>
+          Boolean(entitySystem.getInstanceState(instance.instanceId)?.assignment),
+        );
+      expect(assigned?.stats.power).toBe(5);
+    });
+
+    it('falls back to deterministic ordering when stats tie', () => {
+      const entitySystem = createEntitySystemWithStats([
+        { power: 2 },
+        { power: 2 },
+      ]);
+      const { system } = createMissionHarness({
+        entitySystem,
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: true,
+              preferHighStats: ['power' as any],
+            },
+          ],
+        },
+      });
+
+      const result = system.executeTransform('transform:mission', 0);
+      expect(result.success).toBe(true);
+
+      const instances = entitySystem.getInstancesForEntity('entity.scout');
+      const expected = [...instances].sort((left, right) =>
+        left.instanceId.localeCompare(right.instanceId, 'en'),
+      )[0];
+      const assigned = instances.find((instance) =>
+        Boolean(entitySystem.getInstanceState(instance.instanceId)?.assignment),
+      );
+      expect(assigned?.instanceId).toBe(expected?.instanceId);
+    });
+
+    it('applies mission stat modifiers across scopes', () => {
+      const entitySystem = createEntitySystemWithStats([
+        { skill: 2, luck: 1 },
+        { skill: 4, luck: 3 },
+      ]);
+      const { system } = createMissionHarness({
+        entitySystem,
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 2 },
+              returnOnComplete: true,
+            },
+          ],
+          successRate: {
+            baseRate: { kind: 'constant', value: 0 },
+            usePRD: false,
+            statModifiers: [
+              {
+                stat: 'skill' as any,
+                weight: { kind: 'constant', value: 0.1 },
+                entityScope: 'sum',
+              },
+              {
+                stat: 'skill' as any,
+                weight: { kind: 'constant', value: 0.1 },
+                entityScope: 'min',
+              },
+              {
+                stat: 'skill' as any,
+                weight: { kind: 'constant', value: 0.1 },
+                entityScope: 'max',
+              },
+              {
+                stat: 'luck' as any,
+                weight: { kind: 'constant', value: 0.1 },
+                entityScope: 'average',
+              },
+            ],
+          },
+        },
+      });
+
+      const result = system.executeTransform('transform:mission', 0);
+      expect(result.success).toBe(true);
+    });
+
+    type MissionValidationCase = {
+      readonly label: string;
+      readonly expected: string;
+      readonly transformOverrides: Partial<TransformDefinition>;
+      readonly resourceStateFactory?: () => ResourceStateAccessor & {
+        addAmount?: (idx: number, amount: number) => number;
+      };
+      readonly entitySystemFactory?: () => EntitySystem;
+    };
+
+    const missionValidationCases: MissionValidationCase[] = [
+      {
+        label: 'entity requirements are missing',
+        expected: 'MISSING_ENTITY_REQUIREMENTS',
+        transformOverrides: { entityRequirements: [] },
+      },
+      {
+        label: 'entity count is non-finite',
+        expected: 'INVALID_ENTITY_COUNT',
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: Number.NaN },
+              returnOnComplete: true,
+            },
+          ],
+        },
+      },
+      {
+        label: 'stat requirement is non-finite',
+        expected: 'INVALID_ENTITY_STAT_REQUIREMENT',
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: true,
+              minStats: { power: { kind: 'constant', value: Number.NaN } } as any,
+            },
+          ],
+        },
+      },
+      {
+        label: 'entities are insufficient',
+        expected: 'INSUFFICIENT_ENTITIES',
+        transformOverrides: {
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 2 },
+              returnOnComplete: true,
+            },
+          ],
+        },
+      },
+      {
+        label: 'duration formula is non-finite',
+        expected: 'INVALID_DURATION_FORMULA',
+        transformOverrides: {
+          duration: { kind: 'constant', value: Number.NaN },
+        },
+      },
+      {
+        label: 'input formula is non-finite',
+        expected: 'INVALID_INPUT_FORMULA',
+        transformOverrides: {
+          inputs: [
+            {
+              resourceId: 'res:gold' as any,
+              amount: { kind: 'constant', value: Number.NaN },
+            },
+          ],
+        },
+      },
+      {
+        label: 'resources are insufficient',
+        expected: 'INSUFFICIENT_RESOURCES',
+        transformOverrides: {
+          inputs: [
+            {
+              resourceId: 'res:gold' as any,
+              amount: { kind: 'constant', value: 10 },
+            },
+          ],
+        },
+        resourceStateFactory: () =>
+          createMockResourceState(
+            new Map([
+              ['res:gold', { amount: 0 }],
+              ['res:gems', { amount: 0 }],
+            ]),
+          ),
+      },
+      {
+        label: 'success rate is non-finite',
+        expected: 'INVALID_SUCCESS_RATE',
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: Number.NaN },
+            usePRD: false,
+          },
+        },
+      },
+      {
+        label: 'success rate modifier weight is non-finite',
+        expected: 'INVALID_SUCCESS_RATE',
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+            statModifiers: [
+              {
+                stat: 'power' as any,
+                weight: { kind: 'constant', value: Number.NaN },
+                entityScope: 'sum',
+              },
+            ],
+          },
+        },
+      },
+      {
+        label: 'output formula is non-finite',
+        expected: 'INVALID_OUTPUT_FORMULA',
+        transformOverrides: {
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'res:gems' as any,
+                  amount: { kind: 'constant', value: Number.NaN },
+                },
+              ],
+            },
+          },
+        },
+      },
+      {
+        label: 'experience formula is non-finite',
+        expected: 'INVALID_OUTPUT_FORMULA',
+        transformOverrides: {
+          outcomes: {
+            success: {
+              outputs: [],
+              entityExperience: { kind: 'constant', value: Number.NaN },
+            },
+          },
+        },
+      },
+      {
+        label: 'output resource is missing',
+        expected: 'OUTPUT_RESOURCE_NOT_FOUND',
+        transformOverrides: {
+          outcomes: {
+            success: {
+              outputs: [
+                {
+                  resourceId: 'res:missing' as any,
+                  amount: { kind: 'constant', value: 1 },
+                },
+              ],
+            },
+          },
+        },
+      },
+    ];
+
+    it.each(missionValidationCases)(
+      'rejects mission transforms when $label',
+      ({ expected, transformOverrides, resourceStateFactory, entitySystemFactory }) => {
+        const { system } = createMissionHarness({
+          transformOverrides,
+          resourceState: resourceStateFactory ? resourceStateFactory() : undefined,
+          entitySystem: entitySystemFactory ? entitySystemFactory() : undefined,
+        });
+
+        const result = system.executeTransform('transform:mission', 0);
+
+        expect(result.success).toBe(false);
+        expect(result.error?.code).toBe(expected);
+      },
+    );
+
+    it('caps outstanding mission batches', () => {
+      const entitySystem = createEntitySystemWithStats([
+        { power: 1 },
+        { power: 2 },
+      ]);
+      const { system } = createMissionHarness({
+        entitySystem,
+        transformOverrides: {
+          safety: { maxOutstandingBatches: 1 },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+            },
+          },
+        },
+      });
+
+      const first = system.executeTransform('transform:mission', 0);
+      const second = system.executeTransform('transform:mission', 0);
+
+      expect(first.success).toBe(true);
+      expect(second.success).toBe(false);
+      expect(second.error?.code).toBe('MAX_OUTSTANDING_BATCHES');
+    });
+
+    it('reports spend failures while executing missions', () => {
+      const resourceState: ResourceStateAccessor = {
+        getAmount: () => 10,
+        getResourceIndex: () => 0,
+        spendAmount: () => false,
+      };
+      const { system } = createMissionHarness({ resourceState });
+
+      const result = system.executeTransform('transform:mission', 0);
+
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('SPEND_FAILED');
+    });
+
+    it('delivers mission experience without an entity system', () => {
+      const transforms = [createMissionTransform()];
+      const resourceState = createMockResourceState(
+        new Map([['res:gold', { amount: 0 }]]),
+      );
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+      });
+
+      system.restoreState([
+        {
+          id: 'transform:mission',
+          unlocked: true,
+          cooldownExpiresStep: 0,
+          batches: [
+            {
+              completeAtStep: 0,
+              outputs: [
+                {
+                  resourceId: 'res:gold' as any,
+                  amount: 2,
+                },
+              ],
+              entityInstanceIds: ['entity.scout_0_0001'],
+              entityExperience: 5,
+            },
+          ],
+        },
+      ]);
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      expect(resourceState.getAmount(0)).toBe(2);
+    });
+
+    it('skips mission experience when entity instances are missing', () => {
+      const transforms = [createMissionTransform()];
+      const resourceState = createMockResourceState(
+        new Map([['res:gold', { amount: 0 }]]),
+      );
+      const entitySystem = createEntitySystemWithStats([{ power: 1 }]);
+      const instances = entitySystem.getInstancesForEntity('entity.scout');
+      expect(instances).toHaveLength(1);
+      const existingInstanceId = instances[0]?.instanceId;
+      if (!existingInstanceId) {
+        throw new Error('Expected entity instance for mission experience test.');
+      }
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        entitySystem,
+      });
+
+      system.restoreState([
+        {
+          id: 'transform:mission',
+          unlocked: true,
+          cooldownExpiresStep: 0,
+          batches: [
+            {
+              completeAtStep: 0,
+              outputs: [
+                {
+                  resourceId: 'res:gold' as any,
+                  amount: 2,
+                },
+              ],
+              entityInstanceIds: [`${existingInstanceId}_missing`],
+              entityExperience: 5,
+            },
+          ],
+        },
+      ]);
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      expect(resourceState.getAmount(0)).toBe(2);
+      expect(entitySystem.getInstanceState(existingInstanceId)?.experience).toBe(0);
     });
   });
 });

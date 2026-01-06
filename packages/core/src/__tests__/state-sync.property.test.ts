@@ -382,6 +382,7 @@ const buildSnapshotFromSeed = (
     getAutomationState: () => emptyAutomationState,
     getTransformState: () => emptyTransformState,
     getEntityState: createEmptyEntityState,
+    getPrdState: () => ({}),
     commandQueue,
   });
 
@@ -429,6 +430,7 @@ const roundTripSnapshot = (
     getAutomationState: () => emptyAutomationState,
     getTransformState: () => emptyTransformState,
     getEntityState: createEmptyEntityState,
+    getPrdState: () => ({}),
     commandQueue: restored.commandQueue,
   });
 };
@@ -481,6 +483,7 @@ const buildEmptySnapshot = (): {
     getAutomationState: () => emptyAutomationState,
     getTransformState: () => emptyTransformState,
     getEntityState: createEmptyEntityState,
+    getPrdState: () => ({}),
     commandQueue: runtime.getCommandQueue(),
   });
 

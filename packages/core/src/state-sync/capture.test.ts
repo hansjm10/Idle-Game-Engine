@@ -203,6 +203,7 @@ describe('captureGameStateSnapshot', () => {
       getAutomationState: () => automationState,
       getTransformState: () => transformState,
       getEntityState: createEmptyEntityState,
+      getPrdState: () => ({}),
       commandQueue,
       productionSystem,
     });
@@ -231,6 +232,7 @@ describe('captureGameStateSnapshot', () => {
       automation: expectedAutomation,
       transforms: expectedTransforms,
       entities: expectedEntities,
+      prd: {},
       commandQueue: expectedCommandQueue,
     });
 
