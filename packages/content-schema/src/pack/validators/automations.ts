@@ -10,6 +10,48 @@ type AutomationTriggerByKind<K extends AutomationTrigger['kind']> = Extract<
   { kind: K }
 >;
 
+type EnsureContentReference = CrossReferenceState['ensureContentReference'];
+
+const ensureOptionalContentReference = (
+  ensureContentReference: EnsureContentReference,
+  map: Parameters<EnsureContentReference>[0],
+  id: string | undefined,
+  path: readonly (string | number)[],
+  message: string,
+) => {
+  if (!id) {
+    return;
+  }
+  ensureContentReference(map, id, path, message);
+};
+
+const ensureOptionalFormulaReferencesAtPath = (
+  formula: Parameters<typeof ensureFormulaReferencesAtPath>[0] | undefined,
+  path: readonly (string | number)[],
+  ctx: CrossReferenceState['ctx'],
+  maps: CrossReferenceState['formulaMaps'],
+) => {
+  if (!formula) {
+    return;
+  }
+  ensureFormulaReferencesAtPath(formula, path, ctx, maps);
+};
+
+const assertAllowlistedIfProvided = (
+  spec: CrossReferenceState['context']['allowlists']['systemAutomationTargets'],
+  id: string | undefined,
+  path: readonly (string | number)[],
+  ctx: CrossReferenceState['ctx'],
+  warningSink: CrossReferenceState['context']['warningSink'],
+  warningCode: string,
+  message: string,
+) => {
+  if (!id) {
+    return;
+  }
+  assertAllowlisted(spec, id, path, ctx, warningSink, warningCode, message);
+};
+
 const validateAutomationTarget = (
   state: CrossReferenceState,
   automation: ParsedContentPack['automations'][number],
@@ -20,71 +62,68 @@ const validateAutomationTarget = (
     indexes;
   const warn = context.warningSink;
 
-  if (
-    automation.targetType === 'generator' ||
-    automation.targetType === 'purchaseGenerator'
-  ) {
-    if (automation.targetId) {
-      ensureContentReference(
+  switch (automation.targetType) {
+    case 'generator':
+      ensureOptionalContentReference(
+        ensureContentReference,
         generatorIndex,
         automation.targetId,
         ['automations', index, 'targetId'],
         `Automation "${automation.id}" references unknown generator "${automation.targetId}".`,
       );
-    }
-    if (automation.targetType === 'purchaseGenerator' && automation.targetCount) {
-      ensureFormulaReferencesAtPath(
+      return;
+    case 'purchaseGenerator':
+      ensureOptionalContentReference(
+        ensureContentReference,
+        generatorIndex,
+        automation.targetId,
+        ['automations', index, 'targetId'],
+        `Automation "${automation.id}" references unknown generator "${automation.targetId}".`,
+      );
+      ensureOptionalFormulaReferencesAtPath(
         automation.targetCount,
         ['automations', index, 'targetCount'],
         ctx,
         formulaMaps,
       );
-    }
-    return;
-  }
-
-  if (automation.targetType === 'upgrade') {
-    if (automation.targetId) {
-      ensureContentReference(
+      return;
+    case 'upgrade':
+      ensureOptionalContentReference(
+        ensureContentReference,
         upgradeIndex,
         automation.targetId,
         ['automations', index, 'targetId'],
         `Automation "${automation.id}" references unknown upgrade "${automation.targetId}".`,
       );
-    }
-    return;
-  }
-
-  if (automation.targetType === 'collectResource') {
-    if (automation.targetId) {
-      ensureContentReference(
+      return;
+    case 'collectResource':
+      ensureOptionalContentReference(
+        ensureContentReference,
         resourceIndex,
         automation.targetId,
         ['automations', index, 'targetId'],
         `Automation "${automation.id}" references unknown resource "${automation.targetId}".`,
       );
-    }
-    if (automation.targetAmount) {
-      ensureFormulaReferencesAtPath(
+      ensureOptionalFormulaReferencesAtPath(
         automation.targetAmount,
         ['automations', index, 'targetAmount'],
         ctx,
         formulaMaps,
       );
-    }
-    return;
-  }
-
-  if (automation.targetType === 'system' && automation.systemTargetId) {
-    assertAllowlisted(
-      context.allowlists.systemAutomationTargets,
-      automation.systemTargetId,
-      ['automations', index, 'systemTargetId'],
-      ctx,
-      warn,
-      'allowlist.systemAutomationTarget.missing',
-      `Automation "${automation.id}" references system target "${automation.systemTargetId}" not present in the allowlist.`,
-    );
+      return;
+    case 'system':
+      assertAllowlistedIfProvided(
+        context.allowlists.systemAutomationTargets,
+        automation.systemTargetId,
+        ['automations', index, 'systemTargetId'],
+        ctx,
+        warn,
+        'allowlist.systemAutomationTarget.missing',
+        `Automation "${automation.id}" references system target "${automation.systemTargetId}" not present in the allowlist.`,
+      );
+      return;
+    default:
+      return;
   }
 };
 
