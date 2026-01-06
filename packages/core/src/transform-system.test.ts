@@ -2337,6 +2337,93 @@ describe('TransformSystem', () => {
       );
     });
 
+    it('omits next batch timing when no mission batches exist', () => {
+      const transforms = [createMissionTransform()];
+
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state: new Map(),
+        stepDurationMs,
+      });
+
+      expect(snapshot.transforms[0]?.outstandingBatches).toBe(0);
+      expect(snapshot.transforms[0]?.nextBatchReadyAtStep).toBeUndefined();
+    });
+
+    it('sorts snapshot endpoints and computes affordability without resource state', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:sorted' as any,
+          name: { default: 'Sorted', variants: {} },
+          description: { default: 'Sorted', variants: {} },
+          mode: 'instant',
+          inputs: [
+            { resourceId: 'res:b' as any, amount: { kind: 'constant', value: 0 } },
+            { resourceId: 'res:a' as any, amount: { kind: 'constant', value: 0 } },
+          ],
+          outputs: [
+            { resourceId: 'res:b' as any, amount: { kind: 'constant', value: 2 } },
+            { resourceId: 'res:a' as any, amount: { kind: 'constant', value: 1 } },
+          ],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const state = new Map<string, TransformState>();
+      state.set('transform:sorted', {
+        id: 'transform:sorted',
+        unlocked: true,
+        visible: true,
+        cooldownExpiresStep: 0,
+        runsThisTick: 0,
+      });
+
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state,
+        stepDurationMs,
+      });
+
+      expect(snapshot.transforms[0]?.inputs.map(({ resourceId }) => resourceId)).toEqual([
+        'res:a',
+        'res:b',
+      ]);
+      expect(snapshot.transforms[0]?.outputs.map(({ resourceId }) => resourceId)).toEqual([
+        'res:a',
+        'res:b',
+      ]);
+      expect(snapshot.transforms[0]?.canAfford).toBe(true);
+
+      const expensiveSnapshot = buildTransformSnapshot(0, 0, {
+        transforms: [
+          {
+            ...transforms[0],
+            id: 'transform:sorted-expensive' as any,
+            inputs: [
+              { resourceId: 'res:b' as any, amount: { kind: 'constant', value: 1 } },
+              { resourceId: 'res:a' as any, amount: { kind: 'constant', value: 1 } },
+            ],
+          },
+        ],
+        state: new Map([
+          [
+            'transform:sorted-expensive',
+            {
+              id: 'transform:sorted-expensive',
+              unlocked: true,
+              visible: true,
+              cooldownExpiresStep: 0,
+              runsThisTick: 0,
+            },
+          ],
+        ]),
+        stepDurationMs,
+      });
+
+      expect(expensiveSnapshot.transforms[0]?.canAfford).toBe(false);
+    });
+
     it('normalizes non-finite batch outputs during serialization', () => {
       const state = new Map<string, TransformState>();
       state.set('transform:mission', {
