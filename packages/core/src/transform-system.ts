@@ -36,10 +36,12 @@ import { evaluateNumericFormula } from '@idle-engine/content-schema';
 import type { System } from './index.js';
 import { evaluateCondition } from './condition-evaluator.js';
 import type { ConditionContext } from './condition-evaluator.js';
-import type { RuntimeEventType } from './events/runtime-event.js';
+import type { RuntimeEventPayload, RuntimeEventType } from './events/runtime-event.js';
 import { PRDRegistry, seededRandom } from './rng.js';
 import type { EntitySystem } from './entity-system.js';
 import type { ResourceStateAccessor } from './automation-system.js';
+import type { EventPublisher } from './events/event-bus.js';
+import type { MissionOutcomeKind } from './events/runtime-event-catalog.js';
 import { telemetry } from './telemetry.js';
 
 /**
@@ -107,11 +109,27 @@ export interface TransformBatchOutput {
   readonly amount: number;
 }
 
+type MissionPreparedOutcome = Readonly<{
+  readonly outputs: readonly TransformBatchOutput[];
+  readonly entityExperience: number;
+}>;
+
+type MissionBatchPlan = Readonly<{
+  readonly baseRate: number;
+  readonly usePRD: boolean;
+  readonly criticalChance?: number;
+  readonly success: MissionPreparedOutcome;
+  readonly failure: MissionPreparedOutcome;
+  readonly critical?: MissionPreparedOutcome;
+}>;
+
 export interface TransformBatchState {
   readonly completeAtStep: number;
   readonly outputs: readonly TransformBatchOutput[];
+  readonly batchId?: string;
   readonly entityInstanceIds?: readonly string[];
   readonly entityExperience?: number;
+  readonly mission?: MissionBatchPlan;
 }
 
 type TransformBatchQueueEntry = TransformBatchState & {
@@ -125,8 +143,10 @@ export interface SerializedTransformState {
   readonly batches?: readonly {
     readonly completeAtStep: number;
     readonly outputs: readonly TransformBatchOutput[];
+    readonly batchId?: string;
     readonly entityInstanceIds?: readonly string[];
     readonly entityExperience?: number;
+    readonly mission?: SerializedMissionBatchPlan;
   }[];
 }
 
@@ -136,6 +156,48 @@ function normalizeNonNegativeInt(value: unknown): number {
   }
   return Math.floor(value);
 }
+
+type SerializedMissionPreparedOutcome = Readonly<{
+  readonly outputs: readonly TransformBatchOutput[];
+  readonly entityExperience: number;
+}>;
+
+type SerializedMissionBatchPlan = Readonly<{
+  readonly baseRate: number;
+  readonly usePRD: boolean;
+  readonly criticalChance?: number;
+  readonly success: SerializedMissionPreparedOutcome;
+  readonly failure: SerializedMissionPreparedOutcome;
+  readonly critical?: SerializedMissionPreparedOutcome;
+}>;
+
+const serializeMissionPreparedOutcome = (
+  outcome: MissionPreparedOutcome,
+): SerializedMissionPreparedOutcome => ({
+  outputs: outcome.outputs.map((output) => ({
+    resourceId: output.resourceId,
+    amount:
+      typeof output.amount === 'number' && Number.isFinite(output.amount)
+        ? Math.max(0, output.amount)
+        : 0,
+  })),
+  entityExperience:
+    typeof outcome.entityExperience === 'number' &&
+    Number.isFinite(outcome.entityExperience)
+      ? Math.max(0, outcome.entityExperience)
+      : 0,
+});
+
+const serializeMissionPlan = (plan: MissionBatchPlan): SerializedMissionBatchPlan => ({
+  baseRate: clampProbability(plan.baseRate),
+  usePRD: Boolean(plan.usePRD),
+  ...(plan.criticalChance === undefined
+    ? {}
+    : { criticalChance: clampProbability(plan.criticalChance) }),
+  success: serializeMissionPreparedOutcome(plan.success),
+  failure: serializeMissionPreparedOutcome(plan.failure),
+  ...(plan.critical ? { critical: serializeMissionPreparedOutcome(plan.critical) } : {}),
+});
 
 export function serializeTransformState(
   state: ReadonlyMap<string, TransformState>,
@@ -164,6 +226,13 @@ export function serializeTransformState(
                 ? Math.max(0, batch.entityExperience)
                 : undefined;
 
+            const batchId =
+              typeof batch.batchId === 'string' && batch.batchId.trim().length > 0
+                ? batch.batchId
+                : undefined;
+
+            const mission = batch.mission ? serializeMissionPlan(batch.mission) : undefined;
+
             return {
               completeAtStep: normalizeNonNegativeInt(batch.completeAtStep),
               outputs: batch.outputs.map((output) => ({
@@ -174,10 +243,12 @@ export function serializeTransformState(
                     ? Math.max(0, output.amount)
                     : 0,
               })),
+              ...(batchId ? { batchId } : {}),
               ...(entityInstanceIds && entityInstanceIds.length > 0
                 ? { entityInstanceIds }
                 : {}),
               ...(entityExperience === undefined ? {} : { entityExperience }),
+              ...(mission ? { mission } : {}),
             };
           })
         : undefined;
@@ -880,15 +951,13 @@ function insertBatch(
   batches.splice(low, 0, entry);
 }
 
-function grantBatchExperience(
-  entry: TransformBatchQueueEntry,
+function grantEntityExperience(
+  entityExperience: number,
+  entityInstanceIds: readonly string[] | undefined,
   step: number,
   transformId: string,
   entitySystem?: EntitySystem,
 ): void {
-  const entityExperience = entry.entityExperience;
-  const entityInstanceIds = entry.entityInstanceIds;
-
   if (
     entityExperience === undefined ||
     entityExperience <= 0 ||
@@ -920,23 +989,157 @@ function grantBatchExperience(
   });
 }
 
+interface MissionOutcomeResult {
+  readonly outcomeKind: MissionOutcomeKind;
+  readonly critical: boolean;
+  readonly success: boolean;
+  readonly outcome: MissionPreparedOutcome;
+}
+
+function determineMissionOutcome(
+  mission: MissionBatchPlan,
+  transformId: string,
+  prdRegistry: PRDRegistry | undefined,
+): MissionOutcomeResult {
+  const baseRate = clampProbability(mission.baseRate);
+  const success = mission.usePRD
+    ? (prdRegistry ?? new PRDRegistry(seededRandom)).getOrCreate(transformId, baseRate).roll()
+    : seededRandom() < baseRate;
+
+  if (!success) {
+    return { outcomeKind: 'failure', critical: false, success: false, outcome: mission.failure };
+  }
+
+  const criticalOutcome = mission.critical;
+  const criticalChance = mission.criticalChance;
+  if (
+    criticalOutcome !== undefined &&
+    criticalChance !== undefined &&
+    seededRandom() < clampProbability(criticalChance)
+  ) {
+    return { outcomeKind: 'critical', critical: true, success: true, outcome: criticalOutcome };
+  }
+
+  return { outcomeKind: 'success', critical: false, success: true, outcome: mission.success };
+}
+
+function publishMissionEvent(
+  publisher: EventPublisher | undefined,
+  type: 'mission:started',
+  payload: RuntimeEventPayload<'mission:started'>,
+  transformId: string,
+): void;
+function publishMissionEvent(
+  publisher: EventPublisher | undefined,
+  type: 'mission:completed',
+  payload: RuntimeEventPayload<'mission:completed'>,
+  transformId: string,
+): void;
+function publishMissionEvent(
+  publisher: EventPublisher | undefined,
+  type: 'mission:started' | 'mission:completed',
+  payload: RuntimeEventPayload<'mission:started' | 'mission:completed'>,
+  transformId: string,
+): void {
+  if (!publisher) {
+    return;
+  }
+
+  try {
+    publisher.publish(type, payload);
+  } catch (error) {
+    telemetry.recordWarning('MissionEventPublishFailed', {
+      transformId,
+      type,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function completeMissionBatch(
+  entry: TransformBatchQueueEntry,
+  transformId: string,
+  resourceState: TransformResourceState,
+  step: number,
+  entitySystem: EntitySystem | undefined,
+  prdRegistry: PRDRegistry | undefined,
+  events: EventPublisher | undefined,
+): void {
+  const mission = entry.mission!;
+  const result = determineMissionOutcome(mission, transformId, prdRegistry);
+
+  applyBatchOutputs(result.outcome.outputs, resourceState, transformId);
+  grantEntityExperience(
+    result.outcome.entityExperience,
+    entry.entityInstanceIds,
+    step,
+    transformId,
+    entitySystem,
+  );
+
+  publishMissionEvent(
+    events,
+    'mission:completed',
+    {
+      transformId,
+      batchId: entry.batchId ?? `${entry.sequence}`,
+      completedAtStep: step,
+      outcomeKind: result.outcomeKind,
+      success: result.success,
+      critical: result.critical,
+      outputs: result.outcome.outputs.map((output) => ({
+        resourceId: output.resourceId,
+        amount: output.amount,
+      })),
+      entityExperience: result.outcome.entityExperience,
+      entityInstanceIds: entry.entityInstanceIds ?? [],
+    },
+    transformId,
+  );
+}
+
+function completeStandardBatch(
+  entry: TransformBatchQueueEntry,
+  transformId: string,
+  resourceState: TransformResourceState,
+  step: number,
+  entitySystem: EntitySystem | undefined,
+): void {
+  applyBatchOutputs(entry.outputs, resourceState, transformId);
+  grantEntityExperience(
+    entry.entityExperience ?? 0,
+    entry.entityInstanceIds,
+    step,
+    transformId,
+    entitySystem,
+  );
+}
+
 function deliverDueBatches(
+  transform: TransformDefinition,
   batches: TransformBatchQueueEntry[],
   resourceState: TransformResourceState,
-  transformId: string,
   step: number,
   entitySystem?: EntitySystem,
+  prdRegistry?: PRDRegistry,
+  events?: EventPublisher,
 ): void {
   if (batches.length === 0) {
     return;
   }
 
+  const transformId = transform.id;
   let writeIndex = 0;
+
   for (let readIndex = 0; readIndex < batches.length; readIndex += 1) {
     const entry = batches[readIndex];
+
     if (entry.completeAtStep <= step) {
-      applyBatchOutputs(entry.outputs, resourceState, transformId);
-      grantBatchExperience(entry, step, transformId, entitySystem);
+      if (transform.mode === 'mission' && entry.mission) {
+        completeMissionBatch(entry, transformId, resourceState, step, entitySystem, prdRegistry, events);
+      } else {
+        completeStandardBatch(entry, transformId, resourceState, step, entitySystem);
+      }
       continue;
     }
 
@@ -950,6 +1153,91 @@ function deliverDueBatches(
     batches.length = 0;
   } else if (writeIndex < batches.length) {
     batches.length = writeIndex;
+  }
+}
+
+function isEventBasedTrigger(transform: TransformDefinition): boolean {
+  return transform.trigger.kind === 'event' || transform.trigger.kind === 'automation';
+}
+
+function evaluateTrigger(
+  transform: TransformDefinition,
+  pendingEventTriggers: Set<string>,
+  conditionContext: ConditionContext | undefined,
+): boolean {
+  switch (transform.trigger.kind) {
+    case 'condition':
+      return conditionContext
+        ? evaluateCondition(transform.trigger.condition, conditionContext)
+        : false;
+    case 'event':
+    case 'automation':
+      return pendingEventTriggers.has(transform.id);
+    default:
+      return false;
+  }
+}
+
+function updateTransformUnlockStatus(
+  transform: TransformDefinition,
+  state: TransformState,
+  conditionContext: ConditionContext | undefined,
+): void {
+  if (state.unlocked) {
+    return;
+  }
+  if (!transform.unlockCondition) {
+    state.unlocked = true;
+    return;
+  }
+  if (conditionContext && evaluateCondition(transform.unlockCondition, conditionContext)) {
+    state.unlocked = true;
+  }
+}
+
+type ProcessTransformResult = 'skipped' | 'blocked' | 'executed';
+
+function processTriggeredTransform(
+  transform: TransformDefinition,
+  state: TransformState,
+  step: number,
+  formulaContext: FormulaEvaluationContext,
+  events: EventPublisher | undefined,
+  executeTransformRun: (
+    transform: TransformDefinition,
+    state: TransformState,
+    step: number,
+    formulaContext: FormulaEvaluationContext,
+    events: EventPublisher | undefined,
+  ) => TransformExecutionResult,
+): ProcessTransformResult {
+  if (isTransformCooldownActive(state, step)) {
+    return 'blocked';
+  }
+
+  const maxRuns = getEffectiveMaxRunsPerTick(transform);
+  if (state.runsThisTick >= maxRuns) {
+    return 'blocked';
+  }
+
+  const result = executeTransformRun(transform, state, step, formulaContext, events);
+  return result.success ? 'executed' : 'blocked';
+}
+
+function deliverAllDueBatches(
+  sortedTransforms: readonly TransformDefinition[],
+  transformStates: Map<string, TransformState>,
+  resourceState: TransformResourceState,
+  step: number,
+  entitySystem: EntitySystem | undefined,
+  prdRegistry: PRDRegistry,
+  events: EventPublisher | undefined,
+): void {
+  for (const transform of sortedTransforms) {
+    const state = transformStates.get(transform.id);
+    const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
+    if (batches.length === 0) continue;
+    deliverDueBatches(transform, batches, resourceState, step, entitySystem, prdRegistry, events);
   }
 }
 
@@ -978,7 +1266,7 @@ export function createTransformSystem(
   executeTransform: (
     transformId: string,
     step: number,
-    options?: { runs?: number },
+    options?: { runs?: number; events?: EventPublisher },
   ) => TransformExecutionResult;
   getTransformDefinition: (transformId: string) => TransformDefinition | undefined;
 } {
@@ -1210,7 +1498,7 @@ export function createTransformSystem(
       };
     };
 
-    const prepareMissionOutcome = (
+    const prepareMissionPlan = (
       transform: TransformDefinition,
       assignmentResult: MissionAssignmentSuccess,
       formulaContext: FormulaEvaluationContext,
@@ -1218,8 +1506,7 @@ export function createTransformSystem(
     ):
       | {
           readonly ok: true;
-          readonly preparedOutputs: readonly PreparedResourceDelta[];
-          readonly experience: number;
+          readonly plan: MissionBatchPlan;
         }
       | { readonly ok: false; readonly result: TransformExecutionResult } => {
       const successRate = calculateMissionSuccessRate(
@@ -1233,59 +1520,125 @@ export function createTransformSystem(
       }
 
       const baseRate = successRate.baseRate;
-      const success = transform.successRate?.usePRD
-        ? prdRegistry.getOrCreate(transform.id, baseRate).roll()
-        : seededRandom() < baseRate;
-
-      const outcome = success
-        ? transform.outcomes?.success
-        : transform.outcomes?.failure;
-      const outputs = evaluateMissionOutcomeOutputs(transform, outcome, formulaContext);
-      if (outputs === null) {
-        return {
-          ok: false,
-          result: {
-            success: false,
-            error: {
-              code: 'INVALID_OUTPUT_FORMULA',
-              message: 'Transform output formula evaluated to non-finite value.',
-              details: { transformId: transform.id },
-            },
-          },
-        };
+      const usePRD = Boolean(transform.successRate?.usePRD);
+      if (usePRD) {
+        prdRegistry.getOrCreate(transform.id, baseRate);
       }
 
-      const experience = evaluateMissionOutcomeExperience(
-        transform,
-        outcome,
-        formulaContext,
-      );
-      if (experience === null) {
-        return {
-          ok: false,
-          result: {
-            success: false,
-            error: {
-              code: 'INVALID_OUTPUT_FORMULA',
-              message: 'Mission experience formula evaluated to non-finite value.',
-              details: { transformId: transform.id },
+      const missionOutcomes = transform.outcomes;
+
+      const prepareOutcome = (
+        outcome: MissionOutcome | undefined,
+      ):
+        | { readonly ok: true; readonly prepared: MissionPreparedOutcome }
+        | { readonly ok: false; readonly result: TransformExecutionResult } => {
+        const outputs = evaluateMissionOutcomeOutputs(transform, outcome, formulaContext);
+        if (outputs === null) {
+          return {
+            ok: false,
+            result: {
+              success: false,
+              error: {
+                code: 'INVALID_OUTPUT_FORMULA',
+                message: 'Transform output formula evaluated to non-finite value.',
+                details: { transformId: transform.id },
+              },
             },
+          };
+        }
+
+        const experience = evaluateMissionOutcomeExperience(
+          transform,
+          outcome,
+          formulaContext,
+        );
+        if (experience === null) {
+          return {
+            ok: false,
+            result: {
+              success: false,
+              error: {
+                code: 'INVALID_OUTPUT_FORMULA',
+                message: 'Mission experience formula evaluated to non-finite value.',
+                details: { transformId: transform.id },
+              },
+            },
+          };
+        }
+
+        const preparedOutputs = prepareOutputs(outputs, resourceState, transform.id);
+        if (!preparedOutputs.ok) {
+          return {
+            ok: false,
+            result: { success: false, error: preparedOutputs.error },
+          };
+        }
+
+        return {
+          ok: true,
+          prepared: {
+            outputs: preparedOutputs.outputs.map((output) => ({
+              resourceId: output.resourceId,
+              amount: output.amount,
+            })),
+            entityExperience: experience,
           },
         };
+      };
+
+      const successOutcome = prepareOutcome(missionOutcomes?.success);
+      if (!successOutcome.ok) {
+        return { ok: false, result: successOutcome.result };
       }
 
-      const preparedOutputs = prepareOutputs(outputs, resourceState, transform.id);
-      if (!preparedOutputs.ok) {
-        return {
-          ok: false,
-          result: { success: false, error: preparedOutputs.error },
-        };
+      // Missing failure outcome means no rewards on failure.
+      const failureOutcome = missionOutcomes?.failure
+        ? prepareOutcome(missionOutcomes?.failure)
+        : ({ ok: true, prepared: { outputs: [], entityExperience: 0 } } as const);
+      if (!failureOutcome.ok) {
+        return { ok: false, result: failureOutcome.result };
+      }
+
+      let criticalChance: number | undefined;
+      let criticalOutcome: MissionPreparedOutcome | undefined;
+
+      if (missionOutcomes?.critical) {
+        const chanceRaw = evaluateNumericFormula(
+          missionOutcomes.critical.chance,
+          formulaContext,
+        );
+        if (!Number.isFinite(chanceRaw)) {
+          return {
+            ok: false,
+            result: {
+              success: false,
+              error: {
+                code: 'INVALID_SUCCESS_RATE',
+                message: 'Mission critical chance evaluated to non-finite value.',
+                details: { transformId: transform.id },
+              },
+            },
+          };
+        }
+        criticalChance = clampProbability(chanceRaw);
+
+        const criticalPrepared = prepareOutcome(missionOutcomes.critical);
+        if (!criticalPrepared.ok) {
+          return { ok: false, result: criticalPrepared.result };
+        }
+        criticalOutcome = criticalPrepared.prepared;
       }
 
       return {
         ok: true,
-        preparedOutputs: preparedOutputs.outputs,
-        experience,
+        plan: {
+          baseRate,
+          usePRD,
+          ...(criticalChance === undefined ? {} : { criticalChance }),
+          success: successOutcome.prepared,
+          failure: failureOutcome.prepared,
+          ...(criticalOutcome ? { critical: criticalOutcome } : {}),
+        },
       };
     };
 
@@ -1295,6 +1648,7 @@ export function createTransformSystem(
       step: number,
       formulaContext: FormulaEvaluationContext,
       missionEntitySystem: EntitySystem,
+      events?: EventPublisher,
     ): TransformExecutionResult => {
 	    const inputsResult = prepareMissionInputs(
 	      transform,
@@ -1305,14 +1659,14 @@ export function createTransformSystem(
         return inputsResult.result;
       }
 
-      const outcomeResult = prepareMissionOutcome(
+      const planResult = prepareMissionPlan(
         transform,
         inputsResult.assignmentResult,
         formulaContext,
         missionEntitySystem,
       );
-      if (!outcomeResult.ok) {
-        return outcomeResult.result;
+      if (!planResult.ok) {
+        return planResult.result;
       }
 
       state.batches ??= [];
@@ -1352,6 +1706,7 @@ export function createTransformSystem(
       const completeAtStep = step + inputsResult.durationSteps;
       const sequence = batchSequences.get(transform.id) ?? 0;
       batchSequences.set(transform.id, sequence + 1);
+      const batchId = `${sequence}`;
 
       for (const instanceId of inputsResult.assignmentResult.instanceIds) {
         const returnOnComplete =
@@ -1360,33 +1715,43 @@ export function createTransformSystem(
           ? completeAtStep
           : Number.MAX_SAFE_INTEGER;
         missionEntitySystem.assignToMission(instanceId, {
-        missionId: transform.id,
-        batchId: `${sequence}`,
-        deployedAtStep: step,
-        returnStep,
-      });
-    }
+          missionId: transform.id,
+          batchId,
+          deployedAtStep: step,
+          returnStep,
+        });
+      }
 
       const batchEntry: TransformBatchQueueEntry = {
         completeAtStep,
         sequence,
-        outputs: outcomeResult.preparedOutputs.map((output) => ({
-          resourceId: output.resourceId,
-          amount: output.amount,
-        })),
+        batchId,
+        outputs: [],
         ...(inputsResult.assignmentResult.instanceIds.length > 0
           ? { entityInstanceIds: inputsResult.assignmentResult.instanceIds }
           : {}),
-        ...(outcomeResult.experience > 0
-          ? { entityExperience: outcomeResult.experience }
-          : {}),
+        mission: planResult.plan,
       };
 
-    insertBatch(batchQueue, batchEntry);
-    updateTransformCooldown(transform, state, step, stepDurationMs, formulaContext);
-    state.runsThisTick += 1;
-    return { success: true };
-  };
+      insertBatch(batchQueue, batchEntry);
+
+      publishMissionEvent(
+        events,
+        'mission:started',
+        {
+          transformId: transform.id,
+          batchId,
+          startedAtStep: step,
+          completeAtStep,
+          entityInstanceIds: inputsResult.assignmentResult.instanceIds,
+        },
+        transform.id,
+      );
+
+      updateTransformCooldown(transform, state, step, stepDurationMs, formulaContext);
+      state.runsThisTick += 1;
+      return { success: true };
+    };
 
   const executeNonMissionTransformRun = (
     transform: TransformDefinition,
@@ -1523,6 +1888,7 @@ export function createTransformSystem(
     state: TransformState,
     step: number,
     formulaContext: FormulaEvaluationContext,
+    events?: EventPublisher,
   ): TransformExecutionResult => {
     if (transform.mode === 'continuous') {
       return {
@@ -1543,6 +1909,7 @@ export function createTransformSystem(
           step,
           formulaContext,
           entitySystem,
+          events,
         );
       }
 
@@ -1559,6 +1926,60 @@ export function createTransformSystem(
     return executeNonMissionTransformRun(transform, state, step, formulaContext);
   };
 
+  const processTransformTick = (
+    transform: TransformDefinition,
+    step: number,
+    formulaContext: ReturnType<typeof createTransformFormulaEvaluationContext>,
+    events: EventPublisher,
+    retainedEventTriggers: Set<string>,
+  ): void => {
+    const state = transformStates.get(transform.id);
+    if (!state) {
+      return;
+    }
+
+    // Update visibility each tick (default visible when no context is provided)
+    state.visible = conditionContext
+      ? evaluateCondition(transform.visibilityCondition, conditionContext)
+      : true;
+
+    updateTransformUnlockStatus(transform, state, conditionContext);
+
+    const isEventBased = isEventBasedTrigger(transform);
+    const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
+
+    // Skip if not unlocked
+    if (!state.unlocked) {
+      if (isEventPending) {
+        retainedEventTriggers.add(transform.id);
+      }
+      return;
+    }
+
+    // Skip manual transforms (handled by command)
+    if (transform.trigger.kind === 'manual') {
+      return;
+    }
+
+    const triggered = evaluateTrigger(transform, pendingEventTriggers, conditionContext);
+    if (!triggered) {
+      return;
+    }
+
+    const result = processTriggeredTransform(
+      transform,
+      state,
+      step,
+      formulaContext,
+      events,
+      executeTransformRun,
+    );
+
+    if (result === 'blocked' && isEventBased) {
+      retainedEventTriggers.add(transform.id);
+    }
+  };
+
   /**
    * Public method to execute a manual transform.
    * Called by the RUN_TRANSFORM command handler.
@@ -1566,7 +1987,7 @@ export function createTransformSystem(
   const executeTransform = (
     transformId: string,
     step: number,
-    execOptions?: { runs?: number },
+    execOptions?: { runs?: number; events?: EventPublisher },
   ): TransformExecutionResult => {
     // Ensure counters are reset for this step (handles command-before-tick ordering)
     ensureCountersResetForStep(step);
@@ -1703,7 +2124,13 @@ export function createTransformSystem(
         break;
       }
 
-      const result = executeTransformRun(transform, state, step, formulaContext);
+      const result = executeTransformRun(
+        transform,
+        state,
+        step,
+        formulaContext,
+        execOptions?.events,
+      );
       if (result.success) {
         successfulRuns++;
       } else {
@@ -1800,7 +2227,6 @@ export function createTransformSystem(
               : normalizedCompleteAtStep;
 
             const outputsValue = batchRecord.outputs;
-            const outputsArray = Array.isArray(outputsValue) ? outputsValue : [];
             const outputs: TransformBatchOutput[] = [];
             const entityInstanceIdsValue = batchRecord.entityInstanceIds;
             const entityInstanceIds = Array.isArray(entityInstanceIdsValue)
@@ -1816,36 +2242,105 @@ export function createTransformSystem(
                 ? Math.max(0, entityExperienceValue)
                 : undefined;
 
-            for (const outputEntry of outputsArray) {
-              if (!outputEntry || typeof outputEntry !== 'object') {
-                continue;
+            const batchIdValue = batchRecord.batchId;
+            const batchId =
+              typeof batchIdValue === 'string' && batchIdValue.trim().length > 0
+                ? batchIdValue
+                : undefined;
+
+            const parseOutputs = (value: unknown): TransformBatchOutput[] => {
+              const outputsArray = Array.isArray(value) ? value : [];
+              const outputs: TransformBatchOutput[] = [];
+
+              for (const outputEntry of outputsArray) {
+                if (!outputEntry || typeof outputEntry !== 'object') {
+                  continue;
+                }
+
+                const outputRecord = outputEntry as Record<string, unknown>;
+                const resourceId = outputRecord.resourceId;
+                const amountValue = outputRecord.amount;
+
+                if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
+                  continue;
+                }
+
+                if (typeof amountValue !== 'number' || !Number.isFinite(amountValue)) {
+                  continue;
+                }
+
+                outputs.push({
+                  resourceId,
+                  amount: Math.max(0, amountValue),
+                });
               }
 
-              const outputRecord = outputEntry as Record<string, unknown>;
-              const resourceId = outputRecord.resourceId;
-              const amountValue = outputRecord.amount;
+              return outputs;
+            };
 
-              if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
-                continue;
+            const parseMissionOutcome = (value: unknown): MissionPreparedOutcome => {
+              if (!value || typeof value !== 'object') {
+                return { outputs: [], entityExperience: 0 };
               }
 
-              if (typeof amountValue !== 'number' || !Number.isFinite(amountValue)) {
-                continue;
-              }
+              const record = value as Record<string, unknown>;
+              const entityExperienceValue = record.entityExperience;
+              const entityExperience =
+                typeof entityExperienceValue === 'number' &&
+                Number.isFinite(entityExperienceValue)
+                  ? Math.max(0, entityExperienceValue)
+                  : 0;
 
-              outputs.push({
-                resourceId,
-                amount: Math.max(0, amountValue),
-              });
+              return {
+                outputs: parseOutputs(record.outputs),
+                entityExperience,
+              };
+            };
+
+            let mission: MissionBatchPlan | undefined;
+            const missionValue = batchRecord.mission;
+            if (missionValue && typeof missionValue === 'object') {
+              const missionRecord = missionValue as Record<string, unknown>;
+              const baseRateValue = missionRecord.baseRate;
+              const baseRate =
+                typeof baseRateValue === 'number' && Number.isFinite(baseRateValue)
+                  ? clampProbability(baseRateValue)
+                  : 0;
+
+              const criticalChanceValue = missionRecord.criticalChance;
+              const criticalChance =
+                typeof criticalChanceValue === 'number' &&
+                Number.isFinite(criticalChanceValue)
+                  ? clampProbability(criticalChanceValue)
+                  : undefined;
+
+              const criticalValue = missionRecord.critical;
+              const critical =
+                criticalValue && typeof criticalValue === 'object'
+                  ? parseMissionOutcome(criticalValue)
+                  : undefined;
+
+              mission = {
+                baseRate,
+                usePRD: Boolean(missionRecord.usePRD),
+                ...(criticalChance === undefined ? {} : { criticalChance }),
+                success: parseMissionOutcome(missionRecord.success),
+                failure: parseMissionOutcome(missionRecord.failure),
+                ...(critical ? { critical } : {}),
+              };
             }
+
+            outputs.push(...parseOutputs(outputsValue));
 
             restoredBatches.push({
               completeAtStep: rebasedCompleteAtStep,
               outputs,
+              ...(batchId ? { batchId } : {}),
               ...(entityInstanceIds && entityInstanceIds.length > 0
                 ? { entityInstanceIds }
                 : {}),
               ...(entityExperience === undefined ? {} : { entityExperience }),
+              ...(mission ? { mission } : {}),
               sequence,
             });
             sequence += 1;
@@ -1883,7 +2378,7 @@ export function createTransformSystem(
       }
     },
 
-    tick({ step }) {
+    tick({ step, events }) {
       const formulaContext = createTransformFormulaEvaluationContext({
         currentStep: step,
         stepDurationMs,
@@ -1895,128 +2390,18 @@ export function createTransformSystem(
       ensureCountersResetForStep(step);
 
       // Deliver any batches that are due before evaluating triggers.
-      for (const transform of sortedTransforms) {
-        const state = transformStates.get(transform.id);
-        const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
-        if (batches.length === 0) continue;
-        deliverDueBatches(batches, resourceState, transform.id, step, entitySystem);
-      }
+      deliverAllDueBatches(sortedTransforms, transformStates, resourceState, step, entitySystem, prdRegistry, events);
 
       // Collect event triggers to retain across ticks when blocked
       const retainedEventTriggers = new Set<string>();
 
       // Evaluate each transform in deterministic order
       for (const transform of sortedTransforms) {
-        const state = transformStates.get(transform.id);
-        if (!state) continue;
-
-        // Update visibility each tick (default visible when no context is provided)
-        state.visible = conditionContext
-          ? evaluateCondition(transform.visibilityCondition, conditionContext)
-          : true;
-
-        // Update unlock status (monotonic: once unlocked, stays unlocked)
-        if (!state.unlocked && conditionContext) {
-          if (evaluateCondition(transform.unlockCondition, conditionContext)) {
-            state.unlocked = true;
-          }
-        } else if (!state.unlocked && !transform.unlockCondition) {
-          // No unlock condition means always unlocked
-          state.unlocked = true;
-        }
-
-        const isEventPending =
-          (transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation') &&
-          pendingEventTriggers.has(transform.id);
-
-        // Skip if not unlocked
-        if (!state.unlocked) {
-          // Retain pending event triggers when blocked by unlock state
-          if (isEventPending) {
-            retainedEventTriggers.add(transform.id);
-          }
-          continue;
-        }
-
-        // Skip manual transforms (handled by command)
-        if (transform.trigger.kind === 'manual') {
-          continue;
-        }
-
-        // Evaluate trigger
-        let triggered = false;
-
-        switch (transform.trigger.kind) {
-          case 'condition': {
-            if (conditionContext) {
-              triggered = evaluateCondition(
-                transform.trigger.condition,
-                conditionContext,
-              );
-            }
-            break;
-          }
-          case 'event': {
-            triggered = pendingEventTriggers.has(transform.id);
-            break;
-          }
-          case 'automation': {
-            triggered = pendingEventTriggers.has(transform.id);
-            break;
-          }
-        }
-
-        if (!triggered) {
-          continue;
-        }
-
-        // Check cooldown
-        if (isTransformCooldownActive(state, step)) {
-          // Retain event trigger for next tick
-          if (
-            transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation'
-          ) {
-            retainedEventTriggers.add(transform.id);
-          }
-          continue;
-        }
-
-        // Check safety cap
-        const maxRuns = getEffectiveMaxRunsPerTick(transform);
-        if (state.runsThisTick >= maxRuns) {
-          // Retain event trigger for next tick
-          if (
-            transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation'
-          ) {
-            retainedEventTriggers.add(transform.id);
-          }
-          continue;
-        }
-
-        // Attempt execution
-        const result = executeTransformRun(transform, state, step, formulaContext);
-
-        if (!result.success) {
-          // Retain event trigger when blocked
-          if (
-            transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation'
-          ) {
-            retainedEventTriggers.add(transform.id);
-          }
-        }
+        processTransformTick(transform, step, formulaContext, events, retainedEventTriggers);
       }
 
       // Deliver any same-step batches scheduled during trigger evaluation.
-      for (const transform of sortedTransforms) {
-        const state = transformStates.get(transform.id);
-        const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
-        if (batches.length === 0) continue;
-        deliverDueBatches(batches, resourceState, transform.id, step, entitySystem);
-      }
+      deliverAllDueBatches(sortedTransforms, transformStates, resourceState, step, entitySystem, prdRegistry, events);
 
       // Clear and repopulate pending event triggers with retained items only
       pendingEventTriggers.clear();

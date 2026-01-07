@@ -2189,6 +2189,60 @@ describe('TransformSystem', () => {
       expect(result.error?.code).toBe('MISSING_ENTITY_SYSTEM');
     });
 
+    it('uses PRD to determine outcome at completion time', () => {
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+      const entitySystem = createEntitySystemWithStats([{ power: 1 }]);
+      let prdCallCount = 0;
+      const prdRegistry = new PRDRegistry(() => {
+        prdCallCount += 1;
+        return 0;
+      });
+
+      const { system } = createMissionHarness({
+        resourceState,
+        entitySystem,
+        prdRegistry,
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: true,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 3 } },
+              ],
+              entityExperience: { kind: 'constant', value: 5 },
+            },
+          },
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, {
+        events: events as any,
+      });
+      expect(result.success).toBe(true);
+
+      const prdCallsBeforeCompletion = prdCallCount;
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      expect(prdCallCount).toBeGreaterThan(prdCallsBeforeCompletion);
+      expect(resourceState.getAmount(1)).toBe(3);
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.success).toBe(true);
+    });
+
     it('serializes mission batches with entity metadata and snapshots next batch time', () => {
       const resourceState = createMockResourceState(
         new Map([
@@ -2236,14 +2290,18 @@ describe('TransformSystem', () => {
       expect(state?.batches?.[0].entityInstanceIds).toEqual(
         instanceId ? [instanceId] : [],
       );
-      expect(state?.batches?.[0].entityExperience).toBe(5);
+      expect(state?.batches?.[0].batchId).toBe('0');
+      expect(state?.batches?.[0].outputs).toEqual([]);
+      expect(state?.batches?.[0].mission?.success.entityExperience).toBe(5);
 
       const serialized = serializeTransformState(system.getState());
       const serializedBatch = serialized[0]?.batches?.[0];
       expect(serializedBatch?.entityInstanceIds).toEqual(
         instanceId ? [instanceId] : [],
       );
-      expect(serializedBatch?.entityExperience).toBe(5);
+      expect(serializedBatch?.batchId).toBe('0');
+      expect(serializedBatch?.outputs).toEqual([]);
+      expect(serializedBatch?.mission?.success.entityExperience).toBe(5);
 
       const restoredResourceState = createMockResourceState(
         new Map([
@@ -2263,7 +2321,9 @@ describe('TransformSystem', () => {
       expect(restoredState?.batches?.[0].entityInstanceIds).toEqual(
         instanceId ? [instanceId] : [],
       );
-      expect(restoredState?.batches?.[0].entityExperience).toBe(5);
+      expect(restoredState?.batches?.[0].batchId).toBe('0');
+      expect(restoredState?.batches?.[0].outputs).toEqual([]);
+      expect(restoredState?.batches?.[0].mission?.success.entityExperience).toBe(5);
 
       const snapshot = buildTransformSnapshot(0, 0, {
         transforms,
@@ -2275,6 +2335,93 @@ describe('TransformSystem', () => {
       expect(snapshot.transforms[0]?.nextBatchReadyAtStep).toBe(
         restoredState?.batches?.[0].completeAtStep,
       );
+    });
+
+    it('omits next batch timing when no mission batches exist', () => {
+      const transforms = [createMissionTransform()];
+
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state: new Map(),
+        stepDurationMs,
+      });
+
+      expect(snapshot.transforms[0]?.outstandingBatches).toBe(0);
+      expect(snapshot.transforms[0]?.nextBatchReadyAtStep).toBeUndefined();
+    });
+
+    it('sorts snapshot endpoints and computes affordability without resource state', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:sorted' as any,
+          name: { default: 'Sorted', variants: {} },
+          description: { default: 'Sorted', variants: {} },
+          mode: 'instant',
+          inputs: [
+            { resourceId: 'res:b' as any, amount: { kind: 'constant', value: 0 } },
+            { resourceId: 'res:a' as any, amount: { kind: 'constant', value: 0 } },
+          ],
+          outputs: [
+            { resourceId: 'res:b' as any, amount: { kind: 'constant', value: 2 } },
+            { resourceId: 'res:a' as any, amount: { kind: 'constant', value: 1 } },
+          ],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const state = new Map<string, TransformState>();
+      state.set('transform:sorted', {
+        id: 'transform:sorted',
+        unlocked: true,
+        visible: true,
+        cooldownExpiresStep: 0,
+        runsThisTick: 0,
+      });
+
+      const snapshot = buildTransformSnapshot(0, 0, {
+        transforms,
+        state,
+        stepDurationMs,
+      });
+
+      expect(snapshot.transforms[0]?.inputs.map(({ resourceId }) => resourceId)).toEqual([
+        'res:a',
+        'res:b',
+      ]);
+      expect(snapshot.transforms[0]?.outputs.map(({ resourceId }) => resourceId)).toEqual([
+        'res:a',
+        'res:b',
+      ]);
+      expect(snapshot.transforms[0]?.canAfford).toBe(true);
+
+      const expensiveSnapshot = buildTransformSnapshot(0, 0, {
+        transforms: [
+          {
+            ...transforms[0],
+            id: 'transform:sorted-expensive' as any,
+            inputs: [
+              { resourceId: 'res:b' as any, amount: { kind: 'constant', value: 1 } },
+              { resourceId: 'res:a' as any, amount: { kind: 'constant', value: 1 } },
+            ],
+          },
+        ],
+        state: new Map([
+          [
+            'transform:sorted-expensive',
+            {
+              id: 'transform:sorted-expensive',
+              unlocked: true,
+              visible: true,
+              cooldownExpiresStep: 0,
+              runsThisTick: 0,
+            },
+          ],
+        ]),
+        stepDurationMs,
+      });
+
+      expect(expensiveSnapshot.transforms[0]?.canAfford).toBe(false);
     });
 
     it('normalizes non-finite batch outputs during serialization', () => {
@@ -2301,6 +2448,97 @@ describe('TransformSystem', () => {
       const serialized = serializeTransformState(state);
 
       expect(serialized[0]?.batches?.[0].outputs[0]?.amount).toBe(0);
+    });
+
+    it('completes restored mission batches with correct outcomes', () => {
+      const transforms = [
+        createMissionTransform({
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 5 } },
+              ],
+              entityExperience: { kind: 'constant', value: 10 },
+            },
+            critical: {
+              chance: { kind: 'constant', value: 1 },
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 8 } },
+              ],
+              entityExperience: { kind: 'constant', value: 15 },
+            },
+          },
+        }),
+      ];
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 0 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+      const entitySystem = createEntitySystemWithStats([{ power: 1 }]);
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        entitySystem,
+      });
+
+      system.restoreState([
+        {
+          id: 'transform:mission',
+          unlocked: true,
+          cooldownExpiresStep: 0,
+          batches: [
+            {
+              batchId: 'restored-batch',
+              completeAtStep: 1,
+              outputs: [],
+              entityInstanceIds: [instanceId!],
+              mission: {
+                baseRate: 1,
+                usePRD: false,
+                criticalChance: 1,
+                success: {
+                  outputs: [{ resourceId: 'res:gems' as any, amount: 5 }],
+                  entityExperience: 10,
+                },
+                failure: {
+                  outputs: [],
+                  entityExperience: 0,
+                },
+                critical: {
+                  outputs: [{ resourceId: 'res:gems' as any, amount: 8 }],
+                  entityExperience: 15,
+                },
+              },
+            },
+          ],
+        },
+      ]);
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      expect(resourceState.getAmount(1)).toBe(8);
+      expect(entitySystem.getInstanceState(instanceId!)?.experience).toBe(15);
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.batchId).toBe('restored-batch');
+      expect(payload.outcomeKind).toBe('critical');
+      expect(payload.success).toBe(true);
+      expect(payload.critical).toBe(true);
     });
 
     it('handles empty assignments and missing outcomes', () => {
@@ -2339,6 +2577,182 @@ describe('TransformSystem', () => {
 
       const state = getTransformState(system).get('transform:mission');
       expect(state?.batches?.[0].outputs).toEqual([]);
+    });
+
+    it('treats missing failure outcome as no rewards on failure', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 0 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 3 } },
+              ],
+              entityExperience: { kind: 'constant', value: 10 },
+            },
+          },
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+
+      const result = system.executeTransform('transform:mission', 0, {
+        events: events as any,
+      });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      expect(resourceState.getAmount(1)).toBe(0);
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(0);
+      }
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.outcomeKind).toBe('failure');
+      expect(payload.outputs).toEqual([]);
+      expect(payload.entityExperience).toBe(0);
+    });
+
+    it('applies critical outcomes when rolled at completion', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+              entityExperience: { kind: 'constant', value: 5 },
+            },
+            critical: {
+              chance: { kind: 'constant', value: 1 },
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 2 } },
+              ],
+              entityExperience: { kind: 'constant', value: 7 },
+            },
+          },
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+
+      const result = system.executeTransform('transform:mission', 0, {
+        events: events as any,
+      });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      expect(resourceState.getAmount(1)).toBe(2);
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(7);
+      }
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.outcomeKind).toBe('critical');
+      expect(payload.success).toBe(true);
+      expect(payload.critical).toBe(true);
+      expect(payload.outputs).toEqual([{ resourceId: 'res:gems', amount: 2 }]);
+      expect(payload.entityExperience).toBe(7);
+    });
+
+    it('publishes mission:started event when mission begins', () => {
+      const { system, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          duration: { kind: 'constant', value: 200 },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+            },
+          },
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+
+      const result = system.executeTransform('transform:mission', 0, {
+        events: events as any,
+      });
+      expect(result.success).toBe(true);
+
+      const started = publish.mock.calls.find(([type]) => type === 'mission:started');
+      expect(started).toBeTruthy();
+      const payload = started?.[1] as any;
+      expect(payload.transformId).toBe('transform:mission');
+      expect(payload.batchId).toBe('0');
+      expect(payload.startedAtStep).toBe(0);
+      expect(payload.completeAtStep).toBe(2);
+      expect(payload.entityInstanceIds).toEqual(instanceId ? [instanceId] : []);
+    });
+
+    it('applies explicit failure outcome rewards on failure', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 0 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 5 } },
+              ],
+              entityExperience: { kind: 'constant', value: 10 },
+            },
+            failure: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+              ],
+              entityExperience: { kind: 'constant', value: 2 },
+            },
+          },
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+
+      const result = system.executeTransform('transform:mission', 0, {
+        events: events as any,
+      });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      expect(resourceState.getAmount(1)).toBe(1);
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(2);
+      }
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.outcomeKind).toBe('failure');
+      expect(payload.success).toBe(false);
+      expect(payload.critical).toBe(false);
+      expect(payload.outputs).toEqual([{ resourceId: 'res:gems', amount: 1 }]);
+      expect(payload.entityExperience).toBe(2);
     });
 
     it('selects mission entities by stats and prefers higher values', () => {
@@ -2613,6 +3027,69 @@ describe('TransformSystem', () => {
                   amount: { kind: 'constant', value: 1 },
                 },
               ],
+            },
+          },
+        },
+      },
+      {
+        label: 'critical chance formula is non-finite',
+        expected: 'INVALID_SUCCESS_RATE',
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [],
+            },
+            critical: {
+              chance: { kind: 'constant', value: Number.NaN },
+              outputs: [],
+            },
+          },
+        },
+      },
+      {
+        label: 'critical outcome output formula is non-finite',
+        expected: 'INVALID_OUTPUT_FORMULA',
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [],
+            },
+            critical: {
+              chance: { kind: 'constant', value: 0.5 },
+              outputs: [
+                {
+                  resourceId: 'res:gems' as any,
+                  amount: { kind: 'constant', value: Number.NaN },
+                },
+              ],
+            },
+          },
+        },
+      },
+      {
+        label: 'critical outcome experience formula is non-finite',
+        expected: 'INVALID_OUTPUT_FORMULA',
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [],
+            },
+            critical: {
+              chance: { kind: 'constant', value: 0.5 },
+              outputs: [],
+              entityExperience: { kind: 'constant', value: Number.NaN },
             },
           },
         },

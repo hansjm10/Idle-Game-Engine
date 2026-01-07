@@ -44,13 +44,13 @@ function cloneSchemaWarning(
   const cloned = {
     code: warning.code,
     message: warning.message,
-    path: Object.freeze([...warning.path]) as SerializedContentSchemaWarning['path'],
+    path: Object.freeze([...warning.path]),
     severity: warning.severity,
     ...(warning.suggestion !== undefined ? { suggestion: warning.suggestion } : {}),
     ...(issues !== undefined ? { issues: Object.freeze(issues) } : {}),
   } satisfies SerializedContentSchemaWarning;
 
-  return Object.freeze(cloned) as SerializedContentSchemaWarning;
+  return Object.freeze(cloned);
 }
 
 function cloneSchemaWarningIssue(
@@ -58,10 +58,10 @@ function cloneSchemaWarningIssue(
 ): SerializedSchemaIssue {
   const cloned = {
     ...issue,
-    path: Object.freeze([...issue.path]) as SerializedSchemaIssue['path'],
+    path: [...issue.path],
   } satisfies SerializedSchemaIssue;
 
-  return Object.freeze(cloned) as SerializedSchemaIssue;
+  return cloned;
 }
 
 function cloneWarnings(

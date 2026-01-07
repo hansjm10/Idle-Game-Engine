@@ -41,7 +41,7 @@ const reportAngleBracket = (file, node, matchIndex) => {
 
 const lintAngleBrackets = (file, node) => {
   const value = node.value;
-  if (value && value.includes('<')) {
+  if (value?.includes('<')) {
     for (const match of value.matchAll(/</g)) {
       reportAngleBracket(file, node, match.index ?? 0);
     }

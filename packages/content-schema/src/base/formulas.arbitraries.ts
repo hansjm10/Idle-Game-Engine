@@ -540,10 +540,10 @@ const createPiecewiseArbitrary = (
         type PiecewiseSegment = { readonly untilLevel?: number; readonly formula: NumericFormula };
         const pieces: PiecewiseSegment[] = thresholds.map((untilLevel, index) => ({
           untilLevel,
-          formula: formulas[index]!,
+          formula: formulas[index],
         }));
         pieces.push({
-          formula: formulas[formulas.length - 1]!,
+          formula: formulas[formulas.length - 1],
         });
         return {
           kind: 'piecewise' as const,
