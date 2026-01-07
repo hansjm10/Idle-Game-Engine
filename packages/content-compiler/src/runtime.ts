@@ -258,9 +258,7 @@ function buildModuleIndex<Name extends ModuleName>(
   pack: NormalizedContentPack,
   name: Name,
 ): ReadonlyMap<string, number> {
-  const modules = (pack as { readonly modules?: SerializedNormalizedModules }).modules;
-  const entries =
-    (modules?.[name] ?? pack[name]) as SerializedNormalizedModules[Name];
+  const entries = pack.modules[name];
   const index = new Map<string, number>();
 
   entries.forEach((entry, position) => {

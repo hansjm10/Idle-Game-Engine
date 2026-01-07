@@ -68,16 +68,30 @@ export function isModuleNotFoundError(
   }
 
   const errorWithMessage = error as { message?: unknown };
-  const stringified = String(error);
-  let message: string;
   if (typeof errorWithMessage.message === 'string') {
-    message = errorWithMessage.message;
-  } else if (stringified !== '[object Object]') {
-    message = stringified;
-  } else {
-    message = JSON.stringify(error);
+    return errorWithMessage.message.includes(packageName);
   }
-  return message.includes(packageName);
+
+  const errorWithToString = error as { toString?: unknown };
+  if (
+    typeof errorWithToString.toString === 'function' &&
+    errorWithToString.toString !== Object.prototype.toString
+  ) {
+    try {
+      const stringified = errorWithToString.toString.call(error);
+      if (typeof stringified === 'string' && stringified !== '[object Object]') {
+        return stringified.includes(packageName);
+      }
+    } catch {
+      // Ignore and fall back.
+    }
+  }
+
+  try {
+    return JSON.stringify(error).includes(packageName);
+  } catch {
+    return false;
+  }
 }
 
 // ============================================================================

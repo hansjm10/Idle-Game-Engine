@@ -118,6 +118,6 @@ async function resolveManifestPath(packageRoot: string): Promise<string | undefi
 
 function parseManifest(raw: string, manifestPath: string): unknown {
   return manifestPath.endsWith('.json5')
-    ? (JSON5.parse(raw) as unknown)
-    : (JSON.parse(raw) as unknown);
+    ? JSON5.parse(raw)
+    : JSON.parse(raw);
 }
