@@ -1010,13 +1010,14 @@ function determineMissionOutcome(
     return { outcomeKind: 'failure', critical: false, success: false, outcome: mission.failure };
   }
 
-  const hasCritical =
-    mission.critical !== undefined &&
-    mission.criticalChance !== undefined &&
-    seededRandom() < clampProbability(mission.criticalChance);
-
-  if (hasCritical) {
-    return { outcomeKind: 'critical', critical: true, success: true, outcome: mission.critical! };
+  const criticalOutcome = mission.critical;
+  const criticalChance = mission.criticalChance;
+  if (
+    criticalOutcome !== undefined &&
+    criticalChance !== undefined &&
+    seededRandom() < clampProbability(criticalChance)
+  ) {
+    return { outcomeKind: 'critical', critical: true, success: true, outcome: criticalOutcome };
   }
 
   return { outcomeKind: 'success', critical: false, success: true, outcome: mission.success };
@@ -1925,6 +1926,60 @@ export function createTransformSystem(
     return executeNonMissionTransformRun(transform, state, step, formulaContext);
   };
 
+  const processTransformTick = (
+    transform: TransformDefinition,
+    step: number,
+    formulaContext: ReturnType<typeof createTransformFormulaEvaluationContext>,
+    events: EventPublisher,
+    retainedEventTriggers: Set<string>,
+  ): void => {
+    const state = transformStates.get(transform.id);
+    if (!state) {
+      return;
+    }
+
+    // Update visibility each tick (default visible when no context is provided)
+    state.visible = conditionContext
+      ? evaluateCondition(transform.visibilityCondition, conditionContext)
+      : true;
+
+    updateTransformUnlockStatus(transform, state, conditionContext);
+
+    const isEventBased = isEventBasedTrigger(transform);
+    const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
+
+    // Skip if not unlocked
+    if (!state.unlocked) {
+      if (isEventPending) {
+        retainedEventTriggers.add(transform.id);
+      }
+      return;
+    }
+
+    // Skip manual transforms (handled by command)
+    if (transform.trigger.kind === 'manual') {
+      return;
+    }
+
+    const triggered = evaluateTrigger(transform, pendingEventTriggers, conditionContext);
+    if (!triggered) {
+      return;
+    }
+
+    const result = processTriggeredTransform(
+      transform,
+      state,
+      step,
+      formulaContext,
+      events,
+      executeTransformRun,
+    );
+
+    if (result === 'blocked' && isEventBased) {
+      retainedEventTriggers.add(transform.id);
+    }
+  };
+
   /**
    * Public method to execute a manual transform.
    * Called by the RUN_TRANSFORM command handler.
@@ -2342,47 +2397,7 @@ export function createTransformSystem(
 
       // Evaluate each transform in deterministic order
       for (const transform of sortedTransforms) {
-        const state = transformStates.get(transform.id);
-        if (!state) continue;
-
-        // Update visibility each tick (default visible when no context is provided)
-        state.visible = conditionContext
-          ? evaluateCondition(transform.visibilityCondition, conditionContext)
-          : true;
-
-        updateTransformUnlockStatus(transform, state, conditionContext);
-
-        const isEventBased = isEventBasedTrigger(transform);
-        const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
-
-        // Skip if not unlocked
-        if (!state.unlocked) {
-          if (isEventPending) retainedEventTriggers.add(transform.id);
-          continue;
-        }
-
-        // Skip manual transforms (handled by command)
-        if (transform.trigger.kind === 'manual') {
-          continue;
-        }
-
-        const triggered = evaluateTrigger(transform, pendingEventTriggers, conditionContext);
-        if (!triggered) {
-          continue;
-        }
-
-        const result = processTriggeredTransform(
-          transform,
-          state,
-          step,
-          formulaContext,
-          events,
-          executeTransformRun,
-        );
-
-        if (result === 'blocked' && isEventBased) {
-          retainedEventTriggers.add(transform.id);
-        }
+        processTransformTick(transform, step, formulaContext, events, retainedEventTriggers);
       }
 
       // Deliver any same-step batches scheduled during trigger evaluation.
