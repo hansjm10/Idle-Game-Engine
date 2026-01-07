@@ -87,6 +87,53 @@ function validateAutomationFired(payload: AutomationFiredEventPayload): void {
   }
 }
 
+function validateStringArray(arr: unknown, fieldName: string): void {
+  if (!Array.isArray(arr)) {
+    throw new TypeError(`${fieldName} must be an array.`);
+  }
+  for (const id of arr) {
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new TypeError(`${fieldName} must contain non-empty strings.`);
+    }
+  }
+}
+
+function validateOutcomeConsistency(
+  outcomeKind: MissionOutcomeKind,
+  success: boolean,
+  critical: boolean,
+): void {
+  const expectedFlags: Record<MissionOutcomeKind, { success: boolean; critical: boolean }> = {
+    critical: { success: true, critical: true },
+    success: { success: true, critical: false },
+    failure: { success: false, critical: false },
+  };
+  const expected = expectedFlags[outcomeKind];
+  if (success !== expected.success || critical !== expected.critical) {
+    throw new Error(
+      `outcomeKind "${outcomeKind}" requires success=${expected.success} and critical=${expected.critical}.`,
+    );
+  }
+}
+
+function validateMissionOutputs(outputs: unknown): void {
+  if (!Array.isArray(outputs)) {
+    throw new TypeError('outputs must be an array.');
+  }
+  for (const output of outputs) {
+    if (!output || typeof output !== 'object') {
+      throw new Error('outputs must contain objects.');
+    }
+    const record = output as Record<string, unknown>;
+    if (typeof record.resourceId !== 'string' || record.resourceId.length === 0) {
+      throw new Error('output.resourceId must be a non-empty string.');
+    }
+    if (typeof record.amount !== 'number' || !Number.isFinite(record.amount)) {
+      throw new TypeError('output.amount must be a finite number.');
+    }
+  }
+}
+
 function validateMissionStarted(payload: MissionStartedEventPayload): void {
   if (typeof payload.transformId !== 'string' || payload.transformId.length === 0) {
     throw new Error('transformId must be a non-empty string.');
@@ -100,14 +147,7 @@ function validateMissionStarted(payload: MissionStartedEventPayload): void {
   if (!Number.isInteger(payload.completeAtStep) || payload.completeAtStep < 0) {
     throw new Error('completeAtStep must be a non-negative integer.');
   }
-  if (!Array.isArray(payload.entityInstanceIds)) {
-    throw new Error('entityInstanceIds must be an array.');
-  }
-  for (const id of payload.entityInstanceIds) {
-    if (typeof id !== 'string' || id.length === 0) {
-      throw new Error('entityInstanceIds must contain non-empty strings.');
-    }
-  }
+  validateStringArray(payload.entityInstanceIds, 'entityInstanceIds');
 }
 
 function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
@@ -128,47 +168,17 @@ function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
     throw new Error('outcomeKind must be "success", "failure", or "critical".');
   }
   if (typeof payload.success !== 'boolean') {
-    throw new Error('success must be a boolean.');
+    throw new TypeError('success must be a boolean.');
   }
   if (typeof payload.critical !== 'boolean') {
-    throw new Error('critical must be a boolean.');
+    throw new TypeError('critical must be a boolean.');
   }
-  // Validate relationship between outcomeKind, success, and critical
-  if (payload.outcomeKind === 'critical' && (!payload.success || !payload.critical)) {
-    throw new Error('outcomeKind "critical" requires success=true and critical=true.');
-  }
-  if (payload.outcomeKind === 'success' && (!payload.success || payload.critical)) {
-    throw new Error('outcomeKind "success" requires success=true and critical=false.');
-  }
-  if (payload.outcomeKind === 'failure' && (payload.success || payload.critical)) {
-    throw new Error('outcomeKind "failure" requires success=false and critical=false.');
-  }
-  if (!Array.isArray(payload.outputs)) {
-    throw new Error('outputs must be an array.');
-  }
-  for (const output of payload.outputs) {
-    if (!output || typeof output !== 'object') {
-      throw new Error('outputs must contain objects.');
-    }
-    const record = output as Record<string, unknown>;
-    if (typeof record.resourceId !== 'string' || record.resourceId.length === 0) {
-      throw new Error('output.resourceId must be a non-empty string.');
-    }
-    if (typeof record.amount !== 'number' || !Number.isFinite(record.amount)) {
-      throw new Error('output.amount must be a finite number.');
-    }
-  }
+  validateOutcomeConsistency(payload.outcomeKind, payload.success, payload.critical);
+  validateMissionOutputs(payload.outputs);
   if (typeof payload.entityExperience !== 'number' || !Number.isFinite(payload.entityExperience)) {
-    throw new Error('entityExperience must be a finite number.');
+    throw new TypeError('entityExperience must be a finite number.');
   }
-  if (!Array.isArray(payload.entityInstanceIds)) {
-    throw new Error('entityInstanceIds must be an array.');
-  }
-  for (const id of payload.entityInstanceIds) {
-    if (typeof id !== 'string' || id.length === 0) {
-      throw new Error('entityInstanceIds must contain non-empty strings.');
-    }
-  }
+  validateStringArray(payload.entityInstanceIds, 'entityInstanceIds');
 }
 
 const CORE_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [

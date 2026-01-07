@@ -989,6 +989,39 @@ function grantEntityExperience(
   });
 }
 
+interface MissionOutcomeResult {
+  readonly outcomeKind: MissionOutcomeKind;
+  readonly critical: boolean;
+  readonly success: boolean;
+  readonly outcome: MissionPreparedOutcome;
+}
+
+function determineMissionOutcome(
+  mission: MissionBatchPlan,
+  transformId: string,
+  prdRegistry: PRDRegistry | undefined,
+): MissionOutcomeResult {
+  const baseRate = clampProbability(mission.baseRate);
+  const success = mission.usePRD
+    ? (prdRegistry ?? new PRDRegistry(seededRandom)).getOrCreate(transformId, baseRate).roll()
+    : seededRandom() < baseRate;
+
+  if (!success) {
+    return { outcomeKind: 'failure', critical: false, success: false, outcome: mission.failure };
+  }
+
+  const hasCritical =
+    mission.critical !== undefined &&
+    mission.criticalChance !== undefined &&
+    seededRandom() < clampProbability(mission.criticalChance);
+
+  if (hasCritical) {
+    return { outcomeKind: 'critical', critical: true, success: true, outcome: mission.critical! };
+  }
+
+  return { outcomeKind: 'success', critical: false, success: true, outcome: mission.success };
+}
+
 function publishMissionEvent(
   publisher: EventPublisher | undefined,
   type: 'mission:started',
@@ -1022,6 +1055,65 @@ function publishMissionEvent(
   }
 }
 
+function completeMissionBatch(
+  entry: TransformBatchQueueEntry,
+  transformId: string,
+  resourceState: TransformResourceState,
+  step: number,
+  entitySystem: EntitySystem | undefined,
+  prdRegistry: PRDRegistry | undefined,
+  events: EventPublisher | undefined,
+): void {
+  const mission = entry.mission!;
+  const result = determineMissionOutcome(mission, transformId, prdRegistry);
+
+  applyBatchOutputs(result.outcome.outputs, resourceState, transformId);
+  grantEntityExperience(
+    result.outcome.entityExperience,
+    entry.entityInstanceIds,
+    step,
+    transformId,
+    entitySystem,
+  );
+
+  publishMissionEvent(
+    events,
+    'mission:completed',
+    {
+      transformId,
+      batchId: entry.batchId ?? `${entry.sequence}`,
+      completedAtStep: step,
+      outcomeKind: result.outcomeKind,
+      success: result.success,
+      critical: result.critical,
+      outputs: result.outcome.outputs.map((output) => ({
+        resourceId: output.resourceId,
+        amount: output.amount,
+      })),
+      entityExperience: result.outcome.entityExperience,
+      entityInstanceIds: entry.entityInstanceIds ?? [],
+    },
+    transformId,
+  );
+}
+
+function completeStandardBatch(
+  entry: TransformBatchQueueEntry,
+  transformId: string,
+  resourceState: TransformResourceState,
+  step: number,
+  entitySystem: EntitySystem | undefined,
+): void {
+  applyBatchOutputs(entry.outputs, resourceState, transformId);
+  grantEntityExperience(
+    entry.entityExperience ?? 0,
+    entry.entityInstanceIds,
+    step,
+    transformId,
+    entitySystem,
+  );
+}
+
 function deliverDueBatches(
   transform: TransformDefinition,
   batches: TransformBatchQueueEntry[],
@@ -1037,79 +1129,15 @@ function deliverDueBatches(
 
   const transformId = transform.id;
   let writeIndex = 0;
+
   for (let readIndex = 0; readIndex < batches.length; readIndex += 1) {
     const entry = batches[readIndex];
+
     if (entry.completeAtStep <= step) {
       if (transform.mode === 'mission' && entry.mission) {
-        const mission = entry.mission;
-        const baseRate = clampProbability(mission.baseRate);
-        const usePRD = mission.usePRD;
-
-        const success = usePRD
-          ? (prdRegistry ?? new PRDRegistry(seededRandom))
-              .getOrCreate(transformId, baseRate)
-              .roll()
-          : seededRandom() < baseRate;
-
-        let outcomeKind: MissionOutcomeKind;
-        let critical = false;
-        let outcome: MissionPreparedOutcome;
-
-        if (
-          success &&
-          mission.critical !== undefined &&
-          mission.criticalChance !== undefined &&
-          seededRandom() < clampProbability(mission.criticalChance)
-        ) {
-          outcomeKind = 'critical';
-          critical = true;
-          outcome = mission.critical;
-        } else if (success) {
-          outcomeKind = 'success';
-          outcome = mission.success;
-        } else {
-          outcomeKind = 'failure';
-          outcome = mission.failure;
-        }
-
-        applyBatchOutputs(outcome.outputs, resourceState, transformId);
-
-        grantEntityExperience(
-          outcome.entityExperience,
-          entry.entityInstanceIds,
-          step,
-          transformId,
-          entitySystem,
-        );
-
-        publishMissionEvent(
-          events,
-          'mission:completed',
-          {
-            transformId,
-            batchId: entry.batchId ?? `${entry.sequence}`,
-            completedAtStep: step,
-            outcomeKind,
-            success,
-            critical,
-            outputs: outcome.outputs.map((output) => ({
-              resourceId: output.resourceId,
-              amount: output.amount,
-            })),
-            entityExperience: outcome.entityExperience,
-            entityInstanceIds: entry.entityInstanceIds ?? [],
-          },
-          transformId,
-        );
+        completeMissionBatch(entry, transformId, resourceState, step, entitySystem, prdRegistry, events);
       } else {
-        applyBatchOutputs(entry.outputs, resourceState, transformId);
-        grantEntityExperience(
-          entry.entityExperience ?? 0,
-          entry.entityInstanceIds,
-          step,
-          transformId,
-          entitySystem,
-        );
+        completeStandardBatch(entry, transformId, resourceState, step, entitySystem);
       }
       continue;
     }
@@ -1124,6 +1152,91 @@ function deliverDueBatches(
     batches.length = 0;
   } else if (writeIndex < batches.length) {
     batches.length = writeIndex;
+  }
+}
+
+function isEventBasedTrigger(transform: TransformDefinition): boolean {
+  return transform.trigger.kind === 'event' || transform.trigger.kind === 'automation';
+}
+
+function evaluateTrigger(
+  transform: TransformDefinition,
+  pendingEventTriggers: Set<string>,
+  conditionContext: ConditionContext | undefined,
+): boolean {
+  switch (transform.trigger.kind) {
+    case 'condition':
+      return conditionContext
+        ? evaluateCondition(transform.trigger.condition, conditionContext)
+        : false;
+    case 'event':
+    case 'automation':
+      return pendingEventTriggers.has(transform.id);
+    default:
+      return false;
+  }
+}
+
+function updateTransformUnlockStatus(
+  transform: TransformDefinition,
+  state: TransformState,
+  conditionContext: ConditionContext | undefined,
+): void {
+  if (state.unlocked) {
+    return;
+  }
+  if (!transform.unlockCondition) {
+    state.unlocked = true;
+    return;
+  }
+  if (conditionContext && evaluateCondition(transform.unlockCondition, conditionContext)) {
+    state.unlocked = true;
+  }
+}
+
+type ProcessTransformResult = 'skipped' | 'blocked' | 'executed';
+
+function processTriggeredTransform(
+  transform: TransformDefinition,
+  state: TransformState,
+  step: number,
+  formulaContext: FormulaEvaluationContext,
+  events: EventPublisher | undefined,
+  executeTransformRun: (
+    transform: TransformDefinition,
+    state: TransformState,
+    step: number,
+    formulaContext: FormulaEvaluationContext,
+    events: EventPublisher | undefined,
+  ) => TransformExecutionResult,
+): ProcessTransformResult {
+  if (isTransformCooldownActive(state, step)) {
+    return 'blocked';
+  }
+
+  const maxRuns = getEffectiveMaxRunsPerTick(transform);
+  if (state.runsThisTick >= maxRuns) {
+    return 'blocked';
+  }
+
+  const result = executeTransformRun(transform, state, step, formulaContext, events);
+  return result.success ? 'executed' : 'blocked';
+}
+
+function deliverAllDueBatches(
+  sortedTransforms: readonly TransformDefinition[],
+  transformStates: Map<string, TransformState>,
+  resourceState: TransformResourceState,
+  step: number,
+  entitySystem: EntitySystem | undefined,
+  prdRegistry: PRDRegistry,
+  events: EventPublisher | undefined,
+): void {
+  for (const transform of sortedTransforms) {
+    const state = transformStates.get(transform.id);
+    const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
+    if (batches.length === 0) continue;
+    deliverDueBatches(transform, batches, resourceState, step, entitySystem, prdRegistry, events);
   }
 }
 
@@ -2222,20 +2335,7 @@ export function createTransformSystem(
       ensureCountersResetForStep(step);
 
       // Deliver any batches that are due before evaluating triggers.
-      for (const transform of sortedTransforms) {
-        const state = transformStates.get(transform.id);
-        const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
-        if (batches.length === 0) continue;
-        deliverDueBatches(
-          transform,
-          batches,
-          resourceState,
-          step,
-          entitySystem,
-          prdRegistry,
-          events,
-        );
-      }
+      deliverAllDueBatches(sortedTransforms, transformStates, resourceState, step, entitySystem, prdRegistry, events);
 
       // Collect event triggers to retain across ticks when blocked
       const retainedEventTriggers = new Set<string>();
@@ -2250,27 +2350,14 @@ export function createTransformSystem(
           ? evaluateCondition(transform.visibilityCondition, conditionContext)
           : true;
 
-        // Update unlock status (monotonic: once unlocked, stays unlocked)
-        if (!state.unlocked && conditionContext) {
-          if (evaluateCondition(transform.unlockCondition, conditionContext)) {
-            state.unlocked = true;
-          }
-        } else if (!state.unlocked && !transform.unlockCondition) {
-          // No unlock condition means always unlocked
-          state.unlocked = true;
-        }
+        updateTransformUnlockStatus(transform, state, conditionContext);
 
-        const isEventPending =
-          (transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation') &&
-          pendingEventTriggers.has(transform.id);
+        const isEventBased = isEventBasedTrigger(transform);
+        const isEventPending = isEventBased && pendingEventTriggers.has(transform.id);
 
         // Skip if not unlocked
         if (!state.unlocked) {
-          // Retain pending event triggers when blocked by unlock state
-          if (isEventPending) {
-            retainedEventTriggers.add(transform.id);
-          }
+          if (isEventPending) retainedEventTriggers.add(transform.id);
           continue;
         }
 
@@ -2279,93 +2366,27 @@ export function createTransformSystem(
           continue;
         }
 
-        // Evaluate trigger
-        let triggered = false;
-
-        switch (transform.trigger.kind) {
-          case 'condition': {
-            if (conditionContext) {
-              triggered = evaluateCondition(
-                transform.trigger.condition,
-                conditionContext,
-              );
-            }
-            break;
-          }
-          case 'event': {
-            triggered = pendingEventTriggers.has(transform.id);
-            break;
-          }
-          case 'automation': {
-            triggered = pendingEventTriggers.has(transform.id);
-            break;
-          }
-        }
-
+        const triggered = evaluateTrigger(transform, pendingEventTriggers, conditionContext);
         if (!triggered) {
           continue;
         }
 
-        // Check cooldown
-        if (isTransformCooldownActive(state, step)) {
-          // Retain event trigger for next tick
-          if (
-            transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation'
-          ) {
-            retainedEventTriggers.add(transform.id);
-          }
-          continue;
-        }
-
-        // Check safety cap
-        const maxRuns = getEffectiveMaxRunsPerTick(transform);
-        if (state.runsThisTick >= maxRuns) {
-          // Retain event trigger for next tick
-          if (
-            transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation'
-          ) {
-            retainedEventTriggers.add(transform.id);
-          }
-          continue;
-        }
-
-        // Attempt execution
-        const result = executeTransformRun(
+        const result = processTriggeredTransform(
           transform,
           state,
           step,
           formulaContext,
           events,
+          executeTransformRun,
         );
 
-        if (!result.success) {
-          // Retain event trigger when blocked
-          if (
-            transform.trigger.kind === 'event' ||
-            transform.trigger.kind === 'automation'
-          ) {
-            retainedEventTriggers.add(transform.id);
-          }
+        if (result === 'blocked' && isEventBased) {
+          retainedEventTriggers.add(transform.id);
         }
       }
 
       // Deliver any same-step batches scheduled during trigger evaluation.
-      for (const transform of sortedTransforms) {
-        const state = transformStates.get(transform.id);
-        const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
-        if (batches.length === 0) continue;
-        deliverDueBatches(
-          transform,
-          batches,
-          resourceState,
-          step,
-          entitySystem,
-          prdRegistry,
-          events,
-        );
-      }
+      deliverAllDueBatches(sortedTransforms, transformStates, resourceState, step, entitySystem, prdRegistry, events);
 
       // Clear and repopulate pending event triggers with retained items only
       pendingEventTriggers.clear();
