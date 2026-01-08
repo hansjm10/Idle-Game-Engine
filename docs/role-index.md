@@ -18,7 +18,9 @@ touch most often.
   - `docs/tick-accumulator-coverage-design.md`
   - `docs/diagnostic-timeline-design.md`
 - Implementation hotspots live in `packages/core/src/`; refer to the colocated
-  `*.test.ts` files for current coverage.
+  `*.test.ts` files for current coverage. Some larger suites live under
+  `packages/core/src/__tests__/` (for example, the Progression Coordinator tests
+  are in `packages/core/src/__tests__/progression-coordinator/`).
 
 ## Content pipeline authors
 
