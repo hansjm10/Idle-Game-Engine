@@ -9,7 +9,7 @@ import {
   resetRNG,
   setRNGSeed,
   type ResourceDefinition,
-} from './index.js';
+} from './internals.js';
 
 describe('verification runtime helpers', () => {
   it('buildEconomyStateSummary captures step, rates, and metadata', () => {

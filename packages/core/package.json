@@ -16,6 +16,26 @@
         "default": "./dist/index.js"
       }
     },
+    "./public": {
+      "browser": {
+        "types": "./dist/index.browser.d.ts",
+        "default": "./dist/index.browser.js"
+      },
+      "default": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./internals": {
+      "browser": {
+        "types": "./dist/internals.browser.d.ts",
+        "default": "./dist/internals.browser.js"
+      },
+      "default": {
+        "types": "./dist/internals.d.ts",
+        "default": "./dist/internals.js"
+      }
+    },
     "./prometheus": {
       "types": "./dist/prometheus.d.ts",
       "default": "./dist/prometheus.js"

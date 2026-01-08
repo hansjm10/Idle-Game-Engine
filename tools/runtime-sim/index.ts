@@ -21,7 +21,7 @@ import {
   type DiagnosticsThresholds,
   type GameRuntimeWiring,
   type RuntimeDiagnosticsTimelineOptions,
-} from '@idle-engine/core';
+} from '@idle-engine/core/internals';
 import { sampleContent, type ContentPack } from '@idle-engine/content-sample';
 
 const BENCHMARK_EVENT = 'benchmark_run_end';

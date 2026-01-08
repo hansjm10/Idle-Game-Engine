@@ -26,7 +26,7 @@ import {
   restoreGameRuntimeFromSnapshot,
   restoreFromSnapshot,
   restorePartial,
-} from '../index.js';
+} from '../internals.js';
 import { createProductionSystem } from '../production-system.js';
 import { createProgressionCoordinator } from '../progression-coordinator.js';
 import { hydrateProgressionCoordinatorState } from '../progression-coordinator-save.js';

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelemetryFacade } from '../../index.js';
+import type { TelemetryFacade } from '../../internals.js';
 import {
   createProgressionCoordinator,
   resetTelemetry,
   setTelemetry,
-} from '../../index.js';
+} from '../../internals.js';
 import {
   createContentPack,
   createPrestigeLayerDefinition,
@@ -36,7 +36,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
 
   it('executes prestige reset via command dispatcher and mutates resource state', async () => {
     // Import command infrastructure
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../index.js');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../internals.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
@@ -117,7 +117,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
   });
 
   it('rejects locked prestige layer via command dispatcher', async () => {
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../index.js');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../internals.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
@@ -195,7 +195,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
   });
 
   it('handles repeatable prestige (completed status) via command dispatcher', async () => {
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../index.js');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../internals.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',
@@ -282,7 +282,7 @@ describe('Integration: PRESTIGE_RESET command handler with real evaluator', () =
   });
 
   it('passes confirmationToken through full command flow', async () => {
-    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../index.js');
+    const { CommandDispatcher, registerResourceCommandHandlers, RUNTIME_COMMAND_TYPES, CommandPriority } = await import('../../internals.js');
 
     const energy = createResourceDefinition('resource.energy', {
       name: 'Energy',

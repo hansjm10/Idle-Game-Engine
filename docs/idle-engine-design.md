@@ -157,6 +157,12 @@ function runTick(deltaMs: number) {
 
 #### APIs & Contracts
 
+##### Package Entry Points
+- `@idle-engine/core`: public API intended for game developers and engine integration code.
+- `@idle-engine/core/public`: explicit alias for the public API (helps readability and progressive disclosure).
+- `@idle-engine/core/internals`: full API surface for engine contributors and advanced tooling; no stability guarantees.
+- `@idle-engine/core/prometheus`: Node-only Prometheus telemetry integration (requires `prom-client`).
+
 ##### Presentation Layer Contracts
 - Runtime sends UI-ready snapshots through a state channel; UI sends user intents (purchase upgrade, toggle automation) via a command channel.
 - Presentation shells choose framework (React/Svelte/plain DOM); the engine depends only on the contract.

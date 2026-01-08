@@ -7,8 +7,11 @@ import process from 'node:process';
 import {
   createVerificationRuntime,
   runVerificationTicks,
-} from '@idle-engine/core';
-import type { EconomyStateSummary, ResourceDefinition } from '@idle-engine/core';
+} from '@idle-engine/core/internals';
+import type {
+  EconomyStateSummary,
+  ResourceDefinition,
+} from '@idle-engine/core/internals';
 import { sampleContent } from '@idle-engine/content-sample';
 
 // Telemetry is silent by default in @idle-engine/core, no configuration needed.

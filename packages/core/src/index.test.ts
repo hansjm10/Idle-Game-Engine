@@ -5,13 +5,7 @@ import { CommandDispatcher } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import {
   IdleEngineRuntime,
-  createPredictionManager,
-  type AutomationState,
   type IdleEngineRuntimeOptions,
-  type PredictionCompatibilityMetadata,
-  type PredictionManager,
-  type PredictionWindow,
-  type RollbackResult,
 } from './index.js';
 import {
   DEFAULT_EVENT_BUS_OPTIONS,
@@ -165,21 +159,21 @@ function readBacklog(
   return { entries: result.entries, head: result.head };
 }
 
-describe('core exports', () => {
-  it('exposes prediction manager types', () => {
-    const compatibility = null as unknown as PredictionCompatibilityMetadata;
-    const manager = null as unknown as PredictionManager;
-    const window = null as unknown as PredictionWindow;
-    const rollback = null as unknown as RollbackResult;
-
-    expect(compatibility).toBeNull();
-    expect(manager).toBeNull();
-    expect(window).toBeNull();
-    expect(rollback).toBeNull();
+describe('entrypoint boundaries', () => {
+  it('keeps advanced helpers out of the public entrypoint', async () => {
+    const publicApi = await import('./index.js');
+    expect('createPredictionManager' in publicApi).toBe(false);
+    expect('captureGameStateSnapshot' in publicApi).toBe(false);
+    expect('createVerificationRuntime' in publicApi).toBe(false);
+    expect('resetRNG' in publicApi).toBe(false);
   });
 
-  it('exposes prediction manager factory', () => {
-    expect(createPredictionManager).toBeTypeOf('function');
+  it('exposes advanced helpers via the internals entrypoint', async () => {
+    const internals = await import('./internals.js');
+    expect(internals.createPredictionManager).toBeTypeOf('function');
+    expect(internals.captureGameStateSnapshot).toBeTypeOf('function');
+    expect(internals.createVerificationRuntime).toBeTypeOf('function');
+    expect(internals.resetRNG).toBeTypeOf('function');
   });
 });
 
@@ -1454,19 +1448,6 @@ describe('IdleEngineRuntime', () => {
     expect(second).toEqual(first);
   });
 
-  it('exports AutomationState type', () => {
-    // This is a compile-time test
-    const testState: AutomationState = {
-      id: 'test',
-      enabled: true,
-      lastFiredStep: 0,
-      cooldownExpiresStep: 0,
-      unlocked: true,
-      lastThresholdSatisfied: false,
-    };
-
-    expect(testState.id).toBe('test');
-  });
 });
 
 type FrameEventSnapshot = {

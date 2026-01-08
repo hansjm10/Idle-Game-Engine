@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelemetryFacade } from '../../index.js';
+import type { TelemetryFacade } from '../../internals.js';
 import {
   createProgressionCoordinator,
   resetTelemetry,
   setTelemetry,
-} from '../../index.js';
+} from '../../internals.js';
 import {
   createContentPack,
   createGeneratorDefinition,

@@ -9,7 +9,7 @@ import {
   createProgressionCoordinator,
   createResourceStateAdapter,
   registerResourceCommandHandlers,
-} from '../../index.js';
+} from '../../internals.js';
 import {
   createAchievementDefinition,
   createContentPack,

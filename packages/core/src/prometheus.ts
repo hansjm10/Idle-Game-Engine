@@ -5,10 +5,11 @@
  * requires prom-client (a Node.js-only library).
  *
  * @example
- * import { createPrometheusTelemetry, setTelemetry } from '@idle-engine/core';
+ * import { setTelemetry } from '@idle-engine/core/internals';
+ * import { createPrometheusTelemetry } from '@idle-engine/core/prometheus';
  * // or
  * import { createPrometheusTelemetry } from '@idle-engine/core/prometheus';
- * import { setTelemetry } from '@idle-engine/core';
+ * import { setTelemetry } from '@idle-engine/core/internals';
  *
  * const promTelemetry = createPrometheusTelemetry();
  * setTelemetry(promTelemetry);
