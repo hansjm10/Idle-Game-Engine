@@ -7,6 +7,9 @@
  * - For the full (unstable) surface used by engine contributors, import
  *   `@idle-engine/core/internals`.
  * - For Prometheus telemetry (Node-only), import `@idle-engine/core/prometheus`.
+ *
+ * @public
+ * @stability stable
  */
 
 // ---------------------------------------------------------------------------

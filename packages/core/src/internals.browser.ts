@@ -6,6 +6,9 @@
  *
  * Prefer importing from `@idle-engine/core` unless you are working on engine
  * internals or advanced tooling.
+ *
+ * @internal
+ * @stability experimental
  */
 
 // ---------------------------------------------------------------------------

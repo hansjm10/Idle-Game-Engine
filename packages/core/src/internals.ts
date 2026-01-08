@@ -3,6 +3,9 @@
  *
  * This entry point is intended for engine contributors and tooling; it exports
  * everything from the browser-safe internals entry, plus Node-only telemetry.
+ *
+ * @internal
+ * @stability experimental
  */
 
 export * from './internals.browser.js';
