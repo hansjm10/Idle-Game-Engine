@@ -1,5 +1,7 @@
-import type { NormalizedAchievement } from '@idle-engine/content-schema';
-import type { FormulaEvaluationContext } from '@idle-engine/content-schema';
+import type {
+  FormulaEvaluationContext,
+  NormalizedAchievement,
+} from '@idle-engine/content-schema';
 
 /**
  * AchievementTracker owns achievement state and reward application.
@@ -34,6 +36,19 @@ type AchievementRecord = {
   readonly definition: NormalizedAchievement;
   readonly state: Mutable<ProgressionAchievementState>;
 };
+
+type DerivedRewardEntry = {
+  readonly record: AchievementRecord;
+  readonly index: number;
+  readonly completedAtStep: number;
+};
+
+type AchievementRewardOptions = Readonly<{
+  readonly events?: EventPublisher;
+  readonly grantResource: (resourceId: string, amount: number) => void;
+  readonly grantUpgrade: (upgradeId: string) => void;
+  readonly onAutomationIdsChanged: () => void;
+}>;
 
 function createAchievementRecord(
   achievement: NormalizedAchievement,
@@ -141,20 +156,8 @@ export class AchievementTracker {
     return this.grantedAutomationIds;
   }
 
-  rebuildDerivedRewards(onAutomationIdsChanged: () => void): void {
-    this.achievementFlagState.clear();
-    this.grantedAutomationIds.clear();
-
-    if (this.achievementList.length === 0) {
-      onAutomationIdsChanged();
-      return;
-    }
-
-    const completed: Array<{
-      readonly record: AchievementRecord;
-      readonly index: number;
-      readonly completedAtStep: number;
-    }> = [];
+  private collectDerivedRewardEntries(): DerivedRewardEntry[] {
+    const completed: DerivedRewardEntry[] = [];
 
     for (let index = 0; index < this.achievementList.length; index += 1) {
       const record = this.achievementList[index];
@@ -164,6 +167,7 @@ export class AchievementTracker {
       if (completions <= 0) {
         continue;
       }
+
       const reward = record.definition.reward;
       if (!reward || (reward.kind !== 'grantFlag' && reward.kind !== 'unlockAutomation')) {
         continue;
@@ -187,7 +191,11 @@ export class AchievementTracker {
       return left.index - right.index;
     });
 
-    for (const entry of completed) {
+    return completed;
+  }
+
+  private applyDerivedRewardEntries(entries: readonly DerivedRewardEntry[]): void {
+    for (const entry of entries) {
       const reward = entry.record.definition.reward;
       if (!reward) {
         continue;
@@ -198,19 +206,176 @@ export class AchievementTracker {
         this.grantedAutomationIds.add(reward.automationId);
       }
     }
+  }
 
+  rebuildDerivedRewards(onAutomationIdsChanged: () => void): void {
+    this.achievementFlagState.clear();
+    this.grantedAutomationIds.clear();
+
+    this.applyDerivedRewardEntries(this.collectDerivedRewardEntries());
     onAutomationIdsChanged();
+  }
+
+  private computeAchievementTarget(
+    achievement: NormalizedAchievement,
+    context: FormulaEvaluationContext,
+  ): number {
+    const targetValue =
+      evaluateFiniteNumericFormula(
+        achievement.progress.target,
+        context,
+        this.onError,
+        `Achievement target evaluation for "${achievement.id}"`,
+      ) ?? 0;
+    return targetValue > 0 ? targetValue : 1;
+  }
+
+  private computeAchievementVisibility(
+    achievement: NormalizedAchievement,
+    completions: number,
+    eligible: boolean,
+    conditionContext: ConditionContext,
+  ): boolean {
+    return (
+      completions > 0 ||
+      (eligible &&
+        evaluateCondition(achievement.visibilityCondition, conditionContext))
+    );
+  }
+
+  private updateRepeatableAchievementForStep(
+    record: AchievementRecord,
+    step: number,
+    conditionContext: ConditionContext,
+    formulaContext: FormulaEvaluationContext,
+    target: number,
+    eligible: boolean,
+    completions: number,
+    options: AchievementRewardOptions,
+  ): boolean {
+    const definition = record.definition;
+    const state = record.state;
+    const repeatable = definition.progress.repeatable;
+    const maxRepeats = normalizeOptionalNonNegativeInt(repeatable?.maxRepeats);
+
+    if (maxRepeats !== undefined && completions >= maxRepeats) {
+      state.progress = Math.max(
+        normalizeFiniteNonNegativeNumber(state.progress),
+        target,
+      );
+      state.nextRepeatableAtStep = undefined;
+      return false;
+    }
+
+    const nextRepeatableAtStep = normalizeOptionalNonNegativeInt(
+      state.nextRepeatableAtStep,
+    );
+
+    if (nextRepeatableAtStep !== undefined && step < nextRepeatableAtStep) {
+      state.nextRepeatableAtStep = nextRepeatableAtStep;
+      state.progress = Math.max(
+        normalizeFiniteNonNegativeNumber(state.progress),
+        target,
+      );
+      return false;
+    }
+
+    const measurement = this.getAchievementTrackValue(definition, conditionContext);
+    state.progress = normalizeFiniteNonNegativeNumber(measurement);
+
+    if (!eligible) {
+      return false;
+    }
+
+    const complete = this.isAchievementTrackComplete(
+      definition,
+      measurement,
+      target,
+      conditionContext,
+    );
+    if (!complete) {
+      return false;
+    }
+
+    state.completions = completions + 1;
+    state.lastCompletedStep = step;
+    state.progress = target;
+
+    const resetWindowTicks =
+      repeatable?.resetWindow &&
+      evaluateFiniteNumericFormula(
+        repeatable.resetWindow,
+        formulaContext,
+        this.onError,
+        `Achievement resetWindow evaluation for "${definition.id}"`,
+      );
+    const resetWindow = normalizeOptionalNonNegativeInt(resetWindowTicks) ?? 1;
+
+    const nextEligibleAt = step + Math.max(1, resetWindow);
+    state.nextRepeatableAtStep =
+      maxRepeats !== undefined && state.completions >= maxRepeats
+        ? undefined
+        : nextEligibleAt;
+
+    this.applyAchievementReward(definition, formulaContext, options);
+    return true;
+  }
+
+  private updateSingleAchievementForStep(
+    record: AchievementRecord,
+    step: number,
+    conditionContext: ConditionContext,
+    formulaContext: FormulaEvaluationContext,
+    target: number,
+    eligible: boolean,
+    completions: number,
+    options: AchievementRewardOptions,
+  ): boolean {
+    const definition = record.definition;
+    const state = record.state;
+
+    if (completions > 0) {
+      state.progress = Math.max(
+        normalizeFiniteNonNegativeNumber(state.progress),
+        target,
+      );
+      return false;
+    }
+
+    if (!eligible) {
+      state.progress = 0;
+      return false;
+    }
+
+    const measurement = this.getAchievementTrackValue(definition, conditionContext);
+    state.progress = Math.max(
+      normalizeFiniteNonNegativeNumber(state.progress),
+      normalizeFiniteNonNegativeNumber(measurement),
+    );
+
+    const complete = this.isAchievementTrackComplete(
+      definition,
+      measurement,
+      target,
+      conditionContext,
+    );
+    if (!complete) {
+      return false;
+    }
+
+    state.completions = 1;
+    state.lastCompletedStep = step;
+    state.progress = target;
+    state.nextRepeatableAtStep = undefined;
+
+    this.applyAchievementReward(definition, formulaContext, options);
+    return true;
   }
 
   updateForStep(
     step: number,
     conditionContext: ConditionContext,
-    options: {
-      readonly events?: EventPublisher;
-      readonly grantResource: (resourceId: string, amount: number) => void;
-      readonly grantUpgrade: (upgradeId: string) => void;
-      readonly onAutomationIdsChanged: () => void;
-    },
+    options: AchievementRewardOptions,
   ): boolean {
     if (this.achievementList.length === 0) {
       return false;
@@ -232,14 +397,7 @@ export class AchievementTracker {
         step,
       );
 
-      const targetValue =
-        evaluateFiniteNumericFormula(
-          definition.progress.target,
-          formulaContext,
-          this.onError,
-          `Achievement target evaluation for "${definition.id}"`,
-        ) ?? 0;
-      const target = targetValue > 0 ? targetValue : 1;
+      const target = this.computeAchievementTarget(definition, formulaContext);
       state.target = target;
 
       const eligible = evaluateCondition(
@@ -247,118 +405,39 @@ export class AchievementTracker {
         conditionContext,
       );
 
-      const visible =
-        completions > 0 ||
-        (eligible &&
-          evaluateCondition(definition.visibilityCondition, conditionContext));
-      state.isVisible = visible;
-
-      if (state.mode === 'repeatable') {
-        const repeatable = definition.progress.repeatable;
-        const maxRepeats = normalizeOptionalNonNegativeInt(repeatable?.maxRepeats);
-        if (maxRepeats !== undefined && completions >= maxRepeats) {
-          state.progress = Math.max(
-            normalizeFiniteNonNegativeNumber(state.progress),
-            target,
-          );
-          state.nextRepeatableAtStep = undefined;
-          continue;
-        }
-
-        const nextRepeatableAtStep = normalizeOptionalNonNegativeInt(
-          state.nextRepeatableAtStep,
-        );
-
-        if (nextRepeatableAtStep !== undefined && step < nextRepeatableAtStep) {
-          state.nextRepeatableAtStep = nextRepeatableAtStep;
-          state.progress = Math.max(
-            normalizeFiniteNonNegativeNumber(state.progress),
-            target,
-          );
-          continue;
-        }
-
-        const measurement = this.getAchievementTrackValue(definition, conditionContext);
-        state.progress = normalizeFiniteNonNegativeNumber(measurement);
-
-        if (!eligible) {
-          continue;
-        }
-
-        const complete = this.isAchievementTrackComplete(
-          definition,
-          measurement,
-          target,
-          conditionContext,
-        );
-        if (!complete) {
-          continue;
-        }
-
-        state.completions = completions + 1;
-        state.lastCompletedStep = step;
-        state.progress = target;
-
-        const resetWindowTicks =
-          repeatable?.resetWindow &&
-          evaluateFiniteNumericFormula(
-            repeatable.resetWindow,
-            formulaContext,
-            this.onError,
-            `Achievement resetWindow evaluation for "${definition.id}"`,
-          );
-        const resetWindow =
-          normalizeOptionalNonNegativeInt(resetWindowTicks) ?? 1;
-
-        const nextEligibleAt = step + Math.max(1, resetWindow);
-        state.nextRepeatableAtStep =
-          maxRepeats !== undefined && state.completions >= maxRepeats
-            ? undefined
-            : nextEligibleAt;
-
-        this.applyAchievementReward(definition, formulaContext, options);
-        completedAny = true;
-        continue;
-      }
-
-      if (!eligible && completions === 0) {
-        state.progress = 0;
-        continue;
-      }
-
-      if (completions > 0) {
-        state.progress = Math.max(
-          normalizeFiniteNonNegativeNumber(state.progress),
-          target,
-        );
-        continue;
-      }
-
-      const measurement = this.getAchievementTrackValue(definition, conditionContext);
-      state.progress = Math.max(
-        normalizeFiniteNonNegativeNumber(state.progress),
-        normalizeFiniteNonNegativeNumber(measurement),
+      state.isVisible = this.computeAchievementVisibility(
+        definition,
+        completions,
+        eligible,
+        conditionContext,
       );
 
-      const complete =
-        eligible &&
-        this.isAchievementTrackComplete(
-          definition,
-          measurement,
-          target,
-          conditionContext,
-        );
-      if (!complete) {
-        continue;
+      const completed =
+        state.mode === 'repeatable'
+          ? this.updateRepeatableAchievementForStep(
+              record,
+              step,
+              conditionContext,
+              formulaContext,
+              target,
+              eligible,
+              completions,
+              options,
+            )
+          : this.updateSingleAchievementForStep(
+              record,
+              step,
+              conditionContext,
+              formulaContext,
+              target,
+              eligible,
+              completions,
+              options,
+            );
+
+      if (completed) {
+        completedAny = true;
       }
-
-      state.completions = 1;
-      state.lastCompletedStep = step;
-      state.progress = target;
-      state.nextRepeatableAtStep = undefined;
-
-      this.applyAchievementReward(definition, formulaContext, options);
-      completedAny = true;
     }
 
     return completedAny;
@@ -409,12 +488,7 @@ export class AchievementTracker {
   private applyAchievementReward(
     achievement: NormalizedAchievement,
     context: FormulaEvaluationContext,
-    options: {
-      readonly events?: EventPublisher;
-      readonly grantResource: (resourceId: string, amount: number) => void;
-      readonly grantUpgrade: (upgradeId: string) => void;
-      readonly onAutomationIdsChanged: () => void;
-    },
+    options: AchievementRewardOptions,
   ): void {
     const reward = achievement.reward;
     let rewardScaling = 1;

@@ -150,19 +150,13 @@ export class ProgressionFacade implements ProgressionCoordinator {
         entities: {
           resource: (resourceId) => this.conditionContext.getResourceAmount(resourceId),
           generator: (generatorId) => {
-            if (
-              generatorLevels &&
-              Object.prototype.hasOwnProperty.call(generatorLevels, generatorId)
-            ) {
+            if (generatorLevels && Object.hasOwn(generatorLevels, generatorId)) {
               return generatorLevels[generatorId];
             }
             return this.conditionContext.getGeneratorLevel(generatorId);
           },
           upgrade: (upgradeId) => {
-            if (
-              upgradePurchases &&
-              Object.prototype.hasOwnProperty.call(upgradePurchases, upgradeId)
-            ) {
+            if (upgradePurchases && Object.hasOwn(upgradePurchases, upgradeId)) {
               return upgradePurchases[upgradeId];
             }
             return this.conditionContext.getUpgradePurchases(upgradeId);

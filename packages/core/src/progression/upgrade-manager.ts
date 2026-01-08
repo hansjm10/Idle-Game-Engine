@@ -272,11 +272,10 @@ export class UpgradeManager {
   getUpgradeEffects(step: number): EvaluatedUpgradeEffects {
     const cached = this.upgradeEffectsCache;
     if (
-      cached &&
-      cached.step === step &&
-      cached.revision === this.upgradePurchasesRevision
+      cached?.step === step &&
+      cached?.revision === this.upgradePurchasesRevision
     ) {
-      return cached.effects;
+      return cached!.effects;
     }
 
     const effects = evaluateUpgradeEffects(
@@ -467,16 +466,14 @@ export class UpgradeManager {
           return undefined;
         }
       }
-    } else {
-      if (
-        !evaluateCostEntry(
-          cost.currencyId,
-          cost.costMultiplier,
-          cost.costCurve,
-        )
-      ) {
-        return undefined;
-      }
+    } else if (
+      !evaluateCostEntry(
+        cost.currencyId,
+        cost.costMultiplier,
+        cost.costCurve,
+      )
+    ) {
+      return undefined;
     }
 
     return costs;
@@ -507,7 +504,7 @@ class ContentUpgradeEvaluator implements UpgradePurchaseEvaluator {
     }
 
     const issuedAt = options?.issuedAt;
-    const metadata = issuedAt !== undefined ? { issuedAt } : undefined;
+    const metadata = issuedAt === undefined ? undefined : { issuedAt };
 
     for (const effect of record.definition.effects) {
       if (effect.kind !== 'emitEvent') {

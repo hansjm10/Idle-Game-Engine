@@ -1,7 +1,7 @@
-import type { NormalizedPrestigeLayer } from '@idle-engine/content-schema';
 import {
   evaluateNumericFormula,
   type FormulaEvaluationContext,
+  type NormalizedPrestigeLayer,
 } from '@idle-engine/content-schema';
 
 /**
@@ -40,6 +40,7 @@ import { telemetry } from '../telemetry.js';
 import { getDisplayName, type Mutable } from './progression-utils.js';
 
 type MutablePrestigeLayerState = Mutable<ProgressionPrestigeLayerState>;
+type PrestigeRetentionEntry = NonNullable<NormalizedPrestigeLayer['retention']>[number];
 
 export type PrestigeLayerRecord = {
   readonly definition: NormalizedPrestigeLayer;
@@ -180,12 +181,12 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     const isUnlocked = record.state.isUnlocked;
 
     let status: PrestigeQuote['status'];
-    if (!isUnlocked) {
-      status = 'locked';
-    } else {
+    if (isUnlocked) {
       const prestigeCountId = `${layerId}-prestige-count`;
       const prestigeCount = this.access.getResourceAmount(prestigeCountId);
       status = prestigeCount >= 1 ? 'completed' : 'available';
+    } else {
+      status = 'locked';
     }
 
     const reward = this.computeRewardPreview(record);
@@ -201,12 +202,11 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     };
   }
 
-  applyPrestige(layerId: string, confirmationToken?: string): void {
-    if (!confirmationToken) {
-      throw new Error('Prestige operation requires a confirmation token');
-    }
-
-    const now = Date.now();
+  private reserveConfirmationToken(
+    layerId: string,
+    confirmationToken: string,
+    now: number,
+  ): void {
     for (const [storedToken, timestamp] of this.usedTokens) {
       if (now - timestamp > ContentPrestigeEvaluator.TOKEN_EXPIRATION_MS) {
         this.usedTokens.delete(storedToken);
@@ -219,7 +219,9 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     }
 
     this.usedTokens.set(confirmationToken, now);
+  }
 
+  private getUnlockedLayerRecord(layerId: string): PrestigeLayerRecord {
     const record = this.getLayerRecord(layerId);
     if (!record) {
       throw new Error(`Prestige layer "${layerId}" not found`);
@@ -229,21 +231,18 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       throw new Error(`Prestige layer "${layerId}" is locked`);
     }
 
-    telemetry.recordProgress('PrestigeResetTokenReceived', {
-      layerId,
-      tokenLength: confirmationToken.length,
-    });
+    return record;
+  }
 
-    const resourceState = this.access.resourceState;
-
-    const retention = record.definition.retention ?? [];
-    const preResetFormulaContext = this.buildFormulaContext();
-
-    const rewardPreview = this.computeRewardPreview(record, preResetFormulaContext);
-
+  private collectRetainedIds(retention: readonly PrestigeRetentionEntry[]): {
+    readonly retainedResourceIds: Set<string>;
+    readonly retainedGeneratorIds: Set<string>;
+    readonly retainedUpgradeIds: Set<string>;
+  } {
     const retainedResourceIds = new Set<string>();
     const retainedGeneratorIds = new Set<string>();
     const retainedUpgradeIds = new Set<string>();
+
     for (const entry of retention) {
       if (entry.kind === 'resource') {
         retainedResourceIds.add(entry.resourceId);
@@ -254,43 +253,152 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
       }
     }
 
-    const prestigeCountId = `${layerId}-prestige-count`;
-    retainedResourceIds.add(prestigeCountId);
+    return {
+      retainedResourceIds,
+      retainedGeneratorIds,
+      retainedUpgradeIds,
+    };
+  }
 
+  private computeResetTargets(
+    record: PrestigeLayerRecord,
+    retainedResourceIds: ReadonlySet<string>,
+  ): {
+    readonly resetTargets: PrestigeResetTarget[];
+    readonly resetResourceFlags: PrestigeResourceFlagTarget[];
+  } {
     const resetTargets: PrestigeResetTarget[] = [];
     const resetResourceFlags: PrestigeResourceFlagTarget[] = [];
+
     for (const resetResourceId of record.definition.resetTargets) {
       if (retainedResourceIds.has(resetResourceId)) {
         continue;
       }
 
       const definition = this.access.getResourceDefinition(resetResourceId);
-      if (definition) {
-        resetTargets.push({
-          resourceId: resetResourceId,
-          resetToAmount: definition.startAmount ?? 0,
-        });
-        resetResourceFlags.push({
-          resourceId: resetResourceId,
-          unlocked: definition.unlocked ?? true,
-          visible: Boolean(definition.visible ?? true),
-        });
+      if (!definition) {
+        continue;
       }
+
+      resetTargets.push({
+        resourceId: resetResourceId,
+        resetToAmount: definition.startAmount ?? 0,
+      });
+      resetResourceFlags.push({
+        resourceId: resetResourceId,
+        unlocked: definition.unlocked ?? true,
+        visible: Boolean(definition.visible ?? true),
+      });
     }
 
+    return {
+      resetTargets,
+      resetResourceFlags,
+    };
+  }
+
+  private computeRetentionTargets(
+    retention: readonly PrestigeRetentionEntry[],
+    context: FormulaEvaluationContext,
+  ): PrestigeRetentionTarget[] {
     const retentionTargets: PrestigeRetentionTarget[] = [];
+
     for (const entry of retention) {
-      if (entry.kind === 'resource' && entry.amount) {
-        const retainedAmount = evaluateNumericFormula(
-          entry.amount,
-          preResetFormulaContext,
-        );
-        retentionTargets.push({
-          resourceId: entry.resourceId,
-          retainedAmount,
+      if (entry.kind !== 'resource' || !entry.amount) {
+        continue;
+      }
+
+      const retainedAmount = evaluateNumericFormula(entry.amount, context);
+      retentionTargets.push({
+        resourceId: entry.resourceId,
+        retainedAmount,
+      });
+    }
+
+    return retentionTargets;
+  }
+
+  private applyGeneratorResets(
+    layerId: string,
+    record: PrestigeLayerRecord,
+    retainedGeneratorIds: ReadonlySet<string>,
+    resetStep: number,
+  ): void {
+    for (const generatorId of record.definition.resetGenerators ?? []) {
+      if (retainedGeneratorIds.has(generatorId)) {
+        continue;
+      }
+
+      const reset = this.access.resetGeneratorForPrestige(generatorId, resetStep);
+      if (!reset) {
+        telemetry.recordWarning('PrestigeResetGeneratorSkipped', {
+          layerId,
+          generatorId,
         });
       }
     }
+  }
+
+  private applyUpgradeResets(
+    layerId: string,
+    record: PrestigeLayerRecord,
+    retainedUpgradeIds: ReadonlySet<string>,
+  ): void {
+    for (const upgradeId of record.definition.resetUpgrades ?? []) {
+      if (retainedUpgradeIds.has(upgradeId)) {
+        continue;
+      }
+
+      const reset = this.access.resetUpgradeForPrestige(upgradeId);
+      if (!reset) {
+        telemetry.recordWarning('PrestigeResetUpgradeSkipped', {
+          layerId,
+          upgradeId,
+        });
+      }
+    }
+  }
+
+  private incrementPrestigeCount(resourceState: ResourceState, prestigeCountId: string): void {
+    const countIndex = resourceState.getIndex(prestigeCountId);
+    if (countIndex !== undefined) {
+      resourceState.addAmount(countIndex, 1);
+    }
+  }
+
+  applyPrestige(layerId: string, confirmationToken?: string): void {
+    if (!confirmationToken) {
+      throw new Error('Prestige operation requires a confirmation token');
+    }
+
+    const now = Date.now();
+    this.reserveConfirmationToken(layerId, confirmationToken, now);
+    const record = this.getUnlockedLayerRecord(layerId);
+
+    telemetry.recordProgress('PrestigeResetTokenReceived', {
+      layerId,
+      tokenLength: confirmationToken.length,
+    });
+
+    const resourceState = this.access.resourceState;
+    const retention = record.definition.retention ?? [];
+    const preResetFormulaContext = this.buildFormulaContext();
+    const rewardPreview = this.computeRewardPreview(record, preResetFormulaContext);
+
+    const { retainedResourceIds, retainedGeneratorIds, retainedUpgradeIds } =
+      this.collectRetainedIds(retention);
+
+    const prestigeCountId = `${layerId}-prestige-count`;
+    retainedResourceIds.add(prestigeCountId);
+
+    const { resetTargets, resetResourceFlags } = this.computeResetTargets(
+      record,
+      retainedResourceIds,
+    );
+    const retentionTargets = this.computeRetentionTargets(
+      retention,
+      preResetFormulaContext,
+    );
 
     applyPrestigeReset({
       layerId,
@@ -305,40 +413,9 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
     });
 
     const resetStep = this.access.getLastUpdatedStep();
-
-    for (const generatorId of record.definition.resetGenerators ?? []) {
-      if (retainedGeneratorIds.has(generatorId)) {
-        continue;
-      }
-
-      const reset = this.access.resetGeneratorForPrestige(generatorId, resetStep);
-      if (!reset) {
-        telemetry.recordWarning('PrestigeResetGeneratorSkipped', {
-          layerId,
-          generatorId,
-        });
-      }
-    }
-
-    for (const upgradeId of record.definition.resetUpgrades ?? []) {
-      if (retainedUpgradeIds.has(upgradeId)) {
-        continue;
-      }
-
-      const reset = this.access.resetUpgradeForPrestige(upgradeId);
-      if (!reset) {
-        telemetry.recordWarning('PrestigeResetUpgradeSkipped', {
-          layerId,
-          upgradeId,
-        });
-        continue;
-      }
-    }
-
-    const countIndex = resourceState.getIndex(prestigeCountId);
-    if (countIndex !== undefined) {
-      resourceState.addAmount(countIndex, 1);
-    }
+    this.applyGeneratorResets(layerId, record, retainedGeneratorIds, resetStep);
+    this.applyUpgradeResets(layerId, record, retainedUpgradeIds);
+    this.incrementPrestigeCount(resourceState, prestigeCountId);
 
     this.access.updateForStep(resetStep);
   }
@@ -410,7 +487,10 @@ class ContentPrestigeEvaluator implements PrestigeSystemEvaluator {
 
     const resourceLookup = (id: string): number | undefined => {
       const index = resourceState.getIndex(id);
-      return index !== undefined ? (snapshot.amounts[index] ?? 0) : undefined;
+      if (index === undefined) {
+        return undefined;
+      }
+      return snapshot.amounts[index] ?? 0;
     };
 
     const generatorLookup = (id: string): number | undefined =>

@@ -1,11 +1,9 @@
-import type {
-  NormalizedGenerator,
-  Condition,
-  NumericFormula,
-} from '@idle-engine/content-schema';
 import {
   evaluateNumericFormula,
   type FormulaEvaluationContext,
+  type Condition,
+  type NormalizedGenerator,
+  type NumericFormula,
 } from '@idle-engine/content-schema';
 
 /**
@@ -51,16 +49,19 @@ export type GeneratorRecord = {
   readonly state: Mutable<ProgressionGeneratorState>;
 };
 
+const DEFAULT_RATE_CONTEXT: FormulaEvaluationContext = {
+  variables: { level: 1, time: 0, deltaTime: 0 },
+};
+
 function buildGeneratorRates(
   entries: readonly { resourceId: string; rate: NumericFormula }[],
-  context: FormulaEvaluationContext = {
-    variables: { level: 1, time: 0, deltaTime: 0 },
-  },
+  context?: FormulaEvaluationContext,
 ): readonly GeneratorRateView[] {
   const rates: GeneratorRateView[] = [];
+  const resolvedContext = context ?? DEFAULT_RATE_CONTEXT;
 
   for (const entry of entries) {
-    const rate = evaluateNumericFormula(entry.rate, context);
+    const rate = evaluateNumericFormula(entry.rate, resolvedContext);
     if (!Number.isFinite(rate)) {
       continue;
     }
@@ -243,10 +244,18 @@ export class GeneratorManager {
     conditionContext: ConditionContext,
     upgradeEffects: EvaluatedUpgradeEffects,
   ): void {
+    this.updateGeneratorStatusForStep(step, conditionContext, upgradeEffects);
+    this.updateGeneratorRatesForStep(step, upgradeEffects);
+  }
+
+  private updateGeneratorStatusForStep(
+    step: number,
+    conditionContext: ConditionContext,
+    upgradeEffects: EvaluatedUpgradeEffects,
+  ): void {
     for (const record of this.generatorList) {
-      const unlockedByUpgrade = upgradeEffects.unlockedGenerators.has(
-        record.definition.id,
-      );
+      const generatorId = record.definition.id;
+      const unlockedByUpgrade = upgradeEffects.unlockedGenerators.has(generatorId);
       const baseUnlock = evaluateCondition(
         record.definition.baseUnlock,
         conditionContext,
@@ -281,9 +290,10 @@ export class GeneratorManager {
             conditionContext,
           );
 
-      if (!Number.isFinite(record.state.nextPurchaseReadyAtStep)) {
-        record.state.nextPurchaseReadyAtStep = step + 1;
-      } else if (!wasUnlocked && record.state.isUnlocked) {
+      const shouldResetPurchaseReadyAt =
+        !Number.isFinite(record.state.nextPurchaseReadyAtStep) ||
+        (!wasUnlocked && record.state.isUnlocked);
+      if (shouldResetPurchaseReadyAt) {
         record.state.nextPurchaseReadyAtStep = step + 1;
       }
       record.state.owned = clampOwned(
@@ -291,7 +301,12 @@ export class GeneratorManager {
         record.definition.maxLevel,
       );
     }
+  }
 
+  private updateGeneratorRatesForStep(
+    step: number,
+    upgradeEffects: EvaluatedUpgradeEffects,
+  ): void {
     const generatorRateMultipliers = upgradeEffects.generatorRateMultipliers;
     const generatorConsumptionMultipliers =
       upgradeEffects.generatorConsumptionMultipliers;
@@ -474,10 +489,10 @@ export class GeneratorManager {
 class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
   constructor(private readonly generatorManager: GeneratorManager) {}
 
-  getPurchaseQuote(
+  private getPurchasableRecord(
     generatorId: string,
     count: number,
-  ): GeneratorPurchaseQuote | undefined {
+  ): GeneratorRecord | undefined {
     if (!Number.isInteger(count) || count <= 0) {
       return undefined;
     }
@@ -505,17 +520,23 @@ class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
       return undefined;
     }
 
+    return record;
+  }
+
+  private computeBulkPurchaseCosts(
+    generatorId: string,
+    record: GeneratorRecord,
+    count: number,
+  ): readonly GeneratorResourceCost[] | undefined {
     const totalCostsByResource = new Map<string, number>();
+    const baseOwned = record.state.owned;
+    const maxLevel = record.definition.maxLevel;
 
     for (let offset = 0; offset < count; offset += 1) {
-      const purchaseLevel = record.state.owned + offset;
-      if (
-        record.definition.maxLevel !== undefined &&
-        purchaseLevel >= record.definition.maxLevel
-      ) {
+      const purchaseLevel = baseOwned + offset;
+      if (maxLevel !== undefined && purchaseLevel >= maxLevel) {
         return undefined;
       }
-
       const costs = this.generatorManager.computeGeneratorCosts(generatorId, purchaseLevel);
       if (!costs || costs.length === 0) {
         return undefined;
@@ -531,13 +552,28 @@ class ContentGeneratorEvaluator implements GeneratorPurchaseEvaluator {
       }
     }
 
-    const costs: GeneratorResourceCost[] = Array.from(
+    return Array.from(
       totalCostsByResource,
       ([resourceId, amount]) => ({
         resourceId,
         amount,
       }),
     );
+  }
+
+  getPurchaseQuote(
+    generatorId: string,
+    count: number,
+  ): GeneratorPurchaseQuote | undefined {
+    const record = this.getPurchasableRecord(generatorId, count);
+    if (!record) {
+      return undefined;
+    }
+
+    const costs = this.computeBulkPurchaseCosts(generatorId, record, count);
+    if (!costs) {
+      return undefined;
+    }
 
     return {
       generatorId,

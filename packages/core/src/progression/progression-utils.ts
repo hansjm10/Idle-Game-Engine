@@ -1,7 +1,7 @@
-import type { NumericFormula } from '@idle-engine/content-schema';
 import {
   evaluateNumericFormula,
   type FormulaEvaluationContext,
+  type NumericFormula,
 } from '@idle-engine/content-schema';
 
 /**

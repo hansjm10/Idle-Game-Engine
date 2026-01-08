@@ -63,10 +63,7 @@ function hydrateResourceState(
     }
 
     const resolvedCapacity = serialized.capacities[savedIndex];
-    const capacity =
-      resolvedCapacity === null || resolvedCapacity === undefined
-        ? Number.POSITIVE_INFINITY
-        : resolvedCapacity;
+    const capacity = resolvedCapacity ?? Number.POSITIVE_INFINITY;
     state.setCapacity(liveIndex, capacity);
 
     const targetAmount = serialized.amounts[savedIndex] ?? 0;
@@ -112,10 +109,7 @@ export class ResourceManager {
       (resource): ResourceDefinition => ({
         id: resource.id,
         startAmount: resource.startAmount ?? 0,
-        capacity:
-          resource.capacity === null || resource.capacity === undefined
-            ? undefined
-            : resource.capacity,
+        capacity: resource.capacity ?? undefined,
         unlocked: resource.unlocked ?? false,
         visible: resource.visible ?? true,
         dirtyTolerance: resource.dirtyTolerance ?? undefined,
