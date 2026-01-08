@@ -1,5 +1,17 @@
 import type { NormalizedUpgrade, NumericFormula } from '@idle-engine/content-schema';
 
+/**
+ * UpgradeManager owns upgrade state, purchase quoting/application, and upgrade effect evaluation.
+ *
+ * Responsibilities:
+ * - Maintain upgrade visibility/status, costs, and unlock hints
+ * - Provide a {@link UpgradePurchaseEvaluator} used by command handlers
+ * - Evaluate and aggregate upgrade effects into a compact representation that
+ *   other managers can consume (e.g. generator rate multipliers, unlock grants)
+ *
+ * Cross-cutting effects (flags/automations/unlocks/events) are applied here,
+ * while the facade coordinates when derived effects should be recomputed.
+ */
 import type {
   UpgradePurchaseApplicationOptions,
   UpgradePurchaseEvaluator,

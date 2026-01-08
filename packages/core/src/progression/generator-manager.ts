@@ -8,6 +8,17 @@ import {
   type FormulaEvaluationContext,
 } from '@idle-engine/content-schema';
 
+/**
+ * GeneratorManager owns generator progression state and quoting logic.
+ *
+ * Responsibilities:
+ * - Maintain generator unlock/visibility state and unlock hints
+ * - Compute generator production/consumption rates each step, including upgrade effects
+ * - Provide a {@link GeneratorPurchaseEvaluator} for cost quoting/purchasing
+ *
+ * It relies on the facade-provided condition context and upgrade effects, so it
+ * can stay independent of the upgrade/resource modules.
+ */
 import type {
   GeneratorPurchaseEvaluator,
   GeneratorPurchaseQuote,

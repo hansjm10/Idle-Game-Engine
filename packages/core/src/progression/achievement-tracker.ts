@@ -1,6 +1,17 @@
 import type { NormalizedAchievement } from '@idle-engine/content-schema';
 import type { FormulaEvaluationContext } from '@idle-engine/content-schema';
 
+/**
+ * AchievementTracker owns achievement state and reward application.
+ *
+ * Responsibilities:
+ * - Evaluate achievement progress each step and mark completions deterministically
+ * - Apply rewards (flags, resources, upgrades, automations, runtime events)
+ * - Rebuild derived rewards on hydration (e.g. completed achievements re-grant flags)
+ *
+ * This module exposes a flag-value lookup for the coordinator's condition context,
+ * so other unlock conditions can be gated on achievement-derived flags.
+ */
 import {
   compareWithComparator,
   evaluateCondition,

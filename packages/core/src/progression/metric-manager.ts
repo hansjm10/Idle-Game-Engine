@@ -1,5 +1,12 @@
 import type { NormalizedMetric } from '@idle-engine/content-schema';
 
+/**
+ * MetricManager builds metric state views and optionally exposes a value provider.
+ *
+ * The progression coordinator stores metric definitions in authoritative state so
+ * shells can render them. Runtime values are optionally supplied by host code via
+ * `getCustomMetricValue`, surfaced through a {@link MetricValueProvider}.
+ */
 import type { MetricValueProvider, ProgressionMetricState } from '../progression.js';
 
 import { getDisplayName } from './progression-utils.js';
@@ -57,4 +64,3 @@ export class MetricManager {
       : undefined;
   }
 }
-

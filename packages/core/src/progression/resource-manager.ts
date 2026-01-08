@@ -1,5 +1,17 @@
 import type { Condition, NormalizedResource } from '@idle-engine/content-schema';
 
+/**
+ * ResourceManager owns the authoritative {@link ResourceState} used by the
+ * progression system.
+ *
+ * Responsibilities:
+ * - Build initial resource definitions + metadata from content
+ * - Hydrate/reconcile saves into the current definition set
+ * - Evaluate per-step unlock/visibility conditions for resources
+ *
+ * It intentionally does not handle generator/upgrade logic; those live in
+ * dedicated managers and consume {@link ResourceState} via the coordinator.
+ */
 import {
   createResourceState,
   reconcileSaveAgainstDefinitions,
@@ -259,4 +271,3 @@ export class ResourceManager {
     return this.resourceDefinitionsById.get(resourceId);
   }
 }
-

@@ -4,6 +4,13 @@ import {
   type FormulaEvaluationContext,
 } from '@idle-engine/content-schema';
 
+/**
+ * Small shared utilities used by progression managers.
+ *
+ * Kept separate from the facade/managers to avoid incidental import cycles and
+ * to centralize common numeric sanitization (finite/non-negative checks) and
+ * display-name normalization for content-localized fields.
+ */
 export type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
 };
@@ -87,4 +94,3 @@ export function getDisplayName(name: unknown, fallback: string): string {
   }
   return fallback;
 }
-

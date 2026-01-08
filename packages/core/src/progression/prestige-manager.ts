@@ -4,6 +4,19 @@ import {
   type FormulaEvaluationContext,
 } from '@idle-engine/content-schema';
 
+/**
+ * PrestigeManager owns prestige layer state and reset evaluation.
+ *
+ * Responsibilities:
+ * - Maintain prestige layer unlock/visibility state and unlock hints
+ * - Provide a {@link PrestigeSystemEvaluator} for quoting/applying prestige resets
+ * - Apply reset targets + retention rules deterministically via {@link applyPrestigeReset}
+ * - Enforce confirmation-token semantics to guard against accidental repeated resets
+ *
+ * The coordinator provides a narrow access interface so prestige logic can read
+ * current resources/generators/upgrades and trigger targeted resets without
+ * depending directly on other managers.
+ */
 import type {
   PrestigeQuote,
   PrestigeRewardPreview,

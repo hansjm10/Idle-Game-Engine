@@ -1,5 +1,14 @@
 import type { FormulaEvaluationContext } from '@idle-engine/content-schema';
 
+/**
+ * ProgressionCoordinator implementation that composes focused managers.
+ *
+ * This facade preserves the public coordinator API while delegating each domain
+ * (resources, generators, upgrades, prestige, achievements, metrics) to a small
+ * module. It is responsible for per-tick orchestration order, cross-manager
+ * wiring (condition context + formula context), and any shared caching/derived
+ * state (e.g. evaluated upgrade effects).
+ */
 import type {
   ProgressionAuthoritativeState,
   ProgressionResourceState,
@@ -30,6 +39,12 @@ import type {
   ProgressionCoordinatorOptions,
 } from './progression-coordinator-types.js';
 
+/**
+ * Facade implementation of {@link ProgressionCoordinator}.
+ *
+ * Managers remain mostly independent; this class wires them together without
+ * introducing circular dependencies.
+ */
 export class ProgressionFacade implements ProgressionCoordinator {
   public readonly state: ProgressionAuthoritativeState;
   public readonly resourceState;

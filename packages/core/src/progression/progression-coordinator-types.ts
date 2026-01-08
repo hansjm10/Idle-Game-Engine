@@ -17,11 +17,12 @@ import type { ConditionContext } from '../condition-evaluator.js';
 import type { EventPublisher } from '../events/event-bus.js';
 
 /**
- * Coordinates progression state for an idle game, managing resources, generators, and upgrades.
+ * Coordinates progression state for an idle game.
  *
- * The coordinator maintains authoritative state and provides evaluators for calculating
- * purchase costs and availability. It handles state updates per game step and supports
- * hydration from serialized saves.
+ * The coordinator maintains authoritative state and exposes evaluators for quoting/applying
+ * progression actions (generator purchases, upgrade purchases, prestige resets). It is also
+ * responsible for evaluating unlock/visibility conditions, tracking achievements, and
+ * assembling metric state for snapshots.
  */
 export interface ProgressionCoordinator {
   readonly state: ProgressionAuthoritativeState;
@@ -52,4 +53,3 @@ export interface ProgressionCoordinatorOptions {
   readonly evaluateScriptCondition?: (scriptId: string) => boolean;
   readonly getCustomMetricValue?: (metricId: string) => number;
 }
-
