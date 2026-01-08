@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { IdleEngineRuntime, createProgressionCoordinator } from './index.js';
+import { IdleEngineRuntime, createProgressionCoordinator } from '../../index.js';
 import {
   createAchievementDefinition,
   createContentPack,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
-import { buildProgressionSnapshot } from './progression.js';
+} from '../../content-test-helpers.js';
+import { buildProgressionSnapshot } from '../../progression.js';
 
 describe('Achievement reward types', () => {
   it('grants an upgrade when achievement with grantUpgrade reward completes', () => {

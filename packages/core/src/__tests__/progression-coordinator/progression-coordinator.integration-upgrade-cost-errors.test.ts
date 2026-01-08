@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: upgrade cost calculation error paths', () => {
   it('reports error when upgrade has invalid costMultiplier (negative)', () => {

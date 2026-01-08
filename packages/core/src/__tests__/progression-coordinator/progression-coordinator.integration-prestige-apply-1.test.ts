@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
@@ -8,7 +8,7 @@ import {
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: prestige system applyPrestige', () => {
   it('retention formulas see pre-reset resource values', () => {

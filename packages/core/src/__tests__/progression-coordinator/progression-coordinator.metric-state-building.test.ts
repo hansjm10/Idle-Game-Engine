@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
-import { createContentPack, createResourceDefinition } from './content-test-helpers.js';
+import { createProgressionCoordinator } from '../../index.js';
+import { createContentPack, createResourceDefinition } from '../../content-test-helpers.js';
 
 describe('Metric state building', () => {
   it('builds metric states from content pack definitions', () => {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createAchievementDefinition,
   createContentPack,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
-import { buildProgressionSnapshot } from './progression.js';
+} from '../../content-test-helpers.js';
+import { buildProgressionSnapshot } from '../../progression.js';
 
 describe('Achievement track types', () => {
   it('tracks flag-based achievements when flag is set via upgrade effect', () => {

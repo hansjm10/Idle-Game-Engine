@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelemetryFacade } from './index.js';
+import type { TelemetryFacade } from '../../index.js';
 import {
   createProgressionCoordinator,
   resetTelemetry,
   setTelemetry,
-} from './index.js';
+} from '../../index.js';
 import {
   createContentPack,
   createPrestigeLayerDefinition,
   createResourceDefinition,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: prestige telemetry', () => {
   let telemetryStub: TelemetryFacade;

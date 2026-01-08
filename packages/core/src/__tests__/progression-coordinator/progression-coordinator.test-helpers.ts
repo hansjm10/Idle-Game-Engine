@@ -12,7 +12,7 @@ import {
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 export function createRepeatableContentPack(): NormalizedContentPack {
   const resource = createResourceDefinition('resource.test', {

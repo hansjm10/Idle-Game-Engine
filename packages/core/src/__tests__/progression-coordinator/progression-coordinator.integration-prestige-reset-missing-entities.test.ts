@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelemetryFacade } from './index.js';
+import type { TelemetryFacade } from '../../index.js';
 import {
   createProgressionCoordinator,
   resetTelemetry,
   setTelemetry,
-} from './index.js';
+} from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
@@ -13,7 +13,7 @@ import {
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: prestige reset with missing entities', () => {
   let telemetryStub: TelemetryFacade;

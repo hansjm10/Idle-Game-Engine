@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: enhanced error messages', () => {
   it('reports detailed error when generator not found', () => {

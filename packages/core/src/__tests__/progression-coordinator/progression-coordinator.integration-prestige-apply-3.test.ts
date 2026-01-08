@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createPrestigeLayerDefinition,
   createResourceDefinition,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: prestige system applyPrestige', () => {
   it('throws error when prestige layer is locked', () => {

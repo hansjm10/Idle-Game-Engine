@@ -9,14 +9,14 @@ import {
   createProgressionCoordinator,
   createResourceStateAdapter,
   registerResourceCommandHandlers,
-} from './index.js';
+} from '../../index.js';
 import {
   createAchievementDefinition,
   createContentPack,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: upgrade effects', () => {
   it('applies grantFlag so flag conditions can gate upgrades', () => {

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
   createResourceDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: multi-cost generator error paths', () => {
   it('reports error when multi-cost generator has invalid costMultiplier on one entry', () => {

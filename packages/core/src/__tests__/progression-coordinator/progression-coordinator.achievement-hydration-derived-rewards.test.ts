@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createAchievementDefinition,
   createContentPack,
   createResourceDefinition,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Achievement hydration with derived rewards', () => {
   it('rebuilds grantFlag rewards from completed achievements on hydration', () => {

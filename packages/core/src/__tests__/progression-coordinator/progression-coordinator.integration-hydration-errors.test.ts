@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SerializedResourceState } from './index.js';
-import { createProgressionCoordinator } from './index.js';
+import type { SerializedResourceState } from '../../index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
   createResourceDefinition,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: hydration error scenarios', () => {
   it('detects invalid save format with missing required fields', () => {

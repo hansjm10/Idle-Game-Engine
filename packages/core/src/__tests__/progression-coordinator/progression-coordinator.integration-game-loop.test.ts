@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: coordinator + condition evaluation game loop', () => {
   it('simulates resource accumulation unlocking generators over multiple steps', () => {

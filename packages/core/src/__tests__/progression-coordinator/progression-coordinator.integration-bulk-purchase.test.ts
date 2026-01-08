@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from './index.js';
+import { createProgressionCoordinator } from '../../index.js';
 import {
   createContentPack,
   createGeneratorDefinition,
   createResourceDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: bulk purchase edge cases', () => {
   it('handles large bulk purchases (1000+ generators) with exponential cost curves', () => {

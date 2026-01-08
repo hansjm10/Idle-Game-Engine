@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelemetryFacade } from './index.js';
+import type { TelemetryFacade } from '../../index.js';
 import {
   createMockEventPublisher,
   createProgressionCoordinator,
   resetTelemetry,
   setTelemetry,
-} from './index.js';
+} from '../../index.js';
 import {
   createContentPack,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
-} from './content-test-helpers.js';
+} from '../../content-test-helpers.js';
 
 describe('Integration: upgrade emitEvent effect error handling', () => {
   let telemetryStub: TelemetryFacade;
