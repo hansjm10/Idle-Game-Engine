@@ -248,6 +248,23 @@ export class GeneratorManager {
     this.updateGeneratorRatesForStep(step, upgradeEffects);
   }
 
+  private computeGeneratorVisibility(
+    record: GeneratorRecord,
+    conditionContext: ConditionContext,
+    unlockedByUpgrade: boolean,
+  ): boolean {
+    if (unlockedByUpgrade) {
+      return true;
+    }
+
+    const visibilityCondition = record.definition.visibilityCondition;
+    if (visibilityCondition) {
+      return evaluateVisibility(visibilityCondition, conditionContext);
+    }
+
+    return record.state.isUnlocked;
+  }
+
   private updateGeneratorStatusForStep(
     step: number,
     conditionContext: ConditionContext,
@@ -266,16 +283,11 @@ export class GeneratorManager {
       }
 
       const visibilityCondition = record.definition.visibilityCondition;
-      if (unlockedByUpgrade) {
-        record.state.isVisible = true;
-      } else if (visibilityCondition) {
-        record.state.isVisible = evaluateVisibility(
-          visibilityCondition,
-          conditionContext,
-        );
-      } else {
-        record.state.isVisible = record.state.isUnlocked;
-      }
+      record.state.isVisible = this.computeGeneratorVisibility(
+        record,
+        conditionContext,
+        unlockedByUpgrade,
+      );
 
       const conditionsToDescribe =
         visibilityCondition &&

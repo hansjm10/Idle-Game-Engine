@@ -50,6 +50,16 @@ type AchievementRewardOptions = Readonly<{
   readonly onAutomationIdsChanged: () => void;
 }>;
 
+type AchievementStepUpdateContext = Readonly<{
+  readonly step: number;
+  readonly conditionContext: ConditionContext;
+  readonly formulaContext: FormulaEvaluationContext;
+  readonly target: number;
+  readonly eligible: boolean;
+  readonly completions: number;
+  readonly options: AchievementRewardOptions;
+}>;
+
 function createAchievementRecord(
   achievement: NormalizedAchievement,
   initial?: ProgressionAchievementState,
@@ -245,14 +255,17 @@ export class AchievementTracker {
 
   private updateRepeatableAchievementForStep(
     record: AchievementRecord,
-    step: number,
-    conditionContext: ConditionContext,
-    formulaContext: FormulaEvaluationContext,
-    target: number,
-    eligible: boolean,
-    completions: number,
-    options: AchievementRewardOptions,
+    context: AchievementStepUpdateContext,
   ): boolean {
+    const {
+      step,
+      conditionContext,
+      formulaContext,
+      target,
+      eligible,
+      completions,
+      options,
+    } = context;
     const definition = record.definition;
     const state = record.state;
     const repeatable = definition.progress.repeatable;
@@ -323,14 +336,17 @@ export class AchievementTracker {
 
   private updateSingleAchievementForStep(
     record: AchievementRecord,
-    step: number,
-    conditionContext: ConditionContext,
-    formulaContext: FormulaEvaluationContext,
-    target: number,
-    eligible: boolean,
-    completions: number,
-    options: AchievementRewardOptions,
+    context: AchievementStepUpdateContext,
   ): boolean {
+    const {
+      step,
+      conditionContext,
+      formulaContext,
+      target,
+      eligible,
+      completions,
+      options,
+    } = context;
     const definition = record.definition;
     const state = record.state;
 
@@ -412,28 +428,19 @@ export class AchievementTracker {
         conditionContext,
       );
 
+      const updateContext: AchievementStepUpdateContext = {
+        step,
+        conditionContext,
+        formulaContext,
+        target,
+        eligible,
+        completions,
+        options,
+      };
       const completed =
         state.mode === 'repeatable'
-          ? this.updateRepeatableAchievementForStep(
-              record,
-              step,
-              conditionContext,
-              formulaContext,
-              target,
-              eligible,
-              completions,
-              options,
-            )
-          : this.updateSingleAchievementForStep(
-              record,
-              step,
-              conditionContext,
-              formulaContext,
-              target,
-              eligible,
-              completions,
-              options,
-            );
+          ? this.updateRepeatableAchievementForStep(record, updateContext)
+          : this.updateSingleAchievementForStep(record, updateContext);
 
       if (completed) {
         completedAny = true;
