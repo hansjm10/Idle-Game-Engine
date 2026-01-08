@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { readFile } from 'node:fs/promises';
+
 import { CommandPriority } from './command.js';
 import { CommandDispatcher } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
@@ -160,6 +162,39 @@ function readBacklog(
 }
 
 describe('entrypoint boundaries', () => {
+  it('exposes an explicit stable public surface', async () => {
+    const publicApi = await import('./index.js');
+    const exportedKeys = Object.keys(publicApi).sort();
+    expect(exportedKeys).toEqual([
+      'CommandPriority',
+      'EventBroadcastBatcher',
+      'EventBroadcastDeduper',
+      'EventBus',
+      'GENERATED_RUNTIME_EVENT_DEFINITIONS',
+      'IdleEngineRuntime',
+      'RUNTIME_COMMAND_TYPES',
+      'RUNTIME_VERSION',
+      'applyEventBroadcastBatch',
+      'applyEventBroadcastFrame',
+      'buildRuntimeEventFrame',
+      'createEventBroadcastFrame',
+      'createEventTypeFilter',
+      'createGameRuntime',
+      'wireGameRuntime',
+    ]);
+    expect(exportedKeys.length).toBeLessThan(30);
+  });
+
+  it('keeps @idle-engine/core/public aligned with the stable surface', async () => {
+    const packageJsonUrl = new URL('../package.json', import.meta.url);
+    const raw = await readFile(packageJsonUrl, 'utf8');
+    const pkg = JSON.parse(raw) as {
+      exports?: Record<string, unknown>;
+    };
+
+    expect(pkg.exports?.['./public']).toEqual(pkg.exports?.['.']);
+  });
+
   it('keeps advanced helpers out of the public entrypoint', async () => {
     const publicApi = await import('./index.js');
     expect('createPredictionManager' in publicApi).toBe(false);

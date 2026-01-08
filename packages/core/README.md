@@ -8,6 +8,29 @@ Skeleton implementation of the idle engine runtime. This placeholder exposes a d
 - `@idle-engine/core/internals`: full surface for engine contributors and advanced tooling; no stability guarantees.
 - `@idle-engine/core/prometheus`: Node-only Prometheus telemetry integration.
 
+## Stable exports
+
+The stable surface of `@idle-engine/core` intentionally stays small:
+
+- Runtime wiring: `IdleEngineRuntime`, `createGameRuntime`, `wireGameRuntime` (plus types like `TickContext`, `System`, and `GameRuntimeWiring`)
+- Commands: `RUNTIME_COMMAND_TYPES`, `CommandPriority` (plus types like `RuntimeCommand` and `RuntimeCommandPayloads`)
+- Events: `EventBus`, `buildRuntimeEventFrame`, `EventBroadcastBatcher`, `EventBroadcastDeduper`, `applyEventBroadcastFrame`, `applyEventBroadcastBatch`, `createEventBroadcastFrame`, `createEventTypeFilter`, `GENERATED_RUNTIME_EVENT_DEFINITIONS`
+- Versioning: `RUNTIME_VERSION`
+
+## Avoiding accidental internals usage
+
+For game code, prefer importing from `@idle-engine/core` and avoid depending on `@idle-engine/core/internals` unless you are intentionally integrating with engine internals.
+
+If you use ESLint, you can enforce this in consumer packages via `no-restricted-imports` (example):
+
+```js
+{
+  "rules": {
+    "no-restricted-imports": ["error", { "paths": ["@idle-engine/core/internals"] }]
+  }
+}
+```
+
 ## Event broadcast
 
 Use event broadcast helpers to serialize runtime event frames on the server and hydrate them on clients. The `frame` below comes from `buildRuntimeEventFrame`.
