@@ -272,9 +272,8 @@ export class UpgradeManager {
   getUpgradeEffects(step: number): EvaluatedUpgradeEffects {
     const cached = this.upgradeEffectsCache;
     if (
-      cached &&
-      cached.step === step &&
-      cached.revision === this.upgradePurchasesRevision
+      cached?.step === step &&
+      cached?.revision === this.upgradePurchasesRevision
     ) {
       return cached.effects;
     }
