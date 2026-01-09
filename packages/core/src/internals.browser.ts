@@ -28,10 +28,11 @@ import {
 } from './events/event-bus.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import { DEFAULT_EVENT_BUS_OPTIONS } from './events/runtime-event-catalog.js';
-import type { Command } from './command.js';
+import type { Command, CommandSnapshot } from './command.js';
 import {
   CommandDispatcher,
   type CommandExecutionOutcome,
+  type CommandResult,
   type CommandFailure,
 } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
@@ -41,6 +42,7 @@ import {
   type IdleEngineRuntimeDiagnosticsOptions,
   type RuntimeDiagnosticsTimelineOptions,
   type RuntimeDiagnosticsController,
+  type RuntimeTickDiagnostics,
 } from './diagnostics/runtime-diagnostics-controller.js';
 import type {
   DiagnosticTimelineRecorder,
@@ -59,16 +61,13 @@ import {
 import { getCurrentRNGSeed, setRNGSeed } from './rng.js';
 import {
   restoreFromSnapshot as restoreFromSnapshotInternal,
-  restorePartial,
   setRestoreRuntimeFactory,
-  type RestoreMode,
-  type RestorePartialOptions,
-  type RestoreSnapshotOptions,
   type RestoredRuntime as BaseRestoredRuntime,
 } from './state-sync/restore.js';
+import type { RestoreSnapshotOptions } from './state-sync/restore.js';
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import {
-  wireGameRuntime,
+  wireGameRuntime as wireGameRuntimeInternal,
   type GameRuntimeHydrateOptions as GameRuntimeHydrateOptionsBase,
   type GameRuntimeSerializeOptions as GameRuntimeSerializeOptionsBase,
   type GameRuntimeWiring as GameRuntimeWiringBase,
@@ -342,6 +341,200 @@ export class IdleEngineRuntime {
     this.diagnostics.enable(options);
   }
 
+  private runTickBatch(stepCount: number): number {
+    let processedSteps = 0;
+    let resetOutbound = true;
+
+    for (let i = 0; i < stepCount; i += 1) {
+      resetOutbound = this.runTickStep(resetOutbound);
+      processedSteps += 1;
+    }
+
+    return processedSteps;
+  }
+
+  private runTickStep(resetOutbound: boolean): boolean {
+    const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
+
+    const queueSizeBefore = this.commandQueue.size;
+    let queueSizeAfter = queueSizeBefore;
+    let capturedCommands = 0;
+    let executedCommands = 0;
+    let skippedCommands = 0;
+
+    try {
+      this.eventBusClock?.setTick(this.currentStep);
+      this.eventBus.beginTick(this.currentStep, {
+        resetOutbound,
+      });
+      resetOutbound = false;
+
+      const commands = this.dequeueCommandsForCurrentStep();
+      capturedCommands = commands.length;
+
+      const commandExecution = this.executeCommandsForCurrentStep(commands);
+      executedCommands = commandExecution.executed;
+      skippedCommands = commandExecution.skipped;
+
+      const dispatchContext: EventDispatchContext = {
+        tick: this.currentStep,
+      };
+
+      this.eventBus.dispatch(dispatchContext);
+
+      const context: TickContext = {
+        deltaMs: this.stepSizeMs,
+        step: this.currentStep,
+        events: this.eventPublisher,
+      };
+
+      this.tickSystems(context, tickDiagnostics, dispatchContext);
+
+      queueSizeAfter = this.commandQueue.size;
+
+      const backPressure = this.eventBus.getBackPressureSnapshot();
+
+      tickDiagnostics.recordEventMetrics(
+        toDiagnosticTimelineEventMetrics(backPressure),
+      );
+      tickDiagnostics.recordQueueMetrics({
+        sizeBefore: queueSizeBefore,
+        sizeAfter: queueSizeAfter,
+        captured: capturedCommands,
+        executed: executedCommands,
+        skipped: skippedCommands,
+      });
+      tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
+
+      recordBackPressureTelemetry(backPressure);
+
+      this.currentStep += 1;
+      this.nextExecutableStep = this.currentStep;
+      telemetry.recordTick();
+
+      tickDiagnostics.complete();
+    } catch (error) {
+      tickDiagnostics.fail(error);
+    }
+
+    return resetOutbound;
+  }
+
+  private dequeueCommandsForCurrentStep(): CommandSnapshot<unknown>[] {
+    // Accept commands for the current step until the batch is captured.
+    this.nextExecutableStep = this.currentStep;
+    const commands = this.commandQueue.dequeueUpToStep(this.currentStep);
+
+    // Commands enqueued during execution target the next tick.
+    this.nextExecutableStep = this.currentStep + 1;
+    return commands;
+  }
+
+  private executeCommandsForCurrentStep(
+    commands: readonly CommandSnapshot<unknown>[],
+  ): Readonly<{ executed: number; skipped: number }> {
+    let executed = 0;
+    let skipped = 0;
+
+    for (const command of commands) {
+      if (command.step !== this.currentStep) {
+        skipped += 1;
+        telemetry.recordError('CommandStepMismatch', {
+          expectedStep: this.currentStep,
+          commandStep: command.step,
+          type: command.type,
+        });
+        continue;
+      }
+
+      const result = this.commandDispatcher.executeWithResult(
+        command as Command,
+      );
+      executed += 1;
+      this.recordCommandResult(command, result);
+    }
+
+    return { executed, skipped };
+  }
+
+  private recordCommandResult(
+    command: CommandSnapshot<unknown>,
+    result: CommandResult | Promise<CommandResult>,
+  ): void {
+    if (result instanceof Promise) {
+      void result.then((resolved) => {
+        this.recordResolvedCommandResult(command, resolved);
+      });
+      return;
+    }
+
+    this.recordResolvedCommandResult(command, result);
+  }
+
+  private recordResolvedCommandResult(
+    command: CommandSnapshot<unknown>,
+    result: CommandResult,
+  ): void {
+    if (result.success) {
+      this.commandOutcomes.push({
+        success: true,
+        requestId: command.requestId,
+        serverStep: command.step,
+      });
+      return;
+    }
+
+    this.commandFailures.push({
+      requestId: command.requestId,
+      type: command.type,
+      priority: command.priority,
+      timestamp: command.timestamp,
+      step: command.step,
+      error: result.error,
+    });
+    this.commandOutcomes.push({
+      success: false,
+      requestId: command.requestId,
+      serverStep: command.step,
+      error: result.error,
+    });
+  }
+
+  private tickSystems(
+    context: TickContext,
+    tickDiagnostics: RuntimeTickDiagnostics,
+    dispatchContext: EventDispatchContext,
+  ): void {
+    for (const { system } of this.systems) {
+      this.tickSystem(system, context, tickDiagnostics);
+      this.eventBus.dispatch(dispatchContext);
+    }
+  }
+
+  private tickSystem(
+    system: System,
+    context: TickContext,
+    tickDiagnostics: RuntimeTickDiagnostics,
+  ): void {
+    const systemSpan = tickDiagnostics.startSystem(system.id);
+    try {
+      system.tick(context);
+      systemSpan.end();
+    } catch (error) {
+      try {
+        systemSpan.fail(error);
+      } catch (annotatedError) {
+        telemetry.recordError('SystemExecutionFailed', {
+          systemId: system.id,
+          error:
+            annotatedError instanceof Error
+              ? annotatedError
+              : new Error(String(annotatedError)),
+        });
+      }
+    }
+  }
+
   /**
    * Advance the simulation by `deltaMs`, clamping the number of processed
    * steps to avoid spiral of death scenarios.
@@ -351,175 +544,20 @@ export class IdleEngineRuntime {
       return 0;
     }
 
-    let processedSteps = 0;
     this.accumulator += deltaMs;
+    let processedSteps = 0;
     let remainingStepBudget = this.maxStepsPerFrame;
 
     while (remainingStepBudget > 0) {
       const availableSteps = Math.floor(this.accumulator / this.stepSizeMs);
       const steps = Math.min(availableSteps, remainingStepBudget);
 
-      if (steps === 0) {
-        return processedSteps;
+      if (steps <= 0) {
+        break;
       }
 
       this.accumulator -= steps * this.stepSizeMs;
-      let resetOutbound = true;
-
-      for (let i = 0; i < steps; i += 1) {
-        const tickDiagnostics = this.diagnostics.beginTick(this.currentStep);
-
-        const queueSizeBefore = this.commandQueue.size;
-        let queueSizeAfter = queueSizeBefore;
-        let capturedCommands = 0;
-        let executedCommands = 0;
-        let skippedCommands = 0;
-
-        try {
-          this.eventBusClock?.setTick(this.currentStep);
-          this.eventBus.beginTick(this.currentStep, {
-            resetOutbound,
-          });
-          resetOutbound = false;
-
-          // Accept commands for the current step until the batch is captured.
-          this.nextExecutableStep = this.currentStep;
-          const commands =
-            this.commandQueue.dequeueUpToStep(this.currentStep);
-          capturedCommands = commands.length;
-
-          // Commands enqueued during execution target the next tick.
-          this.nextExecutableStep = this.currentStep + 1;
-
-          for (const command of commands) {
-            if (command.step !== this.currentStep) {
-              skippedCommands += 1;
-              telemetry.recordError('CommandStepMismatch', {
-                expectedStep: this.currentStep,
-                commandStep: command.step,
-                type: command.type,
-              });
-              continue;
-            }
-
-            const result = this.commandDispatcher.executeWithResult(
-              command as Command,
-            );
-            executedCommands += 1;
-
-            if (result instanceof Promise) {
-              void result.then((resolved) => {
-                if (resolved.success) {
-                  this.commandOutcomes.push({
-                    success: true,
-                    requestId: command.requestId,
-                    serverStep: command.step,
-                  });
-                  return;
-                }
-
-                this.commandFailures.push({
-                  requestId: command.requestId,
-                  type: command.type,
-                  priority: command.priority,
-                  timestamp: command.timestamp,
-                  step: command.step,
-                  error: resolved.error,
-                });
-                this.commandOutcomes.push({
-                  success: false,
-                  requestId: command.requestId,
-                  serverStep: command.step,
-                  error: resolved.error,
-                });
-              });
-            } else if (!result.success) {
-              this.commandFailures.push({
-                requestId: command.requestId,
-                type: command.type,
-                priority: command.priority,
-                timestamp: command.timestamp,
-                step: command.step,
-                error: result.error,
-              });
-              this.commandOutcomes.push({
-                success: false,
-                requestId: command.requestId,
-                serverStep: command.step,
-                error: result.error,
-              });
-            } else {
-              this.commandOutcomes.push({
-                success: true,
-                requestId: command.requestId,
-                serverStep: command.step,
-              });
-            }
-          }
-
-          const dispatchContext: EventDispatchContext = {
-            tick: this.currentStep,
-          };
-
-          this.eventBus.dispatch(dispatchContext);
-
-          const context: TickContext = {
-            deltaMs: this.stepSizeMs,
-            step: this.currentStep,
-            events: this.eventPublisher,
-          };
-
-          for (const { system } of this.systems) {
-            const systemSpan = tickDiagnostics.startSystem(system.id);
-            try {
-              system.tick(context);
-              systemSpan.end();
-            } catch (error) {
-              try {
-                systemSpan.fail(error);
-              } catch (annotatedError) {
-                telemetry.recordError('SystemExecutionFailed', {
-                  systemId: system.id,
-                  error:
-                    annotatedError instanceof Error
-                      ? annotatedError
-                      : new Error(String(annotatedError)),
-                });
-              }
-            }
-
-            this.eventBus.dispatch(dispatchContext);
-          }
-
-          queueSizeAfter = this.commandQueue.size;
-
-          const backPressure = this.eventBus.getBackPressureSnapshot();
-
-          tickDiagnostics.recordEventMetrics(
-            toDiagnosticTimelineEventMetrics(backPressure),
-          );
-          tickDiagnostics.recordQueueMetrics({
-            sizeBefore: queueSizeBefore,
-            sizeAfter: queueSizeAfter,
-            captured: capturedCommands,
-            executed: executedCommands,
-            skipped: skippedCommands,
-          });
-        tickDiagnostics.setAccumulatorBacklogMs(this.accumulator);
-
-        recordBackPressureTelemetry(backPressure);
-
-        this.currentStep += 1;
-        processedSteps += 1;
-        this.nextExecutableStep = this.currentStep;
-        telemetry.recordTick();
-
-          tickDiagnostics.complete();
-        } catch (error) {
-          tickDiagnostics.fail(error);
-        }
-      }
-
+      processedSteps += this.runTickBatch(steps);
       remainingStepBudget -= steps;
     }
 
@@ -702,6 +740,59 @@ function toSerializedResourceState(
   };
 }
 
+function toFiniteRate(value: number): number {
+  return Number.isFinite(value) ? value : 0;
+}
+
+function reconcileResourceAmount(
+  resources: ResourceState,
+  liveIndex: number,
+  targetAmount: number,
+): void {
+  const currentAmount = resources.getAmount(liveIndex);
+
+  if (targetAmount > currentAmount) {
+    resources.addAmount(liveIndex, targetAmount - currentAmount);
+    return;
+  }
+
+  if (targetAmount < currentAmount) {
+    resources.spendAmount(liveIndex, currentAmount - targetAmount);
+  }
+}
+
+function applyResourceSnapshotFromSummary(
+  resources: ResourceState,
+  liveIndex: number,
+  resource: EconomyResourceSnapshot,
+): void {
+  resources.setCapacity(
+    liveIndex,
+    resource.capacity ?? Number.POSITIVE_INFINITY,
+  );
+
+  reconcileResourceAmount(resources, liveIndex, resource.amount ?? 0);
+
+  if (resource.unlocked) {
+    resources.unlock(liveIndex);
+  }
+
+  if (resource.visible) {
+    resources.grantVisibility(liveIndex);
+  }
+
+  const incomePerSecond = toFiniteRate(resource.rates.incomePerSecond);
+  const expensePerSecond = toFiniteRate(resource.rates.expensePerSecond);
+
+  if (incomePerSecond > 0) {
+    resources.applyIncome(liveIndex, incomePerSecond);
+  }
+
+  if (expensePerSecond > 0) {
+    resources.applyExpense(liveIndex, expensePerSecond);
+  }
+}
+
 function hydrateResourceStateFromSummary(
   summary: EconomyStateSummary,
   definitions: readonly ResourceDefinition[],
@@ -724,47 +815,11 @@ function hydrateResourceStateFromSummary(
       continue;
     }
 
-    const resource = summary.resources[savedIndex];
-    const capacity =
-      resource.capacity ?? Number.POSITIVE_INFINITY;
-    resources.setCapacity(liveIndex, capacity);
-
-    const targetAmount = resource.amount ?? 0;
-    const currentAmount = resources.getAmount(liveIndex);
-
-    if (targetAmount > currentAmount) {
-      resources.addAmount(liveIndex, targetAmount - currentAmount);
-    } else if (targetAmount < currentAmount) {
-      resources.spendAmount(liveIndex, currentAmount - targetAmount);
-    }
-
-    if (resource.unlocked) {
-      resources.unlock(liveIndex);
-    }
-
-    if (resource.visible) {
-      resources.grantVisibility(liveIndex);
-    }
-
-    const incomePerSecond = Number.isFinite(
-      resource.rates.incomePerSecond,
-    )
-      ? resource.rates.incomePerSecond
-      : 0;
-
-    const expensePerSecond = Number.isFinite(
-      resource.rates.expensePerSecond,
-    )
-      ? resource.rates.expensePerSecond
-      : 0;
-
-    if (incomePerSecond > 0) {
-      resources.applyIncome(liveIndex, incomePerSecond);
-    }
-
-    if (expensePerSecond > 0) {
-      resources.applyExpense(liveIndex, expensePerSecond);
-    }
+    applyResourceSnapshotFromSummary(
+      resources,
+      liveIndex,
+      summary.resources[savedIndex],
+    );
   }
 
   resources.snapshot({ mode: 'publish' });
@@ -889,7 +944,7 @@ export function createGameRuntime(
       : {}),
   });
 
-  return wireGameRuntime({
+  return wireGameRuntimeInternal({
     content: options.content,
     runtime,
     coordinator,
@@ -902,7 +957,7 @@ export function createGameRuntime(
   });
 }
 
-export { wireGameRuntime };
+export { wireGameRuntime } from './game-runtime-wiring.js';
 
 
 /**
@@ -1513,12 +1568,12 @@ export type {
   PredictionWindow,
   RollbackResult,
 } from './state-sync/prediction-manager.js';
-export {
-  restorePartial,
-  type RestoreMode,
-  type RestorePartialOptions,
-  type RestoreSnapshotOptions,
-};
+export { restorePartial } from './state-sync/restore.js';
+export type {
+  RestoreMode,
+  RestorePartialOptions,
+  RestoreSnapshotOptions,
+} from './state-sync/restore.js';
 export type { RestoreGameRuntimeFromSnapshotOptions } from './state-sync/restore-runtime.js';
 export type { GameStateSnapshot } from './state-sync/types.js';
 // Test utilities - useful for consumers writing tests for their game logic

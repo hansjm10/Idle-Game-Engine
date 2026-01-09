@@ -88,20 +88,31 @@ function parseArgs(argv: string[]): CliArgs {
   return args;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isEconomyStateSummary(value: unknown): value is EconomyStateSummary {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    Array.isArray(value.resources) &&
+    typeof value.step === 'number' &&
+    typeof value.stepSizeMs === 'number' &&
+    typeof value.publishedAt === 'number' &&
+    isRecord(value.definitionDigest)
+  );
+}
+
 async function loadSnapshot(snapshotPath: string): Promise<EconomyStateSummary> {
   const raw = await fs.readFile(snapshotPath, 'utf8');
-  const snapshot = JSON.parse(raw) as Partial<EconomyStateSummary>;
-  if (
-    typeof snapshot !== 'object' ||
-    snapshot === null ||
-    !Array.isArray(snapshot.resources) ||
-    typeof snapshot.step !== 'number' ||
-    typeof snapshot.stepSizeMs !== 'number' ||
-    typeof snapshot.definitionDigest !== 'object'
-  ) {
+  const snapshot: unknown = JSON.parse(raw);
+  if (!isEconomyStateSummary(snapshot)) {
     throw new Error('Snapshot must be an EconomyStateSummary JSON object.');
   }
-  return snapshot as EconomyStateSummary;
+  return snapshot;
 }
 
 function selectResourcesFromPayload(payload: any): ResourceDefinition[] | undefined {
