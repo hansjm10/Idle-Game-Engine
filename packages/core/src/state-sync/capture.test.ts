@@ -15,7 +15,7 @@ import {
   createResourceDefinition,
   createUpgradeDefinition,
 } from '../content-test-helpers.js';
-import { captureGameStateSnapshot, IdleEngineRuntime } from '../index.js';
+import { captureGameStateSnapshot, IdleEngineRuntime } from '../internals.js';
 import { createProductionSystem } from '../production-system.js';
 import { createProgressionCoordinator } from '../progression-coordinator.js';
 import { serializeProgressionCoordinatorState } from '../progression-coordinator-save.js';

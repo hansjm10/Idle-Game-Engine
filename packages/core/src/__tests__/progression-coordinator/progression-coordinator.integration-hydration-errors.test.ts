@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SerializedResourceState } from '../../index.js';
-import { createProgressionCoordinator } from '../../index.js';
+import type { SerializedResourceState } from '../../internals.js';
+import { createProgressionCoordinator } from '../../internals.js';
 import {
   createContentPack,
   createGeneratorDefinition,

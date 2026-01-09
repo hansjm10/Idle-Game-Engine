@@ -513,7 +513,7 @@ export function validateRates(
  * @example
  * **Basic usage:**
  * ```typescript
- * import { createProductionSystem } from '@idle-engine/core';
+ * import { createProductionSystem } from '@idle-engine/core/internals';
  *
  * const productionSystem = createProductionSystem({
  *   generators: () => progressionCoordinator.state.generators,

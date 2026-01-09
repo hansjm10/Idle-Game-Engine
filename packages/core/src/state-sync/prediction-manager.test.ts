@@ -18,7 +18,7 @@ import {
   restoreGameRuntimeFromSnapshot,
   type IdleEngineRuntime,
   type PredictionReplayWiring,
-} from '../index.js';
+} from '../internals.js';
 import { createDefinitionDigest } from '../resource-state.js';
 import { createContextualTelemetry, resetTelemetry, setTelemetry } from '../telemetry.js';
 import type { TelemetryEventData, TelemetryFacade } from '../telemetry.js';

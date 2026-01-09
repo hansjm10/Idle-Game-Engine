@@ -20,7 +20,7 @@ import {
   createProgressionCoordinator,
   IdleEngineRuntime,
   restoreFromSnapshot,
-} from '../index.js';
+} from '../internals.js';
 import {
   createAchievementDefinition,
   createContentPack,

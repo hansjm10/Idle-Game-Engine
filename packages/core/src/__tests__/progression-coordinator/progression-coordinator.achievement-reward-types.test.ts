@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { IdleEngineRuntime, createProgressionCoordinator } from '../../index.js';
+import { IdleEngineRuntime, createProgressionCoordinator } from '../../internals.js';
 import {
   createAchievementDefinition,
   createContentPack,

@@ -1,7 +1,7 @@
 import type { NumericFormula } from '@idle-engine/content-schema';
 import { describe, expect, it } from 'vitest';
 
-import { createProgressionCoordinator } from '../../index.js';
+import { createProgressionCoordinator } from '../../internals.js';
 import {
   createContentPack,
   createGeneratorDefinition,

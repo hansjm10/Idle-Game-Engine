@@ -11,9 +11,9 @@ import {
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import {
   createGameRuntime,
-  createProgressionCoordinator,
   IdleEngineRuntime,
 } from './index.js';
+import { createProgressionCoordinator } from './progression-coordinator.js';
 import { wireGameRuntime } from './game-runtime-wiring.js';
 import { resetRNG, setRNGSeed } from './rng.js';
 

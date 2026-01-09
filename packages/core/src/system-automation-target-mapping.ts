@@ -11,7 +11,7 @@
  * ## Usage
  *
  * ```typescript
- * import { mapSystemTargetToCommandType } from '@idle-engine/core';
+ * import { mapSystemTargetToCommandType } from '@idle-engine/core/internals';
  *
  * const commandType = mapSystemTargetToCommandType('offline-catchup');
  * // Returns: 'OFFLINE_CATCHUP'

@@ -85,7 +85,7 @@ export function createContextualTelemetry(
  * Use this for development/debugging when you want to see telemetry output.
  *
  * @example
- * import { setTelemetry, createConsoleTelemetry } from '@idle-engine/core';
+ * import { setTelemetry, createConsoleTelemetry } from '@idle-engine/core/internals';
  * setTelemetry(createConsoleTelemetry());
  */
 export function createConsoleTelemetry(): TelemetryFacade {

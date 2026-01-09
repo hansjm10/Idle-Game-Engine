@@ -1,4 +1,5 @@
-import type { TickContext, EventPublisher } from './index.js';
+import type { TickContext } from './index.js';
+import type { EventPublisher } from './events/event-bus.js';
 
 /**
  * Creates a mock EventPublisher for testing.
