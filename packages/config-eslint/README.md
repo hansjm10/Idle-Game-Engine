@@ -19,3 +19,9 @@ export default createConfig({
   restrictCoreInternals: 'warn',
 });
 ```
+
+### `restrictCoreInternals`
+
+- Use `'error'` in game/app-facing packages to prevent accidental dependency on `@idle-engine/core/internals`.
+- Use `'warn'` for engine tooling where internals usage may be intentional.
+- Use `false` to disable the rule.

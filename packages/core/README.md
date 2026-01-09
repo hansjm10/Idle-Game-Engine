@@ -4,7 +4,7 @@ Skeleton implementation of the idle engine runtime. This placeholder exposes a d
 
 ## Entry points
 
-- `@idle-engine/core` / `@idle-engine/core/public`: stable, documented public API.
+- `@idle-engine/core` / `@idle-engine/core/public`: stable, documented public API (`/public` is a strict alias for readability).
 - `@idle-engine/core/internals`: full surface for engine contributors and advanced tooling; no stability guarantees.
 - `@idle-engine/core/prometheus`: Node-only Prometheus telemetry integration.
 
@@ -21,14 +21,31 @@ The stable surface of `@idle-engine/core` intentionally stays small:
 
 For game code, prefer importing from `@idle-engine/core` and avoid depending on `@idle-engine/core/internals` unless you are intentionally integrating with engine internals.
 
-If you use ESLint, you can enforce this in consumer packages via `no-restricted-imports` (example):
+If you use ESLint, you can enforce this in consumer packages via `@idle-engine/config-eslint`:
 
 ```js
-{
-  "rules": {
-    "no-restricted-imports": ["error", { "paths": ["@idle-engine/core/internals"] }]
-  }
-}
+import { createConfig } from '@idle-engine/config-eslint';
+
+export default createConfig({
+  restrictCoreInternals: 'error',
+});
+```
+
+If you aren't using `@idle-engine/config-eslint`, you can also configure `no-restricted-imports` directly:
+
+```js
+export default [
+  {
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['@idle-engine/core/internals'],
+        },
+      ],
+    },
+  },
+];
 ```
 
 ## Event broadcast

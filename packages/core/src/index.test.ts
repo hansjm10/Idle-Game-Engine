@@ -195,12 +195,34 @@ describe('entrypoint boundaries', () => {
     expect(pkg.exports?.['./public']).toEqual(pkg.exports?.['.']);
   });
 
+  it('defines explicit internals/prometheus entrypoints', async () => {
+    const packageJsonUrl = new URL('../package.json', import.meta.url);
+    const raw = await readFile(packageJsonUrl, 'utf8');
+    const pkg = JSON.parse(raw) as {
+      exports?: Record<string, unknown>;
+    };
+
+    const exportsMap = pkg.exports ?? {};
+
+    expect(exportsMap).toHaveProperty('.');
+    expect(exportsMap).toHaveProperty('./internals');
+    expect(exportsMap).toHaveProperty('./prometheus');
+
+    expect(exportsMap['./internals']).not.toEqual(exportsMap['.']);
+    expect(exportsMap['./prometheus']).not.toEqual(exportsMap['.']);
+  });
+
   it('keeps advanced helpers out of the public entrypoint', async () => {
     const publicApi = await import('./index.js');
     expect('createPredictionManager' in publicApi).toBe(false);
     expect('captureGameStateSnapshot' in publicApi).toBe(false);
     expect('createVerificationRuntime' in publicApi).toBe(false);
     expect('resetRNG' in publicApi).toBe(false);
+  });
+
+  it('does not expose Prometheus telemetry via the browser internals entrypoint', async () => {
+    const browserInternals = await import('./internals.browser.js');
+    expect('createPrometheusTelemetry' in browserInternals).toBe(false);
   });
 
   it('exposes advanced helpers via the internals entrypoint', async () => {
