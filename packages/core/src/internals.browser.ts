@@ -63,8 +63,8 @@ import {
   restoreFromSnapshot as restoreFromSnapshotInternal,
   setRestoreRuntimeFactory,
   type RestoredRuntime as BaseRestoredRuntime,
+  type RestoreSnapshotOptions,
 } from './state-sync/restore.js';
-import type { RestoreSnapshotOptions } from './state-sync/restore.js';
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import {
   wireGameRuntime as wireGameRuntimeInternal,
