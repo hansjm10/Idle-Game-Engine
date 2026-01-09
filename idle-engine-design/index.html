@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.9.2">
 <title data-rh="true">Idle Engine Design Document | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Idle Engine Design Document | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Idle Engine Design Document","item":"https://hansjm10.github.io/Idle-Game-Engine/idle-engine-design"}]}</script><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.ddf7989c.css">
-<script src="/Idle-Game-Engine/assets/js/runtime~main.933afa13.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/runtime~main.c8d79524.js" defer="defer"></script>
 <script src="/Idle-Game-Engine/assets/js/main.57fd14dd.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -146,6 +146,13 @@
 <li class="">Content lints enforce naming conventions, ID uniqueness, and forbid direct references across prestige layers without explicit bridges.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_EdDC" id="apis--contracts">APIs &amp; Contracts<a href="#apis--contracts" class="hash-link" aria-label="Direct link to APIs &amp; Contracts" title="Direct link to APIs &amp; Contracts" translate="no">​</a></h4>
+<h5 class="anchor anchorTargetStickyNavbar_EdDC" id="package-entry-points">Package Entry Points<a href="#package-entry-points" class="hash-link" aria-label="Direct link to Package Entry Points" title="Direct link to Package Entry Points" translate="no">​</a></h5>
+<ul>
+<li class=""><code>@idle-engine/core</code>: public API intended for game developers and engine integration code.</li>
+<li class=""><code>@idle-engine/core/public</code>: explicit alias for the public API (helps readability and progressive disclosure).</li>
+<li class=""><code>@idle-engine/core/internals</code>: full API surface for engine contributors and advanced tooling; no stability guarantees.</li>
+<li class=""><code>@idle-engine/core/prometheus</code>: Node-only Prometheus telemetry integration (requires <code>prom-client</code>).</li>
+</ul>
 <h5 class="anchor anchorTargetStickyNavbar_EdDC" id="presentation-layer-contracts">Presentation Layer Contracts<a href="#presentation-layer-contracts" class="hash-link" aria-label="Direct link to Presentation Layer Contracts" title="Direct link to Presentation Layer Contracts" translate="no">​</a></h5>
 <ul>
 <li class="">Runtime sends UI-ready snapshots through a state channel; UI sends user intents (purchase upgrade, toggle automation) via a command channel.</li>
