@@ -630,7 +630,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -656,7 +656,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -709,7 +709,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -759,7 +759,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -1105,6 +1105,118 @@ describe('createProductionSystem', () => {
 
       expect(resources.getAmount(goldIndex)).toBeCloseTo(10, 6);
       expect(resources.getAmount(woodIndex)).toBeCloseTo(80, 6);
+    });
+
+    it('standard flow applies production and consumption correctly', () => {
+      const resourceAmounts = new Map<number, number>([
+        [0, 100], // gold
+        [1, 50], // energy
+      ]);
+
+      const resourceState = {
+        getIndex: (id: string) => (id === 'gold' ? 0 : id === 'energy' ? 1 : undefined),
+        getAmount: (index: number) => resourceAmounts.get(index) ?? 0,
+        addAmount: (index: number, amount: number) => {
+          resourceAmounts.set(index, (resourceAmounts.get(index) ?? 0) + amount);
+        },
+        spendAmount: (index: number, amount: number) => {
+          const current = resourceAmounts.get(index) ?? 0;
+          if (current >= amount) {
+            resourceAmounts.set(index, current - amount);
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const generators = [
+        {
+          id: 'smelter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState,
+      });
+
+      system.tick(createTickContext(1000, 0));
+
+      expect(resourceAmounts.get(0)).toBe(120); // 100 + 20 gold
+      expect(resourceAmounts.get(1)).toBe(40); // 50 - 10 energy
+    });
+
+    it('shadow flow produces identical results to standard flow under same conditions', () => {
+      const resourceAmounts = new Map<number, number>([
+        [0, 100], // gold
+        [1, 50], // energy
+      ]);
+      const incomeRates = new Map<number, number>();
+      const expenseRates = new Map<number, number>();
+
+      const resourceState = {
+        getIndex: (id: string) => (id === 'gold' ? 0 : id === 'energy' ? 1 : undefined),
+        getAmount: (index: number) => resourceAmounts.get(index) ?? 0,
+        addAmount: (index: number, amount: number) => {
+          resourceAmounts.set(index, (resourceAmounts.get(index) ?? 0) + amount);
+        },
+        spendAmount: (index: number, amount: number) => {
+          const current = resourceAmounts.get(index) ?? 0;
+          if (current >= amount) {
+            resourceAmounts.set(index, current - amount);
+            return true;
+          }
+          return false;
+        },
+        applyIncome: (index: number, rate: number) => {
+          incomeRates.set(index, (incomeRates.get(index) ?? 0) + rate);
+        },
+        applyExpense: (index: number, rate: number) => {
+          expenseRates.set(index, (expenseRates.get(index) ?? 0) + rate);
+        },
+        finalizeTick: (deltaMs: number) => {
+          const deltaSeconds = deltaMs / 1000;
+          for (const [index, rate] of incomeRates) {
+            resourceAmounts.set(
+              index,
+              (resourceAmounts.get(index) ?? 0) + rate * deltaSeconds,
+            );
+          }
+          for (const [index, rate] of expenseRates) {
+            resourceAmounts.set(
+              index,
+              (resourceAmounts.get(index) ?? 0) - rate * deltaSeconds,
+            );
+          }
+          incomeRates.clear();
+          expenseRates.clear();
+        },
+        getCapacity: () => Number.POSITIVE_INFINITY,
+      };
+
+      const generators = [
+        {
+          id: 'smelter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState,
+        applyViaFinalizeTick: true,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resourceState.finalizeTick(1000);
+
+      expect(resourceAmounts.get(0)).toBe(120); // 100 + 20 gold
+      expect(resourceAmounts.get(1)).toBe(40); // 50 - 10 energy
     });
   });
 });
