@@ -7,3 +7,15 @@ import config from '@idle-engine/config-eslint';
 
 export default config;
 ```
+
+## Options
+
+Use `createConfig()` for opt-in rules:
+
+```js
+import { createConfig } from '@idle-engine/config-eslint';
+
+export default createConfig({
+  restrictCoreInternals: 'warn',
+});
+```

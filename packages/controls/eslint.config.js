@@ -1,3 +1,5 @@
-import config from '@idle-engine/config-eslint';
+import { createConfig } from '@idle-engine/config-eslint';
 
-export default config;
+export default createConfig({
+  restrictCoreInternals: 'warn',
+});
