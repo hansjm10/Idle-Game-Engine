@@ -1149,6 +1149,52 @@ describe('createProductionSystem', () => {
       expect(resourceAmounts.get(1)).toBe(40); // 50 - 10 energy
     });
 
+    it('avoids overspending when epsilon aligns toApply above accumulator total', () => {
+      const resourceAmounts = new Map<number, number>([
+        [0, 0], // gold
+        [1, 0.09 + 0.01], // energy
+      ]);
+
+      const resourceState = {
+        getIndex: (id: string) => (id === 'gold' ? 0 : id === 'energy' ? 1 : undefined),
+        getAmount: (index: number) => resourceAmounts.get(index) ?? 0,
+        addAmount: (index: number, amount: number) => {
+          resourceAmounts.set(index, (resourceAmounts.get(index) ?? 0) + amount);
+        },
+        spendAmount: (index: number, amount: number) => {
+          const current = resourceAmounts.get(index) ?? 0;
+          if (current < amount) {
+            throw new Error(`Insufficient resources: ${current} < ${amount}`);
+          }
+          resourceAmounts.set(index, current - amount);
+          return true;
+        },
+      };
+
+      const generators = [
+        {
+          id: 'smelter',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 1 }],
+          consumes: [{ resourceId: 'energy', rate: 1 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState,
+        applyThreshold: 0.1,
+      });
+
+      expect(() => {
+        system.tick(createTickContext(90, 0));
+        system.tick(createTickContext(10, 1));
+      }).not.toThrow();
+
+      expect(resourceAmounts.get(0)).toBeCloseTo(0.1, 12);
+      expect(resourceAmounts.get(1)).toBeCloseTo(0, 12);
+    });
+
     it('shadow flow produces identical results to standard flow under same conditions', () => {
       const resourceAmounts = new Map<number, number>([
         [0, 100], // gold

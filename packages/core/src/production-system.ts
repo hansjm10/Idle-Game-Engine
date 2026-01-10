@@ -86,6 +86,9 @@ function supportsPerTickReset(
 /**
  * Serialized accumulator state for save/load persistence.
  * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
+ *
+ * Keys are treated as opaque strings; generator/resource IDs may contain `:`, but should avoid the
+ * reserved delimiter sequences `:produce:` and `:consume:` to prevent collisions.
  */
 export interface SerializedProductionAccumulators {
   /** Map of accumulator keys to their current fractional values */
@@ -519,8 +522,9 @@ function executeProductionPhases(
       // to ensure production scales correctly with actual consumption.
       // Guard against division by zero (theoretically possible with extremely
       // small delta times that round to zero after floating-point operations).
-      const ratio = result.newTotal > 0 ? available / result.newTotal : 1;
-      consumptionRatio = Math.min(consumptionRatio, ratio);
+      const ratioByTotal = result.newTotal > 0 ? available / result.newTotal : 1;
+      const ratioByToApply = available / result.toApply;
+      consumptionRatio = Math.min(consumptionRatio, ratioByTotal, ratioByToApply);
     }
   }
 
@@ -595,8 +599,7 @@ function createDirectPhaseContext(
       return amount;
     },
     spendConsumption: (index, amount) => {
-      resourceState.spendAmount(index, amount, { systemId });
-      return true;
+      return resourceState.spendAmount(index, amount, { systemId });
     },
     onProduce: onTick
       ? (resourceId, amount) => {
