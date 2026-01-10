@@ -110,6 +110,44 @@ describe('createProductionSystem - serialization', () => {
       expect(resources.getAmount(resources.getIndex('gold')!)).toBe(0.01);
     });
 
+    it('should restore both produce and consume accumulators and keep them in sync', () => {
+      const resources = createResourceState([
+        { id: 'energy', startAmount: 1 },
+        { id: 'ore', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'harvester',
+          owned: 1,
+          produces: [{ resourceId: 'ore', rate: 0.003 }],
+          consumes: [{ resourceId: 'energy', rate: 0.003 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      system.restoreAccumulators({
+        accumulators: {
+          'harvester:produce:ore': 0.009,
+          'harvester:consume:energy': 0.009,
+        },
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      expect(resources.getAmount(resources.getIndex('ore')!)).toBeCloseTo(0.01, 12);
+      expect(resources.getAmount(resources.getIndex('energy')!)).toBeCloseTo(0.99, 12);
+
+      const exported = system.exportAccumulators();
+      expect(exported.accumulators['harvester:produce:ore']).toBeCloseTo(0.002, 12);
+      expect(exported.accumulators['harvester:consume:energy']).toBeCloseTo(0.002, 12);
+    });
+
     it('should clear existing accumulators when restoring', () => {
       const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
       const generators = [

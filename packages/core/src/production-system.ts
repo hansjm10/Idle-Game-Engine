@@ -85,10 +85,16 @@ function supportsPerTickReset(
 
 /**
  * Serialized accumulator state for save/load persistence.
- * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
+ * Keys are in the format `${generatorId}:${operation}:${resourceId}` where operation is "produce" or "consume".
  *
- * Keys are treated as opaque strings; generator/resource IDs may contain `:`, but should avoid the
- * reserved delimiter sequences `:produce:` and `:consume:` to prevent collisions.
+ * This is a legacy string encoding and is not collision-free if generator/resource IDs contain `:`.
+ * For example, the key `foo:produce:produce:bar` could represent either:
+ * - (generatorId="foo", operation="produce", resourceId="produce:bar")
+ * - (generatorId="foo:produce", operation="produce", resourceId="bar")
+ *
+ * To avoid ambiguous keys, prefer IDs that don't contain `:`. If IDs are namespaced with `:`, avoid
+ * patterns that can create `:${operation}:` boundaries inside IDs (e.g., generator IDs ending with
+ * `:produce`/`:consume` or resource IDs starting with `produce:`/`consume:`).
  */
 export interface SerializedProductionAccumulators {
   /** Map of accumulator keys to their current fractional values */
@@ -523,6 +529,9 @@ function executeProductionPhases(
       // Guard against division by zero (theoretically possible with extremely
       // small delta times that round to zero after floating-point operations).
       const ratioByTotal = result.newTotal > 0 ? available / result.newTotal : 1;
+      // Also clamp by the threshold-aligned spend amount; this avoids attempting
+      // to spend slightly more than available when `toApply` is nudged upward by
+      // the epsilon used for threshold alignment.
       const ratioByToApply = available / result.toApply;
       consumptionRatio = Math.min(consumptionRatio, ratioByTotal, ratioByToApply);
     }
