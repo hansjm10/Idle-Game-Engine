@@ -15,8 +15,10 @@ async function main(): Promise<void> {
   await fs.writeFile(path.join(outputDir, 'index.md'), `${markdown.trimEnd()}\n`);
 }
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error('[coverage-report] Failed to generate markdown coverage report.');
   console.error(error);
   process.exit(1);
-});
+}

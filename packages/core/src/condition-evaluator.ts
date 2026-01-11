@@ -141,6 +141,18 @@ const resolveDisplayName = (
   return resolved;
 };
 
+function reportConditionEvaluationError(
+  context: Pick<ConditionContext, 'onError'>,
+  error: Error,
+): void {
+  if (isDevelopmentMode()) {
+    context.onError?.(error);
+    return;
+  }
+  // eslint-disable-next-line no-console -- graceful degradation path in production builds
+  console.warn(error.message);
+}
+
 function reportMissingContextHook(
   context: ConditionContext,
   hook: keyof ConditionContext,
@@ -152,12 +164,7 @@ function reportMissingContextHook(
       hook,
     )}()`,
   );
-  if (isDevelopmentMode()) {
-    context.onError?.(error);
-  } else {
-    // eslint-disable-next-line no-console -- log degradation path in production builds
-    console.warn(error.message);
-  }
+  reportConditionEvaluationError(context, error);
 }
 
 /**
@@ -201,12 +208,7 @@ export function evaluateCondition(
     const error = new Error(
       `Condition evaluation exceeded maximum depth of ${MAX_CONDITION_DEPTH} at recursion level ${depth}${conditionInfo}. Possible circular dependency detected. Check for conditions that reference each other in a cycle.`,
     );
-    if (isDevelopmentMode()) {
-      context.onError?.(error);
-    } else {
-      // eslint-disable-next-line no-console -- Graceful degradation: log circular dependency warning in production
-      console.warn(error.message);
-    }
+    reportConditionEvaluationError(context, error);
     return false;
   }
 
@@ -297,12 +299,7 @@ export function evaluateCondition(
       const error = new Error(
         `Unknown condition kind: ${(_exhaustive as Condition).kind}`,
       );
-      if (isDevelopmentMode()) {
-        context.onError?.(error);
-      } else {
-        // eslint-disable-next-line no-console -- Graceful degradation: log unknown condition types in production
-        console.warn(error.message);
-      }
+      reportConditionEvaluationError(context, error);
       return false;
     }
   }

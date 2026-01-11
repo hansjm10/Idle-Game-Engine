@@ -42,7 +42,7 @@ export type GameStateSaveFormatV1 = Readonly<{
   readonly runtime: GameStateSaveRuntime;
 }>;
 
-export type GameStateSaveFormat = GameStateSaveFormatV1;
+export type GameStateSaveFormat = GameStateSaveFormatV1; // NOSONAR - stable alias for versioned persistence format
 
 export interface SchemaMigration {
   readonly fromVersion: number;
@@ -252,10 +252,7 @@ function findMigrationPath(
   const visited = new Set<number>([fromVersion]);
 
   while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      break;
-    }
+    const current = queue.shift()!;
 
     const nextMigrations = migrationsByFrom.get(current.version) ?? [];
     for (const migration of nextMigrations) {

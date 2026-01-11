@@ -81,36 +81,12 @@ export function wireGameRuntime<
 >(options: WireGameRuntimeOptions<TRuntime>): GameRuntimeWiring<TRuntime> {
   const { content, runtime, coordinator } = options;
   const runtimeStepSizeMs = runtime.getStepSizeMs();
-  const coordinatorStepDurationMs = coordinator.state.stepDurationMs;
-
-  if (
-    typeof coordinatorStepDurationMs !== 'number' ||
-    !Number.isFinite(coordinatorStepDurationMs) ||
-    coordinatorStepDurationMs <= 0
-  ) {
-    throw new Error(
-      'Progression coordinator step duration must be a positive, finite number.',
-    );
-  }
-
-  if (coordinatorStepDurationMs !== runtimeStepSizeMs) {
-    throw new Error(
-      `Runtime stepSizeMs (${runtimeStepSizeMs}) must match coordinator stepDurationMs (${coordinatorStepDurationMs}).`,
-    );
-  }
+  assertValidCoordinatorStepDuration(runtimeStepSizeMs, coordinator.state.stepDurationMs);
 
   coordinator.updateForStep(runtime.getCurrentStep());
 
   const applyViaFinalizeTick = options.production?.applyViaFinalizeTick ?? false;
-  const enableProduction =
-    options.enableProduction ?? content.generators.length > 0;
-  const enableAutomation =
-    options.enableAutomation ?? content.automations.length > 0;
-  const enableTransforms =
-    options.enableTransforms ?? content.transforms.length > 0;
-  const enableEntities =
-    options.enableEntities ?? content.entities.length > 0;
-  const registerOfflineCatchup = options.registerOfflineCatchup ?? true;
+  const enablement = resolveWiringEnablement(options, content);
 
   const systems: System[] = [];
 
@@ -118,40 +94,35 @@ export function wireGameRuntime<
     coordinator.resourceState,
   );
 
-  const automationSystem =
-    enableAutomation && content.automations.length > 0
-      ? createAutomationSystem({
-          automations: content.automations,
-          commandQueue: runtime.getCommandQueue(),
-          resourceState: resourceStateAdapter,
-          stepDurationMs: runtimeStepSizeMs,
-          conditionContext: coordinator.getConditionContext(),
-          isAutomationUnlocked: (automationId) =>
-            coordinator.getGrantedAutomationIds().has(automationId),
-        })
-      : undefined;
-
   const prdRegistry = new PRDRegistry(seededRandom);
 
-  const entitySystem =
-    enableEntities && content.entities.length > 0
-      ? new EntitySystem(content.entities, createSeededRng(), {
-          stepDurationMs: runtimeStepSizeMs,
-          conditionContext: coordinator.getConditionContext(),
-        })
-      : undefined;
+  const automationSystem = createAutomationSystemIfEnabled({
+    enabled: enablement.enableAutomation,
+    automations: content.automations,
+    commandQueue: runtime.getCommandQueue(),
+    resourceState: resourceStateAdapter,
+    stepDurationMs: runtimeStepSizeMs,
+    conditionContext: coordinator.getConditionContext(),
+    isAutomationUnlocked: (automationId) =>
+      coordinator.getGrantedAutomationIds().has(automationId),
+  });
 
-  const transformSystem =
-    enableTransforms && content.transforms.length > 0
-      ? createTransformSystem({
-          transforms: content.transforms,
-          stepDurationMs: runtimeStepSizeMs,
-          resourceState: resourceStateAdapter,
-          conditionContext: coordinator.getConditionContext(),
-          entitySystem,
-          prdRegistry,
-        })
-      : undefined;
+  const entitySystem = createEntitySystemIfEnabled({
+    enabled: enablement.enableEntities,
+    entities: content.entities,
+    stepDurationMs: runtimeStepSizeMs,
+    conditionContext: coordinator.getConditionContext(),
+  });
+
+  const transformSystem = createTransformSystemIfEnabled({
+    enabled: enablement.enableTransforms,
+    transforms: content.transforms,
+    stepDurationMs: runtimeStepSizeMs,
+    resourceState: resourceStateAdapter,
+    conditionContext: coordinator.getConditionContext(),
+    entitySystem,
+    prdRegistry,
+  });
 
   registerResourceCommandHandlers({
     dispatcher: runtime.getCommandDispatcher(),
@@ -167,66 +138,26 @@ export function wireGameRuntime<
       : {}),
   });
 
-  if (registerOfflineCatchup) {
-    registerOfflineCatchupCommandHandler({
-      dispatcher: runtime.getCommandDispatcher(),
-      coordinator,
-      runtime,
-    });
-  }
+  registerOfflineCatchupHandlerIfEnabled({
+    enabled: enablement.registerOfflineCatchup,
+    dispatcher: runtime.getCommandDispatcher(),
+    coordinator,
+    runtime,
+  });
 
-  let productionSystem: ProductionSystem | undefined;
-  if (enableProduction && content.generators.length > 0) {
-    productionSystem = createProductionSystem({
-      applyViaFinalizeTick,
-      generators: () =>
-        (coordinator.state.generators ?? []).map((generator) => ({
-          id: generator.id,
-          owned: generator.owned,
-          enabled: generator.enabled,
-          produces: generator.produces ?? [],
-          consumes: generator.consumes ?? [],
-        })),
-      resourceState: coordinator.resourceState,
-    });
+  const productionSystem = registerProductionSystemIfEnabled({
+    enabled: enablement.enableProduction,
+    hasGenerators: content.generators.length > 0,
+    applyViaFinalizeTick,
+    runtime,
+    coordinator,
+    systems,
+  });
 
-    runtime.addSystem(productionSystem);
-    systems.push(productionSystem);
-
-    if (applyViaFinalizeTick) {
-      const resourceFinalizeSystem: System = {
-        id: 'resource-finalize',
-        tick: ({ deltaMs }) => coordinator.resourceState.finalizeTick(deltaMs),
-      };
-      runtime.addSystem(resourceFinalizeSystem);
-      systems.push(resourceFinalizeSystem);
-    }
-  }
-
-  if (automationSystem) {
-    runtime.addSystem(automationSystem);
-    systems.push(automationSystem);
-  }
-
-  if (transformSystem) {
-    runtime.addSystem(transformSystem);
-    systems.push(transformSystem);
-  }
-
-  if (entitySystem) {
-    runtime.addSystem(entitySystem);
-    systems.push(entitySystem);
-
-    const coordinatorState = coordinator.state as ProgressionAuthoritativeState & {
-      entities?: ProgressionEntityState;
-    };
-    coordinatorState.entities = {
-      definitions: content.entities,
-      state: entitySystem.getState().entities,
-      instances: entitySystem.getState().instances,
-      entityInstances: entitySystem.getState().entityInstances,
-    };
-  }
+  registerSystemIfDefined(runtime, systems, automationSystem);
+  registerSystemIfDefined(runtime, systems, transformSystem);
+  registerSystemIfDefined(runtime, systems, entitySystem);
+  syncCoordinatorEntityStateIfEnabled(coordinator, entitySystem, content.entities);
 
   const coordinatorUpdateSystem: System = {
     id: 'progression-coordinator',
@@ -238,26 +169,9 @@ export function wireGameRuntime<
   runtime.addSystem(coordinatorUpdateSystem);
   systems.push(coordinatorUpdateSystem);
 
-  if (automationSystem) {
-    registerAutomationCommandHandlers({
-      dispatcher: runtime.getCommandDispatcher(),
-      automationSystem,
-    });
-  }
-
-  if (transformSystem) {
-    registerTransformCommandHandlers({
-      dispatcher: runtime.getCommandDispatcher(),
-      transformSystem,
-    });
-  }
-
-  if (entitySystem) {
-    registerEntityCommandHandlers({
-      dispatcher: runtime.getCommandDispatcher(),
-      entitySystem,
-    });
-  }
+  registerAutomationHandlersIfEnabled(runtime.getCommandDispatcher(), automationSystem);
+  registerTransformHandlersIfEnabled(runtime.getCommandDispatcher(), transformSystem);
+  registerEntityHandlersIfEnabled(runtime.getCommandDispatcher(), entitySystem);
 
   const serialize = (
     serializeOptions?: GameRuntimeSerializeOptions,
@@ -307,4 +221,243 @@ export function wireGameRuntime<
     serialize,
     hydrate,
   };
+}
+
+function assertValidCoordinatorStepDuration(
+  runtimeStepSizeMs: number,
+  coordinatorStepDurationMs: unknown,
+): void {
+  if (
+    typeof coordinatorStepDurationMs !== 'number' ||
+    !Number.isFinite(coordinatorStepDurationMs) ||
+    coordinatorStepDurationMs <= 0
+  ) {
+    throw new Error(
+      'Progression coordinator step duration must be a positive, finite number.',
+    );
+  }
+
+  if (coordinatorStepDurationMs !== runtimeStepSizeMs) {
+    throw new Error(
+      `Runtime stepSizeMs (${runtimeStepSizeMs}) must match coordinator stepDurationMs (${coordinatorStepDurationMs}).`,
+    );
+  }
+}
+
+function resolveWiringEnablement(
+  options: WireGameRuntimeOptions<RuntimeWiringRuntime>,
+  content: NormalizedContentPack,
+): Readonly<{
+  enableProduction: boolean;
+  enableAutomation: boolean;
+  enableTransforms: boolean;
+  enableEntities: boolean;
+  registerOfflineCatchup: boolean;
+}> {
+  return {
+    enableProduction: options.enableProduction ?? content.generators.length > 0,
+    enableAutomation: options.enableAutomation ?? content.automations.length > 0,
+    enableTransforms: options.enableTransforms ?? content.transforms.length > 0,
+    enableEntities: options.enableEntities ?? content.entities.length > 0,
+    registerOfflineCatchup: options.registerOfflineCatchup ?? true,
+  };
+}
+
+function createAutomationSystemIfEnabled(
+  options: Readonly<{
+    enabled: boolean;
+    automations: NormalizedContentPack['automations'];
+    commandQueue: CommandQueue;
+    resourceState: ReturnType<typeof createResourceStateAdapter>;
+    stepDurationMs: number;
+    conditionContext: ReturnType<ProgressionCoordinator['getConditionContext']>;
+    isAutomationUnlocked: (automationId: string) => boolean;
+  }>,
+): ReturnType<typeof createAutomationSystem> | undefined {
+  if (!options.enabled || options.automations.length === 0) {
+    return undefined;
+  }
+
+  return createAutomationSystem({
+    automations: options.automations,
+    commandQueue: options.commandQueue,
+    resourceState: options.resourceState,
+    stepDurationMs: options.stepDurationMs,
+    conditionContext: options.conditionContext,
+    isAutomationUnlocked: options.isAutomationUnlocked,
+  });
+}
+
+function createEntitySystemIfEnabled(
+  options: Readonly<{
+    enabled: boolean;
+    entities: NormalizedContentPack['entities'];
+    stepDurationMs: number;
+    conditionContext: ReturnType<ProgressionCoordinator['getConditionContext']>;
+  }>,
+): EntitySystem | undefined {
+  if (!options.enabled || options.entities.length === 0) {
+    return undefined;
+  }
+
+  return new EntitySystem(options.entities, createSeededRng(), {
+    stepDurationMs: options.stepDurationMs,
+    conditionContext: options.conditionContext,
+  });
+}
+
+function createTransformSystemIfEnabled(
+  options: Readonly<{
+    enabled: boolean;
+    transforms: NormalizedContentPack['transforms'];
+    stepDurationMs: number;
+    resourceState: ReturnType<typeof createResourceStateAdapter>;
+    conditionContext: ReturnType<ProgressionCoordinator['getConditionContext']>;
+    entitySystem: EntitySystem | undefined;
+    prdRegistry: PRDRegistry;
+  }>,
+): ReturnType<typeof createTransformSystem> | undefined {
+  if (!options.enabled || options.transforms.length === 0) {
+    return undefined;
+  }
+
+  return createTransformSystem({
+    transforms: options.transforms,
+    stepDurationMs: options.stepDurationMs,
+    resourceState: options.resourceState,
+    conditionContext: options.conditionContext,
+    entitySystem: options.entitySystem,
+    prdRegistry: options.prdRegistry,
+  });
+}
+
+function registerOfflineCatchupHandlerIfEnabled(
+  options: Readonly<{
+    enabled: boolean;
+    dispatcher: CommandDispatcher;
+    coordinator: ProgressionCoordinator;
+    runtime: RuntimeWiringRuntime;
+  }>,
+): void {
+  if (!options.enabled) {
+    return;
+  }
+  registerOfflineCatchupCommandHandler({
+    dispatcher: options.dispatcher,
+    coordinator: options.coordinator,
+    runtime: options.runtime,
+  });
+}
+
+function registerProductionSystemIfEnabled(
+  options: Readonly<{
+    enabled: boolean;
+    hasGenerators: boolean;
+    applyViaFinalizeTick: boolean;
+    runtime: RuntimeWiringRuntime;
+    coordinator: ProgressionCoordinator;
+    systems: System[];
+  }>,
+): ProductionSystem | undefined {
+  if (!options.enabled || !options.hasGenerators) {
+    return undefined;
+  }
+
+  const productionSystem = createProductionSystem({
+    applyViaFinalizeTick: options.applyViaFinalizeTick,
+    generators: () =>
+      (options.coordinator.state.generators ?? []).map((generator) => ({
+        id: generator.id,
+        owned: generator.owned,
+        enabled: generator.enabled,
+        produces: generator.produces ?? [],
+        consumes: generator.consumes ?? [],
+      })),
+    resourceState: options.coordinator.resourceState,
+  });
+
+  options.runtime.addSystem(productionSystem);
+  options.systems.push(productionSystem);
+
+  if (options.applyViaFinalizeTick) {
+    const resourceFinalizeSystem: System = {
+      id: 'resource-finalize',
+      tick: ({ deltaMs }) => options.coordinator.resourceState.finalizeTick(deltaMs),
+    };
+    options.runtime.addSystem(resourceFinalizeSystem);
+    options.systems.push(resourceFinalizeSystem);
+  }
+
+  return productionSystem;
+}
+
+function registerSystemIfDefined(
+  runtime: RuntimeWiringRuntime,
+  systems: System[],
+  system: System | undefined,
+): void {
+  if (!system) {
+    return;
+  }
+  runtime.addSystem(system);
+  systems.push(system);
+}
+
+function syncCoordinatorEntityStateIfEnabled(
+  coordinator: ProgressionCoordinator,
+  entitySystem: EntitySystem | undefined,
+  entityDefinitions: NormalizedContentPack['entities'],
+): void {
+  if (!entitySystem) {
+    return;
+  }
+
+  const coordinatorState = coordinator.state as ProgressionAuthoritativeState & {
+    entities?: ProgressionEntityState;
+  };
+  coordinatorState.entities = {
+    definitions: entityDefinitions,
+    state: entitySystem.getState().entities,
+    instances: entitySystem.getState().instances,
+    entityInstances: entitySystem.getState().entityInstances,
+  };
+}
+
+function registerAutomationHandlersIfEnabled(
+  dispatcher: CommandDispatcher,
+  automationSystem: ReturnType<typeof createAutomationSystem> | undefined,
+): void {
+  if (!automationSystem) {
+    return;
+  }
+  registerAutomationCommandHandlers({
+    dispatcher,
+    automationSystem,
+  });
+}
+
+function registerTransformHandlersIfEnabled(
+  dispatcher: CommandDispatcher,
+  transformSystem: ReturnType<typeof createTransformSystem> | undefined,
+): void {
+  if (!transformSystem) {
+    return;
+  }
+  registerTransformCommandHandlers({
+    dispatcher,
+    transformSystem,
+  });
+}
+
+function registerEntityHandlersIfEnabled(
+  dispatcher: CommandDispatcher,
+  entitySystem: EntitySystem | undefined,
+): void {
+  if (!entitySystem) {
+    return;
+  }
+  registerEntityCommandHandlers({
+    dispatcher,
+    entitySystem,
+  });
 }

@@ -52,7 +52,7 @@ export type SerializedCommandQueueV1 = Readonly<{
   readonly entries: readonly SerializedCommandQueueEntryV1[];
 }>;
 
-export type SerializedCommandQueue = SerializedCommandQueueV1;
+export type SerializedCommandQueue = SerializedCommandQueueV1; // NOSONAR - stable alias for versioned persistence format
 
 export interface RestoreCommandQueueOptions {
   /**
@@ -842,6 +842,111 @@ function makeImmutableObject(
   return clone;
 }
 
+function getViewBufferSnapshot(
+  target: ArrayBufferView,
+  seen: WeakMap<object, unknown>,
+): unknown {
+  const buffer = target.buffer;
+  if (buffer instanceof ArrayBuffer) {
+    return makeImmutableArrayBuffer(buffer, seen);
+  }
+  if (
+    typeof sharedArrayBufferCtor === 'function' &&
+    buffer instanceof sharedArrayBufferCtor
+  ) {
+    return makeImmutableSharedArrayBuffer(buffer, seen);
+  }
+  return buffer;
+}
+
+function getDataViewLayoutProperty(
+  target: ArrayBufferView,
+  prop: unknown,
+  isDataView: boolean,
+): unknown | undefined {
+  if (!isDataView) {
+    return undefined;
+  }
+  if (prop !== 'byteOffset' && prop !== 'byteLength') {
+    return undefined;
+  }
+  return Reflect.get(target, prop, target);
+}
+
+function createTypedArrayCallbackWrapper(
+  target: ArrayBufferView,
+  receiver: ArrayBufferView,
+  prop: string,
+  seen: WeakMap<object, unknown>,
+): ((...args: unknown[]) => unknown) | undefined {
+  const original = Reflect.get(target as object, prop, receiver);
+  if (typeof original !== 'function') {
+    return undefined;
+  }
+
+  const originalInvoker = original as (
+    this: typeof target,
+    ...callbackArgs: unknown[]
+  ) => unknown;
+
+  return (...args: unknown[]) => {
+    const [callback, ...rest] = args;
+    if (typeof callback !== 'function') {
+      return originalInvoker.call(target, callback, ...rest);
+    }
+
+    const actualCallback = callback as (
+      this: unknown,
+      ...innerArgs: unknown[]
+    ) => unknown;
+
+    const wrappedCallback = function (
+      this: unknown,
+      ...callbackArgs: unknown[]
+    ) {
+      if (callbackArgs.length > 0) {
+        callbackArgs[callbackArgs.length - 1] = receiver;
+      }
+      return actualCallback.apply(this, callbackArgs);
+    };
+
+    const result = originalInvoker.call(target, wrappedCallback, ...rest);
+    if (ArrayBuffer.isView(result) && !(result instanceof DataView)) {
+      return makeImmutableView(result, seen);
+    }
+    return result;
+  };
+}
+
+function createTypedArraySubarrayWrapper(
+  target: ArrayBufferView,
+  seen: WeakMap<object, unknown>,
+): (...args: unknown[]) => ArrayBufferView {
+  return (...args: unknown[]) => {
+    const typedTarget = target as unknown as {
+      subarray: (...params: unknown[]) => ArrayBufferView;
+    };
+    const result = typedTarget.subarray(...args);
+    return makeImmutableView(result, seen);
+  };
+}
+
+function isMutatorMethod(prop: unknown, isDataView: boolean): boolean {
+  if (typeof prop !== 'string') {
+    return false;
+  }
+  return (
+    (isDataView && DATAVIEW_MUTATORS.has(prop)) ||
+    (!isDataView && TYPED_ARRAY_MUTATORS.has(prop))
+  );
+}
+
+function createMutationGuard(typeName: string): () => never {
+  return () => {
+    throw new TypeError(`Cannot mutate immutable ${typeName} snapshot`);
+  };
+}
+
 function createViewGuard(
   source: ArrayBufferView,
   seen: WeakMap<object, unknown>,
@@ -854,90 +959,31 @@ function createViewGuard(
   return {
     get(target, prop, receiver) {
       if (prop === 'buffer') {
-        const buffer = target.buffer;
-        if (buffer instanceof ArrayBuffer) {
-          return makeImmutableArrayBuffer(buffer, seen);
-        }
-        if (
-          typeof sharedArrayBufferCtor === 'function' &&
-          buffer instanceof sharedArrayBufferCtor
-        ) {
-          return makeImmutableSharedArrayBuffer(buffer, seen);
-        }
-        return buffer;
+        return getViewBufferSnapshot(target, seen);
       }
 
       if (prop === 'valueOf') {
         return () => receiver;
       }
 
-      if (
-        isDataView &&
-        (prop === 'byteOffset' || prop === 'byteLength')
-      ) {
-        return Reflect.get(target, prop, target);
+      const dataViewLayoutValue = getDataViewLayoutProperty(target, prop, isDataView);
+      if (dataViewLayoutValue !== undefined) {
+        return dataViewLayoutValue;
       }
 
-      if (
-        typeof prop === 'string' &&
-        TYPED_ARRAY_CALLBACK_METHODS.has(prop) &&
-        !isDataView
-      ) {
-          const original = Reflect.get(target as object, prop, receiver);
-          if (typeof original === 'function') {
-            const originalInvoker = original as (
-              this: typeof target,
-              ...callbackArgs: unknown[]
-          ) => unknown;
-          return (...args: unknown[]) => {
-            const [callback, ...rest] = args;
-            if (typeof callback !== 'function') {
-              return originalInvoker.call(target, callback, ...rest);
-            }
-            const wrappedCallback = function (
-              this: unknown,
-              ...callbackArgs: unknown[]
-            ) {
-              if (callbackArgs.length > 0) {
-                callbackArgs[callbackArgs.length - 1] = receiver;
-              }
-              const actualCallback = callback as (
-                this: unknown,
-                ...innerArgs: unknown[]
-              ) => unknown;
-              return actualCallback.apply(this, callbackArgs);
-            };
-            const result = originalInvoker.call(target, wrappedCallback, ...rest);
-            if (
-              ArrayBuffer.isView(result) &&
-              !(result instanceof DataView)
-            ) {
-              return makeImmutableView(result, seen);
-            }
-            return result;
-          };
+      if (!isDataView && typeof prop === 'string' && TYPED_ARRAY_CALLBACK_METHODS.has(prop)) {
+        const wrapped = createTypedArrayCallbackWrapper(target, receiver, prop, seen);
+        if (wrapped) {
+          return wrapped;
         }
       }
 
       if (!isDataView && prop === 'subarray') {
-        return (...args: unknown[]) => {
-          const typedTarget = target as unknown as {
-            subarray: (...params: unknown[]) => ArrayBufferView;
-          };
-          const result = typedTarget.subarray(...args);
-          return makeImmutableView(result, seen);
-        };
+        return createTypedArraySubarrayWrapper(target, seen);
       }
 
-      if (typeof prop === 'string') {
-        if (
-          (isDataView && DATAVIEW_MUTATORS.has(prop)) ||
-          (!isDataView && TYPED_ARRAY_MUTATORS.has(prop))
-        ) {
-          return () => {
-            throw new TypeError(`Cannot mutate immutable ${typeName} snapshot`);
-          };
-        }
+      if (isMutatorMethod(prop, isDataView)) {
+        return createMutationGuard(typeName);
       }
 
       const value = Reflect.get(target, prop, receiver);

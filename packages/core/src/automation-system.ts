@@ -797,11 +797,7 @@ export function evaluateResourceThresholdTrigger(
 
   if (resourceState.getResourceIndex) {
     const resolvedIndex = resourceState.getResourceIndex(resourceId);
-    if (resolvedIndex === -1) {
-      // Resource doesn't exist - treat as 0 amount
-      // Continue with amount = 0 instead of returning false
-      amount = 0;
-    } else {
+    if (resolvedIndex !== -1) {
       resourceIndex = resolvedIndex;
       amount = resourceState.getAmount(resourceIndex);
     }

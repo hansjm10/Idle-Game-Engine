@@ -4,43 +4,37 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-async function main() {
-  const [targetPath, expectedEvent] = process.argv.slice(2);
-  if (!targetPath) {
-    console.error(
-      'Usage: node tools/scripts/assert-json-tail.mjs <log-file> [expectedEvent]',
-    );
-    process.exit(1);
-  }
+function printUsageAndExit() {
+  console.error(
+    'Usage: node tools/scripts/assert-json-tail.mjs <log-file> [expectedEvent]',
+  );
+  process.exit(1);
+}
 
-  const absolutePath = path.resolve(process.cwd(), targetPath);
-  let raw;
+async function readLogFile(absolutePath) {
   try {
-    raw = await fs.readFile(absolutePath, 'utf8');
+    return await fs.readFile(absolutePath, 'utf8');
   } catch (error) {
-    console.error(
+    throw new Error(
       `Failed to read log file at ${absolutePath}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    process.exit(1);
   }
+}
 
-  const lines = raw
+function getNonEmptyLines(raw) {
+  return raw
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
 
-  if (lines.length === 0) {
-    console.error(
-      `No non-empty lines found in log file at ${absolutePath}. Expected structured JSON output.`,
-    );
-    process.exit(1);
-  }
-
+function parseTrailingJson(lines) {
   let parsed;
   let lastError;
   let errorCandidate = '';
+
   // Walk upward ignoring trailing noise until we accumulate a full JSON block (covers compact and pretty output).
   for (let tailIndex = lines.length - 1; tailIndex >= 0; tailIndex -= 1) {
     let working = '';
@@ -61,14 +55,49 @@ async function main() {
   }
 
   if (!parsed) {
-    console.error(
+    throw new Error(
       [
-        `Failed to parse trailing JSON payload in ${absolutePath}.`,
-        `Payload:`,
+        'Failed to parse trailing JSON payload.',
+        'Payload:',
         errorCandidate.length > 0 ? errorCandidate : '(no viable JSON candidate found)',
         lastError instanceof Error ? lastError.message : String(lastError),
       ].join('\n'),
     );
+  }
+
+  return parsed;
+}
+
+async function main() {
+  const [targetPath, expectedEvent] = process.argv.slice(2);
+  if (!targetPath) {
+    printUsageAndExit();
+  }
+
+  const absolutePath = path.resolve(process.cwd(), targetPath);
+  let raw = '';
+  try {
+    raw = await readLogFile(absolutePath);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+
+  const lines = getNonEmptyLines(raw);
+
+  if (lines.length === 0) {
+    console.error(
+      `No non-empty lines found in log file at ${absolutePath}. Expected structured JSON output.`,
+    );
+    process.exit(1);
+  }
+
+  let parsed;
+  try {
+    parsed = parseTrailingJson(lines);
+  } catch (error) {
+    console.error(`Failed to parse trailing JSON payload in ${absolutePath}.`);
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
@@ -87,7 +116,9 @@ async function main() {
   );
 }
 
-await main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error(error instanceof Error ? error.stack ?? error.message : String(error));
   process.exit(1);
-});
+}

@@ -36,7 +36,7 @@ const silentTelemetry = {
 };
 
 function commitToSink(value) {
-  benchSink.value = (benchSink.value ^ (value | 0)) >>> 0;
+  benchSink.value = (benchSink.value ^ Math.trunc(value)) >>> 0;
 }
 
 function createRuntimeScenario({ diagnosticsEnabled, clock }) {
@@ -193,6 +193,63 @@ function registerTask(bench, label, diagnosticsEnabled, clock) {
   );
 }
 
+function formatTaskLabel(value, digits) {
+  if (value === null || value === undefined) {
+    return 'n/a';
+  }
+  if (!Number.isFinite(value)) {
+    return 'n/a';
+  }
+  return value.toFixed(digits);
+}
+
+function formatSummaryRows(summaries) {
+  return [...summaries.entries()].map(([name, entry]) => {
+    const stats = entry.summary.stats;
+    const hzLabel = formatTaskLabel(stats.hz, 2);
+    const avgLabel = formatTaskLabel(stats.meanMs, 3);
+    const medianLabel = formatTaskLabel(stats.medianMs, 3);
+    const stdLabel = formatTaskLabel(stats.stdDevMs, 3);
+    const minLabel = formatTaskLabel(stats.minMs, 3);
+    const maxLabel = formatTaskLabel(stats.maxMs, 3);
+    const rmeLabel = formatTaskLabel(stats.rmePercent, 2);
+
+    return `  task=${name} hz=${hzLabel} avg=${avgLabel}ms median=${medianLabel}ms std=${stdLabel}ms min=${minLabel}ms max=${maxLabel}ms samples=${stats.samples} rme=${rmeLabel}%`;
+  });
+}
+
+function logOverheadSummary(summaries) {
+  const enabledStats = summaries.get('diagnostics-enabled')?.summary.stats;
+  const disabledStats = summaries.get('diagnostics-disabled')?.summary.stats;
+  const hasMean =
+    Number.isFinite(enabledStats?.meanMs) &&
+    Number.isFinite(disabledStats?.meanMs);
+
+  if (!hasMean) {
+    console.log('Overhead: n/a');
+    return;
+  }
+
+  const delta = enabledStats.meanMs - disabledStats.meanMs;
+  const relative =
+    disabledStats.meanMs === 0 ? null : (delta / disabledStats.meanMs) * 100;
+  const hasMedian =
+    Number.isFinite(enabledStats?.medianMs) &&
+    Number.isFinite(disabledStats?.medianMs);
+  const medianDelta = hasMedian
+    ? enabledStats.medianMs - disabledStats.medianMs
+    : null;
+
+  if (relative === null || medianDelta === null) {
+    console.log('Overhead: n/a');
+    return;
+  }
+
+  console.log(
+    `Overhead: +${delta.toFixed(3)}ms per ${MEASURE_TICKS} ticks (${relative.toFixed(2)}%) mean, +${medianDelta.toFixed(3)}ms median`,
+  );
+}
+
 async function runBenchmark() {
   const clock = getDefaultHighResolutionClock();
   const benchConfig = {
@@ -235,27 +292,7 @@ async function runBenchmark() {
     }
   }
 
-  const rows = [...summaries.entries()].map(([name, entry]) => {
-    const stats = entry.summary.stats;
-    const hzLabel = stats.hz === null ? 'n/a' : stats.hz.toFixed(2);
-    const avgLabel =
-      stats.meanMs === null ? 'n/a' : stats.meanMs.toFixed(3);
-    const medianLabel =
-      stats.medianMs === null
-        ? 'n/a'
-        : stats.medianMs.toFixed(3);
-    const stdLabel =
-      stats.stdDevMs === null ? 'n/a' : stats.stdDevMs.toFixed(3);
-    const minLabel =
-      stats.minMs === null ? 'n/a' : stats.minMs.toFixed(3);
-    const maxLabel =
-      stats.maxMs === null ? 'n/a' : stats.maxMs.toFixed(3);
-    const rmeLabel =
-      stats.rmePercent === null
-        ? 'n/a'
-        : stats.rmePercent.toFixed(2);
-    return `  task=${name} hz=${hzLabel} avg=${avgLabel}ms median=${medianLabel}ms std=${stdLabel}ms min=${minLabel}ms max=${maxLabel}ms samples=${stats.samples} rme=${rmeLabel}%`;
-  });
+  const rows = formatSummaryRows(summaries);
 
   if (rows.length > 0) {
     console.log('Results:');
@@ -265,38 +302,7 @@ async function runBenchmark() {
   }
 
   if (disabled && enabled) {
-    const enabledStats =
-      summaries.get('diagnostics-enabled')?.summary.stats;
-    const disabledStats =
-      summaries.get('diagnostics-disabled')?.summary.stats;
-    const hasMean =
-      Number.isFinite(enabledStats?.meanMs) &&
-      Number.isFinite(disabledStats?.meanMs);
-    const delta = hasMean
-      ? enabledStats.meanMs - disabledStats.meanMs
-      : null;
-    const relative = hasMean
-      ? (delta / disabledStats.meanMs) * 100
-      : null;
-    const hasMedian =
-      Number.isFinite(enabledStats?.medianMs) &&
-      Number.isFinite(disabledStats?.medianMs);
-    const medianDelta = hasMedian
-      ? enabledStats.medianMs - disabledStats.medianMs
-      : null;
-    if (delta !== null && relative !== null && medianDelta !== null) {
-      console.log(
-        `Overhead: +${delta.toFixed(
-          3,
-        )}ms per ${MEASURE_TICKS} ticks (${relative.toFixed(
-          2,
-        )}%) mean, +${medianDelta.toFixed(
-          3,
-        )}ms median`,
-      );
-    } else {
-      console.log('Overhead: n/a');
-    }
+    logOverheadSummary(summaries);
   }
 
   const tasks = [...summaries.entries()].map(([name, entry]) => ({
@@ -358,7 +364,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error('Benchmark failed:', error);
   process.exitCode = 1;
-});
+}

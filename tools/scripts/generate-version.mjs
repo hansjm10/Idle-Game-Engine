@@ -206,4 +206,4 @@ export const PERSISTENCE_SCHEMA_VERSION = ${persistenceSchemaVersion};
   }
 }
 
-generateVersionFile();
+await generateVersionFile();

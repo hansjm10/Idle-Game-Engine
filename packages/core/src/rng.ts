@@ -4,9 +4,17 @@ const PRD_CUMULATIVE_THRESHOLD = 0.9999;
 const PRD_SEARCH_ITERATIONS = 20;
 const PRD_BASE_RATE_REL_EPSILON = 1e-6;
 const PRD_BASE_RATE_ABS_EPSILON = 1e-12;
+const INT32_HIGH_BIT = 0x8000_0000;
+const INT32_RANGE = 0x1_0000_0000;
 
 let currentSeed: number | undefined;
 let rngState: number | undefined;
+
+const toInt32 = (value: number): number => {
+  const truncated = Math.trunc(value);
+  const mod = ((truncated % INT32_RANGE) + INT32_RANGE) % INT32_RANGE;
+  return mod >= INT32_HIGH_BIT ? mod - INT32_RANGE : mod;
+};
 
 export function getCurrentRNGSeed(): number | undefined {
   return currentSeed;
@@ -32,7 +40,7 @@ export function setRNGState(state: number): void {
   if (!Number.isFinite(state)) {
     throw new Error('RNG state must be a finite number.');
   }
-  rngState = state | 0;
+  rngState = toInt32(state);
 }
 
 export function resetRNG(): void {
@@ -46,7 +54,7 @@ export function seededRandom(): number {
     setRNGSeed(fallbackSeed);
   }
 
-  rngState = (rngState! + STATE_INCREMENT) | 0;
+  rngState = toInt32(rngState! + STATE_INCREMENT);
   let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
   t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;

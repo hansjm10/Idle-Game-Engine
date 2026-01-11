@@ -193,41 +193,47 @@ const findCycleFromNode = (
   const previous = new Map<string, string>();
 
   while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      continue;
-    }
+    const current = queue.shift()!;
     const targets = adjacency.get(current);
     if (!targets) {
       continue;
     }
     for (const next of targets) {
       if (next === startId) {
-        const path: string[] = [];
-        let cursor = current;
-        path.push(cursor);
-        while (cursor !== startId) {
-          const parent = previous.get(cursor);
-          if (!parent) {
-            return undefined;
-          }
-          cursor = parent;
-          path.push(cursor);
-        }
-        path.reverse();
-        path.push(startId);
-        return path;
+        return buildCyclePath(previous, startId, current);
       }
-      if (!visited.has(next)) {
-        visited.add(next);
-        previous.set(next, current);
-        queue.push(next);
+      if (visited.has(next)) {
+        continue;
       }
+      visited.add(next);
+      previous.set(next, current);
+      queue.push(next);
     }
   }
 
   return undefined;
 };
+
+function buildCyclePath(
+  previous: ReadonlyMap<string, string>,
+  startId: string,
+  current: string,
+): CyclePath | undefined {
+  const path: string[] = [current];
+  let cursor = current;
+  while (cursor !== startId) {
+    const parent = previous.get(cursor);
+    if (!parent) {
+      return undefined;
+    }
+    cursor = parent;
+    path.push(cursor);
+  }
+
+  path.reverse();
+  path.push(startId);
+  return path;
+}
 
 const findNetPositiveCycle = (
   transformIds: readonly string[],

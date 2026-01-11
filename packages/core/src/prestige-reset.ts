@@ -37,6 +37,11 @@ export interface PrestigeResourceFlagTarget {
   readonly visible: boolean;
 }
 
+interface PrestigeReward {
+  readonly resourceId: string;
+  readonly amount: number;
+}
+
 /**
  * Context for applying a prestige reset.
  * All values should be pre-calculated by the caller before invoking applyPrestigeReset.
@@ -52,10 +57,7 @@ export interface PrestigeResetContext {
   readonly resourceState: ResourceState;
 
   /** The reward to grant (added before any resets) */
-  readonly reward: {
-    readonly resourceId: string;
-    readonly amount: number;
-  };
+  readonly reward: PrestigeReward;
 
   /**
    * Resources to reset to specific amounts.
@@ -100,63 +102,10 @@ export function applyPrestigeReset(context: PrestigeResetContext): void {
     resetResourceFlags,
   } = context;
 
-  // 1. Grant reward (safe operation using addAmount)
-  const rewardIndex = resourceState.getIndex(reward.resourceId);
-  if (rewardIndex !== undefined && reward.amount > 0) {
-    resourceState.addAmount(rewardIndex, reward.amount);
-  } else if (rewardIndex === undefined && reward.amount > 0) {
-    telemetry.recordWarning('PrestigeResetRewardSkipped', {
-      layerId,
-      resourceId: reward.resourceId,
-    });
-  }
-
-  // 2. Reset targets to their specified amounts
-  for (const target of resetTargets) {
-    const index = resourceState.getIndex(target.resourceId);
-    if (index !== undefined) {
-      const amount = normalizeAmount(target.resetToAmount);
-      __unsafeWriteAmountDirect(resourceState, index, amount);
-    } else {
-      telemetry.recordWarning('PrestigeResetTargetSkipped', {
-        layerId,
-        resourceId: target.resourceId,
-        targetType: 'reset',
-      });
-    }
-  }
-
-  // 3. Apply retention amounts
-  for (const target of retentionTargets) {
-    const index = resourceState.getIndex(target.resourceId);
-    if (index !== undefined) {
-      const amount = normalizeAmount(target.retainedAmount);
-      __unsafeWriteAmountDirect(resourceState, index, amount);
-    } else {
-      telemetry.recordWarning('PrestigeResetTargetSkipped', {
-        layerId,
-        resourceId: target.resourceId,
-        targetType: 'retention',
-      });
-    }
-  }
-
-  // 4. Reset resource flags (unlock/visibility) when requested
-  if (resetResourceFlags && resetResourceFlags.length > 0) {
-    for (const target of resetResourceFlags) {
-      const index = resourceState.getIndex(target.resourceId);
-      if (index !== undefined) {
-        __unsafeWriteUnlockedDirect(resourceState, index, target.unlocked);
-        __unsafeWriteVisibleDirect(resourceState, index, target.visible);
-      } else {
-        telemetry.recordWarning('PrestigeResetTargetSkipped', {
-          layerId,
-          resourceId: target.resourceId,
-          targetType: 'flags',
-        });
-      }
-    }
-  }
+  grantPrestigeReward(layerId, resourceState, reward);
+  applyPrestigeResetTargets(layerId, resourceState, resetTargets);
+  applyPrestigeRetentionTargets(layerId, resourceState, retentionTargets);
+  applyPrestigeFlagTargets(layerId, resourceState, resetResourceFlags);
 
   telemetry.recordProgress('prestige.reset_applied', {
     layerId,
@@ -165,6 +114,94 @@ export function applyPrestigeReset(context: PrestigeResetContext): void {
     resetCount: resetTargets.length,
     retentionCount: retentionTargets.length,
   });
+}
+
+function grantPrestigeReward(
+  layerId: string,
+  resourceState: ResourceState,
+  reward: PrestigeReward,
+): void {
+  if (reward.amount <= 0) {
+    return;
+  }
+
+  const rewardIndex = resourceState.getIndex(reward.resourceId);
+  if (rewardIndex === undefined) {
+    telemetry.recordWarning('PrestigeResetRewardSkipped', {
+      layerId,
+      resourceId: reward.resourceId,
+    });
+    return;
+  }
+
+  resourceState.addAmount(rewardIndex, reward.amount);
+}
+
+function applyPrestigeResetTargets(
+  layerId: string,
+  resourceState: ResourceState,
+  targets: readonly PrestigeResetTarget[],
+): void {
+  for (const target of targets) {
+    const index = resourceState.getIndex(target.resourceId);
+    if (index === undefined) {
+      telemetry.recordWarning('PrestigeResetTargetSkipped', {
+        layerId,
+        resourceId: target.resourceId,
+        targetType: 'reset',
+      });
+      continue;
+    }
+
+    const amount = normalizeAmount(target.resetToAmount);
+    __unsafeWriteAmountDirect(resourceState, index, amount);
+  }
+}
+
+function applyPrestigeRetentionTargets(
+  layerId: string,
+  resourceState: ResourceState,
+  targets: readonly PrestigeRetentionTarget[],
+): void {
+  for (const target of targets) {
+    const index = resourceState.getIndex(target.resourceId);
+    if (index === undefined) {
+      telemetry.recordWarning('PrestigeResetTargetSkipped', {
+        layerId,
+        resourceId: target.resourceId,
+        targetType: 'retention',
+      });
+      continue;
+    }
+
+    const amount = normalizeAmount(target.retainedAmount);
+    __unsafeWriteAmountDirect(resourceState, index, amount);
+  }
+}
+
+function applyPrestigeFlagTargets(
+  layerId: string,
+  resourceState: ResourceState,
+  resetResourceFlags: readonly PrestigeResourceFlagTarget[] | undefined,
+): void {
+  if (!resetResourceFlags || resetResourceFlags.length === 0) {
+    return;
+  }
+
+  for (const target of resetResourceFlags) {
+    const index = resourceState.getIndex(target.resourceId);
+    if (index === undefined) {
+      telemetry.recordWarning('PrestigeResetTargetSkipped', {
+        layerId,
+        resourceId: target.resourceId,
+        targetType: 'flags',
+      });
+      continue;
+    }
+
+    __unsafeWriteUnlockedDirect(resourceState, index, target.unlocked);
+    __unsafeWriteVisibleDirect(resourceState, index, target.visible);
+  }
 }
 
 /**

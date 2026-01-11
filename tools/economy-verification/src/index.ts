@@ -216,11 +216,13 @@ async function main(): Promise<void> {
   process.stdout.write(JSON.stringify(report) + '\n');
 }
 
-main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error(
     'economy-verification failed:',
     error instanceof Error ? error.message : String(error),
   );
   // eslint-disable-next-line no-process-exit
   process.exit(1);
-});
+}

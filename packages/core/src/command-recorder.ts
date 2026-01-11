@@ -457,14 +457,14 @@ export class CommandRecorder {
       recordedFinalStep >= 0 ? recordedFinalStep : derivedFinalStep;
     const previousStep = runtimeContext?.getCurrentStep?.();
     const previousNextStep = runtimeContext?.getNextExecutableStep?.();
-    let replayFailed = true;
-    let stateAdvanced = false;
-    let finalizationComplete = false;
+	    let replayFailed = true;
+	    let stateAdvanced = false;
+	    let finalizationComplete = false;
     const matchedFutureCommandIndices = new Set<number>();
     const eventBus = runtimeContext?.eventBus;
-    let activeEventBusTick: number | undefined;
-    let processedSinceLastTelemetry = 0;
-    let diagnosticsError: unknown;
+	    let activeEventBusTick: number | undefined;
+	    let processedSinceLastTelemetry = 0;
+	    let diagnosticsError: Error | undefined;
 
     const revertRuntimeContext = (): void => {
       restoreState(mutableState);
@@ -595,22 +595,22 @@ export class CommandRecorder {
       }
 
       replayFailed = false;
-    } finally {
-      if (typeof readDiagnosticsDelta === 'function') {
-        try {
-          const previousDiagnosticsHead = diagnosticsHead;
-          const previousDiagnosticsConfiguration = diagnosticsConfiguration;
-          const delta = readDiagnosticsDelta(diagnosticsHead);
-          diagnosticsHead = delta.head;
-          diagnosticsConfiguration = delta.configuration;
-          const hasEntries = delta.entries.length > 0;
-          const hasDrops = delta.dropped > 0;
-          const headChanged =
-            previousDiagnosticsHead !== undefined &&
-            delta.head !== previousDiagnosticsHead;
-          const configurationChanged =
-            previousDiagnosticsConfiguration !== undefined &&
-            previousDiagnosticsConfiguration !== delta.configuration;
+	    } finally {
+	      if (typeof readDiagnosticsDelta === 'function') {
+	        try {
+	          const previousDiagnosticsHead = diagnosticsHead;
+	          const previousDiagnosticsConfiguration = diagnosticsConfiguration;
+	          const delta = readDiagnosticsDelta(diagnosticsHead);
+	          const nextDiagnosticsHead = delta.head;
+	          const nextDiagnosticsConfiguration = delta.configuration;
+	          const hasEntries = delta.entries.length > 0;
+	          const hasDrops = delta.dropped > 0;
+	          const headChanged =
+	            previousDiagnosticsHead !== undefined &&
+	            nextDiagnosticsHead !== previousDiagnosticsHead;
+	          const configurationChanged =
+	            previousDiagnosticsConfiguration !== undefined &&
+	            previousDiagnosticsConfiguration !== nextDiagnosticsConfiguration;
 
           if (
             attachDiagnosticsDelta &&
@@ -618,11 +618,14 @@ export class CommandRecorder {
           ) {
             attachDiagnosticsDelta(delta);
           }
-        } catch (error) {
-          diagnosticsError = error;
-          replayFailed = true;
-        }
-      }
+	        } catch (error) {
+	          diagnosticsError =
+	            error instanceof Error
+	              ? error
+	              : new Error(String(error));
+	          replayFailed = true;
+	        }
+	      }
 
       (queue as CommandQueue & {
         enqueue: (command: Command) => void;
@@ -639,9 +642,9 @@ export class CommandRecorder {
 
     }
 
-    if (diagnosticsError !== undefined) {
-      throw diagnosticsError;
-    }
+	    if (diagnosticsError) {
+	      throw diagnosticsError;
+	    }
   }
 
   clear(nextState: unknown, options?: { seed?: number }): void {

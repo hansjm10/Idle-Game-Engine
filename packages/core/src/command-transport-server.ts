@@ -132,14 +132,16 @@ export function createCommandTransportServer(
         'Envelope sentAt must be a finite number.',
       );
       return recordRejectedResponse(
-        registry,
-        pendingKeys,
-        key,
-        requestIdResult.value,
-        resolveServerStep(undefined, options.getNextExecutableStep),
-        error,
-        atTime,
-        idempotencyTtlMs,
+        {
+          registry,
+          pendingKeys,
+          key,
+          requestId: requestIdResult.value,
+          serverStep: resolveServerStep(undefined, options.getNextExecutableStep),
+          error,
+          atTime,
+          ttlMs: idempotencyTtlMs,
+        },
       );
     }
 
@@ -150,14 +152,16 @@ export function createCommandTransportServer(
     );
     if (!normalizedCommand.ok) {
       return recordRejectedResponse(
-        registry,
-        pendingKeys,
-        key,
-        requestIdResult.value,
-        resolveServerStep(undefined, options.getNextExecutableStep),
-        normalizedCommand.error,
-        atTime,
-        idempotencyTtlMs,
+        {
+          registry,
+          pendingKeys,
+          key,
+          requestId: requestIdResult.value,
+          serverStep: resolveServerStep(undefined, options.getNextExecutableStep),
+          error: normalizedCommand.error,
+          atTime,
+          ttlMs: idempotencyTtlMs,
+        },
       );
     }
 
@@ -175,14 +179,16 @@ export function createCommandTransportServer(
         },
       );
       return recordRejectedResponse(
-        registry,
-        pendingKeys,
-        key,
-        requestIdResult.value,
-        resolveServerStep(undefined, options.getNextExecutableStep),
-        error,
-        atTime,
-        idempotencyTtlMs,
+        {
+          registry,
+          pendingKeys,
+          key,
+          requestId: requestIdResult.value,
+          serverStep: resolveServerStep(undefined, options.getNextExecutableStep),
+          error,
+          atTime,
+          ttlMs: idempotencyTtlMs,
+        },
       );
     }
 
@@ -517,16 +523,30 @@ function createRejectedResponse(
   };
 }
 
+type RejectedResponseRecordInput = Readonly<{
+  registry: IdempotencyRegistry;
+  pendingKeys: Map<string, PendingKeyEntry>;
+  key: string;
+  requestId: string;
+  serverStep: number;
+  error: CommandResponseError;
+  atTime: number;
+  ttlMs: number;
+}>;
+
 function recordRejectedResponse(
-  registry: IdempotencyRegistry,
-  pendingKeys: Map<string, PendingKeyEntry>,
-  key: string,
-  requestId: string,
-  serverStep: number,
-  error: CommandResponseError,
-  atTime: number,
-  ttlMs: number,
+  input: RejectedResponseRecordInput,
 ): CommandResponse {
+  const {
+    registry,
+    pendingKeys,
+    key,
+    requestId,
+    serverStep,
+    error,
+    atTime,
+    ttlMs,
+  } = input;
   const response = createRejectedResponse(requestId, serverStep, error);
   registry.record(key, response, atTime + ttlMs);
   pendingKeys.set(requestId, {
