@@ -742,6 +742,64 @@ describe('createProductionSystem', () => {
       expect(tickStats[3].produced.get('gold')).toBe(0.01); // Now 0.01 is applied
     });
 
+    it('should report applied produced amount when capacity clamps (standard vs applyViaFinalizeTick)', () => {
+      const resourcesStandard = createResourceState([
+        { id: 'gold', startAmount: 4, capacity: 5 },
+      ]);
+      const resourcesShadow = createResourceState([
+        { id: 'gold', startAmount: 4, capacity: 5 },
+      ]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [],
+        },
+      ];
+
+      const standardTickStats: {
+        produced: Map<string, number>;
+        consumed: Map<string, number>;
+      }[] = [];
+      const shadowTickStats: {
+        produced: Map<string, number>;
+        consumed: Map<string, number>;
+      }[] = [];
+
+      const standard = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesStandard,
+        onTick: (stats) => standardTickStats.push(stats),
+      });
+      const shadow = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesShadow,
+        applyViaFinalizeTick: true,
+        onTick: (stats) => shadowTickStats.push(stats),
+      });
+
+      standard.tick(createTickContext(1000, 0));
+      shadow.tick(createTickContext(1000, 0));
+      resourcesShadow.finalizeTick(1000);
+
+      resourcesStandard.snapshot({ mode: 'publish' });
+      resourcesShadow.snapshot({ mode: 'publish' });
+
+      const standardGoldIndex = resourcesStandard.getIndex('gold')!;
+      const shadowGoldIndex = resourcesShadow.getIndex('gold')!;
+
+      expect(resourcesStandard.getAmount(standardGoldIndex)).toBe(5);
+      expect(resourcesShadow.getAmount(shadowGoldIndex)).toBe(5);
+
+      expect(standardTickStats).toHaveLength(1);
+      expect(shadowTickStats).toHaveLength(1);
+
+      // Capacity allows only +1 (4 -> 5), so onTick should report applied amount.
+      expect(standardTickStats[0].produced.get('gold')).toBe(1);
+      expect(shadowTickStats[0].produced.get('gold')).toBe(1);
+    });
+
     it('should aggregate amounts from multiple generators', () => {
       const resources = createTestResources();
       const generators = [

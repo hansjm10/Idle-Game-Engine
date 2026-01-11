@@ -4,6 +4,14 @@ import { createResourceState } from './resource-state.js';
 import { createTickContext } from './test-utils.js';
 
 describe('createProductionSystem - serialization', () => {
+  const serializeAccumulatorKey = (
+    generatorId: string,
+    operation: 'produce' | 'consume',
+    resourceId: string,
+  ): string => {
+    return `v2|${encodeURIComponent(generatorId)}|${operation}|${encodeURIComponent(resourceId)}`;
+  };
+
   describe('exportAccumulators and restoreAccumulators', () => {
     it('should export empty object when no accumulators exist', () => {
       const resources = createResourceState([{ id: 'gold', startAmount: 0 }]);
@@ -49,7 +57,9 @@ describe('createProductionSystem - serialization', () => {
       resources.snapshot({ mode: 'publish' });
 
       const exported = system.exportAccumulators();
-      expect(exported.accumulators['mine:produce:gold']).toBeCloseTo(0.006, 6);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('mine', 'produce', 'gold')],
+      ).toBeCloseTo(0.006, 6);
     });
 
     it('should export remainder after threshold application', () => {
@@ -77,7 +87,9 @@ describe('createProductionSystem - serialization', () => {
       resources.snapshot({ mode: 'publish' });
 
       const exported = system.exportAccumulators();
-      expect(exported.accumulators['mine:produce:gold']).toBeCloseTo(0.002, 6);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('mine', 'produce', 'gold')],
+      ).toBeCloseTo(0.002, 6);
     });
 
     it('should restore accumulators and continue accumulation correctly', () => {
@@ -144,8 +156,12 @@ describe('createProductionSystem - serialization', () => {
       expect(resources.getAmount(resources.getIndex('energy')!)).toBeCloseTo(0.99, 12);
 
       const exported = system.exportAccumulators();
-      expect(exported.accumulators['harvester:produce:ore']).toBeCloseTo(0.002, 12);
-      expect(exported.accumulators['harvester:consume:energy']).toBeCloseTo(0.002, 12);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('harvester', 'produce', 'ore')],
+      ).toBeCloseTo(0.002, 12);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('harvester', 'consume', 'energy')],
+      ).toBeCloseTo(0.002, 12);
     });
 
     it('should clear existing accumulators when restoring', () => {
@@ -241,7 +257,9 @@ describe('createProductionSystem - serialization', () => {
       const exported = system.exportAccumulators();
       // Only the valid value should be restored
       expect(Object.keys(exported.accumulators)).toHaveLength(1);
-      expect(exported.accumulators['mine:produce:gold']).toBeCloseTo(0.006, 6);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('mine', 'produce', 'gold')],
+      ).toBeCloseTo(0.006, 6);
     });
 
     it('should export both produce and consume accumulators', () => {
@@ -270,8 +288,12 @@ describe('createProductionSystem - serialization', () => {
       resources.snapshot({ mode: 'publish' });
 
       const exported = system.exportAccumulators();
-      expect(exported.accumulators['harvester:produce:ore']).toBeCloseTo(0.006, 6);
-      expect(exported.accumulators['harvester:consume:energy']).toBeCloseTo(0.006, 6);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('harvester', 'produce', 'ore')],
+      ).toBeCloseTo(0.006, 6);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('harvester', 'consume', 'energy')],
+      ).toBeCloseTo(0.006, 6);
     });
 
     it('should not export zero values', () => {
@@ -298,7 +320,9 @@ describe('createProductionSystem - serialization', () => {
 
       const exported = system.exportAccumulators();
       // Zero remainder should not be exported
-      expect(exported.accumulators['mine:produce:gold']).toBeUndefined();
+      expect(
+        exported.accumulators[serializeAccumulatorKey('mine', 'produce', 'gold')],
+      ).toBeUndefined();
     });
 
     it('should preserve accumulator state across simulated save/load cycle', () => {
@@ -343,6 +367,46 @@ describe('createProductionSystem - serialization', () => {
       resources2.snapshot({ mode: 'publish' });
 
       expect(resources2.getAmount(resources2.getIndex('gold')!)).toBe(0.01);
+    });
+
+    it('should avoid legacy key collisions when exporting accumulator keys', () => {
+      const resources = createResourceState([
+        { id: 'produce:bar', startAmount: 0 },
+        { id: 'bar', startAmount: 0 },
+      ]);
+      const generators = [
+        {
+          id: 'foo',
+          owned: 1,
+          produces: [{ resourceId: 'produce:bar', rate: 0.003 }],
+          consumes: [],
+        },
+        {
+          id: 'foo:produce',
+          owned: 1,
+          produces: [{ resourceId: 'bar', rate: 0.003 }],
+          consumes: [],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState: resources,
+        applyThreshold: 0.01,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resources.snapshot({ mode: 'publish' });
+
+      const exported = system.exportAccumulators();
+      expect(Object.keys(exported.accumulators)).toHaveLength(2);
+
+      expect(
+        exported.accumulators[serializeAccumulatorKey('foo', 'produce', 'produce:bar')],
+      ).toBeCloseTo(0.003, 12);
+      expect(
+        exported.accumulators[serializeAccumulatorKey('foo:produce', 'produce', 'bar')],
+      ).toBeCloseTo(0.003, 12);
     });
   });
 });

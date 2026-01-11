@@ -85,16 +85,13 @@ function supportsPerTickReset(
 
 /**
  * Serialized accumulator state for save/load persistence.
- * Keys are in the format `${generatorId}:${operation}:${resourceId}` where operation is "produce" or "consume".
  *
- * This is a legacy string encoding and is not collision-free if generator/resource IDs contain `:`.
- * For example, the key `foo:produce:produce:bar` could represent either:
- * - (generatorId="foo", operation="produce", resourceId="produce:bar")
- * - (generatorId="foo:produce", operation="produce", resourceId="bar")
+ * Key formats:
+ * - v2 (collision-free): `v2|${encodeURIComponent(generatorId)}|${operation}|${encodeURIComponent(resourceId)}`
+ * - legacy (backwards compatible): `${generatorId}:${operation}:${resourceId}`
  *
- * To avoid ambiguous keys, prefer IDs that don't contain `:`. If IDs are namespaced with `:`, avoid
- * patterns that can create `:${operation}:` boundaries inside IDs (e.g., generator IDs ending with
- * `:produce`/`:consume` or resource IDs starting with `produce:`/`consume:`).
+ * The legacy format is not collision-free if generator/resource IDs contain `:` (for example,
+ * `foo:produce:produce:bar` can be produced by multiple (generatorId, resourceId) pairs).
  */
 export interface SerializedProductionAccumulators {
   /** Map of accumulator keys to their current fractional values */
@@ -537,6 +534,12 @@ function executeProductionPhases(
     }
   }
 
+  if (!Number.isFinite(consumptionRatio) || consumptionRatio < 0) {
+    consumptionRatio = 0;
+  } else if (consumptionRatio > 1) {
+    consumptionRatio = 1;
+  }
+
   // Phase 2: Accumulate production at full rate, apply scaled by consumption ratio
   for (const { resourceId, index, rate } of validProductions) {
     const delta = rate * effectiveOwned * deltaSeconds;
@@ -604,8 +607,30 @@ function createDirectPhaseContext(
   return {
     getAmount: (index) => resourceState.getAmount(index),
     addProduction: (index, amount) => {
-      resourceState.addAmount(index, amount);
-      return amount;
+      const before = resourceState.getAmount(index);
+      const applied = (
+        resourceState as unknown as {
+          addAmount: (index: number, amount: number) => unknown;
+        }
+      ).addAmount(index, amount);
+
+      if (typeof applied === 'number') {
+        if (!Number.isFinite(applied) || applied <= 0) {
+          return 0;
+        }
+        return applied;
+      }
+
+      const after = resourceState.getAmount(index);
+      if (!Number.isFinite(before) || !Number.isFinite(after)) {
+        return amount;
+      }
+
+      const delta = after - before;
+      if (!Number.isFinite(delta) || delta <= 0) {
+        return 0;
+      }
+      return Math.min(delta, amount);
     },
     spendConsumption: (index, amount) => {
       return resourceState.spendAmount(index, amount, { systemId });
@@ -880,12 +905,154 @@ export function createProductionSystem(
   >();
   const legacyAccumulators = new Map<string, number>();
 
-  function serializeAccumulatorKey(
+  const ACCUMULATOR_KEY_V2_PREFIX = 'v2|';
+
+  function serializeAccumulatorKeyV2(
+    generatorId: string,
+    operation: AccumulatorOperation,
+    resourceId: string,
+  ): string {
+    return [
+      ACCUMULATOR_KEY_V2_PREFIX.slice(0, -1),
+      encodeURIComponent(generatorId),
+      operation,
+      encodeURIComponent(resourceId),
+    ].join('|');
+  }
+
+  function serializeAccumulatorKeyLegacy(
     generatorId: string,
     operation: AccumulatorOperation,
     resourceId: string,
   ): string {
     return `${generatorId}:${operation}:${resourceId}`;
+  }
+
+  function tryParseAccumulatorKeyV2(
+    key: string,
+  ):
+    | {
+        generatorId: string;
+        operation: AccumulatorOperation;
+        resourceId: string;
+      }
+    | undefined {
+    if (!key.startsWith(ACCUMULATOR_KEY_V2_PREFIX)) {
+      return undefined;
+    }
+
+    const parts = key.split('|');
+    if (parts.length !== 4 || parts[0] !== 'v2') {
+      return undefined;
+    }
+
+    const operation = parts[2];
+    if (operation !== 'produce' && operation !== 'consume') {
+      return undefined;
+    }
+
+    try {
+      return {
+        generatorId: decodeURIComponent(parts[1]),
+        operation,
+        resourceId: decodeURIComponent(parts[3]),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  function hasAccumulatorValue(
+    generatorId: string,
+    operation: AccumulatorOperation,
+    resourceId: string,
+  ): boolean {
+    const generatorAccumulators = accumulators.get(generatorId);
+    if (!generatorAccumulators) {
+      return false;
+    }
+
+    const accumulatorMap =
+      operation === 'produce'
+        ? generatorAccumulators.produce
+        : generatorAccumulators.consume;
+    return accumulatorMap.has(resourceId);
+  }
+
+  function setAccumulatorValueFromRestore(
+    generatorId: string,
+    operation: AccumulatorOperation,
+    resourceId: string,
+    value: number,
+  ): void {
+    const generatorAccumulators = accumulators.get(generatorId) ?? {
+      produce: new Map<string, number>(),
+      consume: new Map<string, number>(),
+    };
+    accumulators.set(generatorId, generatorAccumulators);
+
+    const accumulatorMap =
+      operation === 'produce'
+        ? generatorAccumulators.produce
+        : generatorAccumulators.consume;
+    accumulatorMap.set(resourceId, value);
+  }
+
+  function tryParseAccumulatorKeyLegacy(
+    key: string,
+    generatorIds: ReadonlySet<string>,
+  ):
+    | {
+        generatorId: string;
+        operation: AccumulatorOperation;
+        resourceId: string;
+      }
+    | undefined {
+    const candidates: Array<{
+      generatorId: string;
+      operation: AccumulatorOperation;
+      resourceId: string;
+    }> = [];
+
+    const operations: AccumulatorOperation[] = ['produce', 'consume'];
+    for (const operation of operations) {
+      const delimiter = `:${operation}:`;
+      let searchIndex = 0;
+      while (true) {
+        const delimiterIndex = key.indexOf(delimiter, searchIndex);
+        if (delimiterIndex === -1) {
+          break;
+        }
+
+        const generatorId = key.slice(0, delimiterIndex);
+        const resourceId = key.slice(delimiterIndex + delimiter.length);
+        if (generatorId.length > 0 && resourceId.length > 0) {
+          candidates.push({ generatorId, operation, resourceId });
+        }
+
+        searchIndex = delimiterIndex + 1;
+      }
+    }
+
+    const candidatesWithKnownResource = candidates.filter(
+      ({ resourceId }) => resourceState.getIndex(resourceId) !== undefined,
+    );
+    if (candidatesWithKnownResource.length === 0) {
+      return undefined;
+    }
+
+    const candidatesWithKnownGenerator = candidatesWithKnownResource.filter(
+      ({ generatorId }) => generatorIds.has(generatorId),
+    );
+    if (candidatesWithKnownGenerator.length === 1) {
+      return candidatesWithKnownGenerator[0];
+    }
+
+    if (candidatesWithKnownResource.length === 1) {
+      return candidatesWithKnownResource[0];
+    }
+
+    return undefined;
   }
 
   /**
@@ -911,7 +1078,7 @@ export function createProductionSystem(
 
     let current = accumulatorMap.get(resourceId) ?? 0;
     if (legacyAccumulators.size > 0) {
-      const legacyKey = serializeAccumulatorKey(generatorId, operation, resourceId);
+      const legacyKey = serializeAccumulatorKeyLegacy(generatorId, operation, resourceId);
       const legacyValue = legacyAccumulators.get(legacyKey);
       if (legacyValue !== undefined) {
         legacyAccumulators.delete(legacyKey);
@@ -1216,14 +1383,14 @@ export function createProductionSystem(
         for (const [resourceId, value] of generatorAccumulators.produce) {
           // Only export non-zero values to minimize save size
           if (value !== 0) {
-            result[serializeAccumulatorKey(generatorId, 'produce', resourceId)] = value;
+            result[serializeAccumulatorKeyV2(generatorId, 'produce', resourceId)] = value;
           }
         }
 
         for (const [resourceId, value] of generatorAccumulators.consume) {
           // Only export non-zero values to minimize save size
           if (value !== 0) {
-            result[serializeAccumulatorKey(generatorId, 'consume', resourceId)] = value;
+            result[serializeAccumulatorKeyV2(generatorId, 'consume', resourceId)] = value;
           }
         }
       }
@@ -1245,9 +1412,46 @@ export function createProductionSystem(
         return;
       }
 
+      const generatorIds = new Set<string>();
+      for (const generator of generators()) {
+        generatorIds.add(generator.id);
+      }
+
       // Restore each accumulator, filtering out invalid values
       for (const [key, value] of Object.entries(state.accumulators)) {
         if (typeof value === 'number' && Number.isFinite(value)) {
+          const v2Parsed = tryParseAccumulatorKeyV2(key);
+          if (v2Parsed) {
+            setAccumulatorValueFromRestore(
+              v2Parsed.generatorId,
+              v2Parsed.operation,
+              v2Parsed.resourceId,
+              value,
+            );
+            continue;
+          }
+
+          const legacyParsed = tryParseAccumulatorKeyLegacy(key, generatorIds);
+          if (legacyParsed) {
+            if (
+              hasAccumulatorValue(
+                legacyParsed.generatorId,
+                legacyParsed.operation,
+                legacyParsed.resourceId,
+              )
+            ) {
+              continue;
+            }
+
+            setAccumulatorValueFromRestore(
+              legacyParsed.generatorId,
+              legacyParsed.operation,
+              legacyParsed.resourceId,
+              value,
+            );
+            continue;
+          }
+
           legacyAccumulators.set(key, value);
         }
       }
