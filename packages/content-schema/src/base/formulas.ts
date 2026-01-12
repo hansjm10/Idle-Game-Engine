@@ -55,8 +55,6 @@ type PiecewiseSegmentModel = {
 
 type ContentIdInput = z.input<typeof contentIdSchema>;
 
-type VariableReferenceTargetInput = VariableReferenceTarget;
-
 type EntityReferenceTargetInput = {
   type: 'resource' | 'generator' | 'upgrade' | 'automation' | 'prestigeLayer';
   id: ContentIdInput;
@@ -66,7 +64,7 @@ type ExpressionNodeInput =
   | { kind: 'literal'; value: number }
   | {
       kind: 'ref';
-      target: VariableReferenceTargetInput | EntityReferenceTargetInput;
+      target: VariableReferenceTarget | EntityReferenceTargetInput;
     }
   | {
       kind: 'binary';
@@ -340,8 +338,9 @@ export const numericFormulaSchema: z.ZodType<
 
 export const formulaNodeSchema = expressionNodeSchema;
 
-export type ExpressionNode = ExpressionNodeModel;
-export type NumericFormula = NumericFormulaModel;
+// Public API aliases for schema consumers.
+export type ExpressionNode = ExpressionNodeModel; // NOSONAR
+export type NumericFormula = NumericFormulaModel; // NOSONAR
 
 function countExpressionNodes(node: ExpressionNodeModel): number {
   switch (node.kind) {

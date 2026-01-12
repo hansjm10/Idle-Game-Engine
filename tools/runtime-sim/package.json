@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sim": "tsx ./index.ts",
-    "benchmark": "tsx ./index.ts --scenario all"
+    "sim": "tsx ./src/index.ts",
+    "benchmark": "tsx ./src/index.ts --scenario all"
   },
   "dependencies": {
     "@idle-engine/core": "workspace:*",

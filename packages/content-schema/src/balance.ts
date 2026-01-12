@@ -908,17 +908,30 @@ const isResourceLockedLater = (resource: NormalizedResource): boolean => {
   return true;
 };
 
-const checkResourceOrdering = (
-  resourceId: string,
-  unlockCondition: Condition | undefined,
-  dependentPath: readonly (string | number)[],
-  dependentId: string,
-  lookup: UnlockOrderingLookup,
-  flagResources: FlagResourceLookup,
-  warnings: ContentSchemaWarning[],
-  errors: ContentSchemaWarning[],
-  sink?: IssueSink,
-) => {
+type ResourceOrderingCheckInput = Readonly<{
+  resourceId: string;
+  unlockCondition: Condition | undefined;
+  dependentPath: readonly (string | number)[];
+  dependentId: string;
+  lookup: UnlockOrderingLookup;
+  flagResources: FlagResourceLookup;
+  warnings: ContentSchemaWarning[];
+  errors: ContentSchemaWarning[];
+  sink?: IssueSink;
+}>;
+
+const checkResourceOrdering = (input: ResourceOrderingCheckInput) => {
+  const {
+    resourceId,
+    unlockCondition,
+    dependentPath,
+    dependentId,
+    lookup,
+    flagResources,
+    warnings,
+    errors,
+    sink,
+  } = input;
   const resource = lookup.resources.get(resourceId);
   if (!resource) {
     return;
@@ -961,41 +974,47 @@ const validateGenerators = (
     if ('costs' in generator.purchase) {
       generator.purchase.costs.forEach((cost, costIndex) => {
         checkResourceOrdering(
-          cost.resourceId,
-          generator.baseUnlock,
-          ['generators', index, 'purchase', 'costs', costIndex, 'resourceId'],
-          generator.id,
-          unlockOrderingLookup,
-          flagResources,
-          warnings,
-          errors,
-          sink,
+          {
+            resourceId: cost.resourceId,
+            unlockCondition: generator.baseUnlock,
+            dependentPath: ['generators', index, 'purchase', 'costs', costIndex, 'resourceId'],
+            dependentId: generator.id,
+            lookup: unlockOrderingLookup,
+            flagResources,
+            warnings,
+            errors,
+            sink,
+          },
         );
       });
     } else {
       checkResourceOrdering(
-        generator.purchase.currencyId,
-        generator.baseUnlock,
-        ['generators', index, 'purchase', 'currencyId'],
-        generator.id,
-        unlockOrderingLookup,
-        flagResources,
-        warnings,
-        errors,
-        sink,
+        {
+          resourceId: generator.purchase.currencyId,
+          unlockCondition: generator.baseUnlock,
+          dependentPath: ['generators', index, 'purchase', 'currencyId'],
+          dependentId: generator.id,
+          lookup: unlockOrderingLookup,
+          flagResources,
+          warnings,
+          errors,
+          sink,
+        },
       );
     }
     generator.consumes.forEach((entry, consumeIndex) => {
       checkResourceOrdering(
-        entry.resourceId,
-        generator.baseUnlock,
-        ['generators', index, 'consumes', consumeIndex, 'resourceId'],
-        generator.id,
-        unlockOrderingLookup,
-        flagResources,
-        warnings,
-        errors,
-        sink,
+        {
+          resourceId: entry.resourceId,
+          unlockCondition: generator.baseUnlock,
+          dependentPath: ['generators', index, 'consumes', consumeIndex, 'resourceId'],
+          dependentId: generator.id,
+          lookup: unlockOrderingLookup,
+          flagResources,
+          warnings,
+          errors,
+          sink,
+        },
       );
     });
   });
@@ -1020,28 +1039,32 @@ const validateUpgrades = (
     if ('costs' in upgrade.cost) {
       upgrade.cost.costs.forEach((cost, costIndex) => {
         checkResourceOrdering(
-          cost.resourceId,
-          upgrade.unlockCondition,
-          ['upgrades', index, 'cost', 'costs', costIndex, 'resourceId'],
-          upgrade.id,
-          unlockOrderingLookup,
-          flagResources,
-          warnings,
-          errors,
-          sink,
+          {
+            resourceId: cost.resourceId,
+            unlockCondition: upgrade.unlockCondition,
+            dependentPath: ['upgrades', index, 'cost', 'costs', costIndex, 'resourceId'],
+            dependentId: upgrade.id,
+            lookup: unlockOrderingLookup,
+            flagResources,
+            warnings,
+            errors,
+            sink,
+          },
         );
       });
     } else {
       checkResourceOrdering(
-        upgrade.cost.currencyId,
-        upgrade.unlockCondition,
-        ['upgrades', index, 'cost', 'currencyId'],
-        upgrade.id,
-        unlockOrderingLookup,
-        flagResources,
-        warnings,
-        errors,
-        sink,
+        {
+          resourceId: upgrade.cost.currencyId,
+          unlockCondition: upgrade.unlockCondition,
+          dependentPath: ['upgrades', index, 'cost', 'currencyId'],
+          dependentId: upgrade.id,
+          lookup: unlockOrderingLookup,
+          flagResources,
+          warnings,
+          errors,
+          sink,
+        },
       );
     }
   });

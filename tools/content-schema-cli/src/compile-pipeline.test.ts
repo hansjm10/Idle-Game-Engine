@@ -1,3 +1,7 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import type { WorkspaceCompileResult } from '@idle-engine/content-compiler';
@@ -6,6 +10,7 @@ import { ContentPackValidationError } from './generate.js';
 import {
   ensureCoreDistRuntimeEventManifest,
   executeCompilePipeline,
+  spawnProcess,
 } from './compile-pipeline.js';
 
 const EMPTY_COMPILE_RESULT: WorkspaceCompileResult = {
@@ -146,6 +151,82 @@ describe('executeCompilePipeline', () => {
     expect(onUnhandledError).not.toHaveBeenCalled();
   });
 
+  it('persists validation failure summaries deterministically', async () => {
+    const workspaceRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'idle-engine-content-validation-cli-'),
+    );
+
+    try {
+      const buildRuntimeEventManifest = vi.fn().mockResolvedValue({
+        manifestDefinitions: [],
+        moduleSource: 'module source',
+        manifestHash: 'deadbeef',
+      });
+      const validateContentPacks = vi.fn().mockRejectedValue(
+        new ContentPackValidationError('invalid', {
+          failures: [
+            {
+              packSlug: 'alpha',
+              path: 'packages/alpha-pack/content/alpha.json',
+              message: 'Invalid content',
+            },
+          ],
+        }),
+      );
+      const compileWorkspacePacks = vi.fn();
+      const logger = vi.fn();
+      const onUnhandledError = vi.fn();
+
+      const runOnce = async ({ clean }: { clean: boolean }) =>
+        executeCompilePipeline({
+          options: {
+            check: true,
+            clean,
+            pretty: false,
+            summary: undefined,
+          },
+          workspaceRoot,
+          logger,
+          compileWorkspacePacks,
+          callbacks: {
+            onUnhandledError,
+          },
+          dependencies: {
+            buildRuntimeEventManifest,
+            validateContentPacks,
+          },
+        });
+
+      const first = await runOnce({ clean: false });
+      expect(first.success).toBe(false);
+      expect(first.drift).toBe(true);
+      expect(first.runSummary?.summaryAction).toBe('written');
+
+      const summaryPath = path.join(
+        workspaceRoot,
+        'content',
+        'compiled',
+        'index.json',
+      );
+      const summaryRaw = await fs.readFile(summaryPath, 'utf8');
+      const summary = JSON.parse(summaryRaw) as { packs?: Array<{ slug?: string; status?: string }> };
+      expect(summary.packs?.[0]).toMatchObject({ slug: 'alpha', status: 'failed' });
+
+      const second = await runOnce({ clean: false });
+      expect(second.drift).toBe(false);
+      expect(second.runSummary?.summaryAction).toBe('unchanged');
+
+      const third = await runOnce({ clean: true });
+      expect(third.drift).toBe(true);
+      expect(third.runSummary?.summaryAction).toBe('written');
+
+      expect(compileWorkspacePacks).not.toHaveBeenCalled();
+      expect(onUnhandledError).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('reports unhandled errors before returning failure', async () => {
     const error = new Error('boom');
     const buildRuntimeEventManifest = vi.fn().mockRejectedValue(error);
@@ -207,6 +288,50 @@ describe('ensureCoreDistRuntimeEventManifest', () => {
     });
   });
 
+  it('skips when the core dist manifest is missing in check mode', async () => {
+    const missing = new Error('missing') as NodeJS.ErrnoException;
+    missing.code = 'ENOENT';
+
+    const result = await ensureCoreDistRuntimeEventManifest({
+      rootDirectory: '/workspace',
+      expectedHash: 'deadbeef',
+      check: true,
+      io: {
+        access: vi.fn().mockResolvedValue(undefined),
+        readFile: vi.fn().mockRejectedValue(missing),
+        spawnProcess: vi.fn(),
+        env: {},
+      },
+    });
+
+    expect(result).toEqual({
+      action: 'skipped',
+      path: 'packages/core/dist/events/runtime-event-manifest.generated.js',
+      expectedHash: 'deadbeef',
+      actualHash: undefined,
+      reason: 'missing core dist runtime event manifest',
+    });
+  });
+
+  it('rethrows unexpected read errors for the core dist manifest', async () => {
+    const readError = new Error('nope') as NodeJS.ErrnoException;
+    readError.code = 'EACCES';
+
+    await expect(
+      ensureCoreDistRuntimeEventManifest({
+        rootDirectory: '/workspace',
+        expectedHash: 'deadbeef',
+        check: true,
+        io: {
+          access: vi.fn().mockResolvedValue(undefined),
+          readFile: vi.fn().mockRejectedValue(readError),
+          spawnProcess: vi.fn(),
+          env: {},
+        },
+      }),
+    ).rejects.toBe(readError);
+  });
+
   it('builds when hashes differ in write mode', async () => {
     const readFile = vi
       .fn()
@@ -237,5 +362,22 @@ describe('ensureCoreDistRuntimeEventManifest', () => {
       actualHash: 'deadbeef',
     });
     expect(spawnProcess).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('spawnProcess', () => {
+  it('captures stdout/stderr and exit code', async () => {
+    const result = await spawnProcess(
+      'node',
+      [
+        '-e',
+        "process.stdout.write('hello'); process.stderr.write('world');",
+      ],
+      { cwd: process.cwd(), env: process.env },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('hello');
+    expect(result.stderr).toContain('world');
   });
 });

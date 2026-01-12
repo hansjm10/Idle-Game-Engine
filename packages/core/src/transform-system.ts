@@ -157,6 +157,225 @@ function normalizeNonNegativeInt(value: unknown): number {
   return Math.floor(value);
 }
 
+function parseNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function parseEntityInstanceIds(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const ids = value.filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0,
+  );
+  return ids.length > 0 ? ids : undefined;
+}
+
+function parseOptionalEntityExperience(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return Math.max(0, value);
+}
+
+function parseTransformBatchOutputs(value: unknown): TransformBatchOutput[] {
+  const outputsArray = Array.isArray(value) ? value : [];
+  const outputs: TransformBatchOutput[] = [];
+
+  for (const outputEntry of outputsArray) {
+    if (!outputEntry || typeof outputEntry !== 'object') {
+      continue;
+    }
+
+    const outputRecord = outputEntry as Record<string, unknown>;
+    const resourceId = outputRecord.resourceId;
+    const amountValue = outputRecord.amount;
+
+    if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
+      continue;
+    }
+
+    if (typeof amountValue !== 'number' || !Number.isFinite(amountValue)) {
+      continue;
+    }
+
+    outputs.push({
+      resourceId,
+      amount: Math.max(0, amountValue),
+    });
+  }
+
+  return outputs;
+}
+
+function parseMissionPreparedOutcome(value: unknown): MissionPreparedOutcome {
+  if (!value || typeof value !== 'object') {
+    return { outputs: [], entityExperience: 0 };
+  }
+
+  const record = value as Record<string, unknown>;
+  const entityExperienceValue = record.entityExperience;
+  const entityExperience =
+    typeof entityExperienceValue === 'number' && Number.isFinite(entityExperienceValue)
+      ? Math.max(0, entityExperienceValue)
+      : 0;
+
+  return {
+    outputs: parseTransformBatchOutputs(record.outputs),
+    entityExperience,
+  };
+}
+
+function parseMissionPlan(value: unknown): MissionBatchPlan | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const baseRateValue = record.baseRate;
+  const baseRate =
+    typeof baseRateValue === 'number' && Number.isFinite(baseRateValue)
+      ? clampProbability(baseRateValue)
+      : 0;
+
+  const criticalChanceValue = record.criticalChance;
+  const criticalChance =
+    typeof criticalChanceValue === 'number' && Number.isFinite(criticalChanceValue)
+      ? clampProbability(criticalChanceValue)
+      : undefined;
+
+  const criticalValue = record.critical;
+  const critical =
+    criticalValue && typeof criticalValue === 'object'
+      ? parseMissionPreparedOutcome(criticalValue)
+      : undefined;
+
+  return {
+    baseRate,
+    usePRD: Boolean(record.usePRD),
+    ...(criticalChance === undefined ? {} : { criticalChance }),
+    success: parseMissionPreparedOutcome(record.success),
+    failure: parseMissionPreparedOutcome(record.failure),
+    ...(critical ? { critical } : {}),
+  };
+}
+
+function rebaseStepValue(
+  value: number,
+  rebaseDelta: number,
+): number {
+  return Math.max(0, value + rebaseDelta);
+}
+
+function parseTransformBatchEntry(
+  value: unknown,
+  rebaseDelta: number,
+  sequence: number,
+): TransformBatchQueueEntry | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const normalizedCompleteAtStep = normalizeNonNegativeInt(record.completeAtStep);
+  const completeAtStep = rebaseStepValue(
+    normalizedCompleteAtStep,
+    rebaseDelta,
+  );
+
+  const outputs = parseTransformBatchOutputs(record.outputs);
+  const batchId = parseNonEmptyString(record.batchId);
+  const entityInstanceIds = parseEntityInstanceIds(record.entityInstanceIds);
+  const entityExperience = parseOptionalEntityExperience(record.entityExperience);
+  const mission = parseMissionPlan(record.mission);
+
+  return {
+    completeAtStep,
+    outputs,
+    ...(batchId ? { batchId } : {}),
+    ...(entityInstanceIds ? { entityInstanceIds } : {}),
+    ...(entityExperience === undefined ? {} : { entityExperience }),
+    ...(mission ? { mission } : {}),
+    sequence,
+  };
+}
+
+function parseTransformBatchEntries(
+  batchesValue: unknown,
+  rebaseDelta: number,
+): TransformBatchQueueEntry[] {
+  if (!Array.isArray(batchesValue)) {
+    return [];
+  }
+
+  const restoredBatches: TransformBatchQueueEntry[] = [];
+  let sequence = 0;
+
+  for (const batchEntry of batchesValue) {
+    const parsed = parseTransformBatchEntry(
+      batchEntry,
+      rebaseDelta,
+      sequence,
+    );
+    if (!parsed) {
+      continue;
+    }
+    restoredBatches.push(parsed);
+    sequence += 1;
+  }
+
+  return restoredBatches;
+}
+
+function restoreTransformStateEntry(
+  entry: unknown,
+  transformStates: Map<string, TransformState>,
+  batchSequences: Map<string, number>,
+  rebaseDelta: number,
+): void {
+  if (!entry || typeof entry !== 'object') {
+    return;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const id = record.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    return;
+  }
+
+  const existing = transformStates.get(id);
+  if (!existing) {
+    return;
+  }
+
+  const unlockedValue = record.unlocked;
+  const unlocked = typeof unlockedValue === 'boolean' ? unlockedValue : false;
+
+  const normalizedCooldown = normalizeNonNegativeInt(record.cooldownExpiresStep);
+  const rebasedCooldown = rebaseStepValue(
+    normalizedCooldown,
+    rebaseDelta,
+  );
+
+  existing.unlocked = existing.unlocked || unlocked;
+  existing.cooldownExpiresStep = rebasedCooldown;
+  existing.runsThisTick = 0;
+
+  const batchesValue = (record as { batches?: unknown }).batches;
+  if (!Array.isArray(batchesValue) || !existing.batches) {
+    return;
+  }
+
+  const restoredBatches = parseTransformBatchEntries(
+    batchesValue,
+    rebaseDelta,
+  );
+  existing.batches = restoredBatches as TransformBatchState[];
+  batchSequences.set(id, restoredBatches.length);
+}
+
 type SerializedMissionPreparedOutcome = Readonly<{
   readonly outputs: readonly TransformBatchOutput[];
   readonly entityExperience: number;
@@ -2170,185 +2389,18 @@ export function createTransformSystem(
 
       const savedWorkerStep = restoreOptions?.savedWorkerStep;
       const targetCurrentStep = restoreOptions?.currentStep ?? 0;
-      const hasValidSavedStep =
-        typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
-
-      const rebaseDelta = hasValidSavedStep
-        ? targetCurrentStep - savedWorkerStep
-        : 0;
+      const rebaseDelta =
+        typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep)
+          ? targetCurrentStep - savedWorkerStep
+          : 0;
 
       for (const entry of stateArray) {
-        if (!entry || typeof entry !== 'object') {
-          continue;
-        }
-
-        const record = entry as unknown as Record<string, unknown>;
-        const id = record.id;
-        if (typeof id !== 'string' || id.trim().length === 0) {
-          continue;
-        }
-
-        const existing = transformStates.get(id);
-        if (!existing) {
-          continue;
-        }
-
-        const unlockedValue = record.unlocked;
-        const unlocked =
-          typeof unlockedValue === 'boolean' ? unlockedValue : false;
-
-        const normalizedCooldown = normalizeNonNegativeInt(
-          record.cooldownExpiresStep,
+        restoreTransformStateEntry(
+          entry,
+          transformStates,
+          batchSequences,
+          rebaseDelta,
         );
-        const rebasedCooldown = hasValidSavedStep
-          ? Math.max(0, normalizedCooldown + rebaseDelta)
-          : normalizedCooldown;
-
-        existing.unlocked = existing.unlocked || unlocked;
-        existing.cooldownExpiresStep = rebasedCooldown;
-        existing.runsThisTick = 0;
-
-        const batchesValue = (record as { batches?: unknown }).batches;
-        if (Array.isArray(batchesValue) && existing.batches) {
-          const restoredBatches: TransformBatchQueueEntry[] = [];
-          let sequence = 0;
-
-          for (const batchEntry of batchesValue) {
-            if (!batchEntry || typeof batchEntry !== 'object') {
-              continue;
-            }
-
-            const batchRecord = batchEntry as Record<string, unknown>;
-            const normalizedCompleteAtStep = normalizeNonNegativeInt(
-              batchRecord.completeAtStep,
-            );
-            const rebasedCompleteAtStep = hasValidSavedStep
-              ? Math.max(0, normalizedCompleteAtStep + rebaseDelta)
-              : normalizedCompleteAtStep;
-
-            const outputsValue = batchRecord.outputs;
-            const outputs: TransformBatchOutput[] = [];
-            const entityInstanceIdsValue = batchRecord.entityInstanceIds;
-            const entityInstanceIds = Array.isArray(entityInstanceIdsValue)
-              ? entityInstanceIdsValue.filter(
-                  (id): id is string =>
-                    typeof id === 'string' && id.trim().length > 0,
-                )
-              : undefined;
-            const entityExperienceValue = batchRecord.entityExperience;
-            const entityExperience =
-              typeof entityExperienceValue === 'number' &&
-              Number.isFinite(entityExperienceValue)
-                ? Math.max(0, entityExperienceValue)
-                : undefined;
-
-            const batchIdValue = batchRecord.batchId;
-            const batchId =
-              typeof batchIdValue === 'string' && batchIdValue.trim().length > 0
-                ? batchIdValue
-                : undefined;
-
-            const parseOutputs = (value: unknown): TransformBatchOutput[] => {
-              const outputsArray = Array.isArray(value) ? value : [];
-              const outputs: TransformBatchOutput[] = [];
-
-              for (const outputEntry of outputsArray) {
-                if (!outputEntry || typeof outputEntry !== 'object') {
-                  continue;
-                }
-
-                const outputRecord = outputEntry as Record<string, unknown>;
-                const resourceId = outputRecord.resourceId;
-                const amountValue = outputRecord.amount;
-
-                if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
-                  continue;
-                }
-
-                if (typeof amountValue !== 'number' || !Number.isFinite(amountValue)) {
-                  continue;
-                }
-
-                outputs.push({
-                  resourceId,
-                  amount: Math.max(0, amountValue),
-                });
-              }
-
-              return outputs;
-            };
-
-            const parseMissionOutcome = (value: unknown): MissionPreparedOutcome => {
-              if (!value || typeof value !== 'object') {
-                return { outputs: [], entityExperience: 0 };
-              }
-
-              const record = value as Record<string, unknown>;
-              const entityExperienceValue = record.entityExperience;
-              const entityExperience =
-                typeof entityExperienceValue === 'number' &&
-                Number.isFinite(entityExperienceValue)
-                  ? Math.max(0, entityExperienceValue)
-                  : 0;
-
-              return {
-                outputs: parseOutputs(record.outputs),
-                entityExperience,
-              };
-            };
-
-            let mission: MissionBatchPlan | undefined;
-            const missionValue = batchRecord.mission;
-            if (missionValue && typeof missionValue === 'object') {
-              const missionRecord = missionValue as Record<string, unknown>;
-              const baseRateValue = missionRecord.baseRate;
-              const baseRate =
-                typeof baseRateValue === 'number' && Number.isFinite(baseRateValue)
-                  ? clampProbability(baseRateValue)
-                  : 0;
-
-              const criticalChanceValue = missionRecord.criticalChance;
-              const criticalChance =
-                typeof criticalChanceValue === 'number' &&
-                Number.isFinite(criticalChanceValue)
-                  ? clampProbability(criticalChanceValue)
-                  : undefined;
-
-              const criticalValue = missionRecord.critical;
-              const critical =
-                criticalValue && typeof criticalValue === 'object'
-                  ? parseMissionOutcome(criticalValue)
-                  : undefined;
-
-              mission = {
-                baseRate,
-                usePRD: Boolean(missionRecord.usePRD),
-                ...(criticalChance === undefined ? {} : { criticalChance }),
-                success: parseMissionOutcome(missionRecord.success),
-                failure: parseMissionOutcome(missionRecord.failure),
-                ...(critical ? { critical } : {}),
-              };
-            }
-
-            outputs.push(...parseOutputs(outputsValue));
-
-            restoredBatches.push({
-              completeAtStep: rebasedCompleteAtStep,
-              outputs,
-              ...(batchId ? { batchId } : {}),
-              ...(entityInstanceIds && entityInstanceIds.length > 0
-                ? { entityInstanceIds }
-                : {}),
-              ...(entityExperience === undefined ? {} : { entityExperience }),
-              ...(mission ? { mission } : {}),
-              sequence,
-            });
-            sequence += 1;
-          }
-
-          existing.batches = restoredBatches as TransformBatchState[];
-          batchSequences.set(id, restoredBatches.length);
-        }
       }
     },
 

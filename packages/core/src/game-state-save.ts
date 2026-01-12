@@ -42,7 +42,8 @@ export type GameStateSaveFormatV1 = Readonly<{
   readonly runtime: GameStateSaveRuntime;
 }>;
 
-export type GameStateSaveFormat = GameStateSaveFormatV1;
+// Stable alias for versioned persistence format.
+export type GameStateSaveFormat = GameStateSaveFormatV1; // NOSONAR
 
 export interface SchemaMigration {
   readonly fromVersion: number;
@@ -227,15 +228,9 @@ export const DEFAULT_GAME_STATE_SAVE_MIGRATIONS: readonly SchemaMigration[] =
     },
   ]);
 
-function findMigrationPath(
+function buildMigrationIndex(
   migrations: readonly SchemaMigration[],
-  fromVersion: number,
-  toVersion: number,
-): readonly SchemaMigration[] | undefined {
-  if (fromVersion === toVersion) {
-    return [];
-  }
-
+): ReadonlyMap<number, readonly SchemaMigration[]> {
   const migrationsByFrom = new Map<number, SchemaMigration[]>();
   for (const migration of migrations) {
     const list = migrationsByFrom.get(migration.fromVersion);
@@ -245,17 +240,21 @@ function findMigrationPath(
       migrationsByFrom.set(migration.fromVersion, [migration]);
     }
   }
+  return migrationsByFrom;
+}
 
+function searchMigrationPath(
+  migrationsByFrom: ReadonlyMap<number, readonly SchemaMigration[]>,
+  fromVersion: number,
+  toVersion: number,
+): readonly SchemaMigration[] | undefined {
   const queue: Array<{ version: number; path: SchemaMigration[] }> = [
     { version: fromVersion, path: [] },
   ];
   const visited = new Set<number>([fromVersion]);
 
   while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      break;
-    }
+    const current = queue.shift()!;
 
     const nextMigrations = migrationsByFrom.get(current.version) ?? [];
     for (const migration of nextMigrations) {
@@ -274,6 +273,19 @@ function findMigrationPath(
   }
 
   return undefined;
+}
+
+function findMigrationPath(
+  migrations: readonly SchemaMigration[],
+  fromVersion: number,
+  toVersion: number,
+): readonly SchemaMigration[] | undefined {
+  if (fromVersion === toVersion) {
+    return [];
+  }
+
+  const migrationsByFrom = buildMigrationIndex(migrations);
+  return searchMigrationPath(migrationsByFrom, fromVersion, toVersion);
 }
 
 function validateSaveFormatV1(value: unknown): GameStateSaveFormatV1 {

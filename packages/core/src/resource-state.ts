@@ -19,9 +19,9 @@ const DIRTY_EPSILON_RELATIVE = 1e-9;
 const DIRTY_EPSILON_CEILING = 1e-3;
 const DIRTY_EPSILON_OVERRIDE_MAX = 5e-1;
 
-const FLAG_VISIBLE = 1 << 0;
-const FLAG_UNLOCKED = 1 << 1;
-const FLAG_DIRTY_THIS_TICK = 1 << 2;
+const FLAG_VISIBLE = 1;
+const FLAG_UNLOCKED = 2;
+const FLAG_DIRTY_THIS_TICK = 4;
 
 const SCRATCH_UNSET = -1;
 const SCRATCH_VISITED = -2;
@@ -1527,73 +1527,93 @@ function validateDefinitionDigest(
   }
 }
 
+function assertSerializedAmount(amount: number, index: number): void {
+  if (Number.isFinite(amount)) {
+    return;
+  }
+
+  telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+    reason: 'invalid-amount',
+    index,
+    value: amount,
+  });
+  throw new Error('Serialized resource amounts must be finite numbers.');
+}
+
+function assertSerializedCapacity(
+  capacity: number | null,
+  index: number,
+): void {
+  if (capacity === null || (Number.isFinite(capacity) && capacity >= 0)) {
+    return;
+  }
+
+  telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+    reason: 'invalid-capacity',
+    index,
+    value: capacity,
+  });
+  throw new Error(
+    'Serialized resource capacities must be null or finite, non-negative numbers.',
+  );
+}
+
+function assertSerializedFlag(flag: number, index: number): void {
+  if (Number.isInteger(flag) && flag >= 0 && flag <= 0xff) {
+    return;
+  }
+
+  telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+    reason: 'invalid-flag',
+    index,
+    value: flag,
+  });
+  throw new Error('Serialized resource flags must be integers between 0 and 255.');
+}
+
+function assertOptionalSerializedBoolean(
+  values: readonly boolean[] | undefined,
+  index: number,
+  reason: 'invalid-unlocked' | 'invalid-visible',
+  message: string,
+): void {
+  if (!values) {
+    return;
+  }
+
+  const value = values[index];
+  if (typeof value === 'boolean') {
+    return;
+  }
+
+  telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
+    reason,
+    index,
+    value,
+  });
+  throw new Error(message);
+}
+
 function validateSerializedValues(
   serialized: SerializedResourceState,
   expectedLength: number,
 ): void {
   for (let index = 0; index < expectedLength; index += 1) {
-    const amount = serialized.amounts[index];
-    if (!Number.isFinite(amount)) {
-      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
-        reason: 'invalid-amount',
-        index,
-        value: amount,
-      });
-      throw new Error('Serialized resource amounts must be finite numbers.');
-    }
-
-    const capacity = serialized.capacities[index];
-    if (
-      capacity !== null &&
-      (!Number.isFinite(capacity) || capacity < 0)
-    ) {
-      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
-        reason: 'invalid-capacity',
-        index,
-        value: capacity,
-      });
-      throw new Error(
-        'Serialized resource capacities must be null or finite, non-negative numbers.',
-      );
-    }
-
-    const flag = serialized.flags[index];
-    if (!Number.isInteger(flag) || flag < 0 || flag > 0xff) {
-      telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
-        reason: 'invalid-flag',
-        index,
-        value: flag,
-      });
-      throw new Error('Serialized resource flags must be integers between 0 and 255.');
-    }
-
-    if (serialized.unlocked !== undefined) {
-      const unlockedValue = serialized.unlocked[index];
-      if (typeof unlockedValue !== 'boolean') {
-        telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
-          reason: 'invalid-unlocked',
-          index,
-          value: unlockedValue,
-        });
-        throw new Error(
-          'Serialized resource unlocked values must be boolean when provided.',
-        );
-      }
-    }
-
-    if (serialized.visible !== undefined) {
-      const visibleValue = serialized.visible[index];
-      if (typeof visibleValue !== 'boolean') {
-        telemetry.recordError(TELEMETRY_HYDRATION_INVALID_DATA, {
-          reason: 'invalid-visible',
-          index,
-          value: visibleValue,
-        });
-        throw new Error(
-          'Serialized resource visible values must be boolean when provided.',
-        );
-      }
-    }
+    assertSerializedAmount(serialized.amounts[index], index);
+    assertSerializedCapacity(serialized.capacities[index], index);
+    assertSerializedFlag(serialized.flags[index], index);
+    assertOptionalSerializedBoolean(
+      serialized.unlocked,
+      index,
+      'invalid-unlocked',
+      'Serialized resource unlocked values must be boolean when provided.',
+    );
+    assertOptionalSerializedBoolean(
+      serialized.visible,
+      index,
+      'invalid-visible',
+      'Serialized resource visible values must be boolean when provided.',
+    );
   }
 }
 

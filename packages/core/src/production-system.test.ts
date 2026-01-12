@@ -630,7 +630,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -656,7 +656,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -709,7 +709,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -742,6 +742,64 @@ describe('createProductionSystem', () => {
       expect(tickStats[3].produced.get('gold')).toBe(0.01); // Now 0.01 is applied
     });
 
+    it('should report applied produced amount when capacity clamps (standard vs applyViaFinalizeTick)', () => {
+      const resourcesStandard = createResourceState([
+        { id: 'gold', startAmount: 4, capacity: 5 },
+      ]);
+      const resourcesShadow = createResourceState([
+        { id: 'gold', startAmount: 4, capacity: 5 },
+      ]);
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [],
+        },
+      ];
+
+      const standardTickStats: {
+        produced: Map<string, number>;
+        consumed: Map<string, number>;
+      }[] = [];
+      const shadowTickStats: {
+        produced: Map<string, number>;
+        consumed: Map<string, number>;
+      }[] = [];
+
+      const standard = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesStandard,
+        onTick: (stats) => standardTickStats.push(stats),
+      });
+      const shadow = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesShadow,
+        applyViaFinalizeTick: true,
+        onTick: (stats) => shadowTickStats.push(stats),
+      });
+
+      standard.tick(createTickContext(1000, 0));
+      shadow.tick(createTickContext(1000, 0));
+      resourcesShadow.finalizeTick(1000);
+
+      resourcesStandard.snapshot({ mode: 'publish' });
+      resourcesShadow.snapshot({ mode: 'publish' });
+
+      const standardGoldIndex = resourcesStandard.getIndex('gold')!;
+      const shadowGoldIndex = resourcesShadow.getIndex('gold')!;
+
+      expect(resourcesStandard.getAmount(standardGoldIndex)).toBe(5);
+      expect(resourcesShadow.getAmount(shadowGoldIndex)).toBe(5);
+
+      expect(standardTickStats).toHaveLength(1);
+      expect(shadowTickStats).toHaveLength(1);
+
+      // Capacity allows only +1 (4 -> 5), so onTick should report applied amount.
+      expect(standardTickStats[0].produced.get('gold')).toBe(1);
+      expect(shadowTickStats[0].produced.get('gold')).toBe(1);
+    });
+
     it('should aggregate amounts from multiple generators', () => {
       const resources = createTestResources();
       const generators = [
@@ -759,7 +817,7 @@ describe('createProductionSystem', () => {
         },
       ];
 
-      const tickStats: Array<{ produced: Map<string, number>; consumed: Map<string, number> }> = [];
+      const tickStats: { produced: Map<string, number>; consumed: Map<string, number> }[] = [];
       const system = createProductionSystem({
         generators: () => generators,
         resourceState: resources,
@@ -1105,6 +1163,263 @@ describe('createProductionSystem', () => {
 
       expect(resources.getAmount(goldIndex)).toBeCloseTo(10, 6);
       expect(resources.getAmount(woodIndex)).toBeCloseTo(80, 6);
+    });
+
+    it('standard flow applies production and consumption correctly', () => {
+      const resourceAmounts = new Map<number, number>([
+        [0, 100], // gold
+        [1, 50], // energy
+      ]);
+
+      const resourceState = {
+        getIndex: (id: string) => (id === 'gold' ? 0 : id === 'energy' ? 1 : undefined),
+        getAmount: (index: number) => resourceAmounts.get(index) ?? 0,
+        addAmount: (index: number, amount: number) => {
+          resourceAmounts.set(index, (resourceAmounts.get(index) ?? 0) + amount);
+        },
+        spendAmount: (index: number, amount: number) => {
+          const current = resourceAmounts.get(index) ?? 0;
+          if (current >= amount) {
+            resourceAmounts.set(index, current - amount);
+            return true;
+          }
+          return false;
+        },
+      };
+
+      const generators = [
+        {
+          id: 'smelter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState,
+      });
+
+      system.tick(createTickContext(1000, 0));
+
+      expect(resourceAmounts.get(0)).toBe(120); // 100 + 20 gold
+      expect(resourceAmounts.get(1)).toBe(40); // 50 - 10 energy
+    });
+
+    it('avoids overspending when epsilon aligns toApply above accumulator total', () => {
+      const resourceAmounts = new Map<number, number>([
+        [0, 0], // gold
+        [1, 0.09 + 0.01], // energy
+      ]);
+
+      const resourceState = {
+        getIndex: (id: string) => (id === 'gold' ? 0 : id === 'energy' ? 1 : undefined),
+        getAmount: (index: number) => resourceAmounts.get(index) ?? 0,
+        addAmount: (index: number, amount: number) => {
+          resourceAmounts.set(index, (resourceAmounts.get(index) ?? 0) + amount);
+        },
+        spendAmount: (index: number, amount: number) => {
+          const current = resourceAmounts.get(index) ?? 0;
+          if (current < amount) {
+            throw new Error(`Insufficient resources: ${current} < ${amount}`);
+          }
+          resourceAmounts.set(index, current - amount);
+          return true;
+        },
+      };
+
+      const generators = [
+        {
+          id: 'smelter',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 1 }],
+          consumes: [{ resourceId: 'energy', rate: 1 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState,
+        applyThreshold: 0.1,
+      });
+
+      expect(() => {
+        system.tick(createTickContext(90, 0));
+        system.tick(createTickContext(10, 1));
+      }).not.toThrow();
+
+      expect(resourceAmounts.get(0)).toBeCloseTo(0.1, 12);
+      expect(resourceAmounts.get(1)).toBeCloseTo(0, 12);
+    });
+
+    it('shadow flow produces identical results to standard flow under same conditions', () => {
+      const resourceAmounts = new Map<number, number>([
+        [0, 100], // gold
+        [1, 50], // energy
+      ]);
+      const incomeRates = new Map<number, number>();
+      const expenseRates = new Map<number, number>();
+
+      const resourceState = {
+        getIndex: (id: string) => (id === 'gold' ? 0 : id === 'energy' ? 1 : undefined),
+        getAmount: (index: number) => resourceAmounts.get(index) ?? 0,
+        addAmount: (index: number, amount: number) => {
+          resourceAmounts.set(index, (resourceAmounts.get(index) ?? 0) + amount);
+        },
+        spendAmount: (index: number, amount: number) => {
+          const current = resourceAmounts.get(index) ?? 0;
+          if (current >= amount) {
+            resourceAmounts.set(index, current - amount);
+            return true;
+          }
+          return false;
+        },
+        applyIncome: (index: number, rate: number) => {
+          incomeRates.set(index, (incomeRates.get(index) ?? 0) + rate);
+        },
+        applyExpense: (index: number, rate: number) => {
+          expenseRates.set(index, (expenseRates.get(index) ?? 0) + rate);
+        },
+        finalizeTick: (deltaMs: number) => {
+          const deltaSeconds = deltaMs / 1000;
+          for (const [index, rate] of incomeRates) {
+            resourceAmounts.set(
+              index,
+              (resourceAmounts.get(index) ?? 0) + rate * deltaSeconds,
+            );
+          }
+          for (const [index, rate] of expenseRates) {
+            resourceAmounts.set(
+              index,
+              (resourceAmounts.get(index) ?? 0) - rate * deltaSeconds,
+            );
+          }
+          incomeRates.clear();
+          expenseRates.clear();
+        },
+        getCapacity: () => Number.POSITIVE_INFINITY,
+      };
+
+      const generators = [
+        {
+          id: 'smelter',
+          owned: 2,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [{ resourceId: 'energy', rate: 5 }],
+        },
+      ];
+
+      const system = createProductionSystem({
+        generators: () => generators,
+        resourceState,
+        applyViaFinalizeTick: true,
+      });
+
+      system.tick(createTickContext(1000, 0));
+      resourceState.finalizeTick(1000);
+
+      expect(resourceAmounts.get(0)).toBe(120); // 100 + 20 gold
+      expect(resourceAmounts.get(1)).toBe(40); // 50 - 10 energy
+    });
+
+    it('applyViaFinalizeTick matches standard flow when production clamps to capacity', () => {
+      const resourcesStandard = createResourceState([
+        { id: 'gold', startAmount: 4, capacity: 5 },
+      ]);
+      const resourcesShadow = createResourceState([
+        { id: 'gold', startAmount: 4, capacity: 5 },
+      ]);
+
+      const generators = [
+        {
+          id: 'mine',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 10 }],
+          consumes: [],
+        },
+      ];
+
+      const standard = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesStandard,
+      });
+      const shadow = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesShadow,
+        applyViaFinalizeTick: true,
+      });
+
+      standard.tick(createTickContext(1000, 0));
+      shadow.tick(createTickContext(1000, 0));
+      resourcesShadow.finalizeTick(1000);
+
+      const goldStandardIndex = resourcesStandard.getIndex('gold')!;
+      const goldShadowIndex = resourcesShadow.getIndex('gold')!;
+
+      expect(resourcesStandard.getAmount(goldStandardIndex)).toBe(5);
+      expect(resourcesShadow.getAmount(goldShadowIndex)).toBe(5);
+    });
+
+    it('applyViaFinalizeTick matches standard flow with multiple consumptions and generator ordering', () => {
+      const resourcesStandard = createResourceState([
+        { id: 'energy', startAmount: 0 },
+        { id: 'ore', startAmount: 3 },
+        { id: 'gold', startAmount: 0 },
+      ]);
+      const resourcesShadow = createResourceState([
+        { id: 'energy', startAmount: 0 },
+        { id: 'ore', startAmount: 3 },
+        { id: 'gold', startAmount: 0 },
+      ]);
+
+      const generators = [
+        {
+          id: 'charger',
+          owned: 1,
+          produces: [{ resourceId: 'energy', rate: 10 }],
+          consumes: [],
+        },
+        {
+          id: 'smelter',
+          owned: 1,
+          produces: [{ resourceId: 'gold', rate: 4 }],
+          consumes: [
+            { resourceId: 'energy', rate: 8 },
+            { resourceId: 'ore', rate: 5 },
+          ],
+        },
+      ];
+
+      const standard = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesStandard,
+      });
+      const shadow = createProductionSystem({
+        generators: () => generators,
+        resourceState: resourcesShadow,
+        applyViaFinalizeTick: true,
+      });
+
+      standard.tick(createTickContext(1000, 0));
+      shadow.tick(createTickContext(1000, 0));
+      resourcesShadow.finalizeTick(1000);
+
+      const energyStandardIndex = resourcesStandard.getIndex('energy')!;
+      const oreStandardIndex = resourcesStandard.getIndex('ore')!;
+      const goldStandardIndex = resourcesStandard.getIndex('gold')!;
+
+      const energyShadowIndex = resourcesShadow.getIndex('energy')!;
+      const oreShadowIndex = resourcesShadow.getIndex('ore')!;
+      const goldShadowIndex = resourcesShadow.getIndex('gold')!;
+
+      expect(resourcesStandard.getAmount(energyStandardIndex)).toBeCloseTo(5.2, 6);
+      expect(resourcesStandard.getAmount(oreStandardIndex)).toBeCloseTo(0, 6);
+      expect(resourcesStandard.getAmount(goldStandardIndex)).toBeCloseTo(2.4, 6);
+
+      expect(resourcesShadow.getAmount(energyShadowIndex)).toBeCloseTo(5.2, 6);
+      expect(resourcesShadow.getAmount(oreShadowIndex)).toBeCloseTo(0, 6);
+      expect(resourcesShadow.getAmount(goldShadowIndex)).toBeCloseTo(2.4, 6);
     });
   });
 });

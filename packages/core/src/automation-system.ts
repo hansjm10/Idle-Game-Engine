@@ -37,6 +37,7 @@ import type { CommandQueue } from './command-queue.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import { evaluateCondition } from './condition-evaluator.js';
 import type { ConditionContext } from './condition-evaluator.js';
+import type { EventPublisher } from './events/event-bus.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import type { AutomationToggledEventPayload } from './events/runtime-event-catalog.js';
 import { mapSystemTargetToCommandType } from './system-automation-target-mapping.js';
@@ -203,6 +204,271 @@ export interface AutomationSystemOptions {
   readonly isAutomationUnlocked?: (automationId: string) => boolean;
 }
 
+type AutomationTriggerEvaluation = Readonly<{
+  readonly triggered: boolean;
+  readonly thresholdCrossing: boolean;
+}>;
+
+function ensureAutomationUnlocked(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  conditionContext: ConditionContext | undefined,
+  isAutomationUnlocked: ((automationId: string) => boolean) | undefined,
+): void {
+  if (state.unlocked) {
+    return;
+  }
+
+  if (isAutomationUnlocked?.(automation.id)) {
+    state.unlocked = true;
+    return;
+  }
+
+  if (conditionContext) {
+    if (evaluateCondition(automation.unlockCondition, conditionContext)) {
+      state.unlocked = true;
+    }
+    return;
+  }
+
+  if (automation.unlockCondition.kind === 'always') {
+    state.unlocked = true;
+  }
+}
+
+function updateThresholdStateDuringCooldown(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  resourceState: ResourceStateAccessor,
+  formulaContext: FormulaEvaluationContext,
+): void {
+  if (automation.trigger.kind !== 'resourceThreshold') {
+    return;
+  }
+
+  const currentlySatisfied = evaluateResourceThresholdTrigger(
+    automation,
+    resourceState,
+    formulaContext,
+  );
+  if (!currentlySatisfied) {
+    state.lastThresholdSatisfied = false;
+  }
+}
+
+type AutomationTriggerEvaluationContext = Readonly<{
+  step: number;
+  stepDurationMs: number;
+  formulaContext: FormulaEvaluationContext;
+  commandQueue: CommandQueue;
+  resourceState: ResourceStateAccessor;
+  pendingEventTriggers: ReadonlySet<string>;
+}>;
+
+function evaluateAutomationTrigger(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  context: AutomationTriggerEvaluationContext,
+): AutomationTriggerEvaluation {
+  switch (automation.trigger.kind) {
+    case 'interval':
+      return {
+        triggered: evaluateIntervalTrigger(
+          automation,
+          state,
+          context.step,
+          context.stepDurationMs,
+          context.formulaContext,
+        ),
+        thresholdCrossing: false,
+      };
+    case 'resourceThreshold': {
+      const currentThresholdSatisfied = evaluateResourceThresholdTrigger(
+        automation,
+        context.resourceState,
+        context.formulaContext,
+      );
+      const previouslySatisfied = state.lastThresholdSatisfied ?? false;
+
+      const thresholdCrossing = currentThresholdSatisfied && !previouslySatisfied;
+      if (!thresholdCrossing) {
+        state.lastThresholdSatisfied = currentThresholdSatisfied;
+      }
+
+      return {
+        triggered: thresholdCrossing,
+        thresholdCrossing,
+      };
+    }
+    case 'commandQueueEmpty':
+      return {
+        triggered: evaluateCommandQueueEmptyTrigger(context.commandQueue),
+        thresholdCrossing: false,
+      };
+    case 'event':
+      return {
+        triggered: evaluateEventTrigger(automation.id, context.pendingEventTriggers),
+        thresholdCrossing: false,
+      };
+    default: {
+      const exhaustive: never = automation.trigger;
+      return exhaustive;
+    }
+  }
+}
+
+function handleAutomationSpendFailure(
+  automation: AutomationDefinition,
+  state: AutomationState,
+  retainedEventTriggers: Set<string>,
+  thresholdCrossing: boolean,
+): void {
+  if (automation.trigger.kind === 'event') {
+    retainedEventTriggers.add(automation.id);
+  }
+
+  if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
+    state.lastThresholdSatisfied = false;
+  }
+}
+
+function trySpendAutomationResourceCost(
+  automation: AutomationDefinition,
+  formulaContext: FormulaEvaluationContext,
+  resourceState: ResourceStateAccessor,
+): boolean {
+  const cost = automation.resourceCost;
+  if (!cost) {
+    return true;
+  }
+
+  const amountRaw = evaluateNumericFormula(cost.rate, formulaContext);
+  if (!Number.isFinite(amountRaw)) {
+    return false;
+  }
+
+  const amount = Math.max(0, amountRaw);
+  const idx = resourceState.getResourceIndex?.(cost.resourceId) ?? -1;
+  const spender = resourceState.spendAmount;
+  if (idx === -1 || typeof spender !== 'function') {
+    return false;
+  }
+
+  return Boolean(
+    spender(idx, amount, { systemId: 'automation', commandId: automation.id }),
+  );
+}
+
+function processAutomationTick(input: Readonly<{
+  automation: AutomationDefinition;
+  state: AutomationState | undefined;
+  step: number;
+  stepDurationMs: number;
+  formulaContext: FormulaEvaluationContext;
+  retainedEventTriggers: Set<string>;
+  pendingEventTriggers: ReadonlySet<string>;
+  events: EventPublisher;
+  commandQueue: CommandQueue;
+  resourceState: ResourceStateAccessor;
+  conditionContext: ConditionContext | undefined;
+  isAutomationUnlocked: ((automationId: string) => boolean) | undefined;
+}>): void {
+  const state = input.state;
+  if (!state) {
+    return;
+  }
+
+  ensureAutomationUnlocked(
+    input.automation,
+    state,
+    input.conditionContext,
+    input.isAutomationUnlocked,
+  );
+
+  if (!state.unlocked || !state.enabled) {
+    return;
+  }
+
+  if (isCooldownActive(state, input.step)) {
+    updateThresholdStateDuringCooldown(
+      input.automation,
+      state,
+      input.resourceState,
+      input.formulaContext,
+    );
+    return;
+  }
+
+  const evaluation = evaluateAutomationTrigger(
+    input.automation,
+    state,
+    {
+      step: input.step,
+      stepDurationMs: input.stepDurationMs,
+      formulaContext: input.formulaContext,
+      commandQueue: input.commandQueue,
+      resourceState: input.resourceState,
+      pendingEventTriggers: input.pendingEventTriggers,
+    },
+  );
+  if (!evaluation.triggered) {
+    return;
+  }
+
+  if (
+    !trySpendAutomationResourceCost(
+      input.automation,
+      input.formulaContext,
+      input.resourceState,
+    )
+  ) {
+    handleAutomationSpendFailure(
+      input.automation,
+      state,
+      input.retainedEventTriggers,
+      evaluation.thresholdCrossing,
+    );
+    return;
+  }
+
+  input.events.publish('automation:fired', {
+    automationId: input.automation.id,
+    triggerKind: input.automation.trigger.kind,
+    step: input.step,
+  });
+
+  enqueueAutomationCommand(
+    input.automation,
+    input.commandQueue,
+    input.step,
+    input.stepDurationMs,
+    input.formulaContext,
+  );
+
+  state.lastFiredStep = input.step;
+  updateCooldown(
+    input.automation,
+    state,
+    input.step,
+    input.stepDurationMs,
+    input.formulaContext,
+  );
+
+  if (evaluation.thresholdCrossing) {
+    state.lastThresholdSatisfied = true;
+  }
+}
+
+function replacePendingEventTriggers(
+  pendingEventTriggers: Set<string>,
+  retainedEventTriggers: ReadonlySet<string>,
+): void {
+  pendingEventTriggers.clear();
+  for (const id of retainedEventTriggers) {
+    pendingEventTriggers.add(id);
+  }
+}
+
 /**
  * Creates an AutomationSystem that evaluates triggers and enqueues commands.
  *
@@ -364,161 +630,23 @@ export function createAutomationSystem(
 
       // Evaluate each automation
       for (const automation of automations) {
-        const state = automationStates.get(automation.id);
-        if (!state) continue;
-
-        // Update unlock status (only if not already unlocked)
-        // Once unlocked, automations stay unlocked (unlock state is persistent)
-        if (!state.unlocked && isAutomationUnlocked?.(automation.id)) {
-          state.unlocked = true;
-        }
-        if (!state.unlocked) {
-          if (conditionContext) {
-            if (evaluateCondition(automation.unlockCondition, conditionContext)) {
-              state.unlocked = true;
-            }
-          } else if (automation.unlockCondition.kind === 'always') {
-            state.unlocked = true;
-          }
-        }
-
-        // Skip if not unlocked or not enabled
-        if (!state.unlocked || !state.enabled) {
-          continue;
-        }
-
-        // Skip if cooldown is active
-        if (isCooldownActive(state, step)) {
-          // SPECIAL CASE: Update threshold state even during cooldown
-          // This prevents missed crossing detection when cooldown expires.
-          // Without this, if a resource crosses below and back above threshold
-          // during cooldown, the automation won't fire when cooldown expires
-          // because lastThresholdSatisfied remains true (no crossing detected).
-          //
-          // We only update the state when the threshold is NOT satisfied.
-          // This way, if the resource drops below during cooldown and then rises
-          // back above, the "false" state is preserved, allowing the crossing
-          // to be detected when cooldown expires.
-          if (automation.trigger.kind === 'resourceThreshold') {
-            const currentlySatisfied = evaluateResourceThresholdTrigger(
-              automation,
-              resourceState,
-              formulaContext,
-            );
-            if (!currentlySatisfied) {
-              state.lastThresholdSatisfied = currentlySatisfied;
-            }
-          }
-          continue;
-        }
-
-        // Evaluate trigger
-        let triggered = false;
-        let thresholdCrossing = false;
-        let currentThresholdSatisfied = false;
-        switch (automation.trigger.kind) {
-          case 'interval':
-            triggered = evaluateIntervalTrigger(
-              automation,
-              state,
-              step,
-              stepDurationMs,
-              formulaContext,
-            );
-            break;
-          case 'resourceThreshold': {
-            // Detect threshold crossings instead of continuous firing
-            currentThresholdSatisfied = evaluateResourceThresholdTrigger(
-              automation,
-              resourceState,
-              formulaContext,
-            );
-            const previouslySatisfied = state.lastThresholdSatisfied ?? false;
-
-            // Fire only on transition from false -> true (crossing event)
-            thresholdCrossing = currentThresholdSatisfied && !previouslySatisfied;
-            triggered = thresholdCrossing;
-
-            // Do not consume the crossing yet; only update state when there is no crossing.
-            if (!thresholdCrossing) {
-              state.lastThresholdSatisfied = currentThresholdSatisfied;
-            }
-            break;
-          }
-          case 'commandQueueEmpty':
-            triggered = evaluateCommandQueueEmptyTrigger(commandQueue);
-            break;
-          case 'event':
-            triggered = evaluateEventTrigger(automation.id, pendingEventTriggers);
-            break;
-        }
-
-        if (!triggered) {
-          continue;
-        }
-
-        // Enforce optional resource cost atomically before enqueue
-        if (automation.resourceCost) {
-          const cost = automation.resourceCost;
-          const amountRaw = evaluateNumericFormula(cost.rate, formulaContext);
-          if (!Number.isFinite(amountRaw)) {
-            // Reject NaN/Infinity: treat as failed spend
-            if (automation.trigger.kind === 'event') {
-              retainedEventTriggers.add(automation.id);
-            }
-            if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
-              // Do not consume the crossing on failed spend
-              state.lastThresholdSatisfied = false;
-            }
-            continue;
-          }
-
-          const amount = Math.max(0, amountRaw);
-          const idx = resourceState.getResourceIndex?.(cost.resourceId) ?? -1;
-          const spender = resourceState.spendAmount;
-          const ok = idx !== -1 && typeof spender === 'function'
-            ? !!spender(idx, amount, { systemId: 'automation', commandId: automation.id })
-            : false;
-
-          if (!ok) {
-            if (automation.trigger.kind === 'event') {
-              retainedEventTriggers.add(automation.id);
-            }
-            if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
-              state.lastThresholdSatisfied = false; // retrigger while condition holds
-            }
-            continue; // Skip enqueue and cooldown
-          }
-        }
-
-        events.publish('automation:fired', {
-          automationId: automation.id,
-          triggerKind: automation.trigger.kind,
-          step,
-        });
-
-        // Enqueue command
-        enqueueAutomationCommand(
+        processAutomationTick({
           automation,
-          commandQueue,
+          state: automationStates.get(automation.id),
           step,
           stepDurationMs,
           formulaContext,
-        );
-
-        // Update state
-        state.lastFiredStep = step;
-        updateCooldown(automation, state, step, stepDurationMs, formulaContext);
-
-        // After successful fire: consume threshold crossing if applicable
-        if (automation.trigger.kind === 'resourceThreshold' && thresholdCrossing) {
-          state.lastThresholdSatisfied = true;
-        }
+          retainedEventTriggers,
+          pendingEventTriggers,
+          events,
+          commandQueue,
+          resourceState,
+          conditionContext,
+          isAutomationUnlocked,
+        });
       }
 
-      // Clear and repopulate pending event triggers with retained items only
-      pendingEventTriggers.clear();
-      for (const id of retainedEventTriggers) pendingEventTriggers.add(id);
+      replacePendingEventTriggers(pendingEventTriggers, retainedEventTriggers);
     },
   };
 }
@@ -791,24 +919,12 @@ export function evaluateResourceThresholdTrigger(
 
   const { resourceId, comparator, threshold } = automation.trigger;
 
-  // Resolve resource ID to index
-  let resourceIndex = 0;
-  let amount = 0;
-
-  if (resourceState.getResourceIndex) {
-    const resolvedIndex = resourceState.getResourceIndex(resourceId);
-    if (resolvedIndex === -1) {
-      // Resource doesn't exist - treat as 0 amount
-      // Continue with amount = 0 instead of returning false
-      amount = 0;
-    } else {
-      resourceIndex = resolvedIndex;
-      amount = resourceState.getAmount(resourceIndex);
-    }
-  } else {
-    // If getResourceIndex not provided, fall back to index 0 (for legacy tests)
-    amount = resourceState.getAmount(0);
-  }
+  const amount = resourceState.getResourceIndex
+    ? (() => {
+        const idx = resourceState.getResourceIndex?.(resourceId) ?? -1;
+        return idx === -1 ? 0 : resourceState.getAmount(idx);
+      })()
+    : resourceState.getAmount(0);
 
   // Evaluate threshold formula
   const thresholdValue = evaluateNumericFormula(

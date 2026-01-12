@@ -153,92 +153,77 @@ export const automationDefinitionSchema: z.ZodType<
   .strict()
   .superRefine((automation, ctx) => {
     if (automation.targetType === 'system') {
-      if (!automation.systemTargetId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['systemTargetId'],
-          message: 'System automations must declare a systemTargetId.',
-        });
-      }
-      if (automation.targetId !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetId'],
-          message: 'System automations must not declare a targetId.',
-        });
-      }
-      if (automation.targetEnabled !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetEnabled'],
-          message: 'System automations must not declare targetEnabled.',
-        });
-      }
-      if (automation.targetCount !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetCount'],
-          message: 'System automations must not declare targetCount.',
-        });
-      }
-      if (automation.targetAmount !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetAmount'],
-          message: 'System automations must not declare targetAmount.',
-        });
-      }
-    } else {
-      if (!automation.targetId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetId'],
-          message: `Automations targeting "${automation.targetType}" must provide a targetId.`,
-        });
-      }
-
-      if (automation.systemTargetId !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['systemTargetId'],
-          message: 'Only system automations may declare a systemTargetId.',
-        });
-      }
-
-      if (
-        automation.targetType !== 'generator' &&
-        automation.targetEnabled !== undefined
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetEnabled'],
-          message: 'Only generator automations may declare targetEnabled.',
-        });
-      }
-
-      if (
-        automation.targetType !== 'purchaseGenerator' &&
-        automation.targetCount !== undefined
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetCount'],
-          message: 'Only purchaseGenerator automations may declare targetCount.',
-        });
-      }
-
-      if (
-        automation.targetType !== 'collectResource' &&
-        automation.targetAmount !== undefined
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['targetAmount'],
-          message: 'Only collectResource automations may declare targetAmount.',
-        });
-      }
+      validateSystemAutomationTarget(automation, ctx);
+      return;
     }
+
+    validateNonSystemAutomationTarget(automation, ctx);
   });
+
+function addAutomationIssue(
+  ctx: z.RefinementCtx,
+  path: readonly (string | number)[],
+  message: string,
+): void {
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: [...path],
+    message,
+  });
+}
+
+function validateSystemAutomationTarget(
+  automation: AutomationDefinitionModel,
+  ctx: z.RefinementCtx,
+): void {
+  if (!automation.systemTargetId) {
+    addAutomationIssue(ctx, ['systemTargetId'], 'System automations must declare a systemTargetId.');
+  }
+  if (automation.targetId !== undefined) {
+    addAutomationIssue(ctx, ['targetId'], 'System automations must not declare a targetId.');
+  }
+  if (automation.targetEnabled !== undefined) {
+    addAutomationIssue(ctx, ['targetEnabled'], 'System automations must not declare targetEnabled.');
+  }
+  if (automation.targetCount !== undefined) {
+    addAutomationIssue(ctx, ['targetCount'], 'System automations must not declare targetCount.');
+  }
+  if (automation.targetAmount !== undefined) {
+    addAutomationIssue(ctx, ['targetAmount'], 'System automations must not declare targetAmount.');
+  }
+}
+
+function validateNonSystemAutomationTarget(
+  automation: AutomationDefinitionModel,
+  ctx: z.RefinementCtx,
+): void {
+  if (!automation.targetId) {
+    addAutomationIssue(
+      ctx,
+      ['targetId'],
+      `Automations targeting "${automation.targetType}" must provide a targetId.`,
+    );
+  }
+
+  if (automation.systemTargetId !== undefined) {
+    addAutomationIssue(ctx, ['systemTargetId'], 'Only system automations may declare a systemTargetId.');
+  }
+
+  if (automation.targetType !== 'generator' && automation.targetEnabled !== undefined) {
+    addAutomationIssue(ctx, ['targetEnabled'], 'Only generator automations may declare targetEnabled.');
+  }
+
+  if (
+    automation.targetType !== 'purchaseGenerator' &&
+    automation.targetCount !== undefined
+  ) {
+    addAutomationIssue(ctx, ['targetCount'], 'Only purchaseGenerator automations may declare targetCount.');
+  }
+
+  if (automation.targetType !== 'collectResource' && automation.targetAmount !== undefined) {
+    addAutomationIssue(ctx, ['targetAmount'], 'Only collectResource automations may declare targetAmount.');
+  }
+}
 
 export const automationCollectionSchema = z
   .array(automationDefinitionSchema)

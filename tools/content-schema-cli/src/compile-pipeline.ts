@@ -566,12 +566,12 @@ export async function ensureCoreDistRuntimeEventManifest({
   };
 }
 
-interface SpawnProcessOptions {
+export interface SpawnProcessOptions {
   cwd: string;
   env: NodeJS.ProcessEnv;
 }
 
-async function spawnProcess(
+export async function spawnProcess(
   command: string,
   args: string[],
   options: SpawnProcessOptions,

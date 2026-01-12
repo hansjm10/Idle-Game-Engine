@@ -93,46 +93,12 @@ export async function compileWorkspacePacks(
   const dependencyMap = buildDependencyMap(documentsBySlug);
   const topo = topologicallySortDocuments(documentsBySlug, dependencyMap);
 
-  const results: PackArtifactResult[] = [];
-  const failed = new Set<string>();
-
-  for (const slug of topo.ordered) {
-    const document = documentsBySlug.get(slug);
-    if (!document) {
-      continue;
-    }
-
-    const requiredDependencies = extractRequiredDependencies(document);
-    const missingDependencies = dependencyMap.missing.get(slug);
-    if (missingDependencies !== undefined && missingDependencies.size > 0) {
-      results.push(
-        createFailureResult(
-          document,
-          `Pack "${slug}" requires missing dependencies: ${Array.from(missingDependencies).join(', ')}`,
-        ),
-      );
-      failed.add(slug);
-      continue;
-    }
-
-    const failedDependencies = requiredDependencies.filter((dependency) => failed.has(dependency));
-    if (failedDependencies.length > 0) {
-      results.push(
-        createFailureResult(
-          document,
-          `Pack "${slug}" requires dependencies that failed to compile: ${failedDependencies.join(', ')}`,
-        ),
-      );
-      failed.add(slug);
-      continue;
-    }
-
-    const compileResult = await compileContentPack(document, options);
-    results.push(compileResult);
-    if (compileResult.status === 'failed') {
-      failed.add(slug);
-    }
-  }
+  const { results, failed } = await compileTopologicallySortedPacks({
+    orderedSlugs: topo.ordered,
+    documentsBySlug,
+    dependencyMap,
+    options,
+  });
 
   const remainingCycleSlugs = Array.from(topo.cycleSlugs).filter(
     (slug) => !failed.has(slug),
@@ -141,13 +107,7 @@ export async function compileWorkspacePacks(
 
   if (remainingCycleSlugs.length > 0) {
     const cycleMessage = createCycleErrorMessage(remainingCycleSlugs);
-    for (const slug of remainingCycleSlugs) {
-      const document = documentsBySlug.get(slug);
-      if (!document) {
-        continue;
-      }
-      results.push(createFailureResult(document, cycleMessage));
-    }
+    appendCycleFailures(results, documentsBySlug, remainingCycleSlugs, cycleMessage);
   }
 
   const artifactWrites = await writeWorkspaceArtifacts(fs, results, {
@@ -182,6 +142,78 @@ export async function compileWorkspacePacks(
     summaryAction,
     hasDrift,
   };
+}
+
+async function compileTopologicallySortedPacks(input: Readonly<{
+  orderedSlugs: readonly string[];
+  documentsBySlug: Map<string, ContentDocument>;
+  dependencyMap: DependencyMap;
+  options: CompileWorkspaceOptions;
+}>): Promise<{ results: PackArtifactResult[]; failed: Set<string> }> {
+  const results: PackArtifactResult[] = [];
+  const failed = new Set<string>();
+
+  for (const slug of input.orderedSlugs) {
+    const document = input.documentsBySlug.get(slug);
+    if (!document) {
+      continue;
+    }
+
+    const dependencyFailure = getDependencyFailureMessage({
+      slug,
+      document,
+      dependencyMap: input.dependencyMap,
+      failed,
+    });
+    if (dependencyFailure) {
+      results.push(createFailureResult(document, dependencyFailure));
+      failed.add(slug);
+      continue;
+    }
+
+    const compileResult = await compileContentPack(document, input.options);
+    results.push(compileResult);
+    if (compileResult.status === 'failed') {
+      failed.add(slug);
+    }
+  }
+
+  return { results, failed };
+}
+
+function getDependencyFailureMessage(input: Readonly<{
+  slug: string;
+  document: ContentDocument;
+  dependencyMap: DependencyMap;
+  failed: ReadonlySet<string>;
+}>): string | null {
+  const requiredDependencies = extractRequiredDependencies(input.document);
+  const missingDependencies = input.dependencyMap.missing.get(input.slug);
+  if (missingDependencies !== undefined && missingDependencies.size > 0) {
+    return `Pack "${input.slug}" requires missing dependencies: ${Array.from(missingDependencies).join(', ')}`;
+  }
+
+  const failedDependencies = requiredDependencies.filter((dependency) => input.failed.has(dependency));
+  if (failedDependencies.length > 0) {
+    return `Pack "${input.slug}" requires dependencies that failed to compile: ${failedDependencies.join(', ')}`;
+  }
+
+  return null;
+}
+
+function appendCycleFailures(
+  results: PackArtifactResult[],
+  documentsBySlug: Map<string, ContentDocument>,
+  cycleSlugs: readonly string[],
+  cycleMessage: string,
+): void {
+  for (const slug of cycleSlugs) {
+    const document = documentsBySlug.get(slug);
+    if (!document) {
+      continue;
+    }
+    results.push(createFailureResult(document, cycleMessage));
+  }
 }
 
 interface DependencyMap {

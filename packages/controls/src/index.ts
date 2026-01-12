@@ -5,10 +5,11 @@ import type {
   RuntimeCommandType,
 } from '@idle-engine/core';
 
-export type ControlActionId = string;
-export type ControlBindingId = string;
-export type ControlIntent = string;
-export type ControlSchemeId = string;
+// Semantic aliases for external callers.
+export type ControlActionId = string; // NOSONAR
+export type ControlBindingId = string; // NOSONAR
+export type ControlIntent = string; // NOSONAR
+export type ControlSchemeId = string; // NOSONAR
 
 export type ControlEventPhase = 'start' | 'repeat' | 'end';
 

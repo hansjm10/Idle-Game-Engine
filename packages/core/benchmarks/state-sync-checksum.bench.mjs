@@ -245,11 +245,10 @@ function runScenario(scenario) {
   );
   const shouldCheckTarget = scenario.enforceTarget === true;
   const passesTarget = averageUs <= TARGET_US;
-  const status = shouldCheckTarget
-    ? passesTarget
-      ? 'OK'
-      : 'ABOVE_TARGET'
-    : 'INFO';
+  let status = 'INFO';
+  if (shouldCheckTarget) {
+    status = passesTarget ? 'OK' : 'ABOVE_TARGET';
+  }
   const meanOverTarget =
     TARGET_US === 0 ? null : roundNumber(averageUs / TARGET_US, 4);
 

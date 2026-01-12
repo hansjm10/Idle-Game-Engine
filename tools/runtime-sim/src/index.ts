@@ -5,7 +5,8 @@
  * workload simulations and emits a single-line benchmark summary JSON.
  */
 
-import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
 
 import {
@@ -117,6 +118,19 @@ const SCENARIOS: readonly ScenarioDefinition[] = [
   },
 ];
 
+function appendScenarioIds(target: string[], value: string | undefined): void {
+  if (!value) {
+    return;
+  }
+
+  target.push(
+    ...value
+      .split(',')
+      .map((entryValue) => entryValue.trim())
+      .filter((entryValue) => entryValue.length > 0),
+  );
+}
+
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     stepMs: DEFAULT_STEP_MS,
@@ -127,53 +141,39 @@ function parseArgs(argv: string[]): CliArgs {
     helpRequested: false,
   };
 
-  const iterator = argv[Symbol.iterator]();
-  for (let entry = iterator.next(); !entry.done; entry = iterator.next()) {
-    const arg = entry.value;
-    if (arg === '--ticks') {
-      const next = iterator.next();
-      args.ticks = Number(next.value);
-    } else if (arg === '--step-ms') {
-      const next = iterator.next();
-      args.stepMs = Number(next.value);
-    } else if (arg === '--max-steps-per-frame') {
-      const next = iterator.next();
-      args.maxStepsPerFrame = Number(next.value);
-    } else if (arg === '--fail-on-slow') {
-      args.failOnSlow = true;
-    } else if (arg === '--queue-backlog-cap') {
-      const next = iterator.next();
-      args.queueBacklogCap = Number(next.value);
-    } else if (arg === '--slow-tick-budget-ms') {
-      const next = iterator.next();
-      args.slowTickBudgetMs = Number(next.value);
-    } else if (arg === '--scenario' || arg === '--scenarios') {
-      const next = iterator.next();
-      const value = next.value;
-      if (value) {
-        args.scenarios.push(
-          ...value
-            .split(',')
-            .map((entryValue) => entryValue.trim())
-            .filter((entryValue) => entryValue.length > 0),
-        );
-      }
-    } else if (arg === '--warmup-ticks') {
-      const next = iterator.next();
-      args.warmupTicks = Number(next.value);
-    } else if (arg === '--measure-ticks') {
-      const next = iterator.next();
-      args.measureTicks = Number(next.value);
-    } else if (arg === '--seed') {
-      const next = iterator.next();
-      args.seed = Number(next.value);
-    } else if (arg === '--include-memory') {
-      args.includeMemory = true;
-    } else if (arg === '--list-scenarios') {
-      args.listScenarios = true;
-    } else if (arg === '--help' || arg === '-h') {
-      args.helpRequested = true;
+  const valueArgHandlers = new Map<string, (value: string | undefined) => void>([
+    ['--ticks', (value) => { args.ticks = Number(value); }],
+    ['--step-ms', (value) => { args.stepMs = Number(value); }],
+    ['--max-steps-per-frame', (value) => { args.maxStepsPerFrame = Number(value); }],
+    ['--queue-backlog-cap', (value) => { args.queueBacklogCap = Number(value); }],
+    ['--slow-tick-budget-ms', (value) => { args.slowTickBudgetMs = Number(value); }],
+    ['--scenario', (value) => { appendScenarioIds(args.scenarios, value); }],
+    ['--scenarios', (value) => { appendScenarioIds(args.scenarios, value); }],
+    ['--warmup-ticks', (value) => { args.warmupTicks = Number(value); }],
+    ['--measure-ticks', (value) => { args.measureTicks = Number(value); }],
+    ['--seed', (value) => { args.seed = Number(value); }],
+  ]);
+
+  const flagArgHandlers = new Map<string, () => void>([
+    ['--fail-on-slow', () => { args.failOnSlow = true; }],
+    ['--include-memory', () => { args.includeMemory = true; }],
+    ['--list-scenarios', () => { args.listScenarios = true; }],
+    ['--help', () => { args.helpRequested = true; }],
+    ['-h', () => { args.helpRequested = true; }],
+  ]);
+
+  const argvIterator = argv[Symbol.iterator]();
+  for (let argResult = argvIterator.next(); !argResult.done; argResult = argvIterator.next()) {
+    const arg = argResult.value;
+
+    const valueHandler = valueArgHandlers.get(arg);
+    if (valueHandler) {
+      const valueResult = argvIterator.next();
+      valueHandler(valueResult.done ? undefined : valueResult.value);
+      continue;
     }
+
+    flagArgHandlers.get(arg)?.();
   }
 
   return args;
@@ -199,7 +199,6 @@ function printHelpAndExit(code: number): never {
       `  --list-scenarios            List available scenarios and exit\n` +
       `  -h, --help                  Show this help text`,
   );
-  // eslint-disable-next-line no-process-exit
   process.exit(code);
 }
 
@@ -370,6 +369,105 @@ function roundNumber(value: number, decimals = 6): number | null {
   return Math.round(value * factor) / factor;
 }
 
+function findGitEntry(startDir: string): string | null {
+  let current = startDir;
+  while (true) {
+    const candidate = path.join(current, '.git');
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+function resolveGitDirectory(entryPath: string): string | null {
+  try {
+    const stat = statSync(entryPath);
+    if (stat.isDirectory()) {
+      return entryPath;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(entryPath, 'utf8').trim();
+    const prefix = 'gitdir:';
+    if (!content.startsWith(prefix)) {
+      return null;
+    }
+    const gitDirPath = content.slice(prefix.length).trim();
+    if (!gitDirPath) {
+      return null;
+    }
+    return path.isAbsolute(gitDirPath)
+      ? gitDirPath
+      : path.resolve(path.dirname(entryPath), gitDirPath);
+  } catch {
+    return null;
+  }
+}
+
+function readGitTextFile(filePath: string): string | null {
+  try {
+    return readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return null;
+  }
+}
+
+function isCommitSha(value: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(value);
+}
+
+function resolvePackedRefSha(gitDir: string, ref: string): string | null {
+  const packedRefs = readGitTextFile(path.join(gitDir, 'packed-refs'));
+  if (!packedRefs) {
+    return null;
+  }
+
+  for (const line of packedRefs.split(/\r?\n/)) {
+    if (line.length === 0 || line.startsWith('#') || line.startsWith('^')) {
+      continue;
+    }
+    const [sha, refName] = line.split(' ');
+    if (sha && refName === ref) {
+      return sha;
+    }
+  }
+
+  return null;
+}
+
+function resolveGitHeadSha(gitDir: string): string | null {
+  const head = readGitTextFile(path.join(gitDir, 'HEAD'));
+  if (!head) {
+    return null;
+  }
+
+  const refPrefix = 'ref:';
+  if (!head.startsWith(refPrefix)) {
+    return isCommitSha(head) ? head : null;
+  }
+
+  const ref = head.slice(refPrefix.length).trim();
+  if (!ref) {
+    return null;
+  }
+
+  const refSha = readGitTextFile(path.join(gitDir, ref));
+  if (refSha && isCommitSha(refSha)) {
+    return refSha;
+  }
+
+  const packedSha = resolvePackedRefSha(gitDir, ref);
+  return packedSha && isCommitSha(packedSha) ? packedSha : null;
+}
+
 function resolveCommitSha(): string | null {
   const envSha =
     process.env.GITHUB_SHA ??
@@ -379,15 +477,18 @@ function resolveCommitSha(): string | null {
   if (envSha) {
     return envSha;
   }
-  try {
-    return execSync('git rev-parse HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-  } catch {
+
+  const gitEntry = findGitEntry(process.cwd());
+  if (!gitEntry) {
     return null;
   }
+
+  const gitDir = resolveGitDirectory(gitEntry);
+  if (!gitDir) {
+    return null;
+  }
+
+  return resolveGitHeadSha(gitDir);
 }
 
 function getEnvMetadata() {
@@ -449,7 +550,6 @@ function runLegacySim(args: CliArgs): void {
         `Summary — ticks:${s.totalEntries} maxTick:${s.maxTickDurationMs.toFixed(2)}ms ` +
           `avgTick:${s.avgTickDurationMs.toFixed(2)}ms maxQueueBacklog:${s.maxQueueBacklog}`,
       );
-      // eslint-disable-next-line no-process-exit
       process.exit(1);
     }
   }
@@ -539,41 +639,49 @@ function toMemorySummary(memory: NodeJS.MemoryUsage): MemorySummary {
   };
 }
 
-function runScenarioHarness(args: CliArgs): void {
-  const scenarios = resolveScenarios(args.scenarios);
-  if (scenarios.length === 0) {
-    console.error('Error: Scenario mode requires at least one scenario.');
-    printHelpAndExit(2);
+type ScenarioFailure = {
+  scenario: string;
+  reasons: string[];
+};
+
+function getScenarioDiagnosticsThresholds(
+  args: CliArgs,
+  timeline: DiagnosticTimelineResult,
+): DiagnosticsThresholds {
+  const thresholds: DiagnosticsThresholds = {};
+
+  const tickBudgetMs = timeline.configuration.tickBudgetMs;
+  if (args.failOnSlow && typeof tickBudgetMs === 'number') {
+    thresholds.maxTickDurationMs = tickBudgetMs;
   }
 
-  if (args.maxStepsPerFrame !== undefined) {
-    assertPositiveInteger(args.maxStepsPerFrame, '--max-steps-per-frame <n>');
+  const queueBacklogCap = args.queueBacklogCap;
+  if (typeof queueBacklogCap === 'number' && Number.isFinite(queueBacklogCap)) {
+    thresholds.maxQueueBacklog = queueBacklogCap;
   }
 
-  const results: ScenarioResult[] = [];
-  const failures: Array<{ scenario: string; reasons: string[] }> = [];
+  return thresholds;
+}
 
-  for (const scenario of scenarios) {
-    const { result, timeline } = runScenario(scenario, args);
-    results.push(result);
-
-    const thresholds: DiagnosticsThresholds = {};
-    if (args.failOnSlow && typeof timeline.configuration.tickBudgetMs === 'number') {
-      thresholds.maxTickDurationMs = timeline.configuration.tickBudgetMs;
-    }
-    if (typeof args.queueBacklogCap === 'number' && Number.isFinite(args.queueBacklogCap)) {
-      thresholds.maxQueueBacklog = args.queueBacklogCap;
-    }
-
-    if (Object.keys(thresholds).length > 0) {
-      const evaluation = evaluateDiagnostics(timeline, thresholds);
-      if (!evaluation.ok) {
-        failures.push({ scenario: result.label, reasons: [...evaluation.reasons] });
-      }
-    }
+function evaluateScenarioThresholdFailures(
+  args: CliArgs,
+  timeline: DiagnosticTimelineResult,
+): string[] | undefined {
+  const thresholds = getScenarioDiagnosticsThresholds(args, timeline);
+  if (Object.keys(thresholds).length === 0) {
+    return undefined;
   }
 
-  const payload = {
+  const evaluation = evaluateDiagnostics(timeline, thresholds);
+  return evaluation.ok ? undefined : [...evaluation.reasons];
+}
+
+function buildScenarioPayload(
+  args: CliArgs,
+  scenarios: readonly ScenarioDefinition[],
+  results: readonly ScenarioResult[],
+): object {
+  return {
     event: BENCHMARK_EVENT,
     schemaVersion: BENCHMARK_SCHEMA_VERSION,
     benchmark: { name: 'runtime-workload-sim' },
@@ -593,18 +701,51 @@ function runScenarioHarness(args: CliArgs): void {
     },
     env: getEnvMetadata(),
   };
+}
 
-  process.stdout.write(JSON.stringify(payload) + '\n');
-
-  if (failures.length > 0) {
-    for (const failure of failures) {
-      console.error(
-        `Scenario "${failure.scenario}" breached thresholds: ${failure.reasons.join('; ')}`,
-      );
-    }
-    // eslint-disable-next-line no-process-exit
-    process.exit(1);
+function reportScenarioFailuresAndExit(failures: readonly ScenarioFailure[]): void {
+  if (failures.length === 0) {
+    return;
   }
+
+  for (const failure of failures) {
+    console.error(
+      `Scenario "${failure.scenario}" breached thresholds: ${failure.reasons.join('; ')}`,
+    );
+  }
+
+  process.exit(1);
+}
+
+function runScenarioHarness(args: CliArgs): void {
+  const scenarios = resolveScenarios(args.scenarios);
+  if (scenarios.length === 0) {
+    console.error('Error: Scenario mode requires at least one scenario.');
+    printHelpAndExit(2);
+  }
+
+  if (args.maxStepsPerFrame !== undefined) {
+    assertPositiveInteger(args.maxStepsPerFrame, '--max-steps-per-frame <n>');
+  }
+
+  const results: ScenarioResult[] = [];
+  const failures: ScenarioFailure[] = [];
+
+  for (const scenario of scenarios) {
+    const { result, timeline } = runScenario(scenario, args);
+    results.push(result);
+
+    const reasons = evaluateScenarioThresholdFailures(args, timeline);
+    if (reasons) {
+      failures.push({ scenario: result.label, reasons });
+    }
+  }
+
+  process.stdout.write(
+    JSON.stringify(buildScenarioPayload(args, scenarios, results)) + '\n',
+  );
+
+  reportScenarioFailuresAndExit(failures);
 }
 
 async function main(): Promise<void> {
@@ -616,7 +757,6 @@ async function main(): Promise<void> {
 
   if (args.listScenarios) {
     printScenarioList();
-    // eslint-disable-next-line no-process-exit
     process.exit(0);
   }
 
@@ -628,9 +768,12 @@ async function main(): Promise<void> {
   runLegacySim(args);
 }
 
-// eslint-disable-next-line unicorn/prefer-top-level-await
-main().catch((error) => {
-  console.error('runtime-sim failed:', error instanceof Error ? error.message : String(error));
-  // eslint-disable-next-line no-process-exit
+try {
+  await main();
+} catch (error) {
+  console.error(
+    'runtime-sim failed:',
+    error instanceof Error ? error.message : String(error),
+  );
   process.exit(1);
-});
+}

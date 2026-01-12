@@ -108,45 +108,56 @@ export function selectTopNActionables(
     if (actionables.length >= limit) {
       break;
     }
-
-    if (!generator.visible || !generator.unlocked) {
-      continue;
-    }
-
-    if (!isReadyForCommandStep(generator, commandStep)) {
-      continue;
-    }
-
-    if (!areCostsAffordable(resourceAmounts, generator.costs)) {
-      continue;
-    }
-
-    actionables.push(
-      Object.freeze({ kind: 'generator', generator }),
-    );
+    tryAddGeneratorActionable(actionables, generator, commandStep, resourceAmounts);
   }
 
   for (const upgrade of snapshot.upgrades) {
     if (actionables.length >= limit) {
       break;
     }
-
-    if (!upgrade.visible || upgrade.status !== 'available') {
-      continue;
-    }
-
-    if (!areCostsAffordable(resourceAmounts, upgrade.costs)) {
-      continue;
-    }
-
-    actionables.push(
-      Object.freeze({ kind: 'upgrade', upgrade }),
-    );
+    tryAddUpgradeActionable(actionables, upgrade, resourceAmounts);
   }
 
   return actionables.length > 0
     ? Object.freeze(actionables)
     : (EMPTY_ARRAY as readonly ProgressionActionableItem[]);
+}
+
+function tryAddGeneratorActionable(
+  actionables: ProgressionActionableItem[],
+  generator: GeneratorView,
+  commandStep: number,
+  resourceAmounts: ReadonlyMap<string, number>,
+): void {
+  if (!generator.visible || !generator.unlocked) {
+    return;
+  }
+
+  if (!isReadyForCommandStep(generator, commandStep)) {
+    return;
+  }
+
+  if (!areCostsAffordable(resourceAmounts, generator.costs)) {
+    return;
+  }
+
+  actionables.push(Object.freeze({ kind: 'generator', generator }));
+}
+
+function tryAddUpgradeActionable(
+  actionables: ProgressionActionableItem[],
+  upgrade: UpgradeView,
+  resourceAmounts: ReadonlyMap<string, number>,
+): void {
+  if (!upgrade.visible || upgrade.status !== 'available') {
+    return;
+  }
+
+  if (!areCostsAffordable(resourceAmounts, upgrade.costs)) {
+    return;
+  }
+
+  actionables.push(Object.freeze({ kind: 'upgrade', upgrade }));
 }
 
 function createResourceAmountLookup(

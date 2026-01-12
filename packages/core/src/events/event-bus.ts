@@ -687,79 +687,111 @@ export class EventBus implements EventPublisher {
     const cursors = new Array<number>(this.channelStates.length).fill(0);
 
     while (true) {
-      let nextChannelIndex = -1;
-      let nextSlot: EventSlot | undefined;
-
-      for (let channelIndex = 0; channelIndex < this.channelStates.length; channelIndex += 1) {
-        const channel = this.channelStates[channelIndex];
-        const cursor = cursors[channelIndex];
-        const buffer = channel.internalBuffer;
-
-        if (cursor >= buffer.length) {
-          continue;
-        }
-
-        const candidate = buffer.at(cursor);
-        if (nextSlot === undefined || candidate.dispatchOrder < nextSlot.dispatchOrder) {
-          nextSlot = candidate;
-          nextChannelIndex = channelIndex;
-        }
-      }
-
-      if (nextSlot === undefined || nextChannelIndex === -1) {
+      const next = this.findNextDispatchCandidate(cursors);
+      if (!next) {
         break;
       }
 
-      const channel = this.channelStates[nextChannelIndex];
-      const event = createRuntimeEvent({
-        type: nextSlot.type,
-        tick: nextSlot.tick,
-        issuedAt: nextSlot.issuedAt,
-        payload: nextSlot.payload,
-      } satisfies CreateRuntimeEventOptions<RuntimeEventType>);
-
-      for (const subscriber of channel.subscribers) {
-        if (!subscriber.active) {
-          continue;
-        }
-
-        if (this.slowHandlerThresholdMs > 0) {
-          const start = this.clock.now();
-          try {
-            subscriber.handler(event, context);
-          } finally {
-            const duration = this.clock.now() - start;
-            if (duration > this.slowHandlerThresholdMs) {
-              const slowContext: SlowHandlerContext = {
-                type: event.type,
-                channel: nextChannelIndex,
-                tick: event.tick,
-                dispatchOrder: nextSlot.dispatchOrder,
-                durationMs: duration,
-                thresholdMs: this.slowHandlerThresholdMs,
-                handlerLabel: subscriber.label,
-              };
-
-              this.onSlowHandler?.(slowContext);
-              telemetry.recordWarning('EventHandlerSlow', {
-                eventType: event.type,
-                channel: nextChannelIndex,
-                tick: event.tick,
-                dispatchOrder: nextSlot.dispatchOrder,
-                durationMs: duration,
-                thresholdMs: this.slowHandlerThresholdMs,
-                handler: subscriber.label,
-              });
-            }
-          }
-        } else {
-          subscriber.handler(event, context);
-        }
-      }
-
-      cursors[nextChannelIndex] += 1;
+      this.dispatchSlot(next.channelIndex, next.slot, context);
+      cursors[next.channelIndex] += 1;
     }
 
+    this.clearInternalBuffers();
+  }
+
+  private findNextDispatchCandidate(
+    cursors: readonly number[],
+  ): Readonly<{ channelIndex: number; slot: EventSlot }> | null {
+    let nextChannelIndex = -1;
+    let nextSlot: EventSlot | undefined;
+
+    for (
+      let channelIndex = 0;
+      channelIndex < this.channelStates.length;
+      channelIndex += 1
+    ) {
+      const channel = this.channelStates[channelIndex];
+      const cursor = cursors[channelIndex] ?? 0;
+      const buffer = channel.internalBuffer;
+
+      if (cursor >= buffer.length) {
+        continue;
+      }
+
+      const candidate = buffer.at(cursor);
+      if (nextSlot === undefined || candidate.dispatchOrder < nextSlot.dispatchOrder) {
+        nextSlot = candidate;
+        nextChannelIndex = channelIndex;
+      }
+    }
+
+    return nextSlot ? { channelIndex: nextChannelIndex, slot: nextSlot } : null;
+  }
+
+  private dispatchSlot(
+    channelIndex: number,
+    slot: EventSlot,
+    context: EventDispatchContext,
+  ): void {
+    const channel = this.channelStates[channelIndex];
+    const event = createRuntimeEvent({
+      type: slot.type,
+      tick: slot.tick,
+      issuedAt: slot.issuedAt,
+      payload: slot.payload,
+    } satisfies CreateRuntimeEventOptions<RuntimeEventType>);
+
+    for (const subscriber of channel.subscribers) {
+      if (!subscriber.active) {
+        continue;
+      }
+      this.invokeSubscriber(subscriber, event, context, channelIndex, slot.dispatchOrder);
+    }
+  }
+
+  private invokeSubscriber(
+    subscriber: SubscriberRecord,
+    event: RuntimeEvent<RuntimeEventType>,
+    context: EventDispatchContext,
+    channelIndex: number,
+    dispatchOrder: number,
+  ): void {
+    if (this.slowHandlerThresholdMs <= 0) {
+      subscriber.handler(event, context);
+      return;
+    }
+
+    const start = this.clock.now();
+    try {
+      subscriber.handler(event, context);
+    } finally {
+      const duration = this.clock.now() - start;
+      if (duration > this.slowHandlerThresholdMs) {
+        const slowContext: SlowHandlerContext = {
+          type: event.type,
+          channel: channelIndex,
+          tick: event.tick,
+          dispatchOrder,
+          durationMs: duration,
+          thresholdMs: this.slowHandlerThresholdMs,
+          handlerLabel: subscriber.label,
+        };
+
+        this.onSlowHandler?.(slowContext);
+        telemetry.recordWarning('EventHandlerSlow', {
+          eventType: event.type,
+          channel: channelIndex,
+          tick: event.tick,
+          dispatchOrder,
+          durationMs: duration,
+          thresholdMs: this.slowHandlerThresholdMs,
+          handler: subscriber.label,
+        });
+      }
+    }
+  }
+
+  private clearInternalBuffers(): void {
     for (const channel of this.channelStates) {
       channel.internalBuffer.reset();
       channel.currentOccupancy = 0;

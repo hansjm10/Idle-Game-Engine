@@ -77,4 +77,4 @@ async function validateRuntimeVersion() {
   }
 }
 
-validateRuntimeVersion();
+await validateRuntimeVersion();

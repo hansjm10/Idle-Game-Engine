@@ -210,27 +210,19 @@ export function serializeProgressionCoordinatorState(
   };
 }
 
-export function hydrateProgressionCoordinatorState(
-  serialized: SerializedProgressionCoordinatorState | undefined,
-  coordinator: ProgressionCoordinator,
-  productionSystem?: { restoreAccumulators: (state: SerializedProductionAccumulators) => void },
-  options: { skipResources?: boolean } = {},
-): void {
-  if (!serialized) {
+function assertSupportedSchemaVersion(schemaVersion: number): asserts schemaVersion is 1 | 2 {
+  if (schemaVersion === 1 || schemaVersion === PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION) {
     return;
   }
 
-  const schemaVersion = serialized.schemaVersion;
-  if (schemaVersion !== 1 && schemaVersion !== PROGRESSION_COORDINATOR_SAVE_SCHEMA_VERSION) {
-    throw new Error(
-      `Unsupported progression coordinator save schema version: ${schemaVersion}`,
-    );
-  }
+  throw new Error(
+    `Unsupported progression coordinator save schema version: ${schemaVersion}`,
+  );
+}
 
-  if (!options.skipResources) {
-    coordinator.hydrateResources(serialized.resources);
-  }
-
+function createGeneratorIndex(
+  coordinator: ProgressionCoordinator,
+): Map<string, Mutable<ProgressionGeneratorState>> {
   const generatorById = new Map<string, Mutable<ProgressionGeneratorState>>();
   for (const generator of coordinator.state.generators ?? []) {
     generatorById.set(
@@ -238,14 +230,22 @@ export function hydrateProgressionCoordinatorState(
       generator as Mutable<ProgressionGeneratorState>,
     );
   }
+  return generatorById;
+}
 
+function resetGeneratorState(generatorById: Map<string, Mutable<ProgressionGeneratorState>>): void {
   for (const generator of generatorById.values()) {
     generator.owned = 0;
     generator.enabled = true;
     generator.isUnlocked = false;
     generator.nextPurchaseReadyAtStep = 1;
   }
+}
 
+function restoreGeneratorState(
+  serialized: SerializedProgressionCoordinatorState,
+  generatorById: Map<string, Mutable<ProgressionGeneratorState>>,
+): void {
   for (const entry of serialized.generators) {
     const normalized = normalizeGeneratorStateV1(entry);
     if (!normalized) {
@@ -264,16 +264,32 @@ export function hydrateProgressionCoordinatorState(
       generator.nextPurchaseReadyAtStep = normalized.nextPurchaseReadyAtStep;
     }
   }
+}
 
+function createUpgradeIndex(
+  coordinator: ProgressionCoordinator,
+): Map<string, ProgressionUpgradeState> {
   const upgradeById = new Map<string, ProgressionUpgradeState>();
   for (const upgrade of coordinator.state.upgrades ?? []) {
     upgradeById.set(upgrade.id, upgrade);
   }
+  return upgradeById;
+}
 
+function resetUpgradeState(
+  coordinator: ProgressionCoordinator,
+  upgradeById: Map<string, ProgressionUpgradeState>,
+): void {
   for (const upgrade of upgradeById.values()) {
     coordinator.setUpgradePurchases(upgrade.id, 0);
   }
+}
 
+function restoreUpgradeState(
+  coordinator: ProgressionCoordinator,
+  serialized: SerializedProgressionCoordinatorState,
+  upgradeById: ReadonlyMap<string, ProgressionUpgradeState>,
+): void {
   for (const entry of serialized.upgrades) {
     const normalized = normalizeUpgradeStateV1(entry);
     if (!normalized) {
@@ -286,7 +302,11 @@ export function hydrateProgressionCoordinatorState(
 
     coordinator.setUpgradePurchases(normalized.id, normalized.purchases);
   }
+}
 
+function createAchievementIndex(
+  coordinator: ProgressionCoordinator,
+): Map<string, Mutable<ProgressionAchievementState>> {
   const achievementById = new Map<string, Mutable<ProgressionAchievementState>>();
   for (const achievement of coordinator.state.achievements ?? []) {
     achievementById.set(
@@ -294,7 +314,12 @@ export function hydrateProgressionCoordinatorState(
       achievement as Mutable<ProgressionAchievementState>,
     );
   }
+  return achievementById;
+}
 
+function resetAchievementState(
+  achievementById: Map<string, Mutable<ProgressionAchievementState>>,
+): void {
   for (const achievement of achievementById.values()) {
     achievement.isVisible = false;
     achievement.completions = 0;
@@ -303,25 +328,59 @@ export function hydrateProgressionCoordinatorState(
     achievement.nextRepeatableAtStep = undefined;
     achievement.lastCompletedStep = undefined;
   }
+}
 
-  if (schemaVersion === 2) {
-    const achievements = (serialized as SerializedProgressionCoordinatorStateV2).achievements;
-    for (const entry of achievements) {
-      const normalized = normalizeAchievementStateV2(entry);
-      if (!normalized) {
-        continue;
-      }
-
-      const achievement = achievementById.get(normalized.id);
-      if (!achievement) {
-        continue;
-      }
-
-      achievement.completions = normalized.completions;
-      achievement.progress = normalized.progress;
-      achievement.nextRepeatableAtStep = normalized.nextRepeatableAtStep;
-      achievement.lastCompletedStep = normalized.lastCompletedStep;
+function restoreAchievementState(
+  serialized: SerializedProgressionCoordinatorStateV2,
+  achievementById: Map<string, Mutable<ProgressionAchievementState>>,
+): void {
+  for (const entry of serialized.achievements) {
+    const normalized = normalizeAchievementStateV2(entry);
+    if (!normalized) {
+      continue;
     }
+
+    const achievement = achievementById.get(normalized.id);
+    if (!achievement) {
+      continue;
+    }
+
+    achievement.completions = normalized.completions;
+    achievement.progress = normalized.progress;
+    achievement.nextRepeatableAtStep = normalized.nextRepeatableAtStep;
+    achievement.lastCompletedStep = normalized.lastCompletedStep;
+  }
+}
+
+export function hydrateProgressionCoordinatorState(
+  serialized: SerializedProgressionCoordinatorState | undefined,
+  coordinator: ProgressionCoordinator,
+  productionSystem?: { restoreAccumulators: (state: SerializedProductionAccumulators) => void },
+  options: { skipResources?: boolean } = {},
+): void {
+  if (!serialized) {
+    return;
+  }
+
+  const schemaVersion = serialized.schemaVersion;
+  assertSupportedSchemaVersion(schemaVersion);
+
+  if (!options.skipResources) {
+    coordinator.hydrateResources(serialized.resources);
+  }
+
+  const generatorById = createGeneratorIndex(coordinator);
+  resetGeneratorState(generatorById);
+  restoreGeneratorState(serialized, generatorById);
+
+  const upgradeById = createUpgradeIndex(coordinator);
+  resetUpgradeState(coordinator, upgradeById);
+  restoreUpgradeState(coordinator, serialized, upgradeById);
+
+  const achievementById = createAchievementIndex(coordinator);
+  resetAchievementState(achievementById);
+  if (serialized.schemaVersion === 2) {
+    restoreAchievementState(serialized, achievementById);
   }
 
   if (serialized.productionAccumulators && productionSystem) {

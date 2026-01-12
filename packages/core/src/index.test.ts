@@ -212,6 +212,11 @@ describe('entrypoint boundaries', () => {
     expect(exportsMap['./prometheus']).not.toEqual(exportsMap['.']);
   });
 
+  it('exposes Prometheus helpers via the prometheus entrypoint', async () => {
+    const prometheus = await import('./prometheus.js');
+    expect(prometheus.createPrometheusTelemetry).toBeTypeOf('function');
+  });
+
   it('keeps advanced helpers out of the public entrypoint', async () => {
     const publicApi = await import('./index.js');
     expect('createPredictionManager' in publicApi).toBe(false);

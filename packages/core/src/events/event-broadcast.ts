@@ -231,17 +231,23 @@ export class EventBroadcastBatcher {
     this.coalesce = options.coalesce;
   }
 
+  private flushIfDelayElapsed(now: number, batches: EventBroadcastBatch[]): void {
+    if (this.pendingSince === null || this.maxDelayMs === undefined) {
+      return;
+    }
+    if (now - this.pendingSince < this.maxDelayMs) {
+      return;
+    }
+    const flushed = this.flush();
+    if (flushed) {
+      batches.push(flushed);
+    }
+  }
+
   ingestFrame(frame: EventBroadcastFrame, now = this.clock()): EventBroadcastBatch[] {
     const batches: EventBroadcastBatch[] = [];
 
-    if (this.pendingSince !== null && this.maxDelayMs !== undefined) {
-      if (now - this.pendingSince >= this.maxDelayMs) {
-        const flushed = this.flush();
-        if (flushed) {
-          batches.push(flushed);
-        }
-      }
-    }
+    this.flushIfDelayElapsed(now, batches);
 
     let events = frame.events;
     if (this.filter) {
@@ -452,6 +458,32 @@ function hasPriorityEvent(
   return false;
 }
 
+type MutableBroadcastFrame = Omit<EventBroadcastFrame, 'events'> & {
+  events: Array<SerializedRuntimeEvent | null>;
+};
+
+function compactCoalescedFrames(frames: readonly MutableBroadcastFrame[]): EventBroadcastFrame[] {
+  const result: EventBroadcastFrame[] = [];
+  for (const frame of frames) {
+    const compacted = frame.events.filter(
+      (event): event is SerializedRuntimeEvent => event !== null,
+    );
+    if (compacted.length === 0) {
+      continue;
+    }
+    let updated: EventBroadcastFrame = {
+      ...frame,
+      events: compacted,
+    };
+    updated = refreshBroadcastFrameChecksum(
+      updated,
+      compacted.length !== frame.events.length,
+    );
+    result.push(updated);
+  }
+  return result;
+}
+
 function coalesceBatchFrames(
   frames: readonly EventBroadcastFrame[],
   options: EventCoalescingOptions,
@@ -462,7 +494,7 @@ function coalesceBatchFrames(
 
   const mode = options.mode ?? 'last';
   const lookup = new Map<string, { frameIndex: number; eventIndex: number }>();
-  const mutableFrames = frames.map((frame) => ({
+  const mutableFrames: MutableBroadcastFrame[] = frames.map((frame) => ({
     ...frame,
     events: frame.events.slice() as Array<SerializedRuntimeEvent | null>,
   }));
@@ -490,25 +522,7 @@ function coalesceBatchFrames(
     }
   }
 
-  const result: EventBroadcastFrame[] = [];
-  for (const frame of mutableFrames) {
-    const compacted = frame.events.filter(
-      (event): event is SerializedRuntimeEvent => event !== null,
-    );
-    if (compacted.length === 0) {
-      continue;
-    }
-    let updated: EventBroadcastFrame = {
-      ...frame,
-      events: compacted,
-    };
-    updated = refreshBroadcastFrameChecksum(
-      updated,
-      compacted.length !== frame.events.length,
-    );
-    result.push(updated);
-  }
-  return result;
+  return compactCoalescedFrames(mutableFrames);
 }
 
 function normalizePositiveInt(

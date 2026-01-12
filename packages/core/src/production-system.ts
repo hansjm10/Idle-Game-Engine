@@ -1,4 +1,3 @@
-import { isDevelopmentMode } from './env-utils.js';
 import type { System } from './index.js';
 
 /**
@@ -86,7 +85,13 @@ function supportsPerTickReset(
 
 /**
  * Serialized accumulator state for save/load persistence.
- * Keys are in the format "generatorId:operation:resourceId" where operation is "produce" or "consume".
+ *
+ * Key formats:
+ * - v2 (collision-free): `v2|${encodeURIComponent(generatorId)}|${operation}|${encodeURIComponent(resourceId)}`
+ * - legacy (backwards compatible): `${generatorId}:${operation}:${resourceId}`
+ *
+ * The legacy format is not collision-free if generator/resource IDs contain `:` (for example,
+ * `foo:produce:produce:bar` can be produced by multiple (generatorId, resourceId) pairs).
  */
 export interface SerializedProductionAccumulators {
   /** Map of accumulator keys to their current fractional values */
@@ -424,6 +429,426 @@ export function validateRates(
   return validated;
 }
 
+type AccumulatorOperation = 'produce' | 'consume';
+
+function serializeAccumulatorKeyLegacy(
+  generatorId: string,
+  operation: AccumulatorOperation,
+  resourceId: string,
+): string {
+  return `${generatorId}:${operation}:${resourceId}`;
+}
+
+function clampRatio01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function deleteNearZeroEntries<Key>(
+  map: Map<Key, number>,
+  threshold: number,
+): void {
+  for (const [key, value] of map) {
+    if (Math.abs(value) < threshold) {
+      map.delete(key);
+    }
+  }
+}
+
+function computeRateConsumptionRatio(
+  resourceState: ProductionResourceState,
+  validConsumptions: readonly ValidatedRate[],
+  effectiveOwned: number,
+  deltaSeconds: number,
+): number {
+  let rateConsumptionRatio = 1;
+
+  for (const { index, rate } of validConsumptions) {
+    const required = rate * effectiveOwned * deltaSeconds;
+    if (!Number.isFinite(required) || required <= 0) {
+      continue;
+    }
+
+    const available = resourceState.getAmount(index);
+    if (!Number.isFinite(available) || available <= 0) {
+      return 0;
+    }
+
+    const ratio = available / required;
+    if (Number.isFinite(ratio)) {
+      rateConsumptionRatio = Math.min(rateConsumptionRatio, ratio);
+    }
+  }
+
+  return clampRatio01(rateConsumptionRatio);
+}
+
+function applyRateTrackingAdjustments(
+  rates: readonly ValidatedRate[],
+  effectiveOwned: number,
+  rateConsumptionRatio: number,
+  apply: (index: number, amountPerSecond: number) => void,
+): void {
+  for (const { index, rate } of rates) {
+    const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
+    if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+      apply(index, amountPerSecond);
+    }
+  }
+}
+
+/**
+ * Calculates what would be applied without modifying accumulator state.
+ * Returns both the amount that would be applied and the new accumulator total.
+ */
+interface AccumulatorResult {
+  /** Amount that would be applied this tick (threshold-aligned) */
+  readonly toApply: number;
+  /** Total accumulated value (for ratio calculations) */
+  readonly newTotal: number;
+  /** Commits the accumulator state, optionally scaling the applied amount */
+  readonly commit: (scale?: number) => void;
+}
+
+/**
+ * Context for executing production phases.
+ * Abstracts the difference between shadow-based (finalize tick) and direct resource operations.
+ */
+interface PhaseContext {
+  /** Get current resource amount (shadow or actual) */
+  readonly getAmount: (index: number) => number;
+  /**
+   * Add production to a resource.
+   * @returns The actual amount applied (may be less due to capacity)
+   */
+  readonly addProduction: (index: number, amount: number, resourceId: string) => number;
+  /**
+   * Spend consumption from a resource.
+   * @returns true if spend succeeded, false if insufficient
+   */
+  readonly spendConsumption: (index: number, amount: number, resourceId: string) => boolean;
+  /** Callback for tracking produced amounts */
+  readonly onProduce?: (resourceId: string, amount: number) => void;
+  /** Callback for tracking consumed amounts */
+  readonly onConsume?: (resourceId: string, amount: number) => void;
+}
+
+/**
+ * Input data for a single generator's production phase execution.
+ */
+interface GeneratorPhaseInput {
+  readonly generatorId: string;
+  readonly validProductions: readonly ValidatedRate[];
+  readonly validConsumptions: readonly ValidatedRate[];
+  readonly effectiveOwned: number;
+  readonly deltaSeconds: number;
+}
+
+type AccumulateFunction = (
+  generatorId: string,
+  operation: AccumulatorOperation,
+  resourceId: string,
+  delta: number,
+) => AccumulatorResult;
+
+interface ConsumptionAccumulator {
+  readonly resourceId: string;
+  readonly index: number;
+  readonly result: AccumulatorResult;
+}
+
+function prepareConsumptionPhase(
+  input: GeneratorPhaseInput,
+  context: PhaseContext,
+  accumulate: AccumulateFunction,
+): {
+  consumptionAccumulators: ConsumptionAccumulator[];
+  consumptionRatio: number;
+  willApplyProduction: boolean;
+} {
+  const { generatorId, validConsumptions, effectiveOwned, deltaSeconds } = input;
+
+  // Phase 1: Peek at what each consumption accumulator would apply
+  // and calculate ratio based on ACTUAL consumable amounts (post-threshold)
+  const consumptionAccumulators: ConsumptionAccumulator[] = [];
+
+  let consumptionRatio = 1;
+  // Generators without consumption requirements always produce at full rate.
+  // For generators WITH consumption, we only apply production when at least
+  // one consumption crosses the threshold (keeps production/consumption in sync).
+  let willApplyProduction = validConsumptions.length === 0;
+
+  for (const { resourceId, index, rate } of validConsumptions) {
+    const delta = rate * effectiveOwned * deltaSeconds;
+    const result = accumulate(generatorId, 'consume', resourceId, delta);
+    consumptionAccumulators.push({ resourceId, index, result });
+
+    if (result.toApply <= 0) {
+      continue;
+    }
+
+    willApplyProduction = true;
+    const available = context.getAmount(index);
+
+    // Use newTotal (full accumulated amount) for ratio calculation to ensure
+    // production scales correctly with actual consumption.
+    consumptionRatio = Math.min(
+      consumptionRatio,
+      available / result.newTotal,
+      available / result.toApply,
+    );
+  }
+
+  return {
+    consumptionAccumulators,
+    consumptionRatio: clampRatio01(consumptionRatio),
+    willApplyProduction,
+  };
+}
+
+function executeProductionPhase(
+  input: GeneratorPhaseInput,
+  context: PhaseContext,
+  accumulate: AccumulateFunction,
+  consumptionRatio: number,
+  willApplyProduction: boolean,
+): void {
+  const { generatorId, validProductions, effectiveOwned, deltaSeconds } = input;
+  const scale = willApplyProduction ? consumptionRatio : 0;
+
+  // Phase 2: Accumulate production at full rate, apply scaled by consumption ratio
+  for (const { resourceId, index, rate } of validProductions) {
+    const delta = rate * effectiveOwned * deltaSeconds;
+    const result = accumulate(generatorId, 'produce', resourceId, delta);
+    result.commit(scale);
+
+    const actualToApply = result.toApply * scale;
+    if (actualToApply <= 0) {
+      continue;
+    }
+
+    const applied = context.addProduction(index, actualToApply, resourceId);
+    if (applied > 0) {
+      context.onProduce?.(resourceId, applied);
+    }
+  }
+}
+
+function executeConsumptionPhase(
+  context: PhaseContext,
+  consumptionAccumulators: readonly ConsumptionAccumulator[],
+  consumptionRatio: number,
+): void {
+  // Phase 3: Apply consumption, scaling by ratio if resources were limited
+  for (const { resourceId, index, result } of consumptionAccumulators) {
+    result.commit(consumptionRatio);
+
+    const actualToApply = result.toApply * consumptionRatio;
+    if (actualToApply <= 0) {
+      continue;
+    }
+
+    if (!context.spendConsumption(index, actualToApply, resourceId)) {
+      continue;
+    }
+
+    context.onConsume?.(resourceId, actualToApply);
+  }
+}
+
+/**
+ * Executes the three production phases for a single generator.
+ *
+ * Phase 1: Calculate consumption ratios based on available resources
+ * Phase 2: Apply production scaled by consumption ratio
+ * Phase 3: Apply consumption scaled by ratio
+ */
+function executeProductionPhases(
+  input: GeneratorPhaseInput,
+  context: PhaseContext,
+  accumulate: AccumulateFunction,
+): void {
+  const { consumptionAccumulators, consumptionRatio, willApplyProduction } =
+    prepareConsumptionPhase(input, context, accumulate);
+
+  executeProductionPhase(
+    input,
+    context,
+    accumulate,
+    consumptionRatio,
+    willApplyProduction,
+  );
+  executeConsumptionPhase(context, consumptionAccumulators, consumptionRatio);
+}
+
+function createShadowPhaseContext(
+  getAmount: (index: number) => number,
+  addAmount: (index: number, amount: number) => number,
+  spendAmount: (index: number, amount: number) => boolean,
+  produced: Map<string, number>,
+  consumed: Map<string, number>,
+  onTick: boolean,
+): PhaseContext {
+  return {
+    getAmount,
+    addProduction: (index, amount) => addAmount(index, amount),
+    spendConsumption: (index, amount) => spendAmount(index, amount),
+    onProduce: onTick
+      ? (resourceId, amount) => {
+          produced.set(resourceId, (produced.get(resourceId) ?? 0) + amount);
+        }
+      : undefined,
+    onConsume: onTick
+      ? (resourceId, amount) => {
+          consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + amount);
+        }
+      : undefined,
+  };
+}
+
+function createDirectPhaseContext(
+  resourceState: ProductionResourceState,
+  systemId: string,
+  produced: Map<string, number>,
+  consumed: Map<string, number>,
+  onTick: boolean,
+): PhaseContext {
+  return {
+    getAmount: (index) => resourceState.getAmount(index),
+    addProduction: (index, amount) => {
+      const before = resourceState.getAmount(index);
+      const applied = (
+        resourceState as unknown as {
+          addAmount: (index: number, amount: number) => unknown;
+        }
+      ).addAmount(index, amount);
+
+      if (typeof applied === 'number') {
+        if (!Number.isFinite(applied) || applied <= 0) {
+          return 0;
+        }
+        return applied;
+      }
+
+      const after = resourceState.getAmount(index);
+      if (!Number.isFinite(before) || !Number.isFinite(after)) {
+        return amount;
+      }
+
+      const delta = after - before;
+      if (!Number.isFinite(delta) || delta <= 0) {
+        return 0;
+      }
+      return Math.min(delta, amount);
+    },
+    spendConsumption: (index, amount) => {
+      return resourceState.spendAmount(index, amount, { systemId });
+    },
+    onProduce: onTick
+      ? (resourceId, amount) => {
+          produced.set(resourceId, (produced.get(resourceId) ?? 0) + amount);
+        }
+      : undefined,
+    onConsume: onTick
+      ? (resourceId, amount) => {
+          consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + amount);
+        }
+      : undefined,
+  };
+}
+
+/**
+ * Manages shadow state for finalize-tick-based production.
+ * Tracks pending changes in memory before committing via finalizeTick.
+ */
+class ShadowState {
+  private readonly amounts = new Map<number, number>();
+  private readonly income = new Map<number, number>();
+  private readonly expense = new Map<number, number>();
+
+  constructor(
+    private readonly resourceState: ProductionResourceState,
+    private readonly capacityState: ProductionResourceStateWithCapacity | undefined,
+  ) {}
+
+  getAmount(index: number): number {
+    return this.amounts.get(index) ?? this.resourceState.getAmount(index);
+  }
+
+  addAmount(index: number, amount: number): number {
+    const current = this.getAmount(index);
+    const capacity = this.getCapacity(index);
+    const next = this.clampAmount(current + amount, capacity);
+    this.amounts.set(index, next);
+
+    const applied = next - current;
+    if (applied > 0) {
+      this.recordIncome(index, applied);
+    }
+    return applied;
+  }
+
+  spendAmount(index: number, amount: number): boolean {
+    const current = this.getAmount(index);
+    if (current < amount) {
+      return false;
+    }
+
+    this.amounts.set(index, current - amount);
+    this.recordExpense(index, amount);
+    return true;
+  }
+
+  getIncome(): ReadonlyMap<number, number> {
+    return this.income;
+  }
+
+  getExpense(): ReadonlyMap<number, number> {
+    return this.expense;
+  }
+
+  private getCapacity(index: number): number {
+    if (!this.capacityState) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    const capacity = this.capacityState.getCapacity(index);
+    if (capacity === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY;
+    }
+    if (!Number.isFinite(capacity) || capacity < 0) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return capacity;
+  }
+
+  private clampAmount(amount: number, capacity: number): number {
+    if (amount < 0) {
+      return 0;
+    }
+    if (amount > capacity) {
+      return capacity;
+    }
+    return amount;
+  }
+
+  private recordIncome(index: number, amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return;
+    }
+    this.income.set(index, (this.income.get(index) ?? 0) + amount);
+  }
+
+  private recordExpense(index: number, amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return;
+    }
+    this.expense.set(index, (this.expense.get(index) ?? 0) + amount);
+  }
+}
+
 /**
  * Creates a production system that applies generator produces/consumes rates
  * to resources each tick.
@@ -582,35 +1007,189 @@ export function createProductionSystem(
   }
 
   // Track accumulated fractional amounts per generator/resource
-  const accumulators = new Map<string, number>();
+  const accumulators = new Map<
+    string,
+    {
+      readonly produce: Map<string, number>;
+      readonly consume: Map<string, number>;
+    }
+  >();
+  const legacyAccumulators = new Map<string, number>();
 
-  function getAccumulatorKey(
-    generatorId: string,
-    operation: 'produce' | 'consume',
-    resourceId: string,
-  ): string {
-    return `${generatorId}:${operation}:${resourceId}`;
+  const ACCUMULATOR_KEY_V2_PREFIX = 'v2|';
+
+    function serializeAccumulatorKeyV2(
+      generatorId: string,
+      operation: AccumulatorOperation,
+      resourceId: string,
+    ): string {
+    return [
+      ACCUMULATOR_KEY_V2_PREFIX.slice(0, -1),
+      encodeURIComponent(generatorId),
+      operation,
+      encodeURIComponent(resourceId),
+      ].join('|');
+    }
+
+  function tryParseAccumulatorKeyV2(
+    key: string,
+  ):
+    | {
+        generatorId: string;
+        operation: AccumulatorOperation;
+        resourceId: string;
+      }
+    | undefined {
+    if (!key.startsWith(ACCUMULATOR_KEY_V2_PREFIX)) {
+      return undefined;
+    }
+
+    const parts = key.split('|');
+    if (parts.length !== 4 || parts[0] !== 'v2') {
+      return undefined;
+    }
+
+    const operation = parts[2];
+    if (operation !== 'produce' && operation !== 'consume') {
+      return undefined;
+    }
+
+    try {
+      return {
+        generatorId: decodeURIComponent(parts[1]),
+        operation,
+        resourceId: decodeURIComponent(parts[3]),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
-  /**
-   * Calculates what would be applied without modifying accumulator state.
-   * Returns both the amount that would be applied and the new accumulator total.
-   */
-  interface AccumulatorResult {
-    /** Amount that would be applied this tick (threshold-aligned) */
-    toApply: number;
-    /** Total accumulated value (for ratio calculations) */
-    newTotal: number;
-    /** Commits the accumulator state, optionally scaling the applied amount */
-    commit: (scale?: number) => void;
+  function hasAccumulatorValue(
+    generatorId: string,
+    operation: AccumulatorOperation,
+    resourceId: string,
+  ): boolean {
+    const generatorAccumulators = accumulators.get(generatorId);
+    if (!generatorAccumulators) {
+      return false;
+    }
+
+    const accumulatorMap =
+      operation === 'produce'
+        ? generatorAccumulators.produce
+        : generatorAccumulators.consume;
+    return accumulatorMap.has(resourceId);
+  }
+
+  function setAccumulatorValueFromRestore(
+    generatorId: string,
+    operation: AccumulatorOperation,
+    resourceId: string,
+    value: number,
+  ): void {
+    const generatorAccumulators = accumulators.get(generatorId) ?? {
+      produce: new Map<string, number>(),
+      consume: new Map<string, number>(),
+    };
+    accumulators.set(generatorId, generatorAccumulators);
+
+    const accumulatorMap =
+      operation === 'produce'
+        ? generatorAccumulators.produce
+        : generatorAccumulators.consume;
+    accumulatorMap.set(resourceId, value);
+  }
+
+  function tryParseAccumulatorKeyLegacy(
+    key: string,
+    generatorIds: ReadonlySet<string>,
+  ):
+    | {
+        generatorId: string;
+        operation: AccumulatorOperation;
+        resourceId: string;
+      }
+    | undefined {
+    const candidates: Array<{
+      generatorId: string;
+      operation: AccumulatorOperation;
+      resourceId: string;
+    }> = [];
+
+    const operations: AccumulatorOperation[] = ['produce', 'consume'];
+    for (const operation of operations) {
+      const delimiter = `:${operation}:`;
+      let searchIndex = 0;
+      while (true) {
+        const delimiterIndex = key.indexOf(delimiter, searchIndex);
+        if (delimiterIndex === -1) {
+          break;
+        }
+
+        const generatorId = key.slice(0, delimiterIndex);
+        const resourceId = key.slice(delimiterIndex + delimiter.length);
+        if (generatorId.length > 0 && resourceId.length > 0) {
+          candidates.push({ generatorId, operation, resourceId });
+        }
+
+        searchIndex = delimiterIndex + 1;
+      }
+    }
+
+    const candidatesWithKnownResource = candidates.filter(
+      ({ resourceId }) => resourceState.getIndex(resourceId) !== undefined,
+    );
+    if (candidatesWithKnownResource.length === 0) {
+      return undefined;
+    }
+
+    const candidatesWithKnownGenerator = candidatesWithKnownResource.filter(
+      ({ generatorId }) => generatorIds.has(generatorId),
+    );
+    if (candidatesWithKnownGenerator.length === 1) {
+      return candidatesWithKnownGenerator[0];
+    }
+
+    if (candidatesWithKnownResource.length === 1) {
+      return candidatesWithKnownResource[0];
+    }
+
+    return undefined;
   }
 
   /**
    * Accumulates a delta and returns the threshold-aligned amount to apply.
    * Call commit() to finalize the accumulator state after deciding the scale.
    */
-  function accumulate(key: string, delta: number): AccumulatorResult {
-    const current = accumulators.get(key) ?? 0;
+  function accumulate(
+    generatorId: string,
+    operation: AccumulatorOperation,
+    resourceId: string,
+    delta: number,
+  ): AccumulatorResult {
+    const generatorAccumulators = accumulators.get(generatorId) ?? {
+      produce: new Map<string, number>(),
+      consume: new Map<string, number>(),
+    };
+    accumulators.set(generatorId, generatorAccumulators);
+
+    const accumulatorMap =
+      operation === 'produce'
+        ? generatorAccumulators.produce
+        : generatorAccumulators.consume;
+
+    let current = accumulatorMap.get(resourceId) ?? 0;
+    if (legacyAccumulators.size > 0) {
+      const legacyKey = serializeAccumulatorKeyLegacy(generatorId, operation, resourceId);
+      const legacyValue = legacyAccumulators.get(legacyKey);
+      if (legacyValue !== undefined) {
+        legacyAccumulators.delete(legacyKey);
+        current = legacyValue;
+        accumulatorMap.set(resourceId, legacyValue);
+      }
+    }
+
     const total = current + delta;
     // Use a small epsilon to handle floating-point precision issues
     // (e.g., 0.09 + 0.01 = 0.09999999999999999 should count as 0.10)
@@ -625,205 +1204,126 @@ export function createProductionSystem(
       commit: (scale = 1) => {
         // Store the difference between total accumulated and what was actually applied.
         // This preserves both the sub-threshold remainder and any portion not applied due to scaling.
-        accumulators.set(key, total - toApply * scale);
+        accumulatorMap.set(resourceId, total - toApply * scale);
       },
     };
   }
 
-  const runTick = (deltaMs: number): void => {
-    const deltaSeconds = deltaMs / 1000;
-    const generatorList = generators();
+    const shouldTrackTickStats = onTick !== undefined;
 
-    // Track total produced and consumed amounts for this tick
-    const produced = new Map<string, number>();
-    const consumed = new Map<string, number>();
-
-    if (useFinalizeTickRates && rateTrackingState) {
-      if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
-        if (onTick) {
-          onTick({ produced, consumed });
-        }
+    const applyDirectRateTracking = (
+      rateState: ProductionResourceStateWithRateTracking,
+      validProductions: readonly ValidatedRate[],
+      validConsumptions: readonly ValidatedRate[],
+      effectiveOwned: number,
+      deltaSeconds: number,
+    ): void => {
+      const rateConsumptionRatio = computeRateConsumptionRatio(
+        resourceState,
+        validConsumptions,
+        effectiveOwned,
+        deltaSeconds,
+      );
+      if (rateConsumptionRatio <= 0) {
         return;
       }
 
-      const capacityState = supportsCapacity(resourceState)
-        ? resourceState
-        : undefined;
-      const shadowAmounts = new Map<number, number>();
-      const tickIncome = new Map<number, number>();
-      const tickExpense = new Map<number, number>();
+      applyRateTrackingAdjustments(
+        validProductions,
+        effectiveOwned,
+        rateConsumptionRatio,
+        (index, amountPerSecond) => {
+          rateState.applyIncome(index, amountPerSecond);
+        },
+      );
+      applyRateTrackingAdjustments(
+        validConsumptions,
+        effectiveOwned,
+        rateConsumptionRatio,
+        (index, amountPerSecond) => {
+          rateState.applyExpense(index, amountPerSecond);
+        },
+      );
+    };
 
-      const getShadowAmount = (index: number): number =>
-        shadowAmounts.get(index) ?? resourceState.getAmount(index);
+  const runFinalizeTickRatesFlow = (
+    rateState: ProductionResourceStateWithRateTracking,
+    generatorList: readonly GeneratorProductionState[],
+    deltaSeconds: number,
+    produced: Map<string, number>,
+    consumed: Map<string, number>,
+  ): void => {
+    const shadowState = new ShadowState(
+      resourceState,
+      supportsCapacity(resourceState) ? resourceState : undefined,
+    );
 
-      const getShadowCapacity = (index: number): number => {
-        if (!capacityState) {
-          return Number.POSITIVE_INFINITY;
-        }
-
-        const capacity = capacityState.getCapacity(index);
-        if (capacity === Number.POSITIVE_INFINITY) {
-          return Number.POSITIVE_INFINITY;
-        }
-        if (!Number.isFinite(capacity) || capacity < 0) {
-          return Number.POSITIVE_INFINITY;
-        }
-        return capacity;
-      };
-
-      const clampShadowAmount = (amount: number, capacity: number): number => {
-        if (amount < 0) {
-          return 0;
-        }
-        if (amount > capacity) {
-          return capacity;
-        }
-        return amount;
-      };
-
-      const addShadowAmount = (index: number, amount: number): number => {
-        const current = getShadowAmount(index);
-        const capacity = getShadowCapacity(index);
-        const next = clampShadowAmount(current + amount, capacity);
-        shadowAmounts.set(index, next);
-        return next - current;
-      };
-
-      const spendShadowAmount = (index: number, amount: number): boolean => {
-        const current = getShadowAmount(index);
-        if (current < amount) {
-          return false;
-        }
-        shadowAmounts.set(index, current - amount);
-        return true;
-      };
-
-      const recordTickAmount = (map: Map<number, number>, index: number, amount: number): void => {
-        if (!Number.isFinite(amount) || amount <= 0) {
-          return;
-        }
-        map.set(index, (map.get(index) ?? 0) + amount);
-      };
-
-      for (const generator of generatorList) {
-        if (isDevelopmentMode() && generator.id.includes(':')) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `Generator ID "${generator.id}" contains ':' which may cause accumulator key collisions`,
-          );
-        }
-
-        if (generator.owned <= 0) {
-          continue;
-        }
-        if (generator.enabled === false) {
-          continue;
-        }
-
-        const multiplier = getMultiplier?.(generator.id) ?? 1;
-        const effectiveOwned = generator.owned * multiplier;
-
-        const validProductions = validateRates(generator.produces, resourceState);
-        const validConsumptions = validateRates(generator.consumes, resourceState);
-
-        // Phase 1: Peek at what each consumption accumulator would apply
-        // and calculate ratio based on ACTUAL consumable amounts (post-threshold)
-        const consumptionAccumulators: Array<{
-          resourceId: string;
-          index: number;
-          result: AccumulatorResult;
-        }> = [];
-
-        let consumptionRatio = 1;
-        // Generators without consumption requirements always produce at full rate.
-        // For generators WITH consumption, we only apply production when at least
-        // one consumption crosses the threshold (keeps production/consumption in sync).
-        let willApplyProduction = validConsumptions.length === 0;
-        for (const { resourceId, index, rate } of validConsumptions) {
-          const delta = rate * effectiveOwned * deltaSeconds;
-          const key = getAccumulatorKey(generator.id, 'consume', resourceId);
-          const result = accumulate(key, delta);
-
-          consumptionAccumulators.push({ resourceId, index, result });
-
-          // Calculate ratio based on total accumulated consumption vs available
-          if (result.toApply > 0) {
-            willApplyProduction = true;
-            const available = getShadowAmount(index);
-            // Use newTotal (full accumulated amount) for ratio calculation
-            // to ensure production scales correctly with actual consumption.
-            // Guard against division by zero (theoretically possible with extremely
-            // small delta times that round to zero after floating-point operations).
-            const ratio = result.newTotal > 0 ? available / result.newTotal : 1;
-            consumptionRatio = Math.min(consumptionRatio, ratio);
-          }
-        }
-
-        // Phase 2: Accumulate production at full rate, apply scaled by consumption ratio
-        for (const { resourceId, index, rate } of validProductions) {
-          const delta = rate * effectiveOwned * deltaSeconds;
-          const key = getAccumulatorKey(generator.id, 'produce', resourceId);
-          const result = accumulate(key, delta);
-
-          // Scale the applied amount by consumption ratio
-          const scale = willApplyProduction ? consumptionRatio : 0;
-          result.commit(scale);
-
-          const actualToApply = result.toApply * scale;
-          if (actualToApply > 0) {
-            const applied = addShadowAmount(index, actualToApply);
-            recordTickAmount(tickIncome, index, applied);
-            if (onTick && applied > 0) {
-              produced.set(resourceId, (produced.get(resourceId) ?? 0) + applied);
-            }
-          }
-        }
-
-        // Phase 3: Apply consumption, scaling by ratio if resources were limited
-        for (const { resourceId, index, result } of consumptionAccumulators) {
-          result.commit(consumptionRatio);
-
-          const actualToApply = result.toApply * consumptionRatio;
-          if (actualToApply > 0 && spendShadowAmount(index, actualToApply)) {
-            recordTickAmount(tickExpense, index, actualToApply);
-            if (onTick) {
-              consumed.set(
-                resourceId,
-                (consumed.get(resourceId) ?? 0) + actualToApply,
-              );
-            }
-          }
-        }
-      }
-
-      for (const [index, amount] of tickIncome) {
-        const amountPerSecond = amount / deltaSeconds;
-        if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
-          rateTrackingState.applyIncome(index, amountPerSecond);
-        }
-      }
-
-      for (const [index, amount] of tickExpense) {
-        const amountPerSecond = amount / deltaSeconds;
-        if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
-          rateTrackingState.applyExpense(index, amountPerSecond);
-        }
-      }
-
-      if (onTick) {
-        onTick({ produced, consumed });
-      }
-      return;
-    }
+    const shadowContext = createShadowPhaseContext(
+      (index) => shadowState.getAmount(index),
+      (index, amount) => shadowState.addAmount(index, amount),
+      (index, amount) => shadowState.spendAmount(index, amount),
+      produced,
+      consumed,
+      shouldTrackTickStats,
+    );
 
     for (const generator of generatorList) {
-      if (isDevelopmentMode() && generator.id.includes(':')) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `Generator ID "${generator.id}" contains ':' which may cause accumulator key collisions`,
-        );
+      if (generator.owned <= 0) {
+        continue;
+      }
+      if (generator.enabled === false) {
+        continue;
       }
 
+      const multiplier = getMultiplier?.(generator.id) ?? 1;
+      const effectiveOwned = generator.owned * multiplier;
+
+      const validProductions = validateRates(generator.produces, resourceState);
+      const validConsumptions = validateRates(generator.consumes, resourceState);
+
+      executeProductionPhases(
+        {
+          generatorId: generator.id,
+          validProductions,
+          validConsumptions,
+          effectiveOwned,
+          deltaSeconds,
+        },
+        shadowContext,
+        accumulate,
+      );
+    }
+
+    for (const [index, amount] of shadowState.getIncome()) {
+      const amountPerSecond = amount / deltaSeconds;
+      if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+        rateState.applyIncome(index, amountPerSecond);
+      }
+    }
+
+    for (const [index, amount] of shadowState.getExpense()) {
+      const amountPerSecond = amount / deltaSeconds;
+      if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
+        rateState.applyExpense(index, amountPerSecond);
+      }
+    }
+  };
+
+  const runStandardFlow = (
+    generatorList: readonly GeneratorProductionState[],
+    deltaSeconds: number,
+    produced: Map<string, number>,
+    consumed: Map<string, number>,
+  ): void => {
+    const directContext = createDirectPhaseContext(
+      resourceState,
+      systemId,
+      produced,
+      consumed,
+      shouldTrackTickStats,
+    );
+
+    for (const generator of generatorList) {
       if (generator.owned <= 0) {
         continue;
       }
@@ -838,121 +1338,56 @@ export function createProductionSystem(
       const validConsumptions = validateRates(generator.consumes, resourceState);
 
       if (trackRates && rateTrackingState && !hasFinalizeTick) {
-        let rateConsumptionRatio = 1;
-
-        if (validConsumptions.length > 0) {
-          for (const { index, rate } of validConsumptions) {
-            const required = rate * effectiveOwned * deltaSeconds;
-            if (!Number.isFinite(required) || required <= 0) {
-              continue;
-            }
-
-            const available = resourceState.getAmount(index);
-            if (!Number.isFinite(available) || available <= 0) {
-              rateConsumptionRatio = 0;
-              break;
-            }
-
-            const ratio = available / required;
-            if (Number.isFinite(ratio)) {
-              rateConsumptionRatio = Math.min(rateConsumptionRatio, ratio);
-            }
-          }
-
-          if (rateConsumptionRatio < 0) {
-            rateConsumptionRatio = 0;
-          } else if (rateConsumptionRatio > 1) {
-            rateConsumptionRatio = 1;
-          }
-        }
-
-        if (rateConsumptionRatio > 0) {
-          for (const { index, rate } of validProductions) {
-            const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
-            if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
-              rateTrackingState.applyIncome(index, amountPerSecond);
-            }
-          }
-
-          for (const { index, rate } of validConsumptions) {
-            const amountPerSecond = rate * effectiveOwned * rateConsumptionRatio;
-            if (Number.isFinite(amountPerSecond) && amountPerSecond > 0) {
-              rateTrackingState.applyExpense(index, amountPerSecond);
-            }
-          }
-        }
+        applyDirectRateTracking(
+          rateTrackingState,
+          validProductions,
+          validConsumptions,
+          effectiveOwned,
+          deltaSeconds,
+        );
       }
 
-      // Phase 1: Peek at what each consumption accumulator would apply
-      // and calculate ratio based on ACTUAL consumable amounts (post-threshold)
-      const consumptionAccumulators: Array<{
-        resourceId: string;
-        index: number;
-        result: AccumulatorResult;
-      }> = [];
+      executeProductionPhases(
+        {
+          generatorId: generator.id,
+          validProductions,
+          validConsumptions,
+          effectiveOwned,
+          deltaSeconds,
+        },
+        directContext,
+        accumulate,
+      );
+    }
+  };
 
-      let consumptionRatio = 1;
-      // Generators without consumption requirements always produce at full rate.
-      // For generators WITH consumption, we only apply production when at least
-      // one consumption crosses the threshold (keeps production/consumption in sync).
-      let willApplyProduction = validConsumptions.length === 0;
-      for (const { resourceId, index, rate } of validConsumptions) {
-        const delta = rate * effectiveOwned * deltaSeconds;
-        const key = getAccumulatorKey(generator.id, 'consume', resourceId);
-        const result = accumulate(key, delta);
+  const runTick = (deltaMs: number): void => {
+    const deltaSeconds = deltaMs / 1000;
+    const generatorList = generators();
 
-        consumptionAccumulators.push({ resourceId, index, result });
+    const produced = new Map<string, number>();
+    const consumed = new Map<string, number>();
 
-        // Calculate ratio based on total accumulated consumption vs available
-        if (result.toApply > 0) {
-          willApplyProduction = true;
-          const available = resourceState.getAmount(index);
-          // Use newTotal (full accumulated amount) for ratio calculation
-          // to ensure production scales correctly with actual consumption.
-          // Guard against division by zero (theoretically possible with extremely
-          // small delta times that round to zero after floating-point operations).
-          const ratio = result.newTotal > 0 ? available / result.newTotal : 1;
-          consumptionRatio = Math.min(consumptionRatio, ratio);
-        }
+    if (useFinalizeTickRates && rateTrackingState) {
+      if (!Number.isFinite(deltaSeconds) || deltaSeconds <= 0) {
+        onTick?.({ produced, consumed });
+        return;
       }
 
-      // Phase 2: Accumulate production at full rate, apply scaled by consumption ratio
-      for (const { resourceId, index, rate } of validProductions) {
-        const delta = rate * effectiveOwned * deltaSeconds;
-        const key = getAccumulatorKey(generator.id, 'produce', resourceId);
-        const result = accumulate(key, delta);
+      runFinalizeTickRatesFlow(
+        rateTrackingState,
+        generatorList,
+        deltaSeconds,
+        produced,
+        consumed,
+      );
 
-        // Scale the applied amount by consumption ratio
-        const scale = willApplyProduction ? consumptionRatio : 0;
-        result.commit(scale);
-
-        const actualToApply = result.toApply * scale;
-        if (actualToApply > 0) {
-          resourceState.addAmount(index, actualToApply);
-          if (onTick) {
-            produced.set(resourceId, (produced.get(resourceId) ?? 0) + actualToApply);
-          }
-        }
-      }
-
-      // Phase 3: Apply consumption, scaling by ratio if resources were limited
-      for (const { resourceId, index, result } of consumptionAccumulators) {
-        result.commit(consumptionRatio);
-
-        const actualToApply = result.toApply * consumptionRatio;
-        if (actualToApply > 0) {
-          resourceState.spendAmount(index, actualToApply, { systemId });
-          if (onTick) {
-            consumed.set(resourceId, (consumed.get(resourceId) ?? 0) + actualToApply);
-          }
-        }
-      }
+      onTick?.({ produced, consumed });
+      return;
     }
 
-    // Call onTick callback if provided
-    if (onTick) {
-      onTick({ produced, consumed });
-    }
+    runStandardFlow(generatorList, deltaSeconds, produced, consumed);
+    onTick?.({ produced, consumed });
   };
 
   const tick: ProductionSystem['tick'] = ({ deltaMs }) => {
@@ -982,47 +1417,113 @@ export function createProductionSystem(
     applyOfflineDelta,
     clearAccumulators: () => {
       accumulators.clear();
+      legacyAccumulators.clear();
     },
-    cleanupAccumulators: () => {
-      const zeroThreshold = applyThreshold * 1e-6;
-      for (const [key, value] of accumulators) {
-        if (Math.abs(value) < zeroThreshold) {
-          accumulators.delete(key);
+      cleanupAccumulators: () => {
+        const zeroThreshold = applyThreshold * 1e-6;
+        for (const [generatorId, generatorAccumulators] of accumulators) {
+          deleteNearZeroEntries(generatorAccumulators.produce, zeroThreshold);
+          deleteNearZeroEntries(generatorAccumulators.consume, zeroThreshold);
+
+          if (
+            generatorAccumulators.produce.size === 0 &&
+            generatorAccumulators.consume.size === 0
+          ) {
+            accumulators.delete(generatorId);
+          }
         }
-      }
-    },
+        deleteNearZeroEntries(legacyAccumulators, zeroThreshold);
+      },
     clearGeneratorAccumulators: (generatorId: string) => {
-      const prefix = `${generatorId}:`;
-      for (const key of accumulators.keys()) {
-        if (key.startsWith(prefix)) {
-          accumulators.delete(key);
+      accumulators.delete(generatorId);
+
+      const producePrefix = `${generatorId}:produce:`;
+      const consumePrefix = `${generatorId}:consume:`;
+
+      for (const key of legacyAccumulators.keys()) {
+        if (key.startsWith(producePrefix) || key.startsWith(consumePrefix)) {
+          legacyAccumulators.delete(key);
         }
       }
     },
     exportAccumulators: (): SerializedProductionAccumulators => {
       const result: Record<string, number> = {};
-      for (const [key, value] of accumulators) {
+
+      for (const [generatorId, generatorAccumulators] of accumulators) {
+        for (const [resourceId, value] of generatorAccumulators.produce) {
+          // Only export non-zero values to minimize save size
+          if (value !== 0) {
+            result[serializeAccumulatorKeyV2(generatorId, 'produce', resourceId)] = value;
+          }
+        }
+
+        for (const [resourceId, value] of generatorAccumulators.consume) {
+          // Only export non-zero values to minimize save size
+          if (value !== 0) {
+            result[serializeAccumulatorKeyV2(generatorId, 'consume', resourceId)] = value;
+          }
+        }
+      }
+
+      for (const [key, value] of legacyAccumulators) {
         // Only export non-zero values to minimize save size
         if (value !== 0) {
           result[key] = value;
         }
       }
+
       return { accumulators: result };
     },
-    restoreAccumulators: (state: SerializedProductionAccumulators) => {
-      // Clear existing accumulators before restoring
-      accumulators.clear();
+      restoreAccumulators: (state: SerializedProductionAccumulators) => {
+        accumulators.clear();
+        legacyAccumulators.clear();
 
       if (!state || !state.accumulators) {
         return;
       }
 
-      // Restore each accumulator, filtering out invalid values
-      for (const [key, value] of Object.entries(state.accumulators)) {
-        if (typeof value === 'number' && Number.isFinite(value)) {
-          accumulators.set(key, value);
+        const generatorIds = new Set(generators().map((generator) => generator.id));
+
+        // Restore each accumulator, filtering out invalid values
+        for (const [key, value] of Object.entries(state.accumulators)) {
+          if (typeof value !== 'number' || !Number.isFinite(value)) {
+            continue;
+          }
+
+          const v2Parsed = tryParseAccumulatorKeyV2(key);
+          if (v2Parsed) {
+            setAccumulatorValueFromRestore(
+              v2Parsed.generatorId,
+              v2Parsed.operation,
+              v2Parsed.resourceId,
+              value,
+            );
+            continue;
+          }
+
+          const legacyParsed = tryParseAccumulatorKeyLegacy(key, generatorIds);
+          if (!legacyParsed) {
+            legacyAccumulators.set(key, value);
+            continue;
+          }
+
+          if (
+            hasAccumulatorValue(
+              legacyParsed.generatorId,
+              legacyParsed.operation,
+              legacyParsed.resourceId,
+            )
+          ) {
+            continue;
+          }
+
+          setAccumulatorValueFromRestore(
+            legacyParsed.generatorId,
+            legacyParsed.operation,
+            legacyParsed.resourceId,
+            value,
+          );
         }
-      }
-    },
-  };
+      },
+    };
 }

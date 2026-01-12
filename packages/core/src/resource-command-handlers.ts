@@ -7,7 +7,12 @@ import {
   type PurchaseUpgradePayload,
   type ToggleGeneratorPayload,
 } from './command.js';
-import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
+import type {
+  CommandDispatcher,
+  CommandHandler,
+  CommandResultFailure,
+  ExecutionContext,
+} from './command-dispatcher.js';
 import type { EventPublisher } from './events/event-bus.js';
 import type { PrestigeSystemEvaluator } from './progression.js';
 import type { ResourceState, ResourceSpendAttemptContext } from './resource-state.js';
@@ -229,6 +234,189 @@ interface PurchaseHandlerOptions {
   readonly automationSystemId: string;
 }
 
+function spendGeneratorPurchaseCostsOrFail(
+  resources: ResourceState,
+  quote: GeneratorPurchaseQuote,
+  payload: PurchaseGeneratorPayload,
+  context: ExecutionContext,
+  spendContext: ResourceSpendAttemptContext,
+): { successfulSpends: { index: number; amount: number }[] } | {
+  failure: CommandResultFailure;
+} {
+  const successfulSpends: { index: number; amount: number }[] = [];
+
+  for (const cost of quote.costs) {
+    if (!isFiniteNonNegative(cost.amount)) {
+      telemetry.recordError('GeneratorPurchaseInvalidQuote', {
+        generatorId: payload.generatorId,
+        count: payload.count,
+        reason: 'cost-invalid',
+        resourceId: cost.resourceId,
+        amount: cost.amount,
+      });
+      refund(resources, spendContext, successfulSpends);
+      return {
+        failure: {
+          success: false,
+          error: {
+            code: 'INVALID_PURCHASE_QUOTE',
+            message: 'Generator purchase quote is invalid.',
+            details: {
+              generatorId: payload.generatorId,
+              count: payload.count,
+              reason: 'cost-invalid',
+              resourceId: cost.resourceId,
+              amount: cost.amount,
+            },
+          },
+        },
+      };
+    }
+
+    let resourceIndex: number;
+    try {
+      resourceIndex = resources.requireIndex(cost.resourceId);
+    } catch (error) {
+      refund(resources, spendContext, successfulSpends);
+      throw error;
+    }
+
+    if (cost.amount === 0) {
+      continue;
+    }
+
+    const spendSucceeded = resources.spendAmount(
+      resourceIndex,
+      cost.amount,
+      spendContext,
+    );
+
+    if (!spendSucceeded) {
+      telemetry.recordWarning('InsufficientResources', {
+        generatorId: payload.generatorId,
+        resourceId: cost.resourceId,
+        required: cost.amount,
+        count: payload.count,
+        step: context.step,
+        priority: context.priority,
+      });
+      refund(resources, spendContext, successfulSpends);
+      return {
+        failure: {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_RESOURCES',
+            message: 'Insufficient resources.',
+            details: {
+              generatorId: payload.generatorId,
+              resourceId: cost.resourceId,
+              required: cost.amount,
+              count: payload.count,
+            },
+          },
+        },
+      };
+    }
+
+    successfulSpends.push({
+      index: resourceIndex,
+      amount: cost.amount,
+    });
+  }
+
+  return { successfulSpends };
+}
+
+function spendUpgradePurchaseCostsOrFail(
+  resources: ResourceState,
+  quote: UpgradePurchaseQuote,
+  upgradeId: string,
+  context: ExecutionContext,
+  spendContext: ResourceSpendAttemptContext,
+): { successfulSpends: { index: number; amount: number }[] } | {
+  failure: CommandResultFailure;
+} {
+  const successfulSpends: { index: number; amount: number }[] = [];
+
+  for (const cost of quote.costs) {
+    if (!isFiniteNonNegative(cost.amount)) {
+      telemetry.recordError('UpgradePurchaseInvalidQuote', {
+        upgradeId,
+        reason: 'cost-invalid',
+        resourceId: cost.resourceId,
+        amount: cost.amount,
+      });
+      refund(resources, spendContext, successfulSpends);
+      return {
+        failure: {
+          success: false,
+          error: {
+            code: 'INVALID_PURCHASE_QUOTE',
+            message: 'Upgrade purchase quote is invalid.',
+            details: {
+              upgradeId,
+              reason: 'cost-invalid',
+              resourceId: cost.resourceId,
+              amount: cost.amount,
+            },
+          },
+        },
+      };
+    }
+
+    if (cost.amount === 0) {
+      continue;
+    }
+
+    let resourceIndex: number;
+    try {
+      resourceIndex = resources.requireIndex(cost.resourceId);
+    } catch (error) {
+      refund(resources, spendContext, successfulSpends);
+      throw error;
+    }
+
+    const spendSucceeded = resources.spendAmount(
+      resourceIndex,
+      cost.amount,
+      spendContext,
+    );
+
+    if (!spendSucceeded) {
+      telemetry.recordWarning('UpgradePurchaseDenied', {
+        upgradeId,
+        resourceId: cost.resourceId,
+        required: cost.amount,
+        step: context.step,
+        priority: context.priority,
+        reason: 'insufficient-resources',
+      });
+      refund(resources, spendContext, successfulSpends);
+      return {
+        failure: {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_RESOURCES',
+            message: 'Insufficient resources.',
+            details: {
+              upgradeId,
+              resourceId: cost.resourceId,
+              required: cost.amount,
+            },
+          },
+        },
+      };
+    }
+
+    successfulSpends.push({
+      index: resourceIndex,
+      amount: cost.amount,
+    });
+  }
+
+  return { successfulSpends };
+}
+
 function createPurchaseGeneratorHandler(
   resources: ResourceState,
   generatorPurchases: GeneratorPurchaseEvaluator,
@@ -307,84 +495,18 @@ function createPurchaseGeneratorHandler(
       systemId:
         context.priority === CommandPriority.AUTOMATION
           ? automationSystemId
-          : undefined,
+        : undefined,
     };
 
-    const successfulSpends: { index: number; amount: number }[] = [];
-
-    for (const cost of quote.costs) {
-      if (!isFiniteNonNegative(cost.amount)) {
-        telemetry.recordError('GeneratorPurchaseInvalidQuote', {
-          generatorId: payload.generatorId,
-          count: payload.count,
-          reason: 'cost-invalid',
-          resourceId: cost.resourceId,
-          amount: cost.amount,
-        });
-        refund(resources, spendContext, successfulSpends);
-        return {
-          success: false,
-          error: {
-            code: 'INVALID_PURCHASE_QUOTE',
-            message: 'Generator purchase quote is invalid.',
-            details: {
-              generatorId: payload.generatorId,
-              count: payload.count,
-              reason: 'cost-invalid',
-              resourceId: cost.resourceId,
-              amount: cost.amount,
-            },
-          },
-        };
-      }
-
-      let resourceIndex: number;
-      try {
-        resourceIndex = resources.requireIndex(cost.resourceId);
-      } catch (error) {
-        refund(resources, spendContext, successfulSpends);
-        throw error;
-      }
-
-      if (cost.amount === 0) {
-        continue;
-      }
-
-      const spendSucceeded = resources.spendAmount(
-        resourceIndex,
-        cost.amount,
-        spendContext,
-      );
-
-      if (!spendSucceeded) {
-        telemetry.recordWarning('InsufficientResources', {
-          generatorId: payload.generatorId,
-          resourceId: cost.resourceId,
-          required: cost.amount,
-          count: payload.count,
-          step: context.step,
-          priority: context.priority,
-        });
-        refund(resources, spendContext, successfulSpends);
-        return {
-          success: false,
-          error: {
-            code: 'INSUFFICIENT_RESOURCES',
-            message: 'Insufficient resources.',
-            details: {
-              generatorId: payload.generatorId,
-              resourceId: cost.resourceId,
-              required: cost.amount,
-              count: payload.count,
-            },
-          },
-        };
-      }
-
-      successfulSpends.push({
-        index: resourceIndex,
-        amount: cost.amount,
-      });
+    const spendResult = spendGeneratorPurchaseCostsOrFail(
+      resources,
+      quote,
+      payload,
+      context,
+      spendContext,
+    );
+    if ('failure' in spendResult) {
+      return spendResult.failure;
     }
 
     try {
@@ -395,7 +517,7 @@ function createPurchaseGeneratorHandler(
         count: payload.count,
         message: error instanceof Error ? error.message : String(error),
       });
-      refund(resources, spendContext, successfulSpends);
+      refund(resources, spendContext, spendResult.successfulSpends);
       throw error;
     }
   };
@@ -506,78 +628,15 @@ function createPurchaseUpgradeHandler(
           : undefined,
     };
 
-    const successfulSpends: { index: number; amount: number }[] = [];
-
-    for (const cost of quote.costs) {
-      if (!isFiniteNonNegative(cost.amount)) {
-        telemetry.recordError('UpgradePurchaseInvalidQuote', {
-          upgradeId,
-          reason: 'cost-invalid',
-          resourceId: cost.resourceId,
-          amount: cost.amount,
-        });
-        refund(resources, spendContext, successfulSpends);
-        return {
-          success: false,
-          error: {
-            code: 'INVALID_PURCHASE_QUOTE',
-            message: 'Upgrade purchase quote is invalid.',
-            details: {
-              upgradeId,
-              reason: 'cost-invalid',
-              resourceId: cost.resourceId,
-              amount: cost.amount,
-            },
-          },
-        };
-      }
-
-      if (cost.amount === 0) {
-        continue;
-      }
-
-      let resourceIndex: number;
-      try {
-        resourceIndex = resources.requireIndex(cost.resourceId);
-      } catch (error) {
-        refund(resources, spendContext, successfulSpends);
-        throw error;
-      }
-
-      const spendSucceeded = resources.spendAmount(
-        resourceIndex,
-        cost.amount,
-        spendContext,
-      );
-
-      if (!spendSucceeded) {
-        telemetry.recordWarning('UpgradePurchaseDenied', {
-          upgradeId,
-          resourceId: cost.resourceId,
-          required: cost.amount,
-          step: context.step,
-          priority: context.priority,
-          reason: 'insufficient-resources',
-        });
-        refund(resources, spendContext, successfulSpends);
-        return {
-          success: false,
-          error: {
-            code: 'INSUFFICIENT_RESOURCES',
-            message: 'Insufficient resources.',
-            details: {
-              upgradeId,
-              resourceId: cost.resourceId,
-              required: cost.amount,
-            },
-          },
-        };
-      }
-
-      successfulSpends.push({
-        index: resourceIndex,
-        amount: cost.amount,
-      });
+    const spendResult = spendUpgradePurchaseCostsOrFail(
+      resources,
+      quote,
+      upgradeId,
+      context,
+      spendContext,
+    );
+    if ('failure' in spendResult) {
+      return spendResult.failure;
     }
 
     try {
@@ -591,7 +650,7 @@ function createPurchaseUpgradeHandler(
         upgradeId,
         message: error instanceof Error ? error.message : String(error),
       });
-      refund(resources, spendContext, successfulSpends);
+      refund(resources, spendContext, spendResult.successfulSpends);
       throw error;
     }
 

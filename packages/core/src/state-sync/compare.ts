@@ -334,6 +334,16 @@ const mapById = <T extends { id: string }>(
 const hasOwn = (record: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(record, key);
 
+const getIndexedValue = <T>(
+  values: readonly T[] | undefined,
+  index: number | undefined,
+): T | undefined => {
+  if (index === undefined) {
+    return undefined;
+  }
+  return values?.[index];
+};
+
 const compareRuntime = (
   local: GameStateSnapshot['runtime'],
   remote: GameStateSnapshot['runtime'],
@@ -376,39 +386,29 @@ const compareResourceState = (
       recordMissingDiff(diff, localIdx !== undefined, remoteIdx !== undefined) ||
       hasDiff;
 
-    const localAmount =
-      localIdx === undefined ? undefined : local.amounts[localIdx];
-    const remoteAmount =
-      remoteIdx === undefined ? undefined : remote.amounts[remoteIdx];
+    const localAmount = getIndexedValue(local.amounts, localIdx);
+    const remoteAmount = getIndexedValue(remote.amounts, remoteIdx);
     hasDiff =
       recordValueDiff(diff, 'amount', localAmount, remoteAmount) || hasDiff;
 
-    const localCapacity =
-      localIdx === undefined ? undefined : local.capacities[localIdx];
-    const remoteCapacity =
-      remoteIdx === undefined ? undefined : remote.capacities[remoteIdx];
+    const localCapacity = getIndexedValue(local.capacities, localIdx);
+    const remoteCapacity = getIndexedValue(remote.capacities, remoteIdx);
     hasDiff =
       recordValueDiff(diff, 'capacity', localCapacity, remoteCapacity) || hasDiff;
 
-    const localUnlocked =
-      localIdx === undefined ? undefined : local.unlocked?.[localIdx];
-    const remoteUnlocked =
-      remoteIdx === undefined ? undefined : remote.unlocked?.[remoteIdx];
+    const localUnlocked = getIndexedValue(local.unlocked, localIdx);
+    const remoteUnlocked = getIndexedValue(remote.unlocked, remoteIdx);
     hasDiff =
       recordValueDiff(diff, 'unlocked', localUnlocked, remoteUnlocked) ||
       hasDiff;
 
-    const localVisible =
-      localIdx === undefined ? undefined : local.visible?.[localIdx];
-    const remoteVisible =
-      remoteIdx === undefined ? undefined : remote.visible?.[remoteIdx];
+    const localVisible = getIndexedValue(local.visible, localIdx);
+    const remoteVisible = getIndexedValue(remote.visible, remoteIdx);
     hasDiff =
       recordValueDiff(diff, 'visible', localVisible, remoteVisible) || hasDiff;
 
-    const localFlags =
-      localIdx === undefined ? undefined : local.flags[localIdx];
-    const remoteFlags =
-      remoteIdx === undefined ? undefined : remote.flags[remoteIdx];
+    const localFlags = getIndexedValue(local.flags, localIdx);
+    const remoteFlags = getIndexedValue(remote.flags, remoteIdx);
     hasDiff =
       recordValueDiff(diff, 'flags', localFlags, remoteFlags) || hasDiff;
 

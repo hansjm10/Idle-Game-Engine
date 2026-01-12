@@ -4,32 +4,88 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
-async function main() {
-  const [targetPath, expectedEvent] = process.argv.slice(2);
-  if (!targetPath) {
-    console.error(
-      'Usage: node tools/scripts/assert-json-tail.mjs <log-file> [expectedEvent]',
-    );
-    process.exit(1);
-  }
+function printUsageAndExit() {
+  console.error(
+    'Usage: node tools/scripts/assert-json-tail.mjs <log-file> [expectedEvent]',
+  );
+  process.exit(1);
+}
 
-  const absolutePath = path.resolve(process.cwd(), targetPath);
-  let raw;
+async function readLogFile(absolutePath) {
   try {
-    raw = await fs.readFile(absolutePath, 'utf8');
+    return await fs.readFile(absolutePath, 'utf8');
   } catch (error) {
-    console.error(
+    throw new Error(
       `Failed to read log file at ${absolutePath}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    process.exit(1);
   }
+}
 
-  const lines = raw
+function getNonEmptyLines(raw) {
+  return raw
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+function tryParseJsonCandidate(lines, tailIndex) {
+  let working = '';
+  let lastError;
+
+  for (let index = tailIndex; index >= 0; index -= 1) {
+    working = working.length > 0 ? `${lines[index]}\n${working}` : lines[index];
+    try {
+      return { parsed: JSON.parse(working), errorCandidate: working, lastError: undefined };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  return { parsed: undefined, errorCandidate: working, lastError };
+}
+
+function parseTrailingJson(lines) {
+  let lastError;
+  let errorCandidate = '';
+
+  // Walk upward ignoring trailing noise until we accumulate a full JSON block (covers compact and pretty output).
+  for (let tailIndex = lines.length - 1; tailIndex >= 0; tailIndex -= 1) {
+    const attempt = tryParseJsonCandidate(lines, tailIndex);
+    if (attempt.parsed) {
+      return attempt.parsed;
+    }
+    lastError = attempt.lastError;
+    errorCandidate = attempt.errorCandidate;
+  }
+
+  throw new Error(
+    [
+      'Failed to parse trailing JSON payload.',
+      'Payload:',
+      errorCandidate.length > 0 ? errorCandidate : '(no viable JSON candidate found)',
+      lastError instanceof Error ? lastError.message : String(lastError),
+    ].join('\n'),
+  );
+}
+
+async function main() {
+  const [targetPath, expectedEvent] = process.argv.slice(2);
+  if (!targetPath) {
+    printUsageAndExit();
+  }
+
+  const absolutePath = path.resolve(process.cwd(), targetPath);
+  let raw = '';
+  try {
+    raw = await readLogFile(absolutePath);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+
+  const lines = getNonEmptyLines(raw);
 
   if (lines.length === 0) {
     console.error(
@@ -39,36 +95,11 @@ async function main() {
   }
 
   let parsed;
-  let lastError;
-  let errorCandidate = '';
-  // Walk upward ignoring trailing noise until we accumulate a full JSON block (covers compact and pretty output).
-  for (let tailIndex = lines.length - 1; tailIndex >= 0; tailIndex -= 1) {
-    let working = '';
-    for (let index = tailIndex; index >= 0; index -= 1) {
-      working = working.length > 0 ? `${lines[index]}\n${working}` : lines[index];
-      try {
-        parsed = JSON.parse(working);
-        break;
-      } catch (error) {
-        lastError = error;
-        errorCandidate = working;
-      }
-    }
-
-    if (parsed) {
-      break;
-    }
-  }
-
-  if (!parsed) {
-    console.error(
-      [
-        `Failed to parse trailing JSON payload in ${absolutePath}.`,
-        `Payload:`,
-        errorCandidate.length > 0 ? errorCandidate : '(no viable JSON candidate found)',
-        lastError instanceof Error ? lastError.message : String(lastError),
-      ].join('\n'),
-    );
+  try {
+    parsed = parseTrailingJson(lines);
+  } catch (error) {
+    console.error(`Failed to parse trailing JSON payload in ${absolutePath}.`);
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
@@ -87,7 +118,9 @@ async function main() {
   );
 }
 
-await main().catch((error) => {
+try {
+  await main();
+} catch (error) {
   console.error(error instanceof Error ? error.stack ?? error.message : String(error));
   process.exit(1);
-});
+}
