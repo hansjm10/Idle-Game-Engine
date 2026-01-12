@@ -167,6 +167,93 @@ function reportMissingContextHook(
   reportConditionEvaluationError(context, error);
 }
 
+type ConditionEvaluator<K extends Condition['kind']> = (
+  condition: Extract<Condition, { kind: K }>,
+  context: ConditionContext,
+  depth: number,
+) => boolean;
+
+const CONDITION_EVALUATORS = {
+  always: (_condition, _context, _depth) => true,
+  never: (_condition, _context, _depth) => false,
+  resourceThreshold: (condition, context) => {
+    const left = context.getResourceAmount(condition.resourceId);
+    const formulaContext = createStaticFormulaEvaluationContext(context);
+    const target = evaluateNumericFormula(condition.amount, {
+      ...formulaContext,
+    });
+    return compareWithComparator(left, target, condition.comparator, context);
+  },
+  generatorLevel: (condition, context) => {
+    const owned = context.getGeneratorLevel(condition.generatorId);
+    const formulaContext = createStaticFormulaEvaluationContext(context);
+    const required = evaluateNumericFormula(condition.level, {
+      ...formulaContext,
+    });
+    return compareWithComparator(owned, required, condition.comparator, context);
+  },
+  upgradeOwned: (condition, context) => {
+    const purchases = context.getUpgradePurchases(condition.upgradeId);
+    return purchases >= condition.requiredPurchases;
+  },
+  prestigeCountThreshold: (condition, context) => {
+    const prestigeCountId = `${condition.prestigeLayerId}-prestige-count`;
+    const count = context.getResourceAmount(prestigeCountId);
+    return compareWithComparator(count, condition.count, condition.comparator, context);
+  },
+  prestigeCompleted: (condition, context) => {
+    const prestigeCountId = `${condition.prestigeLayerId}-prestige-count`;
+    const count = context.getResourceAmount(prestigeCountId);
+    return count >= 1;
+  },
+  prestigeUnlocked: (condition, context) => {
+    if (!context.hasPrestigeLayerUnlocked) {
+      reportMissingContextHook(
+        context,
+        'hasPrestigeLayerUnlocked',
+        condition.kind,
+        condition.prestigeLayerId,
+      );
+      return false;
+    }
+    return context.hasPrestigeLayerUnlocked(condition.prestigeLayerId);
+  },
+  flag: (condition, context) => {
+    if (!context.isFlagSet) {
+      reportMissingContextHook(
+        context,
+        'isFlagSet',
+        condition.kind,
+        condition.flagId,
+      );
+      return false;
+    }
+    return context.isFlagSet(condition.flagId);
+  },
+  script: (condition, context) => {
+    if (!context.evaluateScriptCondition) {
+      reportMissingContextHook(
+        context,
+        'evaluateScriptCondition',
+        condition.kind,
+        condition.scriptId,
+      );
+      return false;
+    }
+    return context.evaluateScriptCondition(condition.scriptId);
+  },
+  allOf: (condition, context, depth) =>
+    condition.conditions.every((nested) =>
+      evaluateCondition(nested, context, depth + 1),
+    ),
+  anyOf: (condition, context, depth) =>
+    condition.conditions.some((nested) =>
+      evaluateCondition(nested, context, depth + 1),
+    ),
+  not: (condition, context, depth) =>
+    !evaluateCondition(condition.condition, context, depth + 1),
+} satisfies { [K in Condition['kind']]: ConditionEvaluator<K> };
+
 /**
  * Evaluates a condition against the current game state
  *
@@ -212,97 +299,20 @@ export function evaluateCondition(
     return false;
   }
 
-  switch (condition.kind) {
-    case 'always':
-      return true;
-    case 'never':
-      return false;
-    case 'resourceThreshold': {
-      const left = context.getResourceAmount(condition.resourceId);
-      const formulaContext = createStaticFormulaEvaluationContext(context);
-      const target = evaluateNumericFormula(condition.amount, {
-        ...formulaContext,
-      });
-      return compareWithComparator(left, target, condition.comparator, context);
-    }
-    case 'generatorLevel': {
-      const owned = context.getGeneratorLevel(condition.generatorId);
-      const formulaContext = createStaticFormulaEvaluationContext(context);
-      const required = evaluateNumericFormula(condition.level, {
-        ...formulaContext,
-      });
-      return compareWithComparator(owned, required, condition.comparator, context);
-    }
-    case 'upgradeOwned': {
-      const purchases = context.getUpgradePurchases(condition.upgradeId);
-      return purchases >= condition.requiredPurchases;
-    }
-    case 'prestigeCountThreshold': {
-      const prestigeCountId = `${condition.prestigeLayerId}-prestige-count`;
-      const count = context.getResourceAmount(prestigeCountId);
-      return compareWithComparator(count, condition.count, condition.comparator, context);
-    }
-    case 'prestigeCompleted': {
-      const prestigeCountId = `${condition.prestigeLayerId}-prestige-count`;
-      const count = context.getResourceAmount(prestigeCountId);
-      return count >= 1;
-    }
-    case 'prestigeUnlocked': {
-      if (!context.hasPrestigeLayerUnlocked) {
-        reportMissingContextHook(
-          context,
-          'hasPrestigeLayerUnlocked',
-          condition.kind,
-          condition.prestigeLayerId,
-        );
-        return false;
-      }
-      return context.hasPrestigeLayerUnlocked(condition.prestigeLayerId);
-    }
-    case 'flag': {
-      if (!context.isFlagSet) {
-        reportMissingContextHook(
-          context,
-          'isFlagSet',
-          condition.kind,
-          condition.flagId,
-        );
-        return false;
-      }
-      return context.isFlagSet(condition.flagId);
-    }
-    case 'script': {
-      if (!context.evaluateScriptCondition) {
-        reportMissingContextHook(
-          context,
-          'evaluateScriptCondition',
-          condition.kind,
-          condition.scriptId,
-        );
-        return false;
-      }
-      return context.evaluateScriptCondition(condition.scriptId);
-    }
-    case 'allOf':
-      return condition.conditions.every((nested) =>
-        evaluateCondition(nested, context, depth + 1),
-      );
-    case 'anyOf':
-      return condition.conditions.some((nested) =>
-        evaluateCondition(nested, context, depth + 1),
-      );
-    case 'not':
-      return !evaluateCondition(condition.condition, context, depth + 1);
-    default: {
-      // Exhaustive check: if we reach here, TypeScript knows this should never happen
-      const _exhaustive: never = condition;
-      const error = new Error(
-        `Unknown condition kind: ${(_exhaustive as Condition).kind}`,
-      );
-      reportConditionEvaluationError(context, error);
-      return false;
-    }
+  const evaluator = (CONDITION_EVALUATORS as Record<
+    string,
+    (condition: Condition, context: ConditionContext, depth: number) => boolean
+  >)[condition.kind];
+
+  if (typeof evaluator !== 'function') {
+    reportConditionEvaluationError(
+      context,
+      new Error(`Unknown condition kind: ${condition.kind}`),
+    );
+    return false;
   }
+
+  return evaluator(condition, context, depth);
 }
 
 /**

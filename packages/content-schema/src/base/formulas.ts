@@ -338,8 +338,9 @@ export const numericFormulaSchema: z.ZodType<
 
 export const formulaNodeSchema = expressionNodeSchema;
 
-export type ExpressionNode = ExpressionNodeModel; // NOSONAR - public API alias for schema consumers
-export type NumericFormula = NumericFormulaModel; // NOSONAR - public API alias for schema consumers
+// Public API aliases for schema consumers.
+export type ExpressionNode = ExpressionNodeModel; // NOSONAR
+export type NumericFormula = NumericFormulaModel; // NOSONAR
 
 function countExpressionNodes(node: ExpressionNodeModel): number {
   switch (node.kind) {

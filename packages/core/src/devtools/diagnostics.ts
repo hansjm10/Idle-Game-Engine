@@ -80,8 +80,18 @@ function buildMessage(
   slowestSystem: DiagnosticTimelineSystemSpan | undefined,
   slowSystems: readonly DiagnosticTimelineSystemSpan[] | undefined,
 ): string {
-  const parts: string[] = [];
+  const parts = [
+    buildTickCompletionPart(entry),
+    formatBacklogPart(entry.metadata?.accumulatorBacklogMs),
+    formatQueuePart(entry.metadata?.queue),
+    formatSlowSystemsPart(slowestSystem, slowSystems),
+    formatErrorPart(entry.error),
+  ].filter((part): part is string => Boolean(part));
 
+  return `${DIAGNOSTIC_PREFIX} ${parts.join(' | ')}`;
+}
+
+function buildTickCompletionPart(entry: DiagnosticTimelineEntry): string {
   const durationLabel = formatDuration(entry.durationMs);
   const descriptors: string[] = [];
 
@@ -97,46 +107,59 @@ function buildMessage(
 
   const descriptorSuffix =
     descriptors.length > 0 ? ` (${descriptors.join(', ')})` : '';
-  parts.push(`Tick ${entry.tick} completed in ${durationLabel}ms${descriptorSuffix}`);
+  return `Tick ${entry.tick} completed in ${durationLabel}ms${descriptorSuffix}`;
+}
 
-  const backlog = entry.metadata?.accumulatorBacklogMs;
-  if (typeof backlog === 'number' && backlog > 0) {
-    parts.push(`backlog ${formatDuration(backlog)}ms`);
+function formatBacklogPart(backlog: unknown): string | undefined {
+  if (typeof backlog !== 'number' || backlog <= 0) {
+    return undefined;
+  }
+  return `backlog ${formatDuration(backlog)}ms`;
+}
+
+function formatQueuePart(queue: DiagnosticTimelineQueueMetrics | undefined): string | undefined {
+  if (!queue) {
+    return undefined;
   }
 
-  const queue = entry.metadata?.queue;
-  if (queue) {
-    const queueParts: string[] = [];
-    if (typeof queue.captured === 'number' && queue.captured > 0) {
-      queueParts.push(`captured ${queue.captured}`);
-    }
-    if (typeof queue.executed === 'number' && queue.executed > 0) {
-      queueParts.push(`executed ${queue.executed}`);
-    }
-    if (typeof queue.skipped === 'number' && queue.skipped > 0) {
-      queueParts.push(`skipped ${queue.skipped}`);
-    }
-    if (queueParts.length > 0) {
-      parts.push(`queue ${queueParts.join(', ')}`);
-    }
+  const queueParts: string[] = [];
+  if (typeof queue.captured === 'number' && queue.captured > 0) {
+    queueParts.push(`captured ${queue.captured}`);
+  }
+  if (typeof queue.executed === 'number' && queue.executed > 0) {
+    queueParts.push(`executed ${queue.executed}`);
+  }
+  if (typeof queue.skipped === 'number' && queue.skipped > 0) {
+    queueParts.push(`skipped ${queue.skipped}`);
   }
 
+  return queueParts.length > 0 ? `queue ${queueParts.join(', ')}` : undefined;
+}
+
+function formatSlowSystemsPart(
+  slowestSystem: DiagnosticTimelineSystemSpan | undefined,
+  slowSystems: readonly DiagnosticTimelineSystemSpan[] | undefined,
+): string | undefined {
   if (slowSystems && slowSystems.length > 0) {
     const slowSystemLabels = slowSystems.map((system) =>
       formatSystemSummary(system, true),
     );
-    parts.push(`slow systems ${slowSystemLabels.join(', ')}`);
-  } else if (slowestSystem) {
-    parts.push(`slowest system ${formatSystemSummary(slowestSystem, false)}`);
+    return `slow systems ${slowSystemLabels.join(', ')}`;
   }
 
-  if (entry.error) {
-    parts.push(
-      `error ${entry.error.name ?? entry.error.message ?? 'Unknown error'}`,
-    );
+  if (slowestSystem) {
+    return `slowest system ${formatSystemSummary(slowestSystem, false)}`;
   }
 
-  return `${DIAGNOSTIC_PREFIX} ${parts.join(' | ')}`;
+  return undefined;
+}
+
+function formatErrorPart(error: DiagnosticTimelineEntry['error']): string | undefined {
+  if (!error) {
+    return undefined;
+  }
+
+  return `error ${error.name ?? error.message ?? 'Unknown error'}`;
 }
 
 function findSlowestSystem(

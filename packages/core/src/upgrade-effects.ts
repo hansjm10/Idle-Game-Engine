@@ -42,6 +42,8 @@ export type EvaluatedUpgradeEffects = Readonly<{
 
 type AdjustmentOperation = 'add' | 'multiply' | 'set';
 
+type UpgradeEffectDefinition = UpgradeEffectSource['definition']['effects'][number];
+
 function evaluateFiniteNumericFormula(
   formula: NumericFormula,
   context: FormulaEvaluationContext,
@@ -203,6 +205,321 @@ function getGeneratorResourceConsumptionMultipliers(
   return created;
 }
 
+function collectUnlockedEffects(
+  effects: readonly UpgradeEffectDefinition[],
+  unlockedResources: Set<string>,
+  unlockedGenerators: Set<string>,
+  grantedAutomations: Set<string>,
+  grantedFlags: Map<string, boolean>,
+): void {
+  for (const effect of effects) {
+    switch (effect.kind) {
+      case 'unlockResource':
+        unlockedResources.add(effect.resourceId);
+        break;
+      case 'unlockGenerator':
+        unlockedGenerators.add(effect.generatorId);
+        break;
+      case 'grantAutomation':
+        grantedAutomations.add(effect.automationId);
+        break;
+      case 'grantFlag':
+        grantedFlags.set(effect.flagId, effect.value);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+function resolveUpgradeApplicationCount(record: UpgradeEffectSource): {
+  purchases: number;
+  applications: number;
+  effectCurve: NumericFormula | undefined;
+  isRepeatable: boolean;
+} {
+  const purchases = record.purchases;
+  const repeatableConfig = record.definition.repeatable;
+  const isRepeatable = repeatableConfig !== undefined;
+  return {
+    purchases,
+    applications: isRepeatable ? purchases : 1,
+    effectCurve: repeatableConfig?.effectCurve,
+    isRepeatable,
+  };
+}
+
+function resolveEffectCurveMultiplier(
+  effectCurve: NumericFormula | undefined,
+  formulaContext: FormulaEvaluationContext,
+  onError: ((error: Error) => void) | undefined,
+  upgradeId: string,
+): number | undefined {
+  if (!effectCurve) {
+    return 1;
+  }
+
+  return evaluateFiniteNumericFormula(
+    effectCurve,
+    formulaContext,
+    onError,
+    `Upgrade effect curve evaluation for "${upgradeId}"`,
+  );
+}
+
+function resolveEffectiveUpgradeEffectValue(
+  effect: Extract<
+    UpgradeEffectDefinition,
+    {
+      kind:
+        | 'modifyGeneratorRate'
+        | 'modifyGeneratorCost'
+        | 'modifyGeneratorConsumption'
+        | 'modifyResourceRate'
+        | 'modifyResourceCapacity'
+        | 'alterDirtyTolerance';
+    }
+  >,
+  formulaContext: FormulaEvaluationContext,
+  effectCurveMultiplier: number,
+  onError: ((error: Error) => void) | undefined,
+  upgradeId: string,
+): number | undefined {
+  const raw = evaluateFiniteNumericFormula(
+    effect.value,
+    formulaContext,
+    onError,
+    `Upgrade effect evaluation for "${upgradeId}" (${effect.kind})`,
+  );
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  const effective = raw * effectCurveMultiplier;
+  if (!Number.isFinite(effective)) {
+    onError?.(
+      new Error(
+        `Upgrade effect evaluation returned invalid effective value for "${upgradeId}" (${effect.kind}): ${effective}`,
+      ),
+    );
+    return undefined;
+  }
+
+  return effective;
+}
+
+function applyUpgradeEffectValue(
+  effect: UpgradeEffectDefinition,
+  upgradeId: string,
+  formulaContext: FormulaEvaluationContext,
+  effectCurveMultiplier: number,
+  context: UpgradeEffectEvaluatorContext,
+  output: Readonly<{
+    generatorRateMultipliers: Map<string, number>;
+    generatorCostMultipliers: Map<string, number>;
+    generatorConsumptionMultipliers: Map<string, number>;
+    generatorResourceConsumptionMultipliers: Map<string, Map<string, number>>;
+    resourceRateMultipliers: Map<string, number>;
+    resourceCapacityOverrides: Map<string, number>;
+    dirtyToleranceOverrides: Map<string, number>;
+  }>,
+): void {
+  switch (effect.kind) {
+    case 'modifyGeneratorRate': {
+      const effective = resolveEffectiveUpgradeEffectValue(
+        effect,
+        formulaContext,
+        effectCurveMultiplier,
+        context.onError,
+        upgradeId,
+      );
+      if (effective === undefined) {
+        return;
+      }
+      applyModifier(
+        output.generatorRateMultipliers,
+        effect.generatorId,
+        effect.operation,
+        effective,
+        context.onError,
+        `Generator rate modifier for "${upgradeId}"`,
+      );
+      return;
+    }
+    case 'modifyGeneratorCost': {
+      const effective = resolveEffectiveUpgradeEffectValue(
+        effect,
+        formulaContext,
+        effectCurveMultiplier,
+        context.onError,
+        upgradeId,
+      );
+      if (effective === undefined) {
+        return;
+      }
+      applyModifier(
+        output.generatorCostMultipliers,
+        effect.generatorId,
+        effect.operation,
+        effective,
+        context.onError,
+        `Generator cost modifier for "${upgradeId}"`,
+      );
+      return;
+    }
+    case 'modifyGeneratorConsumption': {
+      const effective = resolveEffectiveUpgradeEffectValue(
+        effect,
+        formulaContext,
+        effectCurveMultiplier,
+        context.onError,
+        upgradeId,
+      );
+      if (effective === undefined) {
+        return;
+      }
+      if (effect.resourceId) {
+        const resourceMultipliers = getGeneratorResourceConsumptionMultipliers(
+          output.generatorResourceConsumptionMultipliers,
+          effect.generatorId,
+        );
+        applyModifier(
+          resourceMultipliers,
+          effect.resourceId,
+          effect.operation,
+          effective,
+          context.onError,
+          `Generator consumption modifier for "${upgradeId}"`,
+        );
+        return;
+      }
+      applyModifier(
+        output.generatorConsumptionMultipliers,
+        effect.generatorId,
+        effect.operation,
+        effective,
+        context.onError,
+        `Generator consumption modifier for "${upgradeId}"`,
+      );
+      return;
+    }
+    case 'modifyResourceRate': {
+      const effective = resolveEffectiveUpgradeEffectValue(
+        effect,
+        formulaContext,
+        effectCurveMultiplier,
+        context.onError,
+        upgradeId,
+      );
+      if (effective === undefined) {
+        return;
+      }
+      applyModifier(
+        output.resourceRateMultipliers,
+        effect.resourceId,
+        effect.operation,
+        effective,
+        context.onError,
+        `Resource rate modifier for "${upgradeId}"`,
+      );
+      return;
+    }
+    case 'modifyResourceCapacity': {
+      const effective = resolveEffectiveUpgradeEffectValue(
+        effect,
+        formulaContext,
+        effectCurveMultiplier,
+        context.onError,
+        upgradeId,
+      );
+      if (effective === undefined) {
+        return;
+      }
+      applyCapacityOverride(
+        output.resourceCapacityOverrides,
+        context.getBaseCapacity,
+        effect.resourceId,
+        effect.operation,
+        effective,
+        context.onError,
+        `Resource capacity modifier for "${upgradeId}"`,
+      );
+      return;
+    }
+    case 'alterDirtyTolerance': {
+      const effective = resolveEffectiveUpgradeEffectValue(
+        effect,
+        formulaContext,
+        effectCurveMultiplier,
+        context.onError,
+        upgradeId,
+      );
+      if (effective === undefined) {
+        return;
+      }
+      applyDirtyToleranceOverride(
+        output.dirtyToleranceOverrides,
+        context.getBaseDirtyTolerance,
+        effect.resourceId,
+        effect.operation,
+        effective,
+        context.onError,
+        `Dirty tolerance override for "${upgradeId}"`,
+      );
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+function applyUpgradeRecordEffects(
+  record: UpgradeEffectSource,
+  context: UpgradeEffectEvaluatorContext,
+  output: Readonly<{
+    generatorRateMultipliers: Map<string, number>;
+    generatorCostMultipliers: Map<string, number>;
+    generatorConsumptionMultipliers: Map<string, number>;
+    generatorResourceConsumptionMultipliers: Map<string, Map<string, number>>;
+    resourceRateMultipliers: Map<string, number>;
+    resourceCapacityOverrides: Map<string, number>;
+    dirtyToleranceOverrides: Map<string, number>;
+  }>,
+): void {
+  const { purchases, applications, effectCurve, isRepeatable } =
+    resolveUpgradeApplicationCount(record);
+
+  for (let applicationIndex = 0; applicationIndex < applications; applicationIndex += 1) {
+    const applicationLevel = applicationIndex + 1;
+    const contextLevel = isRepeatable ? applicationLevel : purchases;
+    const formulaContext = context.createFormulaEvaluationContext(
+      contextLevel,
+      context.step,
+    );
+
+    const effectCurveMultiplier = resolveEffectCurveMultiplier(
+      effectCurve,
+      formulaContext,
+      context.onError,
+      record.definition.id,
+    );
+    if (effectCurveMultiplier === undefined) {
+      continue;
+    }
+
+    for (const effect of record.definition.effects) {
+      applyUpgradeEffectValue(
+        effect,
+        record.definition.id,
+        formulaContext,
+        effectCurveMultiplier,
+        context,
+        output,
+      );
+    }
+  }
+}
+
 export function evaluateUpgradeEffects(
   upgrades: readonly UpgradeEffectSource[],
   context: UpgradeEffectEvaluatorContext,
@@ -227,255 +544,23 @@ export function evaluateUpgradeEffects(
       continue;
     }
 
-    for (const effect of record.definition.effects) {
-      switch (effect.kind) {
-        case 'unlockResource':
-          unlockedResources.add(effect.resourceId);
-          break;
-        case 'unlockGenerator':
-          unlockedGenerators.add(effect.generatorId);
-          break;
-        case 'grantAutomation':
-          grantedAutomations.add(effect.automationId);
-          break;
-        case 'grantFlag':
-          grantedFlags.set(effect.flagId, effect.value);
-          break;
-        default:
-          break;
-      }
-    }
+    collectUnlockedEffects(
+      record.definition.effects,
+      unlockedResources,
+      unlockedGenerators,
+      grantedAutomations,
+      grantedFlags,
+    );
 
-    const purchases = record.purchases;
-    const repeatableConfig = record.definition.repeatable;
-    const isRepeatable = repeatableConfig !== undefined;
-    const effectCurve = repeatableConfig?.effectCurve;
-    const applications = isRepeatable ? purchases : 1;
-
-    for (
-      let applicationLevel = 1;
-      applicationLevel <= applications;
-      applicationLevel += 1
-    ) {
-      const contextLevel = isRepeatable ? applicationLevel : purchases;
-      const formulaContext = context.createFormulaEvaluationContext(
-        contextLevel,
-        context.step,
-      );
-
-      let effectCurveMultiplier = 1;
-      if (effectCurve) {
-        const multiplier = evaluateFiniteNumericFormula(
-          effectCurve,
-          formulaContext,
-          context.onError,
-          `Upgrade effect curve evaluation for "${record.definition.id}"`,
-        );
-        if (multiplier === undefined) {
-          continue;
-        }
-        effectCurveMultiplier = multiplier;
-      }
-
-      for (const effect of record.definition.effects) {
-        switch (effect.kind) {
-          case 'modifyGeneratorRate': {
-            const raw = evaluateFiniteNumericFormula(
-              effect.value,
-              formulaContext,
-              context.onError,
-              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
-            );
-            if (raw === undefined) {
-              continue;
-            }
-            const effective = raw * effectCurveMultiplier;
-            if (!Number.isFinite(effective)) {
-              context.onError?.(
-                new Error(
-                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
-                ),
-              );
-              continue;
-            }
-            applyModifier(
-              generatorRateMultipliers,
-              effect.generatorId,
-              effect.operation,
-              effective,
-              context.onError,
-              `Generator rate modifier for "${record.definition.id}"`,
-            );
-            break;
-          }
-          case 'modifyGeneratorCost': {
-            const raw = evaluateFiniteNumericFormula(
-              effect.value,
-              formulaContext,
-              context.onError,
-              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
-            );
-            if (raw === undefined) {
-              continue;
-            }
-            const effective = raw * effectCurveMultiplier;
-            if (!Number.isFinite(effective)) {
-              context.onError?.(
-                new Error(
-                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
-                ),
-              );
-              continue;
-            }
-            applyModifier(
-              generatorCostMultipliers,
-              effect.generatorId,
-              effect.operation,
-              effective,
-              context.onError,
-              `Generator cost modifier for "${record.definition.id}"`,
-            );
-            break;
-          }
-          case 'modifyGeneratorConsumption': {
-            const raw = evaluateFiniteNumericFormula(
-              effect.value,
-              formulaContext,
-              context.onError,
-              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
-            );
-            if (raw === undefined) {
-              continue;
-            }
-            const effective = raw * effectCurveMultiplier;
-            if (!Number.isFinite(effective)) {
-              context.onError?.(
-                new Error(
-                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
-                ),
-              );
-              continue;
-            }
-            if (effect.resourceId) {
-              const resourceMultipliers =
-                getGeneratorResourceConsumptionMultipliers(
-                  generatorResourceConsumptionMultipliers,
-                  effect.generatorId,
-                );
-              applyModifier(
-                resourceMultipliers,
-                effect.resourceId,
-                effect.operation,
-                effective,
-                context.onError,
-                `Generator consumption modifier for "${record.definition.id}"`,
-              );
-            } else {
-              applyModifier(
-                generatorConsumptionMultipliers,
-                effect.generatorId,
-                effect.operation,
-                effective,
-                context.onError,
-                `Generator consumption modifier for "${record.definition.id}"`,
-              );
-            }
-            break;
-          }
-          case 'modifyResourceRate': {
-            const raw = evaluateFiniteNumericFormula(
-              effect.value,
-              formulaContext,
-              context.onError,
-              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
-            );
-            if (raw === undefined) {
-              continue;
-            }
-            const effective = raw * effectCurveMultiplier;
-            if (!Number.isFinite(effective)) {
-              context.onError?.(
-                new Error(
-                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
-                ),
-              );
-              continue;
-            }
-            applyModifier(
-              resourceRateMultipliers,
-              effect.resourceId,
-              effect.operation,
-              effective,
-              context.onError,
-              `Resource rate modifier for "${record.definition.id}"`,
-            );
-            break;
-          }
-          case 'modifyResourceCapacity': {
-            const raw = evaluateFiniteNumericFormula(
-              effect.value,
-              formulaContext,
-              context.onError,
-              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
-            );
-            if (raw === undefined) {
-              continue;
-            }
-            const effective = raw * effectCurveMultiplier;
-            if (!Number.isFinite(effective)) {
-              context.onError?.(
-                new Error(
-                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
-                ),
-              );
-              continue;
-            }
-            applyCapacityOverride(
-              resourceCapacityOverrides,
-              context.getBaseCapacity,
-              effect.resourceId,
-              effect.operation,
-              effective,
-              context.onError,
-              `Resource capacity modifier for "${record.definition.id}"`,
-            );
-            break;
-          }
-          case 'alterDirtyTolerance': {
-            const raw = evaluateFiniteNumericFormula(
-              effect.value,
-              formulaContext,
-              context.onError,
-              `Upgrade effect evaluation for "${record.definition.id}" (${effect.kind})`,
-            );
-            if (raw === undefined) {
-              continue;
-            }
-            const effective = raw * effectCurveMultiplier;
-            if (!Number.isFinite(effective)) {
-              context.onError?.(
-                new Error(
-                  `Upgrade effect evaluation returned invalid effective value for "${record.definition.id}" (${effect.kind}): ${effective}`,
-                ),
-              );
-              continue;
-            }
-            applyDirtyToleranceOverride(
-              dirtyToleranceOverrides,
-              context.getBaseDirtyTolerance,
-              effect.resourceId,
-              effect.operation,
-              effective,
-              context.onError,
-              `Dirty tolerance override for "${record.definition.id}"`,
-            );
-            break;
-          }
-          default:
-            break;
-        }
-      }
-    }
+    applyUpgradeRecordEffects(record, context, {
+      generatorRateMultipliers,
+      generatorCostMultipliers,
+      generatorConsumptionMultipliers,
+      generatorResourceConsumptionMultipliers,
+      resourceRateMultipliers,
+      resourceCapacityOverrides,
+      dirtyToleranceOverrides,
+    });
   }
 
   return Object.freeze({

@@ -52,7 +52,8 @@ export type SerializedCommandQueueV1 = Readonly<{
   readonly entries: readonly SerializedCommandQueueEntryV1[];
 }>;
 
-export type SerializedCommandQueue = SerializedCommandQueueV1; // NOSONAR - stable alias for versioned persistence format
+// Stable alias for versioned persistence format.
+export type SerializedCommandQueue = SerializedCommandQueueV1; // NOSONAR
 
 export interface RestoreCommandQueueOptions {
   /**

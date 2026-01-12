@@ -398,253 +398,106 @@ export class CommandRecorder {
     const mutableState = cloneSnapshotToMutable(log.startState);
     restoreState(mutableState);
 
+    const seedRestorer = createReplaySeedRestorer(log.metadata.seed);
+    seedRestorer.applyReplaySeed();
 
-    const hasReplaySeed = log.metadata.seed !== undefined;
-    const previousSeed = hasReplaySeed
-      ? getCurrentRNGSeed()
-      : undefined;
-    let seedRestored = false;
-    const restoreReplaySeed = (): void => {
-      if (!hasReplaySeed || seedRestored) {
-        return;
-      }
-      if (previousSeed === undefined) {
-        resetRNG();
-      } else {
-        setRNGSeed(previousSeed);
-      }
-      seedRestored = true;
-    };
-
-    if (hasReplaySeed) {
-      setRNGSeed(log.metadata.seed);
-    }
-
-    const queue =
-      runtimeContext?.commandQueue ??
-      new CommandQueue();
+    const queue = runtimeContext?.commandQueue ?? new CommandQueue();
 
     const readDiagnosticsDelta = runtimeContext?.readDiagnosticsDelta;
     const attachDiagnosticsDelta = runtimeContext?.attachDiagnosticsDelta;
-    let diagnosticsHead: number | undefined;
-    let diagnosticsConfiguration:
-      | ResolvedDiagnosticTimelineOptions
-      | undefined;
+    const baselineDiagnostics =
+      typeof readDiagnosticsDelta === 'function'
+        ? readDiagnosticsDelta()
+        : undefined;
+    const baselineDiagnosticsHead = baselineDiagnostics?.head;
+    const baselineDiagnosticsConfiguration = baselineDiagnostics?.configuration;
 
-    if (typeof readDiagnosticsDelta === 'function') {
-      const baseline = readDiagnosticsDelta();
-      diagnosticsHead = baseline.head;
-      diagnosticsConfiguration = baseline.configuration;
-    }
-
-    if (queue.size > 0) {
-      telemetry.recordError('ReplayQueueNotEmpty', { pending: queue.size });
-      restoreReplaySeed();
-      throw new Error('Command queue must be empty before replay begins.');
-    }
+    assertReplayQueueEmpty(queue, seedRestorer.restorePreviousSeed);
 
     const sandboxedEnqueues: FrozenCommand[] = [];
-    const originalEnqueue = queue.enqueue.bind(queue);
-    const recordedFinalStep = log.metadata.lastStep ?? -1;
-    const derivedFinalStep =
-      log.commands.length > 0
-        ? log.commands.reduce(
-            (max, cmd) => Math.max(max, cmd.step),
-            -1,
-          )
-        : -1;
-    const finalStep =
-      recordedFinalStep >= 0 ? recordedFinalStep : derivedFinalStep;
-    const previousStep = runtimeContext?.getCurrentStep?.();
-    const previousNextStep = runtimeContext?.getNextExecutableStep?.();
-	    let replayFailed = true;
-	    let stateAdvanced = false;
-	    let finalizationComplete = false;
+    const restoreEnqueue = sandboxQueueEnqueue(queue, sandboxedEnqueues);
+    const finalStep = resolveReplayFinalStep(log);
+    const runtimeStepSnapshot = captureRuntimeStepSnapshot(runtimeContext);
+    const replayOutcome: ReplayOutcome = {
+      replayFailed: true,
+      stateAdvanced: false,
+      finalizationComplete: false,
+    };
     const matchedFutureCommandIndices = new Set<number>();
     const eventBus = runtimeContext?.eventBus;
-	    let activeEventBusTick: number | undefined;
-	    let processedSinceLastTelemetry = 0;
-	    let diagnosticsError: Error | undefined;
+    let activeEventBusTick: number | undefined;
+    let processedSinceLastTelemetry = 0;
+    let diagnosticsError: Error | undefined;
 
-    const revertRuntimeContext = (): void => {
-      restoreState(mutableState);
-      if (hasReplaySeed) {
-        restoreReplaySeed();
-      }
-      if (!runtimeContext) {
-        return;
-      }
-      if (previousStep !== undefined) {
-        runtimeContext.setCurrentStep?.(previousStep);
-      }
-      if (previousNextStep !== undefined) {
-        runtimeContext.setNextExecutableStep?.(previousNextStep);
-      }
-      stateAdvanced = false;
-    };
+    const revertRuntimeContext = createReplayReverter({
+      stateSnapshot: mutableState,
+      seedRestorer,
+      runtimeContext,
+      runtimeStepSnapshot,
+      replayOutcome,
+    });
 
-    const recordReplayFailure = (
-      command: FrozenCommand,
-      error: unknown,
-    ): void => {
-      replayFailed = true;
+    const recordReplayFailure = (command: FrozenCommand, error: unknown): void => {
+      replayOutcome.replayFailed = true;
       telemetry.recordError('ReplayExecutionFailed', {
         type: command.type,
         step: command.step,
-        error:
-          error instanceof Error ? error.message : String(error),
+        error: error instanceof Error ? error.message : String(error),
       });
 
-      if (finalizationComplete) {
-        if (stateAdvanced) {
+      if (replayOutcome.finalizationComplete) {
+        if (replayOutcome.stateAdvanced) {
           revertRuntimeContext();
         } else {
-          restoreReplaySeed();
+          seedRestorer.restorePreviousSeed();
         }
       }
-    };
-
-    (queue as CommandQueue & {
-      enqueue: (command: Command) => void;
-    }).enqueue = (cmd: Command) => {
-      const snapshot = freezeSnapshot(
-        cloneStructured(cmd),
-      ) as FrozenCommand;
-      sandboxedEnqueues.push(snapshot);
     };
 
     try {
       for (let i = 0; i < log.commands.length; i += 1) {
         const cmd = log.commands[i];
         processedSinceLastTelemetry += 1;
-        if (eventBus && cmd.step !== activeEventBusTick) {
-          eventBus.beginTick(cmd.step);
-          activeEventBusTick = cmd.step;
-        }
 
-        const context: ExecutionContext = {
-          step: cmd.step,
-          timestamp: cmd.timestamp,
-          priority: cmd.priority,
-          events: runtimeContext?.eventPublisher ?? DEFAULT_REPLAY_EVENT_PUBLISHER,
-        };
+        activeEventBusTick = beginReplayTick(eventBus, cmd.step, activeEventBusTick);
 
-        const handler = dispatcher.getHandler(cmd.type);
-        if (!handler) {
-          telemetry.recordError('ReplayUnknownCommandType', {
-            type: cmd.type,
-            step: cmd.step,
-          });
-        } else {
-          if (
-            !authorizeCommand(cmd as Command, {
-              phase: 'replay',
-              reason: 'replay',
-            })
-          ) {
-            continue;
-          }
+        const context = createReplayExecutionContext(cmd, runtimeContext);
+        executeReplayCommand(cmd, dispatcher, context, recordReplayFailure);
+        verifyReplaySandboxedEnqueues(
+          log.commands,
+          sandboxedEnqueues,
+          i,
+          matchedFutureCommandIndices,
+        );
 
-          try {
-            const result = handler(cmd.payload, context);
-            if (isPromiseLike(result)) {
-              result.catch((error: unknown) => {
-                recordReplayFailure(cmd, error);
-              });
-            }
-          } catch (error) {
-            recordReplayFailure(cmd, error);
-          }
-        }
-
-        if (sandboxedEnqueues.length > 0) {
-          for (const queued of sandboxedEnqueues) {
-            const matchIndex = findMatchingFutureCommandIndex(
-              log.commands,
-              queued,
-              i + 1,
-              matchedFutureCommandIndices,
-            );
-
-            if (matchIndex === -1) {
-              telemetry.recordError('ReplayMissingFollowupCommand', {
-                type: queued.type,
-                step: queued.step,
-              });
-              throw new Error(
-                'Replay log is missing a command that was enqueued during handler execution.',
-              );
-            }
-
-            matchedFutureCommandIndices.add(matchIndex);
-          }
-
-          sandboxedEnqueues.length = 0;
-        }
-
-        if (processedSinceLastTelemetry >= REPLAY_TELEMETRY_BATCH_SIZE) {
-          telemetry.recordProgress('CommandReplay', { processed: i + 1 });
-          processedSinceLastTelemetry = 0;
-        }
+        processedSinceLastTelemetry = recordReplayProgressIfNeeded(
+          processedSinceLastTelemetry,
+          i + 1,
+        );
       }
 
-      if (processedSinceLastTelemetry > 0) {
-        telemetry.recordProgress('CommandReplay', {
-          processed: log.commands.length,
-        });
+      recordReplayProgressAtEnd(processedSinceLastTelemetry, log.commands.length);
+      replayOutcome.replayFailed = false;
+    } finally {
+      diagnosticsError = tryAttachReplayDiagnosticsDelta({
+        readDiagnosticsDelta,
+        attachDiagnosticsDelta,
+        baselineHead: baselineDiagnosticsHead,
+        baselineConfiguration: baselineDiagnosticsConfiguration,
+      });
+
+      if (diagnosticsError) {
+        replayOutcome.replayFailed = true;
       }
 
-      replayFailed = false;
-	    } finally {
-	      if (typeof readDiagnosticsDelta === 'function') {
-	        try {
-	          const previousDiagnosticsHead = diagnosticsHead;
-	          const previousDiagnosticsConfiguration = diagnosticsConfiguration;
-	          const delta = readDiagnosticsDelta(diagnosticsHead);
-	          const nextDiagnosticsHead = delta.head;
-	          const nextDiagnosticsConfiguration = delta.configuration;
-	          const hasEntries = delta.entries.length > 0;
-	          const hasDrops = delta.dropped > 0;
-	          const headChanged =
-	            previousDiagnosticsHead !== undefined &&
-	            nextDiagnosticsHead !== previousDiagnosticsHead;
-	          const configurationChanged =
-	            previousDiagnosticsConfiguration !== undefined &&
-	            previousDiagnosticsConfiguration !== nextDiagnosticsConfiguration;
-
-          if (
-            attachDiagnosticsDelta &&
-            (hasEntries || hasDrops || headChanged || configurationChanged)
-          ) {
-            attachDiagnosticsDelta(delta);
-          }
-	        } catch (error) {
-	          diagnosticsError =
-	            error instanceof Error
-	              ? error
-	              : new Error(String(error));
-	          replayFailed = true;
-	        }
-	      }
-
-      (queue as CommandQueue & {
-        enqueue: (command: Command) => void;
-      }).enqueue = originalEnqueue;
-
-      if (replayFailed) {
-        revertRuntimeContext();
-      } else if (finalStep >= 0 && runtimeContext) {
-        runtimeContext.setCurrentStep?.(finalStep + 1);
-        runtimeContext.setNextExecutableStep?.(finalStep + 1);
-        stateAdvanced = true;
-      }
-      finalizationComplete = true;
-
+      restoreEnqueue();
+      finalizeReplayOutcome(replayOutcome, runtimeContext, finalStep, revertRuntimeContext);
+      replayOutcome.finalizationComplete = true;
     }
 
-	    if (diagnosticsError) {
-	      throw diagnosticsError;
-	    }
+    if (diagnosticsError) {
+      throw diagnosticsError;
+    }
   }
 
   clear(nextState: unknown, options?: { seed?: number }): void {
@@ -659,6 +512,310 @@ export class CommandRecorder {
     this.rngSeed = options?.seed;
     this.refreshSeedSnapshot();
     this.lastRecordedStep = -1;
+  }
+}
+
+interface ReplayOutcome {
+  replayFailed: boolean;
+  stateAdvanced: boolean;
+  finalizationComplete: boolean;
+}
+
+interface RuntimeStepSnapshot {
+  readonly currentStep?: number;
+  readonly nextExecutableStep?: number;
+}
+
+interface ReplaySeedRestorer {
+  readonly hasReplaySeed: boolean;
+  applyReplaySeed(): void;
+  restorePreviousSeed(): void;
+}
+
+function createReplaySeedRestorer(replaySeed: number | undefined): ReplaySeedRestorer {
+  if (replaySeed === undefined) {
+    return {
+      hasReplaySeed: false,
+      applyReplaySeed() {},
+      restorePreviousSeed() {},
+    };
+  }
+
+  const previousSeed = getCurrentRNGSeed();
+  let seedRestored = false;
+
+  return {
+    hasReplaySeed: true,
+    applyReplaySeed() {
+      setRNGSeed(replaySeed);
+    },
+    restorePreviousSeed() {
+      if (seedRestored) {
+        return;
+      }
+
+      if (previousSeed === undefined) {
+        resetRNG();
+      } else {
+        setRNGSeed(previousSeed);
+      }
+      seedRestored = true;
+    },
+  };
+}
+
+function assertReplayQueueEmpty(queue: CommandQueue, restoreReplaySeed: () => void): void {
+  if (queue.size === 0) {
+    return;
+  }
+
+  telemetry.recordError('ReplayQueueNotEmpty', { pending: queue.size });
+  restoreReplaySeed();
+  throw new Error('Command queue must be empty before replay begins.');
+}
+
+function sandboxQueueEnqueue(
+  queue: CommandQueue,
+  sandboxedEnqueues: FrozenCommand[],
+): () => void {
+  const originalEnqueue = queue.enqueue.bind(queue);
+
+  (queue as CommandQueue & {
+    enqueue: (command: Command) => void;
+  }).enqueue = (cmd: Command) => {
+    const snapshot = freezeSnapshot(cloneStructured(cmd)) as FrozenCommand;
+    sandboxedEnqueues.push(snapshot);
+  };
+
+  return () => {
+    (queue as CommandQueue & {
+      enqueue: (command: Command) => void;
+    }).enqueue = originalEnqueue;
+  };
+}
+
+function resolveReplayFinalStep(log: CommandLog): number {
+  const recordedFinalStep = log.metadata.lastStep ?? -1;
+  if (recordedFinalStep >= 0) {
+    return recordedFinalStep;
+  }
+
+  return log.commands.reduce((max, cmd) => Math.max(max, cmd.step), -1);
+}
+
+function captureRuntimeStepSnapshot(runtimeContext?: RuntimeReplayContext): RuntimeStepSnapshot {
+  return {
+    currentStep: runtimeContext?.getCurrentStep?.(),
+    nextExecutableStep: runtimeContext?.getNextExecutableStep?.(),
+  };
+}
+
+function createReplayReverter(options: {
+  stateSnapshot: unknown;
+  seedRestorer: ReplaySeedRestorer;
+  runtimeContext: RuntimeReplayContext | undefined;
+  runtimeStepSnapshot: RuntimeStepSnapshot;
+  replayOutcome: ReplayOutcome;
+}): () => void {
+  const {
+    stateSnapshot,
+    seedRestorer,
+    runtimeContext,
+    runtimeStepSnapshot,
+    replayOutcome,
+  } = options;
+
+  return () => {
+    restoreState(stateSnapshot);
+    seedRestorer.restorePreviousSeed();
+
+    if (runtimeContext) {
+      if (runtimeStepSnapshot.currentStep !== undefined) {
+        runtimeContext.setCurrentStep?.(runtimeStepSnapshot.currentStep);
+      }
+      if (runtimeStepSnapshot.nextExecutableStep !== undefined) {
+        runtimeContext.setNextExecutableStep?.(runtimeStepSnapshot.nextExecutableStep);
+      }
+    }
+
+    replayOutcome.stateAdvanced = false;
+  };
+}
+
+function beginReplayTick(
+  eventBus: EventBus | undefined,
+  tick: number,
+  activeTick: number | undefined,
+): number | undefined {
+  if (!eventBus || tick === activeTick) {
+    return activeTick;
+  }
+
+  eventBus.beginTick(tick);
+  return tick;
+}
+
+function createReplayExecutionContext(
+  command: FrozenCommand,
+  runtimeContext: RuntimeReplayContext | undefined,
+): ExecutionContext {
+  return {
+    step: command.step,
+    timestamp: command.timestamp,
+    priority: command.priority,
+    events: runtimeContext?.eventPublisher ?? DEFAULT_REPLAY_EVENT_PUBLISHER,
+  };
+}
+
+function executeReplayCommand(
+  command: FrozenCommand,
+  dispatcher: CommandDispatcher,
+  context: ExecutionContext,
+  onFailure: (command: FrozenCommand, error: unknown) => void,
+): void {
+  const handler = dispatcher.getHandler(command.type);
+  if (!handler) {
+    telemetry.recordError('ReplayUnknownCommandType', {
+      type: command.type,
+      step: command.step,
+    });
+    return;
+  }
+
+  if (
+    !authorizeCommand(command as Command, {
+      phase: 'replay',
+      reason: 'replay',
+    })
+  ) {
+    return;
+  }
+
+  try {
+    const result = handler(command.payload, context);
+    if (isPromiseLike(result)) {
+      result.catch((error: unknown) => {
+        onFailure(command, error);
+      });
+    }
+  } catch (error) {
+    onFailure(command, error);
+  }
+}
+
+function verifyReplaySandboxedEnqueues(
+  commands: readonly CommandSnapshot[],
+  sandboxedEnqueues: FrozenCommand[],
+  currentIndex: number,
+  claimedIndices: Set<number>,
+): void {
+  if (sandboxedEnqueues.length === 0) {
+    return;
+  }
+
+  for (const queued of sandboxedEnqueues) {
+    const matchIndex = findMatchingFutureCommandIndex(
+      commands,
+      queued,
+      currentIndex + 1,
+      claimedIndices,
+    );
+
+    if (matchIndex === -1) {
+      telemetry.recordError('ReplayMissingFollowupCommand', {
+        type: queued.type,
+        step: queued.step,
+      });
+      throw new Error(
+        'Replay log is missing a command that was enqueued during handler execution.',
+      );
+    }
+
+    claimedIndices.add(matchIndex);
+  }
+
+  sandboxedEnqueues.length = 0;
+}
+
+function recordReplayProgressIfNeeded(
+  processedSinceLastTelemetry: number,
+  processed: number,
+): number {
+  if (processedSinceLastTelemetry < REPLAY_TELEMETRY_BATCH_SIZE) {
+    return processedSinceLastTelemetry;
+  }
+
+  telemetry.recordProgress('CommandReplay', { processed });
+  return 0;
+}
+
+function recordReplayProgressAtEnd(
+  processedSinceLastTelemetry: number,
+  total: number,
+): void {
+  if (processedSinceLastTelemetry <= 0) {
+    return;
+  }
+
+  telemetry.recordProgress('CommandReplay', { processed: total });
+}
+
+function tryAttachReplayDiagnosticsDelta(options: {
+  readDiagnosticsDelta: RuntimeReplayContext['readDiagnosticsDelta'] | undefined;
+  attachDiagnosticsDelta: RuntimeReplayContext['attachDiagnosticsDelta'] | undefined;
+  baselineHead: number | undefined;
+  baselineConfiguration: ResolvedDiagnosticTimelineOptions | undefined;
+}): Error | undefined {
+  const {
+    readDiagnosticsDelta,
+    attachDiagnosticsDelta,
+    baselineHead,
+    baselineConfiguration,
+  } = options;
+
+  if (typeof readDiagnosticsDelta !== 'function') {
+    return undefined;
+  }
+
+  try {
+    const delta = readDiagnosticsDelta(baselineHead);
+    if (!attachDiagnosticsDelta) {
+      return undefined;
+    }
+
+    const hasEntries = delta.entries.length > 0;
+    const hasDrops = delta.dropped > 0;
+    const headChanged =
+      baselineHead !== undefined && delta.head !== baselineHead;
+    const configurationChanged =
+      baselineConfiguration !== undefined &&
+      delta.configuration !== baselineConfiguration;
+
+    if (hasEntries || hasDrops || headChanged || configurationChanged) {
+      attachDiagnosticsDelta(delta);
+    }
+
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+function finalizeReplayOutcome(
+  replayOutcome: ReplayOutcome,
+  runtimeContext: RuntimeReplayContext | undefined,
+  finalStep: number,
+  revertRuntimeContext: () => void,
+): void {
+  if (replayOutcome.replayFailed) {
+    revertRuntimeContext();
+    return;
+  }
+
+  if (finalStep >= 0 && runtimeContext) {
+    runtimeContext.setCurrentStep?.(finalStep + 1);
+    runtimeContext.setNextExecutableStep?.(finalStep + 1);
+    replayOutcome.stateAdvanced = true;
   }
 }
 
@@ -821,160 +978,227 @@ function cloneSnapshotToMutable<T>(
   return cloneSnapshotInternal(value, seen) as T;
 }
 
-function cloneSnapshotInternal(
+function tryCloneImmutableArrayBuffer(
   value: unknown,
   seen: WeakMap<object, unknown>,
-): unknown {
-  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
-    return value;
+): ArrayBuffer | undefined {
+  if (!isImmutableArrayBufferSnapshot(value)) {
+    return undefined;
   }
 
-  if (typeof value === 'function') {
-    return value;
+  const buffer = value.toArrayBuffer();
+  seen.set(value as object, buffer);
+  return buffer;
+}
+
+function tryCloneImmutableSharedArrayBuffer(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): ArrayBufferLike | undefined {
+  if (!isImmutableSharedArrayBufferSnapshot(value)) {
+    return undefined;
   }
 
-  const cached = seen.get(value);
-  if (cached) {
-    return cached;
+  const clone =
+    typeof value.toSharedArrayBuffer === 'function'
+      ? value.toSharedArrayBuffer()
+      : value.toArrayBuffer();
+  seen.set(value as object, clone);
+  return clone;
+}
+
+function tryCloneArrayBuffer(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): ArrayBuffer | undefined {
+  if (!(value instanceof ArrayBuffer)) {
+    return undefined;
   }
 
-  if (isImmutableArrayBufferSnapshot(value)) {
-    const buffer = value.toArrayBuffer();
-    seen.set(value as object, buffer);
-    return buffer;
-  }
+  const clone = value.slice(0);
+  seen.set(value, clone);
+  return clone;
+}
 
-  if (isImmutableSharedArrayBufferSnapshot(value)) {
-    const clone =
-      typeof value.toSharedArrayBuffer === 'function'
-        ? value.toSharedArrayBuffer()
-        : value.toArrayBuffer();
-    seen.set(value as object, clone);
-    return clone;
-  }
-
-  if (value instanceof ArrayBuffer) {
-    const clone = value.slice(0);
-    seen.set(value, clone);
-    return clone;
-  }
-
+function tryCloneSharedArrayBuffer(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): SharedArrayBuffer | undefined {
   if (
-    typeof sharedArrayBufferCtor === 'function' &&
-    value instanceof sharedArrayBufferCtor
+    typeof sharedArrayBufferCtor !== 'function' ||
+    !(value instanceof sharedArrayBufferCtor)
   ) {
-    const clone = cloneSharedArrayBuffer(value);
-    seen.set(value, clone);
-    return clone;
+    return undefined;
   }
 
-  if (value instanceof Date) {
-    const clone = new Date(value.getTime());
-    seen.set(value, clone);
-    return clone;
+  const clone = cloneSharedArrayBuffer(value as SharedArrayBuffer);
+  seen.set(value as object, clone);
+  return clone;
+}
+
+function tryCloneDate(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): Date | undefined {
+  if (!(value instanceof Date)) {
+    return undefined;
   }
 
-  if (value instanceof RegExp) {
-    const clone = new RegExp(value.source, value.flags);
-    clone.lastIndex = value.lastIndex;
-    seen.set(value, clone);
-    return clone;
+  const clone = new Date(value.getTime());
+  seen.set(value, clone);
+  return clone;
+}
+
+function tryCloneRegExp(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): RegExp | undefined {
+  if (!(value instanceof RegExp)) {
+    return undefined;
   }
 
-  if (isDataViewLike(value)) {
-    // The immutable proxy strips typed-array identity, so we fall back to `any`
-    // to peek at runtime-only properties before cloning.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dataView = value as any;
-    if (ArrayBuffer.isView(dataView)) {
-      const bufferClone = cloneSnapshotInternal(
-        dataView.buffer,
-        seen,
-      ) as ArrayBufferLike;
-      const view = new DataView(
-        bufferClone,
-        dataView.byteOffset,
-        dataView.byteLength,
-      );
-      seen.set(dataView, view);
-      return view;
-    }
+  const clone = new RegExp(value.source, value.flags);
+  clone.lastIndex = value.lastIndex;
+  seen.set(value, clone);
+  return clone;
+}
 
-    const fallbackBuffer = new ArrayBuffer(dataView.byteLength);
-    const fallbackView = new DataView(
-      fallbackBuffer,
-      0,
+function tryCloneDataView(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): DataViewSnapshot | undefined {
+  if (!isDataViewLike(value)) {
+    return undefined;
+  }
+
+  // The immutable proxy strips typed-array identity, so we fall back to `any`
+  // to peek at runtime-only properties before cloning.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dataView = value as any;
+
+  if (ArrayBuffer.isView(dataView)) {
+    const bufferClone = cloneSnapshotInternal(
+      dataView.buffer,
+      seen,
+    ) as ArrayBufferLike;
+    const view = new DataView(
+      bufferClone,
+      dataView.byteOffset,
       dataView.byteLength,
     );
-    for (let i = 0; i < dataView.byteLength; i += 1) {
-      fallbackView.setUint8(i, dataView.getUint8(i));
-    }
-    seen.set(dataView, fallbackView);
-    return fallbackView;
+    seen.set(dataView, view);
+    return view;
   }
 
-  if (isTypedArrayLike(value)) {
-    const typed = value;
-    const ctor = typed.constructor as {
-      new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
-      new(length: number): TypedArray;
-    };
-    let clone: TypedArray;
-    const isSnapshot = isImmutableTypedArraySnapshot(typed);
-    if (ArrayBuffer.isView(typed) || isSnapshot) {
-      const source = isSnapshot
-        ? (typed as ImmutableTypedArraySnapshot<TypedArray>)
-        : typed;
-      const bufferClone = cloneSnapshotInternal(
-        source.buffer,
-        seen,
-      ) as ArrayBufferLike;
-      clone = new ctor(
-        bufferClone,
-        (source as unknown as TypedArray).byteOffset,
-        getTypedArrayLength(source as unknown as TypedArray),
-      );
-    } else {
-      const length = getTypedArrayLength(typed);
-      clone = new ctor(length);
-      for (let i = 0; i < length; i += 1) {
-        clone[i] = typed[i];
-      }
-    }
-    seen.set(typed as object, clone);
-    return clone;
+  const fallbackBuffer = new ArrayBuffer(dataView.byteLength);
+  const fallbackView = new DataView(
+    fallbackBuffer,
+    0,
+    dataView.byteLength,
+  );
+  for (let i = 0; i < dataView.byteLength; i += 1) {
+    fallbackView.setUint8(i, dataView.getUint8(i));
+  }
+  seen.set(dataView, fallbackView);
+  return fallbackView;
+}
+
+function tryCloneTypedArray(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): TypedArray | undefined {
+  if (!isTypedArrayLike(value)) {
+    return undefined;
   }
 
-  if (value instanceof Map) {
-    const clone = new Map<unknown, unknown>();
-    seen.set(value as object, clone);
-    for (const [key, entryValue] of value.entries()) {
-      clone.set(
-        cloneSnapshotInternal(key, seen),
-        cloneSnapshotInternal(entryValue, seen),
-      );
+  const typed = value;
+  const ctor = typed.constructor as {
+    new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+    new(length: number): TypedArray;
+  };
+  let clone: TypedArray;
+  const isSnapshot = isImmutableTypedArraySnapshot(typed);
+
+  if (ArrayBuffer.isView(typed) || isSnapshot) {
+    const source = isSnapshot
+      ? (typed as ImmutableTypedArraySnapshot<TypedArray>)
+      : typed;
+    const bufferClone = cloneSnapshotInternal(
+      source.buffer,
+      seen,
+    ) as ArrayBufferLike;
+    clone = new ctor(
+      bufferClone,
+      (source as unknown as TypedArray).byteOffset,
+      getTypedArrayLength(source as unknown as TypedArray),
+    );
+  } else {
+    const length = getTypedArrayLength(typed);
+    clone = new ctor(length);
+    for (let i = 0; i < length; i += 1) {
+      clone[i] = typed[i];
     }
-    return clone;
   }
 
-  if (value instanceof Set) {
-    const clone = new Set<unknown>();
-    seen.set(value as object, clone);
-    for (const entry of value.values()) {
-      clone.add(cloneSnapshotInternal(entry, seen));
-    }
-    return clone;
+  seen.set(typed as object, clone);
+  return clone;
+}
+
+function tryCloneMap(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): Map<unknown, unknown> | undefined {
+  if (!(value instanceof Map)) {
+    return undefined;
   }
 
-  if (Array.isArray(value)) {
-    const clone: unknown[] = [];
-    seen.set(value as object, clone);
-    for (const item of value) {
-      clone.push(cloneSnapshotInternal(item, seen));
-    }
-    return clone;
+  const clone = new Map<unknown, unknown>();
+  seen.set(value as object, clone);
+  for (const [key, entryValue] of value.entries()) {
+    clone.set(
+      cloneSnapshotInternal(key, seen),
+      cloneSnapshotInternal(entryValue, seen),
+    );
+  }
+  return clone;
+}
+
+function tryCloneSet(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): Set<unknown> | undefined {
+  if (!(value instanceof Set)) {
+    return undefined;
   }
 
+  const clone = new Set<unknown>();
+  seen.set(value as object, clone);
+  for (const entry of value.values()) {
+    clone.add(cloneSnapshotInternal(entry, seen));
+  }
+  return clone;
+}
+
+function tryCloneArray(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): unknown[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const clone: unknown[] = [];
+  seen.set(value as object, clone);
+  for (const item of value) {
+    clone.push(cloneSnapshotInternal(item, seen));
+  }
+  return clone;
+}
+
+function cloneObjectWithDescriptors(
+  value: object,
+  seen: WeakMap<object, unknown>,
+): unknown {
   const proto = Object.getPrototypeOf(value);
   const clone =
     proto === null ? Object.create(null) : Object.create(proto);
@@ -999,6 +1223,42 @@ function cloneSnapshotInternal(
   }
 
   return clone;
+}
+
+function cloneSnapshotInternal(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+): unknown {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+    return value;
+  }
+
+  if (typeof value === 'function') {
+    return value;
+  }
+
+  if (seen.has(value as object)) {
+    return seen.get(value as object);
+  }
+
+  const cloned =
+    tryCloneImmutableArrayBuffer(value, seen) ??
+    tryCloneImmutableSharedArrayBuffer(value, seen) ??
+    tryCloneArrayBuffer(value, seen) ??
+    tryCloneSharedArrayBuffer(value, seen) ??
+    tryCloneDate(value, seen) ??
+    tryCloneRegExp(value, seen) ??
+    tryCloneDataView(value, seen) ??
+    tryCloneTypedArray(value, seen) ??
+    tryCloneMap(value, seen) ??
+    tryCloneSet(value, seen) ??
+    tryCloneArray(value, seen);
+
+  if (cloned !== undefined) {
+    return cloned;
+  }
+
+  return cloneObjectWithDescriptors(value as object, seen);
 }
 
 function cloneSharedArrayBuffer(
@@ -1091,58 +1351,90 @@ function containsSymbolProperties(
   }
   seen.add(objectValue);
 
-  if (value instanceof Map) {
-    for (const [key, entryValue] of value.entries()) {
-      if (containsSymbolProperties(key, seen)) {
-        return true;
-      }
-      if (containsSymbolProperties(entryValue, seen)) {
-        return true;
-      }
-    }
+  const collectionScan =
+    scanMapForSymbolProperties(value, seen) ??
+    scanSetForSymbolProperties(value, seen) ??
+    scanArrayForSymbolProperties(value, seen);
+  if (collectionScan !== undefined) {
+    return collectionScan;
+  }
+
+  if (isTerminalSymbolScanValue(value)) {
     return false;
   }
 
-  if (value instanceof Set) {
-    for (const entry of value.values()) {
-      if (containsSymbolProperties(entry, seen)) {
-        return true;
-      }
-    }
-    return false;
+  return scanObjectForSymbolProperties(value as Record<PropertyKey, unknown>, seen);
+}
+
+function scanMapForSymbolProperties(
+  value: unknown,
+  seen: WeakSet<object>,
+): boolean | undefined {
+  if (!(value instanceof Map)) {
+    return undefined;
   }
 
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (containsSymbolProperties(item, seen)) {
-        return true;
-      }
+  for (const [key, entryValue] of value.entries()) {
+    if (containsSymbolProperties(key, seen) || containsSymbolProperties(entryValue, seen)) {
+      return true;
     }
-    return false;
+  }
+  return false;
+}
+
+function scanSetForSymbolProperties(
+  value: unknown,
+  seen: WeakSet<object>,
+): boolean | undefined {
+  if (!(value instanceof Set)) {
+    return undefined;
   }
 
-  if (
+  for (const entry of value.values()) {
+    if (containsSymbolProperties(entry, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function scanArrayForSymbolProperties(
+  value: unknown,
+  seen: WeakSet<object>,
+): boolean | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  for (const item of value) {
+    if (containsSymbolProperties(item, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isTerminalSymbolScanValue(value: object): boolean {
+  return (
     ArrayBuffer.isView(value) ||
     isImmutableTypedArraySnapshot(value) ||
     value instanceof ArrayBuffer ||
     value instanceof Date ||
     value instanceof RegExp
-  ) {
-    return false;
-  }
-
-  const keys = Reflect.ownKeys(
-    value as Record<PropertyKey, unknown>,
   );
+}
+
+function scanObjectForSymbolProperties(
+  value: Record<PropertyKey, unknown>,
+  seen: WeakSet<object>,
+): boolean {
+  const keys = Reflect.ownKeys(value);
   if (keys.some((key) => typeof key === 'symbol')) {
     return true;
   }
 
   for (const key of keys) {
-    const descriptor = Object.getOwnPropertyDescriptor(
-      value as Record<PropertyKey, unknown>,
-      key,
-    );
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (!descriptor || !('value' in descriptor)) {
       continue;
     }
@@ -1262,85 +1554,124 @@ function payloadsMatch(
     return left === right;
   }
 
-  const objectLeft = left;
+  const objectLeft = left as object;
   const objectRight = right as object;
   if (seen.has(objectLeft)) {
     return seen.get(objectLeft) === right;
   }
   seen.set(objectLeft, right);
 
-  if (left instanceof Map && right instanceof Map) {
-    if (left.size !== right.size) {
+  return (
+    tryMatchMapPayloads(left, right, seen) ??
+    tryMatchSetPayloads(left, right, seen) ??
+    tryMatchArrayPayloads(left, right, seen) ??
+    tryMatchArrayBufferViewPayloads(left, right) ??
+    tryMatchDatePayloads(left, right) ??
+    matchObjectPayloads(objectLeft as Record<PropertyKey, unknown>, objectRight as Record<PropertyKey, unknown>, seen)
+  );
+}
+
+function tryMatchMapPayloads(
+  left: unknown,
+  right: unknown,
+  seen: WeakMap<object, unknown>,
+): boolean | undefined {
+  if (!(left instanceof Map) || !(right instanceof Map)) {
+    return undefined;
+  }
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  const rightEntries = Array.from(right.entries());
+  return Array.from(left.entries()).every(([lk, lv], index) => {
+    const [rk, rv] = rightEntries[index];
+    return payloadsMatch(lk, rk, seen) && payloadsMatch(lv, rv, seen);
+  });
+}
+
+function tryMatchSetPayloads(
+  left: unknown,
+  right: unknown,
+  seen: WeakMap<object, unknown>,
+): boolean | undefined {
+  if (!(left instanceof Set) || !(right instanceof Set)) {
+    return undefined;
+  }
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  const rightValues = Array.from(right.values());
+  return Array.from(left.values()).every((lv, index) =>
+    payloadsMatch(lv, rightValues[index], seen),
+  );
+}
+
+function tryMatchArrayPayloads(
+  left: unknown,
+  right: unknown,
+  seen: WeakMap<object, unknown>,
+): boolean | undefined {
+  if (!Array.isArray(left) || !Array.isArray(right)) {
+    return undefined;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let i = 0; i < left.length; i += 1) {
+    if (!payloadsMatch(left[i], right[i], seen)) {
       return false;
     }
-    const rightEntries = Array.from(right.entries());
-    return Array.from(left.entries()).every(([lk, lv], index) => {
-      const [rk, rv] = rightEntries[index];
-      return (
-        payloadsMatch(lk, rk, seen) &&
-        payloadsMatch(lv, rv, seen)
-      );
-    });
+  }
+  return true;
+}
+
+function tryMatchArrayBufferViewPayloads(
+  left: unknown,
+  right: unknown,
+): boolean | undefined {
+  if (!isArrayBufferViewLike(left) || !isArrayBufferViewLike(right)) {
+    return undefined;
+  }
+  if (left.byteLength !== right.byteLength) {
+    return false;
   }
 
-  if (left instanceof Set && right instanceof Set) {
-    if (left.size !== right.size) {
+  const leftBytes = getArrayBufferViewBytes(left);
+  const rightBytes = getArrayBufferViewBytes(right);
+  for (let i = 0; i < leftBytes.length; i += 1) {
+    if (leftBytes[i] !== rightBytes[i]) {
       return false;
     }
-    const rightValues = Array.from(right.values());
-    return Array.from(left.values()).every((lv, index) =>
-      payloadsMatch(lv, rightValues[index], seen),
-    );
   }
+  return true;
+}
 
-  if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) {
-      return false;
-    }
-    for (let i = 0; i < left.length; i += 1) {
-      if (!payloadsMatch(left[i], right[i], seen)) {
-        return false;
-      }
-    }
-    return true;
+function tryMatchDatePayloads(left: unknown, right: unknown): boolean | undefined {
+  if (!(left instanceof Date) || !(right instanceof Date)) {
+    return undefined;
   }
+  return left.getTime() === right.getTime();
+}
 
-  if (isArrayBufferViewLike(left) && isArrayBufferViewLike(right)) {
-    if (left.byteLength !== right.byteLength) {
-      return false;
-    }
-    const leftBytes = getArrayBufferViewBytes(left);
-    const rightBytes = getArrayBufferViewBytes(right);
-    for (let i = 0; i < leftBytes.length; i += 1) {
-      if (leftBytes[i] !== rightBytes[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  if (left instanceof Date && right instanceof Date) {
-    return left.getTime() === right.getTime();
-  }
-
-  const leftKeys = Reflect.ownKeys(objectLeft);
-  const rightKeys = Reflect.ownKeys(objectRight);
+function matchObjectPayloads(
+  left: Record<PropertyKey, unknown>,
+  right: Record<PropertyKey, unknown>,
+  seen: WeakMap<object, unknown>,
+): boolean {
+  const leftKeys = Reflect.ownKeys(left);
+  const rightKeys = Reflect.ownKeys(right);
 
   if (leftKeys.length !== rightKeys.length) {
     return false;
   }
 
   for (const key of leftKeys) {
-    if (!Object.prototype.hasOwnProperty.call(objectRight, key)) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) {
       return false;
     }
-    if (
-      !payloadsMatch(
-        Reflect.get(objectLeft, key),
-        Reflect.get(objectRight, key),
-        seen,
-      )
-    ) {
+    if (!payloadsMatch(Reflect.get(left, key), Reflect.get(right, key), seen)) {
       return false;
     }
   }
@@ -1363,192 +1694,227 @@ function reconcileValue(
     return seen.get(objectNext);
   }
 
-  if (next instanceof Map) {
-    const map = current instanceof Map ? current : new Map();
-    seen.set(objectNext, map);
+  return (
+    tryReconcileMap(current, next, seen) ??
+    tryReconcileSet(current, next, seen) ??
+    tryReconcileArray(current, next, seen) ??
+    tryReconcileDataView(current, next, seen) ??
+    tryReconcileTypedArray(current, next, seen) ??
+    tryReconcileDate(next) ??
+    tryReconcilePlainObject(current, next, seen) ??
+    reconcileByCloning(next, seen)
+  );
+}
 
-    const existingEntries =
-      current instanceof Map ? Array.from(current.entries()) : [];
-    const matchedEntryIndices = new Set<number>();
-
-    map.clear();
-    for (const [key, value] of next.entries()) {
-      const existingEntry = findMatchingMapEntry(
-        existingEntries,
-        key,
-        matchedEntryIndices,
-      );
-      const resolvedKey = reconcileValue(
-        existingEntry?.[0],
-        key,
-        seen,
-      );
-      const resolvedValue = reconcileValue(
-        existingEntry?.[1],
-        value,
-        seen,
-      );
-      map.set(resolvedKey, resolvedValue);
-    }
-
-    return map;
+function tryReconcileMap(
+  current: unknown,
+  next: unknown,
+  seen: WeakMap<object, unknown>,
+): Map<unknown, unknown> | undefined {
+  if (!(next instanceof Map)) {
+    return undefined;
   }
 
-  if (next instanceof Set) {
-    const set = current instanceof Set ? current : new Set();
-    seen.set(objectNext, set);
+  const map = current instanceof Map ? current : new Map();
+  seen.set(next as object, map);
 
-    const existingItems =
-      current instanceof Set ? Array.from(current.values()) : [];
-    const matchedItemIndices = new Set<number>();
+  const existingEntries =
+    current instanceof Map ? Array.from(current.entries()) : [];
+  const matchedEntryIndices = new Set<number>();
 
-    set.clear();
-    for (const item of next.values()) {
-      const existingItem = findMatchingSetItem(
-        existingItems,
-        item,
-        matchedItemIndices,
-      );
-      const resolvedItem = reconcileValue(
-        existingItem ?? undefined,
-        item,
-        seen,
-      );
-      set.add(resolvedItem);
-    }
-
-    return set;
+  map.clear();
+  for (const [key, value] of next.entries()) {
+    const existingEntry = findMatchingMapEntry(
+      existingEntries,
+      key,
+      matchedEntryIndices,
+    );
+    const resolvedKey = reconcileValue(existingEntry?.[0], key, seen);
+    const resolvedValue = reconcileValue(existingEntry?.[1], value, seen);
+    map.set(resolvedKey, resolvedValue);
   }
 
-  if (Array.isArray(next)) {
-    const array = Array.isArray(current) ? current : [];
-    seen.set(objectNext, array);
-    array.length = next.length;
-    for (let i = 0; i < next.length; i += 1) {
-      array[i] = reconcileValue(array[i], next[i], seen);
-    }
-    return array;
+  return map;
+}
+
+function tryReconcileSet(
+  current: unknown,
+  next: unknown,
+  seen: WeakMap<object, unknown>,
+): Set<unknown> | undefined {
+  if (!(next instanceof Set)) {
+    return undefined;
   }
 
-  if (isDataViewLike(next)) {
-    // Immutable DataView proxies lose their native type at runtime.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nextView = next as any;
-    let resolvedView: DataViewSnapshot;
-    if (
-      isDataViewLike(current) &&
-      canReuseDataView(current, nextView)
-    ) {
-      const currentView = current;
-      copyDataViewContents(currentView, nextView);
-      resolvedView = currentView;
-    } else if (ArrayBuffer.isView(nextView)) {
-      const clonedBuffer = cloneSnapshotInternal(
-        nextView.buffer,
-        seen,
-      ) as ArrayBufferLike;
-      resolvedView = new DataView(
+  const set = current instanceof Set ? current : new Set();
+  seen.set(next as object, set);
+
+  const existingItems =
+    current instanceof Set ? Array.from(current.values()) : [];
+  const matchedItemIndices = new Set<number>();
+
+  set.clear();
+  for (const item of next.values()) {
+    const existingItem = findMatchingSetItem(
+      existingItems,
+      item,
+      matchedItemIndices,
+    );
+    const resolvedItem = reconcileValue(existingItem ?? undefined, item, seen);
+    set.add(resolvedItem);
+  }
+
+  return set;
+}
+
+function tryReconcileArray(
+  current: unknown,
+  next: unknown,
+  seen: WeakMap<object, unknown>,
+): unknown[] | undefined {
+  if (!Array.isArray(next)) {
+    return undefined;
+  }
+
+  const array = Array.isArray(current) ? current : [];
+  seen.set(next as object, array);
+  array.length = next.length;
+  for (let i = 0; i < next.length; i += 1) {
+    array[i] = reconcileValue(array[i], next[i], seen);
+  }
+  return array;
+}
+
+function tryReconcileDataView(
+  current: unknown,
+  next: unknown,
+  seen: WeakMap<object, unknown>,
+): DataViewSnapshot | undefined {
+  if (!isDataViewLike(next)) {
+    return undefined;
+  }
+
+  // Immutable DataView proxies lose their native type at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nextView = next as any;
+  let resolvedView: DataViewSnapshot;
+
+  if (isDataViewLike(current) && canReuseDataView(current, nextView)) {
+    const currentView = current;
+    copyDataViewContents(currentView, nextView);
+    resolvedView = currentView;
+  } else if (ArrayBuffer.isView(nextView)) {
+    const clonedBuffer = cloneSnapshotInternal(nextView.buffer, seen) as ArrayBufferLike;
+    resolvedView = new DataView(
+      clonedBuffer,
+      nextView.byteOffset,
+      nextView.byteLength,
+    );
+  } else {
+    const fallbackBuffer = new ArrayBuffer(nextView.byteLength);
+    const fallbackView = new DataView(
+      fallbackBuffer,
+      0,
+      nextView.byteLength,
+    );
+    for (let i = 0; i < nextView.byteLength; i += 1) {
+      fallbackView.setUint8(i, nextView.getUint8(i));
+    }
+    resolvedView = fallbackView;
+  }
+
+  seen.set(next as object, resolvedView);
+  return resolvedView;
+}
+
+function tryReconcileTypedArray(
+  current: unknown,
+  next: unknown,
+  seen: WeakMap<object, unknown>,
+): TypedArray | undefined {
+  if (!isTypedArrayLike(next)) {
+    return undefined;
+  }
+
+  const typed = next;
+  let resolvedView: TypedArray;
+
+  if (isTypedArrayLike(current) && canReuseTypedArray(current, typed)) {
+    const currentTyped = current;
+    copyTypedArrayContents(currentTyped, typed);
+    resolvedView = currentTyped;
+  } else {
+    const ctor = typed.constructor as {
+      new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
+      new(length: number): TypedArray;
+    };
+
+    if (ArrayBuffer.isView(typed)) {
+      const clonedBuffer = cloneSnapshotInternal(typed.buffer, seen) as ArrayBufferLike;
+      resolvedView = new ctor(clonedBuffer, typed.byteOffset, typed.length);
+    } else if (isImmutableTypedArraySnapshot(typed)) {
+      const source = typed as ImmutableTypedArraySnapshot<TypedArray>;
+      const clonedBuffer = cloneSnapshotInternal(source.buffer, seen) as ArrayBufferLike;
+      resolvedView = new ctor(
         clonedBuffer,
-        nextView.byteOffset,
-        nextView.byteLength,
+        (source as unknown as TypedArray).byteOffset,
+        getTypedArrayLength(source as unknown as TypedArray),
       );
     } else {
-      const fallbackBuffer = new ArrayBuffer(nextView.byteLength);
-      const fallbackView = new DataView(
-        fallbackBuffer,
-        0,
-        nextView.byteLength,
-      );
-      for (let i = 0; i < nextView.byteLength; i += 1) {
-        fallbackView.setUint8(i, nextView.getUint8(i));
+      const length = getTypedArrayLength(typed);
+      const clone = new ctor(length);
+      for (let i = 0; i < length; i += 1) {
+        clone[i] = typed[i];
       }
-      resolvedView = fallbackView;
+      resolvedView = clone;
     }
-
-    seen.set(objectNext, resolvedView);
-    return resolvedView;
   }
 
-  if (isTypedArrayLike(next)) {
-    const typed = next;
-    let resolvedView: TypedArray;
-    if (
-      isTypedArrayLike(current) &&
-      canReuseTypedArray(current, typed)
-    ) {
-      const currentTyped = current;
-      copyTypedArrayContents(currentTyped, typed);
-      resolvedView = currentTyped;
-    } else {
-      const ctor = typed.constructor as {
-        new(buffer: ArrayBufferLike, byteOffset?: number, length?: number): TypedArray;
-        new(length: number): TypedArray;
-      };
-      if (ArrayBuffer.isView(typed)) {
-        const clonedBuffer = cloneSnapshotInternal(
-          typed.buffer,
-          seen,
-        ) as ArrayBufferLike;
-        resolvedView = new ctor(
-          clonedBuffer,
-          typed.byteOffset,
-          typed.length,
-        );
-      } else if (isImmutableTypedArraySnapshot(typed)) {
-        const source = typed as ImmutableTypedArraySnapshot<TypedArray>;
-        const clonedBuffer = cloneSnapshotInternal(
-          source.buffer,
-          seen,
-        ) as ArrayBufferLike;
-        resolvedView = new ctor(
-          clonedBuffer,
-          (source as unknown as TypedArray).byteOffset,
-          getTypedArrayLength(source as unknown as TypedArray),
-        );
-      } else {
-        const length = getTypedArrayLength(typed);
-        const clone = new ctor(length);
-        for (let i = 0; i < length; i += 1) {
-          clone[i] = typed[i];
-        }
-        resolvedView = clone;
-      }
-    }
+  seen.set(next as object, resolvedView);
+  return resolvedView;
+}
 
-    seen.set(objectNext, resolvedView);
-    return resolvedView;
+function tryReconcileDate(next: unknown): Date | undefined {
+  if (!(next instanceof Date)) {
+    return undefined;
+  }
+  return new Date(next.getTime());
+}
+
+function tryReconcilePlainObject(
+  current: unknown,
+  next: unknown,
+  seen: WeakMap<object, unknown>,
+): Record<PropertyKey, unknown> | undefined {
+  if (!isPlainObject(next)) {
+    return undefined;
   }
 
-  if (next instanceof Date) {
-    return new Date(next.getTime());
+  const target = isPlainObject(current) ? (current as Record<PropertyKey, unknown>) : {};
+  seen.set(next as object, target);
+
+  const nextObject = next as Record<PropertyKey, unknown>;
+
+  for (const key of Reflect.ownKeys(target)) {
+    if (!Reflect.has(nextObject, key)) {
+      Reflect.deleteProperty(target, key);
+    }
   }
 
-  if (isPlainObject(next)) {
-    const target = isPlainObject(current) ? current : {};
-    seen.set(objectNext, target);
-
-    const targetObject = target as Record<PropertyKey, unknown>;
-    const nextObject = next as Record<PropertyKey, unknown>;
-
-    for (const key of Reflect.ownKeys(targetObject)) {
-      if (!Reflect.has(nextObject, key)) {
-        Reflect.deleteProperty(targetObject, key);
-      }
-    }
-
-    for (const key of Reflect.ownKeys(nextObject)) {
-      const currentValue = Reflect.get(targetObject, key);
-      const nextValue = Reflect.get(nextObject, key);
-      const reconciled = reconcileValue(currentValue, nextValue, seen);
-      Reflect.set(targetObject, key, reconciled);
-    }
-
-    return target;
+  for (const key of Reflect.ownKeys(nextObject)) {
+    const currentValue = Reflect.get(target, key);
+    const nextValue = Reflect.get(nextObject, key);
+    const reconciled = reconcileValue(currentValue, nextValue, seen);
+    Reflect.set(target, key, reconciled);
   }
 
+  return target;
+}
+
+function reconcileByCloning(next: unknown, seen: WeakMap<object, unknown>): unknown {
   const clone = cloneStructured(next);
   if (typeof clone === 'object' && clone !== null) {
-    seen.set(objectNext, clone);
+    seen.set(next as object, clone);
   }
   return clone;
 }
