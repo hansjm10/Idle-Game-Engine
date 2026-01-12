@@ -5,7 +5,8 @@
  * workload simulations and emits a single-line benchmark summary JSON.
  */
 
-import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
 
 import {
@@ -199,7 +200,6 @@ function printHelpAndExit(code: number): never {
       `  --list-scenarios            List available scenarios and exit\n` +
       `  -h, --help                  Show this help text`,
   );
-  // eslint-disable-next-line no-process-exit
   process.exit(code);
 }
 
@@ -370,6 +370,105 @@ function roundNumber(value: number, decimals = 6): number | null {
   return Math.round(value * factor) / factor;
 }
 
+function findGitEntry(startDir: string): string | null {
+  let current = startDir;
+  while (true) {
+    const candidate = path.join(current, '.git');
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+function resolveGitDirectory(entryPath: string): string | null {
+  try {
+    const stat = statSync(entryPath);
+    if (stat.isDirectory()) {
+      return entryPath;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(entryPath, 'utf8').trim();
+    const prefix = 'gitdir:';
+    if (!content.startsWith(prefix)) {
+      return null;
+    }
+    const gitDirPath = content.slice(prefix.length).trim();
+    if (!gitDirPath) {
+      return null;
+    }
+    return path.isAbsolute(gitDirPath)
+      ? gitDirPath
+      : path.resolve(path.dirname(entryPath), gitDirPath);
+  } catch {
+    return null;
+  }
+}
+
+function readGitTextFile(filePath: string): string | null {
+  try {
+    return readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return null;
+  }
+}
+
+function isCommitSha(value: string): boolean {
+  return /^[0-9a-f]{40}$/i.test(value);
+}
+
+function resolvePackedRefSha(gitDir: string, ref: string): string | null {
+  const packedRefs = readGitTextFile(path.join(gitDir, 'packed-refs'));
+  if (!packedRefs) {
+    return null;
+  }
+
+  for (const line of packedRefs.split(/\r?\n/)) {
+    if (line.length === 0 || line.startsWith('#') || line.startsWith('^')) {
+      continue;
+    }
+    const [sha, refName] = line.split(' ');
+    if (sha && refName === ref) {
+      return sha;
+    }
+  }
+
+  return null;
+}
+
+function resolveGitHeadSha(gitDir: string): string | null {
+  const head = readGitTextFile(path.join(gitDir, 'HEAD'));
+  if (!head) {
+    return null;
+  }
+
+  const refPrefix = 'ref:';
+  if (!head.startsWith(refPrefix)) {
+    return isCommitSha(head) ? head : null;
+  }
+
+  const ref = head.slice(refPrefix.length).trim();
+  if (!ref) {
+    return null;
+  }
+
+  const refSha = readGitTextFile(path.join(gitDir, ref));
+  if (refSha && isCommitSha(refSha)) {
+    return refSha;
+  }
+
+  const packedSha = resolvePackedRefSha(gitDir, ref);
+  return packedSha && isCommitSha(packedSha) ? packedSha : null;
+}
+
 function resolveCommitSha(): string | null {
   const envSha =
     process.env.GITHUB_SHA ??
@@ -379,15 +478,18 @@ function resolveCommitSha(): string | null {
   if (envSha) {
     return envSha;
   }
-  try {
-    return execSync('git rev-parse HEAD', {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-      .toString()
-      .trim();
-  } catch {
+
+  const gitEntry = findGitEntry(process.cwd());
+  if (!gitEntry) {
     return null;
   }
+
+  const gitDir = resolveGitDirectory(gitEntry);
+  if (!gitDir) {
+    return null;
+  }
+
+  return resolveGitHeadSha(gitDir);
 }
 
 function getEnvMetadata() {
@@ -439,20 +541,19 @@ function runLegacySim(args: CliArgs): void {
 
   if (Object.keys(thresholds).length > 0) {
     const evaluation = evaluateDiagnostics(result, thresholds);
-    if (!evaluation.ok) {
-      // Surface reasons to stderr so CI/users can understand failures while
-      // keeping stdout clean for JSON consumers.
-      const reasons = evaluation.reasons.join('; ');
+	    if (!evaluation.ok) {
+	      // Surface reasons to stderr so CI/users can understand failures while
+	      // keeping stdout clean for JSON consumers.
+	      const reasons = evaluation.reasons.join('; ');
       console.error(`Thresholds breached: ${reasons}`);
       const s = evaluation.summary;
       console.error(
         `Summary — ticks:${s.totalEntries} maxTick:${s.maxTickDurationMs.toFixed(2)}ms ` +
-          `avgTick:${s.avgTickDurationMs.toFixed(2)}ms maxQueueBacklog:${s.maxQueueBacklog}`,
-      );
-      // eslint-disable-next-line no-process-exit
-      process.exit(1);
-    }
-  }
+	          `avgTick:${s.avgTickDurationMs.toFixed(2)}ms maxQueueBacklog:${s.maxQueueBacklog}`,
+	      );
+	      process.exit(1);
+	    }
+	  }
 }
 
 function runScenario(
@@ -551,7 +652,7 @@ function runScenarioHarness(args: CliArgs): void {
   }
 
   const results: ScenarioResult[] = [];
-  const failures: Array<{ scenario: string; reasons: string[] }> = [];
+  const failures: { scenario: string; reasons: string[] }[] = [];
 
   for (const scenario of scenarios) {
     const { result, timeline } = runScenario(scenario, args);
@@ -596,15 +697,14 @@ function runScenarioHarness(args: CliArgs): void {
 
   process.stdout.write(JSON.stringify(payload) + '\n');
 
-  if (failures.length > 0) {
-    for (const failure of failures) {
-      console.error(
-        `Scenario "${failure.scenario}" breached thresholds: ${failure.reasons.join('; ')}`,
-      );
-    }
-    // eslint-disable-next-line no-process-exit
-    process.exit(1);
-  }
+	if (failures.length > 0) {
+	  for (const failure of failures) {
+	    console.error(
+	      `Scenario "${failure.scenario}" breached thresholds: ${failure.reasons.join('; ')}`,
+	    );
+	  }
+	  process.exit(1);
+	}
 }
 
 async function main(): Promise<void> {
@@ -614,23 +714,20 @@ async function main(): Promise<void> {
     printHelpAndExit(0);
   }
 
-  if (args.listScenarios) {
-    printScenarioList();
-    // eslint-disable-next-line no-process-exit
-    process.exit(0);
-  }
+	if (args.listScenarios) {
+	  printScenarioList();
+	  process.exit(0);
+	}
 
   if (args.scenarios.length > 0) {
     runScenarioHarness(args);
     return;
   }
 
-  runLegacySim(args);
+	runLegacySim(args);
 }
 
-// eslint-disable-next-line unicorn/prefer-top-level-await
 main().catch((error) => {
-  console.error('runtime-sim failed:', error instanceof Error ? error.message : String(error));
-  // eslint-disable-next-line no-process-exit
-  process.exit(1);
+	console.error('runtime-sim failed:', error instanceof Error ? error.message : String(error));
+	process.exit(1);
 });
