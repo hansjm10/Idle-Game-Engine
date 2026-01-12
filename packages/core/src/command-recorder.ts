@@ -987,7 +987,7 @@ function tryCloneImmutableArrayBuffer(
   }
 
   const buffer = value.toArrayBuffer();
-  seen.set(value as object, buffer);
+  seen.set(value, buffer);
   return buffer;
 }
 
@@ -1003,7 +1003,7 @@ function tryCloneImmutableSharedArrayBuffer(
     typeof value.toSharedArrayBuffer === 'function'
       ? value.toSharedArrayBuffer()
       : value.toArrayBuffer();
-  seen.set(value as object, clone);
+  seen.set(value, clone);
   return clone;
 }
 
@@ -1031,8 +1031,8 @@ function tryCloneSharedArrayBuffer(
     return undefined;
   }
 
-  const clone = cloneSharedArrayBuffer(value as SharedArrayBuffer);
-  seen.set(value as object, clone);
+  const clone = cloneSharedArrayBuffer(value);
+  seen.set(value, clone);
   return clone;
 }
 
@@ -1237,8 +1237,8 @@ function cloneSnapshotInternal(
     return value;
   }
 
-  if (seen.has(value as object)) {
-    return seen.get(value as object);
+  if (seen.has(value)) {
+    return seen.get(value);
   }
 
   const cloned =
@@ -1258,7 +1258,7 @@ function cloneSnapshotInternal(
     return cloned;
   }
 
-  return cloneObjectWithDescriptors(value as object, seen);
+  return cloneObjectWithDescriptors(value, seen);
 }
 
 function cloneSharedArrayBuffer(
@@ -1550,16 +1550,16 @@ function payloadsMatch(
     return false;
   }
 
-  if (!left || !right || typeof left !== 'object') {
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
     return left === right;
   }
 
-  const objectLeft = left as object;
-  const objectRight = right as object;
+  const objectLeft = left;
+  const objectRight = right;
   if (seen.has(objectLeft)) {
-    return seen.get(objectLeft) === right;
+    return seen.get(objectLeft) === objectRight;
   }
-  seen.set(objectLeft, right);
+  seen.set(objectLeft, objectRight);
 
   return (
     tryMatchMapPayloads(left, right, seen) ??
@@ -1668,7 +1668,7 @@ function matchObjectPayloads(
   }
 
   for (const key of leftKeys) {
-    if (!Object.prototype.hasOwnProperty.call(right, key)) {
+    if (!Object.getOwnPropertyDescriptor(right, key)) {
       return false;
     }
     if (!payloadsMatch(Reflect.get(left, key), Reflect.get(right, key), seen)) {

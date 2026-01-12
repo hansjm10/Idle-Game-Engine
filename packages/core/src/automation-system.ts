@@ -256,15 +256,19 @@ function updateThresholdStateDuringCooldown(
   }
 }
 
+type AutomationTriggerEvaluationContext = Readonly<{
+  step: number;
+  stepDurationMs: number;
+  formulaContext: FormulaEvaluationContext;
+  commandQueue: CommandQueue;
+  resourceState: ResourceStateAccessor;
+  pendingEventTriggers: ReadonlySet<string>;
+}>;
+
 function evaluateAutomationTrigger(
   automation: AutomationDefinition,
   state: AutomationState,
-  step: number,
-  stepDurationMs: number,
-  formulaContext: FormulaEvaluationContext,
-  commandQueue: CommandQueue,
-  resourceState: ResourceStateAccessor,
-  pendingEventTriggers: ReadonlySet<string>,
+  context: AutomationTriggerEvaluationContext,
 ): AutomationTriggerEvaluation {
   switch (automation.trigger.kind) {
     case 'interval':
@@ -272,17 +276,17 @@ function evaluateAutomationTrigger(
         triggered: evaluateIntervalTrigger(
           automation,
           state,
-          step,
-          stepDurationMs,
-          formulaContext,
+          context.step,
+          context.stepDurationMs,
+          context.formulaContext,
         ),
         thresholdCrossing: false,
       };
     case 'resourceThreshold': {
       const currentThresholdSatisfied = evaluateResourceThresholdTrigger(
         automation,
-        resourceState,
-        formulaContext,
+        context.resourceState,
+        context.formulaContext,
       );
       const previouslySatisfied = state.lastThresholdSatisfied ?? false;
 
@@ -298,12 +302,12 @@ function evaluateAutomationTrigger(
     }
     case 'commandQueueEmpty':
       return {
-        triggered: evaluateCommandQueueEmptyTrigger(commandQueue),
+        triggered: evaluateCommandQueueEmptyTrigger(context.commandQueue),
         thresholdCrossing: false,
       };
     case 'event':
       return {
-        triggered: evaluateEventTrigger(automation.id, pendingEventTriggers),
+        triggered: evaluateEventTrigger(automation.id, context.pendingEventTriggers),
         thresholdCrossing: false,
       };
     default: {
@@ -398,12 +402,14 @@ function processAutomationTick(input: Readonly<{
   const evaluation = evaluateAutomationTrigger(
     input.automation,
     state,
-    input.step,
-    input.stepDurationMs,
-    input.formulaContext,
-    input.commandQueue,
-    input.resourceState,
-    input.pendingEventTriggers,
+    {
+      step: input.step,
+      stepDurationMs: input.stepDurationMs,
+      formulaContext: input.formulaContext,
+      commandQueue: input.commandQueue,
+      resourceState: input.resourceState,
+      pendingEventTriggers: input.pendingEventTriggers,
+    },
   );
   if (!evaluation.triggered) {
     return;

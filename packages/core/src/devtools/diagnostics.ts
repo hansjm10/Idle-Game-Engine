@@ -86,7 +86,7 @@ function buildMessage(
     formatQueuePart(entry.metadata?.queue),
     formatSlowSystemsPart(slowestSystem, slowSystems),
     formatErrorPart(entry.error),
-  ].filter((part): part is string => Boolean(part));
+  ].filter((part): part is string => part !== undefined);
 
   return `${DIAGNOSTIC_PREFIX} ${parts.join(' | ')}`;
 }

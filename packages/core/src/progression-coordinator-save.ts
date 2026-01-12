@@ -379,11 +379,8 @@ export function hydrateProgressionCoordinatorState(
 
   const achievementById = createAchievementIndex(coordinator);
   resetAchievementState(achievementById);
-  if (schemaVersion === 2) {
-    restoreAchievementState(
-      serialized as SerializedProgressionCoordinatorStateV2,
-      achievementById,
-    );
+  if (serialized.schemaVersion === 2) {
+    restoreAchievementState(serialized, achievementById);
   }
 
   if (serialized.productionAccumulators && productionSystem) {

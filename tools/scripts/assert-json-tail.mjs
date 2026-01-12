@@ -30,42 +30,44 @@ function getNonEmptyLines(raw) {
     .filter((line) => line.length > 0);
 }
 
+function tryParseJsonCandidate(lines, tailIndex) {
+  let working = '';
+  let lastError;
+
+  for (let index = tailIndex; index >= 0; index -= 1) {
+    working = working.length > 0 ? `${lines[index]}\n${working}` : lines[index];
+    try {
+      return { parsed: JSON.parse(working), errorCandidate: working, lastError: undefined };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  return { parsed: undefined, errorCandidate: working, lastError };
+}
+
 function parseTrailingJson(lines) {
-  let parsed;
   let lastError;
   let errorCandidate = '';
 
   // Walk upward ignoring trailing noise until we accumulate a full JSON block (covers compact and pretty output).
   for (let tailIndex = lines.length - 1; tailIndex >= 0; tailIndex -= 1) {
-    let working = '';
-    for (let index = tailIndex; index >= 0; index -= 1) {
-      working = working.length > 0 ? `${lines[index]}\n${working}` : lines[index];
-      try {
-        parsed = JSON.parse(working);
-        break;
-      } catch (error) {
-        lastError = error;
-        errorCandidate = working;
-      }
+    const attempt = tryParseJsonCandidate(lines, tailIndex);
+    if (attempt.parsed) {
+      return attempt.parsed;
     }
-
-    if (parsed) {
-      break;
-    }
+    lastError = attempt.lastError;
+    errorCandidate = attempt.errorCandidate;
   }
 
-  if (!parsed) {
-    throw new Error(
-      [
-        'Failed to parse trailing JSON payload.',
-        'Payload:',
-        errorCandidate.length > 0 ? errorCandidate : '(no viable JSON candidate found)',
-        lastError instanceof Error ? lastError.message : String(lastError),
-      ].join('\n'),
-    );
-  }
-
-  return parsed;
+  throw new Error(
+    [
+      'Failed to parse trailing JSON payload.',
+      'Payload:',
+      errorCandidate.length > 0 ? errorCandidate : '(no viable JSON candidate found)',
+      lastError instanceof Error ? lastError.message : String(lastError),
+    ].join('\n'),
+  );
 }
 
 async function main() {

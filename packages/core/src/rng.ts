@@ -4,8 +4,8 @@ const PRD_CUMULATIVE_THRESHOLD = 0.9999;
 const PRD_SEARCH_ITERATIONS = 20;
 const PRD_BASE_RATE_REL_EPSILON = 1e-6;
 const PRD_BASE_RATE_ABS_EPSILON = 1e-12;
-const INT32_HIGH_BIT = 0x8000_0000;
-const INT32_RANGE = 0x1_0000_0000;
+const INT32_HIGH_BIT = 0x80000000;
+const INT32_RANGE = 0x100000000;
 
 let currentSeed: number | undefined;
 let rngState: number | undefined;

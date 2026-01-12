@@ -118,6 +118,19 @@ const SCENARIOS: readonly ScenarioDefinition[] = [
   },
 ];
 
+function appendScenarioIds(target: string[], value: string | undefined): void {
+  if (!value) {
+    return;
+  }
+
+  target.push(
+    ...value
+      .split(',')
+      .map((entryValue) => entryValue.trim())
+      .filter((entryValue) => entryValue.length > 0),
+  );
+}
+
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     stepMs: DEFAULT_STEP_MS,
@@ -128,53 +141,38 @@ function parseArgs(argv: string[]): CliArgs {
     helpRequested: false,
   };
 
-  const iterator = argv[Symbol.iterator]();
-  for (let entry = iterator.next(); !entry.done; entry = iterator.next()) {
-    const arg = entry.value;
-    if (arg === '--ticks') {
-      const next = iterator.next();
-      args.ticks = Number(next.value);
-    } else if (arg === '--step-ms') {
-      const next = iterator.next();
-      args.stepMs = Number(next.value);
-    } else if (arg === '--max-steps-per-frame') {
-      const next = iterator.next();
-      args.maxStepsPerFrame = Number(next.value);
-    } else if (arg === '--fail-on-slow') {
-      args.failOnSlow = true;
-    } else if (arg === '--queue-backlog-cap') {
-      const next = iterator.next();
-      args.queueBacklogCap = Number(next.value);
-    } else if (arg === '--slow-tick-budget-ms') {
-      const next = iterator.next();
-      args.slowTickBudgetMs = Number(next.value);
-    } else if (arg === '--scenario' || arg === '--scenarios') {
-      const next = iterator.next();
-      const value = next.value;
-      if (value) {
-        args.scenarios.push(
-          ...value
-            .split(',')
-            .map((entryValue) => entryValue.trim())
-            .filter((entryValue) => entryValue.length > 0),
-        );
-      }
-    } else if (arg === '--warmup-ticks') {
-      const next = iterator.next();
-      args.warmupTicks = Number(next.value);
-    } else if (arg === '--measure-ticks') {
-      const next = iterator.next();
-      args.measureTicks = Number(next.value);
-    } else if (arg === '--seed') {
-      const next = iterator.next();
-      args.seed = Number(next.value);
-    } else if (arg === '--include-memory') {
-      args.includeMemory = true;
-    } else if (arg === '--list-scenarios') {
-      args.listScenarios = true;
-    } else if (arg === '--help' || arg === '-h') {
-      args.helpRequested = true;
+  const valueArgHandlers = new Map<string, (value: string | undefined) => void>([
+    ['--ticks', (value) => { args.ticks = Number(value); }],
+    ['--step-ms', (value) => { args.stepMs = Number(value); }],
+    ['--max-steps-per-frame', (value) => { args.maxStepsPerFrame = Number(value); }],
+    ['--queue-backlog-cap', (value) => { args.queueBacklogCap = Number(value); }],
+    ['--slow-tick-budget-ms', (value) => { args.slowTickBudgetMs = Number(value); }],
+    ['--scenario', (value) => { appendScenarioIds(args.scenarios, value); }],
+    ['--scenarios', (value) => { appendScenarioIds(args.scenarios, value); }],
+    ['--warmup-ticks', (value) => { args.warmupTicks = Number(value); }],
+    ['--measure-ticks', (value) => { args.measureTicks = Number(value); }],
+    ['--seed', (value) => { args.seed = Number(value); }],
+  ]);
+
+  const flagArgHandlers = new Map<string, () => void>([
+    ['--fail-on-slow', () => { args.failOnSlow = true; }],
+    ['--include-memory', () => { args.includeMemory = true; }],
+    ['--list-scenarios', () => { args.listScenarios = true; }],
+    ['--help', () => { args.helpRequested = true; }],
+    ['-h', () => { args.helpRequested = true; }],
+  ]);
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    const valueHandler = valueArgHandlers.get(arg);
+    if (valueHandler) {
+      index += 1;
+      valueHandler(argv[index]);
+      continue;
     }
+
+    flagArgHandlers.get(arg)?.();
   }
 
   return args;
@@ -541,19 +539,19 @@ function runLegacySim(args: CliArgs): void {
 
   if (Object.keys(thresholds).length > 0) {
     const evaluation = evaluateDiagnostics(result, thresholds);
-	    if (!evaluation.ok) {
-	      // Surface reasons to stderr so CI/users can understand failures while
-	      // keeping stdout clean for JSON consumers.
-	      const reasons = evaluation.reasons.join('; ');
+    if (!evaluation.ok) {
+      // Surface reasons to stderr so CI/users can understand failures while
+      // keeping stdout clean for JSON consumers.
+      const reasons = evaluation.reasons.join('; ');
       console.error(`Thresholds breached: ${reasons}`);
       const s = evaluation.summary;
       console.error(
         `Summary — ticks:${s.totalEntries} maxTick:${s.maxTickDurationMs.toFixed(2)}ms ` +
-	          `avgTick:${s.avgTickDurationMs.toFixed(2)}ms maxQueueBacklog:${s.maxQueueBacklog}`,
-	      );
-	      process.exit(1);
-	    }
-	  }
+          `avgTick:${s.avgTickDurationMs.toFixed(2)}ms maxQueueBacklog:${s.maxQueueBacklog}`,
+      );
+      process.exit(1);
+    }
+  }
 }
 
 function runScenario(
@@ -640,41 +638,49 @@ function toMemorySummary(memory: NodeJS.MemoryUsage): MemorySummary {
   };
 }
 
-function runScenarioHarness(args: CliArgs): void {
-  const scenarios = resolveScenarios(args.scenarios);
-  if (scenarios.length === 0) {
-    console.error('Error: Scenario mode requires at least one scenario.');
-    printHelpAndExit(2);
+type ScenarioFailure = {
+  scenario: string;
+  reasons: string[];
+};
+
+function getScenarioDiagnosticsThresholds(
+  args: CliArgs,
+  timeline: DiagnosticTimelineResult,
+): DiagnosticsThresholds {
+  const thresholds: DiagnosticsThresholds = {};
+
+  const tickBudgetMs = timeline.configuration.tickBudgetMs;
+  if (args.failOnSlow && typeof tickBudgetMs === 'number') {
+    thresholds.maxTickDurationMs = tickBudgetMs;
   }
 
-  if (args.maxStepsPerFrame !== undefined) {
-    assertPositiveInteger(args.maxStepsPerFrame, '--max-steps-per-frame <n>');
+  const queueBacklogCap = args.queueBacklogCap;
+  if (typeof queueBacklogCap === 'number' && Number.isFinite(queueBacklogCap)) {
+    thresholds.maxQueueBacklog = queueBacklogCap;
   }
 
-  const results: ScenarioResult[] = [];
-  const failures: { scenario: string; reasons: string[] }[] = [];
+  return thresholds;
+}
 
-  for (const scenario of scenarios) {
-    const { result, timeline } = runScenario(scenario, args);
-    results.push(result);
-
-    const thresholds: DiagnosticsThresholds = {};
-    if (args.failOnSlow && typeof timeline.configuration.tickBudgetMs === 'number') {
-      thresholds.maxTickDurationMs = timeline.configuration.tickBudgetMs;
-    }
-    if (typeof args.queueBacklogCap === 'number' && Number.isFinite(args.queueBacklogCap)) {
-      thresholds.maxQueueBacklog = args.queueBacklogCap;
-    }
-
-    if (Object.keys(thresholds).length > 0) {
-      const evaluation = evaluateDiagnostics(timeline, thresholds);
-      if (!evaluation.ok) {
-        failures.push({ scenario: result.label, reasons: [...evaluation.reasons] });
-      }
-    }
+function evaluateScenarioThresholdFailures(
+  args: CliArgs,
+  timeline: DiagnosticTimelineResult,
+): string[] | undefined {
+  const thresholds = getScenarioDiagnosticsThresholds(args, timeline);
+  if (Object.keys(thresholds).length === 0) {
+    return undefined;
   }
 
-  const payload = {
+  const evaluation = evaluateDiagnostics(timeline, thresholds);
+  return evaluation.ok ? undefined : [...evaluation.reasons];
+}
+
+function buildScenarioPayload(
+  args: CliArgs,
+  scenarios: readonly ScenarioDefinition[],
+  results: readonly ScenarioResult[],
+): object {
+  return {
     event: BENCHMARK_EVENT,
     schemaVersion: BENCHMARK_SCHEMA_VERSION,
     benchmark: { name: 'runtime-workload-sim' },
@@ -694,17 +700,51 @@ function runScenarioHarness(args: CliArgs): void {
     },
     env: getEnvMetadata(),
   };
+}
 
-  process.stdout.write(JSON.stringify(payload) + '\n');
+function reportScenarioFailuresAndExit(failures: readonly ScenarioFailure[]): void {
+  if (failures.length === 0) {
+    return;
+  }
 
-	if (failures.length > 0) {
-	  for (const failure of failures) {
-	    console.error(
-	      `Scenario "${failure.scenario}" breached thresholds: ${failure.reasons.join('; ')}`,
-	    );
-	  }
-	  process.exit(1);
-	}
+  for (const failure of failures) {
+    console.error(
+      `Scenario "${failure.scenario}" breached thresholds: ${failure.reasons.join('; ')}`,
+    );
+  }
+
+  process.exit(1);
+}
+
+function runScenarioHarness(args: CliArgs): void {
+  const scenarios = resolveScenarios(args.scenarios);
+  if (scenarios.length === 0) {
+    console.error('Error: Scenario mode requires at least one scenario.');
+    printHelpAndExit(2);
+  }
+
+  if (args.maxStepsPerFrame !== undefined) {
+    assertPositiveInteger(args.maxStepsPerFrame, '--max-steps-per-frame <n>');
+  }
+
+  const results: ScenarioResult[] = [];
+  const failures: ScenarioFailure[] = [];
+
+  for (const scenario of scenarios) {
+    const { result, timeline } = runScenario(scenario, args);
+    results.push(result);
+
+    const reasons = evaluateScenarioThresholdFailures(args, timeline);
+    if (reasons) {
+      failures.push({ scenario: result.label, reasons });
+    }
+  }
+
+  process.stdout.write(
+    JSON.stringify(buildScenarioPayload(args, scenarios, results)) + '\n',
+  );
+
+  reportScenarioFailuresAndExit(failures);
 }
 
 async function main(): Promise<void> {
@@ -714,20 +754,25 @@ async function main(): Promise<void> {
     printHelpAndExit(0);
   }
 
-	if (args.listScenarios) {
-	  printScenarioList();
-	  process.exit(0);
-	}
+  if (args.listScenarios) {
+    printScenarioList();
+    process.exit(0);
+  }
 
   if (args.scenarios.length > 0) {
     runScenarioHarness(args);
     return;
   }
 
-	runLegacySim(args);
+  runLegacySim(args);
 }
 
-main().catch((error) => {
-	console.error('runtime-sim failed:', error instanceof Error ? error.message : String(error));
-	process.exit(1);
-});
+try {
+  await main();
+} catch (error) {
+  console.error(
+    'runtime-sim failed:',
+    error instanceof Error ? error.message : String(error),
+  );
+  process.exit(1);
+}

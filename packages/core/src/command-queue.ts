@@ -864,7 +864,7 @@ function getDataViewLayoutProperty(
   target: ArrayBufferView,
   prop: unknown,
   isDataView: boolean,
-): unknown | undefined {
+): unknown {
   if (!isDataView) {
     return undefined;
   }

@@ -264,15 +264,13 @@ function parseMissionPlan(value: unknown): MissionBatchPlan | undefined {
 
 function rebaseStepValue(
   value: number,
-  hasValidSavedStep: boolean,
   rebaseDelta: number,
 ): number {
-  return hasValidSavedStep ? Math.max(0, value + rebaseDelta) : value;
+  return Math.max(0, value + rebaseDelta);
 }
 
 function parseTransformBatchEntry(
   value: unknown,
-  hasValidSavedStep: boolean,
   rebaseDelta: number,
   sequence: number,
 ): TransformBatchQueueEntry | undefined {
@@ -284,7 +282,6 @@ function parseTransformBatchEntry(
   const normalizedCompleteAtStep = normalizeNonNegativeInt(record.completeAtStep);
   const completeAtStep = rebaseStepValue(
     normalizedCompleteAtStep,
-    hasValidSavedStep,
     rebaseDelta,
   );
 
@@ -307,7 +304,6 @@ function parseTransformBatchEntry(
 
 function parseTransformBatchEntries(
   batchesValue: unknown,
-  hasValidSavedStep: boolean,
   rebaseDelta: number,
 ): TransformBatchQueueEntry[] {
   if (!Array.isArray(batchesValue)) {
@@ -320,7 +316,6 @@ function parseTransformBatchEntries(
   for (const batchEntry of batchesValue) {
     const parsed = parseTransformBatchEntry(
       batchEntry,
-      hasValidSavedStep,
       rebaseDelta,
       sequence,
     );
@@ -338,7 +333,6 @@ function restoreTransformStateEntry(
   entry: unknown,
   transformStates: Map<string, TransformState>,
   batchSequences: Map<string, number>,
-  hasValidSavedStep: boolean,
   rebaseDelta: number,
 ): void {
   if (!entry || typeof entry !== 'object') {
@@ -362,7 +356,6 @@ function restoreTransformStateEntry(
   const normalizedCooldown = normalizeNonNegativeInt(record.cooldownExpiresStep);
   const rebasedCooldown = rebaseStepValue(
     normalizedCooldown,
-    hasValidSavedStep,
     rebaseDelta,
   );
 
@@ -377,7 +370,6 @@ function restoreTransformStateEntry(
 
   const restoredBatches = parseTransformBatchEntries(
     batchesValue,
-    hasValidSavedStep,
     rebaseDelta,
   );
   existing.batches = restoredBatches as TransformBatchState[];
@@ -2397,19 +2389,16 @@ export function createTransformSystem(
 
       const savedWorkerStep = restoreOptions?.savedWorkerStep;
       const targetCurrentStep = restoreOptions?.currentStep ?? 0;
-      const hasValidSavedStep =
-        typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep);
-
-      const rebaseDelta = hasValidSavedStep
-        ? targetCurrentStep - savedWorkerStep
-        : 0;
+      const rebaseDelta =
+        typeof savedWorkerStep === 'number' && Number.isFinite(savedWorkerStep)
+          ? targetCurrentStep - savedWorkerStep
+          : 0;
 
       for (const entry of stateArray) {
         restoreTransformStateEntry(
           entry,
           transformStates,
           batchSequences,
-          hasValidSavedStep,
           rebaseDelta,
         );
       }
