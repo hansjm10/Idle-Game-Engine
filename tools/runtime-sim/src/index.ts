@@ -162,13 +162,14 @@ function parseArgs(argv: string[]): CliArgs {
     ['-h', () => { args.helpRequested = true; }],
   ]);
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
+  const argvIterator = argv[Symbol.iterator]();
+  for (let argResult = argvIterator.next(); !argResult.done; argResult = argvIterator.next()) {
+    const arg = argResult.value;
 
     const valueHandler = valueArgHandlers.get(arg);
     if (valueHandler) {
-      index += 1;
-      valueHandler(argv[index]);
+      const valueResult = argvIterator.next();
+      valueHandler(valueResult.done ? undefined : valueResult.value);
       continue;
     }
 
