@@ -49,7 +49,6 @@ describe('AutomationSystem', () => {
         resourceState: { getAmount: () => 0 },
       });
 
-      // We need a way to inspect state - will add getter
       const state = getAutomationState(system);
 
       expect(state.size).toBe(1);

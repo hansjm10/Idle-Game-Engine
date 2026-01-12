@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AutomationDefinition } from '@idle-engine/content-schema';
 
 import { createAutomationSystem, enqueueAutomationCommand } from '../../automation-system.js';
@@ -28,7 +28,11 @@ describe('AutomationSystem', () => {
       ];
 
       const commandQueue = new CommandQueue();
-      const runtime = new IdleEngineRuntime({ stepSizeMs: 100 });
+      const eventBus = {
+        on: vi.fn(() => ({ unsubscribe: vi.fn() })),
+        publish: vi.fn(),
+      } as any;
+      const runtime = new IdleEngineRuntime({ stepSizeMs: 100, eventBus });
       const system = createAutomationSystem({
         automations,
         stepDurationMs: 100,
@@ -38,8 +42,17 @@ describe('AutomationSystem', () => {
 
       runtime.addSystem(system);
 
-      // Verify system was registered
       expect(system.id).toBe('automation-system');
+      expect(eventBus.on).toHaveBeenCalledWith(
+        'resource:threshold-reached',
+        expect.any(Function),
+        { label: 'system:automation-system' },
+      );
+      expect(eventBus.on).toHaveBeenCalledWith(
+        'automation:toggled',
+        expect.any(Function),
+        { label: 'system:automation-system' },
+      );
     });
   });
 

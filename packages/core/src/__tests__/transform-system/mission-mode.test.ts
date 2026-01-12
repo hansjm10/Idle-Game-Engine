@@ -17,6 +17,15 @@ import { createMockResourceState } from '../helpers/transform-fixtures.js';
 describe('TransformSystem', () => {
   const stepDurationMs = 100;
 
+  const getResourceAmount = (
+    resourceState: ResourceStateAccessor,
+    resourceId: string,
+  ): number => {
+    const resourceIndex = resourceState.getResourceIndex?.(resourceId) ?? -1;
+    expect(resourceIndex).toBeGreaterThanOrEqual(0);
+    return resourceState.getAmount(resourceIndex);
+  };
+
   const createMissionTransform = (
     overrides: Partial<TransformDefinition> = {},
   ): TransformDefinition => ({
@@ -168,7 +177,7 @@ describe('TransformSystem', () => {
       system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
 
       expect(prdCallCount).toBeGreaterThan(prdCallsBeforeCompletion);
-      expect(resourceState.getAmount(1)).toBe(3);
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(3);
 
       const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
       expect(completed).toBeTruthy();
@@ -462,7 +471,7 @@ describe('TransformSystem', () => {
 
       system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
 
-      expect(resourceState.getAmount(1)).toBe(8);
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(8);
       expect(entitySystem.getInstanceState(instanceId!)?.experience).toBe(15);
 
       const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
@@ -541,7 +550,7 @@ describe('TransformSystem', () => {
 
       system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
 
-      expect(resourceState.getAmount(1)).toBe(0);
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
       if (instanceId) {
         expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(0);
       }
@@ -590,7 +599,7 @@ describe('TransformSystem', () => {
 
       system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
 
-      expect(resourceState.getAmount(1)).toBe(2);
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(2);
       if (instanceId) {
         expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(7);
       }
@@ -673,7 +682,7 @@ describe('TransformSystem', () => {
 
       system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
 
-      expect(resourceState.getAmount(1)).toBe(1);
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(1);
       if (instanceId) {
         expect(entitySystem.getInstanceState(instanceId)?.experience).toBe(2);
       }
@@ -1120,7 +1129,7 @@ describe('TransformSystem', () => {
 
       system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
 
-      expect(resourceState.getAmount(0)).toBe(2);
+      expect(getResourceAmount(resourceState, 'res:gold')).toBe(2);
     });
 
     it('skips mission experience when entity instances are missing', () => {
@@ -1165,7 +1174,7 @@ describe('TransformSystem', () => {
 
       system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
 
-      expect(resourceState.getAmount(0)).toBe(2);
+      expect(getResourceAmount(resourceState, 'res:gold')).toBe(2);
       expect(entitySystem.getInstanceState(existingInstanceId)?.experience).toBe(0);
     });
   });
