@@ -65,6 +65,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import {
+  createAutomationSystem,
   evaluateIntervalTrigger,
   evaluateResourceThresholdTrigger,
   evaluateCommandQueueEmptyTrigger,
@@ -76,6 +77,9 @@ import {
 import type { AutomationDefinition, NumericFormula } from '@idle-engine/content-schema';
 import { CommandQueue } from '../command-queue.js';
 import { CommandPriority } from '../command.js';
+import { createResourceState } from '../resource-state.js';
+import { createResourceStateAdapter } from '../automation-resource-state-adapter.js';
+import type { EventPublisher } from '../events/event-bus.js';
 
 // ============================================================================
 // Generators
@@ -90,6 +94,31 @@ const numericFormulaArb = fc.integer({ min: 0, max: 10000 }).map(value => ({
 }));
 
 const literal = (value: number): NumericFormula => ({ kind: 'constant', value });
+
+const createTestEventPublisher = (): {
+  readonly events: EventPublisher;
+  readonly published: readonly { type: string; payload: unknown }[];
+} => {
+  const published: Array<{ type: string; payload: unknown }> = [];
+
+  const events: EventPublisher = {
+    publish: (eventType, payload) => {
+      published.push({ type: eventType, payload });
+      return {
+        accepted: true,
+        state: 'accepted',
+        type: eventType,
+        channel: 0,
+        bufferSize: 0,
+        remainingCapacity: 0,
+        dispatchOrder: 0,
+        softLimitActive: false,
+      };
+    },
+  };
+
+  return { events, published };
+};
 
 /**
  * Generates resource IDs for testing.
@@ -600,29 +629,321 @@ describe('AutomationSystem - Property-Based Tests', () => {
   // Invariant Tests - Resource Cost Deduction
   // ============================================================================
 
-  describe('resource cost invariants (deferred)', () => {
-    // NOTE: The design document (Section 6.2.4) marks resource cost handling as TODO:
-    // "TODO: Check resource cost (deferred - requires resource deduction API)"
-    //
-    // These tests are stubs to document the deferred invariants. They will be
-    // implemented when the resource deduction API is available.
+  describe('resource cost invariants', () => {
+    const createTestResourceState = () => {
+      const resourceState = createResourceState([
+        { id: 'res:gold', startAmount: 0 },
+        { id: 'res:gems', startAmount: 0 },
+        { id: 'res:energy', startAmount: 0 },
+      ]);
+      return {
+        resourceState,
+        adapter: createResourceStateAdapter(resourceState),
+      };
+    };
 
-    it.skip('sufficient resources allow automation to fire and deduct cost', () => {
-      // Invariant: If automation has resource cost AND resources sufficient,
-      // automation fires and exact cost is deducted
-      expect(true).toBe(true); // Placeholder
+    it('sufficient resources allow automation to fire and deduct cost', () => {
+      fc.assert(
+        fc.property(
+          resourceIdArb,
+          fc.integer({ min: 0, max: 10_000 }),
+          fc.integer({ min: 0, max: 10_000 }),
+          (resourceId, costAmount, extraAmount) => {
+            const initialAmount = costAmount + extraAmount;
+            const { resourceState, adapter } = createTestResourceState();
+            const index = resourceState.requireIndex(resourceId);
+            resourceState.addAmount(index, initialAmount);
+
+            const commandQueue = new CommandQueue();
+            const { events, published } = createTestEventPublisher();
+
+            const automation: AutomationDefinition = {
+              id: 'auto:test-cost-sufficient' as any,
+              name: { default: 'Test Automation', variants: {} },
+              description: { default: 'Resource cost invariant test', variants: {} },
+              trigger: { kind: 'commandQueueEmpty' },
+              targetType: 'generator',
+              targetId: 'gen:clicker' as any,
+              unlockCondition: { kind: 'always' },
+              enabledByDefault: true,
+              cooldown: undefined,
+              order: 0,
+              resourceCost: { resourceId, rate: literal(costAmount) },
+            };
+
+            const system = createAutomationSystem({
+              automations: [automation],
+              stepDurationMs: 100,
+              commandQueue,
+              resourceState: adapter,
+            });
+
+            system.tick({ deltaMs: 0, step: 0, events });
+
+            expect(commandQueue.size).toBe(1);
+            expect(resourceState.getAmount(index)).toBe(initialAmount - costAmount);
+            expect(published.some((evt) => evt.type === 'automation:fired')).toBe(true);
+
+            return true;
+          },
+        ),
+        { numRuns: 1000 },
+      );
     });
 
-    it.skip('insufficient resources prevent automation from firing', () => {
-      // Invariant: If automation has resource cost AND resources insufficient,
-      // automation does NOT fire and no resources deducted
-      expect(true).toBe(true); // Placeholder
+    it('insufficient resources prevent automation from firing and do not deduct cost', () => {
+      fc.assert(
+        fc.property(
+          resourceIdArb,
+          fc.integer({ min: 1, max: 10_000 }),
+          fc.integer({ min: 1, max: 10_000 }),
+          (resourceId, costAmount, deficit) => {
+            const initialAmount = Math.max(0, costAmount - deficit);
+            const { resourceState, adapter } = createTestResourceState();
+            const index = resourceState.requireIndex(resourceId);
+            resourceState.addAmount(index, initialAmount);
+
+            const commandQueue = new CommandQueue();
+            const { events, published } = createTestEventPublisher();
+
+            const automation: AutomationDefinition = {
+              id: 'auto:test-cost-insufficient' as any,
+              name: { default: 'Test Automation', variants: {} },
+              description: { default: 'Resource cost invariant test', variants: {} },
+              trigger: { kind: 'commandQueueEmpty' },
+              targetType: 'generator',
+              targetId: 'gen:clicker' as any,
+              unlockCondition: { kind: 'always' },
+              enabledByDefault: true,
+              cooldown: undefined,
+              order: 0,
+              resourceCost: { resourceId, rate: literal(costAmount) },
+            };
+
+            const system = createAutomationSystem({
+              automations: [automation],
+              stepDurationMs: 100,
+              commandQueue,
+              resourceState: adapter,
+            });
+
+            system.tick({ deltaMs: 0, step: 0, events });
+
+            expect(commandQueue.size).toBe(0);
+            expect(resourceState.getAmount(index)).toBe(initialAmount);
+            expect(published.some((evt) => evt.type === 'automation:fired')).toBe(false);
+
+            return true;
+          },
+        ),
+        { numRuns: 1000 },
+      );
     });
 
-    it.skip('no resource cost specified allows unconditional firing', () => {
-      // Invariant: If automation has NO resource cost specified,
-      // automation fires regardless of resource state
-      expect(true).toBe(true); // Placeholder
+    it('no resource cost specified allows unconditional firing', () => {
+      fc.assert(
+        fc.property(fc.nat({ max: 1000 }), (currentStep) => {
+          const commandQueue = new CommandQueue();
+          const { events, published } = createTestEventPublisher();
+
+          let spendCalls = 0;
+          const resourceState = {
+            getAmount: (_index: number) => 0,
+            getResourceIndex: (_resourceId: string) => 0,
+            spendAmount: (_index: number, _amount: number) => {
+              spendCalls += 1;
+              return true;
+            },
+          };
+
+          const automation: AutomationDefinition = {
+            id: 'auto:test-no-cost' as any,
+            name: { default: 'Test Automation', variants: {} },
+            description: { default: 'Resource cost invariant test', variants: {} },
+            trigger: { kind: 'commandQueueEmpty' },
+            targetType: 'generator',
+            targetId: 'gen:clicker' as any,
+            unlockCondition: { kind: 'always' },
+            enabledByDefault: true,
+            cooldown: undefined,
+            order: 0,
+          };
+
+          const system = createAutomationSystem({
+            automations: [automation],
+            stepDurationMs: 100,
+            commandQueue,
+            resourceState,
+          });
+
+          system.tick({ deltaMs: 0, step: currentStep, events });
+
+          expect(commandQueue.size).toBe(1);
+          expect(spendCalls).toBe(0);
+          expect(published.some((evt) => evt.type === 'automation:fired')).toBe(true);
+
+          return true;
+        }),
+        { numRuns: 500 },
+      );
+    });
+
+    it('exact resource amount equal to cost allows firing and reduces to zero', () => {
+      fc.assert(
+        fc.property(
+          resourceIdArb,
+          fc.integer({ min: 1, max: 10_000 }),
+          (resourceId, costAmount) => {
+            const { resourceState, adapter } = createTestResourceState();
+            const index = resourceState.requireIndex(resourceId);
+            resourceState.addAmount(index, costAmount);
+
+            const commandQueue = new CommandQueue();
+            const { events } = createTestEventPublisher();
+
+            const automation: AutomationDefinition = {
+              id: 'auto:test-exact-cost' as any,
+              name: { default: 'Test Automation', variants: {} },
+              description: { default: 'Resource cost edge case test', variants: {} },
+              trigger: { kind: 'commandQueueEmpty' },
+              targetType: 'generator',
+              targetId: 'gen:clicker' as any,
+              unlockCondition: { kind: 'always' },
+              enabledByDefault: true,
+              cooldown: undefined,
+              order: 0,
+              resourceCost: { resourceId, rate: literal(costAmount) },
+            };
+
+            const system = createAutomationSystem({
+              automations: [automation],
+              stepDurationMs: 100,
+              commandQueue,
+              resourceState: adapter,
+            });
+
+            system.tick({ deltaMs: 0, step: 0, events });
+
+            expect(commandQueue.size).toBe(1);
+            expect(resourceState.getAmount(index)).toBe(0);
+
+            return true;
+          },
+        ),
+        { numRuns: 500 },
+      );
+    });
+
+    it('resource cost of 0 always allows firing', () => {
+      fc.assert(
+        fc.property(resourceIdArb, (resourceId) => {
+          const { resourceState, adapter } = createTestResourceState();
+          const index = resourceState.requireIndex(resourceId);
+          expect(resourceState.getAmount(index)).toBe(0);
+
+          const commandQueue = new CommandQueue();
+          const { events } = createTestEventPublisher();
+
+          const automation: AutomationDefinition = {
+            id: 'auto:test-zero-cost' as any,
+            name: { default: 'Test Automation', variants: {} },
+            description: { default: 'Resource cost edge case test', variants: {} },
+            trigger: { kind: 'commandQueueEmpty' },
+            targetType: 'generator',
+            targetId: 'gen:clicker' as any,
+            unlockCondition: { kind: 'always' },
+            enabledByDefault: true,
+            cooldown: undefined,
+            order: 0,
+            resourceCost: { resourceId, rate: literal(0) },
+          };
+
+          const system = createAutomationSystem({
+            automations: [automation],
+            stepDurationMs: 100,
+            commandQueue,
+            resourceState: adapter,
+          });
+
+          system.tick({ deltaMs: 0, step: 0, events });
+
+          expect(commandQueue.size).toBe(1);
+          expect(resourceState.getAmount(index)).toBe(0);
+
+          return true;
+        }),
+        { numRuns: 200 },
+      );
+    });
+
+    it('multiple automations competing for same resource spend in evaluation order', () => {
+      fc.assert(
+        fc.property(
+          resourceIdArb,
+          fc.integer({ min: 0, max: 10_000 }),
+          fc.integer({ min: 0, max: 10_000 }),
+          fc.integer({ min: 0, max: 10_000 }),
+          (resourceId, initialAmount, cost1, cost2) => {
+            const { resourceState, adapter } = createTestResourceState();
+            const index = resourceState.requireIndex(resourceId);
+            resourceState.addAmount(index, initialAmount);
+
+            const commandQueue = new CommandQueue();
+            const { events } = createTestEventPublisher();
+
+            const automation1: AutomationDefinition = {
+              id: 'auto:test-competing-1' as any,
+              name: { default: 'Test Automation 1', variants: {} },
+              description: { default: 'Competing resource cost test', variants: {} },
+              trigger: { kind: 'interval', interval: literal(1000) },
+              targetType: 'generator',
+              targetId: 'gen:clicker' as any,
+              unlockCondition: { kind: 'always' },
+              enabledByDefault: true,
+              cooldown: undefined,
+              order: 0,
+              resourceCost: { resourceId, rate: literal(cost1) },
+            };
+
+            const automation2: AutomationDefinition = {
+              id: 'auto:test-competing-2' as any,
+              name: { default: 'Test Automation 2', variants: {} },
+              description: { default: 'Competing resource cost test', variants: {} },
+              trigger: { kind: 'interval', interval: literal(1000) },
+              targetType: 'generator',
+              targetId: 'gen:producer' as any,
+              unlockCondition: { kind: 'always' },
+              enabledByDefault: true,
+              cooldown: undefined,
+              order: 1,
+              resourceCost: { resourceId, rate: literal(cost2) },
+            };
+
+            const system = createAutomationSystem({
+              automations: [automation1, automation2],
+              stepDurationMs: 100,
+              commandQueue,
+              resourceState: adapter,
+            });
+
+            system.tick({ deltaMs: 0, step: 0, events });
+
+            const afterFirst = initialAmount >= cost1 ? initialAmount - cost1 : initialAmount;
+            const firstFired = initialAmount >= cost1;
+            const secondFired = afterFirst >= cost2;
+            const expectedCommands =
+              (firstFired ? 1 : 0) + (secondFired ? 1 : 0);
+            const expectedRemaining =
+              afterFirst - (secondFired ? cost2 : 0);
+
+            expect(commandQueue.size).toBe(expectedCommands);
+            expect(resourceState.getAmount(index)).toBe(expectedRemaining);
+
+            return true;
+          },
+        ),
+        { numRuns: 500 },
+      );
     });
   });
 
