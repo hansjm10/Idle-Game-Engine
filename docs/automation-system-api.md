@@ -657,4 +657,4 @@ const saveData = {
 - Design Document: `docs/automation-execution-system-design.md`
 - Content Schema: `packages/content-schema/src/modules/automations.ts`
 - Implementation: `packages/core/src/automation-system.ts`
-- Tests: `packages/core/src/automation-system.test.ts`
+- Tests: `packages/core/src/__tests__/automation-system/`
