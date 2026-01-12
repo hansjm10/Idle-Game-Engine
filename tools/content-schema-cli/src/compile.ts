@@ -2,7 +2,7 @@
 
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { FSWatcher } from 'chokidar';
 import chokidar from 'chokidar';
@@ -54,14 +54,7 @@ interface ExecuteContext {
 
 type CreateLoggerFn = (options: { pretty?: boolean }) => Logger;
 
-try {
-  await run();
-} catch (error) {
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
-  process.exitCode = 1;
-}
-
-async function run(): Promise<void> {
+export async function run(): Promise<void> {
   const args = process.argv.slice(2);
   let options: CliOptions;
   try {
@@ -163,7 +156,7 @@ interface LogManifestResultOptions {
   check: boolean;
 }
 
-function logManifestResult(
+export function logManifestResult(
   result: { action: string; path: string },
   options: LogManifestResultOptions,
 ): void {
@@ -184,7 +177,7 @@ function logManifestResult(
   console.log(serialized);
 }
 
-function logCoreDistRuntimeManifestResult(
+export function logCoreDistRuntimeManifestResult(
   result: CoreDistManifestResult,
   options: LogManifestResultOptions,
 ): void {
@@ -208,8 +201,10 @@ function logCoreDistRuntimeManifestResult(
   console.log(serialized);
 }
 
-
-function logUnhandledCliError(error: unknown, { pretty }: { pretty: boolean }): void {
+export function logUnhandledCliError(
+  error: unknown,
+  { pretty }: { pretty: boolean },
+): void {
   const normalized = normalizeError(error);
   const payload: Record<string, unknown> = {
     event: 'cli.unhandled_error',
@@ -230,7 +225,7 @@ function logUnhandledCliError(error: unknown, { pretty }: { pretty: boolean }): 
 
 type ExecuteFn = (context?: ExecuteContext) => Promise<PipelineOutcome>;
 
-async function startWatch(
+export async function startWatch(
   _options: CliOptions,
   execute: ExecuteFn,
   workspaceRoot: string,
@@ -306,7 +301,7 @@ async function startWatch(
   });
 }
 
-function parseCliArgs(argv: string[]): CliOptions {
+export function parseCliArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     check: false,
     clean: false,
@@ -352,7 +347,7 @@ function parseCliArgs(argv: string[]): CliOptions {
   return options;
 }
 
-function printUsage(): void {
+export function printUsage(): void {
   console.log(
     [
       'Usage: pnpm --filter @idle-engine/content-validation-cli run compile [options]',
@@ -369,7 +364,11 @@ function printUsage(): void {
   );
 }
 
-function formatMonitorLog(message: string, pretty: boolean, rootDirectory?: string): string {
+export function formatMonitorLog(
+  message: string,
+  pretty: boolean,
+  rootDirectory?: string,
+): string {
   const payload: Record<string, unknown> = {
     event: 'watch.status',
     message,
@@ -379,7 +378,7 @@ function formatMonitorLog(message: string, pretty: boolean, rootDirectory?: stri
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
-function formatWatchHintLog(pretty: boolean): string {
+export function formatWatchHintLog(pretty: boolean): string {
   const payload = {
     event: 'watch.hint',
     message: 'Press Ctrl+C to stop watching; structured logs continue until exit.',
@@ -397,7 +396,13 @@ interface EmitWatchRunEventInput {
   triggers: WatchTrigger[];
 }
 
-function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty }: EmitWatchRunEventInput): void {
+export function emitWatchRunEvent({
+  outcome,
+  durationMs,
+  iteration,
+  triggers,
+  pretty,
+}: EmitWatchRunEventInput): void {
   const status = determineWatchStatus(outcome);
   const payload: Record<string, unknown> = {
     event: 'watch.run',
@@ -438,7 +443,7 @@ function emitWatchRunEvent({ outcome, durationMs, iteration, triggers, pretty }:
   console.log(formatWatchRunLog(payload, pretty));
 }
 
-function formatWatchRunLog(payload: unknown, pretty: boolean): string {
+export function formatWatchRunLog(payload: unknown, pretty: boolean): string {
   return JSON.stringify(payload, undefined, pretty ? 2 : undefined);
 }
 
@@ -449,7 +454,12 @@ interface EmitRunSummaryEventInput {
   mode: 'single' | 'watch';
 }
 
-function emitRunSummaryEvent({ outcome, pretty, durationMs, mode }: EmitRunSummaryEventInput): void {
+export function emitRunSummaryEvent({
+  outcome,
+  pretty,
+  durationMs,
+  mode,
+}: EmitRunSummaryEventInput): void {
   const payload: Record<string, unknown> = {
     event: 'cli.run_summary',
     timestamp: new Date().toISOString(),
@@ -467,4 +477,21 @@ function emitRunSummaryEvent({ outcome, pretty, durationMs, mode }: EmitRunSumma
   }
 
   console.log(JSON.stringify(payload, undefined, pretty ? 2 : undefined));
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+  try {
+    await run();
+  } catch (error) {
+    console.error(error instanceof Error ? error.stack ?? error.message : error);
+    process.exitCode = 1;
+  }
+}
+
+function isExecutedDirectly(moduleUrl: string): boolean {
+  const scriptPath = process.argv[1];
+  if (!scriptPath) {
+    return false;
+  }
+  return moduleUrl === pathToFileURL(scriptPath).href;
 }
