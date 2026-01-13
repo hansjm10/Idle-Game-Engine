@@ -556,18 +556,18 @@ function createResourceStateFacade(
       assertValidIndex(internal, index);
       return buffers.capacities[index];
     },
-	    getNetPerSecond: (index) => {
-	      assertValidIndex(internal, index);
-	      return buffers.netPerSecond[index];
-	    },
-	    getDirtyTolerance: (index) => {
-	      assertValidIndex(internal, index);
-	      return buffers.dirtyTolerance[index];
-	    },
-	    isUnlocked: (index) => {
-	      assertValidIndex(internal, index);
-	      return (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
-	    },
+    getNetPerSecond: (index) => {
+      assertValidIndex(internal, index);
+      return buffers.netPerSecond[index];
+    },
+    getDirtyTolerance: (index) => {
+      assertValidIndex(internal, index);
+      return buffers.dirtyTolerance[index];
+    },
+    isUnlocked: (index) => {
+      assertValidIndex(internal, index);
+      return (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
+    },
     isVisible: (index) => {
       assertValidIndex(internal, index);
       return (buffers.flags[index] & FLAG_VISIBLE) !== 0;
@@ -575,15 +575,15 @@ function createResourceStateFacade(
     grantVisibility: (index) => {
       setFlagField(internal, index, FLAG_VISIBLE, true);
     },
-	    unlock: (index) => {
-	      setFlagField(internal, index, FLAG_UNLOCKED, true);
-	    },
-	    setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
-	    setDirtyTolerance: (index, dirtyTolerance) =>
-	      setDirtyTolerance(internal, index, dirtyTolerance),
-	    addAmount: (index, amount) => addAmount(internal, index, amount),
-	    spendAmount: (index, amount, context) =>
-	      spendAmount(internal, index, amount, context),
+    unlock: (index) => {
+      setFlagField(internal, index, FLAG_UNLOCKED, true);
+    },
+    setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
+    setDirtyTolerance: (index, dirtyTolerance) =>
+      setDirtyTolerance(internal, index, dirtyTolerance),
+    addAmount: (index, amount) => addAmount(internal, index, amount),
+    spendAmount: (index, amount, context) =>
+      spendAmount(internal, index, amount, context),
     applyIncome: (index, amountPerSecond) =>
       applyRate(internal, index, amountPerSecond, 'income'),
     applyExpense: (index, amountPerSecond) =>
@@ -932,40 +932,40 @@ function finalizeTick(
       index,
       net,
       'netPerSecond',
-	    );
+    );
 
-	    const tolerance = buffers.dirtyTolerance[index];
-	    const epsilonOptions = Object.is(
-	      tolerance,
-	      internal.precision.dirtyEpsilonCeiling,
-	    )
-	      ? undefined
-	      : EPSILON_FLOOR_OVERRIDE_OPTIONS;
+    const tolerance = buffers.dirtyTolerance[index];
+    const epsilonOptions = Object.is(
+      tolerance,
+      internal.precision.dirtyEpsilonCeiling,
+    )
+      ? undefined
+      : EPSILON_FLOOR_OVERRIDE_OPTIONS;
 
-	    if (
-	      !epsilonEquals(
-	        internal.precision,
-	        incomePerSecond,
-	        publish.incomePerSecond[index],
-	        tolerance,
-	        undefined,
-	        epsilonOptions,
-	      ) ||
-	      !epsilonEquals(
-	        internal.precision,
-	        expensePerSecond,
-	        publish.expensePerSecond[index],
-	        tolerance,
-	        undefined,
-	        epsilonOptions,
-	      ) ||
-	      !epsilonEquals(
-	        internal.precision,
-	        buffers.netPerSecond[index],
-	        publish.netPerSecond[index],
-	        tolerance,
-	        undefined,
-	        epsilonOptions,
+    if (
+      !epsilonEquals(
+        internal.precision,
+        incomePerSecond,
+        publish.incomePerSecond[index],
+        tolerance,
+        undefined,
+        epsilonOptions,
+      ) ||
+      !epsilonEquals(
+        internal.precision,
+        expensePerSecond,
+        publish.expensePerSecond[index],
+        tolerance,
+        undefined,
+        epsilonOptions,
+      ) ||
+      !epsilonEquals(
+        internal.precision,
+        buffers.netPerSecond[index],
+        publish.netPerSecond[index],
+        tolerance,
+        undefined,
+        epsilonOptions,
       )
     ) {
       markDirty(internal, index);

@@ -105,6 +105,14 @@ function toFiniteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function toNonNegativeNumber(value: unknown): number | undefined {
+  const numeric = toFiniteNumber(value);
+  if (numeric === undefined || numeric < 0) {
+    return undefined;
+  }
+  return numeric;
+}
+
 function toPositiveInt(value: unknown): number | undefined {
   const numeric = toFiniteNumber(value);
   if (numeric === undefined || numeric <= 0) {
@@ -119,15 +127,25 @@ function resolvePrecisionConfig(
   const source = overrides ?? {};
   const defaults = DEFAULT_ENGINE_CONFIG.precision;
 
+  const dirtyEpsilonAbsolute =
+    toNonNegativeNumber(source.dirtyEpsilonAbsolute) ?? defaults.dirtyEpsilonAbsolute;
+  const dirtyEpsilonRelative =
+    toNonNegativeNumber(source.dirtyEpsilonRelative) ?? defaults.dirtyEpsilonRelative;
+  const dirtyEpsilonCeiling = Math.max(
+    dirtyEpsilonAbsolute,
+    toNonNegativeNumber(source.dirtyEpsilonCeiling) ?? defaults.dirtyEpsilonCeiling,
+  );
+  const dirtyEpsilonOverrideMax = Math.max(
+    dirtyEpsilonCeiling,
+    toNonNegativeNumber(source.dirtyEpsilonOverrideMax) ??
+      defaults.dirtyEpsilonOverrideMax,
+  );
+
   return {
-    dirtyEpsilonAbsolute:
-      toFiniteNumber(source.dirtyEpsilonAbsolute) ?? defaults.dirtyEpsilonAbsolute,
-    dirtyEpsilonRelative:
-      toFiniteNumber(source.dirtyEpsilonRelative) ?? defaults.dirtyEpsilonRelative,
-    dirtyEpsilonCeiling:
-      toFiniteNumber(source.dirtyEpsilonCeiling) ?? defaults.dirtyEpsilonCeiling,
-    dirtyEpsilonOverrideMax:
-      toFiniteNumber(source.dirtyEpsilonOverrideMax) ?? defaults.dirtyEpsilonOverrideMax,
+    dirtyEpsilonAbsolute,
+    dirtyEpsilonRelative,
+    dirtyEpsilonCeiling,
+    dirtyEpsilonOverrideMax,
   };
 }
 
@@ -163,6 +181,15 @@ function resolveLimitsConfig(
   };
 }
 
+/**
+ * Resolves config overrides into a frozen, runtime-ready EngineConfig.
+ *
+ * @remarks
+ * - Non-finite or negative `precision.*` overrides fall back to defaults.
+ * - `precision.dirtyEpsilonCeiling` is clamped to be `>= dirtyEpsilonAbsolute`.
+ * - `precision.dirtyEpsilonOverrideMax` is clamped to be `>= dirtyEpsilonCeiling`.
+ * - Non-finite or non-positive `limits.*` overrides fall back to defaults.
+ */
 export function resolveEngineConfig(
   overrides?: EngineConfigOverrides,
 ): EngineConfig {

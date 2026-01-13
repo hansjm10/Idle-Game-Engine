@@ -1562,12 +1562,12 @@ export function createTransformSystem(
     }
   };
 
-    const calculateMissionSuccessRate = (
-      transform: TransformDefinition,
-      instanceIds: readonly string[],
-      formulaContext: FormulaEvaluationContext,
-      missionEntitySystem: EntitySystem,
-    ): { ok: true; baseRate: number } | { ok: false; result: TransformExecutionResult } => {
+  const calculateMissionSuccessRate = (
+    transform: TransformDefinition,
+    instanceIds: readonly string[],
+    formulaContext: FormulaEvaluationContext,
+    missionEntitySystem: EntitySystem,
+  ): { ok: true; baseRate: number } | { ok: false; result: TransformExecutionResult } => {
     const successRate = transform.successRate;
     let baseRate = 1;
 
@@ -1620,26 +1620,26 @@ export function createTransformSystem(
       baseRate = clampProbability(baseRate);
     }
 
-      return { ok: true, baseRate };
-    };
+    return { ok: true, baseRate };
+  };
 
-	  const prepareMissionInputs = (
-	    transform: TransformDefinition,
-	    formulaContext: FormulaEvaluationContext,
-	    missionEntitySystem: EntitySystem,
-	  ):
-      | {
-          readonly ok: true;
-          readonly durationSteps: number;
-          readonly assignmentResult: MissionAssignmentSuccess;
-          readonly costs: Map<string, number>;
-        }
-      | { readonly ok: false; readonly result: TransformExecutionResult } => {
-      const durationSteps = evaluateBatchDurationSteps(
-        transform,
-        stepDurationMs,
-        formulaContext,
-      );
+  const prepareMissionInputs = (
+    transform: TransformDefinition,
+    formulaContext: FormulaEvaluationContext,
+    missionEntitySystem: EntitySystem,
+  ):
+    | {
+        readonly ok: true;
+        readonly durationSteps: number;
+        readonly assignmentResult: MissionAssignmentSuccess;
+        readonly costs: Map<string, number>;
+      }
+    | { readonly ok: false; readonly result: TransformExecutionResult } => {
+    const durationSteps = evaluateBatchDurationSteps(
+      transform,
+      stepDurationMs,
+      formulaContext,
+    );
       if (durationSteps === null) {
         return {
           ok: false,
@@ -1855,11 +1855,11 @@ export function createTransformSystem(
       missionEntitySystem: EntitySystem,
       events?: EventPublisher,
     ): TransformExecutionResult => {
-	    const inputsResult = prepareMissionInputs(
-	      transform,
-	      formulaContext,
-	      missionEntitySystem,
-	    );
+      const inputsResult = prepareMissionInputs(
+        transform,
+        formulaContext,
+        missionEntitySystem,
+      );
       if (!inputsResult.ok) {
         return inputsResult.result;
       }
@@ -2171,15 +2171,15 @@ export function createTransformSystem(
       return;
     }
 
-	    const result = processTriggeredTransform(
-	      transform,
-	      state,
-	      step,
-	      formulaContext,
-	      events,
-	      limits,
-	      executeTransformRun,
-	    );
+    const result = processTriggeredTransform(
+      transform,
+      state,
+      step,
+      formulaContext,
+      events,
+      limits,
+      executeTransformRun,
+    );
 
     if (result === 'blocked' && isEventBased) {
       retainedEventTriggers.add(transform.id);
