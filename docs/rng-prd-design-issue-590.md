@@ -183,7 +183,7 @@ Mission success (and similar chance-based mechanics) is currently modelled as re
 
 - **Unit / Integration**
   - `packages/core/src/rng-prd.test.ts`: constant calculation, determinism, streak bounds, restore normalization, registry capture/restore.
-  - `packages/core/src/transform-system.test.ts`: mission execution uses PRD when enabled and preserves determinism.
+  - `packages/core/src/__tests__/transform-system/mission-mode.test.ts`: mission execution uses PRD when enabled and preserves determinism.
   - `packages/core/src/game-state-save.test.ts`: roundtrips PRD registry through save/load.
   - `packages/core/src/state-sync/*.test.ts`: checksum and compare include PRD state and restore-runtime applies it.
 - **Performance**
