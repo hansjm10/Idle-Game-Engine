@@ -2,6 +2,7 @@ import type { Condition, FormulaEvaluationContext } from '@idle-engine/content-s
 import { evaluateNumericFormula } from '@idle-engine/content-schema';
 
 import { isDevelopmentMode } from './env-utils.js';
+import { DEFAULT_ENGINE_CONFIG } from './config.js';
 
 /**
  * Level value used for evaluating static unlock thresholds.
@@ -18,20 +19,7 @@ import { isDevelopmentMode } from './env-utils.js';
  */
 const STATIC_THRESHOLD_LEVEL = 0;
 
-/**
- * Maximum allowed recursion depth for condition evaluation.
- *
- * @remarks
- * This prevents infinite recursion from circular condition dependencies.
- * Conditions exceeding this depth will return false and report an error.
- *
- * Value of 100 provides generous headroom for legitimately complex condition trees
- * (e.g., nested `allOf`/`anyOf` combinations) while catching circular dependencies
- * early enough to preserve stack space. In practice, well-designed content should
- * rarely exceed 10-20 levels. Deeply nested conditions (50+) likely indicate
- * content authoring issues or circular references.
- */
-const MAX_CONDITION_DEPTH = 100;
+const DEFAULT_MAX_CONDITION_DEPTH = DEFAULT_ENGINE_CONFIG.limits.maxConditionDepth;
 
 /**
  * Context providing access to game state for condition evaluation
@@ -40,6 +28,12 @@ export type ConditionContext = {
   readonly getResourceAmount: (resourceId: string) => number;
   readonly getGeneratorLevel: (generatorId: string) => number;
   readonly getUpgradePurchases: (upgradeId: string) => number;
+  /**
+   * Optional override for the recursion guard used by {@link evaluateCondition}.
+   *
+   * @defaultValue `100` (see {@link DEFAULT_ENGINE_CONFIG})
+   */
+  readonly maxConditionDepth?: number;
   /**
    * Optional hook indicating whether a prestige layer is unlocked.
    */
@@ -266,8 +260,8 @@ const CONDITION_EVALUATORS = {
  * Unknown condition kinds will return false as a fail-safe default.
  * This ensures graceful degradation if the schema contains unrecognized condition types.
  *
- * Conditions exceeding MAX_CONDITION_DEPTH will return false and report an error
- * to prevent infinite recursion from circular dependencies.
+ * Conditions exceeding the configured maximum depth will return false and report
+ * an error to prevent infinite recursion from circular dependencies.
  *
  * @example
  * ```typescript
@@ -289,11 +283,19 @@ export function evaluateCondition(
     return true;
   }
 
+  const configuredMaxDepth = context.maxConditionDepth;
+  const maxDepth =
+    typeof configuredMaxDepth === 'number' &&
+    Number.isFinite(configuredMaxDepth) &&
+    configuredMaxDepth > 0
+      ? Math.floor(configuredMaxDepth)
+      : DEFAULT_MAX_CONDITION_DEPTH;
+
   // Check for excessive recursion depth (potential circular dependencies)
-  if (depth > MAX_CONDITION_DEPTH) {
+  if (depth > maxDepth) {
     const conditionInfo = condition ? ` (condition kind: "${condition.kind}")` : '';
     const error = new Error(
-      `Condition evaluation exceeded maximum depth of ${MAX_CONDITION_DEPTH} at recursion level ${depth}${conditionInfo}. Possible circular dependency detected. Check for conditions that reference each other in a cycle.`,
+      `Condition evaluation exceeded maximum depth of ${maxDepth} at recursion level ${depth}${conditionInfo}. Possible circular dependency detected. Check for conditions that reference each other in a cycle.`,
     );
     reportConditionEvaluationError(context, error);
     return false;

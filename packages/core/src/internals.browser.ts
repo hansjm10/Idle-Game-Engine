@@ -75,6 +75,7 @@ import {
 } from './game-runtime-wiring.js';
 import { createProgressionCoordinator } from './progression-coordinator.js';
 import { type ProgressionAuthoritativeState } from './progression.js';
+import { resolveEngineConfig, type EngineConfigOverrides } from './config.js';
 import {
   restoreGameRuntimeFromSnapshot as restoreGameRuntimeFromSnapshotInternal,
   type RestoreGameRuntimeFromSnapshotOptions,
@@ -900,6 +901,7 @@ type CreateGameRuntimeToggles = Readonly<
 export type CreateGameRuntimeOptions = Readonly<
   {
     readonly content: NormalizedContentPack;
+    readonly config?: EngineConfigOverrides;
     readonly stepSizeMs?: number;
     readonly maxStepsPerFrame?: number;
     readonly initialStep?: number;
@@ -914,6 +916,7 @@ export type CreateGameRuntimeOptions = Readonly<
 export function createGameRuntime(
   options: CreateGameRuntimeOptions,
 ): GameRuntimeWiring {
+  const engineConfig = resolveEngineConfig(options.config);
   const stepSizeMs = options.stepSizeMs ?? DEFAULT_STEP_MS;
   const hasGenerators = options.content.generators.length > 0;
   const enableProduction = options.enableProduction ?? hasGenerators;
@@ -926,7 +929,9 @@ export function createGameRuntime(
       ? { applyViaFinalizeTick }
       : { ...options.production, applyViaFinalizeTick };
 
-  const commandQueue = new CommandQueue();
+  const commandQueue = new CommandQueue({
+    maxSize: engineConfig.limits.maxCommandQueueSize,
+  });
   const commandDispatcher = new CommandDispatcher();
   const runtime = new IdleEngineRuntime({
     stepSizeMs,
@@ -934,11 +939,16 @@ export function createGameRuntime(
     ...(options.initialStep === undefined ? {} : { initialStep: options.initialStep }),
     commandQueue,
     commandDispatcher,
+    eventBusOptions: {
+      ...DEFAULT_EVENT_BUS_OPTIONS,
+      defaultChannelCapacity: engineConfig.limits.eventBusDefaultChannelCapacity,
+    },
   });
 
   const coordinator = createProgressionCoordinator({
     content: options.content,
     stepDurationMs: stepSizeMs,
+    config: engineConfig,
     ...(options.initialProgressionState
       ? { initialState: options.initialProgressionState }
       : {}),
@@ -946,6 +956,7 @@ export function createGameRuntime(
 
   return wireGameRuntimeInternal({
     content: options.content,
+    config: engineConfig,
     runtime,
     coordinator,
     enableProduction,

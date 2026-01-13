@@ -14,6 +14,7 @@ import type {
   TypedArray,
 } from './immutable-snapshots.js';
 import { telemetry } from './telemetry.js';
+import { DEFAULT_ENGINE_CONFIG } from './config.js';
 
 /**
  * Queue implementation that maintains per-priority FIFO lanes as documented in
@@ -24,7 +25,7 @@ import { telemetry } from './telemetry.js';
  */
 type SnapshotQueueEntry = CommandQueueEntry<CommandSnapshot<unknown>>;
 
-export const DEFAULT_MAX_QUEUE_SIZE = 10_000;
+export const DEFAULT_MAX_QUEUE_SIZE = DEFAULT_ENGINE_CONFIG.limits.maxCommandQueueSize;
 
 export interface CommandQueueOptions {
   readonly maxSize?: number;

@@ -1,5 +1,6 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 
+import type { EngineConfigOverrides } from '../config.js';
 import type {
   ResourceDefinition,
   ResourceState,
@@ -48,6 +49,7 @@ export interface ProgressionCoordinator {
 export interface ProgressionCoordinatorOptions {
   readonly content: NormalizedContentPack;
   readonly stepDurationMs: number;
+  readonly config?: EngineConfigOverrides;
   readonly initialState?: ProgressionAuthoritativeState;
   readonly onError?: (error: Error) => void;
   readonly evaluateScriptCondition?: (scriptId: string) => boolean;

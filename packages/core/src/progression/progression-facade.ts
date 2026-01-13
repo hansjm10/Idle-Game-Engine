@@ -17,6 +17,7 @@ import type { ResourceDefinition } from '../resource-state.js';
 import type { EvaluatedUpgradeEffects } from '../upgrade-effects.js';
 import type { ConditionContext } from '../condition-evaluator.js';
 import type { EventPublisher } from '../events/event-bus.js';
+import { resolveEngineConfig } from '../config.js';
 
 import { AchievementTracker } from './achievement-tracker.js';
 import type {
@@ -65,6 +66,7 @@ export class ProgressionFacade implements ProgressionCoordinator {
   private lastUpdatedStep = 0;
 
   constructor(options: ProgressionCoordinatorOptions) {
+    const engineConfig = resolveEngineConfig(options.config);
     this.onError = options.onError;
 
     const initialState = options.initialState
@@ -78,6 +80,7 @@ export class ProgressionFacade implements ProgressionCoordinator {
       resources: options.content.resources,
       initialResourceState: initialState?.resources?.state,
       initialSerializedState: initialState?.resources?.serialized,
+      config: options.config,
     });
     this.resourceState = this.resourceManager.resourceState;
 
@@ -107,6 +110,7 @@ export class ProgressionFacade implements ProgressionCoordinator {
     let prestigeManager: PrestigeManager | undefined = undefined;
 
     this.conditionContext = {
+      maxConditionDepth: engineConfig.limits.maxConditionDepth,
       getResourceAmount: (resourceId) => {
         const index = this.resourceState.getIndex(resourceId);
         return index === undefined ? 0 : this.resourceState.getAmount(index);

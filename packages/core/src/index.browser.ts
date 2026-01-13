@@ -31,6 +31,13 @@ export type {
 } from './internals.browser.js';
 
 // ---------------------------------------------------------------------------
+// Engine configuration
+// ---------------------------------------------------------------------------
+
+export { DEFAULT_ENGINE_CONFIG } from './config.js';
+export type { EngineConfig, EngineConfigOverrides } from './config.js';
+
+// ---------------------------------------------------------------------------
 // Commands (presentation -> runtime intents)
 // ---------------------------------------------------------------------------
 

@@ -106,6 +106,27 @@ function runTick(deltaMs: number) {
 }
 ```
 
+##### Runtime Configuration
+- The core runtime exposes an `EngineConfig` structure so per-game tuning does not require editing source constants.
+- `createGameRuntime({ config })` accepts partial overrides that are merged with `DEFAULT_ENGINE_CONFIG`.
+- Configuration covers precision (dirty/publish tolerances) and safety/throughput limits (transform caps, command queue sizing, condition depth guards).
+
+```ts
+import { createGameRuntime } from '@idle-engine/core';
+
+const wiring = createGameRuntime({
+  content: contentPack,
+  config: {
+    precision: {
+      dirtyEpsilonAbsolute: 1e-6,
+    },
+    limits: {
+      maxRunsPerTick: 20,
+    },
+  },
+});
+```
+
 ##### State Model
 - Normalized resource graph: each resource has identifiers, quantity, rates, and metadata.
 - Systems maintain derived state (per-second production, unlocked status).

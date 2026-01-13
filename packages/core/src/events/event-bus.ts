@@ -18,8 +18,9 @@ import {
   type RuntimeEventFrameExportState,
 } from './runtime-event-frame-format.js';
 import { telemetry } from '../telemetry.js';
+import { DEFAULT_ENGINE_CONFIG } from '../config.js';
 
-const DEFAULT_CHANNEL_CAPACITY = 256;
+const DEFAULT_CHANNEL_CAPACITY = DEFAULT_ENGINE_CONFIG.limits.eventBusDefaultChannelCapacity;
 const DEFAULT_SOFT_LIMIT_RATIO = 0.75;
 const DEFAULT_DIAGNOSTIC_COOLDOWN_TICKS = 1;
 const DEFAULT_DIAGNOSTIC_MAX_COOLDOWN_MULTIPLIER = 16;
@@ -129,6 +130,7 @@ export interface EventSubscriptionOptions {
 export interface EventBusOptions {
   readonly channels: readonly EventChannelConfiguration[];
   readonly channelConfigs?: EventChannelConfigMap;
+  readonly defaultChannelCapacity?: number;
   readonly clock?: Clock;
   readonly slowHandlerThresholdMs?: number;
   readonly onSlowHandler?: (context: SlowHandlerContext) => void;
@@ -286,11 +288,16 @@ class EventRegistry {
   constructor(
     channels: readonly EventChannelConfiguration[],
     overrides: EventChannelConfigMap = {},
+    defaultChannelCapacity = DEFAULT_CHANNEL_CAPACITY,
   ) {
+    if (!Number.isFinite(defaultChannelCapacity) || defaultChannelCapacity <= 0) {
+      throw new Error(`Invalid default event channel capacity: ${defaultChannelCapacity}.`);
+    }
+
     this.descriptors = channels.map((channelConfig, index) => {
       const override = overrides[channelConfig.definition.type];
       const capacity =
-        override?.capacity ?? channelConfig.capacity ?? DEFAULT_CHANNEL_CAPACITY;
+        override?.capacity ?? channelConfig.capacity ?? defaultChannelCapacity;
       if (!Number.isFinite(capacity) || capacity <= 0) {
         throw new Error(
           `Invalid capacity for channel ${channelConfig.definition.type}: ${capacity}.`,
@@ -493,6 +500,7 @@ export class EventBus implements EventPublisher {
     this.registry = new EventRegistry(
       options.channels,
       options.channelConfigs,
+      options.defaultChannelCapacity,
     );
     this.channelStates = this.registry.getDescriptors().map((descriptor) => {
       return {

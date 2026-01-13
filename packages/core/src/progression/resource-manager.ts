@@ -1,5 +1,6 @@
 import type { Condition, NormalizedResource } from '@idle-engine/content-schema';
 
+import type { EngineConfigOverrides } from '../config.js';
 /**
  * ResourceManager owns the authoritative {@link ResourceState} used by the
  * progression system.
@@ -104,6 +105,7 @@ export class ResourceManager {
     readonly resources: readonly NormalizedResource[];
     readonly initialResourceState?: ResourceState;
     readonly initialSerializedState?: SerializedResourceState;
+    readonly config?: EngineConfigOverrides;
   }) {
     const resourceDefinitions = options.resources.map(
       (resource): ResourceDefinition => ({
@@ -128,7 +130,8 @@ export class ResourceManager {
     );
 
     this.resourceState =
-      options.initialResourceState ?? createResourceState(resourceDefinitions);
+      options.initialResourceState ??
+      createResourceState(resourceDefinitions, { config: options.config });
     this.hydrateResources(options.initialSerializedState);
 
     this.baseCapacityByIndex = new Float64Array(resourceDefinitions.length);
