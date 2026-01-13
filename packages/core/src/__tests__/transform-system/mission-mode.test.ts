@@ -727,6 +727,248 @@ describe('TransformSystem', () => {
       expect(payload.success).toBe(false);
     });
 
+    it('compounds durationMultiplier across multiple stage decisions', () => {
+      // Test that durationMultiplier accumulates multiplicatively:
+      // - Stage 1 decision: durationMultiplier 2x
+      // - Stage 2 decision: durationMultiplier 1.5x
+      // - Stage 3 effective duration = base * 2 * 1.5 = 3x
+      const { system, resourceState } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 10 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 }, // 1 step
+              decision: {
+                prompt: { default: 'First choice', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'a',
+                options: [
+                  {
+                    id: 'a',
+                    label: { default: 'A', variants: {} },
+                    nextStage: 'stage2',
+                    modifiers: {
+                      durationMultiplier: { kind: 'constant', value: 2 },
+                    },
+                  },
+                  {
+                    id: 'b',
+                    label: { default: 'B', variants: {} },
+                    nextStage: 'stage2',
+                  },
+                ],
+              },
+            },
+            {
+              id: 'stage2',
+              duration: { kind: 'constant', value: 100 }, // 1 step * 2x = 2 steps
+              decision: {
+                prompt: { default: 'Second choice', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'c',
+                options: [
+                  {
+                    id: 'c',
+                    label: { default: 'C', variants: {} },
+                    nextStage: 'stage3',
+                    modifiers: {
+                      durationMultiplier: { kind: 'constant', value: 1.5 },
+                    },
+                  },
+                  {
+                    id: 'd',
+                    label: { default: 'D', variants: {} },
+                    nextStage: 'stage3',
+                  },
+                ],
+              },
+            },
+            {
+              id: 'stage3',
+              duration: { kind: 'constant', value: 100 }, // 1 step * 2 * 1.5 = 3 steps
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      // Step 1: Stage 1 completes, decision required
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
+
+      // Step 2: Decision timeout, option 'a' chosen (2x durationMultiplier), stage 2 starts
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+
+      // Stage 2 has base 100ms = 1 step, with 2x multiplier = 2 steps
+      // Steps 3-4: Stage 2 in progress
+      system.tick({ deltaMs: stepDurationMs, step: 3, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
+
+      // Step 4: Stage 2 completes, decision required
+      system.tick({ deltaMs: stepDurationMs, step: 4, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
+
+      // Step 5: Decision timeout, option 'c' chosen (1.5x), accumulated = 2 * 1.5 = 3x
+      system.tick({ deltaMs: stepDurationMs, step: 5, events: events as any });
+
+      // Stage 3 has base 100ms = 1 step, with 3x multiplier = 3 steps
+      // Steps 6-7: Stage 3 in progress
+      system.tick({ deltaMs: stepDurationMs, step: 6, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
+
+      system.tick({ deltaMs: stepDurationMs, step: 7, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
+
+      // Step 8: Stage 3 completes, mission completes with success
+      system.tick({ deltaMs: stepDurationMs, step: 8, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(10);
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      expect((completed?.[1] as any).success).toBe(true);
+    });
+
+    it('applies outputMultiplier to checkpoint outputs', () => {
+      // Test that checkpoint outputs are scaled by the accumulated outputMultiplier:
+      // - Stage 1 checkpoint: outputMultiplier=1 (initial), gives 2 gems
+      // - Stage 1 decision: outputMultiplier 2x
+      // - Stage 2 checkpoint: outputMultiplier=2x, gives 3*2=6 gems
+      // - Stage 2 decision: outputMultiplier 1.5x (accumulated 3x)
+      // - Stage 3 success: outputMultiplier=3x, gives 5*3=15 gems
+      // - Total: 2 + 6 + 15 = 23 gems
+      const { system, resourceState } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 5 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [
+                  { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 2 } },
+                ],
+              },
+              decision: {
+                prompt: { default: 'First choice', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'a',
+                options: [
+                  {
+                    id: 'a',
+                    label: { default: 'A', variants: {} },
+                    nextStage: 'stage2',
+                    modifiers: {
+                      outputMultiplier: { kind: 'constant', value: 2 },
+                    },
+                  },
+                  {
+                    id: 'b',
+                    label: { default: 'B', variants: {} },
+                    nextStage: 'stage2',
+                  },
+                ],
+              },
+            },
+            {
+              id: 'stage2',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [
+                  { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 3 } },
+                ],
+              },
+              decision: {
+                prompt: { default: 'Second choice', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'c',
+                options: [
+                  {
+                    id: 'c',
+                    label: { default: 'C', variants: {} },
+                    nextStage: 'stage3',
+                    modifiers: {
+                      outputMultiplier: { kind: 'constant', value: 1.5 },
+                    },
+                  },
+                  {
+                    id: 'd',
+                    label: { default: 'D', variants: {} },
+                    nextStage: 'stage3',
+                  },
+                ],
+              },
+            },
+            {
+              id: 'stage3',
+              duration: { kind: 'constant', value: 100 },
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      // Step 1: Stage 1 completes, checkpoint grants 2 gems (outputMultiplier=1)
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(2);
+
+      // Step 2: Decision timeout, option 'a' chosen (outputMultiplier 2x)
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(2);
+
+      // Step 3: Stage 2 completes, checkpoint grants 3*2=6 gems
+      system.tick({ deltaMs: stepDurationMs, step: 3, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(8); // 2 + 6
+
+      // Step 4: Decision timeout, option 'c' chosen (outputMultiplier 1.5x, accumulated 3x)
+      system.tick({ deltaMs: stepDurationMs, step: 4, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(8);
+
+      // Step 5: Stage 3 completes, success grants 5*3=15 gems
+      system.tick({ deltaMs: stepDurationMs, step: 5, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(23); // 2 + 6 + 15
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      expect((completed?.[1] as any).success).toBe(true);
+    });
+
     it('serializes mission batches with entity metadata and snapshots next batch time', () => {
       const resourceState = createMockResourceState(
         new Map([
