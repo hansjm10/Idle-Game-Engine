@@ -68,7 +68,11 @@ export type AutomationInput = z.input<typeof automationDefinitionSchema>;
 /** Input type for creating a transform definition. */
 export type TransformInput = z.input<typeof transformDefinitionSchema>;
 
-/** Input type for creating a prestige layer definition. */
+/**
+ * Input type for creating a prestige layer definition.
+ *
+ * @remarks Requires a resource named `{id}-prestige-count` to exist.
+ */
 export type PrestigeLayerInput = z.input<typeof prestigeLayerSchema>;
 
 // ============================================================================

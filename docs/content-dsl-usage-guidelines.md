@@ -526,6 +526,22 @@ Complete example:
 
 **Purpose**: Define reset mechanics and prestige rewards.
 
+> **Note**: Every prestige layer requires a counter resource named `{id}-prestige-count` (for example `docs-prestige.rebirth-prestige-count`) in the pack's `resources` array. The runtime increments this resource each time the layer is applied, and conditions like `prestigeCompleted` / `prestigeCountThreshold` read it—do not include it in `resetTargets`.
+
+Minimal prestige counter resource example:
+
+```json
+{
+  "id": "docs-prestige.rebirth-prestige-count",
+  "name": { "default": "Rebirth Count" },
+  "category": "misc",
+  "tier": 3,
+  "startAmount": 0,
+  "visible": false,
+  "unlocked": true
+}
+```
+
 Required fields:
 
 | Field | Type | Notes |

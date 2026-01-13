@@ -142,6 +142,20 @@ Prestige layer
 }
 ```
 
+> **Note**: Each prestige layer requires a resource named `{id}-prestige-count` (for example `pack.prestige-id-prestige-count`) in the pack's `resources` array. The runtime uses it to track how many times the player has prestiged—do not include it in `resetTargets`.
+
+```json
+{
+  "id": "pack.prestige-id-prestige-count",
+  "name": { "default": "Prestige Count" },
+  "category": "misc",
+  "tier": 3,
+  "startAmount": 0,
+  "visible": false,
+  "unlocked": true
+}
+```
+
 Metric
 
 ```json
