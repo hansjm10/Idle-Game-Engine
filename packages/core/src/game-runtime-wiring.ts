@@ -1,5 +1,6 @@
 import type { NormalizedContentPack } from '@idle-engine/content-schema';
 
+import type { EngineConfigOverrides } from './config.js';
 import type { CommandDispatcher } from './command-dispatcher.js';
 import type { CommandQueue } from './command-queue.js';
 import type { GameStateSaveFormat } from './game-state-save.js';
@@ -64,6 +65,7 @@ export type WireGameRuntimeOptions<
   TRuntime extends RuntimeWiringRuntime = RuntimeWiringRuntime,
 > = Readonly<{
   readonly content: NormalizedContentPack;
+  readonly config?: EngineConfigOverrides;
   readonly runtime: TRuntime;
   readonly coordinator: ProgressionCoordinator;
   readonly enableProduction?: boolean;
@@ -122,6 +124,7 @@ export function wireGameRuntime<
     conditionContext: coordinator.getConditionContext(),
     entitySystem,
     prdRegistry,
+    config: options.config,
   });
 
   registerResourceCommandHandlers({
@@ -315,6 +318,7 @@ function createTransformSystemIfEnabled(
     conditionContext: ReturnType<ProgressionCoordinator['getConditionContext']>;
     entitySystem: EntitySystem | undefined;
     prdRegistry: PRDRegistry;
+    config?: EngineConfigOverrides;
   }>,
 ): ReturnType<typeof createTransformSystem> | undefined {
   if (!options.enabled || options.transforms.length === 0) {
@@ -328,6 +332,7 @@ function createTransformSystemIfEnabled(
     conditionContext: options.conditionContext,
     entitySystem: options.entitySystem,
     prdRegistry: options.prdRegistry,
+    config: options.config,
   });
 }
 

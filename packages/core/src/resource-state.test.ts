@@ -126,6 +126,27 @@ describe('ResourceState', () => {
     expect(recorderSnapshot.tickDelta[energy]).toBe(postSpend.tickDelta[energy]);
   });
 
+  it('respects configured dirty epsilon floors', () => {
+    const definitions: ResourceDefinition[] = [{ id: 'energy', startAmount: 0 }];
+
+    const defaultState = createResourceState(definitions);
+    const energyDefault = defaultState.requireIndex('energy');
+    defaultState.addAmount(energyDefault, 5e-5);
+    expect(defaultState.snapshot().dirtyCount).toBe(1);
+
+    const configuredState = createResourceState(definitions, {
+      config: { precision: { dirtyEpsilonAbsolute: 1e-4 } },
+    });
+    const energyConfigured = configuredState.requireIndex('energy');
+    configuredState.addAmount(energyConfigured, 5e-5);
+
+    expect(configuredState.getAmount(energyConfigured)).toBeCloseTo(5e-5, 12);
+
+    const snapshot = configuredState.snapshot();
+    expect(snapshot.dirtyCount).toBe(0);
+    expect(snapshot.amounts[energyConfigured]).toBe(0);
+  });
+
   it('keeps netPerSecond in sync with applyIncome/applyExpense', () => {
     const state = createResourceState([
       { id: 'energy', startAmount: 0, capacity: 10 },

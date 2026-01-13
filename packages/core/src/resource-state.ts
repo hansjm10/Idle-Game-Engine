@@ -13,11 +13,7 @@ import {
   type SerializedTransformState,
   type TransformState,
 } from './transform-system.js';
-
-const DIRTY_EPSILON_ABSOLUTE = 1e-9;
-const DIRTY_EPSILON_RELATIVE = 1e-9;
-const DIRTY_EPSILON_CEILING = 1e-3;
-const DIRTY_EPSILON_OVERRIDE_MAX = 5e-1;
+import { resolveEngineConfig, type EngineConfig, type EngineConfigOverrides } from './config.js';
 
 const FLAG_VISIBLE = 1;
 const FLAG_UNLOCKED = 2;
@@ -188,6 +184,7 @@ interface PublishSnapshotOptions {
 
 interface ResourceStateInternal {
   readonly buffers: ResourceStateBuffers;
+  readonly precision: EngineConfig['precision'];
   activePublishIndex: number;
   dirtyIndexCount: number;
   publishGuardState: PublishGuardState;
@@ -198,7 +195,9 @@ type FloatFieldSelector = (publish: ResourcePublishBuffers) => Float64Array;
 
 export function createResourceState(
   definitions: readonly ResourceDefinition[],
+  options: { readonly config?: EngineConfigOverrides } = {},
 ): ResourceState {
+  const precision = resolveEngineConfig(options.config).precision;
   const resourceCount = definitions.length;
 
   const ids: string[] = new Array(resourceCount);
@@ -270,10 +269,11 @@ export function createResourceState(
     dirtyIndexPositions,
   };
 
-  initializeBuffers(buffers, definitions);
+  initializeBuffers(buffers, definitions, precision);
 
   const internal: ResourceStateInternal = {
     buffers,
+    precision,
     activePublishIndex: 0,
     dirtyIndexCount: 0,
     publishGuardState: PublishGuardState.Idle,
@@ -333,6 +333,7 @@ export function __unsafeWriteVisibleDirect(
 function initializeBuffers(
   buffers: ResourceStateBuffers,
   definitions: readonly ResourceDefinition[],
+  precision: EngineConfig['precision'],
 ): void {
   const { amounts, capacities, incomePerSecond, expensePerSecond, netPerSecond, tickDelta, flags, dirtyTolerance, publish } =
     buffers;
@@ -340,7 +341,7 @@ function initializeBuffers(
   const initialPublish = publish[0];
   const standbyPublish = publish[1];
 
-  const { resources: sanitized } = sanitizeDefinitions(definitions);
+  const { resources: sanitized } = sanitizeDefinitions(definitions, precision);
 
   for (let index = 0; index < sanitized.length; index += 1) {
     const definition = sanitized[index];
@@ -379,6 +380,7 @@ function initializeBuffers(
 
 function sanitizeDefinitions(
   definitions: readonly ResourceDefinition[],
+  precision: EngineConfig['precision'],
 ): {
   readonly resources: readonly {
     readonly amount: number;
@@ -394,7 +396,7 @@ function sanitizeDefinitions(
     const unlocked = definition.unlocked ?? true;
     const visible = definition.visible ?? true;
     const dirtyTolerance =
-      definition.dirtyTolerance ?? DIRTY_EPSILON_CEILING;
+      definition.dirtyTolerance ?? precision.dirtyEpsilonCeiling;
 
     if (!Number.isFinite(rawStartAmount)) {
       telemetry.recordError('ResourceDefinitionInvalidStartAmount', {
@@ -442,7 +444,7 @@ function sanitizeDefinitions(
       amount = sanitizedCapacity;
     }
 
-    const tolerance = clampDirtyTolerance(dirtyTolerance, definition.id);
+    const tolerance = clampDirtyTolerance(dirtyTolerance, definition.id, precision);
 
     const initialFlags =
       (visible ? FLAG_VISIBLE : 0) |
@@ -462,21 +464,25 @@ function sanitizeDefinitions(
   };
 }
 
-function clampDirtyTolerance(value: number, resourceId: string): number {
+function clampDirtyTolerance(
+  value: number,
+  resourceId: string,
+  precision: EngineConfig['precision'],
+): number {
   if (!Number.isFinite(value)) {
-    return DIRTY_EPSILON_CEILING;
+    return precision.dirtyEpsilonCeiling;
   }
 
-  if (value < DIRTY_EPSILON_ABSOLUTE) {
-    return DIRTY_EPSILON_ABSOLUTE;
+  if (value < precision.dirtyEpsilonAbsolute) {
+    return precision.dirtyEpsilonAbsolute;
   }
 
-  if (value > DIRTY_EPSILON_OVERRIDE_MAX) {
+  if (value > precision.dirtyEpsilonOverrideMax) {
     telemetry.recordWarning('ResourceDirtyToleranceClamped', {
       resourceId,
       value,
     });
-    return DIRTY_EPSILON_OVERRIDE_MAX;
+    return precision.dirtyEpsilonOverrideMax;
   }
 
   return value;
@@ -550,18 +556,18 @@ function createResourceStateFacade(
       assertValidIndex(internal, index);
       return buffers.capacities[index];
     },
-	    getNetPerSecond: (index) => {
-	      assertValidIndex(internal, index);
-	      return buffers.netPerSecond[index];
-	    },
-	    getDirtyTolerance: (index) => {
-	      assertValidIndex(internal, index);
-	      return buffers.dirtyTolerance[index];
-	    },
-	    isUnlocked: (index) => {
-	      assertValidIndex(internal, index);
-	      return (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
-	    },
+    getNetPerSecond: (index) => {
+      assertValidIndex(internal, index);
+      return buffers.netPerSecond[index];
+    },
+    getDirtyTolerance: (index) => {
+      assertValidIndex(internal, index);
+      return buffers.dirtyTolerance[index];
+    },
+    isUnlocked: (index) => {
+      assertValidIndex(internal, index);
+      return (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
+    },
     isVisible: (index) => {
       assertValidIndex(internal, index);
       return (buffers.flags[index] & FLAG_VISIBLE) !== 0;
@@ -569,15 +575,15 @@ function createResourceStateFacade(
     grantVisibility: (index) => {
       setFlagField(internal, index, FLAG_VISIBLE, true);
     },
-	    unlock: (index) => {
-	      setFlagField(internal, index, FLAG_UNLOCKED, true);
-	    },
-	    setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
-	    setDirtyTolerance: (index, dirtyTolerance) =>
-	      setDirtyTolerance(internal, index, dirtyTolerance),
-	    addAmount: (index, amount) => addAmount(internal, index, amount),
-	    spendAmount: (index, amount, context) =>
-	      spendAmount(internal, index, amount, context),
+    unlock: (index) => {
+      setFlagField(internal, index, FLAG_UNLOCKED, true);
+    },
+    setCapacity: (index, capacity) => setCapacity(internal, index, capacity),
+    setDirtyTolerance: (index, dirtyTolerance) =>
+      setDirtyTolerance(internal, index, dirtyTolerance),
+    addAmount: (index, amount) => addAmount(internal, index, amount),
+    spendAmount: (index, amount, context) =>
+      spendAmount(internal, index, amount, context),
     applyIncome: (index, amountPerSecond) =>
       applyRate(internal, index, amountPerSecond, 'income'),
     applyExpense: (index, amountPerSecond) =>
@@ -678,7 +684,11 @@ function setDirtyTolerance(
   assertValidIndex(internal, index);
 
   const resourceId = internal.buffers.ids[index] ?? String(index);
-  const nextTolerance = clampDirtyTolerance(dirtyTolerance, resourceId);
+  const nextTolerance = clampDirtyTolerance(
+    dirtyTolerance,
+    resourceId,
+    internal.precision,
+  );
 
   const { buffers } = internal;
   const previousTolerance = buffers.dirtyTolerance[index];
@@ -925,12 +935,16 @@ function finalizeTick(
     );
 
     const tolerance = buffers.dirtyTolerance[index];
-    const epsilonOptions = Object.is(tolerance, DIRTY_EPSILON_CEILING)
+    const epsilonOptions = Object.is(
+      tolerance,
+      internal.precision.dirtyEpsilonCeiling,
+    )
       ? undefined
       : EPSILON_FLOOR_OVERRIDE_OPTIONS;
 
     if (
       !epsilonEquals(
+        internal.precision,
         incomePerSecond,
         publish.incomePerSecond[index],
         tolerance,
@@ -938,6 +952,7 @@ function finalizeTick(
         epsilonOptions,
       ) ||
       !epsilonEquals(
+        internal.precision,
         expensePerSecond,
         publish.expensePerSecond[index],
         tolerance,
@@ -945,6 +960,7 @@ function finalizeTick(
         epsilonOptions,
       ) ||
       !epsilonEquals(
+        internal.precision,
         buffers.netPerSecond[index],
         publish.netPerSecond[index],
         tolerance,
@@ -1175,6 +1191,7 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.amounts[index],
       source.amounts[index],
       tolerance,
@@ -1186,6 +1203,7 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.capacities[index],
       source.capacities[index],
       tolerance,
@@ -1197,6 +1215,7 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.incomePerSecond[index],
       source.incomePerSecond[index],
       tolerance,
@@ -1208,6 +1227,7 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.expensePerSecond[index],
       source.expensePerSecond[index],
       tolerance,
@@ -1219,6 +1239,7 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.netPerSecond[index],
       source.netPerSecond[index],
       tolerance,
@@ -1230,6 +1251,7 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.tickDelta[index],
       source.tickDelta[index],
       tolerance,
@@ -1241,9 +1263,10 @@ function isIndexDirtyAgainstPublish(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.dirtyTolerance[index],
       source.dirtyTolerance[index],
-      DIRTY_EPSILON_ABSOLUTE,
+      internal.precision.dirtyEpsilonAbsolute,
     )
   ) {
     return true;
@@ -1739,7 +1762,10 @@ function createEpsilonContext(
   return {
     resourceId,
     field,
-    hasOverride: !Object.is(tolerance, DIRTY_EPSILON_CEILING),
+    hasOverride: !Object.is(
+      tolerance,
+      internal.precision.dirtyEpsilonCeiling,
+    ),
   };
 }
 
@@ -1753,6 +1779,7 @@ function reconcileDirtyState(
   const tolerance = internal.buffers.dirtyTolerance[index];
   if (
     !epsilonEquals(
+      internal.precision,
       liveValue,
       publishedValue,
       tolerance,
@@ -1816,6 +1843,7 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.amounts[index],
       source.amounts[index],
       tolerance,
@@ -1827,6 +1855,7 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.capacities[index],
       source.capacities[index],
       tolerance,
@@ -1838,6 +1867,7 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.incomePerSecond[index],
       source.incomePerSecond[index],
       tolerance,
@@ -1849,6 +1879,7 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.expensePerSecond[index],
       source.expensePerSecond[index],
       tolerance,
@@ -1860,6 +1891,7 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.netPerSecond[index],
       source.netPerSecond[index],
       tolerance,
@@ -1871,6 +1903,7 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.tickDelta[index],
       source.tickDelta[index],
       tolerance,
@@ -1882,9 +1915,10 @@ function isIndexClean(
 
   if (
     !epsilonEquals(
+      internal.precision,
       buffers.dirtyTolerance[index],
       source.dirtyTolerance[index],
-      DIRTY_EPSILON_ABSOLUTE,
+      internal.precision.dirtyEpsilonAbsolute,
     )
   ) {
     return false;
@@ -1915,6 +1949,7 @@ function accumulateTickDelta(
   const tolerance = buffers.dirtyTolerance[index];
   const context = createEpsilonContext(internal, index, 'tickDelta', tolerance);
   const resolved = epsilonEquals(
+    internal.precision,
     next,
     0,
     tolerance,
@@ -1951,6 +1986,7 @@ function clampAmount(amount: number, capacity: number): number {
 }
 
 function epsilonEquals(
+  precision: EngineConfig['precision'],
   a: number,
   b: number,
   toleranceCeiling: number,
@@ -1967,10 +2003,10 @@ function epsilonEquals(
   }
 
   const magnitude = Math.max(Math.abs(a), Math.abs(b));
-  const relativeTolerance = DIRTY_EPSILON_RELATIVE * magnitude;
+  const relativeTolerance = precision.dirtyEpsilonRelative * magnitude;
   const clampedRelative = Math.min(toleranceCeiling, relativeTolerance);
   const tolerance = Math.max(
-    DIRTY_EPSILON_ABSOLUTE,
+    precision.dirtyEpsilonAbsolute,
     clampedRelative,
   );
   const hasOverride = context?.hasOverride === true;

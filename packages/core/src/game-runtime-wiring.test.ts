@@ -130,6 +130,75 @@ describe('createGameRuntime', () => {
     ]);
   });
 
+  it('respects EngineConfig overrides in runtime wiring', () => {
+    const content = createContentPack({
+      resources: [
+        createResourceDefinition('resource.energy', { startAmount: 1000 }),
+        createResourceDefinition('resource.gold', { startAmount: 0 }),
+      ],
+      transforms: [createTestTransform()],
+    });
+
+    const wiring = createGameRuntime({
+      content,
+      stepSizeMs: 100,
+      config: {
+        limits: {
+          maxCommandQueueSize: 1,
+          eventBusDefaultChannelCapacity: 1,
+          maxRunsPerTick: 2,
+        },
+      },
+    });
+
+    wiring.commandQueue.enqueue({
+      type: 'TEST_COMMAND',
+      payload: { marker: 1 },
+      priority: CommandPriority.AUTOMATION,
+      timestamp: 0,
+      step: wiring.runtime.getNextExecutableStep(),
+    });
+    wiring.commandQueue.enqueue({
+      type: 'TEST_COMMAND',
+      payload: { marker: 2 },
+      priority: CommandPriority.AUTOMATION,
+      timestamp: 1,
+      step: wiring.runtime.getNextExecutableStep(),
+    });
+
+    const queued = wiring.commandQueue.dequeueAll();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.payload).toEqual({ marker: 2 });
+
+    const bus = wiring.runtime.getEventBus();
+    bus.beginTick(0);
+    bus.publish('automation:fired', {
+      automationId: 'automation.test',
+      triggerKind: 'commandQueueEmpty',
+      step: 0,
+    });
+    expect(() =>
+      bus.publish('automation:fired', {
+        automationId: 'automation.test',
+        triggerKind: 'commandQueueEmpty',
+        step: 0,
+      }),
+    ).toThrowError(/Event buffer overflow/i);
+
+    const transformSystem = wiring.transformSystem;
+    if (!transformSystem) {
+      throw new Error('Expected transform system to be wired.');
+    }
+
+    const result = transformSystem.executeTransform('transform.test', 0, { runs: 15 });
+    expect(result.success).toBe(true);
+
+    const energyIndex = wiring.coordinator.resourceState.requireIndex('resource.energy');
+    const goldIndex = wiring.coordinator.resourceState.requireIndex('resource.gold');
+    expect(wiring.coordinator.resourceState.getAmount(energyIndex)).toBe(998);
+    expect(wiring.coordinator.resourceState.getAmount(goldIndex)).toBe(2);
+  });
+
   it('executes RUN_TRANSFORM from the command queue when transforms are wired', () => {
     const wiring = createGameRuntime({
       content: createContentWithTransform(),

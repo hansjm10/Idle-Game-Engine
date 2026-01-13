@@ -204,6 +204,85 @@ describe('TransformSystem', () => {
       expect(result2.error?.code).toBe('MAX_RUNS_EXCEEDED');
     });
 
+    it('should respect configured maxRunsPerTick when not authored', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:spam' as any,
+          name: { default: 'Spam', variants: {} },
+          description: { default: 'Spammable transform', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 1 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 1000 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        config: { limits: { maxRunsPerTick: 2 } },
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:spam', 0, { runs: 15 });
+      expect(result.success).toBe(true);
+
+      expect(resourceState.getAmount(0)).toBe(998);
+      expect(resourceState.getAmount(1)).toBe(2);
+
+      const result2 = system.executeTransform('transform:spam', 0);
+      expect(result2.success).toBe(false);
+      expect(result2.error?.code).toBe('MAX_RUNS_EXCEEDED');
+    });
+
+    it('should clamp authored maxRunsPerTick to configured hard cap', () => {
+      const transforms: TransformDefinition[] = [
+        {
+          id: 'transform:excessiveConfigured' as any,
+          name: { default: 'Excessive (Configured)', variants: {} },
+          description: { default: 'Exceeds configured hard cap', variants: {} },
+          mode: 'instant',
+          inputs: [{ resourceId: 'res:gold' as any, amount: { kind: 'constant', value: 1 } }],
+          outputs: [{ resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } }],
+          trigger: { kind: 'manual' },
+          safety: { maxRunsPerTick: 500 },
+          tags: [],
+        },
+      ];
+
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 1000 }],
+          ['res:gems', { amount: 0 }],
+        ]),
+      );
+
+      const system = createTransformSystem({
+        transforms,
+        stepDurationMs,
+        resourceState,
+        config: { limits: { maxRunsPerTickHardCap: 3 } },
+      });
+
+      system.tick({ deltaMs: stepDurationMs, step: 0, events: { publish: vi.fn() } });
+
+      const result = system.executeTransform('transform:excessiveConfigured', 0, { runs: 10 });
+      expect(result.success).toBe(true);
+
+      expect(resourceState.getAmount(0)).toBe(997);
+      expect(resourceState.getAmount(1)).toBe(3);
+    });
+
     it('should respect custom maxRunsPerTick', () => {
       const transforms: TransformDefinition[] = [
         {

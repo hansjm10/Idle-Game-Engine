@@ -43,6 +43,7 @@ import type { ResourceStateAccessor } from './automation-system.js';
 import type { EventPublisher } from './events/event-bus.js';
 import type { MissionOutcomeKind } from './events/runtime-event-catalog.js';
 import { telemetry } from './telemetry.js';
+import { resolveEngineConfig, type EngineConfig, type EngineConfigOverrides } from './config.js';
 
 /**
  * Extended ResourceStateAccessor for transforms that supports adding amounts.
@@ -51,30 +52,6 @@ import { telemetry } from './telemetry.js';
 export interface TransformResourceState extends ResourceStateAccessor {
   addAmount?(index: number, amount: number): number;
 }
-
-/**
- * Default maximum runs per tick when not specified in content.
- * Matches design doc Section 13.4.
- */
-const DEFAULT_MAX_RUNS_PER_TICK = 10;
-
-/**
- * Hard cap for maxRunsPerTick to prevent runaway loops.
- * Matches MAX_CONDITION_DEPTH pattern (packages/core/src/condition-evaluator.ts:34).
- */
-const HARD_CAP_MAX_RUNS_PER_TICK = 100;
-
-/**
- * Default maximum outstanding batches when not specified in content.
- * Matches design doc Section 13.4.
- */
-const DEFAULT_MAX_OUTSTANDING_BATCHES = 50;
-
-/**
- * Hard cap for maxOutstandingBatches to prevent queue blowups.
- * Matches design doc Section 13.4.
- */
-const HARD_CAP_MAX_OUTSTANDING_BATCHES = 1000;
 
 /**
  * Level value used for evaluating transform formulas.
@@ -491,6 +468,7 @@ export interface TransformSystemOptions {
   readonly conditionContext?: ConditionContext;
   readonly entitySystem?: EntitySystem;
   readonly prdRegistry?: PRDRegistry;
+  readonly config?: EngineConfigOverrides;
 }
 
 /**
@@ -594,20 +572,23 @@ const createTransformFormulaEvaluationContext = (options: {
  * Gets the effective maxRunsPerTick for a transform.
  * Applies default and hard cap per design doc Section 13.4.
  */
-function getEffectiveMaxRunsPerTick(transform: TransformDefinition): number {
+function getEffectiveMaxRunsPerTick(
+  transform: TransformDefinition,
+  limits: EngineConfig['limits'],
+): number {
   const authored = transform.safety?.maxRunsPerTick;
 
   if (authored === undefined || !Number.isFinite(authored) || authored <= 0) {
-    return DEFAULT_MAX_RUNS_PER_TICK;
+    return limits.maxRunsPerTick;
   }
 
-  if (authored > HARD_CAP_MAX_RUNS_PER_TICK) {
+  if (authored > limits.maxRunsPerTickHardCap) {
     telemetry.recordWarning('TransformMaxRunsPerTickClamped', {
       transformId: transform.id,
       authored,
-      clamped: HARD_CAP_MAX_RUNS_PER_TICK,
+      clamped: limits.maxRunsPerTickHardCap,
     });
-    return HARD_CAP_MAX_RUNS_PER_TICK;
+    return limits.maxRunsPerTickHardCap;
   }
 
   return authored;
@@ -617,20 +598,23 @@ function getEffectiveMaxRunsPerTick(transform: TransformDefinition): number {
  * Gets the effective maxOutstandingBatches for a transform.
  * Applies default and hard cap per design doc Section 13.4.
  */
-function getEffectiveMaxOutstandingBatches(transform: TransformDefinition): number {
+function getEffectiveMaxOutstandingBatches(
+  transform: TransformDefinition,
+  limits: EngineConfig['limits'],
+): number {
   const authored = transform.safety?.maxOutstandingBatches;
 
   if (authored === undefined || !Number.isFinite(authored) || authored <= 0) {
-    return DEFAULT_MAX_OUTSTANDING_BATCHES;
+    return limits.maxOutstandingBatches;
   }
 
-  if (authored > HARD_CAP_MAX_OUTSTANDING_BATCHES) {
+  if (authored > limits.maxOutstandingBatchesHardCap) {
     telemetry.recordWarning('TransformMaxOutstandingBatchesClamped', {
       transformId: transform.id,
       authored,
-      clamped: HARD_CAP_MAX_OUTSTANDING_BATCHES,
+      clamped: limits.maxOutstandingBatchesHardCap,
     });
-    return HARD_CAP_MAX_OUTSTANDING_BATCHES;
+    return limits.maxOutstandingBatchesHardCap;
   }
 
   return authored;
@@ -1422,6 +1406,7 @@ function processTriggeredTransform(
   step: number,
   formulaContext: FormulaEvaluationContext,
   events: EventPublisher | undefined,
+  limits: EngineConfig['limits'],
   executeTransformRun: (
     transform: TransformDefinition,
     state: TransformState,
@@ -1434,7 +1419,7 @@ function processTriggeredTransform(
     return 'blocked';
   }
 
-  const maxRuns = getEffectiveMaxRunsPerTick(transform);
+  const maxRuns = getEffectiveMaxRunsPerTick(transform, limits);
   if (state.runsThisTick >= maxRuns) {
     return 'blocked';
   }
@@ -1499,6 +1484,7 @@ export function createTransformSystem(
   } = options;
 
   const prdRegistry = providedPrdRegistry ?? new PRDRegistry(seededRandom);
+  const limits = resolveEngineConfig(options.config).limits;
 
   const transformStates = new Map<string, TransformState>();
   const transformById = new Map<string, TransformDefinition>();
@@ -1576,12 +1562,12 @@ export function createTransformSystem(
     }
   };
 
-    const calculateMissionSuccessRate = (
-      transform: TransformDefinition,
-      instanceIds: readonly string[],
-      formulaContext: FormulaEvaluationContext,
-      missionEntitySystem: EntitySystem,
-    ): { ok: true; baseRate: number } | { ok: false; result: TransformExecutionResult } => {
+  const calculateMissionSuccessRate = (
+    transform: TransformDefinition,
+    instanceIds: readonly string[],
+    formulaContext: FormulaEvaluationContext,
+    missionEntitySystem: EntitySystem,
+  ): { ok: true; baseRate: number } | { ok: false; result: TransformExecutionResult } => {
     const successRate = transform.successRate;
     let baseRate = 1;
 
@@ -1634,26 +1620,26 @@ export function createTransformSystem(
       baseRate = clampProbability(baseRate);
     }
 
-      return { ok: true, baseRate };
-    };
+    return { ok: true, baseRate };
+  };
 
-	  const prepareMissionInputs = (
-	    transform: TransformDefinition,
-	    formulaContext: FormulaEvaluationContext,
-	    missionEntitySystem: EntitySystem,
-	  ):
-      | {
-          readonly ok: true;
-          readonly durationSteps: number;
-          readonly assignmentResult: MissionAssignmentSuccess;
-          readonly costs: Map<string, number>;
-        }
-      | { readonly ok: false; readonly result: TransformExecutionResult } => {
-      const durationSteps = evaluateBatchDurationSteps(
-        transform,
-        stepDurationMs,
-        formulaContext,
-      );
+  const prepareMissionInputs = (
+    transform: TransformDefinition,
+    formulaContext: FormulaEvaluationContext,
+    missionEntitySystem: EntitySystem,
+  ):
+    | {
+        readonly ok: true;
+        readonly durationSteps: number;
+        readonly assignmentResult: MissionAssignmentSuccess;
+        readonly costs: Map<string, number>;
+      }
+    | { readonly ok: false; readonly result: TransformExecutionResult } => {
+    const durationSteps = evaluateBatchDurationSteps(
+      transform,
+      stepDurationMs,
+      formulaContext,
+    );
       if (durationSteps === null) {
         return {
           ok: false,
@@ -1869,11 +1855,11 @@ export function createTransformSystem(
       missionEntitySystem: EntitySystem,
       events?: EventPublisher,
     ): TransformExecutionResult => {
-	    const inputsResult = prepareMissionInputs(
-	      transform,
-	      formulaContext,
-	      missionEntitySystem,
-	    );
+      const inputsResult = prepareMissionInputs(
+        transform,
+        formulaContext,
+        missionEntitySystem,
+      );
       if (!inputsResult.ok) {
         return inputsResult.result;
       }
@@ -1890,7 +1876,7 @@ export function createTransformSystem(
 
       state.batches ??= [];
       const batchQueue = state.batches as TransformBatchQueueEntry[];
-      const maxOutstanding = getEffectiveMaxOutstandingBatches(transform);
+      const maxOutstanding = getEffectiveMaxOutstandingBatches(transform, limits);
       if (batchQueue.length >= maxOutstanding) {
         return {
           success: false,
@@ -2037,7 +2023,7 @@ export function createTransformSystem(
 
       state.batches ??= [];
       const batchQueue = state.batches as TransformBatchQueueEntry[];
-      const maxOutstanding = getEffectiveMaxOutstandingBatches(transform);
+      const maxOutstanding = getEffectiveMaxOutstandingBatches(transform, limits);
       if (batchQueue.length >= maxOutstanding) {
         return {
           success: false,
@@ -2191,6 +2177,7 @@ export function createTransformSystem(
       step,
       formulaContext,
       events,
+      limits,
       executeTransformRun,
     );
 
@@ -2315,7 +2302,7 @@ export function createTransformSystem(
 
     // Execute requested number of runs (capped by safety limits)
     const requestedRuns = execOptions?.runs ?? 1;
-    const maxRuns = getEffectiveMaxRunsPerTick(transform);
+    const maxRuns = getEffectiveMaxRunsPerTick(transform, limits);
     const remainingBudget = maxRuns - state.runsThisTick;
     const runsToExecute = Math.min(requestedRuns, remainingBudget);
 

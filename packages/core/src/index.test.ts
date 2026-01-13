@@ -167,6 +167,7 @@ describe('entrypoint boundaries', () => {
     const exportedKeys = Object.keys(publicApi).sort();
     expect(exportedKeys).toEqual([
       'CommandPriority',
+      'DEFAULT_ENGINE_CONFIG',
       'EventBroadcastBatcher',
       'EventBroadcastDeduper',
       'EventBus',
