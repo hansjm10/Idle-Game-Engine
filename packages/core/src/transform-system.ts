@@ -1885,7 +1885,10 @@ function deliverDueBatches(
       const defaultOption = decision.options.find((option) => option.id === decision.defaultOption);
       let chosenOption = defaultOption ?? decision.options[0];
 
-      if (chosenOption && !optionViews.find((view) => view.id === chosenOption.id)?.available) {
+      const isOptionAvailable = (optionId: string): boolean =>
+        optionViews.find((view) => view.id === optionId)?.available ?? false;
+
+      if (chosenOption && !isOptionAvailable(chosenOption.id)) {
         const firstAvailable = optionViews.find((option) => option.available);
         if (firstAvailable) {
           chosenOption =
@@ -1894,7 +1897,7 @@ function deliverDueBatches(
         }
       }
 
-      if (!chosenOption) {
+      if (!chosenOption || !isOptionAvailable(chosenOption.id)) {
         completeMultiStageMission(
           entry,
           missionPlan,

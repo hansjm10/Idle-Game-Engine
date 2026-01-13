@@ -247,7 +247,16 @@ const missionStageSchema: z.ZodType<MissionStageModel, z.ZodTypeDef, MissionStag
     stageOutcomes: missionStageOutcomeOverridesSchema.optional(),
     nextStage: missionStageIdSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((stage, ctx) => {
+    if (stage.decision && stage.nextStage !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['nextStage'],
+        message: 'Stages with decision blocks must omit nextStage.',
+      });
+    }
+  });
 
 const missionOutcomesSchema = z
   .object({
@@ -500,7 +509,7 @@ const validateMissionTransform = (
       if (stage.decision.options.some((option) => option.nextStage === null)) {
         return true;
       }
-    } else if (stage.nextStage === undefined || stage.nextStage === null) {
+    } else if (stage.nextStage === null) {
       return true;
     }
 

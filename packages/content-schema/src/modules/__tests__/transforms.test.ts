@@ -283,6 +283,57 @@ describe('transformDefinitionSchema', () => {
     );
   });
 
+  it('rejects stages that define both decision and nextStage', () => {
+    const result = transformDefinitionSchema.safeParse({
+      ...baseTransform,
+      mode: 'mission',
+      outputs: [],
+      entityRequirements: [
+        { entityId: 'scout', count: { kind: 'constant', value: 1 } },
+      ],
+      outcomes: {
+        success: {
+          outputs: [],
+        },
+      },
+      stages: [
+        {
+          id: 'start',
+          duration: { kind: 'constant', value: 1000 },
+          decision: {
+            prompt: { default: 'Choose', variants: {} },
+            defaultOption: 'left',
+            options: [
+              {
+                id: 'left',
+                label: { default: 'Left', variants: {} },
+                nextStage: null,
+              },
+              {
+                id: 'right',
+                label: { default: 'Right', variants: {} },
+                nextStage: null,
+              },
+            ],
+          },
+          nextStage: null,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ['stages', 0, 'nextStage'],
+          message: expect.stringContaining('must omit nextStage'),
+        }),
+      ]),
+    );
+  });
+
   it('rejects circular stage references', () => {
     expect(() =>
       transformDefinitionSchema.parse({
@@ -311,6 +362,36 @@ describe('transformDefinitionSchema', () => {
         ],
       }),
     ).toThrowError(/circular stage references/i);
+  });
+
+  it('requires multi-stage missions to explicitly include a terminating nextStage: null path', () => {
+    expect(() =>
+      transformDefinitionSchema.parse({
+        ...baseTransform,
+        mode: 'mission',
+        outputs: [],
+        entityRequirements: [
+          { entityId: 'scout', count: { kind: 'constant', value: 1 } },
+        ],
+        outcomes: {
+          success: {
+            outputs: [],
+          },
+        },
+        stages: [
+          {
+            id: 'a',
+            duration: { kind: 'constant', value: 1000 },
+            nextStage: 'b',
+          },
+          {
+            id: 'b',
+            duration: { kind: 'constant', value: 1000 },
+          },
+        ],
+        initialStage: 'a',
+      }),
+    ).toThrowError(/path that terminates/i);
   });
 
   it('requires decision defaultOption to reference an option id', () => {

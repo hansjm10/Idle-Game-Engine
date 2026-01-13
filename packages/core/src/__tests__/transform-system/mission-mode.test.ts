@@ -351,6 +351,195 @@ describe('TransformSystem', () => {
       expect(payload.success).toBe(true);
     });
 
+    it('falls back to the first available option when default option is unavailable on timeout', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 10 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+            failure: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 3 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [
+                  { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+                ],
+              },
+              decision: {
+                prompt: { default: 'Pick a path', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'left',
+                options: [
+                  {
+                    id: 'left',
+                    label: { default: 'Left', variants: {} },
+                    condition: { kind: 'never' },
+                    nextStage: null,
+                  },
+                  {
+                    id: 'right',
+                    label: { default: 'Right', variants: {} },
+                    nextStage: null,
+                  },
+                ],
+              },
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(1);
+
+      const decisionRequired = publish.mock.calls.find(
+        ([type]) => type === 'mission:decision-required',
+      );
+      expect(decisionRequired).toBeTruthy();
+      const decisionRequiredPayload = decisionRequired?.[1] as any;
+      expect(decisionRequiredPayload.options).toEqual([
+        { id: 'left', label: 'Left', available: false },
+        { id: 'right', label: 'Right', available: true },
+      ]);
+
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(11);
+
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.assignment).toBeNull();
+      }
+
+      const decisionMade = publish.mock.calls.find(([type]) => type === 'mission:decision-made');
+      expect(decisionMade).toBeTruthy();
+      const decisionMadePayload = decisionMade?.[1] as any;
+      expect(decisionMadePayload.optionId).toBe('right');
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.success).toBe(true);
+    });
+
+    it('fails decision timeouts when no options are available', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 10 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+            failure: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 3 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [
+                  { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+                ],
+              },
+              decision: {
+                prompt: { default: 'Pick a path', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'left',
+                options: [
+                  {
+                    id: 'left',
+                    label: { default: 'Left', variants: {} },
+                    condition: { kind: 'never' },
+                    nextStage: null,
+                  },
+                  {
+                    id: 'right',
+                    label: { default: 'Right', variants: {} },
+                    condition: { kind: 'never' },
+                    nextStage: null,
+                  },
+                ],
+              },
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(1);
+
+      const decisionRequired = publish.mock.calls.find(
+        ([type]) => type === 'mission:decision-required',
+      );
+      expect(decisionRequired).toBeTruthy();
+      const decisionRequiredPayload = decisionRequired?.[1] as any;
+      expect(decisionRequiredPayload.options).toEqual([
+        { id: 'left', label: 'Left', available: false },
+        { id: 'right', label: 'Right', available: false },
+      ]);
+
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(4);
+
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.assignment).toBeNull();
+      }
+
+      const decisionMade = publish.mock.calls.find(
+        ([type]) => type === 'mission:decision-made',
+      );
+      expect(decisionMade).toBeFalsy();
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.success).toBe(false);
+    });
+
     it('serializes mission batches with entity metadata and snapshots next batch time', () => {
       const resourceState = createMockResourceState(
         new Map([
