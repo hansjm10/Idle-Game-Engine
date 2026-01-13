@@ -10,6 +10,8 @@ import { registerTransformCommandHandlers } from './transform-command-handlers.j
 import { createTransformSystem } from './transform-system.js';
 import type { EventBus } from './events/event-bus.js';
 import type { TransformDefinition } from '@idle-engine/content-schema';
+import { EntitySystem } from './entity-system.js';
+import { createEntityDefinition } from './content-test-helpers.js';
 
 describe('registerTransformCommandHandlers', () => {
   const stepDurationMs = 100;
@@ -297,6 +299,140 @@ describe('registerTransformCommandHandlers', () => {
           },
         },
       });
+    });
+
+    it('should successfully submit a valid mission decision', async () => {
+      // Create a new setup with mission transform
+      const missionDispatcher = new CommandDispatcher();
+      const missionPublishedEvents: Array<{ type: string; payload: unknown }> = [];
+
+      const mockMissionEventBus: EventBus = {
+        publish: vi.fn((type: string, payload: unknown) => {
+          missionPublishedEvents.push({ type, payload });
+        }),
+        on: vi.fn(),
+        off: vi.fn(),
+        once: vi.fn(),
+      } as unknown as EventBus;
+
+      missionDispatcher.setEventPublisher(mockMissionEventBus);
+
+      const missionTransforms: TransformDefinition[] = [
+        {
+          id: 'transform:mission' as any,
+          name: { default: 'Mission', variants: {} },
+          description: { default: 'Test mission', variants: {} },
+          mode: 'mission',
+          inputs: [],
+          outputs: [],
+          trigger: { kind: 'manual' },
+          tags: [],
+          entityRequirements: [
+            {
+              entityId: 'entity.scout' as any,
+              count: { kind: 'constant', value: 1 },
+              returnOnComplete: true,
+            },
+          ],
+          successRate: { baseRate: { kind: 'constant', value: 1 }, usePRD: false },
+          outcomes: {
+            success: { outputs: [], entityExperience: { kind: 'constant', value: 0 } },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              decision: {
+                prompt: { default: 'Pick', variants: {} },
+                timeout: { kind: 'constant', value: 1000 },
+                defaultOption: 'opt1',
+                options: [
+                  { id: 'opt1', label: { default: 'Option 1', variants: {} }, nextStage: null },
+                  { id: 'opt2', label: { default: 'Option 2', variants: {} }, nextStage: null },
+                ],
+              },
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      ];
+
+      const missionResourceState = createMockResourceState([
+        ['res:gold', 100],
+        ['res:gems', 0],
+      ]);
+
+      // Create entity system (required for mission transforms)
+      const entityDefinition = createEntityDefinition('entity.scout', {
+        trackInstances: true,
+        startCount: 1,
+        unlocked: true,
+      });
+      const missionEntitySystem = new EntitySystem([entityDefinition], {
+        nextInt: () => 1,
+      });
+
+      const missionTransformSystem = createTransformSystem({
+        transforms: missionTransforms,
+        stepDurationMs,
+        resourceState: missionResourceState,
+        entitySystem: missionEntitySystem,
+      });
+
+      registerTransformCommandHandlers({
+        dispatcher: missionDispatcher,
+        transformSystem: missionTransformSystem,
+      });
+
+      // Initialize transforms
+      missionTransformSystem.tick({
+        deltaMs: stepDurationMs,
+        step: 0,
+        events: mockMissionEventBus,
+      });
+
+      // Execute mission to create batch
+      const runResult = await missionDispatcher.executeWithResult({
+        type: RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
+        payload: { transformId: 'transform:mission' },
+        priority: CommandPriority.PLAYER,
+        timestamp: 0,
+        step: 0,
+      });
+      expect(runResult.success).toBe(true);
+
+      // Tick to reach decision point (past stage duration)
+      missionTransformSystem.tick({
+        deltaMs: stepDurationMs,
+        step: 1,
+        events: mockMissionEventBus,
+      });
+
+      // Find decision-required event to get batchId
+      const decisionRequired = missionPublishedEvents.find(
+        (e) => e.type === 'mission:decision-required',
+      );
+      expect(decisionRequired).toBeTruthy();
+      const { batchId } = decisionRequired!.payload as { batchId: string };
+
+      // Submit decision
+      const result = await missionDispatcher.executeWithResult({
+        type: RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+        payload: {
+          transformId: 'transform:mission',
+          batchId,
+          stageId: 'stage1',
+          optionId: 'opt1',
+        },
+        priority: CommandPriority.PLAYER,
+        timestamp: 0,
+        step: 1,
+      });
+
+      expect(result).toEqual({ success: true });
+      expect(
+        missionPublishedEvents.some((e) => e.type === 'mission:decision-made'),
+      ).toBe(true);
     });
   });
 });

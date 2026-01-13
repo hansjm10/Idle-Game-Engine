@@ -251,6 +251,193 @@ describe('TransformSystem', () => {
       expect(payload.success).toBe(true);
     });
 
+    it('grants checkpoint entityExperience to assigned entities', () => {
+      const { system, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [],
+              entityExperience: { kind: 'constant', value: 10 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [],
+                entityExperience: { kind: 'constant', value: 25 },
+              },
+              nextStage: 'stage2',
+            },
+            {
+              id: 'stage2',
+              duration: { kind: 'constant', value: 100 },
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      // Start mission
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      // Initial experience should be 0
+      const initialExp = entitySystem.getInstanceState(instanceId!)?.experience ?? 0;
+      expect(initialExp).toBe(0);
+
+      // Tick to complete stage 1 (checkpoint grants 25 experience)
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      // Verify checkpoint experience was granted
+      const expAfterStage1 = entitySystem.getInstanceState(instanceId!)?.experience ?? 0;
+      expect(expAfterStage1).toBe(25);
+
+      // Tick to complete stage 2 and mission (mission grants 10 more)
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+
+      // Verify total experience: 25 (checkpoint) + 10 (mission success) = 35
+      const finalExp = entitySystem.getInstanceState(instanceId!)?.experience ?? 0;
+      expect(finalExp).toBe(35);
+    });
+
+    it('uses stage outcome override instead of mission outcome on success', () => {
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+          ['res:iron', { amount: 0 }],
+        ]),
+      );
+
+      const { system } = createMissionHarness({
+        resourceState,
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 100 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              stageSuccessRate: { kind: 'constant', value: 1 },
+              stageOutcomes: {
+                success: {
+                  outputs: [
+                    { resourceId: 'res:iron' as any, amount: { kind: 'constant', value: 50 } },
+                  ],
+                  entityExperience: { kind: 'constant', value: 0 },
+                },
+              },
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      // Complete the mission
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      // Stage outcome override should grant iron, NOT gems
+      expect(getResourceAmount(resourceState, 'res:iron')).toBe(50);
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(0);
+    });
+
+    it('uses stage outcome override instead of mission outcome on failure', () => {
+      const resourceState = createMockResourceState(
+        new Map([
+          ['res:gold', { amount: 100 }],
+          ['res:gems', { amount: 0 }],
+          ['res:copper', { amount: 0 }],
+        ]),
+      );
+
+      const { system } = createMissionHarness({
+        resourceState,
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+            failure: {
+              outputs: [
+                { resourceId: 'res:copper' as any, amount: { kind: 'constant', value: 5 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              stageSuccessRate: { kind: 'constant', value: 0 }, // Guaranteed failure
+              stageOutcomes: {
+                failure: {
+                  outputs: [
+                    { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 10 } },
+                  ],
+                  entityExperience: { kind: 'constant', value: 0 },
+                },
+              },
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      // Complete the mission (stage fails)
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+
+      // Stage failure override should grant gems, NOT copper
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(10);
+      expect(getResourceAmount(resourceState, 'res:copper')).toBe(0);
+
+      // Verify mission completed with failure
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      expect((completed?.[1] as any).success).toBe(false);
+    });
+
     it('pauses on decisions and auto-selects the default option on timeout', () => {
       const { system, resourceState, entitySystem } = createMissionHarness({
         transformOverrides: {
