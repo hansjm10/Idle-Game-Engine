@@ -1,4 +1,8 @@
-import { RUNTIME_COMMAND_TYPES, type RunTransformPayload } from './command.js';
+import {
+  RUNTIME_COMMAND_TYPES,
+  type MakeMissionDecisionPayload,
+  type RunTransformPayload,
+} from './command.js';
 import type { CommandDispatcher, CommandHandler } from './command-dispatcher.js';
 import {
   validateNonEmptyString,
@@ -20,6 +24,7 @@ export interface TransformCommandHandlerOptions {
  *
  * Currently registers:
  * - RUN_TRANSFORM: Execute a manual transform by ID
+ * - MAKE_MISSION_DECISION: Submit a stage decision option
  *
  * @param options - Configuration with dispatcher and transform system
  *
@@ -39,6 +44,11 @@ export function registerTransformCommandHandlers(
   dispatcher.register<RunTransformPayload>(
     RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
     createRunTransformHandler(transformSystem),
+  );
+
+  dispatcher.register<MakeMissionDecisionPayload>(
+    RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+    createMakeMissionDecisionHandler(transformSystem),
   );
 }
 
@@ -110,6 +120,108 @@ function createRunTransformHandler(
         error: result.error ?? {
           code: 'EXECUTION_FAILED',
           message: 'Transform execution failed.',
+        },
+      };
+    }
+
+    return { success: true };
+  };
+}
+
+function createMakeMissionDecisionHandler(
+  transformSystem: ReturnType<typeof createTransformSystem>,
+): CommandHandler<MakeMissionDecisionPayload> {
+  return (payload, context) => {
+    const invalidTransformId = validateNonEmptyString(
+      payload.transformId,
+      context,
+      'MakeMissionDecisionInvalidTransformId',
+      { transformId: payload.transformId },
+      {
+        code: 'INVALID_TRANSFORM_ID',
+        message: 'Transform id must be a non-empty string.',
+      },
+    );
+    if (invalidTransformId) {
+      return invalidTransformId;
+    }
+
+    const invalidBatchId = validateNonEmptyString(
+      payload.batchId,
+      context,
+      'MakeMissionDecisionInvalidBatchId',
+      { transformId: payload.transformId, batchId: payload.batchId },
+      {
+        code: 'INVALID_BATCH_ID',
+        message: 'Batch id must be a non-empty string.',
+      },
+    );
+    if (invalidBatchId) {
+      return invalidBatchId;
+    }
+
+    const invalidStageId = validateNonEmptyString(
+      payload.stageId,
+      context,
+      'MakeMissionDecisionInvalidStageId',
+      {
+        transformId: payload.transformId,
+        batchId: payload.batchId,
+        stageId: payload.stageId,
+      },
+      {
+        code: 'INVALID_STAGE_ID',
+        message: 'Stage id must be a non-empty string.',
+      },
+    );
+    if (invalidStageId) {
+      return invalidStageId;
+    }
+
+    const invalidOptionId = validateNonEmptyString(
+      payload.optionId,
+      context,
+      'MakeMissionDecisionInvalidOptionId',
+      {
+        transformId: payload.transformId,
+        batchId: payload.batchId,
+        stageId: payload.stageId,
+        optionId: payload.optionId,
+      },
+      {
+        code: 'INVALID_OPTION_ID',
+        message: 'Option id must be a non-empty string.',
+      },
+    );
+    if (invalidOptionId) {
+      return invalidOptionId;
+    }
+
+    const result = transformSystem.makeMissionDecision(
+      payload.transformId,
+      payload.batchId,
+      payload.stageId,
+      payload.optionId,
+      context.step,
+      { events: context.events },
+    );
+
+    if (!result.success) {
+      telemetry.recordWarning('MakeMissionDecisionFailed', {
+        transformId: payload.transformId,
+        batchId: payload.batchId,
+        stageId: payload.stageId,
+        optionId: payload.optionId,
+        step: context.step,
+        priority: context.priority,
+        errorCode: result.error?.code,
+        errorMessage: result.error?.message,
+      });
+      return {
+        success: false,
+        error: result.error ?? {
+          code: 'EXECUTION_FAILED',
+          message: 'Mission decision execution failed.',
         },
       };
     }

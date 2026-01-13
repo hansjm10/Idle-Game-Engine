@@ -185,6 +185,172 @@ describe('TransformSystem', () => {
       expect(payload.success).toBe(true);
     });
 
+    it('grants checkpoint rewards across multiple stages', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 5 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [
+                  { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 2 } },
+                ],
+              },
+              nextStage: 'stage2',
+            },
+            {
+              id: 'stage2',
+              duration: { kind: 'constant', value: 100 },
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(2);
+
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(7);
+
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.assignment).toBeNull();
+      }
+
+      const stageCompletedEvents = publish.mock.calls.filter(
+        ([type]) => type === 'mission:stage-completed',
+      );
+      expect(stageCompletedEvents).toHaveLength(2);
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.success).toBe(true);
+    });
+
+    it('pauses on decisions and auto-selects the default option on timeout', () => {
+      const { system, resourceState, entitySystem } = createMissionHarness({
+        transformOverrides: {
+          successRate: {
+            baseRate: { kind: 'constant', value: 1 },
+            usePRD: false,
+          },
+          outcomes: {
+            success: {
+              outputs: [
+                { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 5 } },
+              ],
+              entityExperience: { kind: 'constant', value: 0 },
+            },
+          },
+          stages: [
+            {
+              id: 'stage1',
+              duration: { kind: 'constant', value: 100 },
+              checkpoint: {
+                outputs: [
+                  { resourceId: 'res:gems' as any, amount: { kind: 'constant', value: 1 } },
+                ],
+              },
+              decision: {
+                prompt: { default: 'Pick a path', variants: {} },
+                timeout: { kind: 'constant', value: 100 },
+                defaultOption: 'left',
+                options: [
+                  {
+                    id: 'left',
+                    label: { default: 'Left', variants: {} },
+                    nextStage: 'stage2',
+                    modifiers: {
+                      successRateBonus: { kind: 'constant', value: 1 },
+                      durationMultiplier: { kind: 'constant', value: 2 },
+                      outputMultiplier: { kind: 'constant', value: 2 },
+                    },
+                  },
+                  {
+                    id: 'right',
+                    label: { default: 'Right', variants: {} },
+                    nextStage: null,
+                  },
+                ],
+              },
+            },
+            {
+              id: 'stage2',
+              duration: { kind: 'constant', value: 100 },
+              stageSuccessRate: { kind: 'constant', value: 0 },
+              nextStage: null,
+            },
+          ],
+          initialStage: 'stage1',
+        },
+      });
+
+      const instanceId = entitySystem.getInstancesForEntity('entity.scout')[0]?.instanceId;
+      expect(instanceId).toBeTruthy();
+
+      const publish = vi.fn();
+      const events = { publish };
+
+      const result = system.executeTransform('transform:mission', 0, { events: events as any });
+      expect(result.success).toBe(true);
+
+      // Stage 1 completes at step 1 and triggers decision requirement.
+      system.tick({ deltaMs: stepDurationMs, step: 1, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(1);
+
+      const decisionRequired = publish.mock.calls.find(
+        ([type]) => type === 'mission:decision-required',
+      );
+      expect(decisionRequired).toBeTruthy();
+
+      // Auto-select default option after timeout (1 step).
+      system.tick({ deltaMs: stepDurationMs, step: 2, events: events as any });
+      const decisionMade = publish.mock.calls.find(
+        ([type]) => type === 'mission:decision-made',
+      );
+      expect(decisionMade).toBeTruthy();
+
+      // Duration multiplier delays stage 2 completion until step 4.
+      system.tick({ deltaMs: stepDurationMs, step: 3, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(1);
+
+      system.tick({ deltaMs: stepDurationMs, step: 4, events: events as any });
+      expect(getResourceAmount(resourceState, 'res:gems')).toBe(11);
+
+      if (instanceId) {
+        expect(entitySystem.getInstanceState(instanceId)?.assignment).toBeNull();
+      }
+
+      const completed = publish.mock.calls.find(([type]) => type === 'mission:completed');
+      expect(completed).toBeTruthy();
+      const payload = completed?.[1] as any;
+      expect(payload.success).toBe(true);
+    });
+
     it('serializes mission batches with entity metadata and snapshots next batch time', () => {
       const resourceState = createMockResourceState(
         new Map([

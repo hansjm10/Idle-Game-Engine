@@ -3,6 +3,7 @@ import { CommandDispatcher } from './command-dispatcher.js';
 import {
   CommandPriority,
   RUNTIME_COMMAND_TYPES,
+  type MakeMissionDecisionPayload,
   type RunTransformPayload,
 } from './command.js';
 import { registerTransformCommandHandlers } from './transform-command-handlers.js';
@@ -211,6 +212,91 @@ describe('registerTransformCommandHandlers', () => {
       });
       expect(resourceState.getAmount(0)).toBe(100);
       expect(resourceState.getAmount(1)).toBe(0);
+    });
+  });
+
+  describe('MAKE_MISSION_DECISION command', () => {
+    it('should register handler for MAKE_MISSION_DECISION', () => {
+      const handler = dispatcher.getHandler(RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION);
+      expect(handler).toBeDefined();
+    });
+
+    it('should handle invalid batch id payloads', () => {
+      const payload = {
+        transformId: 'transform:test',
+        batchId: '',
+        stageId: 'stage',
+        optionId: 'option',
+      } as unknown as MakeMissionDecisionPayload;
+
+      const result = dispatcher.executeWithResult({
+        type: RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+        payload,
+        priority: CommandPriority.PLAYER,
+        timestamp: 0,
+        step: 0,
+      });
+
+      expect(result).toEqual({
+        success: false,
+        error: {
+          code: 'INVALID_BATCH_ID',
+          message: 'Batch id must be a non-empty string.',
+        },
+      });
+    });
+
+    it('should return system error when transform is not a multi-stage mission', async () => {
+      const payload: MakeMissionDecisionPayload = {
+        transformId: 'transform:test',
+        batchId: '0',
+        stageId: 'stage',
+        optionId: 'option',
+      };
+
+      const result = await dispatcher.executeWithResult({
+        type: RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+        payload,
+        priority: CommandPriority.PLAYER,
+        timestamp: 0,
+        step: 0,
+      });
+
+      expect(result.success).toBe(false);
+      if (result.success) {
+        throw new Error('Expected command to fail.');
+      }
+
+      expect(result.error.code).toBe('INVALID_TRANSFORM_MODE');
+    });
+
+    it('should reject commands from unauthorized priority tiers', () => {
+      const payload: MakeMissionDecisionPayload = {
+        transformId: 'transform:test',
+        batchId: '0',
+        stageId: 'stage',
+        optionId: 'option',
+      };
+
+      const result = dispatcher.executeWithResult({
+        type: RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+        payload,
+        priority: CommandPriority.AUTOMATION,
+        timestamp: 0,
+        step: 0,
+      });
+
+      expect(result).toEqual({
+        success: false,
+        error: {
+          code: 'COMMAND_UNAUTHORIZED',
+          message: 'Command priority is not authorized for this command.',
+          details: {
+            type: RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+            priority: CommandPriority.AUTOMATION,
+          },
+        },
+      });
     });
   });
 });
