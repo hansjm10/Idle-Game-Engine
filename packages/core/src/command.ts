@@ -114,6 +114,7 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   OFFLINE_CATCHUP: 'OFFLINE_CATCHUP',
   APPLY_MIGRATION: 'APPLY_MIGRATION',
   RUN_TRANSFORM: 'RUN_TRANSFORM',
+  MAKE_MISSION_DECISION: 'MAKE_MISSION_DECISION',
   ADD_ENTITY: 'ADD_ENTITY',
   REMOVE_ENTITY: 'REMOVE_ENTITY',
   CREATE_ENTITY_INSTANCE: 'CREATE_ENTITY_INSTANCE',
@@ -208,6 +209,16 @@ export interface RunTransformPayload {
 }
 
 /**
+ * Select a decision option for a pending mission stage decision.
+ */
+export interface MakeMissionDecisionPayload {
+  readonly transformId: string;
+  readonly batchId: string;
+  readonly stageId: string;
+  readonly optionId: string;
+}
+
+/**
  * Add entities by count (for non-instance tracked entities).
  */
 export interface AddEntityPayload {
@@ -275,6 +286,7 @@ export interface RuntimeCommandPayloads {
   readonly OFFLINE_CATCHUP: OfflineCatchupPayload;
   readonly APPLY_MIGRATION: ApplyMigrationPayload;
   readonly RUN_TRANSFORM: RunTransformPayload;
+  readonly MAKE_MISSION_DECISION: MakeMissionDecisionPayload;
   readonly ADD_ENTITY: AddEntityPayload;
   readonly REMOVE_ENTITY: RemoveEntityPayload;
   readonly CREATE_ENTITY_INSTANCE: CreateEntityInstancePayload;
@@ -377,6 +389,16 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     ]),
     rationale:
       'Manual transforms are player-initiated or system-driven; automation trigger path is implemented separately.',
+    unauthorizedEvent: 'UnauthorizedTransformCommand',
+  },
+  MAKE_MISSION_DECISION: {
+    type: RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION,
+    allowedPriorities: Object.freeze([
+      CommandPriority.SYSTEM,
+      CommandPriority.PLAYER,
+    ]),
+    rationale:
+      'Mission decisions are player-initiated or system-driven via timeout defaults; automation may not submit them.',
     unauthorizedEvent: 'UnauthorizedTransformCommand',
   },
   ADD_ENTITY: {

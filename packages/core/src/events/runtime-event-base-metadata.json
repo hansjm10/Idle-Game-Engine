@@ -23,5 +23,20 @@
     "type": "mission:completed",
     "version": 1,
     "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "mission:stage-completed",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "mission:decision-required",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
+  },
+  {
+    "type": "mission:decision-made",
+    "version": 1,
+    "packSlug": "@idle-engine/core"
   }
 ]

@@ -91,7 +91,7 @@ type MissionPreparedOutcome = Readonly<{
   readonly entityExperience: number;
 }>;
 
-type MissionBatchPlan = Readonly<{
+type MissionBatchPlanBase = Readonly<{
   readonly baseRate: number;
   readonly usePRD: boolean;
   readonly criticalChance?: number;
@@ -99,6 +99,36 @@ type MissionBatchPlan = Readonly<{
   readonly failure: MissionPreparedOutcome;
   readonly critical?: MissionPreparedOutcome;
 }>;
+
+type MultiStageMissionDecisionState = Readonly<{
+  readonly stageId: string;
+  readonly expiresAtStep: number;
+}>;
+
+type MultiStageMissionAccumulatedModifiers = Readonly<{
+  readonly successRateBonus: number;
+  readonly durationMultiplier: number;
+  readonly outputMultiplier: number;
+}>;
+
+type MultiStageMissionBatchPlan = MissionBatchPlanBase &
+  Readonly<{
+    readonly currentStageId: string;
+    readonly currentStageStartStep: number;
+    readonly currentStageSuccessRate: number;
+    readonly currentStageCheckpoint?: MissionPreparedOutcome;
+    readonly checkpointRewardsGranted: readonly string[];
+    readonly pendingDecision?: MultiStageMissionDecisionState;
+    readonly accumulatedModifiers: MultiStageMissionAccumulatedModifiers;
+    readonly returnOnCompleteEntityInstanceIds: readonly string[];
+  }>;
+
+type MissionBatchPlan = MissionBatchPlanBase | MultiStageMissionBatchPlan;
+
+const isMultiStageMissionPlan = (
+  mission: MissionBatchPlan,
+): mission is MultiStageMissionBatchPlan =>
+  typeof (mission as Partial<MultiStageMissionBatchPlan>).currentStageId === 'string';
 
 export interface TransformBatchState {
   readonly completeAtStep: number;
@@ -205,38 +235,151 @@ function parseMissionPreparedOutcome(value: unknown): MissionPreparedOutcome {
   };
 }
 
-function parseMissionPlan(value: unknown): MissionBatchPlan | undefined {
-  if (!value || typeof value !== 'object') {
-    return undefined;
+function parseNonEmptyStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  const record = value as Record<string, unknown>;
-  const baseRateValue = record.baseRate;
-  const baseRate =
-    typeof baseRateValue === 'number' && Number.isFinite(baseRateValue)
-      ? clampProbability(baseRateValue)
-      : 0;
+  return value.filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0,
+  );
+}
 
-  const criticalChanceValue = record.criticalChance;
-  const criticalChance =
-    typeof criticalChanceValue === 'number' && Number.isFinite(criticalChanceValue)
-      ? clampProbability(criticalChanceValue)
-      : undefined;
+function parseProbabilityOrFallback(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? clampProbability(value)
+    : fallback;
+}
 
-  const criticalValue = record.critical;
+function parseOptionalProbability(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? clampProbability(value)
+    : undefined;
+}
+
+function parseMissionPlanBase(record: Record<string, unknown>): MissionBatchPlanBase {
   const critical =
-    criticalValue && typeof criticalValue === 'object'
-      ? parseMissionPreparedOutcome(criticalValue)
+    record.critical && typeof record.critical === 'object'
+      ? parseMissionPreparedOutcome(record.critical)
       : undefined;
+  const criticalChance = parseOptionalProbability(record.criticalChance);
 
   return {
-    baseRate,
+    baseRate: parseProbabilityOrFallback(record.baseRate, 0),
     usePRD: Boolean(record.usePRD),
     ...(criticalChance === undefined ? {} : { criticalChance }),
     success: parseMissionPreparedOutcome(record.success),
     failure: parseMissionPreparedOutcome(record.failure),
     ...(critical ? { critical } : {}),
   };
+}
+
+function parsePendingDecisionState(
+  value: unknown,
+  rebaseDelta: number,
+): MultiStageMissionDecisionState | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const stageId = parseNonEmptyString(record.stageId);
+  if (!stageId) {
+    return undefined;
+  }
+
+  const expiresAtRaw = normalizeNonNegativeInt(record.expiresAtStep);
+  return {
+    stageId,
+    expiresAtStep: rebaseStepValue(expiresAtRaw, rebaseDelta),
+  };
+}
+
+function parseAccumulatedModifiers(
+  value: unknown,
+): MultiStageMissionAccumulatedModifiers {
+  if (!value || typeof value !== 'object') {
+    return {
+      successRateBonus: 0,
+      durationMultiplier: 1,
+      outputMultiplier: 1,
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+  const successRateBonusValue = record.successRateBonus;
+  const durationMultiplierValue = record.durationMultiplier;
+  const outputMultiplierValue = record.outputMultiplier;
+
+  return {
+    successRateBonus:
+      typeof successRateBonusValue === 'number' && Number.isFinite(successRateBonusValue)
+        ? successRateBonusValue
+        : 0,
+    durationMultiplier:
+      typeof durationMultiplierValue === 'number' && Number.isFinite(durationMultiplierValue)
+        ? Math.max(0, durationMultiplierValue)
+        : 1,
+    outputMultiplier:
+      typeof outputMultiplierValue === 'number' && Number.isFinite(outputMultiplierValue)
+        ? Math.max(0, outputMultiplierValue)
+        : 1,
+  };
+}
+
+function parseMultiStageMissionPlan(
+  record: Record<string, unknown>,
+  basePlan: MissionBatchPlanBase,
+  currentStageId: string,
+  rebaseDelta: number,
+): MultiStageMissionBatchPlan {
+  const currentStageStartRaw = normalizeNonNegativeInt(record.currentStageStartStep);
+  const currentStageStartStep = rebaseStepValue(currentStageStartRaw, rebaseDelta);
+
+  const currentStageSuccessRate = parseProbabilityOrFallback(
+    record.currentStageSuccessRate,
+    basePlan.baseRate,
+  );
+
+  const currentStageCheckpoint =
+    record.currentStageCheckpoint && typeof record.currentStageCheckpoint === 'object'
+      ? parseMissionPreparedOutcome(record.currentStageCheckpoint)
+      : undefined;
+
+  const checkpointRewardsGranted = parseNonEmptyStringArray(record.checkpointRewardsGranted);
+  const pendingDecision = parsePendingDecisionState(record.pendingDecision, rebaseDelta);
+  const returnOnCompleteEntityInstanceIds = parseNonEmptyStringArray(
+    record.returnOnCompleteEntityInstanceIds,
+  );
+
+  return {
+    ...basePlan,
+    currentStageId,
+    currentStageStartStep,
+    currentStageSuccessRate,
+    ...(currentStageCheckpoint ? { currentStageCheckpoint } : {}),
+    checkpointRewardsGranted,
+    ...(pendingDecision ? { pendingDecision } : {}),
+    accumulatedModifiers: parseAccumulatedModifiers(record.accumulatedModifiers),
+    returnOnCompleteEntityInstanceIds,
+  };
+}
+
+function parseMissionPlan(
+  value: unknown,
+  rebaseDelta: number,
+): MissionBatchPlan | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const basePlan = parseMissionPlanBase(record);
+  const currentStageId = parseNonEmptyString(record.currentStageId);
+
+  return currentStageId
+    ? parseMultiStageMissionPlan(record, basePlan, currentStageId, rebaseDelta)
+    : basePlan;
 }
 
 function rebaseStepValue(
@@ -266,7 +409,7 @@ function parseTransformBatchEntry(
   const batchId = parseNonEmptyString(record.batchId);
   const entityInstanceIds = parseEntityInstanceIds(record.entityInstanceIds);
   const entityExperience = parseOptionalEntityExperience(record.entityExperience);
-  const mission = parseMissionPlan(record.mission);
+  const mission = parseMissionPlan(record.mission, rebaseDelta);
 
   return {
     completeAtStep,
@@ -358,6 +501,17 @@ type SerializedMissionPreparedOutcome = Readonly<{
   readonly entityExperience: number;
 }>;
 
+type SerializedMissionDecisionState = Readonly<{
+  readonly stageId: string;
+  readonly expiresAtStep: number;
+}>;
+
+type SerializedMultiStageMissionAccumulatedModifiers = Readonly<{
+  readonly successRateBonus: number;
+  readonly durationMultiplier: number;
+  readonly outputMultiplier: number;
+}>;
+
 type SerializedMissionBatchPlan = Readonly<{
   readonly baseRate: number;
   readonly usePRD: boolean;
@@ -365,6 +519,14 @@ type SerializedMissionBatchPlan = Readonly<{
   readonly success: SerializedMissionPreparedOutcome;
   readonly failure: SerializedMissionPreparedOutcome;
   readonly critical?: SerializedMissionPreparedOutcome;
+  readonly currentStageId?: string;
+  readonly currentStageStartStep?: number;
+  readonly currentStageSuccessRate?: number;
+  readonly currentStageCheckpoint?: SerializedMissionPreparedOutcome;
+  readonly checkpointRewardsGranted?: readonly string[];
+  readonly pendingDecision?: SerializedMissionDecisionState;
+  readonly accumulatedModifiers?: SerializedMultiStageMissionAccumulatedModifiers;
+  readonly returnOnCompleteEntityInstanceIds?: readonly string[];
 }>;
 
 const serializeMissionPreparedOutcome = (
@@ -393,6 +555,41 @@ const serializeMissionPlan = (plan: MissionBatchPlan): SerializedMissionBatchPla
   success: serializeMissionPreparedOutcome(plan.success),
   failure: serializeMissionPreparedOutcome(plan.failure),
   ...(plan.critical ? { critical: serializeMissionPreparedOutcome(plan.critical) } : {}),
+  ...(isMultiStageMissionPlan(plan)
+    ? {
+        currentStageId: plan.currentStageId,
+        currentStageStartStep: normalizeNonNegativeInt(plan.currentStageStartStep),
+        currentStageSuccessRate: clampProbability(plan.currentStageSuccessRate),
+        ...(plan.currentStageCheckpoint
+          ? { currentStageCheckpoint: serializeMissionPreparedOutcome(plan.currentStageCheckpoint) }
+          : {}),
+        checkpointRewardsGranted: plan.checkpointRewardsGranted.filter(
+          (id) => typeof id === 'string' && id.trim().length > 0,
+        ),
+        ...(plan.pendingDecision
+          ? {
+              pendingDecision: {
+                stageId: plan.pendingDecision.stageId,
+                expiresAtStep: normalizeNonNegativeInt(plan.pendingDecision.expiresAtStep),
+              },
+            }
+          : {}),
+        accumulatedModifiers: {
+          successRateBonus: Number.isFinite(plan.accumulatedModifiers.successRateBonus)
+            ? plan.accumulatedModifiers.successRateBonus
+            : 0,
+          durationMultiplier: Number.isFinite(plan.accumulatedModifiers.durationMultiplier)
+            ? Math.max(0, plan.accumulatedModifiers.durationMultiplier)
+            : 1,
+          outputMultiplier: Number.isFinite(plan.accumulatedModifiers.outputMultiplier)
+            ? Math.max(0, plan.accumulatedModifiers.outputMultiplier)
+            : 1,
+        },
+        returnOnCompleteEntityInstanceIds: plan.returnOnCompleteEntityInstanceIds.filter(
+          (id) => typeof id === 'string' && id.trim().length > 0,
+        ),
+      }
+    : {}),
 });
 
 export function serializeTransformState(
@@ -768,6 +965,8 @@ type MissionAssignmentSuccess = Extract<MissionAssignmentResult, { readonly ok: 
 
 type MissionOutcome = NonNullable<TransformDefinition['outcomes']>['success'];
 
+type MissionStageDefinition = NonNullable<TransformDefinition['stages']>[number];
+
 const selectMissionEntities = (
   transform: TransformDefinition,
   entitySystem: EntitySystem,
@@ -929,6 +1128,71 @@ const evaluateMissionOutcomeExperience = (
     return null;
   }
   return Math.max(0, value);
+};
+
+type MissionPreparedOutcomeResult =
+  | { readonly ok: true; readonly prepared: MissionPreparedOutcome }
+  | { readonly ok: false; readonly result: TransformExecutionResult };
+
+const isPreparedMissionOutcomeResult = (
+  outcome: MissionPreparedOutcomeResult | undefined,
+): outcome is Extract<MissionPreparedOutcomeResult, { readonly ok: true }> =>
+  outcome?.ok === true;
+
+const prepareMissionOutcomePlan = (
+  transform: TransformDefinition,
+  outcome: MissionOutcome | undefined,
+  formulaContext: FormulaEvaluationContext,
+  resourceState: TransformResourceState,
+): MissionPreparedOutcomeResult => {
+  const outputs = evaluateMissionOutcomeOutputs(transform, outcome, formulaContext);
+  if (outputs === null) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        error: {
+          code: 'INVALID_OUTPUT_FORMULA',
+          message: 'Transform output formula evaluated to non-finite value.',
+          details: { transformId: transform.id },
+        },
+      },
+    };
+  }
+
+  const experience = evaluateMissionOutcomeExperience(transform, outcome, formulaContext);
+  if (experience === null) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        error: {
+          code: 'INVALID_OUTPUT_FORMULA',
+          message: 'Mission experience formula evaluated to non-finite value.',
+          details: { transformId: transform.id },
+        },
+      },
+    };
+  }
+
+  const preparedOutputs = prepareOutputs(outputs, resourceState, transform.id);
+  if (!preparedOutputs.ok) {
+    return {
+      ok: false,
+      result: { success: false, error: preparedOutputs.error },
+    };
+  }
+
+  return {
+    ok: true,
+    prepared: {
+      outputs: preparedOutputs.outputs.map((output) => ({
+        resourceId: output.resourceId,
+        amount: output.amount,
+      })),
+      entityExperience: experience,
+    },
+  };
 };
 
 /**
@@ -1192,6 +1456,37 @@ function grantEntityExperience(
   });
 }
 
+function returnMissionEntities(
+  entityInstanceIds: readonly string[],
+  transformId: string,
+  step: number,
+  entitySystem?: EntitySystem,
+): void {
+  if (!entityInstanceIds || entityInstanceIds.length === 0) {
+    return;
+  }
+
+  if (!entitySystem) {
+    telemetry.recordWarning('MissionOutcomeReturnMissingEntitySystem', {
+      transformId,
+    });
+    return;
+  }
+
+  for (const instanceId of entityInstanceIds) {
+    try {
+      entitySystem.returnFromMission(instanceId);
+    } catch (error) {
+      telemetry.recordWarning('MissionOutcomeReturnFailed', {
+        transformId,
+        instanceId,
+        step,
+        error: String(error),
+      });
+    }
+  }
+}
+
 interface MissionOutcomeResult {
   readonly outcomeKind: MissionOutcomeKind;
   readonly critical: boolean;
@@ -1226,6 +1521,28 @@ function determineMissionOutcome(
   return { outcomeKind: 'success', critical: false, success: true, outcome: mission.success };
 }
 
+function scaleMissionPreparedOutcome(
+  outcome: MissionPreparedOutcome,
+  multiplier: number,
+): MissionPreparedOutcome {
+  const safeMultiplier =
+    typeof multiplier === 'number' && Number.isFinite(multiplier) ? Math.max(0, multiplier) : 0;
+
+  return {
+    outputs: outcome.outputs.map((output) => ({
+      resourceId: output.resourceId,
+      amount:
+        typeof output.amount === 'number' && Number.isFinite(output.amount)
+          ? Math.max(0, output.amount * safeMultiplier)
+          : 0,
+    })),
+    entityExperience:
+      typeof outcome.entityExperience === 'number' && Number.isFinite(outcome.entityExperience)
+        ? Math.max(0, outcome.entityExperience * safeMultiplier)
+        : 0,
+  };
+}
+
 function publishMissionEvent(
   publisher: EventPublisher | undefined,
   type: 'mission:started',
@@ -1240,8 +1557,37 @@ function publishMissionEvent(
 ): void;
 function publishMissionEvent(
   publisher: EventPublisher | undefined,
-  type: 'mission:started' | 'mission:completed',
-  payload: RuntimeEventPayload<'mission:started' | 'mission:completed'>,
+  type: 'mission:stage-completed',
+  payload: RuntimeEventPayload<'mission:stage-completed'>,
+  transformId: string,
+): void;
+function publishMissionEvent(
+  publisher: EventPublisher | undefined,
+  type: 'mission:decision-required',
+  payload: RuntimeEventPayload<'mission:decision-required'>,
+  transformId: string,
+): void;
+function publishMissionEvent(
+  publisher: EventPublisher | undefined,
+  type: 'mission:decision-made',
+  payload: RuntimeEventPayload<'mission:decision-made'>,
+  transformId: string,
+): void;
+function publishMissionEvent(
+  publisher: EventPublisher | undefined,
+  type:
+    | 'mission:started'
+    | 'mission:completed'
+    | 'mission:stage-completed'
+    | 'mission:decision-required'
+    | 'mission:decision-made',
+  payload: RuntimeEventPayload<
+    | 'mission:started'
+    | 'mission:completed'
+    | 'mission:stage-completed'
+    | 'mission:decision-required'
+    | 'mission:decision-made'
+  >,
   transformId: string,
 ): void {
   if (!publisher) {
@@ -1301,6 +1647,73 @@ function completeMissionBatch(
   );
 }
 
+type CompleteMultiStageMissionParams = Readonly<{
+  readonly entry: TransformBatchQueueEntry;
+  readonly mission: MultiStageMissionBatchPlan;
+  readonly transformId: string;
+  readonly resourceState: TransformResourceState;
+  readonly step: number;
+  readonly outcomeKind: MissionOutcomeKind;
+  readonly outcome: MissionPreparedOutcome;
+  readonly entitySystem?: EntitySystem;
+  readonly events?: EventPublisher;
+}>;
+
+function completeMultiStageMission(
+  params: CompleteMultiStageMissionParams,
+): void {
+  const {
+    entry,
+    mission,
+    transformId,
+    resourceState,
+    step,
+    outcomeKind,
+    outcome,
+    entitySystem,
+    events,
+  } = params;
+  const scaledOutcome = scaleMissionPreparedOutcome(
+    outcome,
+    mission.accumulatedModifiers.outputMultiplier,
+  );
+
+  applyBatchOutputs(scaledOutcome.outputs, resourceState, transformId);
+  grantEntityExperience(
+    scaledOutcome.entityExperience,
+    entry.entityInstanceIds,
+    step,
+    transformId,
+    entitySystem,
+  );
+  returnMissionEntities(
+    mission.returnOnCompleteEntityInstanceIds,
+    transformId,
+    step,
+    entitySystem,
+  );
+
+  publishMissionEvent(
+    events,
+    'mission:completed',
+    {
+      transformId,
+      batchId: entry.batchId ?? `${entry.sequence}`,
+      completedAtStep: step,
+      outcomeKind,
+      success: outcomeKind !== 'failure',
+      critical: outcomeKind === 'critical',
+      outputs: scaledOutcome.outputs.map((output) => ({
+        resourceId: output.resourceId,
+        amount: output.amount,
+      })),
+      entityExperience: scaledOutcome.entityExperience,
+      entityInstanceIds: entry.entityInstanceIds ?? [],
+    },
+    transformId,
+  );
+}
+
 function completeStandardBatch(
   entry: TransformBatchQueueEntry,
   transformId: string,
@@ -1318,44 +1731,773 @@ function completeStandardBatch(
   );
 }
 
-function deliverDueBatches(
-  transform: TransformDefinition,
-  batches: TransformBatchQueueEntry[],
-  resourceState: TransformResourceState,
-  step: number,
-  entitySystem?: EntitySystem,
-  prdRegistry?: PRDRegistry,
-  events?: EventPublisher,
+type MissionDecisionDefinition = NonNullable<MissionStageDefinition['decision']>;
+type MissionDecisionOptionDefinition = MissionDecisionDefinition['options'][number];
+
+type DeliverDueBatchesContext = Readonly<{
+  readonly transform: TransformDefinition;
+  readonly batches: TransformBatchQueueEntry[];
+  readonly resourceState: TransformResourceState;
+  readonly step: number;
+  readonly stepDurationMs: number;
+  readonly formulaContext: FormulaEvaluationContext;
+  readonly conditionContext?: ConditionContext;
+  readonly entitySystem?: EntitySystem;
+  readonly prdRegistry?: PRDRegistry;
+  readonly events?: EventPublisher;
+}>;
+
+type MissionDecisionOptionView = Readonly<{
+  readonly id: string;
+  readonly label: string;
+  readonly available: boolean;
+}>;
+
+type ScheduleMultiStageMissionStageParams = Readonly<{
+  readonly transform: TransformDefinition;
+  readonly mission: MultiStageMissionBatchPlan;
+  readonly stageId: string;
+  readonly step: number;
+  readonly stepDurationMs: number;
+  readonly formulaContext: FormulaEvaluationContext;
+  readonly resourceState: TransformResourceState;
+}>;
+
+type ScheduleMultiStageMissionStageResult =
+  | {
+      readonly ok: true;
+      readonly mission: MultiStageMissionBatchPlan;
+      readonly completeAtStep: number;
+    }
+  | { readonly ok: false; readonly result: TransformExecutionResult };
+
+function evaluateOptionalFormula(
+  formula: NumericFormulaModel | undefined,
+  formulaContext: FormulaEvaluationContext,
+): number | undefined {
+  if (!formula) {
+    return undefined;
+  }
+
+  const value = evaluateNumericFormula(formula, formulaContext);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function applyMissionDecisionModifiers(
+  current: MultiStageMissionAccumulatedModifiers,
+  modifiers: MissionDecisionOptionDefinition['modifiers'],
+  formulaContext: FormulaEvaluationContext,
+): MultiStageMissionAccumulatedModifiers {
+  if (!modifiers) {
+    return current;
+  }
+
+  const successRateBonusValue = evaluateOptionalFormula(
+    modifiers.successRateBonus,
+    formulaContext,
+  );
+  const durationMultiplierValue = evaluateOptionalFormula(
+    modifiers.durationMultiplier,
+    formulaContext,
+  );
+  const outputMultiplierValue = evaluateOptionalFormula(
+    modifiers.outputMultiplier,
+    formulaContext,
+  );
+
+  const currentSuccessRateBonus = Number.isFinite(current.successRateBonus)
+    ? current.successRateBonus
+    : 0;
+  const currentDurationMultiplier = Number.isFinite(current.durationMultiplier)
+    ? current.durationMultiplier
+    : 1;
+  const currentOutputMultiplier = Number.isFinite(current.outputMultiplier)
+    ? current.outputMultiplier
+    : 1;
+
+  return {
+    successRateBonus:
+      currentSuccessRateBonus +
+      (typeof successRateBonusValue === 'number' ? successRateBonusValue : 0),
+    durationMultiplier:
+      currentDurationMultiplier *
+      (typeof durationMultiplierValue === 'number'
+        ? Math.max(0, durationMultiplierValue)
+        : 1),
+    outputMultiplier:
+      currentOutputMultiplier *
+      (typeof outputMultiplierValue === 'number'
+        ? Math.max(0, outputMultiplierValue)
+        : 1),
+  };
+}
+
+function calculateDurationStepsFromMs(
+  durationMs: number,
+  stepDurationMs: number,
+): number {
+  if (stepDurationMs <= 0 || !Number.isFinite(stepDurationMs)) {
+    return 0;
+  }
+  return Math.ceil(Math.max(0, durationMs) / stepDurationMs);
+}
+
+function scheduleMultiStageMissionStage(
+  params: ScheduleMultiStageMissionStageParams,
+): ScheduleMultiStageMissionStageResult {
+  const {
+    transform,
+    mission,
+    stageId,
+    step,
+    stepDurationMs,
+    formulaContext,
+    resourceState,
+  } = params;
+  const transformId = transform.id;
+
+  const stage = transform.stages?.find((candidate) => candidate.id === stageId);
+  if (!stage) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        error: {
+          code: 'INVALID_STAGE',
+          message: 'Mission stage definition missing for multi-stage mission.',
+          details: { transformId, stageId },
+        },
+      },
+    };
+  }
+
+  const durationMsRaw = evaluateNumericFormula(stage.duration, formulaContext);
+  if (!Number.isFinite(durationMsRaw)) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        error: {
+          code: 'INVALID_DURATION_FORMULA',
+          message: 'Mission stage duration formula evaluated to non-finite value.',
+          details: { transformId, stageId: stage.id },
+        },
+      },
+    };
+  }
+
+  const durationMultiplier = mission.accumulatedModifiers.durationMultiplier;
+  const durationMsScaled =
+    Number.isFinite(durationMultiplier) && durationMultiplier >= 0
+      ? durationMsRaw * durationMultiplier
+      : durationMsRaw;
+
+  if (!Number.isFinite(durationMsScaled)) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        error: {
+          code: 'INVALID_DURATION_FORMULA',
+          message: 'Mission stage duration multiplier evaluated to non-finite value.',
+          details: { transformId, stageId: stage.id },
+        },
+      },
+    };
+  }
+
+  const durationSteps = calculateDurationStepsFromMs(durationMsScaled, stepDurationMs);
+
+  const successRateRaw = stage.stageSuccessRate
+    ? evaluateNumericFormula(stage.stageSuccessRate, formulaContext)
+    : mission.baseRate;
+  if (!Number.isFinite(successRateRaw)) {
+    return {
+      ok: false,
+      result: {
+        success: false,
+        error: {
+          code: 'INVALID_SUCCESS_RATE',
+          message: 'Mission stage success rate evaluated to non-finite value.',
+          details: { transformId, stageId: stage.id },
+        },
+      },
+    };
+  }
+
+  const successRateBonus = mission.accumulatedModifiers.successRateBonus;
+  const currentStageSuccessRate = clampProbability(
+    clampProbability(successRateRaw) +
+      (Number.isFinite(successRateBonus) ? successRateBonus : 0),
+  );
+
+  let checkpointPrepared: MissionPreparedOutcome | undefined;
+  if (stage.checkpoint) {
+    const prepared = prepareMissionOutcomePlan(
+      transform,
+      stage.checkpoint as unknown as MissionOutcome,
+      formulaContext,
+      resourceState,
+    );
+    if (!prepared.ok) {
+      return { ok: false, result: prepared.result };
+    }
+    checkpointPrepared = scaleMissionPreparedOutcome(
+      prepared.prepared,
+      mission.accumulatedModifiers.outputMultiplier,
+    );
+  }
+
+  const updatedMission: MultiStageMissionBatchPlan = {
+    ...mission,
+    currentStageId: stage.id,
+    currentStageStartStep: step,
+    currentStageSuccessRate,
+    currentStageCheckpoint: checkpointPrepared,
+    pendingDecision: undefined,
+  };
+
+  return {
+    ok: true,
+    mission: updatedMission,
+    completeAtStep: step + durationSteps,
+  };
+}
+
+function rollMissionStageSuccess(
+  mission: MultiStageMissionBatchPlan,
+  transformId: string,
+  prdRegistry: PRDRegistry | undefined,
+): boolean {
+  const successRate = clampProbability(mission.currentStageSuccessRate);
+  if (mission.usePRD) {
+    const registry = prdRegistry ?? new PRDRegistry(seededRandom);
+    return registry.getOrCreate(transformId, successRate).roll();
+  }
+  return seededRandom() < successRate;
+}
+
+function buildDecisionOptionViews(
+  decision: MissionDecisionDefinition,
+  conditionContext: ConditionContext | undefined,
+): MissionDecisionOptionView[] {
+  return decision.options.map((option) => ({
+    id: option.id,
+    label: option.label.default,
+    available: option.condition
+      ? Boolean(conditionContext && evaluateCondition(option.condition, conditionContext))
+      : true,
+  }));
+}
+
+function selectAvailableDecisionOption(
+  decision: MissionDecisionDefinition,
+  optionViews: readonly MissionDecisionOptionView[],
+): MissionDecisionOptionDefinition | undefined {
+  const availableOptionIds = new Set(
+    optionViews.filter((option) => option.available).map((option) => option.id),
+  );
+  const defaultOption = decision.options.find(
+    (option) => option.id === decision.defaultOption,
+  );
+
+  if (defaultOption && availableOptionIds.has(defaultOption.id)) {
+    return defaultOption;
+  }
+
+  return decision.options.find((option) => availableOptionIds.has(option.id));
+}
+
+function calculateDecisionTimeoutSteps(
+  timeoutMs: number,
+  stepDurationMs: number,
+): number {
+  if (!Number.isFinite(timeoutMs) || timeoutMs === Number.POSITIVE_INFINITY) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return calculateDurationStepsFromMs(timeoutMs, stepDurationMs);
+}
+
+function completeMultiStageMissionFromDueBatch(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  outcomeKind: MissionOutcomeKind,
+  outcome: MissionPreparedOutcome,
 ): void {
+  completeMultiStageMission({
+    entry,
+    mission,
+    transformId: context.transform.id,
+    resourceState: context.resourceState,
+    step: context.step,
+    outcomeKind,
+    outcome,
+    entitySystem: context.entitySystem,
+    events: context.events,
+  });
+}
+
+function completeMultiStageMissionFailure(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+): void {
+  completeMultiStageMissionFromDueBatch(
+    context,
+    entry,
+    mission,
+    'failure',
+    mission.failure,
+  );
+}
+
+function rescheduleMissionEntry(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  nextStageId: string,
+): boolean {
+  const nextStageResult = scheduleMultiStageMissionStage({
+    transform: context.transform,
+    mission,
+    stageId: nextStageId,
+    step: context.step,
+    stepDurationMs: context.stepDurationMs,
+    formulaContext: context.formulaContext,
+    resourceState: context.resourceState,
+  });
+
+  if (!nextStageResult.ok) {
+    completeMultiStageMissionFailure(context, entry, mission);
+    return false;
+  }
+
+  insertBatch(context.batches, {
+    ...entry,
+    completeAtStep: nextStageResult.completeAtStep,
+    mission: nextStageResult.mission,
+  });
+  return true;
+}
+
+function resolveMissionCompletionOutcomeKind(
+  mission: MultiStageMissionBatchPlan,
+): { readonly outcomeKind: MissionOutcomeKind; readonly baseOutcome: MissionPreparedOutcome } {
+  const criticalChance = mission.criticalChance;
+  const criticalOutcome =
+    mission.critical &&
+    criticalChance !== undefined &&
+    seededRandom() < clampProbability(criticalChance)
+      ? mission.critical
+      : undefined;
+
+  return {
+    outcomeKind: criticalOutcome ? 'critical' : 'success',
+    baseOutcome: criticalOutcome ?? mission.success,
+  };
+}
+
+function maybeResolveStageSuccessOverride(
+  context: DeliverDueBatchesContext,
+  stage: MissionStageDefinition,
+  outcomeKind: MissionOutcomeKind,
+): MissionPreparedOutcomeResult | undefined {
+  if (outcomeKind !== 'success' || !stage.stageOutcomes?.success) {
+    return undefined;
+  }
+
+  return prepareMissionOutcomePlan(
+    context.transform,
+    stage.stageOutcomes.success as unknown as MissionOutcome,
+    context.formulaContext,
+    context.resourceState,
+  );
+}
+
+function completeMultiStageMissionAfterSuccessStage(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  stage: MissionStageDefinition,
+): void {
+  const { outcomeKind, baseOutcome } = resolveMissionCompletionOutcomeKind(mission);
+  const overrideOutcome = maybeResolveStageSuccessOverride(
+    context,
+    stage,
+    outcomeKind,
+  );
+
+  if (overrideOutcome && !overrideOutcome.ok) {
+    telemetry.recordWarning('MissionStageOutcomeOverrideInvalid', {
+      transformId: context.transform.id,
+      stageId: stage.id,
+      outcomeKind,
+      errorCode: overrideOutcome.result.error?.code,
+    });
+    completeMultiStageMissionFailure(context, entry, mission);
+    return;
+  }
+
+  const resolvedOutcome = isPreparedMissionOutcomeResult(overrideOutcome)
+    ? overrideOutcome.prepared
+    : baseOutcome;
+  completeMultiStageMissionFromDueBatch(
+    context,
+    entry,
+    mission,
+    outcomeKind,
+    resolvedOutcome,
+  );
+}
+
+function handlePendingDecisionBatch(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  stage: MissionStageDefinition,
+): void {
+  if (!stage.decision) {
+    completeMultiStageMissionFailure(context, entry, mission);
+    return;
+  }
+
+  const optionViews = buildDecisionOptionViews(stage.decision, context.conditionContext);
+  const chosenOption = selectAvailableDecisionOption(stage.decision, optionViews);
+  if (!chosenOption) {
+    completeMultiStageMissionFailure(context, entry, mission);
+    return;
+  }
+
+  const updatedMissionAfterDecision: MultiStageMissionBatchPlan = {
+    ...mission,
+    accumulatedModifiers: applyMissionDecisionModifiers(
+      mission.accumulatedModifiers,
+      chosenOption.modifiers,
+      context.formulaContext,
+    ),
+    pendingDecision: undefined,
+  };
+
+  publishMissionEvent(
+    context.events,
+    'mission:decision-made',
+    {
+      transformId: context.transform.id,
+      batchId: entry.batchId ?? `${entry.sequence}`,
+      stageId: stage.id,
+      optionId: chosenOption.id,
+      nextStageId: chosenOption.nextStage,
+    },
+    context.transform.id,
+  );
+
+  if (chosenOption.nextStage === null) {
+    completeMultiStageMissionAfterSuccessStage(
+      context,
+      entry,
+      updatedMissionAfterDecision,
+      stage,
+    );
+    return;
+  }
+
+  rescheduleMissionEntry(
+    context,
+    entry,
+    updatedMissionAfterDecision,
+    chosenOption.nextStage,
+  );
+}
+
+function applyStageCheckpointRewards(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  stage: MissionStageDefinition,
+  success: boolean,
+): {
+  readonly checkpointOutputs?: readonly TransformBatchOutput[];
+  readonly checkpointRewardsGranted: readonly string[];
+} {
+  if (
+    !success ||
+    !mission.currentStageCheckpoint ||
+    mission.checkpointRewardsGranted.includes(stage.id)
+  ) {
+    return { checkpointRewardsGranted: mission.checkpointRewardsGranted };
+  }
+
+  applyBatchOutputs(
+    mission.currentStageCheckpoint.outputs,
+    context.resourceState,
+    context.transform.id,
+  );
+  grantEntityExperience(
+    mission.currentStageCheckpoint.entityExperience,
+    entry.entityInstanceIds,
+    context.step,
+    context.transform.id,
+    context.entitySystem,
+  );
+
+  return {
+    checkpointOutputs: mission.currentStageCheckpoint.outputs,
+    checkpointRewardsGranted: Object.freeze([
+      ...mission.checkpointRewardsGranted,
+      stage.id,
+    ]),
+  };
+}
+
+function publishMissionStageCompleted(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  stage: MissionStageDefinition,
+  checkpointOutputs: readonly TransformBatchOutput[] | undefined,
+): void {
+  publishMissionEvent(
+    context.events,
+    'mission:stage-completed',
+    {
+      transformId: context.transform.id,
+      batchId: entry.batchId ?? `${entry.sequence}`,
+      stageId: stage.id,
+      ...(checkpointOutputs
+        ? {
+            checkpoint: {
+              outputs: checkpointOutputs.map((output) => ({
+                resourceId: output.resourceId,
+                amount: output.amount,
+              })),
+            },
+          }
+        : {}),
+    },
+    context.transform.id,
+  );
+}
+
+function completeMultiStageMissionOnStageFailure(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  stage: MissionStageDefinition,
+): void {
+  const overrideOutcome = stage.stageOutcomes?.failure
+    ? prepareMissionOutcomePlan(
+        context.transform,
+        stage.stageOutcomes.failure as unknown as MissionOutcome,
+        context.formulaContext,
+        context.resourceState,
+      )
+    : undefined;
+
+  if (overrideOutcome && !overrideOutcome.ok) {
+    telemetry.recordWarning('MissionStageOutcomeOverrideInvalid', {
+      transformId: context.transform.id,
+      stageId: stage.id,
+      outcomeKind: 'failure',
+      errorCode: overrideOutcome.result.error?.code,
+    });
+  }
+
+  const failureOutcome = isPreparedMissionOutcomeResult(overrideOutcome)
+    ? overrideOutcome.prepared
+    : mission.failure;
+
+  completeMultiStageMissionFromDueBatch(context, entry, mission, 'failure', failureOutcome);
+}
+
+function scheduleMissionDecision(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  stage: MissionStageDefinition,
+  decision: MissionDecisionDefinition,
+  checkpointRewardsGranted: readonly string[],
+): void {
+  const timeout = decision.timeout;
+  const timeoutMs = timeout
+    ? evaluateNumericFormula(timeout, context.formulaContext)
+    : Number.POSITIVE_INFINITY;
+  const timeoutSteps = calculateDecisionTimeoutSteps(timeoutMs, context.stepDurationMs);
+  const expiresAtStep =
+    timeoutSteps === Number.MAX_SAFE_INTEGER
+      ? Number.MAX_SAFE_INTEGER
+      : context.step + timeoutSteps;
+
+  const optionViews = buildDecisionOptionViews(decision, context.conditionContext);
+
+  publishMissionEvent(
+    context.events,
+    'mission:decision-required',
+    {
+      transformId: context.transform.id,
+      batchId: entry.batchId ?? `${entry.sequence}`,
+      stageId: stage.id,
+      prompt: decision.prompt.default,
+      options: optionViews,
+      expiresAtStep,
+    },
+    context.transform.id,
+  );
+
+  const updatedMission: MultiStageMissionBatchPlan = {
+    ...mission,
+    checkpointRewardsGranted,
+    pendingDecision: { stageId: stage.id, expiresAtStep },
+  };
+
+  insertBatch(context.batches, {
+    ...entry,
+    completeAtStep: expiresAtStep,
+    mission: updatedMission,
+  });
+}
+
+function handleStageCompletionBatch(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+  stage: MissionStageDefinition,
+): void {
+  const success = rollMissionStageSuccess(
+    mission,
+    context.transform.id,
+    context.prdRegistry,
+  );
+
+  const checkpointResult = applyStageCheckpointRewards(
+    context,
+    entry,
+    mission,
+    stage,
+    success,
+  );
+
+  publishMissionStageCompleted(
+    context,
+    entry,
+    stage,
+    checkpointResult.checkpointOutputs,
+  );
+
+  const missionAfterCheckpoint: MultiStageMissionBatchPlan = {
+    ...mission,
+    checkpointRewardsGranted: checkpointResult.checkpointRewardsGranted,
+  };
+
+  if (!success) {
+    completeMultiStageMissionOnStageFailure(
+      context,
+      entry,
+      missionAfterCheckpoint,
+      stage,
+    );
+    return;
+  }
+
+  if (stage.decision) {
+    scheduleMissionDecision(
+      context,
+      entry,
+      missionAfterCheckpoint,
+      stage,
+      stage.decision,
+      checkpointResult.checkpointRewardsGranted,
+    );
+    return;
+  }
+
+  const nextStageId = stage.nextStage ?? null;
+  if (nextStageId === null) {
+    completeMultiStageMissionAfterSuccessStage(
+      context,
+      entry,
+      missionAfterCheckpoint,
+      stage,
+    );
+    return;
+  }
+
+  rescheduleMissionEntry(context, entry, missionAfterCheckpoint, nextStageId);
+}
+
+function deliverDueMultiStageMissionBatch(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+  mission: MultiStageMissionBatchPlan,
+): void {
+  const stageId = mission.pendingDecision?.stageId ?? mission.currentStageId;
+  const stage = context.transform.stages?.find(
+    (candidate) => candidate.id === stageId,
+  );
+
+  if (!stage) {
+    completeMultiStageMissionFailure(context, entry, mission);
+    return;
+  }
+
+  if (mission.pendingDecision) {
+    handlePendingDecisionBatch(context, entry, mission, stage);
+    return;
+  }
+
+  handleStageCompletionBatch(context, entry, mission, stage);
+}
+
+function deliverDueBatchEntry(
+  context: DeliverDueBatchesContext,
+  entry: TransformBatchQueueEntry,
+): void {
+  const transformId = context.transform.id;
+
+  if (context.transform.mode !== 'mission' || !entry.mission) {
+    completeStandardBatch(
+      entry,
+      transformId,
+      context.resourceState,
+      context.step,
+      context.entitySystem,
+    );
+    return;
+  }
+
+  const missionPlan = entry.mission;
+  if (
+    !isMultiStageMissionPlan(missionPlan) ||
+    !context.transform.stages ||
+    context.transform.stages.length === 0
+  ) {
+    completeMissionBatch(
+      entry,
+      transformId,
+      context.resourceState,
+      context.step,
+      context.entitySystem,
+      context.prdRegistry,
+      context.events,
+    );
+    return;
+  }
+
+  deliverDueMultiStageMissionBatch(context, entry, missionPlan);
+}
+
+function deliverDueBatches(context: DeliverDueBatchesContext): void {
+  const { batches, step } = context;
   if (batches.length === 0) {
     return;
   }
 
-  const transformId = transform.id;
-  let writeIndex = 0;
-
-  for (let readIndex = 0; readIndex < batches.length; readIndex += 1) {
-    const entry = batches[readIndex];
-
-    if (entry.completeAtStep <= step) {
-      if (transform.mode === 'mission' && entry.mission) {
-        completeMissionBatch(entry, transformId, resourceState, step, entitySystem, prdRegistry, events);
-      } else {
-        completeStandardBatch(entry, transformId, resourceState, step, entitySystem);
-      }
-      continue;
+  while (batches.length > 0 && batches[0].completeAtStep <= step) {
+    const entry = batches.shift();
+    if (!entry) {
+      return;
     }
 
-    if (writeIndex !== readIndex) {
-      batches[writeIndex] = entry;
-    }
-    writeIndex += 1;
-  }
-
-  if (writeIndex === 0) {
-    batches.length = 0;
-  } else if (writeIndex < batches.length) {
-    batches.length = writeIndex;
+    deliverDueBatchEntry(context, entry);
   }
 }
 
@@ -1428,20 +2570,39 @@ function processTriggeredTransform(
   return result.success ? 'executed' : 'blocked';
 }
 
-function deliverAllDueBatches(
-  sortedTransforms: readonly TransformDefinition[],
-  transformStates: Map<string, TransformState>,
-  resourceState: TransformResourceState,
-  step: number,
-  entitySystem: EntitySystem | undefined,
-  prdRegistry: PRDRegistry,
-  events: EventPublisher | undefined,
-): void {
-  for (const transform of sortedTransforms) {
-    const state = transformStates.get(transform.id);
+type DeliverAllDueBatchesContext = Readonly<{
+  readonly sortedTransforms: readonly TransformDefinition[];
+  readonly transformStates: Map<string, TransformState>;
+  readonly resourceState: TransformResourceState;
+  readonly step: number;
+  readonly stepDurationMs: number;
+  readonly formulaContext: FormulaEvaluationContext;
+  readonly conditionContext?: ConditionContext;
+  readonly entitySystem?: EntitySystem;
+  readonly prdRegistry: PRDRegistry;
+  readonly events?: EventPublisher;
+}>;
+
+function deliverAllDueBatches(context: DeliverAllDueBatchesContext): void {
+  for (const transform of context.sortedTransforms) {
+    const state = context.transformStates.get(transform.id);
     const batches = (state?.batches ?? []) as TransformBatchQueueEntry[];
-    if (batches.length === 0) continue;
-    deliverDueBatches(transform, batches, resourceState, step, entitySystem, prdRegistry, events);
+    if (batches.length === 0) {
+      continue;
+    }
+
+    deliverDueBatches({
+      transform,
+      batches,
+      resourceState: context.resourceState,
+      step: context.step,
+      stepDurationMs: context.stepDurationMs,
+      formulaContext: context.formulaContext,
+      conditionContext: context.conditionContext,
+      entitySystem: context.entitySystem,
+      prdRegistry: context.prdRegistry,
+      events: context.events,
+    });
   }
 }
 
@@ -1471,6 +2632,14 @@ export function createTransformSystem(
     transformId: string,
     step: number,
     options?: { runs?: number; events?: EventPublisher },
+  ) => TransformExecutionResult;
+  makeMissionDecision: (
+    transformId: string,
+    batchId: string,
+    stageId: string,
+    optionId: string,
+    step: number,
+    options?: { events?: EventPublisher },
   ) => TransformExecutionResult;
   getTransformDefinition: (transformId: string) => TransformDefinition | undefined;
 } {
@@ -1623,6 +2792,70 @@ export function createTransformSystem(
     return { ok: true, baseRate };
   };
 
+  const resolveMissionDurationSteps = (
+    transform: TransformDefinition,
+    formulaContext: FormulaEvaluationContext,
+  ): { ok: true; durationSteps: number } | { ok: false; result: TransformExecutionResult } => {
+    const stages = transform.mode === 'mission' ? transform.stages : undefined;
+    if (stages?.length) {
+      const initialStageId = transform.initialStage ?? stages[0]?.id;
+      const initialStage =
+        stages.find((stage) => stage.id === initialStageId) ?? stages[0];
+      if (!initialStage) {
+        return {
+          ok: false,
+          result: {
+            success: false,
+            error: {
+              code: 'INVALID_STAGE',
+              message: 'Mission stage definition missing for multi-stage mission.',
+              details: { transformId: transform.id, stageId: initialStageId },
+            },
+          },
+        };
+      }
+
+      const durationMs = evaluateNumericFormula(initialStage.duration, formulaContext);
+      if (!Number.isFinite(durationMs)) {
+        return {
+          ok: false,
+          result: {
+            success: false,
+            error: {
+              code: 'INVALID_DURATION_FORMULA',
+              message: 'Mission stage duration formula evaluated to non-finite value.',
+              details: { transformId: transform.id, stageId: initialStage.id },
+            },
+          },
+        };
+      }
+
+      const durationSteps = calculateDurationStepsFromMs(durationMs, stepDurationMs);
+      return { ok: true, durationSteps };
+    }
+
+    const durationSteps = evaluateBatchDurationSteps(
+      transform,
+      stepDurationMs,
+      formulaContext,
+    );
+    if (durationSteps === null) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'INVALID_DURATION_FORMULA',
+            message: 'Transform duration formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        },
+      };
+    }
+
+    return { ok: true, durationSteps };
+  };
+
   const prepareMissionInputs = (
     transform: TransformDefinition,
     formulaContext: FormulaEvaluationContext,
@@ -1635,73 +2868,60 @@ export function createTransformSystem(
         readonly costs: Map<string, number>;
       }
     | { readonly ok: false; readonly result: TransformExecutionResult } => {
-    const durationSteps = evaluateBatchDurationSteps(
+    const durationResult = resolveMissionDurationSteps(transform, formulaContext);
+    if (!durationResult.ok) {
+      return durationResult;
+    }
+    const durationSteps = durationResult.durationSteps;
+
+    const assignmentResult = selectMissionEntities(
       transform,
-      stepDurationMs,
+      missionEntitySystem,
       formulaContext,
     );
-      if (durationSteps === null) {
-        return {
-          ok: false,
-          result: {
-            success: false,
-            error: {
-              code: 'INVALID_DURATION_FORMULA',
-              message: 'Transform duration formula evaluated to non-finite value.',
-              details: { transformId: transform.id },
-            },
-          },
-        };
-      }
-
-      const assignmentResult = selectMissionEntities(
-        transform,
-        missionEntitySystem,
-        formulaContext,
-      );
-      if (!assignmentResult.ok) {
-        return {
-          ok: false,
-          result: { success: false, error: assignmentResult.error },
-        };
-      }
-
-      const costs = evaluateInputCosts(transform, formulaContext);
-      if (costs === null) {
-        return {
-          ok: false,
-          result: {
-            success: false,
-            error: {
-              code: 'INVALID_INPUT_FORMULA',
-              message: 'Transform input formula evaluated to non-finite value.',
-              details: { transformId: transform.id },
-            },
-          },
-        };
-      }
-
-      if (!canAffordInputs(costs, resourceState)) {
-        return {
-          ok: false,
-          result: {
-            success: false,
-            error: {
-              code: 'INSUFFICIENT_RESOURCES',
-              message: 'Cannot afford transform input costs.',
-              details: { transformId: transform.id },
-            },
-          },
-        };
-      }
-
+    if (!assignmentResult.ok) {
       return {
-        ok: true,
-        durationSteps,
-        assignmentResult,
-        costs,
+        ok: false,
+        result: { success: false, error: assignmentResult.error },
       };
+    }
+
+    const costs = evaluateInputCosts(transform, formulaContext);
+    if (costs === null) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT_FORMULA',
+            message: 'Transform input formula evaluated to non-finite value.',
+            details: { transformId: transform.id },
+          },
+        },
+      };
+    }
+
+    if (!canAffordInputs(costs, resourceState)) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_RESOURCES',
+            message: 'Cannot afford transform input costs.',
+            details: { transformId: transform.id },
+          },
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      durationSteps,
+      assignmentResult,
+      costs,
     };
+  };
 
     const prepareMissionPlan = (
       transform: TransformDefinition,
@@ -1732,73 +2952,24 @@ export function createTransformSystem(
 
       const missionOutcomes = transform.outcomes;
 
-      const prepareOutcome = (
-        outcome: MissionOutcome | undefined,
-      ):
-        | { readonly ok: true; readonly prepared: MissionPreparedOutcome }
-        | { readonly ok: false; readonly result: TransformExecutionResult } => {
-        const outputs = evaluateMissionOutcomeOutputs(transform, outcome, formulaContext);
-        if (outputs === null) {
-          return {
-            ok: false,
-            result: {
-              success: false,
-              error: {
-                code: 'INVALID_OUTPUT_FORMULA',
-                message: 'Transform output formula evaluated to non-finite value.',
-                details: { transformId: transform.id },
-              },
-            },
-          };
-        }
-
-        const experience = evaluateMissionOutcomeExperience(
-          transform,
-          outcome,
-          formulaContext,
-        );
-        if (experience === null) {
-          return {
-            ok: false,
-            result: {
-              success: false,
-              error: {
-                code: 'INVALID_OUTPUT_FORMULA',
-                message: 'Mission experience formula evaluated to non-finite value.',
-                details: { transformId: transform.id },
-              },
-            },
-          };
-        }
-
-        const preparedOutputs = prepareOutputs(outputs, resourceState, transform.id);
-        if (!preparedOutputs.ok) {
-          return {
-            ok: false,
-            result: { success: false, error: preparedOutputs.error },
-          };
-        }
-
-        return {
-          ok: true,
-          prepared: {
-            outputs: preparedOutputs.outputs.map((output) => ({
-              resourceId: output.resourceId,
-              amount: output.amount,
-            })),
-            entityExperience: experience,
-          },
-        };
-      };
-
-      const successOutcome = prepareOutcome(missionOutcomes?.success);
+      const successOutcome = prepareMissionOutcomePlan(
+        transform,
+        missionOutcomes?.success,
+        formulaContext,
+        resourceState,
+      );
       if (!successOutcome.ok) {
         return { ok: false, result: successOutcome.result };
       }
 
       // Missing failure outcome means no rewards on failure.
       const failureOutcome = missionOutcomes?.failure
-        ? prepareOutcome(missionOutcomes?.failure)
+        ? prepareMissionOutcomePlan(
+            transform,
+            missionOutcomes?.failure,
+            formulaContext,
+            resourceState,
+          )
         : ({ ok: true, prepared: { outputs: [], entityExperience: 0 } } as const);
       if (!failureOutcome.ok) {
         return { ok: false, result: failureOutcome.result };
@@ -1827,7 +2998,12 @@ export function createTransformSystem(
         }
         criticalChance = clampProbability(chanceRaw);
 
-        const criticalPrepared = prepareOutcome(missionOutcomes.critical);
+        const criticalPrepared = prepareMissionOutcomePlan(
+          transform,
+          missionOutcomes.critical,
+          formulaContext,
+          resourceState,
+        );
         if (!criticalPrepared.ok) {
           return { ok: false, result: criticalPrepared.result };
         }
@@ -1845,6 +3021,135 @@ export function createTransformSystem(
           ...(criticalOutcome ? { critical: criticalOutcome } : {}),
         },
       };
+    };
+
+    type MissionPlanForRunResult =
+      | {
+          readonly ok: true;
+          readonly missionPlan: MissionBatchPlan;
+          readonly hasStages: boolean;
+        }
+      | { readonly ok: false; readonly result: TransformExecutionResult };
+
+    const buildMissionPlanForRun = (
+      params: Readonly<{
+        readonly transform: TransformDefinition;
+        readonly basePlan: MissionBatchPlanBase;
+        readonly assignmentResult: MissionAssignmentSuccess;
+        readonly formulaContext: FormulaEvaluationContext;
+        readonly step: number;
+      }>,
+    ): MissionPlanForRunResult => {
+      const { transform, basePlan, assignmentResult, formulaContext, step } = params;
+      const stages = transform.stages;
+      if (!stages?.length) {
+        return { ok: true, missionPlan: basePlan, hasStages: false };
+      }
+
+      const initialStageCandidate = transform.initialStage ?? stages[0]?.id;
+      const initialStage =
+        stages.find((stage) => stage.id === initialStageCandidate) ?? stages[0];
+      if (!initialStage) {
+        return {
+          ok: false,
+          result: {
+            success: false,
+            error: {
+              code: 'INVALID_STAGE',
+              message: 'Mission stage definition missing for multi-stage mission.',
+              details: { transformId: transform.id, stageId: initialStageCandidate },
+            },
+          },
+        };
+      }
+
+      const stageSuccessRateRaw = initialStage.stageSuccessRate
+        ? evaluateNumericFormula(initialStage.stageSuccessRate, formulaContext)
+        : basePlan.baseRate;
+      if (!Number.isFinite(stageSuccessRateRaw)) {
+        return {
+          ok: false,
+          result: {
+            success: false,
+            error: {
+              code: 'INVALID_SUCCESS_RATE',
+              message: 'Mission stage success rate evaluated to non-finite value.',
+              details: { transformId: transform.id, stageId: initialStage.id },
+            },
+          },
+        };
+      }
+
+      const accumulatedModifiers: MultiStageMissionAccumulatedModifiers = {
+        successRateBonus: 0,
+        durationMultiplier: 1,
+        outputMultiplier: 1,
+      };
+
+      const currentStageSuccessRate = clampProbability(
+        clampProbability(stageSuccessRateRaw) + accumulatedModifiers.successRateBonus,
+      );
+
+      let checkpointPrepared: MissionPreparedOutcome | undefined;
+      if (initialStage.checkpoint) {
+        const checkpointResult = prepareMissionOutcomePlan(
+          transform,
+          initialStage.checkpoint as unknown as MissionOutcome,
+          formulaContext,
+          resourceState,
+        );
+        if (!checkpointResult.ok) {
+          return { ok: false, result: checkpointResult.result };
+        }
+        checkpointPrepared = scaleMissionPreparedOutcome(checkpointResult.prepared, 1);
+      }
+
+      const returnOnCompleteEntityInstanceIds = assignmentResult.instanceIds
+        .filter((instanceId) => assignmentResult.assignments.get(instanceId) ?? true)
+        .sort(compareStableStrings);
+
+      return {
+        ok: true,
+        missionPlan: {
+          ...basePlan,
+          currentStageId: initialStage.id,
+          currentStageStartStep: step,
+          currentStageSuccessRate,
+          ...(checkpointPrepared ? { currentStageCheckpoint: checkpointPrepared } : {}),
+          checkpointRewardsGranted: [],
+          accumulatedModifiers,
+          returnOnCompleteEntityInstanceIds,
+        },
+        hasStages: true,
+      };
+    };
+
+    const assignMissionEntitiesToBatch = (
+      params: Readonly<{
+        readonly missionEntitySystem: EntitySystem;
+        readonly assignmentResult: MissionAssignmentSuccess;
+        readonly transformId: string;
+        readonly batchId: string;
+        readonly deployedAtStep: number;
+        readonly completeAtStep: number;
+        readonly hasStages: boolean;
+      }>,
+    ): void => {
+      for (const instanceId of params.assignmentResult.instanceIds) {
+        const returnOnComplete =
+          params.assignmentResult.assignments.get(instanceId) ?? true;
+        let returnStep = Number.MAX_SAFE_INTEGER;
+        if (!params.hasStages && returnOnComplete) {
+          returnStep = params.completeAtStep;
+        }
+
+        params.missionEntitySystem.assignToMission(instanceId, {
+          missionId: params.transformId,
+          batchId: params.batchId,
+          deployedAtStep: params.deployedAtStep,
+          returnStep,
+        });
+      }
     };
 
     const executeMissionTransformRun = (
@@ -1913,19 +3218,27 @@ export function createTransformSystem(
       batchSequences.set(transform.id, sequence + 1);
       const batchId = `${sequence}`;
 
-      for (const instanceId of inputsResult.assignmentResult.instanceIds) {
-        const returnOnComplete =
-          inputsResult.assignmentResult.assignments.get(instanceId) ?? true;
-        const returnStep = returnOnComplete
-          ? completeAtStep
-          : Number.MAX_SAFE_INTEGER;
-        missionEntitySystem.assignToMission(instanceId, {
-          missionId: transform.id,
-          batchId,
-          deployedAtStep: step,
-          returnStep,
-        });
+      const basePlan: MissionBatchPlanBase = planResult.plan;
+      const missionPlanResult = buildMissionPlanForRun({
+        transform,
+        basePlan,
+        assignmentResult: inputsResult.assignmentResult,
+        formulaContext,
+        step,
+      });
+      if (!missionPlanResult.ok) {
+        return missionPlanResult.result;
       }
+
+      assignMissionEntitiesToBatch({
+        missionEntitySystem,
+        assignmentResult: inputsResult.assignmentResult,
+        transformId: transform.id,
+        batchId,
+        deployedAtStep: step,
+        completeAtStep,
+        hasStages: missionPlanResult.hasStages,
+      });
 
       const batchEntry: TransformBatchQueueEntry = {
         completeAtStep,
@@ -1935,7 +3248,7 @@ export function createTransformSystem(
         ...(inputsResult.assignmentResult.instanceIds.length > 0
           ? { entityInstanceIds: inputsResult.assignmentResult.instanceIds }
           : {}),
-        mission: planResult.plan,
+        mission: missionPlanResult.missionPlan,
       };
 
       insertBatch(batchQueue, batchEntry);
@@ -2359,6 +3672,337 @@ export function createTransformSystem(
     return { success: true };
   };
 
+  type MissionDecisionBatchContext = Readonly<{
+    readonly transform: TransformDefinition;
+    readonly stage: MissionStageDefinition;
+    readonly option: MissionDecisionOptionDefinition;
+    readonly entry: TransformBatchQueueEntry;
+    readonly mission: MultiStageMissionBatchPlan;
+    readonly batchQueue: TransformBatchQueueEntry[];
+    readonly entryIndex: number;
+  }>;
+
+  type MissionDecisionBatchContextResult =
+    | { readonly ok: true; readonly context: MissionDecisionBatchContext }
+    | { readonly ok: false; readonly result: TransformExecutionResult };
+
+  const resolveMissionDecisionBatchContext = (
+    transformId: string,
+    batchId: string,
+    stageId: string,
+    optionId: string,
+  ): MissionDecisionBatchContextResult => {
+    const transform = transformById.get(transformId);
+    if (!transform) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'UNKNOWN_TRANSFORM',
+            message: `Transform "${transformId}" not found.`,
+            details: { transformId },
+          },
+        },
+      };
+    }
+
+    if (transform.mode !== 'mission' || !transform.stages?.length) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'INVALID_TRANSFORM_MODE',
+            message: 'Transform is not a multi-stage mission.',
+            details: { transformId, mode: transform.mode },
+          },
+        },
+      };
+    }
+
+    const state = transformStates.get(transformId);
+    if (!state?.batches) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'STATE_NOT_FOUND',
+            message: `Transform state for "${transformId}" not found.`,
+            details: { transformId },
+          },
+        },
+      };
+    }
+
+    const batchQueue = state.batches as TransformBatchQueueEntry[];
+    const entryIndex = batchQueue.findIndex((entry) => entry.batchId === batchId);
+    if (entryIndex === -1) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'UNKNOWN_MISSION_BATCH',
+            message: 'Mission batch not found.',
+            details: { transformId, batchId },
+          },
+        },
+      };
+    }
+
+    const entry = batchQueue[entryIndex];
+    if (!entry) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'UNKNOWN_MISSION_BATCH',
+            message: 'Mission batch not found.',
+            details: { transformId, batchId },
+          },
+        },
+      };
+    }
+
+    const mission = entry.mission;
+    if (!mission || !isMultiStageMissionPlan(mission)) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'INVALID_MISSION_BATCH',
+            message: 'Mission batch does not contain multi-stage mission state.',
+            details: { transformId, batchId },
+          },
+        },
+      };
+    }
+
+    if (!mission.pendingDecision) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'NO_PENDING_DECISION',
+            message: 'Mission batch does not have a pending decision.',
+            details: { transformId, batchId },
+          },
+        },
+      };
+    }
+
+    if (mission.pendingDecision.stageId !== stageId) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'DECISION_STAGE_MISMATCH',
+            message: 'Decision stage id does not match the pending decision stage.',
+            details: {
+              transformId,
+              batchId,
+              expectedStageId: mission.pendingDecision.stageId,
+              stageId,
+            },
+          },
+        },
+      };
+    }
+
+    const stage = transform.stages.find((candidate) => candidate.id === stageId);
+    if (!stage?.decision) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'INVALID_STAGE',
+            message: 'Stage definition missing a decision block.',
+            details: { transformId, batchId, stageId },
+          },
+        },
+      };
+    }
+
+    const option = stage.decision.options.find(
+      (candidate) => candidate.id === optionId,
+    );
+    if (!option) {
+      return {
+        ok: false,
+        result: {
+          success: false,
+          error: {
+            code: 'UNKNOWN_DECISION_OPTION',
+            message: 'Decision option id not found.',
+            details: { transformId, batchId, stageId, optionId },
+          },
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      context: {
+        transform,
+        stage,
+        option,
+        entry,
+        mission,
+        batchQueue,
+        entryIndex,
+      },
+    };
+  };
+
+  const makeMissionDecision = (
+    transformId: string,
+    batchId: string,
+    stageId: string,
+    optionId: string,
+    step: number,
+    decisionOptions?: { events?: EventPublisher },
+  ): TransformExecutionResult => {
+    const contextResult = resolveMissionDecisionBatchContext(
+      transformId,
+      batchId,
+      stageId,
+      optionId,
+    );
+    if (!contextResult.ok) {
+      return contextResult.result;
+    }
+
+    const { transform, stage, option, entry, mission, batchQueue, entryIndex } =
+      contextResult.context;
+
+    const available = option.condition
+      ? Boolean(conditionContext && evaluateCondition(option.condition, conditionContext))
+      : true;
+    if (!available) {
+      return {
+        success: false,
+        error: {
+          code: 'DECISION_OPTION_UNAVAILABLE',
+          message: 'Decision option is not available.',
+          details: { transformId, batchId, stageId, optionId },
+        },
+      };
+    }
+
+    const formulaContext = createTransformFormulaEvaluationContext({
+      currentStep: step,
+      stepDurationMs,
+      resourceState,
+      conditionContext,
+    });
+
+    const missionAfterDecision: MultiStageMissionBatchPlan = {
+      ...mission,
+      accumulatedModifiers: applyMissionDecisionModifiers(
+        mission.accumulatedModifiers,
+        option.modifiers,
+        formulaContext,
+      ),
+      pendingDecision: undefined,
+    };
+
+    if (option.nextStage === null) {
+      const { outcomeKind, baseOutcome } =
+        resolveMissionCompletionOutcomeKind(missionAfterDecision);
+
+      const overrideOutcome =
+        outcomeKind === 'success' && stage.stageOutcomes?.success
+          ? prepareMissionOutcomePlan(
+              transform,
+              stage.stageOutcomes.success as unknown as MissionOutcome,
+              formulaContext,
+              resourceState,
+            )
+          : undefined;
+
+      if (overrideOutcome && !overrideOutcome.ok) {
+        return overrideOutcome.result;
+      }
+
+      const resolvedOutcome = isPreparedMissionOutcomeResult(overrideOutcome)
+        ? overrideOutcome.prepared
+        : baseOutcome;
+
+      batchQueue.splice(entryIndex, 1);
+
+      publishMissionEvent(
+        decisionOptions?.events,
+        'mission:decision-made',
+        {
+          transformId,
+          batchId,
+          stageId,
+          optionId,
+          nextStageId: option.nextStage,
+        },
+        transformId,
+      );
+
+      completeMultiStageMission({
+        entry,
+        mission: missionAfterDecision,
+        transformId,
+        resourceState,
+        step,
+        outcomeKind,
+        outcome: resolvedOutcome,
+        entitySystem,
+        events: decisionOptions?.events,
+      });
+
+      return { success: true };
+    }
+
+    const nextStageResult = scheduleMultiStageMissionStage({
+      transform,
+      mission: missionAfterDecision,
+      stageId: option.nextStage,
+      step,
+      stepDurationMs,
+      formulaContext,
+      resourceState,
+    });
+    if (!nextStageResult.ok) {
+      return nextStageResult.result;
+    }
+
+    const updatedEntry: TransformBatchQueueEntry = {
+      ...entry,
+      completeAtStep: nextStageResult.completeAtStep,
+      mission: nextStageResult.mission,
+    };
+
+    batchQueue.splice(entryIndex, 1);
+
+    publishMissionEvent(
+      decisionOptions?.events,
+      'mission:decision-made',
+      {
+        transformId,
+        batchId,
+        stageId,
+        optionId,
+        nextStageId: option.nextStage,
+      },
+      transformId,
+    );
+
+    insertBatch(batchQueue, updatedEntry);
+    return { success: true };
+  };
+
   return {
     id: 'transform-system',
 
@@ -2392,6 +4036,8 @@ export function createTransformSystem(
     },
 
     executeTransform,
+
+    makeMissionDecision,
 
     getTransformDefinition(transformId: string) {
       return transformById.get(transformId);
@@ -2429,7 +4075,18 @@ export function createTransformSystem(
       ensureCountersResetForStep(step);
 
       // Deliver any batches that are due before evaluating triggers.
-      deliverAllDueBatches(sortedTransforms, transformStates, resourceState, step, entitySystem, prdRegistry, events);
+      deliverAllDueBatches({
+        sortedTransforms,
+        transformStates,
+        resourceState,
+        step,
+        stepDurationMs,
+        formulaContext,
+        conditionContext,
+        entitySystem,
+        prdRegistry,
+        events,
+      });
 
       // Collect event triggers to retain across ticks when blocked
       const retainedEventTriggers = new Set<string>();
@@ -2440,7 +4097,18 @@ export function createTransformSystem(
       }
 
       // Deliver any same-step batches scheduled during trigger evaluation.
-      deliverAllDueBatches(sortedTransforms, transformStates, resourceState, step, entitySystem, prdRegistry, events);
+      deliverAllDueBatches({
+        sortedTransforms,
+        transformStates,
+        resourceState,
+        step,
+        stepDurationMs,
+        formulaContext,
+        conditionContext,
+        entitySystem,
+        prdRegistry,
+        events,
+      });
 
       // Clear and repopulate pending event triggers with retained items only
       pendingEventTriggers.clear();
