@@ -67,11 +67,14 @@ describe('command', () => {
       expect(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP).toBe('OFFLINE_CATCHUP');
       expect(RUNTIME_COMMAND_TYPES.APPLY_MIGRATION).toBe('APPLY_MIGRATION');
       expect(RUNTIME_COMMAND_TYPES.RUN_TRANSFORM).toBe('RUN_TRANSFORM');
+      expect(RUNTIME_COMMAND_TYPES.MAKE_MISSION_DECISION).toBe(
+        'MAKE_MISSION_DECISION',
+      );
     });
 
-    it('has 16 command types', () => {
+    it('has 17 command types', () => {
       const types = Object.keys(RUNTIME_COMMAND_TYPES);
-      expect(types.length).toBe(16);
+      expect(types.length).toBe(17);
     });
 
     it('all values are unique strings', () => {

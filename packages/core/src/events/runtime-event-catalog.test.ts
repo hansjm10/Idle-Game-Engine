@@ -335,4 +335,121 @@ describe('runtime-event-catalog', () => {
       } as RuntimeEventPayload<'mission:completed'>);
     }).not.toThrow();
   });
+
+  it('validates mission:stage-completed payloads', () => {
+    const bus = createBus();
+
+    const validPayload: RuntimeEventPayload<'mission:stage-completed'> = {
+      transformId: 'transform:1',
+      batchId: 'batch:1',
+      stageId: 'stage-1',
+      checkpoint: {
+        outputs: [{ resourceId: 'res:gold', amount: 1 }],
+      },
+    };
+
+    expect(() => {
+      bus.publish('mission:stage-completed', {
+        ...validPayload,
+        stageId: '',
+      } as RuntimeEventPayload<'mission:stage-completed'>);
+    }).toThrow('stageId must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('mission:stage-completed', {
+        ...validPayload,
+        checkpoint: { outputs: null as any },
+      } as RuntimeEventPayload<'mission:stage-completed'>);
+    }).toThrow('outputs must be an array.');
+
+    expect(() => {
+      bus.publish('mission:stage-completed', {
+        transformId: 'transform:1',
+        batchId: 'batch:1',
+        stageId: 'stage-1',
+      } as RuntimeEventPayload<'mission:stage-completed'>);
+    }).not.toThrow();
+
+    expect(() => {
+      bus.publish('mission:stage-completed', validPayload);
+    }).not.toThrow();
+  });
+
+  it('validates mission:decision-required payloads', () => {
+    const bus = createBus();
+
+    const validPayload: RuntimeEventPayload<'mission:decision-required'> = {
+      transformId: 'transform:1',
+      batchId: 'batch:1',
+      stageId: 'stage-1',
+      prompt: 'Choose a path',
+      options: [
+        { id: 'left', label: 'Left', available: true },
+        { id: 'right', label: 'Right', available: false },
+      ],
+      expiresAtStep: 5,
+    };
+
+    expect(() => {
+      bus.publish('mission:decision-required', {
+        ...validPayload,
+        prompt: '',
+      } as RuntimeEventPayload<'mission:decision-required'>);
+    }).toThrow('prompt must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('mission:decision-required', {
+        ...validPayload,
+        options: null as any,
+      } as RuntimeEventPayload<'mission:decision-required'>);
+    }).toThrow('options must be an array.');
+
+    expect(() => {
+      bus.publish('mission:decision-required', {
+        ...validPayload,
+        expiresAtStep: -1,
+      } as RuntimeEventPayload<'mission:decision-required'>);
+    }).toThrow('expiresAtStep must be a non-negative integer.');
+
+    expect(() => {
+      bus.publish('mission:decision-required', validPayload);
+    }).not.toThrow();
+  });
+
+  it('validates mission:decision-made payloads', () => {
+    const bus = createBus();
+
+    const validPayload: RuntimeEventPayload<'mission:decision-made'> = {
+      transformId: 'transform:1',
+      batchId: 'batch:1',
+      stageId: 'stage-1',
+      optionId: 'left',
+      nextStageId: 'next-stage',
+    };
+
+    expect(() => {
+      bus.publish('mission:decision-made', {
+        ...validPayload,
+        optionId: '',
+      } as RuntimeEventPayload<'mission:decision-made'>);
+    }).toThrow('optionId must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('mission:decision-made', {
+        ...validPayload,
+        nextStageId: '',
+      } as RuntimeEventPayload<'mission:decision-made'>);
+    }).toThrow('nextStageId must be a non-empty string or null.');
+
+    expect(() => {
+      bus.publish('mission:decision-made', {
+        ...validPayload,
+        nextStageId: null,
+      } as RuntimeEventPayload<'mission:decision-made'>);
+    }).not.toThrow();
+
+    expect(() => {
+      bus.publish('mission:decision-made', validPayload);
+    }).not.toThrow();
+  });
 });

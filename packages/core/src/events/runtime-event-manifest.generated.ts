@@ -70,6 +70,24 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
   },
   {
     channel: 5,
+    type: 'mission:stage-completed' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 6,
+    type: 'mission:decision-required' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 7,
+    type: 'mission:decision-made' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/core',
+  },
+  {
+    channel: 8,
     type: 'sample:reactor-primed' as RuntimeEventType,
     version: 2,
     packSlug: '@idle-engine/sample-pack',
@@ -106,11 +124,26 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
     },
     {
       channel: 5,
+      type: 'mission:stage-completed' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 6,
+      type: 'mission:decision-required' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 7,
+      type: 'mission:decision-made' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 8,
       type: 'sample:reactor-primed' as RuntimeEventType,
       version: 2,
     },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: 'fd1c8f05' as RuntimeEventManifestHash,
+  hash: '7d1632fb' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =

@@ -322,6 +322,8 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0
 
+  tools/coverage-report: {}
+
   tools/economy-verification:
     dependencies:
       '@idle-engine/content-sample':

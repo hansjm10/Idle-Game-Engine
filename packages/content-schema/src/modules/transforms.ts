@@ -52,6 +52,13 @@ const missionEntityRequirementSchema = z
   })
   .strict();
 
+const missionStageIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[a-z][a-z0-9_]*$/, {
+    message: 'Stage ids must start with a letter and contain only lowercase letters, numbers, or underscores.',
+  });
+
 const missionSuccessRateModifierSchema = z
   .object({
     stat: contentIdSchema,
@@ -92,6 +99,165 @@ const missionOutcomeSchema = z
   })
   .strict();
 
+type MissionDecisionOptionModifiersModel = {
+  readonly successRateBonus?: z.infer<typeof numericFormulaSchema>;
+  readonly durationMultiplier?: z.infer<typeof numericFormulaSchema>;
+  readonly outputMultiplier?: z.infer<typeof numericFormulaSchema>;
+};
+
+type MissionDecisionOptionModel = {
+  readonly id: z.infer<typeof missionStageIdSchema>;
+  readonly label: z.infer<typeof localizedTextSchema>;
+  readonly description?: z.infer<typeof localizedSummarySchema>;
+  readonly condition?: z.infer<typeof conditionSchema>;
+  readonly nextStage: z.infer<typeof missionStageIdSchema> | null;
+  readonly modifiers?: MissionDecisionOptionModifiersModel;
+};
+
+type MissionDecisionOptionInput = {
+  readonly id: z.input<typeof missionStageIdSchema>;
+  readonly label: z.input<typeof localizedTextSchema>;
+  readonly description?: z.input<typeof localizedSummarySchema>;
+  readonly condition?: z.input<typeof conditionSchema>;
+  readonly nextStage: z.input<typeof missionStageIdSchema> | null;
+  readonly modifiers?: {
+    readonly successRateBonus?: z.input<typeof numericFormulaSchema>;
+    readonly durationMultiplier?: z.input<typeof numericFormulaSchema>;
+    readonly outputMultiplier?: z.input<typeof numericFormulaSchema>;
+  };
+};
+
+const missionDecisionOptionSchema: z.ZodType<
+  MissionDecisionOptionModel,
+  z.ZodTypeDef,
+  MissionDecisionOptionInput
+> = z
+  .object({
+    id: missionStageIdSchema,
+    label: localizedTextSchema,
+    description: localizedSummarySchema.optional(),
+    condition: conditionSchema.optional(),
+    nextStage: missionStageIdSchema.nullable(),
+    modifiers: z
+      .object({
+        successRateBonus: numericFormulaSchema.optional(),
+        durationMultiplier: numericFormulaSchema.optional(),
+        outputMultiplier: numericFormulaSchema.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+type MissionDecisionModel = {
+  readonly prompt: z.infer<typeof localizedTextSchema>;
+  readonly timeout?: z.infer<typeof numericFormulaSchema>;
+  readonly defaultOption: z.infer<typeof missionStageIdSchema>;
+  readonly options: MissionDecisionOptionModel[];
+};
+
+type MissionDecisionInput = {
+  readonly prompt: z.input<typeof localizedTextSchema>;
+  readonly timeout?: z.input<typeof numericFormulaSchema>;
+  readonly defaultOption: z.input<typeof missionStageIdSchema>;
+  readonly options: MissionDecisionOptionInput[];
+};
+
+const missionDecisionSchema: z.ZodType<
+  MissionDecisionModel,
+  z.ZodTypeDef,
+  MissionDecisionInput
+> = z
+  .object({
+    prompt: localizedTextSchema,
+    timeout: numericFormulaSchema.optional(),
+    defaultOption: missionStageIdSchema,
+    options: z.array(missionDecisionOptionSchema).min(2).max(4),
+  })
+  .strict()
+  .superRefine((decision, ctx) => {
+    const ids = new Map<string, number>();
+    decision.options.forEach((option, index) => {
+      const existing = ids.get(option.id);
+      if (existing !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['options', index, 'id'],
+          message: `Duplicate decision option id "${option.id}" also defined at index ${existing}.`,
+        });
+        return;
+      }
+      ids.set(option.id, index);
+    });
+
+    if (!ids.has(decision.defaultOption)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['defaultOption'],
+        message: `Decision defaultOption "${decision.defaultOption}" must reference an option id defined in options.`,
+      });
+    }
+  });
+
+const missionCheckpointSchema = z
+  .object({
+    outputs: z.array(endpointSchema),
+    entityExperience: numericFormulaSchema.optional(),
+    message: localizedTextSchema.optional(),
+  })
+  .strict();
+
+const missionStageOutcomeOverridesSchema = z
+  .object({
+    success: missionOutcomeSchema.optional(),
+    failure: missionOutcomeSchema.optional(),
+  })
+  .strict();
+
+type MissionStageModel = {
+  readonly id: string;
+  readonly name?: z.infer<typeof localizedTextSchema>;
+  readonly duration: z.infer<typeof numericFormulaSchema>;
+  readonly checkpoint?: z.infer<typeof missionCheckpointSchema>;
+  readonly decision?: z.infer<typeof missionDecisionSchema>;
+  readonly stageSuccessRate?: z.infer<typeof numericFormulaSchema>;
+  readonly stageOutcomes?: z.infer<typeof missionStageOutcomeOverridesSchema>;
+  readonly nextStage?: string | null;
+};
+
+type MissionStageInput = {
+  readonly id: z.input<typeof missionStageIdSchema>;
+  readonly name?: z.input<typeof localizedTextSchema>;
+  readonly duration: z.input<typeof numericFormulaSchema>;
+  readonly checkpoint?: z.input<typeof missionCheckpointSchema>;
+  readonly decision?: z.input<typeof missionDecisionSchema>;
+  readonly stageSuccessRate?: z.input<typeof numericFormulaSchema>;
+  readonly stageOutcomes?: z.input<typeof missionStageOutcomeOverridesSchema>;
+  readonly nextStage?: z.input<typeof missionStageIdSchema> | null;
+};
+
+const missionStageSchema: z.ZodType<MissionStageModel, z.ZodTypeDef, MissionStageInput> = z
+  .object({
+    id: missionStageIdSchema,
+    name: localizedTextSchema.optional(),
+    duration: numericFormulaSchema,
+    checkpoint: missionCheckpointSchema.optional(),
+    decision: missionDecisionSchema.optional(),
+    stageSuccessRate: numericFormulaSchema.optional(),
+    stageOutcomes: missionStageOutcomeOverridesSchema.optional(),
+    nextStage: missionStageIdSchema.nullable().optional(),
+  })
+  .strict()
+  .superRefine((stage, ctx) => {
+    if (stage.decision && stage.nextStage !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['nextStage'],
+        message: 'Stages with decision blocks must omit nextStage.',
+      });
+    }
+  });
+
 const missionOutcomesSchema = z
   .object({
     success: missionOutcomeSchema,
@@ -108,12 +274,16 @@ type MissionFields = {
   readonly entityRequirements: z.infer<typeof missionEntityRequirementSchema>[];
   readonly successRate?: z.infer<typeof missionSuccessRateSchema>;
   readonly outcomes: z.infer<typeof missionOutcomesSchema>;
+  readonly stages?: readonly z.infer<typeof missionStageSchema>[];
+  readonly initialStage?: z.infer<typeof missionStageIdSchema>;
 };
 
 type MissionFieldsInput = {
   readonly entityRequirements: z.input<typeof missionEntityRequirementSchema>[];
   readonly successRate?: z.input<typeof missionSuccessRateSchema>;
   readonly outcomes: z.input<typeof missionOutcomesSchema>;
+  readonly stages?: readonly z.input<typeof missionStageSchema>[];
+  readonly initialStage?: z.input<typeof missionStageIdSchema>;
 };
 
 type TransformSafetyInput = {
@@ -223,7 +393,9 @@ const validateMissionTransform = (
   transform: TransformDefinitionModel,
   ctx: z.RefinementCtx,
 ): void => {
-  if (transform.duration === undefined) {
+  const hasStages = transform.stages !== undefined && transform.stages.length > 0;
+
+  if (!hasStages && transform.duration === undefined) {
     reportTransformIssue(
       ctx,
       ['duration'],
@@ -245,6 +417,142 @@ const validateMissionTransform = (
       ['outcomes'],
       'Mission transforms must declare outcomes.',
     );
+  }
+
+  if (!hasStages) {
+    return;
+  }
+
+  const stages = transform.stages ?? [];
+  const stageIndexById = new Map<string, number>();
+  stages.forEach((stage, index) => {
+    const existing = stageIndexById.get(stage.id);
+    if (existing !== undefined) {
+      reportTransformIssue(
+        ctx,
+        ['stages', index, 'id'],
+        `Duplicate stage id "${stage.id}" also defined at index ${existing}.`,
+      );
+      return;
+    }
+    stageIndexById.set(stage.id, index);
+  });
+
+  const initialStage = transform.initialStage ?? stages[0]?.id;
+  if (initialStage && !stageIndexById.has(initialStage)) {
+    reportTransformIssue(
+      ctx,
+      ['initialStage'],
+      `Initial stage "${initialStage}" must reference a valid stage id.`,
+    );
+  }
+
+  const stageById = new Map<string, (typeof stages)[number]>();
+  stages.forEach((stage) => {
+    stageById.set(stage.id, stage);
+  });
+
+  stages.forEach((stage, stageIndex) => {
+    if (stage.decision) {
+      stage.decision.options.forEach((option, optionIndex) => {
+        const next = option.nextStage;
+        if (next !== null && !stageIndexById.has(next)) {
+          reportTransformIssue(
+            ctx,
+            ['stages', stageIndex, 'decision', 'options', optionIndex, 'nextStage'],
+            `Decision option nextStage "${next}" must reference a valid stage id or null.`,
+          );
+        }
+      });
+      return;
+    }
+
+    const next = stage.nextStage;
+    if (next !== undefined && next !== null && !stageIndexById.has(next)) {
+      reportTransformIssue(
+        ctx,
+        ['stages', stageIndex, 'nextStage'],
+        `Stage nextStage "${next}" must reference a valid stage id or null.`,
+      );
+    }
+  });
+
+  const getOutgoingStageIds = (stageId: string): readonly string[] => {
+    const stage = stageById.get(stageId);
+    if (!stage) {
+      return [];
+    }
+
+    if (stage.decision) {
+      const nextStages = stage.decision.options
+        .map((option) => option.nextStage)
+        .filter((nextStage): nextStage is string => nextStage !== null);
+      return Object.freeze([...new Set(nextStages)]);
+    }
+
+    const nextStage = stage.nextStage;
+    return nextStage ? Object.freeze([nextStage]) : [];
+  };
+
+  const canTerminateFrom = (stageId: string, seen: Set<string>): boolean => {
+    if (seen.has(stageId)) {
+      return false;
+    }
+    seen.add(stageId);
+
+    const stage = stageById.get(stageId);
+    if (!stage) {
+      return false;
+    }
+
+    if (stage.decision) {
+      if (stage.decision.options.some((option) => option.nextStage === null)) {
+        return true;
+      }
+    } else if (stage.nextStage === null) {
+      return true;
+    }
+
+    return getOutgoingStageIds(stageId).some((next) =>
+      canTerminateFrom(next, new Set(seen)),
+    );
+  };
+
+  const rootStage = initialStage ?? stages[0]?.id;
+  if (rootStage) {
+    const visitState = new Map<string, 'visiting' | 'visited'>();
+    const detectCycle = (stageId: string): boolean => {
+      const state = visitState.get(stageId);
+      if (state === 'visiting') {
+        return true;
+      }
+      if (state === 'visited') {
+        return false;
+      }
+
+      visitState.set(stageId, 'visiting');
+      for (const next of getOutgoingStageIds(stageId)) {
+        if (detectCycle(next)) {
+          return true;
+        }
+      }
+      visitState.set(stageId, 'visited');
+      return false;
+    };
+
+    if (detectCycle(rootStage)) {
+      reportTransformIssue(
+        ctx,
+        ['stages'],
+        'Multi-stage missions may not contain circular stage references.',
+      );
+    } else if (!canTerminateFrom(rootStage, new Set())) {
+      reportTransformIssue(
+        ctx,
+        ['stages'],
+        'Multi-stage missions must include at least one path that terminates (nextStage: null).',
+      );
+    }
   }
 };
 
@@ -290,6 +598,8 @@ export const transformDefinitionSchema: z.ZodType<
     entityRequirements: z.array(missionEntityRequirementSchema).optional(),
     successRate: missionSuccessRateSchema.optional(),
     outcomes: missionOutcomesSchema.optional(),
+    stages: z.array(missionStageSchema).min(1).optional(),
+    initialStage: missionStageIdSchema.optional(),
     trigger: z.union([
       z
         .object({
@@ -350,6 +660,12 @@ export const transformDefinitionSchema: z.ZodType<
     tags: normalizeTags(transform.tags),
     inputs: Object.freeze([...transform.inputs]),
     outputs: Object.freeze([...transform.outputs]),
+    ...(transform.stages
+      ? {
+          stages: Object.freeze([...transform.stages]),
+          initialStage: transform.initialStage ?? transform.stages[0]?.id,
+        }
+      : {}),
   }));
 
 export const transformCollectionSchema = z

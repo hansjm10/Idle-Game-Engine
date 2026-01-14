@@ -45,6 +45,30 @@ export interface MissionCompletedEventPayload {
   readonly entityInstanceIds: readonly string[];
 }
 
+export interface MissionStageCompletedEventPayload {
+  readonly transformId: string;
+  readonly batchId: string;
+  readonly stageId: string;
+  readonly checkpoint?: { outputs: readonly { resourceId: string; amount: number }[] };
+}
+
+export interface MissionDecisionRequiredEventPayload {
+  readonly transformId: string;
+  readonly batchId: string;
+  readonly stageId: string;
+  readonly prompt: string;
+  readonly options: readonly { id: string; label: string; available: boolean }[];
+  readonly expiresAtStep: number;
+}
+
+export interface MissionDecisionMadeEventPayload {
+  readonly transformId: string;
+  readonly batchId: string;
+  readonly stageId: string;
+  readonly optionId: string;
+  readonly nextStageId: string | null;
+}
+
 declare module './runtime-event.js' {
   interface RuntimeEventPayloadMap {
     'resource:threshold-reached': ResourceThresholdReachedEventPayload;
@@ -52,38 +76,33 @@ declare module './runtime-event.js' {
     'automation:fired': AutomationFiredEventPayload;
     'mission:started': MissionStartedEventPayload;
     'mission:completed': MissionCompletedEventPayload;
+    'mission:stage-completed': MissionStageCompletedEventPayload;
+    'mission:decision-required': MissionDecisionRequiredEventPayload;
+    'mission:decision-made': MissionDecisionMadeEventPayload;
   }
 }
 
-function validateResourceThresholdReached(
-  payload: ResourceThresholdReachedEventPayload,
-): void {
-  if (typeof payload.resourceId !== 'string' || payload.resourceId.length === 0) {
-    throw new Error('resourceId must be a non-empty string.');
-  }
-  if (!Number.isFinite(payload.threshold)) {
-    throw new Error('threshold must be a finite number.');
+function requireNonEmptyString(value: unknown, fieldName: string): void {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${fieldName} must be a non-empty string.`);
   }
 }
 
-function validateAutomationToggled(payload: AutomationToggledEventPayload): void {
-  if (typeof payload.automationId !== 'string' || payload.automationId.length === 0) {
-    throw new Error('automationId must be a non-empty string.');
-  }
-  if (typeof payload.enabled !== 'boolean') {
-    throw new Error('enabled must be a boolean.');
+function requireFiniteNumber(value: unknown, fieldName: string): void {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`${fieldName} must be a finite number.`);
   }
 }
 
-function validateAutomationFired(payload: AutomationFiredEventPayload): void {
-  if (typeof payload.automationId !== 'string' || payload.automationId.length === 0) {
-    throw new Error('automationId must be a non-empty string.');
+function requireBoolean(value: unknown, fieldName: string): void {
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`${fieldName} must be a boolean.`);
   }
-  if (typeof payload.triggerKind !== 'string' || payload.triggerKind.length === 0) {
-    throw new Error('triggerKind must be a non-empty string.');
-  }
-  if (!Number.isInteger(payload.step) || payload.step < 0) {
-    throw new Error('step must be a non-negative integer.');
+}
+
+function requireNonNegativeInteger(value: unknown, fieldName: string): void {
+  if (!Number.isInteger(value) || (value as number) < 0) {
+    throw new Error(`${fieldName} must be a non-negative integer.`);
   }
 }
 
@@ -96,6 +115,24 @@ function validateStringArray(arr: unknown, fieldName: string): void {
       throw new TypeError(`${fieldName} must contain non-empty strings.`);
     }
   }
+}
+
+function validateResourceThresholdReached(
+  payload: ResourceThresholdReachedEventPayload,
+): void {
+  requireNonEmptyString(payload.resourceId, 'resourceId');
+  requireFiniteNumber(payload.threshold, 'threshold');
+}
+
+function validateAutomationToggled(payload: AutomationToggledEventPayload): void {
+  requireNonEmptyString(payload.automationId, 'automationId');
+  requireBoolean(payload.enabled, 'enabled');
+}
+
+function validateAutomationFired(payload: AutomationFiredEventPayload): void {
+  requireNonEmptyString(payload.automationId, 'automationId');
+  requireNonEmptyString(payload.triggerKind, 'triggerKind');
+  requireNonNegativeInteger(payload.step, 'step');
 }
 
 function validateOutcomeConsistency(
@@ -125,41 +162,23 @@ function validateMissionOutputs(outputs: unknown): void {
       throw new Error('outputs must contain objects.');
     }
     const record = output as Record<string, unknown>;
-    if (typeof record.resourceId !== 'string' || record.resourceId.length === 0) {
-      throw new Error('output.resourceId must be a non-empty string.');
-    }
-    if (typeof record.amount !== 'number' || !Number.isFinite(record.amount)) {
-      throw new TypeError('output.amount must be a finite number.');
-    }
+    requireNonEmptyString(record.resourceId, 'output.resourceId');
+    requireFiniteNumber(record.amount, 'output.amount');
   }
 }
 
 function validateMissionStarted(payload: MissionStartedEventPayload): void {
-  if (typeof payload.transformId !== 'string' || payload.transformId.length === 0) {
-    throw new Error('transformId must be a non-empty string.');
-  }
-  if (typeof payload.batchId !== 'string' || payload.batchId.length === 0) {
-    throw new Error('batchId must be a non-empty string.');
-  }
-  if (!Number.isInteger(payload.startedAtStep) || payload.startedAtStep < 0) {
-    throw new Error('startedAtStep must be a non-negative integer.');
-  }
-  if (!Number.isInteger(payload.completeAtStep) || payload.completeAtStep < 0) {
-    throw new Error('completeAtStep must be a non-negative integer.');
-  }
+  requireNonEmptyString(payload.transformId, 'transformId');
+  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonNegativeInteger(payload.startedAtStep, 'startedAtStep');
+  requireNonNegativeInteger(payload.completeAtStep, 'completeAtStep');
   validateStringArray(payload.entityInstanceIds, 'entityInstanceIds');
 }
 
 function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
-  if (typeof payload.transformId !== 'string' || payload.transformId.length === 0) {
-    throw new Error('transformId must be a non-empty string.');
-  }
-  if (typeof payload.batchId !== 'string' || payload.batchId.length === 0) {
-    throw new Error('batchId must be a non-empty string.');
-  }
-  if (!Number.isInteger(payload.completedAtStep) || payload.completedAtStep < 0) {
-    throw new Error('completedAtStep must be a non-negative integer.');
-  }
+  requireNonEmptyString(payload.transformId, 'transformId');
+  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonNegativeInteger(payload.completedAtStep, 'completedAtStep');
   if (
     payload.outcomeKind !== 'success' &&
     payload.outcomeKind !== 'failure' &&
@@ -167,18 +186,57 @@ function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
   ) {
     throw new Error('outcomeKind must be "success", "failure", or "critical".');
   }
-  if (typeof payload.success !== 'boolean') {
-    throw new TypeError('success must be a boolean.');
-  }
-  if (typeof payload.critical !== 'boolean') {
-    throw new TypeError('critical must be a boolean.');
-  }
+  requireBoolean(payload.success, 'success');
+  requireBoolean(payload.critical, 'critical');
   validateOutcomeConsistency(payload.outcomeKind, payload.success, payload.critical);
   validateMissionOutputs(payload.outputs);
-  if (typeof payload.entityExperience !== 'number' || !Number.isFinite(payload.entityExperience)) {
-    throw new TypeError('entityExperience must be a finite number.');
-  }
+  requireFiniteNumber(payload.entityExperience, 'entityExperience');
   validateStringArray(payload.entityInstanceIds, 'entityInstanceIds');
+}
+
+function validateMissionStageCompleted(payload: MissionStageCompletedEventPayload): void {
+  requireNonEmptyString(payload.transformId, 'transformId');
+  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonEmptyString(payload.stageId, 'stageId');
+  if (payload.checkpoint !== undefined) {
+    if (!payload.checkpoint || typeof payload.checkpoint !== 'object') {
+      throw new Error('checkpoint must be an object.');
+    }
+    const record = payload.checkpoint as Record<string, unknown>;
+    validateMissionOutputs(record.outputs);
+  }
+}
+
+function validateMissionDecisionRequired(payload: MissionDecisionRequiredEventPayload): void {
+  requireNonEmptyString(payload.transformId, 'transformId');
+  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonEmptyString(payload.stageId, 'stageId');
+  requireNonEmptyString(payload.prompt, 'prompt');
+  if (!Array.isArray(payload.options)) {
+    throw new TypeError('options must be an array.');
+  }
+  for (const option of payload.options) {
+    if (!option || typeof option !== 'object') {
+      throw new Error('options must contain objects.');
+    }
+    const record = option as Record<string, unknown>;
+    requireNonEmptyString(record.id, 'option.id');
+    requireNonEmptyString(record.label, 'option.label');
+    requireBoolean(record.available, 'option.available');
+  }
+  requireNonNegativeInteger(payload.expiresAtStep, 'expiresAtStep');
+}
+
+function validateMissionDecisionMade(payload: MissionDecisionMadeEventPayload): void {
+  requireNonEmptyString(payload.transformId, 'transformId');
+  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonEmptyString(payload.stageId, 'stageId');
+  requireNonEmptyString(payload.optionId, 'optionId');
+  if (payload.nextStageId !== null) {
+    if (typeof payload.nextStageId !== 'string' || payload.nextStageId.length === 0) {
+      throw new Error('nextStageId must be a non-empty string or null.');
+    }
+  }
 }
 
 const CORE_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [
@@ -215,6 +273,27 @@ const CORE_EVENT_CHANNELS: readonly EventChannelConfiguration[] = [
       type: 'mission:completed',
       version: 1,
       validator: validateMissionCompleted,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'mission:stage-completed',
+      version: 1,
+      validator: validateMissionStageCompleted,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'mission:decision-required',
+      version: 1,
+      validator: validateMissionDecisionRequired,
+    },
+  } as EventChannelConfiguration,
+  {
+    definition: {
+      type: 'mission:decision-made',
+      version: 1,
+      validator: validateMissionDecisionMade,
     },
   } as EventChannelConfiguration,
 ];
