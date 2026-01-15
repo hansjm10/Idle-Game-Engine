@@ -23,6 +23,7 @@ game.purchaseGenerator('generator.mine', 1);
 Notes:
 - `game.start()` ticks with a fixed delta equal to the scheduler interval (defaults to the runtime `stepSizeMs`).
 - `game.hydrate(save)` accepts raw parsed saves (including older schema versions) and will throw if the save is from an earlier step than the current runtime.
+- Facade actions return a `CommandResult` (`{ success: true }` or `{ success: false, error }`). Failures include `COMMAND_UNSUPPORTED` (no handler registered for this game instance) and `COMMAND_REJECTED` (queue refused the command, e.g. backpressure/max size).
 
 ## Required fields by content type
 
