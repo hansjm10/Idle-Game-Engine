@@ -7,6 +7,7 @@ import { createProductionSystem } from './production-system.js';
 import { createProgressionCoordinator } from './progression-coordinator.js';
 import {
   createContentPack,
+  createAchievementDefinition,
   createGeneratorDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
@@ -67,6 +68,9 @@ function createTestContent() {
           },
         ],
       }),
+    ],
+    achievements: [
+      createAchievementDefinition('achievement.energy-1'),
     ],
   });
 }
@@ -156,15 +160,14 @@ describe('progression-coordinator-save', () => {
   it('ignores serialized generator entries with blank ids', () => {
     const { coordinator, productionSystem } = createHarness(0);
     coordinator.incrementGeneratorOwned('generator.mine', 3);
+    coordinator.setGeneratorEnabled('generator.mine', false);
 
-    const saved = serializeProgressionCoordinatorState(
-      coordinator,
-      productionSystem,
-    );
+    const saved = serializeProgressionCoordinatorState(coordinator, productionSystem);
 
     const corrupted = {
       ...saved,
       generators: [
+        ...saved.generators,
         {
           id: ' ',
           owned: 99,
@@ -182,9 +185,75 @@ describe('progression-coordinator-save', () => {
       restored.productionSystem,
     );
 
-    const owned = restored.coordinator.state.generators?.find(
-      (generator) => generator.id === 'generator.mine',
-    )?.owned;
-    expect(owned).toBe(0);
+    expect(
+      serializeProgressionCoordinatorState(
+        restored.coordinator,
+        restored.productionSystem,
+      ),
+    ).toEqual(saved);
+  });
+
+  it('ignores serialized upgrade entries with blank ids', () => {
+    const { coordinator, productionSystem } = createHarness(0);
+    coordinator.setUpgradePurchases('upgrade.double-mine', 1);
+
+    const saved = serializeProgressionCoordinatorState(coordinator, productionSystem);
+    const corrupted = {
+      ...saved,
+      upgrades: [
+        ...saved.upgrades,
+        {
+          id: ' ',
+          purchases: 123,
+        },
+      ],
+    };
+
+    const restored = createHarness(corrupted.step);
+    hydrateProgressionCoordinatorState(
+      corrupted,
+      restored.coordinator,
+      restored.productionSystem,
+    );
+
+    expect(
+      serializeProgressionCoordinatorState(
+        restored.coordinator,
+        restored.productionSystem,
+      ),
+    ).toEqual(saved);
+  });
+
+  it('ignores serialized achievement entries with blank ids', () => {
+    const { coordinator, productionSystem } = createHarness(0);
+
+    const saved = serializeProgressionCoordinatorState(coordinator, productionSystem);
+    const corrupted = {
+      ...saved,
+      achievements: [
+        ...saved.achievements,
+        {
+          id: ' ',
+          completions: 99,
+          progress: 123,
+          nextRepeatableAtStep: 50,
+          lastCompletedStep: 10,
+        },
+      ],
+    };
+
+    const restored = createHarness(corrupted.step);
+    hydrateProgressionCoordinatorState(
+      corrupted,
+      restored.coordinator,
+      restored.productionSystem,
+    );
+
+    expect(
+      serializeProgressionCoordinatorState(
+        restored.coordinator,
+        restored.productionSystem,
+      ),
+    ).toEqual(saved);
   });
 });
