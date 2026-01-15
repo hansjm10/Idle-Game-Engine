@@ -812,6 +812,30 @@ export const featureGateViolationFixture = {
 };
 
 /**
+ * FEATURE GATE VIOLATIONS: Pack uses entities not supported by target runtime
+ */
+export const entityFeatureGateViolationFixture = {
+  metadata: createMetadata('entity-feature-gate-pack', { engine: '^0.4.0' }), // Targets old runtime
+  resources: [],
+  entities: [
+    {
+      id: 'scout',
+      name: baseTitle,
+      description: baseTitle,
+      stats: [
+        {
+          id: 'speed',
+          name: baseTitle,
+          baseValue: { kind: 'constant', value: 1 },
+        },
+      ],
+    },
+  ],
+  generators: [],
+  upgrades: [],
+};
+
+/**
  * DUPLICATE IDS: Multiple resources with same ID
  */
 export const duplicateResourceIdsFixture = {

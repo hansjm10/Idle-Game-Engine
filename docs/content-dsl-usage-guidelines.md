@@ -1175,6 +1175,7 @@ lives in `packages/content-schema/src/runtime-compat.ts`:
 | `transforms` | `0.3.0` | `docs/idle-engine-design.md` (§6.2) |
 | `runtimeEvents` | `0.3.0` | `docs/runtime-event-pubsub-design.md` |
 | `prestigeLayers` | `0.4.0` | `docs/idle-engine-design.md` (§6.2) |
+| `entities` | `0.5.0` | `docs/idle-engine-design.md` (§6.2) |
 
 When `metadata.engine` omits or predates the required version, validation pushes
 structured `FeatureViolation` errors or warnings (see

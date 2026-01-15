@@ -31,6 +31,7 @@ import {
   dependencyLoopFixture,
   duplicateResourceIdsFixture,
   featureGateViolationFixture,
+  entityFeatureGateViolationFixture,
   invalidAllowlistReferenceFixture,
   invalidEntityFormulaReferencesFixture,
   invalidEntityMaxCountFormulaReferencesFixture,
@@ -834,10 +835,10 @@ describe('Integration: Runtime Event Contributions', () => {
   });
 });
 
-describe('Integration: Feature Gates', () => {
-  it('rejects packs using automations when targeting runtime <0.2.0', () => {
-    const validator = createContentPackValidator({ runtimeVersion: '0.1.0' });
-    const result = validator.safeParse(featureGateViolationFixture);
+	describe('Integration: Feature Gates', () => {
+	  it('rejects packs using automations when targeting runtime <0.2.0', () => {
+	    const validator = createContentPackValidator({ runtimeVersion: '0.1.0' });
+	    const result = validator.safeParse(featureGateViolationFixture);
 
     expect(result.success).toBe(false);
     if (result.success) return;
@@ -851,21 +852,52 @@ describe('Integration: Feature Gates', () => {
     );
   });
 
-  it('allows automations when targeting runtime >=0.2.0', () => {
-    const packWithAutomation = {
-      ...featureGateViolationFixture,
-      metadata: {
-        ...featureGateViolationFixture.metadata,
-        engine: '^0.2.0',
-      },
-    };
+	  it('allows automations when targeting runtime >=0.2.0', () => {
+	    const packWithAutomation = {
+	      ...featureGateViolationFixture,
+	      metadata: {
+	        ...featureGateViolationFixture.metadata,
+	        engine: '^0.2.0',
+	      },
+	    };
 
-    const validator = createContentPackValidator({ runtimeVersion: '0.2.0' });
-    const result = validator.safeParse(packWithAutomation);
+	    const validator = createContentPackValidator({ runtimeVersion: '0.2.0' });
+	    const result = validator.safeParse(packWithAutomation);
 
-    expect(result.success).toBe(true);
-  });
-});
+	    expect(result.success).toBe(true);
+	  });
+
+	  it('rejects packs using entities when targeting runtime <0.5.0', () => {
+	    const validator = createContentPackValidator({ runtimeVersion: '0.4.0' });
+	    const result = validator.safeParse(entityFeatureGateViolationFixture);
+
+	    expect(result.success).toBe(false);
+	    if (result.success) return;
+
+	    expect(getZodIssues(result.error)).toEqual(
+	      expect.arrayContaining([
+	        expect.objectContaining({
+	          message: expect.stringMatching(/entities.*0\.5\.0/i),
+	        }),
+	      ]),
+	    );
+	  });
+
+	  it('allows entities when targeting runtime >=0.5.0', () => {
+	    const packWithEntities = {
+	      ...entityFeatureGateViolationFixture,
+	      metadata: {
+	        ...entityFeatureGateViolationFixture.metadata,
+	        engine: '^0.5.0',
+	      },
+	    };
+
+	    const validator = createContentPackValidator({ runtimeVersion: '0.5.0' });
+	    const result = validator.safeParse(packWithEntities);
+
+	    expect(result.success).toBe(true);
+	  });
+	});
 
 describe('Integration: Duplicate IDs', () => {
   it('rejects packs with duplicate resource IDs', () => {
