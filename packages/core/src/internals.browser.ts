@@ -37,6 +37,7 @@ import {
 } from './command-dispatcher.js';
 import { CommandQueue } from './command-queue.js';
 import { telemetry } from './telemetry.js';
+import { isFiniteNumber } from './validation/primitives.js';
 import {
   createRuntimeDiagnosticsController,
   type IdleEngineRuntimeDiagnosticsOptions,
@@ -293,14 +294,14 @@ export class IdleEngineRuntime {
   }
 
   creditTime(deltaMs: number): void {
-    if (typeof deltaMs !== 'number' || !Number.isFinite(deltaMs) || deltaMs <= 0) {
+    if (!isFiniteNumber(deltaMs) || deltaMs <= 0) {
       return;
     }
     this.accumulator += deltaMs;
   }
 
   fastForward(deltaMs: number): number {
-    if (typeof deltaMs !== 'number' || !Number.isFinite(deltaMs) || deltaMs <= 0) {
+    if (!isFiniteNumber(deltaMs) || deltaMs <= 0) {
       return 0;
     }
 

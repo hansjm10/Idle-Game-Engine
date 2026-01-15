@@ -11,6 +11,11 @@ import {
 } from './command-transport.js';
 import type { IdempotencyRegistry } from './idempotency-registry.js';
 import { InMemoryIdempotencyRegistry } from './idempotency-registry.js';
+import {
+  isFiniteNumber,
+  isNonBlankString,
+  isNonNegativeInteger,
+} from './validation/primitives.js';
 
 const DEFAULT_MAX_IDENTIFIER_LENGTH = 128;
 
@@ -126,7 +131,7 @@ export function createCommandTransportServer(
       return response;
     }
 
-    if (!Number.isFinite(envelope?.sentAt)) {
+    if (!isFiniteNumber(envelope?.sentAt)) {
       const error = createResponseError(
         'INVALID_SENT_AT',
         'Envelope sentAt must be a finite number.',
@@ -276,14 +281,14 @@ export function createCommandTransportServer(
 }
 
 function normalizeTtl(value: number | undefined): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+  if (!isFiniteNumber(value) || value <= 0) {
     return DEFAULT_IDEMPOTENCY_TTL_MS;
   }
   return Math.floor(value);
 }
 
 function normalizeMaxIdentifierLength(value: number | undefined): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+  if (!isFiniteNumber(value) || value <= 0) {
     return DEFAULT_MAX_IDENTIFIER_LENGTH;
   }
   return Math.floor(value);
@@ -303,8 +308,7 @@ function normalizeIdentifier(
     };
   }
 
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
+  if (!isNonBlankString(value)) {
     return {
       ok: false,
       error: createResponseError(
@@ -314,6 +318,7 @@ function normalizeIdentifier(
     };
   }
 
+  const trimmed = value.trim();
   if (trimmed.length > maxLength) {
     return {
       ok: false,
@@ -359,7 +364,7 @@ function normalizeSerializedCommand(
   const record = value as Record<string, unknown>;
 
   const type = record.type;
-  if (typeof type !== 'string' || type.trim().length === 0) {
+  if (!isNonBlankString(type)) {
     return {
       ok: false,
       error: createResponseError(
@@ -369,15 +374,15 @@ function normalizeSerializedCommand(
     };
   }
 
-  const priority = record.priority;
-  if (!isValidCommandPriority(priority)) {
-    const priorityDetail =
-      typeof priority === 'number' && Number.isFinite(priority)
-        ? priority
-        : String(priority);
-    return {
-      ok: false,
-      error: createResponseError(
+    const priority = record.priority;
+    if (!isValidCommandPriority(priority)) {
+      const priorityDetail =
+        isFiniteNumber(priority)
+          ? priority
+          : String(priority);
+      return {
+        ok: false,
+        error: createResponseError(
         'INVALID_COMMAND_PRIORITY',
         'Command priority is invalid.',
         { priority: priorityDetail },
@@ -386,7 +391,7 @@ function normalizeSerializedCommand(
   }
 
   const timestamp = record.timestamp;
-  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+  if (!isFiniteNumber(timestamp)) {
     return {
       ok: false,
       error: createResponseError(
@@ -397,12 +402,7 @@ function normalizeSerializedCommand(
   }
 
   const step = record.step;
-  if (
-    typeof step !== 'number' ||
-    !Number.isFinite(step) ||
-    !Number.isInteger(step) ||
-    step < 0
-  ) {
+  if (!isNonNegativeInteger(step)) {
     return {
       ok: false,
       error: createResponseError(
@@ -461,8 +461,7 @@ function normalizeSerializedCommand(
 
 function isValidCommandPriority(value: unknown): value is CommandPriority {
   return (
-    typeof value === 'number' &&
-    Number.isFinite(value) &&
+    isFiniteNumber(value) &&
     Object.values(CommandPriority).includes(value as CommandPriority)
   );
 }
@@ -473,22 +472,12 @@ function resolveServerStep(
 ): number {
   if (getNextExecutableStep) {
     const step = getNextExecutableStep();
-    if (
-      typeof step === 'number' &&
-      Number.isFinite(step) &&
-      Number.isInteger(step) &&
-      step >= 0
-    ) {
+    if (isNonNegativeInteger(step)) {
       return step;
     }
   }
 
-  if (
-    typeof fallbackStep === 'number' &&
-    Number.isFinite(fallbackStep) &&
-    Number.isInteger(fallbackStep) &&
-    fallbackStep >= 0
-  ) {
+  if (isNonNegativeInteger(fallbackStep)) {
     return fallbackStep;
   }
 
@@ -611,7 +600,7 @@ function cloneJsonValueInner(
     case 'boolean':
       return value;
     case 'number':
-      if (!Number.isFinite(value)) {
+      if (!isFiniteNumber(value)) {
         throw new Error('Command payload contains non-finite number');
       }
       return value;

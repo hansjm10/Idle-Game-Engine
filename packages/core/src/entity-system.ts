@@ -8,6 +8,7 @@ import { evaluateCondition } from './condition-evaluator.js';
 import type { ConditionContext } from './condition-evaluator.js';
 import type { System, TickContext } from './index.js';
 import { seededRandom } from './rng.js';
+import { isFiniteNumber } from './validation/primitives.js';
 
 export interface EntityState {
   readonly id: string;
@@ -97,14 +98,17 @@ const compareStableStrings = (left: string, right: string): number => {
 };
 
 const normalizeNonNegativeInt = (value: unknown): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return 0;
+  }
+  if (value < 0) {
     return 0;
   }
   return Math.floor(value);
 };
 
 const normalizeFiniteNumber = (value: unknown): number =>
-  typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  isFiniteNumber(value) ? value : 0;
 
 const clampNumber = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
@@ -116,12 +120,12 @@ const createEntityFormulaEvaluationContext = (options: {
   readonly conditionContext?: ConditionContext;
 }): FormulaEvaluationContext => {
   const level =
-    Number.isFinite(options.level) && options.level >= 0 ? options.level : 0;
-  const step = Number.isFinite(options.step) && options.step >= 0
+    isFiniteNumber(options.level) && options.level >= 0 ? options.level : 0;
+  const step = isFiniteNumber(options.step) && options.step >= 0
     ? options.step
     : 0;
   const stepDurationMs =
-    Number.isFinite(options.stepDurationMs) && options.stepDurationMs >= 0
+    isFiniteNumber(options.stepDurationMs) && options.stepDurationMs >= 0
       ? options.stepDurationMs
       : 0;
   const deltaTime = stepDurationMs / 1000;

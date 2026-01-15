@@ -75,6 +75,28 @@ describe('createCommandTransportServer', () => {
     expect(commandQueue.size).toBe(1);
   });
 
+  it('purges expired idempotency entries and accepts again after the ttl', () => {
+    const { commandQueue } = createRuntime();
+
+    let nowMs = 100;
+    const server = createCommandTransportServer({
+      commandQueue,
+      idempotencyTtlMs: 1,
+      now: () => nowMs,
+    });
+
+    const envelope = createEnvelope();
+    expect(server.handleEnvelope(envelope).status).toBe('accepted');
+    expect(commandQueue.size).toBe(1);
+
+    expect(server.handleEnvelope(envelope).status).toBe('duplicate');
+    expect(commandQueue.size).toBe(1);
+
+    nowMs = 102;
+    expect(server.handleEnvelope(envelope).status).toBe('accepted');
+    expect(commandQueue.size).toBe(2);
+  });
+
   it('records rejected responses and returns duplicate status for repeats', () => {
     const { commandQueue } = createRuntime();
 
@@ -357,6 +379,13 @@ describe('createCommandTransportServer', () => {
       label: 'invalid priority',
       commandOverrides: { priority: 99 },
       errorCode: 'INVALID_COMMAND_PRIORITY',
+      expectedDetails: { priority: 99 },
+    },
+    {
+      label: 'non-finite priority',
+      commandOverrides: { priority: Number.NaN },
+      errorCode: 'INVALID_COMMAND_PRIORITY',
+      expectedDetails: { priority: 'NaN' },
     },
     {
       label: 'invalid timestamp',
@@ -368,7 +397,12 @@ describe('createCommandTransportServer', () => {
       commandOverrides: { step: -1 },
       errorCode: 'INVALID_COMMAND_STEP',
     },
-  ])('rejects commands with $label', ({ commandOverrides, errorCode }) => {
+    {
+      label: 'non-integer step',
+      commandOverrides: { step: 0.5 },
+      errorCode: 'INVALID_COMMAND_STEP',
+    },
+  ])('rejects commands with $label', ({ commandOverrides, errorCode, expectedDetails }) => {
     const { commandQueue } = createRuntime();
 
     const baseCommand = createEnvelope().command;
@@ -386,7 +420,35 @@ describe('createCommandTransportServer', () => {
     const rejected = server.handleEnvelope(envelope);
     expect(rejected.status).toBe('rejected');
     expect(rejected.error?.code).toBe(errorCode);
+    if (expectedDetails) {
+      expect(rejected.error?.details).toEqual(expectedDetails);
+    }
     expect(commandQueue.size).toBe(0);
+  });
+
+  it('uses the command step when getNextExecutableStep is invalid', () => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      getNextExecutableStep: () => Number.NaN,
+    });
+
+    const envelope = createEnvelope({
+      command: {
+        ...createEnvelope().command,
+        step: 5,
+      },
+    });
+
+    const accepted = server.handleEnvelope(envelope);
+    expect(accepted).toEqual({
+      requestId: 'req-1',
+      status: 'accepted',
+      serverStep: 5,
+    });
+
+    expect(commandQueue.dequeueAll()[0]?.step).toBe(5);
   });
 
   it('rejects commands with invalid command requestId values', () => {
@@ -447,6 +509,10 @@ describe('createCommandTransportServer', () => {
       createPayload: () => ({ value: undefined }),
     },
     {
+      label: 'non-finite number',
+      createPayload: () => ({ value: Number.POSITIVE_INFINITY }),
+    },
+    {
       label: 'circular reference',
       createPayload: () => createCircularPayload(),
     },
@@ -481,6 +547,28 @@ describe('createCommandTransportServer', () => {
     expect(rejected.status).toBe('rejected');
     expect(rejected.error?.code).toBe('INVALID_COMMAND_PAYLOAD');
     expect(commandQueue.size).toBe(0);
+  });
+
+  it('accepts envelopes when command requestId is omitted', () => {
+    const { runtime, commandQueue, commandDispatcher } = createRuntime();
+    commandDispatcher.register('TEST', () => undefined);
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      getNextExecutableStep: () => runtime.getNextExecutableStep(),
+    });
+
+    const baseCommand = createEnvelope().command;
+    const command = { ...baseCommand, requestId: undefined };
+
+    const accepted = server.handleEnvelope(
+      createEnvelope({
+        command,
+      }),
+    );
+
+    expect(accepted.status).toBe('accepted');
+    expect(commandQueue.dequeueAll()[0]?.requestId).toBe('req-1');
   });
 
   it('updates stored responses when command outcomes are drained', () => {

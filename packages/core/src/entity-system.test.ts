@@ -15,7 +15,8 @@ import type {
   RuntimeEventPayload,
   RuntimeEventType,
 } from './events/runtime-event.js';
-import { EntitySystem, type EntityAssignment } from './entity-system.js';
+import { EntitySystem, serializeEntitySystemState } from './entity-system.js';
+import type { EntityAssignment, EntitySystemState } from './entity-system.js';
 
 const literal = (value: number): NumericFormula => ({
   kind: 'constant',
@@ -343,5 +344,101 @@ describe('EntitySystem', () => {
     const updated = system.getInstanceState(instance.instanceId)!;
     expect(updated.level).toBe(1);
     expect(updated.experience).toBe(12);
+  });
+
+  it('serializes non-finite and negative values as safe defaults', () => {
+    const state = {
+      entities: new Map([
+        [
+          'entity.alpha',
+          {
+            id: 'entity.alpha',
+            count: Number.NaN,
+            availableCount: -5,
+            unlocked: true,
+            visible: true,
+          },
+        ],
+      ]),
+      instances: new Map([
+        [
+          'entity.alpha_0_000001',
+          {
+            instanceId: 'entity.alpha_0_000001',
+            entityId: 'entity.alpha',
+            level: Number.NaN,
+            experience: Number.POSITIVE_INFINITY,
+            stats: { 'stat.test': 1 },
+            assignment: {
+              missionId: 'mission.alpha',
+              batchId: 'batch.1',
+              deployedAtStep: -1,
+              returnStep: Number.POSITIVE_INFINITY,
+            },
+          },
+        ],
+      ]),
+      entityInstances: new Map([
+        ['entity.alpha', ['entity.alpha_0_000001']],
+      ]),
+    } as unknown as EntitySystemState;
+
+    const serialized = serializeEntitySystemState(state);
+
+    expect(serialized.entities[0]?.count).toBe(0);
+    expect(serialized.entities[0]?.availableCount).toBe(0);
+    expect(serialized.instances[0]?.level).toBe(1);
+    expect(serialized.instances[0]?.experience).toBe(0);
+    expect(serialized.instances[0]?.assignment?.deployedAtStep).toBe(0);
+    expect(serialized.instances[0]?.assignment?.returnStep).toBe(0);
+  });
+
+  it('normalizes malformed serialized instance fields during restore', () => {
+    const definition = createEntityDefinition('entity.scout', {
+      trackInstances: true,
+    });
+
+    const system = new EntitySystem([definition], { nextInt: () => 1 });
+
+    system.restoreState(
+      {
+        entities: [
+          {
+            id: 'entity.scout',
+            count: Number.NaN,
+            availableCount: Number.POSITIVE_INFINITY,
+            unlocked: true,
+            visible: true,
+          },
+        ],
+        instances: [
+          {
+            instanceId: 'entity.scout_0_000001',
+            entityId: 'entity.scout',
+            level: Number.NaN,
+            experience: Number.POSITIVE_INFINITY,
+            stats: {},
+            assignment: {
+              missionId: 'mission.alpha',
+              batchId: 'batch.1',
+              deployedAtStep: -1,
+              returnStep: Number.POSITIVE_INFINITY,
+            },
+          },
+        ],
+        entityInstances: [
+          {
+            entityId: 'entity.scout',
+            instanceIds: ['entity.scout_0_000001'],
+          },
+        ],
+      } as any,
+    );
+
+    const instance = system.getInstanceState('entity.scout_0_000001');
+    expect(instance?.level).toBe(1);
+    expect(instance?.experience).toBe(0);
+    expect(instance?.assignment?.deployedAtStep).toBe(0);
+    expect(instance?.assignment?.returnStep).toBe(0);
   });
 });
