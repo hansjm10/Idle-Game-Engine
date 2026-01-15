@@ -186,6 +186,90 @@ Complete example:
 }
 ```
 
+#### Entities
+
+**Purpose**: Declare units/heroes/NPCs tracked by the runtime (optionally with per-instance identity, stats, and progression).
+
+Required fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | `ContentId` | Entity identifier. |
+| `name` | `LocalizedText` | Display name. |
+| `description` | `LocalizedSummary` | Short description. |
+| `stats` | `{ id, name, baseValue, minValue?, maxValue? }[]` | At least one stat. |
+
+Optional fields (defaults in parentheses):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `maxCount` | `NumericFormula` | Total entity cap (count or instances). |
+| `startCount` (`0`) | `number` | Starting count, or starting instances when `trackInstances: true`. |
+| `trackInstances` (`false`) | `boolean` | When `true`, runtime tracks individual instances (levels/stats/mission assignments). |
+| `progression` | `{ experienceResource?, levelFormula, maxLevel?, statGrowth }` | Enables XP/levels and per-level stat growth. |
+| `unlockCondition` | `Condition` | If omitted, the entity starts unlocked. |
+| `visibilityCondition` | `Condition` | If omitted, uses `visible`. |
+| `unlocked` (`false`) | `boolean` | When `unlockCondition` is present, `unlocked: true` starts it unlocked anyway. |
+| `visible` (`true`) | `boolean` | Default visibility. |
+| `tags` (`[]`) | `string[]` | Normalized, lowercased. |
+| `order` | `number` | UI ordering. |
+
+Minimal example:
+
+```json
+{
+  "id": "docs-minimal.scout",
+  "name": { "default": "Scout" },
+  "description": { "default": "A basic explorer." },
+  "stats": [
+    {
+      "id": "docs-minimal.scout.speed",
+      "name": { "default": "Speed" },
+      "baseValue": { "kind": "constant", "value": 1 }
+    }
+  ]
+}
+```
+
+Complete example:
+
+```json
+{
+  "id": "docs-missions.scout",
+  "name": { "default": "Scout" },
+  "description": { "default": "A recruitable unit used in missions." },
+  "stats": [
+    {
+      "id": "docs-missions.scout.power",
+      "name": { "default": "Power" },
+      "baseValue": { "kind": "constant", "value": 5 },
+      "minValue": { "kind": "constant", "value": 0 }
+    },
+    {
+      "id": "docs-missions.scout.luck",
+      "name": { "default": "Luck" },
+      "baseValue": { "kind": "constant", "value": 0.1 },
+      "minValue": { "kind": "constant", "value": 0 },
+      "maxValue": { "kind": "constant", "value": 1 }
+    }
+  ],
+  "maxCount": { "kind": "constant", "value": 5 },
+  "startCount": 2,
+  "trackInstances": true,
+  "progression": {
+    "experienceResource": "docs-missions.scout-xp",
+    "levelFormula": { "kind": "linear", "base": 0, "slope": 10 },
+    "maxLevel": 20,
+    "statGrowth": {
+      "docs-missions.scout.power": { "kind": "constant", "value": 0.5 }
+    }
+  },
+  "unlockCondition": { "kind": "always" },
+  "order": 40,
+  "tags": ["units", "missions"]
+}
+```
+
 #### Generators
 
 **Purpose**: Define producers that convert time into resources.
@@ -679,23 +763,33 @@ Required fields:
 | `id` | `ContentId` | Transform identifier. |
 | `name` | `LocalizedText` | Display name. |
 | `description` | `LocalizedSummary` | Short description. |
-| `mode` | `instant` \| `continuous` \| `batch` | Execution mode. |
+| `mode` | `instant` \| `continuous` \| `batch` \| `mission` | Execution mode. |
 | `inputs` | `{ resourceId, amount }[]` | At least one input. |
-| `outputs` | `{ resourceId, amount }[]` | At least one output. |
+| `outputs` | `{ resourceId, amount }[]` | Non-mission transforms must have at least one output; mission transforms use `outcomes.*.outputs` and may set this to `[]`. |
 | `trigger` | `TransformTrigger` | Manual, automation, condition, or event. |
 
 Optional fields (defaults in parentheses):
 
 | Field | Type | Notes |
 | --- | --- | --- |
-| `duration` | `NumericFormula` | Required for `batch` mode. |
-| `cooldown` | `NumericFormula` | Cooldown between runs. |
+| `duration` | `NumericFormula` | Duration in milliseconds. Required for `batch` mode and single-stage mission transforms. |
+| `cooldown` | `NumericFormula` | Cooldown in milliseconds between runs. |
 | `unlockCondition` | `Condition` | Unlock gating. |
 | `visibilityCondition` | `Condition` | UI-only visibility. |
 | `automation` | `{ automationId }` | Required for automation trigger. |
 | `tags` (`[]`) | `string[]` | Categorization. |
 | `safety` | `{ maxRunsPerTick?, maxOutstandingBatches? }` | Runtime guardrails. |
 | `order` | `number` | UI ordering. |
+
+Mission-only fields (when `mode: "mission"`):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `entityRequirements` | `{ entityId, count, minStats?, preferHighStats?, returnOnComplete? }[]` | Required; selects entity instances for deployment. |
+| `successRate` | `{ baseRate, statModifiers?, usePRD? }` | Optional; if omitted, missions always succeed. |
+| `outcomes` | `{ success, failure?, critical? }` | Required; mission rewards (and optional entity XP/damage). |
+| `stages` | `MissionStage[]` | Optional; define multi-stage missions with checkpoints/decisions. |
+| `initialStage` | `string` | Optional; defaults to the first stage when `stages` is present. |
 
 Minimal example:
 
@@ -721,8 +815,8 @@ Complete example:
   "mode": "batch",
   "inputs": [{ "resourceId": "docs-prestige.energy", "amount": { "kind": "constant", "value": 50 } }],
   "outputs": [{ "resourceId": "docs-prestige.shards", "amount": { "kind": "constant", "value": 8 } }],
-  "duration": { "kind": "constant", "value": 15 },
-  "cooldown": { "kind": "constant", "value": 10 },
+  "duration": { "kind": "constant", "value": 15000 },
+  "cooldown": { "kind": "constant", "value": 10000 },
   "trigger": {
     "kind": "condition",
     "condition": {
@@ -735,6 +829,109 @@ Complete example:
   "unlockCondition": { "kind": "always" },
   "safety": { "maxRunsPerTick": 5, "maxOutstandingBatches": 20 },
   "order": 80
+}
+```
+
+Mission example (multi-stage with a decision):
+
+```json
+{
+  "id": "docs-missions.forest-expedition",
+  "name": { "default": "Forest Expedition" },
+  "description": { "default": "Send scouts to explore the forest." },
+  "mode": "mission",
+  "inputs": [{ "resourceId": "docs-missions.supplies", "amount": { "kind": "constant", "value": 2 } }],
+  "outputs": [],
+  "trigger": { "kind": "manual" },
+  "entityRequirements": [
+    {
+      "entityId": "docs-missions.scout",
+      "count": { "kind": "constant", "value": 2 },
+      "preferHighStats": ["docs-missions.scout.luck"]
+    }
+  ],
+  "successRate": {
+    "baseRate": { "kind": "constant", "value": 0.6 },
+    "statModifiers": [
+      {
+        "stat": "docs-missions.scout.luck",
+        "weight": { "kind": "constant", "value": 0.1 },
+        "entityScope": "average"
+      }
+    ],
+    "usePRD": true
+  },
+  "outcomes": {
+    "success": {
+      "outputs": [{ "resourceId": "docs-missions.loot", "amount": { "kind": "constant", "value": 5 } }],
+      "entityExperience": { "kind": "constant", "value": 3 },
+      "message": { "default": "The expedition returns with supplies." }
+    },
+    "failure": {
+      "outputs": [],
+      "entityDamage": { "kind": "constant", "value": 1 },
+      "message": { "default": "The expedition returns empty-handed." }
+    },
+    "critical": {
+      "chance": { "kind": "constant", "value": 0.1 },
+      "outputs": [{ "resourceId": "docs-missions.loot", "amount": { "kind": "constant", "value": 15 } }],
+      "entityExperience": { "kind": "constant", "value": 6 },
+      "message": { "default": "Jackpot!" }
+    }
+  },
+  "stages": [
+    {
+      "id": "travel",
+      "name": { "default": "Travel" },
+      "duration": { "kind": "constant", "value": 30000 },
+      "checkpoint": {
+        "outputs": [],
+        "message": { "default": "Scouts reach the forest edge." }
+      },
+      "nextStage": "search"
+    },
+    {
+      "id": "search",
+      "name": { "default": "Search" },
+      "duration": { "kind": "constant", "value": 60000 },
+      "decision": {
+        "prompt": { "default": "Take the safe path or a risky shortcut?" },
+        "timeout": { "kind": "constant", "value": 15000 },
+        "defaultOption": "safe",
+        "options": [
+          {
+            "id": "safe",
+            "label": { "default": "Safe path" },
+            "nextStage": "return_safe",
+            "modifiers": {
+              "successRateBonus": { "kind": "constant", "value": 0.05 }
+            }
+          },
+          {
+            "id": "risky",
+            "label": { "default": "Risky shortcut" },
+            "nextStage": "return_risky",
+            "modifiers": {
+              "successRateBonus": { "kind": "constant", "value": -0.05 },
+              "outputMultiplier": { "kind": "constant", "value": 1.5 }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "return_safe",
+      "name": { "default": "Return" },
+      "duration": { "kind": "constant", "value": 30000 },
+      "nextStage": null
+    },
+    {
+      "id": "return_risky",
+      "name": { "default": "Return (risky)" },
+      "duration": { "kind": "constant", "value": 30000 },
+      "nextStage": null
+    }
+  ]
 }
 ```
 
@@ -1030,10 +1227,24 @@ until the transform succeeds (blocked by cooldown, inputs, or safety limits).
 ### Mode semantics
 
 - `instant`: spend inputs atomically and apply outputs immediately in the same tick.
-- `batch`: spend inputs immediately, then deliver outputs after `duration`
-  (step-based). Outstanding batches are capped by `safety.maxOutstandingBatches`.
+- `batch`: spend inputs immediately, then deliver outputs after `duration` (milliseconds,
+  step-based). Outstanding batches are capped by `safety.maxOutstandingBatches`.
+- `mission`: spend inputs immediately, deploy entity instances, then resolve an outcome at completion
+  (single-stage `duration` or `stages[].duration` in milliseconds). Multi-stage missions may pause
+  on decisions until a `MAKE_MISSION_DECISION` command is received.
 - `continuous`: formulas evaluate to per-second rates with accumulator semantics;
   runtime execution is not yet supported (see Limitations).
+
+### Mission semantics (mission-mode transforms)
+
+- Mission-mode transforms require the Entity System and entities with `trackInstances: true` so the runtime can deploy specific instances.
+- `entityRequirements[]` selects available instances. Optional `minStats` and `preferHighStats` guide selection; deployed instances are unavailable until they return.
+- `successRate.baseRate` defaults to `1` when omitted (always succeed). `statModifiers` adjust the base rate from deployed entity stats. `usePRD: true` uses a deterministic PRD registry keyed by transform id to reduce streakiness.
+- `outcomes` define the resource outputs (and optional `entityExperience` / `entityDamage`) applied when the mission completes.
+- Multi-stage missions:
+  - `stages[].checkpoint` outputs are applied when a stage completes.
+  - `stages[].decision` pauses the mission and emits `mission:decision-required` until a `MAKE_MISSION_DECISION` command is received (or the decision `timeout` elapses and the `defaultOption` is used).
+- Mission mode emits runtime events including `mission:started`, `mission:stage-completed`, `mission:decision-required`, `mission:decision-made`, and `mission:completed`.
 
 ### Cooldowns and safety limits
 
@@ -1049,6 +1260,7 @@ until the transform succeeds (blocked by cooldown, inputs, or safety limits).
 ### Formula evaluation guardrails
 
 - `inputs[].amount`, `outputs[].amount`, `duration`, and `cooldown` accept numeric formulas.
+- Mission-only fields also accept formulas (`entityRequirements[].count`, `successRate.baseRate`, stage durations/timeouts, and outcome outputs).
 - Non-finite evaluations invalidate the run; negative values are clamped to `0`.
 - Inputs are evaluated and validated before any spend to preserve atomicity.
 
@@ -1056,6 +1268,7 @@ until the transform succeeds (blocked by cooldown, inputs, or safety limits).
 
 - `continuous` mode is defined in schema but not yet supported by the runtime.
 - `RUN_TRANSFORM` is restricted to `PLAYER` and `SYSTEM` priorities.
+- Mission transforms require the Entity System to be enabled in runtime wiring.
 
 ## Transform Patterns & Cycle Detection
 

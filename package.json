@@ -6,6 +6,7 @@
     "build": "./tools/scripts/run-workspace-build.sh",
     "lint": "./tools/scripts/run-workspace-lint.sh",
     "lint:fast": "node tools/scripts/run-fast-lint.mjs",
+    "markdownlint-cli": "markdownlint \"docs/**/*.md\"",
     "test": "./tools/scripts/run-workspace-test.sh",
     "test:ci": "./tools/scripts/run-workspace-test-ci.sh",
     "test:ci:serial": "pnpm -r run --sort --workspace-concurrency 1 test:ci",

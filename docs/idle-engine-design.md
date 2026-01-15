@@ -3,27 +3,27 @@
 ## Document Control
 - **Title**: Idle Engine Design Document
 - **Authors**: Jordan Hans
-- **Reviewers**: TODO (Runtime Core, Content Pipeline, Shell, Social maintainers)
+- **Reviewers**: @hansjm10
 - **Status**: Draft
-- **Last Updated**: 2025-12-14
-- **Related Issues**: Idle-Game-Engine#197; Idle-Game-Engine#6; Idle-Game-Engine#11; Idle-Game-Engine#159
+- **Last Updated**: 2026-01-15
+- **Related Issues**: Idle-Game-Engine#753; Idle-Game-Engine#586
 - **Execution Mode**: Hybrid
 
 ## 1. Summary
-The Idle Engine is a reusable, data-driven runtime for incremental/idle games. It separates a deterministic simulation core (`packages/core`) from game-specific content packs and presentation shells so multiple titles can share the same engine while remaining portable across web and desktop wrappers.
+The Idle Engine is a reusable, data-driven runtime for incremental/idle games. It separates a deterministic simulation core (`packages/core`) from game-specific content packs so multiple titles can share the same engine across browser and Node-based hosts. This repository does not ship an in-repo presentation shell; consumer apps integrate via commands, state snapshots, and runtime events.
 
 ## 2. Context & Problem Statement
-- **Background**: Idle games repeatedly re-implement the same core mechanics (tick loop, resource math, upgrades, persistence). This repo aims to consolidate those patterns into a shared runtime that content authors and shells can compose.
+- **Background**: Idle games repeatedly re-implement the same core mechanics (tick loop, resource math, upgrades, persistence). This repo aims to consolidate those patterns into a shared runtime that content authors and host applications can compose.
 - **Problem**: Without a shared, deterministic engine core, content authoring and balancing are brittle, simulation is hard to test/replay, and platform portability (web → desktop) requires duplicated logic.
 - **Forces**:
-  - Web-first execution (Worker-friendly) while keeping portability to Node/desktop shells.
+  - Web-first execution (Worker-friendly) while keeping portability to Node/desktop hosts.
   - Determinism for offline catch-up, diagnostics, and replay-based verification.
   - Performance budgets (foreground smoothness, background throttling) and bounded memory growth.
 
 ## 3. Goals & Non-Goals
 - **Goals**:
   - Deliver a shared runtime that multiple idle games can layer content on top of with minimal duplication.
-  - Maintain deterministic, efficient simulations capable of running in background tabs or native shells with minimal CPU and memory usage.
+  - Maintain deterministic, efficient simulations capable of running in background tabs or native hosts with minimal CPU and memory usage.
   - Provide a declarative content pipeline for defining resources, generators, upgrades, achievements, and events.
   - Support instant deployment to browsers while enabling optional native packaging with the exact same engine build.
   - Keep the core easily testable, observable, and instrumentable for analytics and A/B experimentation.
@@ -33,47 +33,49 @@ The Idle Engine is a reusable, data-driven runtime for incremental/idle games. I
   - Shipping a visual content editor in the first iteration (tracked as follow-up work).
 
 ## 4. Stakeholders, Agents & Impacted Surfaces
-- **Primary Stakeholders**: Runtime Core maintainers; Content Pipeline maintainers; Shell maintainers; partner integrators.
-- **Agent Roles**: Docs & Design Agent; Runtime Implementation Agent; Content Pipeline Agent; Shell Integration Agent; QA & A11y Agent.
-- **Affected Packages/Services**: `packages/core`, `packages/content-schema`, `packages/content-sample`, `tools/`, and `docs/` (presentation shells are archived).
+- **Primary Stakeholders**: Runtime Core maintainers; Content Pipeline maintainers; Tooling maintainers; host application integrators.
+- **Agent Roles**: Docs & Design Agent; Runtime Implementation Agent; Content Pipeline Agent; Integration Agent; QA & A11y Agent.
+- **Affected Packages/Services**: `packages/core`, `packages/content-schema`, `packages/content-compiler`, `packages/content-sample`, `tools/`, `packages/docs`, and `docs/`.
 - **Compatibility Considerations**:
   - Content packs declare an engine compatibility range; validation gates features via `packages/content-schema/src/runtime-compat.ts`.
   - Runtime and content APIs use semantic versioning; breaking changes require explicit migration guidance and version negotiation.
 
 ## 5. Current State
-- Monorepo workstreams are split across deterministic runtime (`packages/core`), reference content (`packages/content-sample`), and tooling under `tools/`. Presentation shells are archived and removed from the active workspace.
+- Monorepo workstreams are split across deterministic runtime (`packages/core`), content schema/compiler (`packages/content-schema`, `packages/content-compiler`), reference content (`packages/content-sample`), and tooling under `tools/`. There is no in-repo presentation shell; integrations live in downstream apps.
 - Detailed subsystem proposals live in dedicated design docs (command queue, resource storage, event bus, content schema/compiler, worker bridge, economy ledger); this document is the umbrella architecture.
 
 ## 6. Proposed Solution
 
 ### 6.1 Architecture Overview
-- **Narrative**: Run a deterministic simulation loop inside a Worker/Node host, apply all state mutations via commands and systems in a fixed order, publish snapshots/deltas to a presentation shell, and keep game-specific behavior in validated content packs.
+- **Narrative**: Run a deterministic simulation loop inside a Worker/Node host, apply all state mutations via queued commands and registered systems in a fixed order, publish state snapshots/deltas plus runtime events to the host, and keep game-specific behavior in validated content packs.
 - **Diagram**:
   ```
   +------------------------------+
-  |          Presentation        |
-  | (Web UI, Native Shell UI)    |
+  |        Host Application      |
+  | (UI, server, tooling, tests) |
   +------------------------------+
                 |
                 v
   +------------------------------+
-  |      Engine Integration      |
-  |  (Runtime Adapter, IPC/API)  |
+  |     Runtime Integration      |
+  | (createGameRuntime + bridge) |
   +------------------------------+
                 |
                 v
   +------------------------------+
   |         Core Runtime         |
-  |  - Simulation Scheduler      |
-  |  - State Graph               |
-  |  - Systems (Progression,     |
-  |    Automation, Events)       |
+  | - IdleEngineRuntime          |
+  | - CommandQueue/Dispatcher    |
+  | - EventBus + Diagnostics     |
+  | - Systems (Production,       |
+  |   Automation, Transform,     |
+  |   Entity, Coordinator)       |
   +------------------------------+
                 |
                 v
   +------------------------------+
-  |       Content Modules        |
-  | (Game-specific data + rules) |
+  |         Content Pack         |
+  | (NormalizedContentPack)      |
   +------------------------------+
   ```
 
@@ -84,9 +86,9 @@ The Idle Engine is a reusable, data-driven runtime for incremental/idle games. I
 ##### Simulation Scheduler
 - Fixed timestep (default 100 ms) with accumulators to handle real-time catch-up.
 - Offline progression: on resume/load, compute elapsed time and run batched ticks with configurable caps (e.g., max 12 hours) to avoid runaway progression.
-- Background throttling: detect document visibility or shell signals to adjust tick frequency and reduce CPU use.
+- Background throttling: detect document visibility or host signals to adjust tick frequency and reduce CPU use.
 - Deterministic tick loop: accumulate elapsed host time, clamp per-frame step count, process `systems` in a fixed order for reproducible results.
-- Tick pipeline executes in phases (input intents, automation, production, progression, events) with hooks so content modules can subscribe without reordering core systems.
+- Tick pipeline executes in phases: dequeue and execute commands for the current step, then tick each registered system in order, dispatching runtime events between systems.
 - Instrumentation probes (tick duration, queue backlog) surface via diagnostics interfaces for tuning.
 
 ```ts
@@ -96,12 +98,16 @@ function runTick(deltaMs: number) {
   accumulator -= steps * FIXED_STEP_MS;
 
   for (let i = 0; i < steps; i++) {
-    applyQueuedCommands();
-    automationSystem.tick();
-    productionSystem.tick();
-    progressionSystem.tick();
-    eventSystem.tick();
-    telemetry.recordTick();
+    const commands = commandQueue.dequeueUpToStep(step);
+    for (const command of commands) dispatcher.execute(command);
+    eventBus.dispatch({ tick: step });
+
+    for (const system of systems) {
+      system.tick({ step, deltaMs: FIXED_STEP_MS, events });
+      eventBus.dispatch({ tick: step });
+    }
+
+    step += 1;
   }
 }
 ```
@@ -131,37 +137,34 @@ const wiring = createGameRuntime({
 - Normalized resource graph: each resource has identifiers, quantity, rates, and metadata.
 - Systems maintain derived state (per-second production, unlocked status).
 - Use structural sharing or typed arrays for efficient snapshots; avoid deep clone churn.
-- Core entities stored in struct-of-arrays layout (`resourceIds[]`, `quantities[]`, `rates[]`) for cache-friendly iteration.
+- Core resources stored in struct-of-arrays layout (`resourceIds[]`, `quantities[]`, `rates[]`) for cache-friendly iteration.
 - Derived views are published as read-only snapshots to avoid mutation leaks.
 - Change journals collect mutations each tick so deltas can be sent to clients without serializing full state.
+- Transform state tracks outstanding batches (including mission batches); entity state tracks entity counts and optional per-entity instances/assignments; PRD state is persisted for deterministic mission outcomes.
 
 ##### Systems
-- **Production System**: processes generators, cost reductions, and automation toggles.
-- **Upgrade System**: resolves prerequisites and applies modifiers (additive, multiplicative, exponential) via composable formula pipelines.
-- **Prestige System**: manages layer resets with carry-over rewards.
-- **Event System**: publishes domain events (thresholds met, unlocks) for UI/telemetry.
-- **Task Scheduler**: handles time-based tasks (quests, research timers) with pause/resume semantics.
-- Systems register deterministic execution order and optional dependencies; the engine validates order at startup to prevent circular hooks.
-- Modifiers are expressed as pure functions operating on typed contexts (`ResourceCtx`, `GeneratorCtx`) to preserve testability.
+- **Production System** (`production-system`): applies generator production and drains resource accumulators via `resource-finalize`.
+- **Automation System** (`automation-system`): evaluates automation triggers and enqueues deterministic commands.
+- **Transform System** (`transform-system`): executes transforms (`instant`, `batch`, and `mission` mode). Mission transforms deploy entities, roll deterministic success (optionally PRD), and emit mission runtime events.
+- **Entity System** (`entity-system`): tracks entity counts and, when `trackInstances: true`, per-instance state (levels/stats/mission assignments) with deterministic instance IDs.
+- **Progression Coordinator** (`progression-coordinator`): maintains the authoritative progression state, computes derived views, and provides a `ConditionContext` used by other systems.
+- Systems execute in the order they are registered by `createGameRuntime` / `wireGameRuntime` (production → finalize → automation → transforms → entities → coordinator), with runtime events dispatched between each system tick.
 
-##### Script Hooks
-- Script layer exposes deterministic APIs (no direct async). Hooks run inside simulation steps for predictable results.
-- Optional sandbox (QuickJS/WASM) supports third-party content without compromising the core runtime.
-- Script host provides whitelisted math/util modules and deterministic random via seeded RNG per save.
-- Hooks execute within a time budget; overruns generate diagnostics and can be killed to preserve tick cadence.
+##### Script Hooks (Host-Provided)
+- Content can reference script-backed conditions (`Condition.kind: "script"`). The core runtime expects hosts to supply deterministic evaluation hooks via the `ConditionContext` contract.
+- A sandboxed in-engine scripting runtime (QuickJS/WASM, time budgets) is not implemented in `packages/core` today; treat it as potential follow-up work.
 
 ##### Persistence
-- State snapshots serialized to binary (MessagePack or custom) to minimize size.
-- Versioned schema with migration pipeline to ensure backward compatibility.
+- State snapshots are serialized as JSON-friendly `GameStateSaveFormat` objects (schema versioned) with migration helpers.
 - Autosave scheduler (e.g., every 30 seconds, on significant events, and before unload).
 - Per-title save slots keyed by content package; no cross-title sharing to avoid balance exploits.
-- Browser shells use IndexedDB/localStorage; native wrappers use filesystem APIs.
+- Hosts choose the persistence backend (IndexedDB/localStorage/filesystem); the core provides `serialize` / `hydrate` helpers via `createGameRuntime`.
 
 #### Data & Schemas
 
 ##### Content Pipeline
 - Content described via declarative TypeScript/JSON modules and compiled into normalized definitions.
-- Content DSL supports: resources, generators, transforms, upgrades, milestones/achievements, prestige layers, automations, and runtime event extensions.
+- Content DSL supports: resources, entities, generators, upgrades, achievements, prestige layers, automations, transforms (including missions), and runtime event extensions.
 - Support for hierarchical content packages (base game, seasonal event, micro-DLC) with dependency resolution.
 - Validation tooling verifies IDs, cyclical dependencies, formula sanity, and runtime feature compatibility before shipping.
 - Property-based sanitization guidance lives in [`docs/content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance`](content-schema-rollout-decisions.md#property-based-formula-sanitization-guidance); run schema and CLI suites before shipping new formulas.
@@ -184,11 +187,14 @@ const wiring = createGameRuntime({
 - `@idle-engine/core/internals`: full API surface for engine contributors and advanced tooling; no stability guarantees.
 - `@idle-engine/core/prometheus`: Node-only Prometheus telemetry integration (requires `prom-client`).
 
-##### Presentation Layer Contracts
-- Runtime sends UI-ready snapshots through a state channel; UI sends user intents (purchase upgrade, toggle automation) via a command channel.
-- Presentation shells choose framework (React/Svelte/plain DOM); the engine depends only on the contract.
-- Desktop wrappers use the same contract through IPC between WebView and Node hosts.
-- Provide a default UI kit (resource panels, upgrade lists, modals) for rapid prototyping while allowing custom skins.
+##### Runtime Wiring & Integration
+- `createGameRuntime({ content, config, ... })` returns a `GameRuntimeWiring` object that groups the runtime host (`runtime`), authoritative state (`coordinator`), core command plumbing (`commandQueue`, `commandDispatcher`), enabled systems (`productionSystem`, `automationSystem`, `transformSystem`, `entitySystem`), and persistence helpers (`serialize`, `hydrate`).
+- For advanced hosts (custom scheduler/event loop), use `wireGameRuntime({ runtime, coordinator, content, ... })` to attach systems and command handlers to your own `RuntimeWiringRuntime` implementation.
+
+##### Host Integration Contracts
+- Hosts enqueue player/system commands into the command queue; the runtime drains and executes commands at deterministic steps before ticking systems.
+- Hosts can subscribe to runtime events (for example `mission:*` events) via system `setup` subscriptions or by accessing the runtime event bus.
+- For networked play, snapshot/restore, or divergence debugging, use the state-sync helpers under `packages/core/src/state-sync/` (see `docs/state-synchronization-protocol-design.md`).
 
 #### Tooling & Automation
 
@@ -219,41 +225,19 @@ const wiring = createGameRuntime({
   - Harden save loading with schema validation to avoid corrupted states.
   - Rotate API secrets regularly, store them in Vault/Secrets Manager, and audit access logs.
 
-## 7. Work Breakdown & Delivery Plan
+## 7. Work Tracking & Delivery Plan
 
-### 7.1 Issue Map
-| Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
-|-------------|---------------|-------------------------|--------------|---------------------|
-| docs: migrate Idle Engine Design to template (#197) | Convert this doc to the standard template and refresh cross-links | Docs & Design Agent | None | Doc follows template headings; issue map + guardrails added; references updated |
-| feat(core): deterministic command queue (#6) | Ensure all state mutations flow through a replayable command queue | Runtime Implementation Agent | Engine design aligned | Unit tests for ordering/replay; docs updated; no nondeterministic sources |
-| feat(core): struct-of-arrays resource storage (#7) | Implement cache-friendly resource buffers and snapshot publishing | Runtime Implementation Agent | Command queue | Resource state tests; snapshot/delta API consumed by shell |
-| feat(core): runtime event pub/sub (#8) | Deterministic event bus for cross-system signalling | Runtime Implementation Agent | Command queue | Event ordering tests; event frames exportable to shells/telemetry |
-| feat(core): diagnostic timeline instrumentation (#9) | Per-tick phase timing + queue pressure snapshots | Runtime + QA Agent | Scheduler + queue | Timeline available via diagnostics; tests cover backlog & segments |
-| feat(core): tick accumulator edge-case coverage (#10) | Clamp/drift/backlog tests for fixed-step scheduler | QA Agent | Scheduler implementation | Tests validate backlog telemetry and drift tolerance |
-| feat(content): content DSL schema contract (#11) | Zod schemas + normalization for content packs | Content Pipeline Agent | Engine goals agreed | Schema tests; CLI validation gates packs; docs link |
-| feat(content): deterministic content compiler (#159) | Compile packs into reproducible artifacts consumed by runtime | Content Pipeline Agent | Schema contract | `pnpm generate --check` stable; generated artifacts committed; smoke tests |
-### 7.2 Milestones
-- **Prototype Milestone (8 weeks)**: Deliver a vertical slice proving the engine loop and content DSL.
-  - **Deliverables**:
-    - `packages/core`: runnable runtime with scheduler, resource system, upgrade processor, save/load (stub), diagnostics.
-    - Presentation shells (archived): UI consumers of runtime snapshots and commands.
-    - `packages/content-sample`: reference game pack with ~10 resources, 6 generators, and a basic prestige layer.
-    - CI pipeline executing unit/integration tests and content validation (`pnpm generate --check`).
-  - **Sequencing**:
-    1. Foundation (Week 1-2): monorepo tooling, scheduler skeleton, resource structures, command bus.
-    2. Content & DSL (Week 2-4): schema, compiler, sample content pack, validation CLI.
-    3. Presentation Adapter (Week 3-5): Worker runtime integration, delta subscription, basic UI kit.
-    4. Persistence & Offline (Week 4-6): save/load, offline catch-up logic, autosave timers, smoke tests.
-    5. Hardening (Week 7-8): profiling, coverage targets, docs/runbooks, milestone demo.
-  - **Success Criteria**:
-    - Reference game runs at 60 ticks/sec in browser foreground with under 30% main-thread utilization on target hardware.
-    - Offline catch-up simulates up to 12 hours without divergence from continuous-play baselines.
-    - Content CLI blocks invalid definitions and outputs human-friendly diagnostics.
-    - CI green (lint/test/generate).
+Implementation work is tracked in GitHub issues and `docs/plans/`. This design document intentionally avoids week-based estimates; keep it focused on architecture and contracts.
 
-### 7.3 Coordination Notes
-- **Hand-off Package**: Agents should preload this doc, `docs/implementation-plan.md`, and the subsystem specs in `docs/` referenced in §15.
-- **Communication Cadence**: One PR per issue-map row; reviewers sign off on design contracts before implementation proceeds to dependent slices.
+### 7.1 Active Issues
+| Issue | Scope |
+| --- | --- |
+| #753 | Documentation drift and alignment work |
+| #586 | Entity + Mission system follow-ups |
+
+### 7.2 Coordination Notes
+- **Hand-off Package**: Agents should preload this doc and the subsystem specs in `docs/` referenced in §15.
+- **Communication Cadence**: One PR per cohesive contract change; reviewers sign off on design contracts before implementation proceeds to dependent slices.
 
 ## 8. Agent Guidance & Guardrails
 - **Context Packets**:
@@ -309,7 +293,7 @@ const wiring = createGameRuntime({
 - Wire the DSL compiler to emit schema-aligned packs instead of hand-authored TypeScript.
 - Port legacy sample data into the CLI format.
 - Extend CI so schema warnings fail builds once the broader content library lands.
-- TODO: Add a formal compatibility/migration playbook for runtime API breaks.
+- Add a formal compatibility/migration playbook for runtime API breaks.
 
 ## 15. References
 - `docs/implementation-plan.md`
