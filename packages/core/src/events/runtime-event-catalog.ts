@@ -4,6 +4,12 @@ import type {
   EventChannelConfiguration,
 } from './event-bus.js';
 import { CONTENT_EVENT_CHANNELS } from './runtime-event-manifest.generated.js';
+import {
+  isBoolean,
+  isFiniteNumber,
+  isNonBlankString,
+  isNonNegativeInteger,
+} from '../validation/primitives.js';
 
 export interface ResourceThresholdReachedEventPayload {
   readonly resourceId: string;
@@ -82,26 +88,26 @@ declare module './runtime-event.js' {
   }
 }
 
-function requireNonEmptyString(value: unknown, fieldName: string): void {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`${fieldName} must be a non-empty string.`);
+function requireNonBlankString(value: unknown, fieldName: string): void {
+  if (!isNonBlankString(value)) {
+    throw new Error(`${fieldName} must be a non-blank string.`);
   }
 }
 
 function requireFiniteNumber(value: unknown, fieldName: string): void {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (!isFiniteNumber(value)) {
     throw new TypeError(`${fieldName} must be a finite number.`);
   }
 }
 
 function requireBoolean(value: unknown, fieldName: string): void {
-  if (typeof value !== 'boolean') {
+  if (!isBoolean(value)) {
     throw new TypeError(`${fieldName} must be a boolean.`);
   }
 }
 
 function requireNonNegativeInteger(value: unknown, fieldName: string): void {
-  if (!Number.isInteger(value) || (value as number) < 0) {
+  if (!isNonNegativeInteger(value)) {
     throw new Error(`${fieldName} must be a non-negative integer.`);
   }
 }
@@ -111,8 +117,8 @@ function validateStringArray(arr: unknown, fieldName: string): void {
     throw new TypeError(`${fieldName} must be an array.`);
   }
   for (const id of arr) {
-    if (typeof id !== 'string' || id.length === 0) {
-      throw new TypeError(`${fieldName} must contain non-empty strings.`);
+    if (!isNonBlankString(id)) {
+      throw new TypeError(`${fieldName} must contain non-blank strings.`);
     }
   }
 }
@@ -120,18 +126,18 @@ function validateStringArray(arr: unknown, fieldName: string): void {
 function validateResourceThresholdReached(
   payload: ResourceThresholdReachedEventPayload,
 ): void {
-  requireNonEmptyString(payload.resourceId, 'resourceId');
+  requireNonBlankString(payload.resourceId, 'resourceId');
   requireFiniteNumber(payload.threshold, 'threshold');
 }
 
 function validateAutomationToggled(payload: AutomationToggledEventPayload): void {
-  requireNonEmptyString(payload.automationId, 'automationId');
+  requireNonBlankString(payload.automationId, 'automationId');
   requireBoolean(payload.enabled, 'enabled');
 }
 
 function validateAutomationFired(payload: AutomationFiredEventPayload): void {
-  requireNonEmptyString(payload.automationId, 'automationId');
-  requireNonEmptyString(payload.triggerKind, 'triggerKind');
+  requireNonBlankString(payload.automationId, 'automationId');
+  requireNonBlankString(payload.triggerKind, 'triggerKind');
   requireNonNegativeInteger(payload.step, 'step');
 }
 
@@ -162,22 +168,22 @@ function validateMissionOutputs(outputs: unknown): void {
       throw new Error('outputs must contain objects.');
     }
     const record = output as Record<string, unknown>;
-    requireNonEmptyString(record.resourceId, 'output.resourceId');
+    requireNonBlankString(record.resourceId, 'output.resourceId');
     requireFiniteNumber(record.amount, 'output.amount');
   }
 }
 
 function validateMissionStarted(payload: MissionStartedEventPayload): void {
-  requireNonEmptyString(payload.transformId, 'transformId');
-  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonBlankString(payload.transformId, 'transformId');
+  requireNonBlankString(payload.batchId, 'batchId');
   requireNonNegativeInteger(payload.startedAtStep, 'startedAtStep');
   requireNonNegativeInteger(payload.completeAtStep, 'completeAtStep');
   validateStringArray(payload.entityInstanceIds, 'entityInstanceIds');
 }
 
 function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
-  requireNonEmptyString(payload.transformId, 'transformId');
-  requireNonEmptyString(payload.batchId, 'batchId');
+  requireNonBlankString(payload.transformId, 'transformId');
+  requireNonBlankString(payload.batchId, 'batchId');
   requireNonNegativeInteger(payload.completedAtStep, 'completedAtStep');
   if (
     payload.outcomeKind !== 'success' &&
@@ -195,9 +201,9 @@ function validateMissionCompleted(payload: MissionCompletedEventPayload): void {
 }
 
 function validateMissionStageCompleted(payload: MissionStageCompletedEventPayload): void {
-  requireNonEmptyString(payload.transformId, 'transformId');
-  requireNonEmptyString(payload.batchId, 'batchId');
-  requireNonEmptyString(payload.stageId, 'stageId');
+  requireNonBlankString(payload.transformId, 'transformId');
+  requireNonBlankString(payload.batchId, 'batchId');
+  requireNonBlankString(payload.stageId, 'stageId');
   if (payload.checkpoint !== undefined) {
     if (!payload.checkpoint || typeof payload.checkpoint !== 'object') {
       throw new Error('checkpoint must be an object.');
@@ -208,10 +214,10 @@ function validateMissionStageCompleted(payload: MissionStageCompletedEventPayloa
 }
 
 function validateMissionDecisionRequired(payload: MissionDecisionRequiredEventPayload): void {
-  requireNonEmptyString(payload.transformId, 'transformId');
-  requireNonEmptyString(payload.batchId, 'batchId');
-  requireNonEmptyString(payload.stageId, 'stageId');
-  requireNonEmptyString(payload.prompt, 'prompt');
+  requireNonBlankString(payload.transformId, 'transformId');
+  requireNonBlankString(payload.batchId, 'batchId');
+  requireNonBlankString(payload.stageId, 'stageId');
+  requireNonBlankString(payload.prompt, 'prompt');
   if (!Array.isArray(payload.options)) {
     throw new TypeError('options must be an array.');
   }
@@ -220,21 +226,21 @@ function validateMissionDecisionRequired(payload: MissionDecisionRequiredEventPa
       throw new Error('options must contain objects.');
     }
     const record = option as Record<string, unknown>;
-    requireNonEmptyString(record.id, 'option.id');
-    requireNonEmptyString(record.label, 'option.label');
+    requireNonBlankString(record.id, 'option.id');
+    requireNonBlankString(record.label, 'option.label');
     requireBoolean(record.available, 'option.available');
   }
   requireNonNegativeInteger(payload.expiresAtStep, 'expiresAtStep');
 }
 
 function validateMissionDecisionMade(payload: MissionDecisionMadeEventPayload): void {
-  requireNonEmptyString(payload.transformId, 'transformId');
-  requireNonEmptyString(payload.batchId, 'batchId');
-  requireNonEmptyString(payload.stageId, 'stageId');
-  requireNonEmptyString(payload.optionId, 'optionId');
+  requireNonBlankString(payload.transformId, 'transformId');
+  requireNonBlankString(payload.batchId, 'batchId');
+  requireNonBlankString(payload.stageId, 'stageId');
+  requireNonBlankString(payload.optionId, 'optionId');
   if (payload.nextStageId !== null) {
-    if (typeof payload.nextStageId !== 'string' || payload.nextStageId.length === 0) {
-      throw new Error('nextStageId must be a non-empty string or null.');
+    if (!isNonBlankString(payload.nextStageId)) {
+      throw new Error('nextStageId must be a non-blank string or null.');
     }
   }
 }
