@@ -90,7 +90,7 @@ declare module './runtime-event.js' {
 
 function requireNonBlankString(value: unknown, fieldName: string): void {
   if (!isNonBlankString(value)) {
-    throw new Error(`${fieldName} must be a non-empty string.`);
+    throw new Error(`${fieldName} must be a non-blank string.`);
   }
 }
 
@@ -118,7 +118,7 @@ function validateStringArray(arr: unknown, fieldName: string): void {
   }
   for (const id of arr) {
     if (!isNonBlankString(id)) {
-      throw new TypeError(`${fieldName} must contain non-empty strings.`);
+      throw new TypeError(`${fieldName} must contain non-blank strings.`);
     }
   }
 }
@@ -240,7 +240,7 @@ function validateMissionDecisionMade(payload: MissionDecisionMadeEventPayload): 
   requireNonBlankString(payload.optionId, 'optionId');
   if (payload.nextStageId !== null) {
     if (!isNonBlankString(payload.nextStageId)) {
-      throw new Error('nextStageId must be a non-empty string or null.');
+      throw new Error('nextStageId must be a non-blank string or null.');
     }
   }
 }
