@@ -18,7 +18,7 @@ Use this as a fast lookup. For narrative guidance and full examples, see
 | Automation | `id`, `name`, `description`, `targetType`, `trigger`, `unlockCondition` + `targetId` or `systemTargetId` |
 | Prestige Layer | `id`, `name`, `summary`, `resetTargets`, `unlockCondition`, `reward` |
 | Metric | `id`, `name`, `kind`, `source` |
-| Transform | `id`, `name`, `description`, `mode`, `inputs`, `outputs`, `trigger` |
+| Transform | `id`, `name`, `description`, `mode`, `inputs`, `trigger` (+ `outputs` for non-mission; + `entityRequirements` + `outcomes` for missions) |
 
 ## Conditions cheat sheet
 
@@ -178,5 +178,26 @@ Transform
   "inputs": [{ "resourceId": "pack.resource-id", "amount": { "kind": "constant", "value": 10 } }],
   "outputs": [{ "resourceId": "pack.resource-id", "amount": { "kind": "constant", "value": 1 } }],
   "trigger": { "kind": "manual" }
+}
+```
+
+Mission transform
+
+```json
+{
+  "id": "pack.mission-id",
+  "name": { "default": "Mission" },
+  "description": { "default": "Deploy entities for rewards." },
+  "mode": "mission",
+  "inputs": [{ "resourceId": "pack.resource-id", "amount": { "kind": "constant", "value": 1 } }],
+  "outputs": [],
+  "duration": { "kind": "constant", "value": 60000 },
+  "trigger": { "kind": "manual" },
+  "entityRequirements": [{ "entityId": "pack.entity-id", "count": { "kind": "constant", "value": 1 } }],
+  "outcomes": {
+    "success": {
+      "outputs": [{ "resourceId": "pack.resource-id", "amount": { "kind": "constant", "value": 2 } }]
+    }
+  }
 }
 ```
