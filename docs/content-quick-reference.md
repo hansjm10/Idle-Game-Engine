@@ -20,6 +20,10 @@ const snapshot = game.getSnapshot();
 game.purchaseGenerator('generator.mine', 1);
 ```
 
+Notes:
+- `game.start()` ticks with a fixed delta equal to the scheduler interval (defaults to the runtime `stepSizeMs`).
+- `game.hydrate(save)` accepts raw parsed saves (including older schema versions) and will throw if the save is from an earlier step than the current runtime.
+
 ## Required fields by content type
 
 | Type | Required fields |

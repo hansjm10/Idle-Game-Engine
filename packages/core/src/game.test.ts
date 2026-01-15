@@ -148,6 +148,55 @@ describe('createGame', () => {
     });
   });
 
+  it('returns a clear error when a facade action has no registered handler', () => {
+    const noAutomation = createGame(createTestContent(), {
+      stepSizeMs: 100,
+      systems: { automation: false },
+    });
+
+    expect(
+      noAutomation.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.TOGGLE_AUTOMATION,
+      ),
+    ).toBeUndefined();
+    expect(noAutomation.toggleAutomation('automation.test', true)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'COMMAND_UNSUPPORTED' }),
+    });
+
+    const noTransforms = createGame(createTestContent(), {
+      stepSizeMs: 100,
+      systems: { transforms: false },
+    });
+
+    expect(
+      noTransforms.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.RUN_TRANSFORM,
+      ),
+    ).toBeUndefined();
+    expect(noTransforms.startTransform('transform.test')).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'COMMAND_UNSUPPORTED' }),
+    });
+
+    const noUpgrades = createGame(
+      createContentPack({
+        resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],
+      }),
+      { stepSizeMs: 100 },
+    );
+
+    expect(
+      noUpgrades.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
+      ),
+    ).toBeUndefined();
+    expect(noUpgrades.purchaseUpgrade('upgrade.test')).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'COMMAND_UNSUPPORTED' }),
+    });
+  });
+
   it('ticks queued commands through the wired dispatcher', () => {
     const game = createGame(
       createContentPack({
@@ -229,6 +278,163 @@ describe('createGame', () => {
     vi.useRealTimers();
   });
 
+  it('hydrates legacy v0 saves (embedded automation state)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1234);
+    resetRNG();
+    setRNGSeed(42);
+
+    const content = createTestContent();
+    const game = createGame(content, { stepSizeMs: 100 });
+    expect(game.toggleAutomation('automation.test', true)).toEqual({ success: true });
+    game.tick(game.internals.runtime.getStepSizeMs());
+
+    const save = game.serialize();
+    const legacySave = {
+      savedAt: save.savedAt,
+      resources: {
+        ...save.resources,
+        automationState: save.automation,
+      },
+      progression: {
+        ...save.progression,
+        resources: {
+          ...save.progression.resources,
+          automationState: save.automation,
+        },
+      },
+      transforms: save.transforms,
+      prd: save.prd,
+      commandQueue: save.commandQueue,
+      runtime: save.runtime,
+    };
+
+    const restored = createGame(content, { stepSizeMs: 100 });
+    restored.hydrate(legacySave);
+
+    const automationState = restored.internals.automationSystem
+      ?.getState()
+      .get('automation.test');
+    expect(automationState?.enabled).toBe(true);
+
+    restored.stop();
+    game.stop();
+    vi.useRealTimers();
+  });
+
+  it('rejects hydrating a save from an earlier step than the current runtime', () => {
+    const content = createContentPack({
+      resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],
+    });
+
+    const saveSource = createGame(content, { stepSizeMs: 100 });
+    const save = saveSource.serialize();
+
+    const advanced = createGame(content, { stepSizeMs: 100 });
+    advanced.tick(advanced.internals.runtime.getStepSizeMs() * 2);
+
+    expect(() => advanced.hydrate(save)).toThrowError(
+      /Cannot hydrate a save from step 0 into a runtime currently at step 2\./,
+    );
+  });
+
+  it('hydrates very large saves (high step + large command queue)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1234);
+    resetRNG();
+    setRNGSeed(42);
+
+    const extraResources = Array.from({ length: 1500 }, (_, index) =>
+      createResourceDefinition(`resource.extra.${index}`, { startAmount: index }),
+    );
+    const content = createContentPack({
+      resources: [
+        createResourceDefinition('resource.energy', { startAmount: 1000 }),
+        createResourceDefinition('resource.gold', { startAmount: 0 }),
+        ...extraResources,
+      ],
+      generators: [
+        createGeneratorDefinition('generator.mine', {
+          purchase: {
+            currencyId: 'resource.energy',
+            costMultiplier: 10,
+            costCurve: literalOne,
+          },
+          produces: [{ resourceId: 'resource.gold', rate: literalOne }],
+          consumes: [],
+          baseUnlock: { kind: 'always' },
+        }),
+      ],
+      upgrades: [createUpgradeDefinition('upgrade.test')],
+    });
+
+    const game = createGame(content, { stepSizeMs: 100 });
+    const targetStep = 50_000;
+    game.internals.runtime.fastForward(targetStep * game.internals.runtime.getStepSizeMs());
+    game.internals.coordinator.updateForStep(targetStep);
+
+    for (let index = 0; index < 8000; index += 1) {
+      game.purchaseGenerator('generator.mine', 1);
+    }
+    expect(game.internals.commandQueue.size).toBe(8000);
+
+    const save = game.serialize();
+
+    const restored = createGame(content, { stepSizeMs: 100 });
+    restored.hydrate(save);
+
+    expect(restored.internals.runtime.getCurrentStep()).toBe(targetStep);
+    expect(restored.internals.commandQueue.size).toBe(save.commandQueue.entries.length);
+
+    const energyIndex = restored.internals.coordinator.resourceState.getIndex('resource.energy')!;
+    expect(restored.internals.coordinator.resourceState.getAmount(energyIndex)).toBe(1000);
+
+    const lastExtraId = 'resource.extra.1499';
+    const extraIndex = restored.internals.coordinator.resourceState.getIndex(lastExtraId)!;
+    expect(restored.internals.coordinator.resourceState.getAmount(extraIndex)).toBe(1499);
+
+    const restoredQueue = restored.internals.commandQueue.exportForSave();
+    expect(restoredQueue.entries).toHaveLength(save.commandQueue.entries.length);
+    expect(restoredQueue.entries[0]).toEqual(save.commandQueue.entries[0]);
+    expect(restoredQueue.entries[restoredQueue.entries.length - 1]).toEqual(
+      save.commandQueue.entries[save.commandQueue.entries.length - 1],
+    );
+
+    restored.stop();
+    game.stop();
+    vi.useRealTimers();
+  });
+
+  it('uses scheduler interval overrides and falls back on invalid values', () => {
+    vi.useFakeTimers();
+
+    const content = createContentPack({
+      resources: [createResourceDefinition('resource.energy', { startAmount: 0 })],
+    });
+
+    const customInterval = createGame(content, {
+      stepSizeMs: 100,
+      scheduler: { intervalMs: 60 },
+    });
+
+    customInterval.start();
+    vi.advanceTimersByTime(500);
+    expect(customInterval.internals.runtime.getCurrentStep()).toBe(4);
+    customInterval.stop();
+
+    const fallbackInterval = createGame(content, {
+      stepSizeMs: 80,
+      scheduler: { intervalMs: 0 },
+    });
+
+    fallbackInterval.start();
+    vi.advanceTimersByTime(400);
+    expect(fallbackInterval.internals.runtime.getCurrentStep()).toBe(5);
+    fallbackInterval.stop();
+
+    vi.useRealTimers();
+  });
+
   it('starts and stops the built-in scheduler', () => {
     vi.useFakeTimers();
 
@@ -251,4 +457,3 @@ describe('createGame', () => {
     vi.useRealTimers();
   });
 });
-

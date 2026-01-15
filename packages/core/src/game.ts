@@ -13,6 +13,7 @@ import type { RuntimeDiagnosticsTimelineOptions } from './diagnostics/runtime-di
 import type { EventHandler, EventSubscriptionOptions } from './events/event-bus.js';
 import type { RuntimeEventType } from './events/runtime-event.js';
 import type { GameStateSaveFormat } from './game-state-save.js';
+import { loadGameStateSaveFormat } from './game-state-save.js';
 import { createGameRuntime } from './internals.browser.js';
 import type { GameRuntimeWiring } from './internals.browser.js';
 import type { ProgressionAuthoritativeState, ProgressionSnapshot } from './progression.js';
@@ -60,7 +61,7 @@ export interface Game {
   getSnapshot(): GameSnapshot;
 
   serialize(): SerializedGameState;
-  hydrate(save: SerializedGameState): void;
+  hydrate(save: unknown): void;
 
   purchaseGenerator(generatorId: string, count: number): CommandResult;
   purchaseUpgrade(upgradeId: string): CommandResult;
@@ -171,6 +172,17 @@ export function createGame(
     type: string,
     payload: TPayload,
   ): CommandResult => {
+    if (!wiring.commandDispatcher.getHandler(type)) {
+      return {
+        success: false,
+        error: {
+          code: 'COMMAND_UNSUPPORTED',
+          message: 'Command is not supported by this game instance.',
+          details: { type },
+        },
+      };
+    }
+
     const step = runtime.getNextExecutableStep();
     const timestamp = runtime.getCurrentStep() * runtime.getStepSizeMs();
 
@@ -196,10 +208,12 @@ export function createGame(
     return { success: true };
   };
 
-  const hydrate = (save: GameStateSaveFormat): void => {
+  const hydrate = (save: unknown): void => {
     stop();
 
-    const targetStep = save.runtime.step;
+    const loadedSave = loadGameStateSaveFormat(save);
+
+    const targetStep = loadedSave.runtime.step;
     const currentStep = runtime.getCurrentStep();
     if (targetStep < currentStep) {
       throw new Error(
@@ -211,7 +225,7 @@ export function createGame(
       runtime.fastForward((targetStep - currentStep) * runtime.getStepSizeMs());
     }
 
-    wiring.hydrate(save, { currentStep: targetStep });
+    wiring.hydrate(loadedSave, { currentStep: targetStep });
   };
 
   const game: Game = {
@@ -258,4 +272,3 @@ export function createGame(
 
   return Object.freeze(game);
 }
-

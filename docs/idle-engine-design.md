@@ -134,6 +134,8 @@ const game = createGame(contentPack, {
 game.start();
 ```
 
+Note: `game.start()` uses a fixed-delta interval scheduler (defaulting to `stepSizeMs`). Hosts that need wall-clock deltas should drive `game.tick(deltaMs)` from their own scheduler.
+
 ##### State Model
 - Normalized resource graph: each resource has identifiers, quantity, rates, and metadata.
 - Systems maintain derived state (per-second production, unlocked status).
@@ -189,7 +191,7 @@ game.start();
 - `@idle-engine/core/prometheus`: Node-only Prometheus telemetry integration (requires `prom-client`).
 
 ##### Runtime Wiring & Integration
-- `createGame(content, options?)` returns a high-level `Game` façade (lifecycle, snapshots, type-safe player actions), with an explicit `game.internals` escape hatch for advanced integrations.
+- `createGame(content, options?)` returns a high-level `Game` façade (lifecycle, snapshots, type-safe player actions, save/hydrate with schema migrations), with an explicit `game.internals` escape hatch for advanced integrations.
 - `createGameRuntime({ content, config, ... })` returns a `GameRuntimeWiring` object that groups the runtime host (`runtime`), authoritative state (`coordinator`), core command plumbing (`commandQueue`, `commandDispatcher`), enabled systems (`productionSystem`, `automationSystem`, `transformSystem`, `entitySystem`), and persistence helpers (`serialize`, `hydrate`).
 - For advanced hosts (custom scheduler/event loop), use `wireGameRuntime({ runtime, coordinator, content, ... })` to attach systems and command handlers to your own `RuntimeWiringRuntime` implementation.
 
