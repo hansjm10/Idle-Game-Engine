@@ -581,15 +581,16 @@ function sandboxQueueEnqueue(
   const originalEnqueue = queue.enqueue.bind(queue);
 
   (queue as CommandQueue & {
-    enqueue: (command: Command) => void;
+    enqueue: (command: Command) => boolean;
   }).enqueue = (cmd: Command) => {
     const snapshot = freezeSnapshot(cloneStructured(cmd)) as FrozenCommand;
     sandboxedEnqueues.push(snapshot);
+    return true;
   };
 
   return () => {
     (queue as CommandQueue & {
-      enqueue: (command: Command) => void;
+      enqueue: (command: Command) => boolean;
     }).enqueue = originalEnqueue;
   };
 }

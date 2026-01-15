@@ -92,9 +92,9 @@ export class CommandQueue {
     this.maxSize = configuredSize;
   }
 
-  enqueue(command: Command): void {
+  enqueue(command: Command): boolean {
     if (!authorizeCommand(command, { phase: 'live', reason: 'queue' })) {
-      return;
+      return false;
     }
 
     const queue = this.lanes.get(command.priority);
@@ -117,7 +117,7 @@ export class CommandQueue {
           size: this.totalSize,
           maxSize: this.maxSize,
         });
-        return;
+        return false;
       }
     }
 
@@ -145,6 +145,7 @@ export class CommandQueue {
 
     queue.splice(low, 0, entry);
     this.totalSize += 1;
+    return true;
   }
 
   dequeueAll(): CommandSnapshot<unknown>[] {

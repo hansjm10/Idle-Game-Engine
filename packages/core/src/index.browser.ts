@@ -29,6 +29,14 @@ export type {
   SystemRegistrationContext,
   TickContext,
 } from './internals.browser.js';
+export { createGame } from './game.js';
+export type {
+  CreateGameOptions,
+  Game,
+  GameSnapshot,
+  SerializedGameState,
+  Unsubscribe,
+} from './game.js';
 
 // ---------------------------------------------------------------------------
 // Engine configuration

@@ -114,14 +114,13 @@ function runTick(deltaMs: number) {
 
 ##### Runtime Configuration
 - The core runtime exposes an `EngineConfig` structure so per-game tuning does not require editing source constants.
-- `createGameRuntime({ config })` accepts partial overrides that are merged with `DEFAULT_ENGINE_CONFIG`.
+- `createGame({ config })` accepts partial overrides that are merged with `DEFAULT_ENGINE_CONFIG`.
 - Configuration covers precision (dirty/publish tolerances) and safety/throughput limits (transform caps, command queue sizing, condition depth guards).
 
 ```ts
-import { createGameRuntime } from '@idle-engine/core';
+import { createGame } from '@idle-engine/core';
 
-const wiring = createGameRuntime({
-  content: contentPack,
+const game = createGame(contentPack, {
   config: {
     precision: {
       dirtyEpsilonAbsolute: 1e-6,
@@ -131,6 +130,8 @@ const wiring = createGameRuntime({
     },
   },
 });
+
+game.start();
 ```
 
 ##### State Model
@@ -188,6 +189,7 @@ const wiring = createGameRuntime({
 - `@idle-engine/core/prometheus`: Node-only Prometheus telemetry integration (requires `prom-client`).
 
 ##### Runtime Wiring & Integration
+- `createGame(content, options?)` returns a high-level `Game` façade (lifecycle, snapshots, type-safe player actions), with an explicit `game.internals` escape hatch for advanced integrations.
 - `createGameRuntime({ content, config, ... })` returns a `GameRuntimeWiring` object that groups the runtime host (`runtime`), authoritative state (`coordinator`), core command plumbing (`commandQueue`, `commandDispatcher`), enabled systems (`productionSystem`, `automationSystem`, `transformSystem`, `entitySystem`), and persistence helpers (`serialize`, `hydrate`).
 - For advanced hosts (custom scheduler/event loop), use `wireGameRuntime({ runtime, coordinator, content, ... })` to attach systems and command handlers to your own `RuntimeWiringRuntime` implementation.
 

@@ -180,6 +180,7 @@ describe('entrypoint boundaries', () => {
       'buildRuntimeEventFrame',
       'createEventBroadcastFrame',
       'createEventTypeFilter',
+      'createGame',
       'createGameRuntime',
       'wireGameRuntime',
     ]);

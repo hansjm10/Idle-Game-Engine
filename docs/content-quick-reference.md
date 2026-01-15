@@ -6,6 +6,20 @@ description: Condensed content-authoring cheatsheet for Idle Engine packs.
 Use this as a fast lookup. For narrative guidance and full examples, see
 `docs/content-dsl-usage-guidelines.md`.
 
+## Quick start (createGame)
+
+Once you have a normalized content pack, bootstrap a runtime with the high-level factory:
+
+```ts
+import { createGame } from '@idle-engine/core';
+
+const game = createGame(contentPack);
+game.start();
+
+const snapshot = game.getSnapshot();
+game.purchaseGenerator('generator.mine', 1);
+```
+
 ## Required fields by content type
 
 | Type | Required fields |
