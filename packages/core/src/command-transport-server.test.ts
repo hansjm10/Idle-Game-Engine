@@ -75,6 +75,28 @@ describe('createCommandTransportServer', () => {
     expect(commandQueue.size).toBe(1);
   });
 
+  it('purges expired idempotency entries and accepts again after the ttl', () => {
+    const { commandQueue } = createRuntime();
+
+    let nowMs = 100;
+    const server = createCommandTransportServer({
+      commandQueue,
+      idempotencyTtlMs: 1,
+      now: () => nowMs,
+    });
+
+    const envelope = createEnvelope();
+    expect(server.handleEnvelope(envelope).status).toBe('accepted');
+    expect(commandQueue.size).toBe(1);
+
+    expect(server.handleEnvelope(envelope).status).toBe('duplicate');
+    expect(commandQueue.size).toBe(1);
+
+    nowMs = 102;
+    expect(server.handleEnvelope(envelope).status).toBe('accepted');
+    expect(commandQueue.size).toBe(2);
+  });
+
   it('records rejected responses and returns duplicate status for repeats', () => {
     const { commandQueue } = createRuntime();
 
@@ -375,6 +397,11 @@ describe('createCommandTransportServer', () => {
       commandOverrides: { step: -1 },
       errorCode: 'INVALID_COMMAND_STEP',
     },
+    {
+      label: 'non-integer step',
+      commandOverrides: { step: 0.5 },
+      errorCode: 'INVALID_COMMAND_STEP',
+    },
   ])('rejects commands with $label', ({ commandOverrides, errorCode, expectedDetails }) => {
     const { commandQueue } = createRuntime();
 
@@ -397,6 +424,31 @@ describe('createCommandTransportServer', () => {
       expect(rejected.error?.details).toEqual(expectedDetails);
     }
     expect(commandQueue.size).toBe(0);
+  });
+
+  it('uses the command step when getNextExecutableStep is invalid', () => {
+    const { commandQueue } = createRuntime();
+
+    const server = createCommandTransportServer({
+      commandQueue,
+      getNextExecutableStep: () => Number.NaN,
+    });
+
+    const envelope = createEnvelope({
+      command: {
+        ...createEnvelope().command,
+        step: 5,
+      },
+    });
+
+    const accepted = server.handleEnvelope(envelope);
+    expect(accepted).toEqual({
+      requestId: 'req-1',
+      status: 'accepted',
+      serverStep: 5,
+    });
+
+    expect(commandQueue.dequeueAll()[0]?.step).toBe(5);
   });
 
   it('rejects commands with invalid command requestId values', () => {
