@@ -53,7 +53,7 @@ For issue 587 on GitHub, this design defines the entity content module schema in
 - **Compatibility Considerations (Issue 587)**:
   - Backward compatible with existing packs by defaulting `entities` to `[]`.
   - Digest version stays the same but payload expands to include entities in `packages/content-schema/src/runtime-helpers.ts`.
-  - Feature gate version for entities is undecided and must be resolved before enforcing runtime compatibility.
+  - Feature gate version for entities is **0.5.0** (resolved in #738).
 
 ## 5. Current State
 For issue 587, the content schema validates pack modules in `packages/content-schema/src/pack/schema.ts`, normalizes localized text in `packages/content-schema/src/pack/normalize.ts`, and performs cross-reference checks in `packages/content-schema/src/pack/validate-cross-references.ts`. Entity-like concepts are not modeled, and there is no `entities` entry in `ParsedContentPack` or `NormalizedContentPack`. Validation and ordering patterns for new modules should follow `packages/content-schema/src/modules/resources.ts` and `packages/content-schema/src/modules/generators.ts`.
@@ -190,7 +190,7 @@ Populate the table as the canonical source for downstream GitHub issues for issu
 
 ## 13. Open Questions
 - **Issue 587**: TODO(owner: Content Schema Maintainer) Should stat ids reuse `contentIdSchema` or remain a stricter snake_case pattern?
-- **Issue 587**: TODO(owner: Runtime Lead) What runtime version gate should introduce entities in `packages/content-schema/src/runtime-compat.ts`?
+- **Issue 587**: Resolved in #738: Entities require runtime >=0.5.0 (`packages/content-schema/src/runtime-compat.ts`).
 - **Issue 587**: TODO(owner: Content Design Lead) Should `statGrowth` be required when `progression` is present?
 - **Issue 587**: TODO(owner: Systems Designer) Should `minValue` and `maxValue` enforce constant-formula bounds at schema time?
 

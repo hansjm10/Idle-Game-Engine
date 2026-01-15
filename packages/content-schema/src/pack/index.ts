@@ -153,6 +153,7 @@ const normalizeActivePackIds = (
 
 const buildFeatureGateMap = (pack: ParsedContentPack): FeatureGateMap => ({
   automations: pack.automations.length > 0,
+  entities: pack.entities.length > 0,
   transforms: pack.transforms.length > 0,
   runtimeEvents: pack.runtimeEvents.length > 0,
   prestigeLayers: pack.prestigeLayers.length > 0,
