@@ -152,4 +152,39 @@ describe('progression-coordinator-save', () => {
     ).toEqual(saved);
     expect(restored.runtime.getCurrentStep()).toBe(saved.step);
   });
+
+  it('ignores serialized generator entries with blank ids', () => {
+    const { coordinator, productionSystem } = createHarness(0);
+    coordinator.incrementGeneratorOwned('generator.mine', 3);
+
+    const saved = serializeProgressionCoordinatorState(
+      coordinator,
+      productionSystem,
+    );
+
+    const corrupted = {
+      ...saved,
+      generators: [
+        {
+          id: ' ',
+          owned: 99,
+          enabled: false,
+          isUnlocked: true,
+          nextPurchaseReadyAtStep: 10,
+        },
+      ],
+    };
+
+    const restored = createHarness(corrupted.step);
+    hydrateProgressionCoordinatorState(
+      corrupted,
+      restored.coordinator,
+      restored.productionSystem,
+    );
+
+    const owned = restored.coordinator.state.generators?.find(
+      (generator) => generator.id === 'generator.mine',
+    )?.owned;
+    expect(owned).toBe(0);
+  });
 });

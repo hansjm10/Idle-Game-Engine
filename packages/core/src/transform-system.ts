@@ -44,6 +44,7 @@ import type { EventPublisher } from './events/event-bus.js';
 import type { MissionOutcomeKind } from './events/runtime-event-catalog.js';
 import { telemetry } from './telemetry.js';
 import { resolveEngineConfig, type EngineConfig, type EngineConfigOverrides } from './config.js';
+import { isBoolean, isFiniteNumber, isNonBlankString } from './validation/primitives.js';
 
 /**
  * Extended ResourceStateAccessor for transforms that supports adding amounts.
@@ -158,14 +159,17 @@ export interface SerializedTransformState {
 }
 
 function normalizeNonNegativeInt(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return 0;
+  }
+  if (value < 0) {
     return 0;
   }
   return Math.floor(value);
 }
 
 function parseNonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+  return isNonBlankString(value) ? value : undefined;
 }
 
 function parseEntityInstanceIds(value: unknown): readonly string[] | undefined {
@@ -174,13 +178,13 @@ function parseEntityInstanceIds(value: unknown): readonly string[] | undefined {
   }
 
   const ids = value.filter(
-    (id): id is string => typeof id === 'string' && id.trim().length > 0,
+    (id): id is string => isNonBlankString(id),
   );
   return ids.length > 0 ? ids : undefined;
 }
 
 function parseOptionalEntityExperience(value: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (!isFiniteNumber(value)) {
     return undefined;
   }
 
@@ -200,11 +204,11 @@ function parseTransformBatchOutputs(value: unknown): TransformBatchOutput[] {
     const resourceId = outputRecord.resourceId;
     const amountValue = outputRecord.amount;
 
-    if (typeof resourceId !== 'string' || resourceId.trim().length === 0) {
+    if (!isNonBlankString(resourceId)) {
       continue;
     }
 
-    if (typeof amountValue !== 'number' || !Number.isFinite(amountValue)) {
+    if (!isFiniteNumber(amountValue)) {
       continue;
     }
 
@@ -225,7 +229,7 @@ function parseMissionPreparedOutcome(value: unknown): MissionPreparedOutcome {
   const record = value as Record<string, unknown>;
   const entityExperienceValue = record.entityExperience;
   const entityExperience =
-    typeof entityExperienceValue === 'number' && Number.isFinite(entityExperienceValue)
+    isFiniteNumber(entityExperienceValue)
       ? Math.max(0, entityExperienceValue)
       : 0;
 
@@ -241,18 +245,18 @@ function parseNonEmptyStringArray(value: unknown): string[] {
   }
 
   return value.filter(
-    (id): id is string => typeof id === 'string' && id.trim().length > 0,
+    (id): id is string => isNonBlankString(id),
   );
 }
 
 function parseProbabilityOrFallback(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value)
+  return isFiniteNumber(value)
     ? clampProbability(value)
     : fallback;
 }
 
 function parseOptionalProbability(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value)
+  return isFiniteNumber(value)
     ? clampProbability(value)
     : undefined;
 }
@@ -313,15 +317,15 @@ function parseAccumulatedModifiers(
 
   return {
     successRateBonus:
-      typeof successRateBonusValue === 'number' && Number.isFinite(successRateBonusValue)
+      isFiniteNumber(successRateBonusValue)
         ? successRateBonusValue
         : 0,
     durationMultiplier:
-      typeof durationMultiplierValue === 'number' && Number.isFinite(durationMultiplierValue)
+      isFiniteNumber(durationMultiplierValue)
         ? Math.max(0, durationMultiplierValue)
         : 1,
     outputMultiplier:
-      typeof outputMultiplierValue === 'number' && Number.isFinite(outputMultiplierValue)
+      isFiniteNumber(outputMultiplierValue)
         ? Math.max(0, outputMultiplierValue)
         : 1,
   };
@@ -461,7 +465,7 @@ function restoreTransformStateEntry(
 
   const record = entry as Record<string, unknown>;
   const id = record.id;
-  if (typeof id !== 'string' || id.trim().length === 0) {
+  if (!isNonBlankString(id)) {
     return;
   }
 
@@ -471,7 +475,7 @@ function restoreTransformStateEntry(
   }
 
   const unlockedValue = record.unlocked;
-  const unlocked = typeof unlockedValue === 'boolean' ? unlockedValue : false;
+  const unlocked = isBoolean(unlockedValue) ? unlockedValue : false;
 
   const normalizedCooldown = normalizeNonNegativeInt(record.cooldownExpiresStep);
   const rebasedCooldown = rebaseStepValue(
@@ -535,7 +539,7 @@ const serializeMissionPreparedOutcome = (
   outputs: outcome.outputs.map((output) => ({
     resourceId: output.resourceId,
     amount:
-      typeof output.amount === 'number' && Number.isFinite(output.amount)
+      isFiniteNumber(output.amount)
         ? Math.max(0, output.amount)
         : 0,
   })),

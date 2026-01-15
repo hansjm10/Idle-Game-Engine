@@ -6,6 +6,7 @@ import type {
   ProgressionUpgradeState,
 } from './progression.js';
 import type { SerializedResourceState } from './resource-state.js';
+import { isBoolean, isFiniteNumber, isNonBlankString } from './validation/primitives.js';
 
 type Mutable<T> = {
   -readonly [K in keyof T]: T[K];
@@ -58,18 +59,24 @@ export type SerializedProgressionCoordinatorState =
   | SerializedProgressionCoordinatorStateV2;
 
 function normalizeNonNegativeInt(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return 0;
+  }
+  if (value < 0) {
     return 0;
   }
   return Math.floor(value);
 }
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
+  return isBoolean(value) ? value : fallback;
 }
 
 function normalizeNonNegativeNumber(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return 0;
+  }
+  if (value < 0) {
     return 0;
   }
   return value;
@@ -79,7 +86,10 @@ function normalizeOptionalNonNegativeInt(value: unknown): number | undefined {
   if (value === undefined) {
     return undefined;
   }
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return undefined;
+  }
+  if (value < 0) {
     return undefined;
   }
   return Math.floor(value);
@@ -94,7 +104,7 @@ function normalizeGeneratorStateV1(
 
   const record = value as Record<string, unknown>;
   const id = record.id;
-  if (typeof id !== 'string' || id.trim().length === 0) {
+  if (!isNonBlankString(id)) {
     return undefined;
   }
 
@@ -119,7 +129,7 @@ function normalizeUpgradeStateV1(
 
   const record = value as Record<string, unknown>;
   const id = record.id;
-  if (typeof id !== 'string' || id.trim().length === 0) {
+  if (!isNonBlankString(id)) {
     return undefined;
   }
 
@@ -138,7 +148,7 @@ function normalizeAchievementStateV2(
 
   const record = value as Record<string, unknown>;
   const id = record.id;
-  if (typeof id !== 'string' || id.trim().length === 0) {
+  if (!isNonBlankString(id)) {
     return undefined;
   }
 

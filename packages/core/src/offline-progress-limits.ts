@@ -1,3 +1,5 @@
+import { isFiniteNumber } from './validation/primitives.js';
+
 export type OfflineProgressLimits = Readonly<{
   readonly maxElapsedMs?: number;
   readonly maxSteps?: number;
@@ -13,7 +15,10 @@ export type OfflineProgressTotals = Readonly<{
 function normalizeNonNegativeNumber(
   value: number | undefined,
 ): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return undefined;
+  }
+  if (value < 0) {
     return undefined;
   }
   return value;
@@ -22,7 +27,10 @@ function normalizeNonNegativeNumber(
 function normalizeNonNegativeInteger(
   value: number | undefined,
 ): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+  if (!isFiniteNumber(value)) {
+    return undefined;
+  }
+  if (value < 0) {
     return undefined;
   }
   return Math.floor(value);
