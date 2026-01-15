@@ -148,6 +148,26 @@ describe('createGame', () => {
     });
   });
 
+  it('normalizes purchase generator counts', () => {
+    const game = createGame(createTestContent(), { stepSizeMs: 100 });
+
+    expect(game.purchaseGenerator('generator.mine', 2.9)).toEqual({ success: true });
+    expect(game.purchaseGenerator('generator.mine', 0.2)).toEqual({ success: true });
+    expect(game.purchaseGenerator('generator.mine', 0)).toEqual({ success: true });
+    expect(game.purchaseGenerator('generator.mine', -5)).toEqual({ success: true });
+    expect(game.purchaseGenerator('generator.mine', Number.NaN)).toEqual({ success: true });
+
+    const entries = game.internals.commandQueue.exportForSave().entries;
+    expect(entries).toHaveLength(5);
+    expect(entries.map((entry) => entry.payload)).toEqual([
+      { generatorId: 'generator.mine', count: 2 },
+      { generatorId: 'generator.mine', count: 1 },
+      { generatorId: 'generator.mine', count: 1 },
+      { generatorId: 'generator.mine', count: 1 },
+      { generatorId: 'generator.mine', count: 1 },
+    ]);
+  });
+
   it('returns a clear error when a facade action has no registered handler', () => {
     const noAutomation = createGame(createTestContent(), {
       stepSizeMs: 100,
