@@ -23,6 +23,13 @@ describe('runtime-event-catalog', () => {
 
     expect(() => {
       bus.publish('resource:threshold-reached', {
+        resourceId: '   ',
+        threshold: 10,
+      } as RuntimeEventPayload<'resource:threshold-reached'>);
+    }).toThrow('resourceId must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('resource:threshold-reached', {
         resourceId: 'res:energy',
         threshold: Number.NaN,
       } as RuntimeEventPayload<'resource:threshold-reached'>);
@@ -42,6 +49,13 @@ describe('runtime-event-catalog', () => {
     expect(() => {
       bus.publish('automation:toggled', {
         automationId: '',
+        enabled: true,
+      } as RuntimeEventPayload<'automation:toggled'>);
+    }).toThrow('automationId must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('automation:toggled', {
+        automationId: '   ',
         enabled: true,
       } as RuntimeEventPayload<'automation:toggled'>);
     }).toThrow('automationId must be a non-empty string.');
@@ -84,6 +98,14 @@ describe('runtime-event-catalog', () => {
     expect(() => {
       bus.publish('automation:fired', {
         automationId: 'auto:1',
+        triggerKind: '   ',
+        step: 0,
+      } as unknown as RuntimeEventPayload<'automation:fired'>);
+    }).toThrow('triggerKind must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('automation:fired', {
+        automationId: 'auto:1',
         triggerKind: validTriggerKind,
         step: -1,
       } as RuntimeEventPayload<'automation:fired'>);
@@ -112,6 +134,16 @@ describe('runtime-event-catalog', () => {
     expect(() => {
       bus.publish('mission:started', {
         transformId: '',
+        batchId: 'batch:1',
+        startedAtStep: 0,
+        completeAtStep: 1,
+        entityInstanceIds: [],
+      } as RuntimeEventPayload<'mission:started'>);
+    }).toThrow('transformId must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('mission:started', {
+        transformId: '   ',
         batchId: 'batch:1',
         startedAtStep: 0,
         completeAtStep: 1,
@@ -166,6 +198,16 @@ describe('runtime-event-catalog', () => {
         startedAtStep: 0,
         completeAtStep: 1,
         entityInstanceIds: ['ok', ''],
+      } as RuntimeEventPayload<'mission:started'>);
+    }).toThrow('entityInstanceIds must contain non-empty strings.');
+
+    expect(() => {
+      bus.publish('mission:started', {
+        transformId: 'transform:1',
+        batchId: 'batch:1',
+        startedAtStep: 0,
+        completeAtStep: 1,
+        entityInstanceIds: ['ok', '   '],
       } as RuntimeEventPayload<'mission:started'>);
     }).toThrow('entityInstanceIds must contain non-empty strings.');
 
@@ -400,6 +442,13 @@ describe('runtime-event-catalog', () => {
     expect(() => {
       bus.publish('mission:decision-required', {
         ...validPayload,
+        prompt: '   ',
+      } as RuntimeEventPayload<'mission:decision-required'>);
+    }).toThrow('prompt must be a non-empty string.');
+
+    expect(() => {
+      bus.publish('mission:decision-required', {
+        ...validPayload,
         options: null as any,
       } as RuntimeEventPayload<'mission:decision-required'>);
     }).toThrow('options must be an array.');
@@ -410,6 +459,13 @@ describe('runtime-event-catalog', () => {
         expiresAtStep: -1,
       } as RuntimeEventPayload<'mission:decision-required'>);
     }).toThrow('expiresAtStep must be a non-negative integer.');
+
+    expect(() => {
+      bus.publish('mission:decision-required', {
+        ...validPayload,
+        options: [{ id: 'left', label: '   ', available: true }],
+      } as RuntimeEventPayload<'mission:decision-required'>);
+    }).toThrow('option.label must be a non-empty string.');
 
     expect(() => {
       bus.publish('mission:decision-required', validPayload);
@@ -438,6 +494,13 @@ describe('runtime-event-catalog', () => {
       bus.publish('mission:decision-made', {
         ...validPayload,
         nextStageId: '',
+      } as RuntimeEventPayload<'mission:decision-made'>);
+    }).toThrow('nextStageId must be a non-empty string or null.');
+
+    expect(() => {
+      bus.publish('mission:decision-made', {
+        ...validPayload,
+        nextStageId: '   ',
       } as RuntimeEventPayload<'mission:decision-made'>);
     }).toThrow('nextStageId must be a non-empty string or null.');
 

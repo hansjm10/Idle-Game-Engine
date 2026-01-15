@@ -3,6 +3,12 @@ import type {
   ExecutionContext,
 } from './command-dispatcher.js';
 import { telemetry } from './telemetry.js';
+import {
+  isBoolean,
+  isFiniteNumber,
+  isNonBlankString,
+  isNonNegativeInteger,
+} from './validation/primitives.js';
 
 export type ValidationError = Readonly<{
   code: string;
@@ -54,7 +60,7 @@ export const validateNonEmptyString = (
   error: ValidationError,
 ): CommandHandlerResult | undefined =>
   validateField(
-    typeof value === 'string' && value.trim().length > 0,
+    isNonBlankString(value),
     context,
     eventName,
     details,
@@ -69,7 +75,7 @@ export const validatePositiveInteger = (
   error: ValidationError,
 ): CommandHandlerResult | undefined =>
   validateField(
-    Number.isInteger(value) && (value as number) > 0,
+    isNonNegativeInteger(value) && value > 0,
     context,
     eventName,
     details,
@@ -84,7 +90,7 @@ export const validatePositiveNumber = (
   error: ValidationError,
 ): CommandHandlerResult | undefined =>
   validateField(
-    typeof value === 'number' && Number.isFinite(value) && value > 0,
+    isFiniteNumber(value) && value > 0,
     context,
     eventName,
     details,
@@ -99,7 +105,7 @@ export const validateBoolean = (
   error: ValidationError,
 ): CommandHandlerResult | undefined =>
   validateField(
-    typeof value === 'boolean',
+    isBoolean(value),
     context,
     eventName,
     details,
