@@ -216,24 +216,47 @@ describe('createGame', () => {
     });
   });
 
-  it('normalizes purchase generator counts', () => {
+  it('normalizes positive purchase generator counts', () => {
     const game = createGame(createTestContent(), { stepSizeMs: 100 });
 
     expect(game.purchaseGenerator('generator.mine', 2.9)).toEqual({ success: true });
-    expect(game.purchaseGenerator('generator.mine', 0.2)).toEqual({ success: true });
-    expect(game.purchaseGenerator('generator.mine', 0)).toEqual({ success: true });
-    expect(game.purchaseGenerator('generator.mine', -5)).toEqual({ success: true });
-    expect(game.purchaseGenerator('generator.mine', Number.NaN)).toEqual({ success: true });
+    expect(game.purchaseGenerator('generator.mine', 1.2)).toEqual({ success: true });
 
     const entries = game.internals.commandQueue.exportForSave().entries;
-    expect(entries).toHaveLength(5);
+    expect(entries).toHaveLength(2);
     expect(entries.map((entry) => entry.payload)).toEqual([
       { generatorId: 'generator.mine', count: 2 },
       { generatorId: 'generator.mine', count: 1 },
-      { generatorId: 'generator.mine', count: 1 },
-      { generatorId: 'generator.mine', count: 1 },
-      { generatorId: 'generator.mine', count: 1 },
     ]);
+  });
+
+  it('rejects invalid purchase generator counts', () => {
+    const game = createGame(createTestContent(), { stepSizeMs: 100 });
+
+    expect(game.purchaseGenerator('generator.mine', 0)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'INVALID_PURCHASE_COUNT' }),
+    });
+
+    expect(game.purchaseGenerator('generator.mine', 0.2)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'INVALID_PURCHASE_COUNT' }),
+    });
+
+    expect(game.purchaseGenerator('generator.mine', -5)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'INVALID_PURCHASE_COUNT' }),
+    });
+
+    expect(game.purchaseGenerator('generator.mine', Number.NaN)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'INVALID_PURCHASE_COUNT' }),
+    });
+
+    expect(game.internals.commandQueue.exportForSave()).toEqual({
+      schemaVersion: 1,
+      entries: [],
+    });
   });
 
   it('enqueues prestige resets when prestige is enabled', () => {

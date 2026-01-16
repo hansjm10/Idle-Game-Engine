@@ -83,13 +83,12 @@ export interface Game {
   readonly internals: GameRuntimeWiring;
 }
 
-function toPositiveIntOrFallback(
-  value: number,
-  fallback: number,
-): number {
-  return Number.isFinite(value) && value > 0
-    ? Math.max(1, Math.floor(value))
-    : fallback;
+function toPositiveIntOrNull(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  const normalized = Math.floor(value);
+  return normalized > 0 ? normalized : null;
 }
 
 function createGameArgumentError(
@@ -281,14 +280,24 @@ export function createGame(
         { resourceId, amount },
       );
     },
-    purchaseGenerator: (generatorId, count) =>
-      enqueuePlayerCommand<PurchaseGeneratorPayload>(
+    purchaseGenerator: (generatorId, count) => {
+      const normalizedCount = toPositiveIntOrNull(count);
+      if (normalizedCount === null) {
+        return createGameArgumentError(
+          'INVALID_PURCHASE_COUNT',
+          'Purchase count must be a positive integer.',
+          { generatorId, count },
+        );
+      }
+
+      return enqueuePlayerCommand<PurchaseGeneratorPayload>(
         RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR,
         {
           generatorId,
-          count: toPositiveIntOrFallback(count, 1),
+          count: normalizedCount,
         },
-      ),
+      );
+    },
     purchaseUpgrade: (upgradeId) =>
       enqueuePlayerCommand<PurchaseUpgradePayload>(
         RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
