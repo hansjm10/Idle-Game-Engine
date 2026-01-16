@@ -280,8 +280,17 @@ export class CommandQueue {
 
   private nextSequence = 0;
   private totalSize = 0;
+  private readonly maxSize: number;
 
-  enqueue(command: Command): void {
+  constructor(maxSize: number) {
+    this.maxSize = maxSize;
+  }
+
+  enqueue(command: Command): boolean {
+    if (this.totalSize >= this.maxSize) {
+      return false;
+    }
+
     const queue = this.queues.get(command.priority);
     if (!queue) {
       throw new Error(`Invalid priority: ${command.priority}`);
@@ -311,6 +320,7 @@ export class CommandQueue {
     }
     queue.splice(lo, 0, entry);
     this.totalSize++;
+    return true;
   }
 
   dequeueAll(): CommandSnapshot[] {

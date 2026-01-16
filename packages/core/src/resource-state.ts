@@ -1323,7 +1323,7 @@ function exportForSave(
       buffers.capacities[index] === Number.POSITIVE_INFINITY
         ? null
         : buffers.capacities[index];
-    flags[index] = buffers.flags[index];
+    flags[index] = buffers.flags[index] & ~FLAG_DIRTY_THIS_TICK;
     unlocked[index] = (buffers.flags[index] & FLAG_UNLOCKED) !== 0;
     visible[index] = (buffers.flags[index] & FLAG_VISIBLE) !== 0;
   }
