@@ -89,8 +89,7 @@ This proposal adds a first-party desktop host (“shell”) and a first-party 2D
 - **Headless runtime exists**: `IdleEngineRuntime` implements a deterministic fixed-step loop with an accumulator (`packages/core/src/internals.browser.ts`) and deterministic command step stamping (`docs/runtime-command-queue-design.md`).
 - **Replay primitives exist**: `CommandRecorder` can record commands + start state + runtime event frames and replay them (`packages/core/src/command-recorder.ts`), but there is no standardized file/container format and no visual replay.
 - **Shell integration examples exist (non-graphical)**:
-  - `packages/fantasy-guild-tui` demonstrates a Node-based host that loads content, runs `createGame`, and polls snapshots to render a terminal UI.
-  - `tools/runtime-sim` provides headless simulation/benchmark tooling.
+  - `tools/runtime-sim` provides headless simulation/benchmark tooling and demonstrates host-driven runtime stepping.
 - **Rendering contract does not exist**: there is no ViewModel / RenderCommandBuffer schema, no renderer implementation, and no asset pipeline for 2D scenes/UI in this repo.
 
 ## 6. Proposed Solution
@@ -147,7 +146,7 @@ Proposed packages (additive to the workspace):
   - For game-specific scene composition, selectors can live in a game module within the shell until content schemas mature.
 
 **Shell responsibilities**:
-- Time source and fixed-step scheduling (`IdleEngineRuntime.tick(deltaMs)`), including background throttling behavior and max-step budgets.
+- Time source and fixed-step scheduling (`IdleEngineRuntime.tick(deltaMs)`), including background throttling behavior and max-step budgets (note: `tick(deltaMs)` may advance 0..N sim steps; the authoritative counter is `step`).
 - Input capture → `@idle-engine/controls` mapping → runtime commands (player priority).
 - Persistence (settings/saves), filesystem IO, content pack discovery/loading, and dev-mode hot reload.
 - Asset management: load/validate assets and provide stable asset IDs + hashes to the renderer.
@@ -168,15 +167,25 @@ Adopt a two-layer approach, matching Issue 778:
 
 Key requirements:
 - The compilation step `ViewModel → RenderCommandBuffer` is deterministic:
-  - stable ordering rules,
+  - stable ordering rules (no reliance on insertion order),
   - explicit sort keys,
-  - no iteration-order hazards (avoid `Map`/object key dependence unless explicitly canonicalized).
+  - no iteration-order hazards (`Map`/`Set` and object key enumeration are forbidden in hashed payloads; represent dictionaries as `[{ key, value }]` arrays sorted by `key`).
+- `sortKey` is a `uint64` with an explicitly defined encoding (avoid JS numbers > `2^53 - 1`):
+  - recommended in-memory representation: `{ sortKeyHi: number; sortKeyLo: number }` where both are `uint32`,
+  - ordering rule: ascending `(sortKeyHi, sortKeyLo)`, then a stable tie-breaker (e.g., `drawId`).
+- Floats are canonicalized at the compile boundary so visual replay hashes are stable:
+  - reject `NaN`, `Infinity`, and `-Infinity`,
+  - normalize `-0` to `0`,
+  - quantize world-space floats into fixed-point integers for the RCB (default: `1/256` world units), and keep UI-space coordinates as integers.
+- Hashing is explicitly defined for replay validation and golden tests:
+  - `hashViewModel`/`hashRCB` = `SHA-256(canonicalEncode(payload))`,
+  - canonical encoding must have stable key ordering and stable numeric formatting (if JSON is used, follow RFC 8785 JCS plus the numeric constraints above).
 - Both ViewModel and RCB are versioned for evolution and replay compatibility.
 
 #### 6.2.4 Coordinate Systems & Timing
 Define explicit coordinate spaces up front to prevent later churn:
 - **Simulation time**: `simTimeMs = step * stepSizeMs` (authoritative).
-- **World space**: float world units (camera-controlled). Prefer stable rounding rules at the compile boundary (e.g., quantize to 1/256th units) if cross-platform drift becomes an issue.
+- **World space**: float world units in the ViewModel (camera-controlled). The RCB uses fixed-point integer coordinates (default quantization: `1/256` world units) so hashing and replay validation are stable.
 - **UI space**: logical pixels with integer coordinates; apply devicePixelRatio scaling at renderer boundary.
 - **Render frame cadence**:
   - Sim runs at fixed step (e.g., 60 Hz or 10 Hz depending on game).
@@ -185,11 +194,14 @@ Define explicit coordinate spaces up front to prevent later churn:
 #### 6.2.5 Renderer Contract (High-Level Shape)
 The contract package defines (at minimum):
 - `AssetId` and `AssetManifest` (fonts, images, sprite sheets, shaders) with content hashes.
+- `FrameHeader`:
+  - `{ step, simTimeMs, renderFrame?, contentHash, schemaVersion }` where `step` is the authoritative sim step and `renderFrame` is a monotonic counter for presented frames (optional when recording per-step ViewModels only).
 - `ViewModel`:
-  - `frame`: `{ tick, simTimeMs, contentHash, schemaVersion }`
+  - `frame`: `FrameHeader`
   - `scene`: camera + sprite instances + optional tilemap/particle descriptors
   - `ui`: a small set of GPU-friendly primitives (rect, image, text, meter/progress bar), plus layout metadata
 - `RenderCommandBuffer`:
+  - `frame`: `FrameHeader`
   - `passes[]`: e.g., `world`, `ui`
   - `draws[]` (or pass-scoped draws): each draw has a stable `sortKey` and references materials/geometry
   - optional `debug` channels (bounds, missing assets, perf markers)
@@ -216,7 +228,7 @@ Provide two complementary replay products:
 **B) Visual Replay (debugging)**
 - Purpose: reproduce and inspect visuals without rerunning sim; validate ViewModel/RCB determinism.
 - Recorded data (configurable):
-  - per-step ViewModel (post-tick),
+  - per-step ViewModel (after each sim step),
   - and/or per-render-frame RenderCommandBuffer (post-compile).
 - Validation: during a “combined replay”, run sim replay and compare computed ViewModel/RCB hashes against recorded frames. Mismatches fail fast and include a diffable summary.
 
@@ -265,7 +277,7 @@ To keep visual replays stable:
 | `feat(renderer-webgpu): sprites + batching` | Quad batching + texture/atlas loader | WebGPU Renderer Agent | device init | Draw N sprites deterministically with stable sort |
 | `feat(renderer-webgpu): GPU UI primitives` | Rect/image primitives + clipping | WebGPU Renderer Agent | sprites | HUD panels render without DOM |
 | `feat(renderer-webgpu): text pipeline` | Bitmap/MSDF text rendering + deterministic layout | WebGPU Renderer Agent | UI primitives | Text renders deterministically for packaged fonts |
-| `feat(shell-desktop): sim worker + frame pump` | Run core in Worker, emit ViewModel/RCB to renderer | Desktop Shell Agent | Electron scaffolding + contract | Sim ticks deterministically; renderer receives frames |
+| `feat(shell-desktop): sim worker + frame pump` | Run core in Worker, emit ViewModel/RCB to renderer | Desktop Shell Agent | Electron scaffolding + contract | Sim steps deterministically; renderer receives frames |
 | `feat(replay): sim replay container + runner` | Write/read sim replay files; CLI or in-app UI | Replay & Tooling Agent | render-contract + shell | Record & replay sim commands; validate final state |
 | `feat(replay): visual replay (ViewModel/RCB)` | Record per-frame ViewModel/RCB; hash validation | Replay & Tooling Agent | replay container + renderer | Replay reproduces identical frame hashes on same build/content |
 | `test(render-compiler): deterministic RCB generation` | Golden tests for compilation determinism | Renderer Contract Agent | contract | `pnpm test` passes; deterministic ordering validated |
@@ -353,7 +365,7 @@ To keep visual replays stable:
 3. **Coordinate and unit conventions**: world-units vs pixel-units; camera scaling rules; integer quantization boundaries.
 4. **Where ViewModel is authored**: in `packages/core` selectors vs a game module in the shell vs content-driven scene graph.
 5. **Renderer fallback policy**: is a WebGL fallback required, or is debug renderer sufficient?
-6. **Replay container format details**: JSON vs binary, compression, streaming, stable hashing algorithm choice.
+6. **Replay container format details**: JSON vs binary, compression, streaming, hash digest size/perf trade-offs (e.g., full SHA-256 vs truncated/faster hashes).
 
 ## 14. Follow-Up Work
 - Add a dedicated “Shell & Rendering” documentation section (including how downstream apps can reuse the renderer contract without Electron).
