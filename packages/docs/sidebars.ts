@@ -28,6 +28,7 @@ const sidebars: SidebarsConfig = {
         'runtime-step-lifecycle',
         'runtime-command-queue-design',
         'controls-contract-design-issue-705',
+        'desktop-shell-webgpu-renderer-replay-design-issue-778',
         'runtime-event-pubsub-design',
         'runtime-event-bus-decisions',
         'runtime-event-manifest-authoring',
