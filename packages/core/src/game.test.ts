@@ -438,6 +438,33 @@ describe('createGame', () => {
     vi.useRealTimers();
   });
 
+  it('restarts the scheduler after hydrate when it was running', () => {
+    vi.useFakeTimers();
+    resetRNG();
+    setRNGSeed(42);
+
+    const content = createTestContent();
+
+    const source = createGame(content, { stepSizeMs: 100 });
+    source.tick(source.internals.runtime.getStepSizeMs() * 5);
+    const save = source.serialize();
+
+    const restored = createGame(content, { stepSizeMs: 100 });
+    restored.start();
+    vi.advanceTimersByTime(restored.internals.runtime.getStepSizeMs());
+    expect(restored.internals.runtime.getCurrentStep()).toBe(1);
+
+    restored.hydrate(save);
+    expect(restored.internals.runtime.getCurrentStep()).toBe(save.runtime.step);
+
+    vi.advanceTimersByTime(restored.internals.runtime.getStepSizeMs() * 3);
+    expect(restored.internals.runtime.getCurrentStep()).toBe(save.runtime.step + 3);
+
+    restored.stop();
+    source.stop();
+    vi.useRealTimers();
+  });
+
   it('hydrates legacy v0 saves (embedded automation state)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1234);

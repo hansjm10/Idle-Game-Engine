@@ -225,10 +225,11 @@ export function createGame(
     return { success: true };
   };
 
-  const hydrate = (save: unknown): void => {
-    stop();
+	  const hydrate = (save: unknown): void => {
+	    const wasRunning = intervalHandle !== null;
+	    stop();
 
-    const loadedSave = loadGameStateSaveFormat(save);
+	    const loadedSave = loadGameStateSaveFormat(save);
 
     const targetStep = loadedSave.runtime.step;
     const currentStep = runtime.getCurrentStep();
@@ -242,8 +243,12 @@ export function createGame(
       runtime.fastForward((targetStep - currentStep) * runtime.getStepSizeMs());
     }
 
-    wiring.hydrate(loadedSave, { currentStep: targetStep });
-  };
+	    wiring.hydrate(loadedSave, { currentStep: targetStep });
+
+	    if (wasRunning) {
+	      start();
+	    }
+	  };
 
   const game: Game = {
     start,
