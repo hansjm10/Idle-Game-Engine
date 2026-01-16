@@ -5,6 +5,7 @@ import { createAutomation, createTransform } from '@idle-engine/content-schema';
 import {
   createContentPack,
   createGeneratorDefinition,
+  createPrestigeLayerDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
@@ -63,6 +64,23 @@ function createTestContent() {
   });
 }
 
+function createTestContentWithPrestige() {
+  const layerId = 'prestige.test';
+
+  return createContentPack({
+    resources: [
+      createResourceDefinition('resource.energy', { startAmount: 1000 }),
+      createResourceDefinition('resource.prestige', { startAmount: 0 }),
+      createResourceDefinition(`${layerId}-prestige-count`, {
+        startAmount: 0,
+        visible: false,
+        unlocked: true,
+      }),
+    ],
+    prestigeLayers: [createPrestigeLayerDefinition(layerId)],
+  });
+}
+
 describe('createGame', () => {
   it('builds snapshots from wired runtime state', () => {
     vi.useFakeTimers();
@@ -99,6 +117,16 @@ describe('createGame', () => {
     ).toBeTypeOf('function');
     expect(
       game.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      ),
+    ).toBeTypeOf('function');
+    expect(
+      game.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+      ),
+    ).toBeTypeOf('function');
+    expect(
+      game.internals.commandDispatcher.getHandler(
         RUNTIME_COMMAND_TYPES.TOGGLE_AUTOMATION,
       ),
     ).toBeTypeOf('function');
@@ -110,6 +138,8 @@ describe('createGame', () => {
 
     expect(game.purchaseGenerator('generator.mine', 1)).toEqual({ success: true });
     expect(game.purchaseUpgrade('upgrade.test')).toEqual({ success: true });
+    expect(game.collectResource('resource.gold', 5)).toEqual({ success: true });
+    expect(game.toggleGenerator('generator.mine', true)).toEqual({ success: true });
     expect(game.toggleAutomation('automation.test', true)).toEqual({ success: true });
     expect(game.startTransform('transform.test')).toEqual({ success: true });
 
@@ -131,6 +161,20 @@ describe('createGame', () => {
           payload: { upgradeId: 'upgrade.test' },
         },
         {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          priority: CommandPriority.PLAYER,
+          timestamp: 0,
+          step: 0,
+          payload: { resourceId: 'resource.gold', amount: 5 },
+        },
+        {
+          type: RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+          priority: CommandPriority.PLAYER,
+          timestamp: 0,
+          step: 0,
+          payload: { generatorId: 'generator.mine', enabled: true },
+        },
+        {
           type: RUNTIME_COMMAND_TYPES.TOGGLE_AUTOMATION,
           priority: CommandPriority.PLAYER,
           timestamp: 0,
@@ -145,6 +189,30 @@ describe('createGame', () => {
           payload: { transformId: 'transform.test' },
         },
       ],
+    });
+  });
+
+  it('rejects invalid collectResource arguments', () => {
+    const game = createGame(createTestContent(), { stepSizeMs: 100 });
+
+    expect(game.collectResource('resource.gold', 0)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'INVALID_COLLECT_AMOUNT' }),
+    });
+
+    expect(game.collectResource('resource.gold', Number.NaN)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'INVALID_COLLECT_AMOUNT' }),
+    });
+
+    expect(game.collectResource('resource.unknown', 1)).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'UNKNOWN_RESOURCE' }),
+    });
+
+    expect(game.internals.commandQueue.exportForSave()).toEqual({
+      schemaVersion: 1,
+      entries: [],
     });
   });
 
@@ -166,6 +234,55 @@ describe('createGame', () => {
       { generatorId: 'generator.mine', count: 1 },
       { generatorId: 'generator.mine', count: 1 },
     ]);
+  });
+
+  it('enqueues prestige resets when prestige is enabled', () => {
+    const content = createTestContentWithPrestige();
+    const game = createGame(content, { stepSizeMs: 100 });
+
+    expect(
+      game.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      ),
+    ).toBeTypeOf('function');
+
+    expect(game.prestigeReset('prestige.test')).toEqual({ success: true });
+    expect(game.prestigeReset('prestige.test', 'token')).toEqual({ success: true });
+
+    expect(game.internals.commandQueue.exportForSave()).toEqual({
+      schemaVersion: 1,
+      entries: [
+        {
+          type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+          priority: CommandPriority.PLAYER,
+          timestamp: 0,
+          step: 0,
+          payload: { layerId: 'prestige.test' },
+        },
+        {
+          type: RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+          priority: CommandPriority.PLAYER,
+          timestamp: 0,
+          step: 0,
+          payload: { layerId: 'prestige.test', confirmationToken: 'token' },
+        },
+      ],
+    });
+  });
+
+  it('returns a clear error when prestigeReset is unavailable', () => {
+    const game = createGame(createTestContent(), { stepSizeMs: 100 });
+
+    expect(
+      game.internals.commandDispatcher.getHandler(
+        RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+      ),
+    ).toBeUndefined();
+
+    expect(game.prestigeReset('prestige.test')).toEqual({
+      success: false,
+      error: expect.objectContaining({ code: 'COMMAND_UNSUPPORTED' }),
+    });
   });
 
   it('returns a clear error when a facade action has no registered handler', () => {

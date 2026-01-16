@@ -3,10 +3,13 @@ import type { NormalizedContentPack } from '@idle-engine/content-schema';
 import type { EngineConfigOverrides } from './config.js';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from './command.js';
 import type {
+  CollectResourcePayload,
+  PrestigeResetPayload,
   PurchaseGeneratorPayload,
   PurchaseUpgradePayload,
   RunTransformPayload,
   ToggleAutomationPayload,
+  ToggleGeneratorPayload,
 } from './command.js';
 import type { CommandResult } from './command-dispatcher.js';
 import type { RuntimeDiagnosticsTimelineOptions } from './diagnostics/runtime-diagnostics-controller.js';
@@ -63,9 +66,12 @@ export interface Game {
   serialize(): SerializedGameState;
   hydrate(save: unknown): void;
 
+  collectResource(resourceId: string, amount: number): CommandResult;
   purchaseGenerator(generatorId: string, count: number): CommandResult;
   purchaseUpgrade(upgradeId: string): CommandResult;
+  toggleGenerator(generatorId: string, enabled: boolean): CommandResult;
   toggleAutomation(automationId: string, enabled: boolean): CommandResult;
+  prestigeReset(layerId: string, confirmationToken?: string): CommandResult;
   startTransform(transformId: string): CommandResult;
 
   on<TType extends RuntimeEventType>(
@@ -81,7 +87,19 @@ function toPositiveIntOrFallback(
   value: number,
   fallback: number,
 ): number {
-  return Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : fallback;
+  return Number.isFinite(value) && value > 0
+    ? Math.max(1, Math.floor(value))
+    : fallback;
+}
+
+function createGameArgumentError(
+  code: string,
+  message: string,
+  details?: Record<string, unknown>,
+): CommandResult {
+  return details
+    ? { success: false, error: { code, message, details } }
+    : { success: false, error: { code, message } };
 }
 
 function toValidIntervalMs(
@@ -240,6 +258,29 @@ export function createGame(
       ),
     serialize: () => wiring.serialize(),
     hydrate,
+    collectResource: (resourceId, amount) => {
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return createGameArgumentError(
+          'INVALID_COLLECT_AMOUNT',
+          'Collect amount must be a positive, finite number.',
+          { amount },
+        );
+      }
+
+      const index = wiring.coordinator.resourceState.getIndex(resourceId);
+      if (index === undefined) {
+        return createGameArgumentError(
+          'UNKNOWN_RESOURCE',
+          'Resource not found.',
+          { resourceId },
+        );
+      }
+
+      return enqueuePlayerCommand<CollectResourcePayload>(
+        RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        { resourceId, amount },
+      );
+    },
     purchaseGenerator: (generatorId, count) =>
       enqueuePlayerCommand<PurchaseGeneratorPayload>(
         RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR,
@@ -253,10 +294,20 @@ export function createGame(
         RUNTIME_COMMAND_TYPES.PURCHASE_UPGRADE,
         { upgradeId },
       ),
+    toggleGenerator: (generatorId, enabled) =>
+      enqueuePlayerCommand<ToggleGeneratorPayload>(
+        RUNTIME_COMMAND_TYPES.TOGGLE_GENERATOR,
+        { generatorId, enabled },
+      ),
     toggleAutomation: (automationId, enabled) =>
       enqueuePlayerCommand<ToggleAutomationPayload>(
         RUNTIME_COMMAND_TYPES.TOGGLE_AUTOMATION,
         { automationId, enabled },
+      ),
+    prestigeReset: (layerId, confirmationToken) =>
+      enqueuePlayerCommand<PrestigeResetPayload>(
+        RUNTIME_COMMAND_TYPES.PRESTIGE_RESET,
+        confirmationToken === undefined ? { layerId } : { layerId, confirmationToken },
       ),
     startTransform: (transformId) =>
       enqueuePlayerCommand<RunTransformPayload>(
@@ -264,7 +315,9 @@ export function createGame(
         { transformId },
       ),
     on: (eventType, handler, subscriptionOptions) => {
-      const subscription = runtime.getEventBus().on(eventType, handler, subscriptionOptions);
+      const subscription = runtime
+        .getEventBus()
+        .on(eventType, handler, subscriptionOptions);
       return () => subscription.unsubscribe();
     },
     internals: wiring,
