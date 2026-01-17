@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 import { createRenderCommandBufferStepper } from './rcb-stepper.js';
@@ -7,7 +8,7 @@ import { createRenderCommandBufferStepper } from './rcb-stepper.js';
 function createRcb(step: number): RenderCommandBuffer {
   return {
     frame: {
-      schemaVersion: 1,
+      schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
       step,
       simTimeMs: step * 16,
       contentHash: 'content',

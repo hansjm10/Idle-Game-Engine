@@ -7,6 +7,12 @@ function isUint32(value) {
         value >= 0 &&
         value <= 4294967295);
 }
+function isRecord(value) {
+    return typeof value === 'object' && value !== null;
+}
+function isRenderPassId(value) {
+    return value === 'world' || value === 'ui';
+}
 function sortKeyToString(sortKey) {
     return `${sortKey.sortKeyHi}:${sortKey.sortKeyLo}`;
 }
@@ -16,136 +22,209 @@ function compareSortKey(a, b) {
     }
     return a.sortKeyLo - b.sortKeyLo;
 }
-function validateDrawCommon(errors, path, draw, passIndexById) {
-    if (!passIndexById.has(draw.passId)) {
-        errors.push(`${path}.passId references unknown passId: ${draw.passId}`);
+function parseSortKey(errors, path, sortKey) {
+    if (!isRecord(sortKey)) {
+        errors.push(`${path}.sortKey must be an object`);
+        return undefined;
     }
-    if (!isUint32(draw.sortKey.sortKeyHi)) {
+    const sortKeyHi = sortKey['sortKeyHi'];
+    const sortKeyLo = sortKey['sortKeyLo'];
+    if (!isUint32(sortKeyHi)) {
         errors.push(`${path}.sortKey.sortKeyHi must be uint32`);
     }
-    if (!isUint32(draw.sortKey.sortKeyLo)) {
+    if (!isUint32(sortKeyLo)) {
         errors.push(`${path}.sortKey.sortKeyLo must be uint32`);
     }
+    if (!isUint32(sortKeyHi) || !isUint32(sortKeyLo)) {
+        return undefined;
+    }
+    return { sortKeyHi, sortKeyLo };
 }
-function validateClearDraw(errors, path, draw, passIndexById) {
-    validateDrawCommon(errors, path, draw, passIndexById);
-    if (!isUint32(draw.colorRgba)) {
+function parseDrawCommon(errors, path, draw, passIndexById) {
+    const passIdValue = draw['passId'];
+    let passId;
+    let passIndex;
+    if (!isRenderPassId(passIdValue)) {
+        errors.push(`${path}.passId must be 'world' or 'ui'`);
+    }
+    else {
+        passId = passIdValue;
+        passIndex = passIndexById.get(passIdValue);
+        if (passIndex === undefined) {
+            errors.push(`${path}.passId references unknown passId: ${passIdValue}`);
+        }
+    }
+    const sortKey = parseSortKey(errors, path, draw['sortKey']);
+    return { passId, passIndex, sortKey };
+}
+function validateClearDraw(errors, path, draw) {
+    if (!isUint32(draw['colorRgba'])) {
         errors.push(`${path}.colorRgba must be uint32 RGBA`);
     }
 }
-function validateRectDraw(errors, path, draw, passIndexById) {
-    validateDrawCommon(errors, path, draw, passIndexById);
-    if (!isFiniteNumber(draw.x)) {
+function validateRectDraw(errors, path, draw) {
+    if (!isFiniteNumber(draw['x'])) {
         errors.push(`${path}.x must be a finite number`);
     }
-    if (!isFiniteNumber(draw.y)) {
+    if (!isFiniteNumber(draw['y'])) {
         errors.push(`${path}.y must be a finite number`);
     }
-    if (!isFiniteNumber(draw.width) || draw.width < 0) {
+    const width = draw['width'];
+    if (!isFiniteNumber(width) || width < 0) {
         errors.push(`${path}.width must be a finite non-negative number`);
     }
-    if (!isFiniteNumber(draw.height) || draw.height < 0) {
+    const height = draw['height'];
+    if (!isFiniteNumber(height) || height < 0) {
         errors.push(`${path}.height must be a finite non-negative number`);
     }
-    if (!isUint32(draw.colorRgba)) {
+    if (!isUint32(draw['colorRgba'])) {
         errors.push(`${path}.colorRgba must be uint32 RGBA`);
     }
 }
-function validateImageDraw(errors, path, draw, passIndexById) {
-    validateDrawCommon(errors, path, draw, passIndexById);
-    if (draw.assetId.length === 0) {
+function validateImageDraw(errors, path, draw) {
+    const assetId = draw['assetId'];
+    if (typeof assetId !== 'string' || assetId.length === 0) {
         errors.push(`${path}.assetId must be non-empty`);
     }
-    if (!isFiniteNumber(draw.x)) {
+    if (!isFiniteNumber(draw['x'])) {
         errors.push(`${path}.x must be a finite number`);
     }
-    if (!isFiniteNumber(draw.y)) {
+    if (!isFiniteNumber(draw['y'])) {
         errors.push(`${path}.y must be a finite number`);
     }
-    if (!isFiniteNumber(draw.width) || draw.width < 0) {
+    const width = draw['width'];
+    if (!isFiniteNumber(width) || width < 0) {
         errors.push(`${path}.width must be a finite non-negative number`);
     }
-    if (!isFiniteNumber(draw.height) || draw.height < 0) {
+    const height = draw['height'];
+    if (!isFiniteNumber(height) || height < 0) {
         errors.push(`${path}.height must be a finite non-negative number`);
     }
-    if (draw.tintRgba !== undefined && !isUint32(draw.tintRgba)) {
+    const tintRgba = draw['tintRgba'];
+    if (tintRgba !== undefined && !isUint32(tintRgba)) {
         errors.push(`${path}.tintRgba must be uint32 RGBA when provided`);
     }
 }
-function validateTextDraw(errors, path, draw, passIndexById) {
-    validateDrawCommon(errors, path, draw, passIndexById);
-    if (!isFiniteNumber(draw.x)) {
+function validateTextDraw(errors, path, draw) {
+    if (!isFiniteNumber(draw['x'])) {
         errors.push(`${path}.x must be a finite number`);
     }
-    if (!isFiniteNumber(draw.y)) {
+    if (!isFiniteNumber(draw['y'])) {
         errors.push(`${path}.y must be a finite number`);
     }
-    if (!isUint32(draw.colorRgba)) {
+    if (typeof draw['text'] !== 'string') {
+        errors.push(`${path}.text must be a string`);
+    }
+    if (!isUint32(draw['colorRgba'])) {
         errors.push(`${path}.colorRgba must be uint32 RGBA`);
     }
-    if (draw.fontAssetId !== undefined && draw.fontAssetId.length === 0) {
+    const fontAssetId = draw['fontAssetId'];
+    if (fontAssetId !== undefined &&
+        (typeof fontAssetId !== 'string' || fontAssetId.length === 0)) {
         errors.push(`${path}.fontAssetId must be non-empty when provided`);
     }
-    if (!isFiniteNumber(draw.fontSizePx) || draw.fontSizePx <= 0) {
+    const fontSizePx = draw['fontSizePx'];
+    if (!isFiniteNumber(fontSizePx) || fontSizePx <= 0) {
         errors.push(`${path}.fontSizePx must be a finite positive number`);
     }
 }
 export function validateRenderCommandBuffer(rcb) {
     const errors = [];
+    const rcbValue = rcb;
+    if (!isRecord(rcbValue)) {
+        return { ok: false, errors: ['rcb must be an object'] };
+    }
+    const passesValue = rcbValue['passes'];
+    const drawsValue = rcbValue['draws'];
+    if (!Array.isArray(passesValue)) {
+        errors.push('passes must be an array');
+    }
+    if (!Array.isArray(drawsValue)) {
+        errors.push('draws must be an array');
+    }
+    const passes = Array.isArray(passesValue) ? passesValue : [];
+    const draws = Array.isArray(drawsValue) ? drawsValue : [];
     const passIndexById = new Map();
-    for (let index = 0; index < rcb.passes.length; index++) {
-        const pass = rcb.passes[index];
-        if (passIndexById.has(pass.id)) {
-            errors.push(`passes contains duplicate id: ${pass.id}`);
+    for (let index = 0; index < passes.length; index++) {
+        const path = `passes[${index}]`;
+        const pass = passes[index];
+        if (!isRecord(pass)) {
+            errors.push(`${path} must be an object`);
             continue;
         }
-        passIndexById.set(pass.id, index);
+        const id = pass['id'];
+        if (!isRenderPassId(id)) {
+            errors.push(`${path}.id must be 'world' or 'ui'`);
+            continue;
+        }
+        if (passIndexById.has(id)) {
+            errors.push(`passes contains duplicate id: ${id}`);
+            continue;
+        }
+        passIndexById.set(id, index);
     }
-    for (let index = 0; index < rcb.draws.length; index++) {
-        const draw = rcb.draws[index];
+    const drawOrderInfo = [];
+    for (let index = 0; index < draws.length; index++) {
         const path = `draws[${index}]`;
-        switch (draw.kind) {
+        const draw = draws[index];
+        if (!isRecord(draw)) {
+            errors.push(`${path} must be an object`);
+            drawOrderInfo.push({
+                passId: undefined,
+                passIndex: undefined,
+                sortKey: undefined,
+            });
+            continue;
+        }
+        const kind = draw['kind'];
+        if (typeof kind !== 'string') {
+            errors.push(`${path}.kind must be a string`);
+        }
+        const common = parseDrawCommon(errors, path, draw, passIndexById);
+        drawOrderInfo.push(common);
+        switch (kind) {
             case 'clear':
-                validateClearDraw(errors, path, draw, passIndexById);
+                validateClearDraw(errors, path, draw);
                 break;
             case 'rect':
-                validateRectDraw(errors, path, draw, passIndexById);
+                validateRectDraw(errors, path, draw);
                 break;
             case 'image':
-                validateImageDraw(errors, path, draw, passIndexById);
+                validateImageDraw(errors, path, draw);
                 break;
             case 'text':
-                validateTextDraw(errors, path, draw, passIndexById);
+                validateTextDraw(errors, path, draw);
                 break;
-            default: {
-                const exhaustiveCheck = draw;
-                errors.push(`${path} has unsupported kind: ${String(exhaustiveCheck)}`);
-            }
+            default:
+                if (typeof kind === 'string') {
+                    errors.push(`${path}.kind must be one of: clear, rect, image, text`);
+                }
         }
     }
     let previousPassIndex = -1;
     let previousSortKey;
-    for (let index = 0; index < rcb.draws.length; index++) {
-        const draw = rcb.draws[index];
-        const passIndex = passIndexById.get(draw.passId);
+    for (let index = 0; index < drawOrderInfo.length; index++) {
+        const { passId, passIndex, sortKey } = drawOrderInfo[index];
         if (passIndex === undefined) {
             previousPassIndex = -1;
             previousSortKey = undefined;
             continue;
         }
         if (passIndex < previousPassIndex) {
-            errors.push(`draws[${index}] passId ${draw.passId} out of order (pass index ${passIndex} < ${previousPassIndex})`);
+            errors.push(`draws[${index}] passId ${passId} out of order (pass index ${passIndex} < ${previousPassIndex})`);
             previousPassIndex = passIndex;
-            previousSortKey = draw.sortKey;
+            previousSortKey = sortKey;
             continue;
         }
-        if (passIndex === previousPassIndex && previousSortKey) {
-            if (compareSortKey(draw.sortKey, previousSortKey) < 0) {
-                errors.push(`draws[${index}] sortKey out of order (${sortKeyToString(draw.sortKey)} < ${sortKeyToString(previousSortKey)})`);
+        if (passIndex === previousPassIndex &&
+            previousSortKey !== undefined &&
+            sortKey !== undefined) {
+            if (compareSortKey(sortKey, previousSortKey) < 0) {
+                errors.push(`draws[${index}] sortKey out of order (${sortKeyToString(sortKey)} < ${sortKeyToString(previousSortKey)})`);
             }
         }
         previousPassIndex = passIndex;
-        previousSortKey = draw.sortKey;
+        previousSortKey = sortKey;
     }
     if (errors.length > 0) {
         return { ok: false, errors };

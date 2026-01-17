@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 import type { Canvas2dContextLike } from './canvas2d-renderer.js';
@@ -36,7 +37,7 @@ function createFakeContext(): {
 function createSampleRcb(): RenderCommandBuffer {
   return {
     frame: {
-      schemaVersion: 1,
+      schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
       step: 1,
       simTimeMs: 16,
       contentHash: 'content',
@@ -87,7 +88,7 @@ describe('validateRenderCommandBuffer', () => {
   it('flags out-of-order sort keys', () => {
     const rcb: RenderCommandBuffer = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
@@ -121,6 +122,136 @@ describe('validateRenderCommandBuffer', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.join('\n')).toContain('sortKey out of order');
+    }
+  });
+
+  it('flags duplicate pass ids', () => {
+    const rcb: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'ui' }, { id: 'ui' }],
+      draws: [],
+    };
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('passes contains duplicate id: ui');
+    }
+  });
+
+  it('flags draws referencing unknown passId', () => {
+    const rcb: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 'clear',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_00_00_ff,
+        },
+      ],
+    };
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain(
+        'draws[0].passId references unknown passId: world',
+      );
+    }
+  });
+
+  it('flags draws out of order across passes', () => {
+    const rcb: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'world' }, { id: 'ui' }],
+      draws: [
+        {
+          kind: 'clear',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_00_00_ff,
+        },
+        {
+          kind: 'clear',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_00_00_ff,
+        },
+      ],
+    };
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain(
+        'draws[1] passId world out of order',
+      );
+    }
+  });
+
+  it('does not throw on malformed runtime shapes', () => {
+    const malformed = {
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 'rect',
+          passId: 'ui',
+          sortKey: null,
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          colorRgba: 0xff_00_00_ff,
+        },
+        {
+          kind: 'image',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          assetId: null,
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    expect(() => validateRenderCommandBuffer(malformed)).not.toThrow();
+
+    const result = validateRenderCommandBuffer(malformed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('draws[0].sortKey must be an object');
+      expect(result.errors.join('\n')).toContain('draws[1].assetId must be non-empty');
+    }
+  });
+
+  it('does not throw when rcb is not an object', () => {
+    const malformed = null as unknown as RenderCommandBuffer;
+
+    expect(() => validateRenderCommandBuffer(malformed)).not.toThrow();
+
+    const result = validateRenderCommandBuffer(malformed);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('rcb must be an object');
     }
   });
 });

@@ -1,4 +1,4 @@
-export declare const RENDERER_CONTRACT_SCHEMA_VERSION: 1;
+export declare const RENDERER_CONTRACT_SCHEMA_VERSION: 2;
 export type RendererContractSchemaVersion = typeof RENDERER_CONTRACT_SCHEMA_VERSION;
 export type Sha256Hex = string;
 export type AssetId = string & {

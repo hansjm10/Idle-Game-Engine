@@ -23,6 +23,13 @@ export interface RendererDebugAssets {
     resolveFontFamily?(assetId: AssetId): string | undefined;
 }
 export interface RenderCommandBufferToCanvas2dOptions {
+    /**
+     * Scales draw coordinates and font size.
+     *
+     * The canvas is expected to already be sized in device pixels
+     * (`ctx.canvas.width/height`). `clear` fills the raw canvas dimensions,
+     * while other draws multiply coordinates by `pixelRatio`.
+     */
     readonly pixelRatio?: number;
     readonly assets?: RendererDebugAssets;
     readonly validate?: boolean;

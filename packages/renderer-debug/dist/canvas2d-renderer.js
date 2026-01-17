@@ -35,7 +35,8 @@ function drawImage(ctx, draw, pixelRatio, assets) {
         drawMissingAssetPlaceholder(ctx, draw, pixelRatio);
         return;
     }
-    const alpha = draw.tintRgba !== undefined ? (draw.tintRgba & 0xff) / 255 : 1;
+    // tintRgba is treated as opacity only (alpha byte); RGB is ignored.
+    const alpha = draw.tintRgba !== undefined ? ((draw.tintRgba >>> 0) & 0xff) / 255 : 1;
     ctx.globalAlpha = alpha;
     ctx.drawImage(image, draw.x * pixelRatio, draw.y * pixelRatio, draw.width * pixelRatio, draw.height * pixelRatio);
     ctx.globalAlpha = 1;

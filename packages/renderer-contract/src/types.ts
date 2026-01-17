@@ -1,4 +1,4 @@
-export const RENDERER_CONTRACT_SCHEMA_VERSION = 1 as const;
+export const RENDERER_CONTRACT_SCHEMA_VERSION = 2 as const;
 
 export type RendererContractSchemaVersion =
   typeof RENDERER_CONTRACT_SCHEMA_VERSION;

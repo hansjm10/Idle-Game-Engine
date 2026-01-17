@@ -10,10 +10,10 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 ## Overall Coverage
 | Metric | Covered | Total | % |
 | --- | --- | --- | --- |
-| Statements | 35701 | 40472 | 88.21% |
-| Branches | 6957 | 8397 | 82.85% |
-| Functions | 1883 | 2047 | 91.99% |
-| Lines | 35701 | 40472 | 88.21% |
+| Statements | 35777 | 40554 | 88.22% |
+| Branches | 6984 | 8429 | 82.86% |
+| Functions | 1886 | 2049 | 92.04% |
+| Lines | 35777 | 40554 | 88.22% |
 
 ## Coverage by Package
 | Package | Statements | Branches | Functions | Lines |
@@ -23,7 +23,7 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 | @idle-engine/content-schema | 8645 / 9715 (88.99%) | 1231 / 1446 (85.13%) | 307 / 337 (91.10%) | 8645 / 9715 (88.99%) |
 | @idle-engine/content-validation-cli | 1608 / 2200 (73.09%) | 276 / 374 (73.80%) | 80 / 99 (80.81%) | 1608 / 2200 (73.09%) |
 | @idle-engine/controls | 228 / 230 (99.13%) | 67 / 69 (97.10%) | 14 / 14 (100.00%) | 228 / 230 (99.13%) |
-| @idle-engine/core | 23444 / 26182 (89.54%) | 5070 / 6077 (83.43%) | 1361 / 1467 (92.77%) | 23444 / 26182 (89.54%) |
-| @idle-engine/renderer-contract | 80 / 103 (77.67%) | 26 / 40 (65.00%) | 9 / 11 (81.82%) | 80 / 103 (77.67%) |
-| @idle-engine/renderer-debug | 301 / 375 (80.27%) | 48 / 86 (55.81%) | 24 / 25 (96.00%) | 301 / 375 (80.27%) |
+| @idle-engine/core | 23444 / 26182 (89.54%) | 5068 / 6075 (83.42%) | 1361 / 1467 (92.77%) | 23444 / 26182 (89.54%) |
+| @idle-engine/renderer-contract | 81 / 103 (78.64%) | 26 / 39 (66.67%) | 9 / 10 (90.00%) | 81 / 103 (78.64%) |
+| @idle-engine/renderer-debug | 376 / 457 (82.28%) | 77 / 121 (63.64%) | 27 / 28 (96.43%) | 376 / 457 (82.28%) |
 | @idle-engine/shell-desktop | 4 / 121 (3.31%) | 0 / 2 (0.00%) | 0 / 2 (0.00%) | 4 / 121 (3.31%) |
