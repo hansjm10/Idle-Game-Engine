@@ -6,7 +6,7 @@ import type { MenuItemConstructorOptions } from 'electron';
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
-const preloadPath = fileURLToPath(new URL('./preload.js', import.meta.url));
+const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
 
 function assertPingRequest(

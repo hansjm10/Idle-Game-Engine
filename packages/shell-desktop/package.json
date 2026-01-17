@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node ../../tools/scripts/copy-renderer-assets.mjs",
     "start": "pnpm run build && electron ./dist/main.js",
-    "lint": "eslint --max-warnings=0 'src/**/*.ts'",
+    "lint": "eslint --max-warnings=0 'src/**/*.{ts,cts}'",
     "test": "vitest",
     "test:ci": "vitest run --passWithNoTests",
     "coverage": "vitest run --coverage --passWithNoTests",

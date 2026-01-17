@@ -1,6 +1,14 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import { IDLE_ENGINE_API_KEY, IPC_CHANNELS } from './ipc.js';
 import type { IdleEngineApi, IpcInvokeMap } from './ipc.js';
+
+const electron = require('electron') as typeof import('electron');
+
+const { contextBridge, ipcRenderer } = electron;
+
+const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
+
+const IPC_CHANNELS = {
+  ping: 'idle-engine:ping',
+} as const;
 
 async function invoke<K extends keyof IpcInvokeMap>(
   channel: K,
@@ -17,4 +25,3 @@ const idleEngineApi: IdleEngineApi = {
 };
 
 contextBridge.exposeInMainWorld(IDLE_ENGINE_API_KEY, idleEngineApi);
-
