@@ -229,24 +229,26 @@ export function createGame(
     const wasRunning = intervalHandle !== null;
     stop();
 
-    const loadedSave = loadGameStateSaveFormat(save);
+    try {
+      const loadedSave = loadGameStateSaveFormat(save);
 
-    const targetStep = loadedSave.runtime.step;
-    const currentStep = runtime.getCurrentStep();
-    if (targetStep < currentStep) {
-      throw new Error(
-        `Cannot hydrate a save from step ${targetStep} into a runtime currently at step ${currentStep}. Create a new game instance instead.`,
-      );
-    }
+      const targetStep = loadedSave.runtime.step;
+      const currentStep = runtime.getCurrentStep();
+      if (targetStep < currentStep) {
+        throw new Error(
+          `Cannot hydrate a save from step ${targetStep} into a runtime currently at step ${currentStep}. Create a new game instance instead.`,
+        );
+      }
 
-    if (targetStep > currentStep) {
-      runtime.fastForward((targetStep - currentStep) * runtime.getStepSizeMs());
-    }
+      if (targetStep > currentStep) {
+        runtime.fastForward((targetStep - currentStep) * runtime.getStepSizeMs());
+      }
 
-    wiring.hydrate(loadedSave, { currentStep: targetStep });
-
-    if (wasRunning) {
-      start();
+      wiring.hydrate(loadedSave, { currentStep: targetStep });
+    } finally {
+      if (wasRunning) {
+        start();
+      }
     }
   };
 

@@ -465,6 +465,56 @@ describe('createGame', () => {
     vi.useRealTimers();
   });
 
+  it('does not start the scheduler after hydrate when it was not running', () => {
+    vi.useFakeTimers();
+    resetRNG();
+    setRNGSeed(42);
+
+    const content = createTestContent();
+
+    const source = createGame(content, { stepSizeMs: 100 });
+    source.tick(source.internals.runtime.getStepSizeMs() * 5);
+    const save = source.serialize();
+
+    const restored = createGame(content, { stepSizeMs: 100 });
+    restored.hydrate(save);
+
+    const hydratedStep = restored.internals.runtime.getCurrentStep();
+    vi.advanceTimersByTime(restored.internals.runtime.getStepSizeMs() * 3);
+    expect(restored.internals.runtime.getCurrentStep()).toBe(hydratedStep);
+
+    restored.stop();
+    source.stop();
+    vi.useRealTimers();
+  });
+
+  it('restores scheduler running state after hydrate throws', () => {
+    vi.useFakeTimers();
+    resetRNG();
+    setRNGSeed(42);
+
+    const content = createTestContent();
+
+    const saveSource = createGame(content, { stepSizeMs: 100 });
+    const save = saveSource.serialize();
+
+    const running = createGame(content, { stepSizeMs: 100 });
+    running.start();
+    vi.advanceTimersByTime(running.internals.runtime.getStepSizeMs() * 2);
+    expect(running.internals.runtime.getCurrentStep()).toBe(2);
+
+    expect(() => running.hydrate(save)).toThrowError(
+      /Cannot hydrate a save from step 0 into a runtime currently at step 2\./,
+    );
+
+    vi.advanceTimersByTime(running.internals.runtime.getStepSizeMs());
+    expect(running.internals.runtime.getCurrentStep()).toBe(3);
+
+    running.stop();
+    saveSource.stop();
+    vi.useRealTimers();
+  });
+
   it('hydrates legacy v0 saves (embedded automation state)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(1234);

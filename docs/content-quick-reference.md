@@ -24,7 +24,7 @@ game.collectResource('resource.gold', 10);
 
 Notes:
 - `game.start()` ticks with a fixed delta equal to the scheduler interval (defaults to the runtime `stepSizeMs`).
-- `game.hydrate(save)` accepts raw parsed saves (including older schema versions) and will throw if the save is from an earlier step than the current runtime. If the built-in scheduler is running, hydration pauses it and resumes after the save is applied.
+- `game.hydrate(save)` accepts raw parsed saves (including older schema versions) and will throw if the save is from an earlier step than the current runtime. If the built-in scheduler is running, hydration pauses it and restores the running state when `hydrate(...)` returns or throws.
 - Facade actions return a `CommandResult` (`{ success: true }` or `{ success: false, error }`). Failures include `COMMAND_UNSUPPORTED` (no handler registered for this game instance) and `COMMAND_REJECTED` (queue refused the command, e.g. backpressure/max size). Some actions may also validate inputs (for example `INVALID_COLLECT_AMOUNT` / `UNKNOWN_RESOURCE` / `INVALID_PURCHASE_COUNT`).
 - `game.purchaseGenerator(id, count)` expects `count` to be a positive integer (values are floored; values < 1 return `INVALID_PURCHASE_COUNT`).
 
