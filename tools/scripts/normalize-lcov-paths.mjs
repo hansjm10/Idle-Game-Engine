@@ -124,6 +124,51 @@ function parseArgs(argv) {
   return opts;
 }
 
+function resolveLcovPaths(lcovFile, projectRootAbs) {
+  const lcovAbs = path.isAbsolute(lcovFile) ? lcovFile : path.join(projectRootAbs, lcovFile);
+  const lcovRel = path.relative(projectRootAbs, lcovAbs);
+  const baseDir = path.dirname(path.dirname(lcovRel));
+
+  return { lcovAbs, lcovRel, baseDir };
+}
+
+async function normalizeLcovFile(lcovFile, { projectRootAbs, check }) {
+  const { lcovAbs, lcovRel, baseDir } = resolveLcovPaths(lcovFile, projectRootAbs);
+
+  const original = await readFile(lcovAbs, 'utf8');
+  const { changed, normalized } = normalizeLcovContent(original, { baseDir, projectRootAbs });
+
+  if (!changed) {
+    return null;
+  }
+
+  if (!check) {
+    await writeFile(lcovAbs, normalized);
+  }
+
+  return lcovRel;
+}
+
+async function normalizeLcovFiles(lcovFiles, { projectRootAbs, check }) {
+  const updated = [];
+
+  for (const lcovFile of lcovFiles) {
+    const updatedFile = await normalizeLcovFile(lcovFile, { projectRootAbs, check });
+    if (updatedFile) {
+      updated.push(updatedFile);
+    }
+  }
+
+  return updated;
+}
+
+function reportCheckFailure(updated) {
+  console.error('[normalize-lcov-paths] LCOV file paths need normalization:');
+  for (const file of updated) {
+    console.error(`- ${file}`);
+  }
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const lcovFiles = opts.paths.length > 0 ? opts.paths : await findLcovFiles();
@@ -135,32 +180,13 @@ async function main() {
     return;
   }
 
-  const projectRootAbs = projectRoot;
-  const updated = [];
-
-  for (const lcovFile of lcovFiles) {
-    const lcovAbs = path.isAbsolute(lcovFile) ? lcovFile : path.join(projectRootAbs, lcovFile);
-    const lcovRel = path.relative(projectRootAbs, lcovAbs);
-    const baseDir = path.dirname(path.dirname(lcovRel));
-
-    const original = await readFile(lcovAbs, 'utf8');
-    const { changed, normalized } = normalizeLcovContent(original, { baseDir, projectRootAbs });
-
-    if (!changed) {
-      continue;
-    }
-
-    updated.push(lcovRel);
-    if (!opts.check) {
-      await writeFile(lcovAbs, normalized);
-    }
-  }
+  const updated = await normalizeLcovFiles(lcovFiles, {
+    projectRootAbs: projectRoot,
+    check: opts.check,
+  });
 
   if (opts.check && updated.length > 0) {
-    console.error('[normalize-lcov-paths] LCOV file paths need normalization:');
-    for (const file of updated) {
-      console.error(`- ${file}`);
-    }
+    reportCheckFailure(updated);
     process.exit(1);
   }
 
@@ -176,4 +202,3 @@ try {
   console.error(error);
   process.exit(1);
 }
-
