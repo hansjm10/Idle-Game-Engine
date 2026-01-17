@@ -25,3 +25,8 @@ if [[ ${#test_args[@]} -gt 0 ]]; then
 fi
 
 "${cmd[@]}"
+
+# Vitest generates LCOV entries relative to each package root (e.g. "SF:src/index.ts").
+# SonarCloud runs from the repository root, so those paths won't match scanned sources
+# (e.g. "packages/core/src/index.ts") unless we normalize them.
+node tools/scripts/normalize-lcov-paths.mjs --quiet
