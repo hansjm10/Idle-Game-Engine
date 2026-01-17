@@ -285,6 +285,34 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
 
+  packages/renderer-contract:
+    dependencies:
+      canonicalize:
+        specifier: ^2.0.0
+        version: 2.1.0
+    devDependencies:
+      '@idle-engine/config-eslint':
+        specifier: workspace:*
+        version: link:../config-eslint
+      '@idle-engine/config-vitest':
+        specifier: workspace:*
+        version: link:../config-vitest
+      '@vitest/coverage-v8':
+        specifier: ^3.2.4
+        version: 3.2.4(vitest@3.2.4(@types/debug@4.1.12)(@types/node@24.9.1)(jiti@1.21.7)(jsdom@25.0.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1))
+      eslint:
+        specifier: ^9.37.0
+        version: 9.37.0(jiti@1.21.7)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.9.1)(jiti@1.21.7)(jsdom@25.0.1)(terser@5.44.0)(tsx@4.20.6)(yaml@2.8.1)
+      vitest-llm-reporter:
+        specifier: ^1.2.0
+        version: 1.2.0
+
   packages/shell-desktop:
     devDependencies:
       '@idle-engine/config-eslint':

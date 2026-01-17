@@ -267,20 +267,20 @@ To keep visual replays stable:
 
 ### 7.1 Issue Map
 
-| Issue Title | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
+| Issue | Scope Summary | Proposed Assignee/Agent | Dependencies | Acceptance Criteria |
 |-------------|---------------|-------------------------|--------------|---------------------|
-| `docs: desktop shell + WebGPU renderer + replay (Issue 778)` | This document + follow-up links | Docs Agent | None | Doc merged and referenced from Issue 778 |
-| `chore(shell-desktop): Electron scaffolding` | Main/preload/renderer scaffolding, window lifecycle | Desktop Shell Agent | Doc approved | App opens window, clean shutdown, basic IPC wiring |
-| `feat(renderer-contract): define ViewModel + RCB types` | Add data-only contract package with versioning | Renderer Contract Agent | Doc approved | Types published in workspace; basic validation + hashing helpers |
-| `feat(renderer-debug): minimal backend` | Canvas2D/minimal WebGPU backend consuming RCB | Debug Renderer Agent | render-contract | Can render a handful of primitives; supports replay stepping |
-| `feat(renderer-webgpu): device init + clear` | WebGPU init + resize + present loop | WebGPU Renderer Agent | render-contract | Renders stable clear color; handles device loss gracefully |
-| `feat(renderer-webgpu): sprites + batching` | Quad batching + texture/atlas loader | WebGPU Renderer Agent | device init | Draw N sprites deterministically with stable sort |
-| `feat(renderer-webgpu): GPU UI primitives` | Rect/image primitives + clipping | WebGPU Renderer Agent | sprites | HUD panels render without DOM |
-| `feat(renderer-webgpu): text pipeline` | Bitmap/MSDF text rendering + deterministic layout | WebGPU Renderer Agent | UI primitives | Text renders deterministically for packaged fonts |
-| `feat(shell-desktop): sim worker + frame pump` | Run core in Worker, emit ViewModel/RCB to renderer | Desktop Shell Agent | Electron scaffolding + contract | Sim steps deterministically; renderer receives frames |
-| `feat(replay): sim replay container + runner` | Write/read sim replay files; CLI or in-app UI | Replay & Tooling Agent | render-contract + shell | Record & replay sim commands; validate final state |
-| `feat(replay): visual replay (ViewModel/RCB)` | Record per-frame ViewModel/RCB; hash validation | Replay & Tooling Agent | replay container + renderer | Replay reproduces identical frame hashes on same build/content |
-| `test(render-compiler): deterministic RCB generation` | Golden tests for compilation determinism | Renderer Contract Agent | contract | `pnpm test` passes; deterministic ordering validated |
+| [#778](https://github.com/hansjm10/Idle-Game-Engine/issues/778) `docs: desktop shell + WebGPU renderer + replay` | This document + follow-up links | Docs Agent | None | Doc merged and referenced from Issue 778 |
+| [#781](https://github.com/hansjm10/Idle-Game-Engine/issues/781) `chore(shell-desktop): Electron scaffolding` | Main/preload/renderer scaffolding, window lifecycle | Desktop Shell Agent | Doc approved | App opens window, clean shutdown, basic IPC wiring |
+| [#782](https://github.com/hansjm10/Idle-Game-Engine/issues/782) `feat(renderer-contract): define ViewModel + RCB types` | Add data-only contract package with versioning | Renderer Contract Agent | Doc approved | Types published in workspace; basic validation + hashing helpers |
+| [#783](https://github.com/hansjm10/Idle-Game-Engine/issues/783) `feat(renderer-debug): minimal backend` | Canvas2D/minimal WebGPU backend consuming RCB | Debug Renderer Agent | render-contract | Can render a handful of primitives; supports replay stepping |
+| [#784](https://github.com/hansjm10/Idle-Game-Engine/issues/784) `feat(renderer-webgpu): device init + clear` | WebGPU init + resize + present loop | WebGPU Renderer Agent | render-contract | Renders stable clear color; handles device loss gracefully |
+| [#785](https://github.com/hansjm10/Idle-Game-Engine/issues/785) `feat(renderer-webgpu): sprites + batching` | Quad batching + texture/atlas loader | WebGPU Renderer Agent | device init | Draw N sprites deterministically with stable sort |
+| [#786](https://github.com/hansjm10/Idle-Game-Engine/issues/786) `feat(renderer-webgpu): GPU UI primitives` | Rect/image primitives + clipping | WebGPU Renderer Agent | sprites | HUD panels render without DOM |
+| [#787](https://github.com/hansjm10/Idle-Game-Engine/issues/787) `feat(renderer-webgpu): text pipeline` | Bitmap/MSDF text rendering + deterministic layout | WebGPU Renderer Agent | UI primitives | Text renders deterministically for packaged fonts |
+| [#788](https://github.com/hansjm10/Idle-Game-Engine/issues/788) `feat(shell-desktop): sim worker + frame pump` | Run core in Worker, emit ViewModel/RCB to renderer | Desktop Shell Agent | Electron scaffolding + contract | Sim steps deterministically; renderer receives frames |
+| [#789](https://github.com/hansjm10/Idle-Game-Engine/issues/789) `feat(replay): sim replay container + runner` | Write/read sim replay files; CLI or in-app UI | Replay & Tooling Agent | render-contract + shell | Record & replay sim commands; validate final state |
+| [#790](https://github.com/hansjm10/Idle-Game-Engine/issues/790) `feat(replay): visual replay (ViewModel/RCB)` | Record per-frame ViewModel/RCB; hash validation | Replay & Tooling Agent | replay container + renderer | Replay reproduces identical frame hashes on same build/content |
+| [#791](https://github.com/hansjm10/Idle-Game-Engine/issues/791) `test(render-compiler): deterministic RCB generation` | Golden tests for compilation determinism | Renderer Contract Agent | contract | `pnpm test` passes; deterministic ordering validated |
 
 ### 7.2 Milestones
 - **Phase 1 — Foundations**:
