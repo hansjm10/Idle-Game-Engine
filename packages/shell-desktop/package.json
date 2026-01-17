@@ -6,7 +6,7 @@
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ./scripts/copy-renderer-assets.mjs",
+    "build": "tsc -p tsconfig.json && node ../../tools/scripts/copy-renderer-assets.mjs",
     "start": "pnpm run build && electron ./dist/main.js",
     "lint": "eslint --max-warnings=0 'src/**/*.ts'",
     "test": "vitest",
@@ -26,4 +26,3 @@
     "vitest-llm-reporter": "^1.2.0"
   }
 }
-
