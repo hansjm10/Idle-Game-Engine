@@ -9,10 +9,24 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 const preloadPath = fileURLToPath(new URL('./preload.js', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
 
+function assertPingRequest(
+  request: unknown,
+): asserts request is IpcInvokeMap[typeof IPC_CHANNELS.ping]['request'] {
+  if (typeof request !== 'object' || request === null || Array.isArray(request)) {
+    throw new TypeError('Invalid ping request: expected an object');
+  }
+
+  const message = (request as { message?: unknown }).message;
+  if (typeof message !== 'string') {
+    throw new TypeError('Invalid ping request: expected { message: string }');
+  }
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.ping,
-    async (_event, request: IpcInvokeMap[typeof IPC_CHANNELS.ping]['request']) => {
+    async (_event, request: unknown) => {
+      assertPingRequest(request);
       return { message: request.message } satisfies IpcInvokeMap[typeof IPC_CHANNELS.ping]['response'];
     },
   );
