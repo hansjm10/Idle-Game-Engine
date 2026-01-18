@@ -6,10 +6,18 @@ export function rgbaToCssColor(rgba: number): string {
   const a = u32 & 0xff;
 
   const alpha = a / 255;
-  const alphaText =
-    alpha === 1
-      ? '1'
-      : alpha.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  let alphaText: string;
+  if (alpha === 1) {
+    alphaText = '1';
+  } else {
+    alphaText = alpha.toFixed(3);
+    while (alphaText.endsWith('0')) {
+      alphaText = alphaText.slice(0, -1);
+    }
+    if (alphaText.endsWith('.')) {
+      alphaText = alphaText.slice(0, -1);
+    }
+  }
 
   return `rgba(${r}, ${g}, ${b}, ${alphaText})`;
 }
