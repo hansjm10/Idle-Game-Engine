@@ -6,9 +6,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": ["node", "@webgpu/types"],
-    "moduleResolution": "NodeNext",
-    "module": "NodeNext"
+    "lib": ["ES2020", "DOM"],
+    "types": ["@webgpu/types"]
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
