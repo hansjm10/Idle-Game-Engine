@@ -125,6 +125,52 @@ describe('validateRenderCommandBuffer', () => {
     }
   });
 
+  it('flags schemaVersion mismatches', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: 1,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'ui' }],
+      draws: [],
+    } as unknown as RenderCommandBuffer;
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain(
+        `frame.schemaVersion must equal ${RENDERER_CONTRACT_SCHEMA_VERSION}`,
+      );
+    }
+  });
+
+  it('flags non-string draw kinds', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 123,
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('draws[0].kind must be a string');
+    }
+  });
+
   it('flags duplicate pass ids', () => {
     const rcb: RenderCommandBuffer = {
       frame: {

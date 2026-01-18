@@ -1,3 +1,4 @@
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 function isFiniteNumber(value) {
     return typeof value === 'number' && Number.isFinite(value);
 }
@@ -133,6 +134,19 @@ export function validateRenderCommandBuffer(rcb) {
     const rcbValue = rcb;
     if (!isRecord(rcbValue)) {
         return { ok: false, errors: ['rcb must be an object'] };
+    }
+    const frameValue = rcbValue['frame'];
+    if (!isRecord(frameValue)) {
+        errors.push('frame must be an object');
+    }
+    else {
+        const schemaVersion = frameValue['schemaVersion'];
+        if (!isUint32(schemaVersion)) {
+            errors.push('frame.schemaVersion must be uint32');
+        }
+        else if (schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
+            errors.push(`frame.schemaVersion must equal ${RENDERER_CONTRACT_SCHEMA_VERSION}`);
+        }
     }
     const passesValue = rcbValue['passes'];
     const drawsValue = rcbValue['draws'];
