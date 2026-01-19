@@ -5,7 +5,7 @@ import {
   WebGpuDeviceLostError,
   WebGpuNotSupportedError,
 } from './webgpu-renderer.js';
-import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
+import type { AssetId, AssetManifest, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 describe('renderer-webgpu', () => {
   const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
@@ -143,7 +143,10 @@ describe('renderer-webgpu', () => {
       device: GPUDevice;
       configure: ReturnType<typeof vi.fn>;
       beginRenderPass: ReturnType<typeof vi.fn>;
+      drawIndexed: ReturnType<typeof vi.fn>;
       submit: ReturnType<typeof vi.fn>;
+      writeBuffer: ReturnType<typeof vi.fn>;
+      copyExternalImageToTexture: ReturnType<typeof vi.fn>;
       getPreferredCanvasFormat?: ReturnType<typeof vi.fn>;
       getPreferredFormat?: ReturnType<typeof vi.fn>;
       resolveDeviceLost: (info: GPUDeviceLostInfo) => void;
@@ -152,7 +155,15 @@ describe('renderer-webgpu', () => {
         options?.configureImplementation ?? ((_configuration: GPUCanvasConfiguration) => undefined),
       );
 
-      const passEncoder = { end: vi.fn() } as unknown as GPURenderPassEncoder;
+      const drawIndexed = vi.fn();
+      const passEncoder = {
+        end: vi.fn(),
+        setPipeline: vi.fn(),
+        setBindGroup: vi.fn(),
+        setVertexBuffer: vi.fn(),
+        setIndexBuffer: vi.fn(),
+        drawIndexed,
+      } as unknown as GPURenderPassEncoder;
       const beginRenderPass = vi.fn(() => passEncoder);
 
       const commandBuffer = {} as unknown as GPUCommandBuffer;
@@ -160,7 +171,9 @@ describe('renderer-webgpu', () => {
       const commandEncoder = { beginRenderPass, finish } as unknown as GPUCommandEncoder;
 
       const submit = vi.fn();
-      const queue = { submit } as unknown as GPUQueue;
+      const writeBuffer = vi.fn();
+      const copyExternalImageToTexture = vi.fn();
+      const queue = { submit, writeBuffer, copyExternalImageToTexture } as unknown as GPUQueue;
 
       let resolveDeviceLost: (info: GPUDeviceLostInfo) => void = () => undefined;
       const deviceLost = new Promise<GPUDeviceLostInfo>((resolve) => {
@@ -170,6 +183,19 @@ describe('renderer-webgpu', () => {
         lost: deviceLost,
         queue,
         createCommandEncoder: vi.fn(() => commandEncoder),
+        createShaderModule: vi.fn(() => ({} as unknown as GPUShaderModule)),
+        createBindGroupLayout: vi.fn(() => ({} as unknown as GPUBindGroupLayout)),
+        createPipelineLayout: vi.fn(() => ({} as unknown as GPUPipelineLayout)),
+        createRenderPipeline: vi.fn(() => ({} as unknown as GPURenderPipeline)),
+        createSampler: vi.fn(() => ({} as unknown as GPUSampler)),
+        createBuffer: vi.fn(() => ({} as unknown as GPUBuffer)),
+        createBindGroup: vi.fn(() => ({} as unknown as GPUBindGroup)),
+        createTexture: vi.fn(
+          () =>
+            ({
+              createView: vi.fn(() => ({} as unknown as GPUTextureView)),
+            }) as unknown as GPUTexture,
+        ),
       } as unknown as GPUDevice;
 
       const adapter = {
@@ -215,7 +241,10 @@ describe('renderer-webgpu', () => {
         device,
         configure,
         beginRenderPass,
+        drawIndexed,
         submit,
+        writeBuffer,
+        copyExternalImageToTexture,
         getPreferredCanvasFormat,
         getPreferredFormat,
         resolveDeviceLost,
@@ -383,6 +412,63 @@ describe('renderer-webgpu', () => {
       });
 
       expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('uploads an atlas and draws sprite instances', async () => {
+      const { canvas, copyExternalImageToTexture, drawIndexed } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: 1,
+        assets: [
+          { id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' },
+        ],
+      } as unknown as AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+
+      await renderer.loadAssets(
+        manifest,
+        { loadImage },
+        { maxAtlasSizePx: 64, paddingPx: 0, powerOfTwo: true },
+      );
+
+      expect(loadImage).toHaveBeenCalledWith('sprite:demo', 'hash:demo');
+      expect(copyExternalImageToTexture).toHaveBeenCalledTimes(1);
+
+      const rcb = {
+        frame: {
+          schemaVersion: 1,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'clear',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            colorRgba: 0x00_00_00_ff,
+          },
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
     });
 
     it('invokes onDeviceLost and no-ops render/resize after device loss', async () => {
