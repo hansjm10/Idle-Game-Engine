@@ -11,8 +11,26 @@ export declare class WebGpuDeviceLostError extends Error {
 export interface WebGpuRendererResizeOptions {
     readonly devicePixelRatio?: number;
 }
+export interface WebGpuBitmapFontGlyph {
+    readonly codePoint: number;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly xOffsetPx: number;
+    readonly yOffsetPx: number;
+    readonly xAdvancePx: number;
+}
+export interface WebGpuBitmapFont {
+    readonly image: GPUImageCopyExternalImageSource;
+    readonly baseFontSizePx: number;
+    readonly lineHeightPx: number;
+    readonly glyphs: readonly WebGpuBitmapFontGlyph[];
+    readonly fallbackCodePoint?: number;
+}
 export interface WebGpuRendererAssets {
     loadImage(assetId: AssetId, contentHash: Sha256Hex): Promise<GPUImageCopyExternalImageSource>;
+    loadFont?(assetId: AssetId, contentHash: Sha256Hex): Promise<WebGpuBitmapFont>;
 }
 export interface WebGpuRendererLoadAssetsOptions {
     readonly maxAtlasSizePx?: number;

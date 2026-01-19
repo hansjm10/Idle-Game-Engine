@@ -43,11 +43,35 @@ export interface WebGpuRendererResizeOptions {
   readonly devicePixelRatio?: number;
 }
 
+export interface WebGpuBitmapFontGlyph {
+  readonly codePoint: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly xOffsetPx: number;
+  readonly yOffsetPx: number;
+  readonly xAdvancePx: number;
+}
+
+export interface WebGpuBitmapFont {
+  readonly image: GPUImageCopyExternalImageSource;
+  readonly baseFontSizePx: number;
+  readonly lineHeightPx: number;
+  readonly glyphs: readonly WebGpuBitmapFontGlyph[];
+  readonly fallbackCodePoint?: number;
+}
+
 export interface WebGpuRendererAssets {
   loadImage(
     assetId: AssetId,
     contentHash: Sha256Hex,
   ): Promise<GPUImageCopyExternalImageSource>;
+
+  loadFont?(
+    assetId: AssetId,
+    contentHash: Sha256Hex,
+  ): Promise<WebGpuBitmapFont>;
 }
 
 export interface WebGpuRendererLoadAssetsOptions {
@@ -349,6 +373,10 @@ function isRenderableImageAssetKind(kind: string): boolean {
   return kind === 'image' || kind === 'spriteSheet';
 }
 
+function isRenderableAtlasAssetKind(kind: string): boolean {
+  return isRenderableImageAssetKind(kind) || kind === 'font';
+}
+
 function compareAssetId(a: AssetId, b: AssetId): number {
   if (a < b) {
     return -1;
@@ -381,6 +409,426 @@ const GPU_TEXTURE_USAGE: { readonly COPY_DST: number; readonly TEXTURE_BINDING: 
   (globalThis as unknown as { GPUTextureUsage?: { COPY_DST: number; TEXTURE_BINDING: number } })
     .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
 
+interface WebGpuBitmapFontRuntimeGlyph {
+  readonly uv: SpriteUvRect;
+  readonly widthPx: number;
+  readonly heightPx: number;
+  readonly xOffsetPx: number;
+  readonly yOffsetPx: number;
+  readonly xAdvancePx: number;
+}
+
+interface WebGpuBitmapFontRuntime {
+  readonly baseFontSizePx: number;
+  readonly lineHeightPx: number;
+  readonly glyphByCodePoint: Map<number, WebGpuBitmapFontRuntimeGlyph>;
+  readonly fallbackGlyph: WebGpuBitmapFontRuntimeGlyph | undefined;
+}
+
+function buildBitmapFontRuntimeGlyph(options: {
+  readonly glyph: WebGpuBitmapFontGlyph;
+  readonly fontAssetId: AssetId;
+  readonly fontSize: { readonly width: number; readonly height: number };
+  readonly atlasEntry: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  readonly atlasWidthPx: number;
+  readonly atlasHeightPx: number;
+}): { readonly codePoint: number; readonly runtimeGlyph: WebGpuBitmapFontRuntimeGlyph } {
+  const codePoint = options.glyph.codePoint;
+  if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+    throw new Error(
+      `Font ${options.fontAssetId} has invalid glyph codePoint ${String(codePoint)}.`,
+    );
+  }
+
+  const { x, y, width, height } = options.glyph;
+
+  if (![x, y, width, height].every((value) => typeof value === 'number' && Number.isFinite(value))) {
+    throw new Error(
+      `Font ${options.fontAssetId} glyph ${codePoint} has non-finite bounds.`,
+    );
+  }
+
+  if (width < 0 || height < 0) {
+    throw new Error(
+      `Font ${options.fontAssetId} glyph ${codePoint} has negative size ${width}x${height}.`,
+    );
+  }
+
+  if (x < 0 || y < 0 || x + width > options.fontSize.width || y + height > options.fontSize.height) {
+    throw new Error(
+      `Font ${options.fontAssetId} glyph ${codePoint} bounds exceed atlas image (${options.fontSize.width}x${options.fontSize.height}).`,
+    );
+  }
+
+  const xOffsetPx = options.glyph.xOffsetPx;
+  const yOffsetPx = options.glyph.yOffsetPx;
+  const xAdvancePx = options.glyph.xAdvancePx;
+  if (![xOffsetPx, yOffsetPx, xAdvancePx].every((value) => typeof value === 'number' && Number.isFinite(value))) {
+    throw new Error(
+      `Font ${options.fontAssetId} glyph ${codePoint} has non-finite metrics.`,
+    );
+  }
+
+  const atlasX0 = options.atlasEntry.x + x;
+  const atlasY0 = options.atlasEntry.y + y;
+  const atlasX1 = atlasX0 + width;
+  const atlasY1 = atlasY0 + height;
+
+  return {
+    codePoint,
+    runtimeGlyph: {
+      uv: {
+        u0: atlasX0 / options.atlasWidthPx,
+        v0: atlasY0 / options.atlasHeightPx,
+        u1: atlasX1 / options.atlasWidthPx,
+        v1: atlasY1 / options.atlasHeightPx,
+      },
+      widthPx: width,
+      heightPx: height,
+      xOffsetPx,
+      yOffsetPx,
+      xAdvancePx,
+    },
+  };
+}
+
+function pickBitmapFontFallbackGlyph(options: {
+  readonly font: WebGpuBitmapFont;
+  readonly glyphByCodePoint: Map<number, WebGpuBitmapFontRuntimeGlyph>;
+}): WebGpuBitmapFontRuntimeGlyph | undefined {
+  const candidateFallbacks: number[] = [];
+  if (options.font.fallbackCodePoint !== undefined) {
+    candidateFallbacks.push(options.font.fallbackCodePoint);
+  }
+  candidateFallbacks.push(0xfffd, 0x3f);
+
+  for (const codePoint of candidateFallbacks) {
+    const glyph = options.glyphByCodePoint.get(codePoint);
+    if (glyph) {
+      return glyph;
+    }
+  }
+
+  if (options.glyphByCodePoint.size === 0) {
+    return undefined;
+  }
+
+  const sortedGlyphKeys = [...options.glyphByCodePoint.keys()].sort((a, b) => a - b);
+  const firstKey = sortedGlyphKeys[0];
+  return firstKey === undefined ? undefined : options.glyphByCodePoint.get(firstKey);
+}
+
+function buildBitmapFontRuntime(options: {
+  readonly font: WebGpuBitmapFont;
+  readonly fontAssetId: AssetId;
+  readonly fontSize: { readonly width: number; readonly height: number };
+  readonly atlasEntry: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  readonly atlasWidthPx: number;
+  readonly atlasHeightPx: number;
+}): WebGpuBitmapFontRuntime {
+  const baseFontSizePx = options.font.baseFontSizePx;
+  if (!Number.isFinite(baseFontSizePx) || baseFontSizePx <= 0) {
+    throw new Error(
+      `Font ${options.fontAssetId} has invalid baseFontSizePx ${String(baseFontSizePx)}.`,
+    );
+  }
+
+  const lineHeightPx = options.font.lineHeightPx;
+  if (!Number.isFinite(lineHeightPx) || lineHeightPx <= 0) {
+    throw new Error(
+      `Font ${options.fontAssetId} has invalid lineHeightPx ${String(lineHeightPx)}.`,
+    );
+  }
+
+  const glyphByCodePoint = new Map<number, WebGpuBitmapFontRuntimeGlyph>();
+
+  for (const glyph of options.font.glyphs) {
+    const { codePoint, runtimeGlyph } = buildBitmapFontRuntimeGlyph({
+      glyph,
+      fontAssetId: options.fontAssetId,
+      fontSize: options.fontSize,
+      atlasEntry: options.atlasEntry,
+      atlasWidthPx: options.atlasWidthPx,
+      atlasHeightPx: options.atlasHeightPx,
+    });
+
+    if (glyphByCodePoint.has(codePoint)) {
+      throw new Error(`Font ${options.fontAssetId} contains duplicate glyph codePoint ${codePoint}.`);
+    }
+
+    glyphByCodePoint.set(codePoint, runtimeGlyph);
+  }
+
+  const fallbackGlyph = pickBitmapFontFallbackGlyph({ font: options.font, glyphByCodePoint });
+
+  return {
+    baseFontSizePx,
+    lineHeightPx,
+    glyphByCodePoint,
+    fallbackGlyph,
+  };
+}
+
+type ManifestAssetEntry = AssetManifest['assets'][number];
+
+interface LoadedAtlasSource {
+  readonly entry: ManifestAssetEntry;
+  readonly source: GPUImageCopyExternalImageSource;
+}
+
+function getSortedRenderableAtlasEntries(manifest: AssetManifest): ManifestAssetEntry[] {
+  const atlasEntries = manifest.assets
+    .filter((entry) => isRenderableAtlasAssetKind(entry.kind))
+    .slice()
+    .sort((a, b) => compareAssetId(a.id, b.id));
+
+  for (let index = 1; index < atlasEntries.length; index += 1) {
+    const previous = atlasEntries[index - 1];
+    const current = atlasEntries[index];
+    if (previous && current && previous.id === current.id) {
+      throw new Error(`AssetManifest contains duplicate AssetId: ${current.id}`);
+    }
+  }
+
+  return atlasEntries;
+}
+
+async function loadAtlasSources(options: {
+  readonly atlasEntries: readonly ManifestAssetEntry[];
+  readonly assets: WebGpuRendererAssets;
+}): Promise<{
+  readonly loadedFontByAssetId: Map<AssetId, WebGpuBitmapFont>;
+  readonly loadedSources: readonly LoadedAtlasSource[];
+}> {
+  const loadedFontByAssetId = new Map<AssetId, WebGpuBitmapFont>();
+  const loadedSources: LoadedAtlasSource[] = [];
+
+  for (const entry of options.atlasEntries) {
+    if (entry.kind === 'font') {
+      if (!options.assets.loadFont) {
+        throw new Error(
+          `AssetManifest contains font asset ${entry.id} but assets.loadFont is not provided.`,
+        );
+      }
+
+      const font = await options.assets.loadFont(entry.id, entry.contentHash);
+      loadedFontByAssetId.set(entry.id, font);
+      loadedSources.push({ entry, source: font.image });
+      continue;
+    }
+
+    loadedSources.push({
+      entry,
+      source: await options.assets.loadImage(entry.id, entry.contentHash),
+    });
+  }
+
+  return { loadedFontByAssetId, loadedSources };
+}
+
+function buildAtlasImages(options: {
+  readonly loadedSources: readonly LoadedAtlasSource[];
+}): {
+  readonly loadedFontSizeByAssetId: Map<AssetId, { width: number; height: number }>;
+  readonly atlasImages: Array<{ assetId: AssetId; width: number; height: number }>;
+} {
+  const loadedFontSizeByAssetId = new Map<AssetId, { width: number; height: number }>();
+  const atlasImages: Array<{ assetId: AssetId; width: number; height: number }> = [];
+
+  for (const { entry, source } of options.loadedSources) {
+    const size = getExternalImageSize(source);
+    if (size.width <= 0 || size.height <= 0) {
+      throw new Error(
+        `Loaded image ${entry.id} has invalid dimensions ${size.width}x${size.height}.`,
+      );
+    }
+
+    if (entry.kind === 'font') {
+      loadedFontSizeByAssetId.set(entry.id, size);
+    }
+
+    atlasImages.push({
+      assetId: entry.id,
+      width: size.width,
+      height: size.height,
+    });
+  }
+
+  return { loadedFontSizeByAssetId, atlasImages };
+}
+
+type PackedAtlas = ReturnType<typeof packAtlas>;
+
+function buildUvByAssetId(packed: PackedAtlas): Map<AssetId, SpriteUvRect> {
+  const uvByAssetId = new Map<AssetId, SpriteUvRect>();
+  for (const entry of packed.entries) {
+    uvByAssetId.set(entry.assetId, {
+      u0: entry.x / packed.atlasWidthPx,
+      v0: entry.y / packed.atlasHeightPx,
+      u1: (entry.x + entry.width) / packed.atlasWidthPx,
+      v1: (entry.y + entry.height) / packed.atlasHeightPx,
+    });
+  }
+  return uvByAssetId;
+}
+
+function buildBitmapFontRuntimeState(options: {
+  readonly packed: PackedAtlas;
+  readonly loadedFontByAssetId: Map<AssetId, WebGpuBitmapFont>;
+  readonly loadedFontSizeByAssetId: Map<AssetId, { width: number; height: number }>;
+}): {
+  readonly bitmapFontByAssetId: Map<AssetId, WebGpuBitmapFontRuntime> | undefined;
+  readonly defaultBitmapFontAssetId: AssetId | undefined;
+} {
+  if (options.loadedFontByAssetId.size === 0) {
+    return {
+      bitmapFontByAssetId: undefined,
+      defaultBitmapFontAssetId: undefined,
+    };
+  }
+
+  const fontStateByAssetId = new Map<AssetId, WebGpuBitmapFontRuntime>();
+  const atlasEntryByAssetId = new Map<AssetId, (typeof options.packed.entries)[number]>();
+  for (const entry of options.packed.entries) {
+    atlasEntryByAssetId.set(entry.assetId, entry);
+  }
+
+  const sortedFontAssetIds = [...options.loadedFontByAssetId.keys()].sort(compareAssetId);
+  for (const fontAssetId of sortedFontAssetIds) {
+    const font = options.loadedFontByAssetId.get(fontAssetId);
+    const fontSize = options.loadedFontSizeByAssetId.get(fontAssetId);
+    const atlasEntry = atlasEntryByAssetId.get(fontAssetId);
+
+    if (!font || !fontSize || !atlasEntry) {
+      throw new Error(`Missing font atlas data for asset ${fontAssetId}`);
+    }
+
+    fontStateByAssetId.set(
+      fontAssetId,
+      buildBitmapFontRuntime({
+        font,
+        fontAssetId,
+        fontSize,
+        atlasEntry,
+        atlasWidthPx: options.packed.atlasWidthPx,
+        atlasHeightPx: options.packed.atlasHeightPx,
+      }),
+    );
+  }
+
+  return {
+    bitmapFontByAssetId: fontStateByAssetId,
+    defaultBitmapFontAssetId: sortedFontAssetIds[0],
+  };
+}
+
+type WebGpuQuadBatchKind = 'rect' | 'image';
+
+interface WebGpuQuadRenderState {
+  readonly passEncoder: GPURenderPassEncoder;
+  readonly atlasUvByAssetId: ReadonlyMap<AssetId, SpriteUvRect> | undefined;
+  readonly textureBindGroup: GPUBindGroup | undefined;
+  readonly bitmapFontByAssetId: ReadonlyMap<AssetId, WebGpuBitmapFontRuntime> | undefined;
+  readonly defaultBitmapFontAssetId: AssetId | undefined;
+
+  readonly spritePipeline: GPURenderPipeline;
+  readonly rectPipeline: GPURenderPipeline;
+  readonly vertexBuffer: GPUBuffer;
+  readonly indexBuffer: GPUBuffer;
+  readonly worldGlobalsBindGroup: GPUBindGroup;
+  readonly uiGlobalsBindGroup: GPUBindGroup;
+
+  readonly viewportScissor: ScissorRect;
+
+  appliedScissor: ScissorRect | undefined;
+  currentPassId: RenderPassId | undefined;
+  scissorStack: ScissorRect[];
+  currentScissor: ScissorRect;
+
+  batchKind: WebGpuQuadBatchKind | undefined;
+  batchPassId: RenderPassId | undefined;
+  batchInstances: number[];
+  batchInstanceCount: number;
+}
+
+function applyBitmapTextControlCharacter(
+  char: string,
+  pen: { x: number; y: number },
+  lineHeightPx: number,
+  tabAdvancePx: number,
+): boolean {
+  if (char === '\r') {
+    return true;
+  }
+  if (char === '\n') {
+    pen.x = 0;
+    pen.y += lineHeightPx;
+    return true;
+  }
+  if (char === '\t') {
+    pen.x += tabAdvancePx;
+    return true;
+  }
+  return false;
+}
+
+function appendBitmapTextInstances(options: {
+  readonly batchInstances: number[];
+  readonly x: number;
+  readonly y: number;
+  readonly text: string;
+  readonly font: WebGpuBitmapFontRuntime;
+  readonly scale: number;
+  readonly tabAdvancePx: number;
+  readonly color: { readonly red: number; readonly green: number; readonly blue: number; readonly alpha: number };
+}): number {
+  const pen = { x: 0, y: 0 };
+  let appended = 0;
+
+  for (const glyphText of options.text) {
+    if (applyBitmapTextControlCharacter(glyphText, pen, options.font.lineHeightPx, options.tabAdvancePx)) {
+      continue;
+    }
+
+    const codePoint = glyphText.codePointAt(0);
+    if (codePoint === undefined) {
+      continue;
+    }
+
+    const glyph = options.font.glyphByCodePoint.get(codePoint) ?? options.font.fallbackGlyph;
+    if (!glyph) {
+      continue;
+    }
+
+    if (glyph.widthPx > 0 && glyph.heightPx > 0) {
+      const glyphX = options.x + (pen.x + glyph.xOffsetPx) * options.scale;
+      const glyphY = options.y + (pen.y + glyph.yOffsetPx) * options.scale;
+      const glyphW = glyph.widthPx * options.scale;
+      const glyphH = glyph.heightPx * options.scale;
+
+      options.batchInstances.push(
+        glyphX,
+        glyphY,
+        glyphW,
+        glyphH,
+        glyph.uv.u0,
+        glyph.uv.v0,
+        glyph.uv.u1,
+        glyph.uv.v1,
+        options.color.red,
+        options.color.green,
+        options.color.blue,
+        options.color.alpha,
+      );
+      appended += 1;
+    }
+
+    pen.x += glyph.xAdvancePx;
+  }
+
+  return appended;
+}
+
 class WebGpuRendererImpl implements WebGpuRenderer {
   readonly canvas: HTMLCanvasElement;
   readonly context: GPUCanvasContext;
@@ -411,6 +859,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   #atlasLayout: WebGpuAtlasLayout | undefined;
   #atlasLayoutHash: Sha256Hex | undefined;
   #atlasUvByAssetId: Map<AssetId, SpriteUvRect> | undefined;
+  #bitmapFontByAssetId: Map<AssetId, WebGpuBitmapFontRuntime> | undefined;
+  #defaultBitmapFontAssetId: AssetId | undefined;
 
   constructor(options: {
     canvas: HTMLCanvasElement;
@@ -454,8 +904,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       return;
     }
 
-    const devicePixelRatio =
-      options?.devicePixelRatio ?? globalThis.devicePixelRatio ?? 1;
+    const devicePixelRatio = options?.devicePixelRatio ?? globalThis.devicePixelRatio ?? 1;
     this.#devicePixelRatio = devicePixelRatio;
     const { width, height } = getCanvasPixelSize(this.canvas, devicePixelRatio);
 
@@ -473,75 +922,31 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     });
   }
 
-  async loadAssets(
-    manifest: AssetManifest,
-    assets: WebGpuRendererAssets,
-    options?: WebGpuRendererLoadAssetsOptions,
-  ): Promise<WebGpuRendererAtlasState> {
+  #assertReadyForAssetLoad(): void {
     if (this.#disposed) {
       throw new Error('WebGPU renderer is disposed.');
     }
     if (this.#lost) {
       throw new Error('WebGPU device is lost.');
     }
+  }
 
-    this.#ensureSpritePipeline();
-
-    const imageEntries = manifest.assets
-      .filter((entry) => isRenderableImageAssetKind(entry.kind))
-      .slice()
-      .sort((a, b) => compareAssetId(a.id, b.id));
-
-    for (let index = 1; index < imageEntries.length; index += 1) {
-      const previous = imageEntries[index - 1];
-      const current = imageEntries[index];
-      if (previous && current && previous.id === current.id) {
-        throw new Error(`AssetManifest contains duplicate AssetId: ${current.id}`);
-      }
-    }
-
-    const loadedSources = await Promise.all(
-      imageEntries.map(async (entry) => ({
-        entry,
-        source: await assets.loadImage(entry.id, entry.contentHash),
-      })),
-    );
-
-    const atlasImages = loadedSources.map(({ entry, source }) => {
-      const size = getExternalImageSize(source);
-      if (size.width <= 0 || size.height <= 0) {
-        throw new Error(
-          `Loaded image ${entry.id} has invalid dimensions ${size.width}x${size.height}.`,
-        );
-      }
-
-      return {
-        assetId: entry.id,
-        width: size.width,
-        height: size.height,
-      };
-    });
-
-    const packed = packAtlas(atlasImages, {
-      maxSizePx: options?.maxAtlasSizePx,
-      paddingPx: options?.paddingPx,
-      powerOfTwo: options?.powerOfTwo,
-    });
-    const layout = createAtlasLayout(packed);
-    const layoutHash = await sha256Hex(canonicalEncodeForHash(layout));
-
+  #createAtlasTextureAndUpload(options: {
+    readonly packed: PackedAtlas;
+    readonly loadedSources: readonly LoadedAtlasSource[];
+  }): GPUTexture {
     const atlasTexture = this.device.createTexture({
-      size: [packed.atlasWidthPx, packed.atlasHeightPx, 1],
+      size: [options.packed.atlasWidthPx, options.packed.atlasHeightPx, 1],
       format: 'rgba8unorm',
       usage: GPU_TEXTURE_USAGE.TEXTURE_BINDING | GPU_TEXTURE_USAGE.COPY_DST,
     });
 
     const sourceByAssetId = new Map<AssetId, GPUImageCopyExternalImageSource>();
-    for (const { entry, source } of loadedSources) {
+    for (const { entry, source } of options.loadedSources) {
       sourceByAssetId.set(entry.id, source);
     }
 
-    for (const entry of packed.entries) {
+    for (const entry of options.packed.entries) {
       const source = sourceByAssetId.get(entry.assetId);
       if (!source) {
         throw new Error(`Missing loaded image for AssetId: ${entry.assetId}`);
@@ -557,6 +962,10 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       );
     }
 
+    return atlasTexture;
+  }
+
+  #createSpriteAtlasBindGroup(atlasTexture: GPUTexture): GPUBindGroup {
     const atlasView = atlasTexture.createView();
     const textureBindGroupLayout = this.#spriteTextureBindGroupLayout;
     const sampler = this.#spriteSampler;
@@ -564,23 +973,50 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       throw new Error('Sprite pipeline missing texture bindings.');
     }
 
-    this.#spriteTextureBindGroup = this.device.createBindGroup({
+    return this.device.createBindGroup({
       layout: textureBindGroupLayout,
       entries: [
         { binding: 0, resource: sampler },
         { binding: 1, resource: atlasView },
       ],
     });
+  }
 
-    const uvByAssetId = new Map<AssetId, SpriteUvRect>();
-    for (const entry of packed.entries) {
-      uvByAssetId.set(entry.assetId, {
-        u0: entry.x / packed.atlasWidthPx,
-        v0: entry.y / packed.atlasHeightPx,
-        u1: (entry.x + entry.width) / packed.atlasWidthPx,
-        v1: (entry.y + entry.height) / packed.atlasHeightPx,
-      });
-    }
+  async loadAssets(
+    manifest: AssetManifest,
+    assets: WebGpuRendererAssets,
+    options?: WebGpuRendererLoadAssetsOptions,
+  ): Promise<WebGpuRendererAtlasState> {
+    this.#assertReadyForAssetLoad();
+
+    this.#ensureSpritePipeline();
+
+    const atlasEntries = getSortedRenderableAtlasEntries(manifest);
+    const { loadedFontByAssetId, loadedSources } = await loadAtlasSources({
+      atlasEntries,
+      assets,
+    });
+    const { loadedFontSizeByAssetId, atlasImages } = buildAtlasImages({ loadedSources });
+
+    const packed = packAtlas(atlasImages, {
+      maxSizePx: options?.maxAtlasSizePx,
+      paddingPx: options?.paddingPx,
+      powerOfTwo: options?.powerOfTwo,
+    });
+    const layout = createAtlasLayout(packed);
+    const layoutHash = await sha256Hex(canonicalEncodeForHash(layout));
+
+    const atlasTexture = this.#createAtlasTextureAndUpload({ packed, loadedSources });
+    this.#spriteTextureBindGroup = this.#createSpriteAtlasBindGroup(atlasTexture);
+
+    const uvByAssetId = buildUvByAssetId(packed);
+    const { bitmapFontByAssetId, defaultBitmapFontAssetId } = buildBitmapFontRuntimeState({
+      packed,
+      loadedFontByAssetId,
+      loadedFontSizeByAssetId,
+    });
+    this.#bitmapFontByAssetId = bitmapFontByAssetId;
+    this.#defaultBitmapFontAssetId = defaultBitmapFontAssetId;
 
     this.#atlasLayout = layout;
     this.#atlasLayoutHash = layoutHash;
@@ -880,25 +1316,14 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     };
   }
 
-	  #renderDraws(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
-	    const hasQuadDraws = orderedDraws.some(
-	      (entry) => entry.draw.kind === 'rect' || entry.draw.kind === 'image',
-	    );
-	    if (!hasQuadDraws) {
-	      return;
-	    }
-	
-	    const atlasUvByAssetId = this.#atlasUvByAssetId;
-	    const textureBindGroup = this.#spriteTextureBindGroup;
-	    if (
-	      orderedDraws.some((entry) => entry.draw.kind === 'image') &&
-	      (!atlasUvByAssetId || !textureBindGroup)
-	    ) {
-	      throw new Error(
-	        'No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.',
-	      );
-	    }
-
+  #getQuadPipelinesOrThrow(): {
+    readonly spritePipeline: GPURenderPipeline;
+    readonly rectPipeline: GPURenderPipeline;
+    readonly vertexBuffer: GPUBuffer;
+    readonly indexBuffer: GPUBuffer;
+    readonly worldGlobalsBindGroup: GPUBindGroup;
+    readonly uiGlobalsBindGroup: GPUBindGroup;
+  } {
     this.#ensureSpritePipeline();
 
     const spritePipeline = this.#spritePipeline;
@@ -919,8 +1344,52 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       throw new Error('Quad pipelines are incomplete.');
     }
 
-    this.#writeGlobals(WORLD_GLOBALS_OFFSET, this.#worldCamera);
-    this.#writeGlobals(UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
+    return {
+      spritePipeline,
+      rectPipeline,
+      vertexBuffer,
+      indexBuffer,
+      worldGlobalsBindGroup,
+      uiGlobalsBindGroup,
+    };
+  }
+
+  #createQuadRenderState(
+    passEncoder: GPURenderPassEncoder,
+    orderedDraws: readonly OrderedDraw[],
+  ): WebGpuQuadRenderState | undefined {
+    const hasQuadDraws = orderedDraws.some(
+      (entry) =>
+        entry.draw.kind === 'rect' ||
+        entry.draw.kind === 'image' ||
+        entry.draw.kind === 'text',
+    );
+    if (!hasQuadDraws) {
+      return undefined;
+    }
+
+    const atlasUvByAssetId = this.#atlasUvByAssetId;
+    const textureBindGroup = this.#spriteTextureBindGroup;
+    const bitmapFontByAssetId = this.#bitmapFontByAssetId;
+    const defaultBitmapFontAssetId = this.#defaultBitmapFontAssetId;
+
+    const requiresSpriteAtlas = orderedDraws.some(
+      (entry) => entry.draw.kind === 'image' || entry.draw.kind === 'text',
+    );
+    if (requiresSpriteAtlas && (!atlasUvByAssetId || !textureBindGroup)) {
+      throw new Error(
+        'No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image/text draws.',
+      );
+    }
+
+    const hasTextDraws = orderedDraws.some((entry) => entry.draw.kind === 'text');
+    if (hasTextDraws && (!bitmapFontByAssetId || bitmapFontByAssetId.size === 0)) {
+      throw new Error(
+        'No bitmap fonts loaded. Include font assets in the manifest and implement assets.loadFont(...).',
+      );
+    }
+
+    const pipelines = this.#getQuadPipelinesOrThrow();
 
     const viewportScissor: ScissorRect = {
       x: 0,
@@ -929,191 +1398,294 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       height: this.canvas.height,
     };
 
-    let appliedScissor: ScissorRect | undefined;
-    const applyScissorRect = (rect: ScissorRect): void => {
-      if (appliedScissor && isSameScissorRect(appliedScissor, rect)) {
-        return;
-      }
-
-      passEncoder.setScissorRect(rect.x, rect.y, rect.width, rect.height);
-      appliedScissor = rect;
+    return {
+      passEncoder,
+      atlasUvByAssetId,
+      textureBindGroup,
+      bitmapFontByAssetId,
+      defaultBitmapFontAssetId,
+      ...pipelines,
+      viewportScissor,
+      appliedScissor: undefined,
+      currentPassId: undefined,
+      scissorStack: [],
+      currentScissor: viewportScissor,
+      batchKind: undefined,
+      batchPassId: undefined,
+      batchInstances: [],
+      batchInstanceCount: 0,
     };
+  }
 
-    applyScissorRect(viewportScissor);
-
-    let currentPassId: RenderPassId | undefined;
-    let scissorStack: ScissorRect[] = [];
-    let currentScissor = viewportScissor;
-
-    type BatchKind = 'rect' | 'image';
-	    let batchKind: BatchKind | undefined;
-	    let batchPassId: RenderPassId | undefined;
-	    let batchInstances: number[] = [];
-	    let batchInstanceCount = 0;
-
-	    const flushBatch = (): void => {
-	      if (!batchKind || !batchPassId || batchInstanceCount <= 0) {
-	        batchKind = undefined;
-	        batchPassId = undefined;
-        batchInstances = [];
-        batchInstanceCount = 0;
-        return;
-      }
-
-      if (currentScissor.width <= 0 || currentScissor.height <= 0) {
-        batchKind = undefined;
-        batchPassId = undefined;
-        batchInstances = [];
-        batchInstanceCount = 0;
-        return;
-      }
-
-      const instances = new Float32Array(batchInstances);
-      this.#ensureInstanceBuffer(instances.byteLength);
-
-      const ensuredInstanceBuffer = this.#spriteInstanceBuffer;
-      if (!ensuredInstanceBuffer) {
-        throw new Error('Sprite pipeline missing instance buffer.');
-      }
-
-      this.device.queue.writeBuffer(ensuredInstanceBuffer, 0, toArrayBuffer(instances));
-
-      const globals = batchPassId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
-
-      if (batchKind === 'image') {
-        if (!textureBindGroup) {
-          throw new Error('Sprite pipeline missing texture bind group.');
-        }
-        passEncoder.setPipeline(spritePipeline);
-        passEncoder.setBindGroup(1, textureBindGroup);
-      } else {
-        passEncoder.setPipeline(rectPipeline);
-      }
-
-      passEncoder.setBindGroup(0, globals);
-      passEncoder.setVertexBuffer(0, vertexBuffer);
-      passEncoder.setVertexBuffer(1, ensuredInstanceBuffer);
-      passEncoder.setIndexBuffer(indexBuffer, 'uint16');
-      passEncoder.drawIndexed(6, batchInstanceCount, 0, 0, 0);
-
-      batchKind = undefined;
-      batchPassId = undefined;
-	      batchInstances = [];
-	      batchInstanceCount = 0;
-	    };
-
-	    const ensureBatch = (kind: BatchKind, passId: RenderPassId): void => {
-	      if (batchKind === kind && batchPassId === passId) {
-	        return;
-	      }
-	      flushBatch();
-	      batchKind = kind;
-	      batchPassId = passId;
-	    };
-
-	    const spriteUvOrThrow = (assetId: AssetId): SpriteUvRect => {
-	      if (!atlasUvByAssetId) {
-	        throw new Error('Sprite atlas missing UVs.');
-	      }
-
-	      const uv = atlasUvByAssetId.get(assetId);
-	      if (!uv) {
-	        throw new Error(`Atlas missing UVs for AssetId: ${assetId}`);
-	      }
-
-	      return uv;
-	    };
-
-	    for (const entry of orderedDraws) {
-	      const draw = entry.draw;
-
-      if (currentPassId !== entry.passId) {
-        flushBatch();
-        currentPassId = entry.passId;
-        scissorStack = [];
-        currentScissor = viewportScissor;
-        applyScissorRect(currentScissor);
-      }
-
-	      switch (draw.kind) {
-	        case 'scissorPush': {
-	          flushBatch();
-	          const scissor = this.#toDeviceScissorRect({
-            passId: entry.passId,
-            x: draw.x,
-            y: draw.y,
-            width: draw.width,
-            height: draw.height,
-          });
-          scissorStack.push(currentScissor);
-          currentScissor = intersectScissorRect(currentScissor, scissor);
-          applyScissorRect(currentScissor);
-          break;
-        }
-        case 'scissorPop': {
-          flushBatch();
-          currentScissor = scissorStack.pop() ?? viewportScissor;
-	          applyScissorRect(currentScissor);
-	          break;
-	        }
-	        case 'rect': {
-	          ensureBatch('rect', entry.passId);
-
-	          const rgba = draw.colorRgba >>> 0;
-	          const red = clampByte((rgba >>> 24) & 0xff) / 255;
-	          const green = clampByte((rgba >>> 16) & 0xff) / 255;
-          const blue = clampByte((rgba >>> 8) & 0xff) / 255;
-          const alpha = clampByte(rgba & 0xff) / 255;
-
-          batchInstances.push(
-            draw.x,
-            draw.y,
-            draw.width,
-            draw.height,
-            0,
-            0,
-            0,
-            0,
-            red,
-            green,
-            blue,
-            alpha,
-          );
-	          batchInstanceCount += 1;
-	          break;
-	        }
-	        case 'image': {
-	          ensureBatch('image', entry.passId);
-
-	          const uv = spriteUvOrThrow(draw.assetId);
-
-	          const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
-
-	          batchInstances.push(
-	            draw.x,
-	            draw.y,
-            draw.width,
-            draw.height,
-            uv.u0,
-            uv.v0,
-            uv.u1,
-            uv.v1,
-            1,
-            1,
-            1,
-            tintAlpha,
-          );
-          batchInstanceCount += 1;
-          break;
-        }
-        default:
-          flushBatch();
-          break;
-      }
+  #applyScissorRect(state: WebGpuQuadRenderState, rect: ScissorRect): void {
+    if (state.appliedScissor && isSameScissorRect(state.appliedScissor, rect)) {
+      return;
     }
 
-    flushBatch();
+    state.passEncoder.setScissorRect(rect.x, rect.y, rect.width, rect.height);
+    state.appliedScissor = rect;
   }
+
+  #resetQuadBatch(state: WebGpuQuadRenderState): void {
+    state.batchKind = undefined;
+    state.batchPassId = undefined;
+    state.batchInstances = [];
+    state.batchInstanceCount = 0;
+  }
+
+  #flushQuadBatch(state: WebGpuQuadRenderState): void {
+    const kind = state.batchKind;
+    const passId = state.batchPassId;
+    const instanceCount = state.batchInstanceCount;
+
+    if (!kind || !passId || instanceCount <= 0) {
+      this.#resetQuadBatch(state);
+      return;
+    }
+
+    if (state.currentScissor.width <= 0 || state.currentScissor.height <= 0) {
+      this.#resetQuadBatch(state);
+      return;
+    }
+
+    const instances = new Float32Array(state.batchInstances);
+    this.#ensureInstanceBuffer(instances.byteLength);
+
+    const instanceBuffer = this.#spriteInstanceBuffer;
+    if (!instanceBuffer) {
+      throw new Error('Sprite pipeline missing instance buffer.');
+    }
+
+    this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(instances));
+
+    const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
+
+    if (kind === 'image') {
+      if (!state.textureBindGroup) {
+        throw new Error('Sprite pipeline missing texture bind group.');
+      }
+      state.passEncoder.setPipeline(state.spritePipeline);
+      state.passEncoder.setBindGroup(1, state.textureBindGroup);
+    } else {
+      state.passEncoder.setPipeline(state.rectPipeline);
+    }
+
+    state.passEncoder.setBindGroup(0, globals);
+    state.passEncoder.setVertexBuffer(0, state.vertexBuffer);
+    state.passEncoder.setVertexBuffer(1, instanceBuffer);
+    state.passEncoder.setIndexBuffer(state.indexBuffer, 'uint16');
+    state.passEncoder.drawIndexed(6, instanceCount, 0, 0, 0);
+
+    this.#resetQuadBatch(state);
+  }
+
+  #ensureQuadBatch(
+    state: WebGpuQuadRenderState,
+    kind: WebGpuQuadBatchKind,
+    passId: RenderPassId,
+  ): void {
+    if (state.batchKind === kind && state.batchPassId === passId) {
+      return;
+    }
+
+    this.#flushQuadBatch(state);
+    state.batchKind = kind;
+    state.batchPassId = passId;
+  }
+
+  #setQuadPass(state: WebGpuQuadRenderState, passId: RenderPassId): void {
+    if (state.currentPassId === passId) {
+      return;
+    }
+
+    this.#flushQuadBatch(state);
+    state.currentPassId = passId;
+    state.scissorStack = [];
+    state.currentScissor = state.viewportScissor;
+    this.#applyScissorRect(state, state.currentScissor);
+  }
+
+  #spriteUvOrThrow(state: WebGpuQuadRenderState, assetId: AssetId): SpriteUvRect {
+    const atlasUvByAssetId = state.atlasUvByAssetId;
+    if (!atlasUvByAssetId) {
+      throw new Error('Sprite atlas missing UVs.');
+    }
+
+    const uv = atlasUvByAssetId.get(assetId);
+    if (!uv) {
+      throw new Error(`Atlas missing UVs for AssetId: ${assetId}`);
+    }
+
+    return uv;
+  }
+
+  #renderQuadDrawEntry(state: WebGpuQuadRenderState, entry: OrderedDraw): void {
+    this.#setQuadPass(state, entry.passId);
+
+    const draw = entry.draw;
+    switch (draw.kind) {
+      case 'scissorPush':
+        this.#handleScissorPushDraw(state, entry.passId, draw);
+        break;
+      case 'scissorPop':
+        this.#handleScissorPopDraw(state);
+        break;
+      case 'rect':
+        this.#handleRectDraw(state, entry.passId, draw);
+        break;
+      case 'image':
+        this.#handleImageDraw(state, entry.passId, draw);
+        break;
+      case 'text':
+        this.#handleTextDraw(state, entry.passId, draw);
+        break;
+      default:
+        this.#flushQuadBatch(state);
+        break;
+    }
+  }
+
+  #handleScissorPushDraw(
+    state: WebGpuQuadRenderState,
+    passId: RenderPassId,
+    draw: Extract<OrderedDraw['draw'], { kind: 'scissorPush' }>,
+  ): void {
+    this.#flushQuadBatch(state);
+    const scissor = this.#toDeviceScissorRect({
+      passId,
+      x: draw.x,
+      y: draw.y,
+      width: draw.width,
+      height: draw.height,
+    });
+    state.scissorStack.push(state.currentScissor);
+    state.currentScissor = intersectScissorRect(state.currentScissor, scissor);
+    this.#applyScissorRect(state, state.currentScissor);
+  }
+
+  #handleScissorPopDraw(state: WebGpuQuadRenderState): void {
+    this.#flushQuadBatch(state);
+    state.currentScissor = state.scissorStack.pop() ?? state.viewportScissor;
+    this.#applyScissorRect(state, state.currentScissor);
+  }
+
+  #handleRectDraw(
+    state: WebGpuQuadRenderState,
+    passId: RenderPassId,
+    draw: Extract<OrderedDraw['draw'], { kind: 'rect' }>,
+  ): void {
+    this.#ensureQuadBatch(state, 'rect', passId);
+    const rgba = draw.colorRgba >>> 0;
+    const red = clampByte((rgba >>> 24) & 0xff) / 255;
+    const green = clampByte((rgba >>> 16) & 0xff) / 255;
+    const blue = clampByte((rgba >>> 8) & 0xff) / 255;
+    const alpha = clampByte(rgba & 0xff) / 255;
+
+    state.batchInstances.push(
+      draw.x,
+      draw.y,
+      draw.width,
+      draw.height,
+      0,
+      0,
+      0,
+      0,
+      red,
+      green,
+      blue,
+      alpha,
+    );
+    state.batchInstanceCount += 1;
+  }
+
+  #handleImageDraw(
+    state: WebGpuQuadRenderState,
+    passId: RenderPassId,
+    draw: Extract<OrderedDraw['draw'], { kind: 'image' }>,
+  ): void {
+    this.#ensureQuadBatch(state, 'image', passId);
+
+    const uv = this.#spriteUvOrThrow(state, draw.assetId);
+    const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
+
+    state.batchInstances.push(
+      draw.x,
+      draw.y,
+      draw.width,
+      draw.height,
+      uv.u0,
+      uv.v0,
+      uv.u1,
+      uv.v1,
+      1,
+      1,
+      1,
+      tintAlpha,
+    );
+    state.batchInstanceCount += 1;
+  }
+
+  #handleTextDraw(
+    state: WebGpuQuadRenderState,
+    passId: RenderPassId,
+    draw: Extract<OrderedDraw['draw'], { kind: 'text' }>,
+  ): void {
+    this.#ensureQuadBatch(state, 'image', passId);
+
+    const fontAssetId = draw.fontAssetId ?? state.defaultBitmapFontAssetId;
+    if (!fontAssetId) {
+      throw new Error('Text draw missing fontAssetId and no default font is available.');
+    }
+
+    const font = state.bitmapFontByAssetId?.get(fontAssetId);
+    if (!font) {
+      throw new Error(`Unknown fontAssetId: ${fontAssetId}`);
+    }
+
+    const scale = draw.fontSizePx / font.baseFontSizePx;
+    if (!Number.isFinite(scale) || scale <= 0) {
+      throw new Error(`Invalid fontSizePx ${draw.fontSizePx} for font ${fontAssetId}.`);
+    }
+
+    const rgba = draw.colorRgba >>> 0;
+    const red = clampByte((rgba >>> 24) & 0xff) / 255;
+    const green = clampByte((rgba >>> 16) & 0xff) / 255;
+    const blue = clampByte((rgba >>> 8) & 0xff) / 255;
+    const alpha = clampByte(rgba & 0xff) / 255;
+
+    const spaceGlyph = font.glyphByCodePoint.get(0x20) ?? font.fallbackGlyph;
+    const tabAdvancePx = (spaceGlyph?.xAdvancePx ?? 0) * 4;
+
+    state.batchInstanceCount += appendBitmapTextInstances({
+      batchInstances: state.batchInstances,
+      x: draw.x,
+      y: draw.y,
+      text: draw.text,
+      font,
+      scale,
+      tabAdvancePx,
+      color: { red, green, blue, alpha },
+    });
+  }
+
+  #renderDraws(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
+    const state = this.#createQuadRenderState(passEncoder, orderedDraws);
+    if (!state) {
+      return;
+    }
+
+    this.#writeGlobals(WORLD_GLOBALS_OFFSET, this.#worldCamera);
+    this.#writeGlobals(UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
+
+    this.#applyScissorRect(state, state.viewportScissor);
+
+    for (const entry of orderedDraws) {
+      this.#renderQuadDrawEntry(state, entry);
+    }
+
+    this.#flushQuadBatch(state);
+  }
+
 
   render(rcb: RenderCommandBuffer): void {
     if (this.#disposed || this.#lost) {
