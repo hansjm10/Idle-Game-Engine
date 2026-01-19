@@ -20,6 +20,7 @@ import {
   orderDrawsByPassAndSortKey,
 } from './sprite-batching.js';
 import type {
+  OrderedDraw,
   SpriteUvRect,
 } from './sprite-batching.js';
 
@@ -121,7 +122,7 @@ function selectClearColor(rcb: RenderCommandBuffer): GPUColor {
         );
   const clearDrawCandidate =
     clearDrawByPass ?? rcb.draws.find((draw) => draw.kind === 'clear');
-  if (!clearDrawCandidate || clearDrawCandidate.kind !== 'clear') {
+  if (clearDrawCandidate?.kind !== 'clear') {
     return { r: 0, g: 0, b: 0, a: 1 };
   }
   return colorRgbaToGpuColor(clearDrawCandidate.colorRgba);
@@ -350,22 +351,14 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#alphaMode = options.alphaMode;
     this.#onDeviceLost = options.onDeviceLost;
 
-    void this.device.lost
+    this.device.lost
       .then((info) => {
         if (this.#disposed) {
           return;
         }
         this.#lost = true;
-        try {
-          this.#onDeviceLost?.(
-            new WebGpuDeviceLostError(
-              `WebGPU device lost${info.message ? `: ${info.message}` : ''}`,
-              info.reason,
-            ),
-          );
-        } catch (error: unknown) {
-          void error;
-        }
+        const message = info.message ? `WebGPU device lost: ${info.message}` : 'WebGPU device lost';
+        this.#onDeviceLost?.(new WebGpuDeviceLostError(message, info.reason));
       })
       .catch(() => undefined);
   }
@@ -697,6 +690,66 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.device.queue.writeBuffer(buffer, offset, toArrayBuffer(data));
   }
 
+  #renderSprites(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
+    if (!orderedDraws.some((entry) => entry.draw.kind === 'image')) {
+      return;
+    }
+
+    const atlasUvByAssetId = this.#atlasUvByAssetId;
+    const textureBindGroup = this.#spriteTextureBindGroup;
+    if (!atlasUvByAssetId || !textureBindGroup) {
+      throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering sprites.');
+    }
+
+    this.#ensureSpritePipeline();
+
+    const spriteInstances = buildSpriteInstances({
+      orderedDraws,
+      uvByAssetId: atlasUvByAssetId,
+    });
+    if (spriteInstances.instanceCount <= 0) {
+      return;
+    }
+
+    const instanceBytes = spriteInstances.instances.byteLength;
+    this.#ensureInstanceBuffer(instanceBytes);
+
+    const pipeline = this.#spritePipeline;
+    const vertexBuffer = this.#spriteVertexBuffer;
+    const indexBuffer = this.#spriteIndexBuffer;
+    const instanceBuffer = this.#spriteInstanceBuffer;
+    const worldGlobalsBindGroup = this.#worldGlobalsBindGroup;
+    const uiGlobalsBindGroup = this.#uiGlobalsBindGroup;
+
+    if (
+      !pipeline ||
+      !vertexBuffer ||
+      !indexBuffer ||
+      !instanceBuffer ||
+      !worldGlobalsBindGroup ||
+      !uiGlobalsBindGroup
+    ) {
+      throw new Error('Sprite pipeline is incomplete.');
+    }
+
+    this.#writeGlobals(WORLD_GLOBALS_OFFSET, this.#worldCamera);
+    this.#writeGlobals(UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
+
+    this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(spriteInstances.instances));
+
+    passEncoder.setPipeline(pipeline);
+    passEncoder.setBindGroup(1, textureBindGroup);
+    passEncoder.setVertexBuffer(0, vertexBuffer);
+    passEncoder.setVertexBuffer(1, instanceBuffer);
+    passEncoder.setIndexBuffer(indexBuffer, 'uint16');
+
+    for (const group of spriteInstances.groups) {
+      const globals = group.passId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
+      passEncoder.setBindGroup(0, globals);
+      passEncoder.drawIndexed(6, group.instanceCount, 0, 0, group.firstInstance);
+    }
+  }
+
   render(rcb: RenderCommandBuffer): void {
     if (this.#disposed || this.#lost) {
       return;
@@ -718,61 +771,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     });
 
     const orderedDraws = orderDrawsByPassAndSortKey(rcb);
-    const atlasUvByAssetId = this.#atlasUvByAssetId;
-    const textureBindGroup = this.#spriteTextureBindGroup;
-
-    if (orderedDraws.some((entry) => entry.draw.kind === 'image')) {
-      if (!atlasUvByAssetId || !textureBindGroup) {
-        throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering sprites.');
-      }
-
-      this.#ensureSpritePipeline();
-
-      const spriteInstances = buildSpriteInstances({
-        orderedDraws,
-        uvByAssetId: atlasUvByAssetId,
-      });
-
-      if (spriteInstances.instanceCount > 0) {
-        const instanceBytes = spriteInstances.instances.byteLength;
-        this.#ensureInstanceBuffer(instanceBytes);
-
-        const pipeline = this.#spritePipeline;
-        const vertexBuffer = this.#spriteVertexBuffer;
-        const indexBuffer = this.#spriteIndexBuffer;
-        const instanceBuffer = this.#spriteInstanceBuffer;
-        const worldGlobalsBindGroup = this.#worldGlobalsBindGroup;
-        const uiGlobalsBindGroup = this.#uiGlobalsBindGroup;
-
-        if (
-          !pipeline ||
-          !vertexBuffer ||
-          !indexBuffer ||
-          !instanceBuffer ||
-          !worldGlobalsBindGroup ||
-          !uiGlobalsBindGroup
-        ) {
-          throw new Error('Sprite pipeline is incomplete.');
-        }
-
-        this.#writeGlobals(WORLD_GLOBALS_OFFSET, this.#worldCamera);
-        this.#writeGlobals(UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
-
-        this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(spriteInstances.instances));
-
-        passEncoder.setPipeline(pipeline);
-        passEncoder.setBindGroup(1, textureBindGroup);
-        passEncoder.setVertexBuffer(0, vertexBuffer);
-        passEncoder.setVertexBuffer(1, instanceBuffer);
-        passEncoder.setIndexBuffer(indexBuffer, 'uint16');
-
-        for (const group of spriteInstances.groups) {
-          const globals = group.passId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
-          passEncoder.setBindGroup(0, globals);
-          passEncoder.drawIndexed(6, group.instanceCount, 0, 0, group.firstInstance);
-        }
-      }
-    }
+    this.#renderSprites(passEncoder, orderedDraws);
 
     passEncoder.end();
 

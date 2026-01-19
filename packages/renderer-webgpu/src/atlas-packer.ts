@@ -47,6 +47,25 @@ export interface WebGpuAtlasPackingResult {
 const DEFAULT_MAX_SIZE_PX = 2048;
 const DEFAULT_PADDING_PX = 2;
 
+function getPackingConfig(options: WebGpuAtlasPackingOptions): {
+  readonly maxSizePx: number;
+  readonly paddingPx: number;
+  readonly powerOfTwo: boolean;
+} {
+  const maxSizePx = options.maxSizePx ?? DEFAULT_MAX_SIZE_PX;
+  const paddingPx = options.paddingPx ?? DEFAULT_PADDING_PX;
+  const powerOfTwo = options.powerOfTwo ?? true;
+
+  if (!Number.isFinite(maxSizePx) || maxSizePx <= 0) {
+    throw new Error(`Invalid atlas maxSizePx: ${maxSizePx}`);
+  }
+  if (!Number.isFinite(paddingPx) || paddingPx < 0) {
+    throw new Error(`Invalid atlas paddingPx: ${paddingPx}`);
+  }
+
+  return { maxSizePx, paddingPx, powerOfTwo };
+}
+
 function compareAssetId(a: AssetId, b: AssetId): number {
   if (a < b) {
     return -1;
@@ -116,70 +135,94 @@ function packShelf(
   return { packedHeightPx, entries };
 }
 
-export function packAtlas(
-  inputImages: readonly WebGpuAtlasImageInput[],
-  options: WebGpuAtlasPackingOptions = {},
-): WebGpuAtlasPackingResult {
-  const maxSizePx = options.maxSizePx ?? DEFAULT_MAX_SIZE_PX;
-  const paddingPx = options.paddingPx ?? DEFAULT_PADDING_PX;
-  const powerOfTwo = options.powerOfTwo ?? true;
-
-  if (!Number.isFinite(maxSizePx) || maxSizePx <= 0) {
-    throw new Error(`Invalid atlas maxSizePx: ${maxSizePx}`);
-  }
-  if (!Number.isFinite(paddingPx) || paddingPx < 0) {
-    throw new Error(`Invalid atlas paddingPx: ${paddingPx}`);
-  }
-
-  const images = [...inputImages].sort((a, b) => compareAssetId(a.assetId, b.assetId));
-
-  for (let i = 1; i < images.length; i += 1) {
-    const previous = images[i - 1];
-    const current = images[i];
-    if (previous && current && previous.assetId === current.assetId) {
-      throw new Error(`Atlas input contains duplicate AssetId: ${current.assetId}`);
+function assertNoDuplicateAssetIds(images: readonly WebGpuAtlasImageInput[]): void {
+  for (let index = 1; index < images.length; index += 1) {
+    if (images[index - 1].assetId === images[index].assetId) {
+      throw new Error(`Atlas input contains duplicate AssetId: ${images[index].assetId}`);
     }
   }
+}
 
+function getMaxImageWidth(images: readonly WebGpuAtlasImageInput[]): number {
   let maxImageWidth = 1;
   for (const image of images) {
     maxImageWidth = Math.max(maxImageWidth, image.width);
   }
+  return maxImageWidth;
+}
 
-  let atlasWidthPx = powerOfTwo ? nextPowerOfTwo(maxImageWidth) : maxImageWidth;
-  if (atlasWidthPx > maxSizePx) {
-    throw new Error(
-      `Atlas requires width ${atlasWidthPx} but maxSizePx is ${maxSizePx}.`,
-    );
+function getNextAtlasWidth(options: {
+  readonly currentAtlasWidthPx: number;
+  readonly maxSizePx: number;
+  readonly powerOfTwo: boolean;
+}): number {
+  const nextWidth = options.currentAtlasWidthPx * 2;
+  if (options.powerOfTwo) {
+    return nextWidth;
   }
+  return Math.min(options.maxSizePx, nextWidth);
+}
 
+function packWithGrowingWidth(options: {
+  readonly images: readonly WebGpuAtlasImageInput[];
+  readonly initialAtlasWidthPx: number;
+  readonly maxSizePx: number;
+  readonly paddingPx: number;
+  readonly powerOfTwo: boolean;
+}): WebGpuAtlasPackingResult {
+  let atlasWidthPx = options.initialAtlasWidthPx;
   while (true) {
-    const { packedHeightPx, entries } = packShelf(images, atlasWidthPx, paddingPx);
-    const atlasHeightCandidate = powerOfTwo ? nextPowerOfTwo(packedHeightPx) : packedHeightPx;
+    const { packedHeightPx, entries } = packShelf(options.images, atlasWidthPx, options.paddingPx);
+    const atlasHeightCandidate = options.powerOfTwo ? nextPowerOfTwo(packedHeightPx) : packedHeightPx;
 
-    if (atlasHeightCandidate <= maxSizePx) {
+    if (atlasHeightCandidate <= options.maxSizePx) {
       return {
         atlasWidthPx,
         atlasHeightPx: atlasHeightCandidate,
-        paddingPx,
+        paddingPx: options.paddingPx,
         entries,
       };
     }
 
-    const nextAtlasWidthPx = powerOfTwo ? atlasWidthPx * 2 : Math.min(maxSizePx, atlasWidthPx * 2);
-    if (nextAtlasWidthPx === atlasWidthPx) {
+    const nextAtlasWidthPx = getNextAtlasWidth({
+      currentAtlasWidthPx: atlasWidthPx,
+      maxSizePx: options.maxSizePx,
+      powerOfTwo: options.powerOfTwo,
+    });
+    if (nextAtlasWidthPx <= atlasWidthPx || nextAtlasWidthPx > options.maxSizePx) {
       throw new Error(
-        `Atlas packing exceeded maxSizePx ${maxSizePx} (height needed ${atlasHeightCandidate}).`,
+        `Atlas packing exceeded maxSizePx ${options.maxSizePx} (height needed ${atlasHeightCandidate}).`,
       );
     }
-    atlasWidthPx = nextAtlasWidthPx;
 
-    if (atlasWidthPx > maxSizePx) {
-      throw new Error(
-        `Atlas packing exceeded maxSizePx ${maxSizePx} (height needed ${atlasHeightCandidate}).`,
-      );
-    }
+    atlasWidthPx = nextAtlasWidthPx;
   }
+}
+
+export function packAtlas(
+  inputImages: readonly WebGpuAtlasImageInput[],
+  options: WebGpuAtlasPackingOptions = {},
+): WebGpuAtlasPackingResult {
+  const { maxSizePx, paddingPx, powerOfTwo } = getPackingConfig(options);
+
+  const images = [...inputImages].sort((a, b) => compareAssetId(a.assetId, b.assetId));
+  assertNoDuplicateAssetIds(images);
+
+  const maxImageWidth = getMaxImageWidth(images);
+  const initialAtlasWidthPx = powerOfTwo ? nextPowerOfTwo(maxImageWidth) : maxImageWidth;
+  if (initialAtlasWidthPx > maxSizePx) {
+    throw new Error(
+      `Atlas requires width ${initialAtlasWidthPx} but maxSizePx is ${maxSizePx}.`,
+    );
+  }
+
+  return packWithGrowingWidth({
+    images,
+    initialAtlasWidthPx,
+    maxSizePx,
+    paddingPx,
+    powerOfTwo,
+  });
 }
 
 export function createAtlasLayout(result: WebGpuAtlasPackingResult): WebGpuAtlasLayout {

@@ -94,9 +94,8 @@ export function buildSpriteInstances(options) {
         if (!uv) {
             throw new Error(`Atlas missing UVs for AssetId: ${imageDraw.draw.assetId}`);
         }
-        const tintAlpha = imageDraw.draw.tintRgba !== undefined
-            ? ((imageDraw.draw.tintRgba >>> 0) & 0xff) / 255
-            : 1;
+        const tintRgba = imageDraw.draw.tintRgba;
+        const tintAlpha = tintRgba === undefined ? 1 : ((tintRgba >>> 0) & 0xff) / 255;
         instances[writeOffset++] = imageDraw.draw.x;
         instances[writeOffset++] = imageDraw.draw.y;
         instances[writeOffset++] = imageDraw.draw.width;

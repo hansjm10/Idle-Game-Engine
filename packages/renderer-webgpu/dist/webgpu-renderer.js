@@ -9,7 +9,7 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals;
+var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_renderSprites;
 import { canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
 import { createAtlasLayout, packAtlas, } from './atlas-packer.js';
 import { buildSpriteInstances, orderDrawsByPassAndSortKey, } from './sprite-batching.js';
@@ -67,7 +67,7 @@ function selectClearColor(rcb) {
         ? undefined
         : rcb.draws.find((draw) => draw.kind === 'clear' && draw.passId === primaryPassId);
     const clearDrawCandidate = clearDrawByPass ?? rcb.draws.find((draw) => draw.kind === 'clear');
-    if (!clearDrawCandidate || clearDrawCandidate.kind !== 'clear') {
+    if (clearDrawCandidate?.kind !== 'clear') {
         return { r: 0, g: 0, b: 0, a: 1 };
     }
     return colorRgbaToGpuColor(clearDrawCandidate.colorRgba);
@@ -265,18 +265,14 @@ class WebGpuRendererImpl {
         this.format = options.format;
         __classPrivateFieldSet(this, _WebGpuRendererImpl_alphaMode, options.alphaMode, "f");
         __classPrivateFieldSet(this, _WebGpuRendererImpl_onDeviceLost, options.onDeviceLost, "f");
-        void this.device.lost
+        this.device.lost
             .then((info) => {
             if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f")) {
                 return;
             }
             __classPrivateFieldSet(this, _WebGpuRendererImpl_lost, true, "f");
-            try {
-                __classPrivateFieldGet(this, _WebGpuRendererImpl_onDeviceLost, "f")?.call(this, new WebGpuDeviceLostError(`WebGPU device lost${info.message ? `: ${info.message}` : ''}`, info.reason));
-            }
-            catch (error) {
-                void error;
-            }
+            const message = info.message ? `WebGPU device lost: ${info.message}` : 'WebGPU device lost';
+            __classPrivateFieldGet(this, _WebGpuRendererImpl_onDeviceLost, "f")?.call(this, new WebGpuDeviceLostError(message, info.reason));
         })
             .catch(() => undefined);
     }
@@ -413,49 +409,7 @@ class WebGpuRendererImpl {
             ],
         });
         const orderedDraws = orderDrawsByPassAndSortKey(rcb);
-        const atlasUvByAssetId = __classPrivateFieldGet(this, _WebGpuRendererImpl_atlasUvByAssetId, "f");
-        const textureBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteTextureBindGroup, "f");
-        if (orderedDraws.some((entry) => entry.draw.kind === 'image')) {
-            if (!atlasUvByAssetId || !textureBindGroup) {
-                throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering sprites.');
-            }
-            __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureSpritePipeline).call(this);
-            const spriteInstances = buildSpriteInstances({
-                orderedDraws,
-                uvByAssetId: atlasUvByAssetId,
-            });
-            if (spriteInstances.instanceCount > 0) {
-                const instanceBytes = spriteInstances.instances.byteLength;
-                __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, instanceBytes);
-                const pipeline = __classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f");
-                const vertexBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteVertexBuffer, "f");
-                const indexBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteIndexBuffer, "f");
-                const instanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
-                const worldGlobalsBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_worldGlobalsBindGroup, "f");
-                const uiGlobalsBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_uiGlobalsBindGroup, "f");
-                if (!pipeline ||
-                    !vertexBuffer ||
-                    !indexBuffer ||
-                    !instanceBuffer ||
-                    !worldGlobalsBindGroup ||
-                    !uiGlobalsBindGroup) {
-                    throw new Error('Sprite pipeline is incomplete.');
-                }
-                __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_writeGlobals).call(this, WORLD_GLOBALS_OFFSET, __classPrivateFieldGet(this, _WebGpuRendererImpl_worldCamera, "f"));
-                __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_writeGlobals).call(this, UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
-                this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(spriteInstances.instances));
-                passEncoder.setPipeline(pipeline);
-                passEncoder.setBindGroup(1, textureBindGroup);
-                passEncoder.setVertexBuffer(0, vertexBuffer);
-                passEncoder.setVertexBuffer(1, instanceBuffer);
-                passEncoder.setIndexBuffer(indexBuffer, 'uint16');
-                for (const group of spriteInstances.groups) {
-                    const globals = group.passId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
-                    passEncoder.setBindGroup(0, globals);
-                    passEncoder.drawIndexed(6, group.instanceCount, 0, 0, group.firstInstance);
-                }
-            }
-        }
+        __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_renderSprites).call(this, passEncoder, orderedDraws);
         passEncoder.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }
@@ -617,6 +571,52 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         0,
     ]);
     this.device.queue.writeBuffer(buffer, offset, toArrayBuffer(data));
+}, _WebGpuRendererImpl_renderSprites = function _WebGpuRendererImpl_renderSprites(passEncoder, orderedDraws) {
+    if (!orderedDraws.some((entry) => entry.draw.kind === 'image')) {
+        return;
+    }
+    const atlasUvByAssetId = __classPrivateFieldGet(this, _WebGpuRendererImpl_atlasUvByAssetId, "f");
+    const textureBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteTextureBindGroup, "f");
+    if (!atlasUvByAssetId || !textureBindGroup) {
+        throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering sprites.');
+    }
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureSpritePipeline).call(this);
+    const spriteInstances = buildSpriteInstances({
+        orderedDraws,
+        uvByAssetId: atlasUvByAssetId,
+    });
+    if (spriteInstances.instanceCount <= 0) {
+        return;
+    }
+    const instanceBytes = spriteInstances.instances.byteLength;
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, instanceBytes);
+    const pipeline = __classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f");
+    const vertexBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteVertexBuffer, "f");
+    const indexBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteIndexBuffer, "f");
+    const instanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
+    const worldGlobalsBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_worldGlobalsBindGroup, "f");
+    const uiGlobalsBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_uiGlobalsBindGroup, "f");
+    if (!pipeline ||
+        !vertexBuffer ||
+        !indexBuffer ||
+        !instanceBuffer ||
+        !worldGlobalsBindGroup ||
+        !uiGlobalsBindGroup) {
+        throw new Error('Sprite pipeline is incomplete.');
+    }
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_writeGlobals).call(this, WORLD_GLOBALS_OFFSET, __classPrivateFieldGet(this, _WebGpuRendererImpl_worldCamera, "f"));
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_writeGlobals).call(this, UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
+    this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(spriteInstances.instances));
+    passEncoder.setPipeline(pipeline);
+    passEncoder.setBindGroup(1, textureBindGroup);
+    passEncoder.setVertexBuffer(0, vertexBuffer);
+    passEncoder.setVertexBuffer(1, instanceBuffer);
+    passEncoder.setIndexBuffer(indexBuffer, 'uint16');
+    for (const group of spriteInstances.groups) {
+        const globals = group.passId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
+        passEncoder.setBindGroup(0, globals);
+        passEncoder.drawIndexed(6, group.instanceCount, 0, 0, group.firstInstance);
+    }
 };
 function getNavigatorGpu() {
     const maybeNavigator = globalThis.navigator;
