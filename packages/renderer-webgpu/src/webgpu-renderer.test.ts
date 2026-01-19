@@ -509,6 +509,102 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
     });
 
+    it('renders bitmap text as sprite instances', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [
+          { id: fontAssetId, kind: 'font', contentHash: 'hash:font' },
+        ],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 32, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+          {
+            codePoint: 0x42,
+            x: 8,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+          {
+            codePoint: 0x3f,
+            x: 16,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+          {
+            codePoint: 0x20,
+            x: 24,
+            y: 0,
+            width: 0,
+            height: 0,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+        fallbackCodePoint: 0x3f,
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      expect(loadFont).toHaveBeenCalledWith(fontAssetId, 'hash:font');
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'AB',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
+    });
+
     it('applies scissorPush/scissorPop with devicePixelRatio scaling', async () => {
       setDevicePixelRatio(2);
       const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();

@@ -6,9 +6,13 @@ WebGPU renderer backend for the Idle Engine renderer contract, including determi
 
 - `createWebGpuRenderer(canvas, options?)` → `Promise<WebGpuRenderer>`
 - `WebGpuRenderer.resize(options?)` updates the canvas pixel size and reconfigures the context.
-- `WebGpuRenderer.loadAssets(manifest, assets, options?)` builds a deterministic texture atlas and exposes `atlasLayoutHash`.
-- `WebGpuRenderer.render(rcb)` clears and renders `rect` + `image` draws (instanced quads), with optional `scissorPush`/`scissorPop` clipping.
+- `WebGpuRenderer.loadAssets(manifest, assets, options?)` builds a deterministic texture atlas (including bitmap fonts) and exposes `atlasLayoutHash`.
+- `WebGpuRenderer.render(rcb)` clears and renders `rect` + `image` + `text` draws (instanced quads), with optional `scissorPush`/`scissorPop` clipping.
 - `WebGpuRenderer.dispose()` stops future `render/resize` calls from doing GPU work.
+
+## Text rendering
+
+`text` draws are rendered using bitmap fonts supplied via `assets.loadFont(...)`. Layout is deterministic (no OS font fallback, no kerning/shaping).
 
 ## Options
 
