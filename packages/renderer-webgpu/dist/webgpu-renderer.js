@@ -63,11 +63,11 @@ function selectClearColor(rcb) {
     const clearDrawByPass = primaryPassId === undefined
         ? undefined
         : rcb.draws.find((draw) => draw.kind === 'clear' && draw.passId === primaryPassId);
-    const clearDraw = clearDrawByPass ?? rcb.draws.find((draw) => draw.kind === 'clear');
-    if (!clearDraw) {
+    const clearDrawCandidate = clearDrawByPass ?? rcb.draws.find((draw) => draw.kind === 'clear');
+    if (!clearDrawCandidate || clearDrawCandidate.kind !== 'clear') {
         return { r: 0, g: 0, b: 0, a: 1 };
     }
-    return colorRgbaToGpuColor(clearDraw.colorRgba);
+    return colorRgbaToGpuColor(clearDrawCandidate.colorRgba);
 }
 function getCanvasPixelSize(canvas, devicePixelRatio) {
     const targetWidth = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));

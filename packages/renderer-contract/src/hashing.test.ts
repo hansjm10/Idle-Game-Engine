@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { hashRenderCommandBuffer, hashViewModel } from './hashing.js';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from './types.js';
 import type {
   RenderCommandBuffer,
   ViewModel,
@@ -10,7 +11,7 @@ describe('hashing', () => {
   it('hashes ViewModel deterministically (independent of object key insertion order)', async () => {
     const a: ViewModel = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 2,
         simTimeMs: 32,
         contentHash: 'content:abc',
@@ -36,7 +37,7 @@ describe('hashing', () => {
         contentHash: 'content:abc',
         simTimeMs: 32,
         step: 2,
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
       },
     };
 
@@ -46,7 +47,7 @@ describe('hashing', () => {
   it('normalizes -0 to 0 before hashing', async () => {
     const a: ViewModel = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 2,
         simTimeMs: 32,
         contentHash: 'content:abc',
@@ -62,7 +63,7 @@ describe('hashing', () => {
 
     const b: ViewModel = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 2,
         simTimeMs: 32,
         contentHash: 'content:abc',
@@ -82,7 +83,7 @@ describe('hashing', () => {
   it('rejects NaN and Infinity for hashing', async () => {
     const nan: ViewModel = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 1,
         simTimeMs: 16,
         contentHash: 'content:abc',
@@ -98,7 +99,7 @@ describe('hashing', () => {
 
     const infinity: ViewModel = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 1,
         simTimeMs: 16,
         contentHash: 'content:abc',
@@ -119,7 +120,7 @@ describe('hashing', () => {
   it('hashes RenderCommandBuffer deterministically', async () => {
     const a: RenderCommandBuffer = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 2,
         simTimeMs: 32,
         contentHash: 'content:abc',
@@ -155,7 +156,7 @@ describe('hashing', () => {
         contentHash: 'content:abc',
         simTimeMs: 32,
         step: 2,
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
       },
     };
 

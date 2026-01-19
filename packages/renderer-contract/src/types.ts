@@ -1,4 +1,4 @@
-export const RENDERER_CONTRACT_SCHEMA_VERSION = 1 as const;
+export const RENDERER_CONTRACT_SCHEMA_VERSION = 2 as const;
 
 export type RendererContractSchemaVersion =
   typeof RENDERER_CONTRACT_SCHEMA_VERSION;
@@ -118,7 +118,42 @@ export interface ClearDraw {
   readonly colorRgba: number;
 }
 
-export type RenderDraw = ClearDraw;
+export interface RectDraw {
+  readonly kind: 'rect';
+  readonly passId: RenderPassId;
+  readonly sortKey: SortKey;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly colorRgba: number;
+}
+
+export interface ImageDraw {
+  readonly kind: 'image';
+  readonly passId: RenderPassId;
+  readonly sortKey: SortKey;
+  readonly assetId: AssetId;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly tintRgba?: number;
+}
+
+export interface TextDraw {
+  readonly kind: 'text';
+  readonly passId: RenderPassId;
+  readonly sortKey: SortKey;
+  readonly x: number;
+  readonly y: number;
+  readonly text: string;
+  readonly colorRgba: number;
+  readonly fontAssetId?: AssetId;
+  readonly fontSizePx: number;
+}
+
+export type RenderDraw = ClearDraw | RectDraw | ImageDraw | TextDraw;
 
 export interface RenderCommandBuffer {
   readonly frame: FrameHeader;

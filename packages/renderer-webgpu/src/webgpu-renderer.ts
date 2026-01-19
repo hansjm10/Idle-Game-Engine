@@ -70,12 +70,12 @@ function selectClearColor(rcb: RenderCommandBuffer): GPUColor {
       : rcb.draws.find(
           (draw) => draw.kind === 'clear' && draw.passId === primaryPassId,
         );
-  const clearDraw =
+  const clearDrawCandidate =
     clearDrawByPass ?? rcb.draws.find((draw) => draw.kind === 'clear');
-  if (!clearDraw) {
+  if (!clearDrawCandidate || clearDrawCandidate.kind !== 'clear') {
     return { r: 0, g: 0, b: 0, a: 1 };
   }
-  return colorRgbaToGpuColor(clearDraw.colorRgba);
+  return colorRgbaToGpuColor(clearDrawCandidate.colorRgba);
 }
 
 function getCanvasPixelSize(
