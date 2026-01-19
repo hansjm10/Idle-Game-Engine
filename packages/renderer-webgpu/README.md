@@ -1,12 +1,13 @@
 # `@idle-engine/renderer-webgpu`
 
-Minimal WebGPU renderer backend (device init + clear pass) for the Idle Engine renderer contract.
+WebGPU renderer backend for the Idle Engine renderer contract, including deterministic sprite atlasing + instanced quad batching.
 
 ## API
 
 - `createWebGpuRenderer(canvas, options?)` → `Promise<WebGpuRenderer>`
 - `WebGpuRenderer.resize(options?)` updates the canvas pixel size and reconfigures the context.
-- `WebGpuRenderer.render(rcb)` submits a render pass that clears to the selected color from the `RenderCommandBuffer`.
+- `WebGpuRenderer.loadAssets(manifest, assets, options?)` builds a deterministic texture atlas and exposes `atlasLayoutHash`.
+- `WebGpuRenderer.render(rcb)` clears and renders `image` draws using the loaded atlas (instanced quads).
 - `WebGpuRenderer.dispose()` stops future `render/resize` calls from doing GPU work.
 
 ## Options
@@ -24,6 +25,8 @@ Minimal WebGPU renderer backend (device init + clear pass) for the Idle Engine r
 
 ```ts
 import { createWebGpuRenderer } from '@idle-engine/renderer-webgpu';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import type { AssetId, AssetManifest, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
 if (!canvas) throw new Error('Missing canvas');
@@ -34,8 +37,27 @@ const renderer = await createWebGpuRenderer(canvas, {
   },
 });
 
-renderer.render({
-  frame: { schemaVersion: 1, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+const demoAssetId = 'sprite:demo' as AssetId;
+const manifest: AssetManifest = {
+  schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+  assets: [{ id: demoAssetId, kind: 'image', contentHash: 'demo' }],
+};
+
+await renderer.loadAssets(manifest, {
+  async loadImage(assetId) {
+    if (assetId !== demoAssetId) {
+      throw new Error(`Unknown assetId: ${assetId}`);
+    }
+
+    const image = new Image();
+    image.src = '/sprites/demo.png';
+    await image.decode();
+    return image;
+  },
+});
+
+const rcb: RenderCommandBuffer = {
+  frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
   passes: [{ id: 'world' }],
   draws: [
     {
@@ -44,6 +66,18 @@ renderer.render({
       sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
       colorRgba: 0x18_2a_44_ff,
     },
+    {
+      kind: 'image',
+      passId: 'world',
+      sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+      assetId: demoAssetId,
+      x: 20,
+      y: 20,
+      width: 64,
+      height: 64,
+    },
   ],
-});
+};
+
+renderer.render(rcb);
 ```
