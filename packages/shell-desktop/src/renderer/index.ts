@@ -1,7 +1,7 @@
-import { RENDERER_CONTRACT_SCHEMA_VERSION } from '../../node_modules/@idle-engine/renderer-contract/dist/index.js';
-import { createWebGpuRenderer } from '../../node_modules/@idle-engine/renderer-webgpu/dist/index.js';
-import type { RenderCommandBuffer } from '../../node_modules/@idle-engine/renderer-contract/dist/index.js';
-import type { WebGpuRenderer } from '../../node_modules/@idle-engine/renderer-webgpu/dist/index.js';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '../../../renderer-contract/dist/index.js';
+import { createWebGpuRenderer } from '../../../renderer-webgpu/dist/index.js';
+import type { RenderCommandBuffer } from '../../../renderer-contract/dist/index.js';
+import type { WebGpuRenderer } from '../../../renderer-webgpu/dist/index.js';
 
 const output = document.querySelector<HTMLPreElement>('#output');
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
@@ -24,7 +24,7 @@ async function run(): Promise<void> {
   updateOutput();
 
   try {
-    const pong = await window.idleEngine.ping('hello');
+    const pong = await (globalThis as unknown as Window).idleEngine.ping('hello');
     ipcStatus = `IPC ok: ${pong}`;
   } catch (error: unknown) {
     ipcStatus = `IPC error: ${String(error)}`;
@@ -69,12 +69,12 @@ async function run(): Promise<void> {
 
     renderer.render(rcb);
     renderFrame += 1;
-    animationFrame = window.requestAnimationFrame(render);
+    animationFrame = requestAnimationFrame(render);
   };
 
   const stopLoop = (): void => {
     if (animationFrame !== undefined) {
-      window.cancelAnimationFrame(animationFrame);
+      cancelAnimationFrame(animationFrame);
       animationFrame = undefined;
     }
   };
@@ -103,7 +103,7 @@ async function run(): Promise<void> {
       renderFrame = 0;
       webgpuStatus = 'WebGPU ok (recovered).';
       updateOutput();
-      animationFrame = window.requestAnimationFrame(render);
+      animationFrame = requestAnimationFrame(render);
     } catch (error: unknown) {
       webgpuStatus = `WebGPU recovery failed: ${String(error)}`;
       updateOutput();
@@ -120,13 +120,13 @@ async function run(): Promise<void> {
     });
     webgpuStatus = 'WebGPU ok.';
     updateOutput();
-    animationFrame = window.requestAnimationFrame(render);
+    animationFrame = requestAnimationFrame(render);
   } catch (error: unknown) {
     webgpuStatus = `WebGPU error: ${String(error)}`;
     updateOutput();
   }
 
-  window.addEventListener('beforeunload', () => {
+  addEventListener('beforeunload', () => {
     stopLoop();
     resizeObserver.disconnect();
     renderer?.dispose();
