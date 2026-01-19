@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSpriteInstances, orderDrawsByPassAndSortKey } from './sprite-batching.js';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import type {
   AssetId,
   RenderCommandBuffer,
@@ -8,7 +9,7 @@ import type {
 describe('sprite-batching', () => {
   it('sorts draws by pass order and sortKey stably', () => {
     const rcb = {
-      frame: { schemaVersion: 1, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
         {
@@ -54,7 +55,7 @@ describe('sprite-batching', () => {
 
   it('builds per-pass instance groups and respects alpha-only tinting', () => {
     const rcb = {
-      frame: { schemaVersion: 1, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
         {
@@ -101,4 +102,3 @@ describe('sprite-batching', () => {
     expect(spriteAAlpha).toBeCloseTo(0x80 / 255);
   });
 });
-

@@ -5,6 +5,7 @@ import {
   WebGpuDeviceLostError,
   WebGpuNotSupportedError,
 } from './webgpu-renderer.js';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import type { AssetId, AssetManifest, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 describe('renderer-webgpu', () => {
@@ -89,7 +90,7 @@ describe('renderer-webgpu', () => {
   it('defaults to opaque black when RCB has no clear draw', () => {
     const rcb = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 0,
         simTimeMs: 0,
         contentHash: 'content:dev',
@@ -104,7 +105,7 @@ describe('renderer-webgpu', () => {
   it('prefers the clear draw matching the first pass', () => {
     const rcb = {
       frame: {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 0,
         simTimeMs: 0,
         contentHash: 'content:dev',
@@ -381,7 +382,7 @@ describe('renderer-webgpu', () => {
 
       const rcb = {
         frame: {
-          schemaVersion: 1,
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
@@ -420,11 +421,11 @@ describe('renderer-webgpu', () => {
       const renderer = await createWebGpuRenderer(canvas);
 
       const manifest = {
-        schemaVersion: 1,
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         assets: [
           { id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' },
         ],
-      } as unknown as AssetManifest;
+      } satisfies AssetManifest;
 
       const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
 
@@ -439,7 +440,7 @@ describe('renderer-webgpu', () => {
 
       const rcb = {
         frame: {
-          schemaVersion: 1,
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
@@ -480,7 +481,7 @@ describe('renderer-webgpu', () => {
 
       const rcb = {
         frame: {
-          schemaVersion: 1,
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
@@ -547,7 +548,7 @@ describe('renderer-webgpu', () => {
 
       const rcb = {
         frame: {
-          schemaVersion: 1,
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
