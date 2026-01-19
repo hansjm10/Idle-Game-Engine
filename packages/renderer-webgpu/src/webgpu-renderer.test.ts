@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __test__, createWebGpuRenderer, WebGpuNotSupportedError } from './webgpu-renderer.js';
+import {
+  __test__,
+  createWebGpuRenderer,
+  WebGpuDeviceLostError,
+  WebGpuNotSupportedError,
+} from './webgpu-renderer.js';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 describe('renderer-webgpu', () => {
@@ -30,6 +35,12 @@ describe('renderer-webgpu', () => {
       enumerable: true,
       writable: true,
     });
+  }
+
+  async function flushMicrotasks(maxTurns = 10): Promise<void> {
+    for (let i = 0; i < maxTurns; i += 1) {
+      await Promise.resolve();
+    }
   }
 
   beforeEach(() => {
@@ -121,6 +132,10 @@ describe('renderer-webgpu', () => {
   describe('createWebGpuRenderer', () => {
     function createStubWebGpuEnvironment(options?: {
       canvas?: Partial<HTMLCanvasElement> & { getContext?: unknown };
+      configureImplementation?: (configuration: GPUCanvasConfiguration) => void;
+      includeGetPreferredCanvasFormat?: boolean;
+      preferredCanvasFormat?: GPUTextureFormat;
+      legacyPreferredFormat?: (adapter: GPUAdapter) => GPUTextureFormat;
     }): {
       canvas: HTMLCanvasElement;
       context: GPUCanvasContext;
@@ -129,8 +144,13 @@ describe('renderer-webgpu', () => {
       configure: ReturnType<typeof vi.fn>;
       beginRenderPass: ReturnType<typeof vi.fn>;
       submit: ReturnType<typeof vi.fn>;
+      getPreferredCanvasFormat?: ReturnType<typeof vi.fn>;
+      getPreferredFormat?: ReturnType<typeof vi.fn>;
+      resolveDeviceLost: (info: GPUDeviceLostInfo) => void;
     } {
-      const configure = vi.fn();
+      const configure = vi.fn(
+        options?.configureImplementation ?? ((_configuration: GPUCanvasConfiguration) => undefined),
+      );
 
       const passEncoder = { end: vi.fn() } as unknown as GPURenderPassEncoder;
       const beginRenderPass = vi.fn(() => passEncoder);
@@ -142,7 +162,10 @@ describe('renderer-webgpu', () => {
       const submit = vi.fn();
       const queue = { submit } as unknown as GPUQueue;
 
-      const deviceLost = new Promise<GPUDeviceLostInfo>(() => undefined);
+      let resolveDeviceLost: (info: GPUDeviceLostInfo) => void = () => undefined;
+      const deviceLost = new Promise<GPUDeviceLostInfo>((resolve) => {
+        resolveDeviceLost = resolve;
+      });
       const device = {
         lost: deviceLost,
         queue,
@@ -155,14 +178,25 @@ describe('renderer-webgpu', () => {
       } as unknown as GPUAdapter;
 
       const requestAdapter = vi.fn(async () => adapter);
-      const getPreferredCanvasFormat = vi.fn(() => 'bgra8unorm' as GPUTextureFormat);
-      setNavigator({ gpu: { requestAdapter, getPreferredCanvasFormat } } as unknown as Navigator);
+      const gpu = { requestAdapter } as unknown as Record<string, unknown>;
+      const getPreferredCanvasFormat =
+        options?.includeGetPreferredCanvasFormat === false
+          ? undefined
+          : vi.fn(() => options?.preferredCanvasFormat ?? ('bgra8unorm' as GPUTextureFormat));
+      if (getPreferredCanvasFormat) {
+        gpu.getPreferredCanvasFormat = getPreferredCanvasFormat;
+      }
+      setNavigator({ gpu } as unknown as Navigator);
 
       const view = {} as unknown as GPUTextureView;
       const texture = { createView: vi.fn(() => view) } as unknown as GPUTexture;
+      const getPreferredFormat = options?.legacyPreferredFormat
+        ? vi.fn(options.legacyPreferredFormat)
+        : undefined;
       const context = {
         configure,
         getCurrentTexture: vi.fn(() => texture),
+        ...(getPreferredFormat ? { getPreferredFormat } : {}),
       } as unknown as GPUCanvasContext;
 
       const canvas = {
@@ -174,7 +208,18 @@ describe('renderer-webgpu', () => {
         ...(options?.canvas ?? {}),
       } as unknown as HTMLCanvasElement;
 
-      return { canvas, context, adapter, device, configure, beginRenderPass, submit };
+      return {
+        canvas,
+        context,
+        adapter,
+        device,
+        configure,
+        beginRenderPass,
+        submit,
+        getPreferredCanvasFormat,
+        getPreferredFormat,
+        resolveDeviceLost,
+      };
     }
 
     it('throws when WebGPU is unavailable', async () => {
@@ -232,6 +277,60 @@ describe('renderer-webgpu', () => {
       );
     });
 
+    it('uses gpu.getPreferredCanvasFormat when available', async () => {
+      const preferredCanvasFormat = 'rgba8unorm' as GPUTextureFormat;
+      const { canvas, configure, getPreferredCanvasFormat } = createStubWebGpuEnvironment({
+        preferredCanvasFormat,
+      });
+
+      await createWebGpuRenderer(canvas);
+
+      expect(getPreferredCanvasFormat).toHaveBeenCalledTimes(1);
+      expect(configure).toHaveBeenCalledTimes(2);
+      expect(configure.mock.calls[0]?.[0]).toMatchObject({ format: preferredCanvasFormat });
+    });
+
+    it('falls back to legacy context.getPreferredFormat when getPreferredCanvasFormat is unavailable', async () => {
+      const legacyFormat = 'rgba16float' as GPUTextureFormat;
+      const { canvas, adapter, configure, getPreferredFormat } = createStubWebGpuEnvironment({
+        includeGetPreferredCanvasFormat: false,
+        legacyPreferredFormat: () => legacyFormat,
+      });
+
+      await createWebGpuRenderer(canvas);
+
+      expect(getPreferredFormat).toHaveBeenCalledTimes(1);
+      expect(getPreferredFormat).toHaveBeenCalledWith(adapter);
+      expect(configure.mock.calls[0]?.[0]).toMatchObject({ format: legacyFormat });
+    });
+
+    it('falls back to bgra8unorm when no preferred format APIs are available', async () => {
+      const { canvas, configure } = createStubWebGpuEnvironment({
+        includeGetPreferredCanvasFormat: false,
+      });
+
+      await createWebGpuRenderer(canvas);
+
+      expect(configure.mock.calls[0]?.[0]).toMatchObject({ format: 'bgra8unorm' });
+    });
+
+    it('wraps context.configure failures with WebGpuNotSupportedError including attempted format', async () => {
+      const preferredFormat = 'rgba8unorm' as GPUTextureFormat;
+      const configureError = new Error('configure failed');
+      const { canvas } = createStubWebGpuEnvironment({
+        configureImplementation: () => {
+          throw configureError;
+        },
+      });
+
+      await expect(
+        createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
+      ).rejects.toBeInstanceOf(WebGpuNotSupportedError);
+      await expect(
+        createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
+      ).rejects.toThrow(`format: ${preferredFormat}`);
+    });
+
     it('configures the canvas context when resized and avoids redundant reconfiguration', async () => {
       setDevicePixelRatio(2);
       const { canvas, configure } = createStubWebGpuEnvironment();
@@ -284,6 +383,52 @@ describe('renderer-webgpu', () => {
       });
 
       expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('invokes onDeviceLost and no-ops render/resize after device loss', async () => {
+      const { canvas, beginRenderPass, submit, configure, resolveDeviceLost } =
+        createStubWebGpuEnvironment();
+      const onDeviceLost = vi.fn();
+
+      const renderer = await createWebGpuRenderer(canvas, { onDeviceLost });
+
+      const rcb = {
+        frame: {
+          schemaVersion: 1,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [],
+      } satisfies RenderCommandBuffer;
+
+      beginRenderPass.mockClear();
+      submit.mockClear();
+      configure.mockClear();
+
+      renderer.render(rcb);
+      expect(beginRenderPass).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledTimes(1);
+
+      resolveDeviceLost({ message: 'lost', reason: 'unknown' } as unknown as GPUDeviceLostInfo);
+      await flushMicrotasks();
+
+      expect(onDeviceLost).toHaveBeenCalledTimes(1);
+      const [deviceLostError] = onDeviceLost.mock.calls[0] ?? [];
+      expect(deviceLostError).toBeInstanceOf(WebGpuDeviceLostError);
+      expect(deviceLostError).toMatchObject({ reason: 'unknown' });
+
+      beginRenderPass.mockClear();
+      submit.mockClear();
+      configure.mockClear();
+
+      renderer.render(rcb);
+      renderer.resize({ devicePixelRatio: 2 });
+
+      expect(beginRenderPass).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+      expect(configure).not.toHaveBeenCalled();
     });
 
     it('no-ops after dispose', async () => {

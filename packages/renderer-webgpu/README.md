@@ -15,6 +15,11 @@ Minimal WebGPU renderer backend (device init + clear pass) for the Idle Engine r
 - `preferredFormats`: when provided, the first entry is used. The implementation does not probe format support or fall back to later entries.
 - `onDeviceLost`: invoked when `device.lost` resolves; after loss, the renderer no-ops `render/resize`.
 
+## Environment
+
+- Requires a runtime with WebGPU enabled.
+- In Electron, WebGPU bring-up may require `enable-unsafe-webgpu` (see `@idle-engine/shell-desktop`).
+
 ## Example
 
 ```ts

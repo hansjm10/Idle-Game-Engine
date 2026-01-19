@@ -87,6 +87,28 @@ function getCanvasPixelSize(
   return { width: targetWidth, height: targetHeight };
 }
 
+function configureCanvasContext(options: {
+  context: GPUCanvasContext;
+  device: GPUDevice;
+  format: GPUTextureFormat;
+  alphaMode: GPUCanvasAlphaMode;
+}): void {
+  try {
+    options.context.configure({
+      device: options.device,
+      format: options.format,
+      alphaMode: options.alphaMode,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new WebGpuNotSupportedError(
+      `Failed to configure WebGPU canvas context (format: ${options.format})${
+        message ? `: ${message}` : ''
+      }`,
+    );
+  }
+}
+
 class WebGpuRendererImpl implements WebGpuRenderer {
   readonly canvas: HTMLCanvasElement;
   readonly context: GPUCanvasContext;
@@ -145,7 +167,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     this.canvas.width = width;
     this.canvas.height = height;
-    this.context.configure({
+    configureCanvasContext({
+      context: this.context,
       device: this.device,
       format: this.format,
       alphaMode: this.#alphaMode,
@@ -260,7 +283,7 @@ export async function createWebGpuRenderer(
     preferredFormats: options?.preferredFormats,
   });
   const alphaMode = options?.alphaMode ?? 'opaque';
-  context.configure({ device, format, alphaMode });
+  configureCanvasContext({ context, device, format, alphaMode });
 
   const renderer = new WebGpuRendererImpl({
     canvas,
