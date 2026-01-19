@@ -180,7 +180,7 @@ function validateClearDraw(
   }
 }
 
-function validateRectDraw(
+function validateRectGeometry(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
@@ -203,6 +203,15 @@ function validateRectDraw(
     draw['height'],
     requiresUiPixels,
   );
+}
+
+function validateRectDraw(
+  errors: string[],
+  path: string,
+  draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
+): void {
+  validateRectGeometry(errors, path, draw, passId);
 
   if (!isUint32(draw['colorRgba'])) {
     errors.push(`${path}.colorRgba must be uint32 RGBA`);
@@ -220,23 +229,7 @@ function validateImageDraw(
     errors.push(`${path}.assetId must be non-empty`);
   }
 
-  const requiresUiPixels = passId === 'ui';
-  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
-  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
-  validateFiniteNonNegativeDimension(
-    errors,
-    path,
-    'width',
-    draw['width'],
-    requiresUiPixels,
-  );
-  validateFiniteNonNegativeDimension(
-    errors,
-    path,
-    'height',
-    draw['height'],
-    requiresUiPixels,
-  );
+  validateRectGeometry(errors, path, draw, passId);
 
   const tintRgba = draw['tintRgba'];
   if (tintRgba !== undefined && !isUint32(tintRgba)) {
@@ -285,23 +278,7 @@ function validateScissorPushDraw(
   draw: Record<string, unknown>,
   passId: RenderPassId | undefined,
 ): void {
-  const requiresUiPixels = passId === 'ui';
-  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
-  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
-  validateFiniteNonNegativeDimension(
-    errors,
-    path,
-    'width',
-    draw['width'],
-    requiresUiPixels,
-  );
-  validateFiniteNonNegativeDimension(
-    errors,
-    path,
-    'height',
-    draw['height'],
-    requiresUiPixels,
-  );
+  validateRectGeometry(errors, path, draw, passId);
 }
 
 export function validateRenderCommandBuffer(

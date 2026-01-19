@@ -110,12 +110,15 @@ function validateClearDraw(errors, path, draw) {
         errors.push(`${path}.colorRgba must be uint32 RGBA`);
     }
 }
-function validateRectDraw(errors, path, draw, passId) {
+function validateRectGeometry(errors, path, draw, passId) {
     const requiresUiPixels = passId === 'ui';
     validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
     validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
     validateFiniteNonNegativeDimension(errors, path, 'width', draw['width'], requiresUiPixels);
     validateFiniteNonNegativeDimension(errors, path, 'height', draw['height'], requiresUiPixels);
+}
+function validateRectDraw(errors, path, draw, passId) {
+    validateRectGeometry(errors, path, draw, passId);
     if (!isUint32(draw['colorRgba'])) {
         errors.push(`${path}.colorRgba must be uint32 RGBA`);
     }
@@ -125,11 +128,7 @@ function validateImageDraw(errors, path, draw, passId) {
     if (typeof assetId !== 'string' || assetId.length === 0) {
         errors.push(`${path}.assetId must be non-empty`);
     }
-    const requiresUiPixels = passId === 'ui';
-    validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
-    validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
-    validateFiniteNonNegativeDimension(errors, path, 'width', draw['width'], requiresUiPixels);
-    validateFiniteNonNegativeDimension(errors, path, 'height', draw['height'], requiresUiPixels);
+    validateRectGeometry(errors, path, draw, passId);
     const tintRgba = draw['tintRgba'];
     if (tintRgba !== undefined && !isUint32(tintRgba)) {
         errors.push(`${path}.tintRgba must be uint32 RGBA when provided`);
@@ -153,11 +152,7 @@ function validateTextDraw(errors, path, draw, passId) {
     validateFinitePositiveDimension(errors, path, 'fontSizePx', draw['fontSizePx'], requiresUiPixels);
 }
 function validateScissorPushDraw(errors, path, draw, passId) {
-    const requiresUiPixels = passId === 'ui';
-    validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
-    validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
-    validateFiniteNonNegativeDimension(errors, path, 'width', draw['width'], requiresUiPixels);
-    validateFiniteNonNegativeDimension(errors, path, 'height', draw['height'], requiresUiPixels);
+    validateRectGeometry(errors, path, draw, passId);
 }
 export function validateRenderCommandBuffer(rcb) {
     const errors = [];
