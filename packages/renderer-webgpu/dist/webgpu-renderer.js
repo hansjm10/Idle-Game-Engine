@@ -737,10 +737,9 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     }
     const atlasUvByAssetId = __classPrivateFieldGet(this, _WebGpuRendererImpl_atlasUvByAssetId, "f");
     const textureBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteTextureBindGroup, "f");
-    if (orderedDraws.some((entry) => entry.draw.kind === 'image')) {
-        if (!atlasUvByAssetId || !textureBindGroup) {
-            throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.');
-        }
+    if (orderedDraws.some((entry) => entry.draw.kind === 'image') &&
+        (!atlasUvByAssetId || !textureBindGroup)) {
+        throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.');
     }
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureSpritePipeline).call(this);
     const spritePipeline = __classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f");
@@ -824,6 +823,24 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         batchInstances = [];
         batchInstanceCount = 0;
     };
+    const ensureBatch = (kind, passId) => {
+        if (batchKind === kind && batchPassId === passId) {
+            return;
+        }
+        flushBatch();
+        batchKind = kind;
+        batchPassId = passId;
+    };
+    const spriteUvOrThrow = (assetId) => {
+        if (!atlasUvByAssetId) {
+            throw new Error('Sprite atlas missing UVs.');
+        }
+        const uv = atlasUvByAssetId.get(assetId);
+        if (!uv) {
+            throw new Error(`Atlas missing UVs for AssetId: ${assetId}`);
+        }
+        return uv;
+    };
     for (const entry of orderedDraws) {
         const draw = entry.draw;
         if (currentPassId !== entry.passId) {
@@ -855,11 +872,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
                 break;
             }
             case 'rect': {
-                if (batchKind !== 'rect' || batchPassId !== entry.passId) {
-                    flushBatch();
-                    batchKind = 'rect';
-                    batchPassId = entry.passId;
-                }
+                ensureBatch('rect', entry.passId);
                 const rgba = draw.colorRgba >>> 0;
                 const red = clampByte((rgba >>> 24) & 0xff) / 255;
                 const green = clampByte((rgba >>> 16) & 0xff) / 255;
@@ -870,20 +883,9 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
                 break;
             }
             case 'image': {
-                if (batchKind !== 'image' || batchPassId !== entry.passId) {
-                    flushBatch();
-                    batchKind = 'image';
-                    batchPassId = entry.passId;
-                }
-                if (!atlasUvByAssetId) {
-                    throw new Error('Sprite atlas missing UVs.');
-                }
-                const uv = atlasUvByAssetId.get(draw.assetId);
-                if (!uv) {
-                    throw new Error(`Atlas missing UVs for AssetId: ${draw.assetId}`);
-                }
-                const tintRgba = draw.tintRgba;
-                const tintAlpha = tintRgba === undefined ? 1 : ((tintRgba >>> 0) & 0xff) / 255;
+                ensureBatch('image', entry.passId);
+                const uv = spriteUvOrThrow(draw.assetId);
+                const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
                 batchInstances.push(draw.x, draw.y, draw.width, draw.height, uv.u0, uv.v0, uv.u1, uv.v1, 1, 1, 1, tintAlpha);
                 batchInstanceCount += 1;
                 break;

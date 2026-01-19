@@ -880,23 +880,24 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     };
   }
 
-  #renderDraws(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
-    const hasQuadDraws = orderedDraws.some(
-      (entry) => entry.draw.kind === 'rect' || entry.draw.kind === 'image',
-    );
-    if (!hasQuadDraws) {
-      return;
-    }
-
-    const atlasUvByAssetId = this.#atlasUvByAssetId;
-    const textureBindGroup = this.#spriteTextureBindGroup;
-    if (orderedDraws.some((entry) => entry.draw.kind === 'image')) {
-      if (!atlasUvByAssetId || !textureBindGroup) {
-        throw new Error(
-          'No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.',
-        );
-      }
-    }
+	  #renderDraws(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
+	    const hasQuadDraws = orderedDraws.some(
+	      (entry) => entry.draw.kind === 'rect' || entry.draw.kind === 'image',
+	    );
+	    if (!hasQuadDraws) {
+	      return;
+	    }
+	
+	    const atlasUvByAssetId = this.#atlasUvByAssetId;
+	    const textureBindGroup = this.#spriteTextureBindGroup;
+	    if (
+	      orderedDraws.some((entry) => entry.draw.kind === 'image') &&
+	      (!atlasUvByAssetId || !textureBindGroup)
+	    ) {
+	      throw new Error(
+	        'No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.',
+	      );
+	    }
 
     this.#ensureSpritePipeline();
 
@@ -945,15 +946,15 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     let currentScissor = viewportScissor;
 
     type BatchKind = 'rect' | 'image';
-    let batchKind: BatchKind | undefined;
-    let batchPassId: RenderPassId | undefined;
-    let batchInstances: number[] = [];
-    let batchInstanceCount = 0;
+	    let batchKind: BatchKind | undefined;
+	    let batchPassId: RenderPassId | undefined;
+	    let batchInstances: number[] = [];
+	    let batchInstanceCount = 0;
 
-    const flushBatch = (): void => {
-      if (!batchKind || !batchPassId || batchInstanceCount <= 0) {
-        batchKind = undefined;
-        batchPassId = undefined;
+	    const flushBatch = (): void => {
+	      if (!batchKind || !batchPassId || batchInstanceCount <= 0) {
+	        batchKind = undefined;
+	        batchPassId = undefined;
         batchInstances = [];
         batchInstanceCount = 0;
         return;
@@ -997,12 +998,34 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
       batchKind = undefined;
       batchPassId = undefined;
-      batchInstances = [];
-      batchInstanceCount = 0;
-    };
+	      batchInstances = [];
+	      batchInstanceCount = 0;
+	    };
 
-    for (const entry of orderedDraws) {
-      const draw = entry.draw;
+	    const ensureBatch = (kind: BatchKind, passId: RenderPassId): void => {
+	      if (batchKind === kind && batchPassId === passId) {
+	        return;
+	      }
+	      flushBatch();
+	      batchKind = kind;
+	      batchPassId = passId;
+	    };
+
+	    const spriteUvOrThrow = (assetId: AssetId): SpriteUvRect => {
+	      if (!atlasUvByAssetId) {
+	        throw new Error('Sprite atlas missing UVs.');
+	      }
+
+	      const uv = atlasUvByAssetId.get(assetId);
+	      if (!uv) {
+	        throw new Error(`Atlas missing UVs for AssetId: ${assetId}`);
+	      }
+
+	      return uv;
+	    };
+
+	    for (const entry of orderedDraws) {
+	      const draw = entry.draw;
 
       if (currentPassId !== entry.passId) {
         flushBatch();
@@ -1012,10 +1035,10 @@ class WebGpuRendererImpl implements WebGpuRenderer {
         applyScissorRect(currentScissor);
       }
 
-      switch (draw.kind) {
-        case 'scissorPush': {
-          flushBatch();
-          const scissor = this.#toDeviceScissorRect({
+	      switch (draw.kind) {
+	        case 'scissorPush': {
+	          flushBatch();
+	          const scissor = this.#toDeviceScissorRect({
             passId: entry.passId,
             x: draw.x,
             y: draw.y,
@@ -1030,19 +1053,15 @@ class WebGpuRendererImpl implements WebGpuRenderer {
         case 'scissorPop': {
           flushBatch();
           currentScissor = scissorStack.pop() ?? viewportScissor;
-          applyScissorRect(currentScissor);
-          break;
-        }
-        case 'rect': {
-          if (batchKind !== 'rect' || batchPassId !== entry.passId) {
-            flushBatch();
-            batchKind = 'rect';
-            batchPassId = entry.passId;
-          }
+	          applyScissorRect(currentScissor);
+	          break;
+	        }
+	        case 'rect': {
+	          ensureBatch('rect', entry.passId);
 
-          const rgba = draw.colorRgba >>> 0;
-          const red = clampByte((rgba >>> 24) & 0xff) / 255;
-          const green = clampByte((rgba >>> 16) & 0xff) / 255;
+	          const rgba = draw.colorRgba >>> 0;
+	          const red = clampByte((rgba >>> 24) & 0xff) / 255;
+	          const green = clampByte((rgba >>> 16) & 0xff) / 255;
           const blue = clampByte((rgba >>> 8) & 0xff) / 255;
           const alpha = clampByte(rgba & 0xff) / 255;
 
@@ -1060,30 +1079,19 @@ class WebGpuRendererImpl implements WebGpuRenderer {
             blue,
             alpha,
           );
-          batchInstanceCount += 1;
-          break;
-        }
-        case 'image': {
-          if (batchKind !== 'image' || batchPassId !== entry.passId) {
-            flushBatch();
-            batchKind = 'image';
-            batchPassId = entry.passId;
-          }
+	          batchInstanceCount += 1;
+	          break;
+	        }
+	        case 'image': {
+	          ensureBatch('image', entry.passId);
 
-          if (!atlasUvByAssetId) {
-            throw new Error('Sprite atlas missing UVs.');
-          }
-          const uv = atlasUvByAssetId.get(draw.assetId);
-          if (!uv) {
-            throw new Error(`Atlas missing UVs for AssetId: ${draw.assetId}`);
-          }
+	          const uv = spriteUvOrThrow(draw.assetId);
 
-          const tintRgba = draw.tintRgba;
-          const tintAlpha = tintRgba === undefined ? 1 : ((tintRgba >>> 0) & 0xff) / 255;
+	          const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
 
-          batchInstances.push(
-            draw.x,
-            draw.y,
+	          batchInstances.push(
+	            draw.x,
+	            draw.y,
             draw.width,
             draw.height,
             uv.u0,

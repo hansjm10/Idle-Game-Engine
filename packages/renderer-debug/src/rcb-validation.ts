@@ -17,6 +17,75 @@ function isFiniteInt(value: unknown): value is number {
   return isFiniteNumber(value) && Number.isInteger(value);
 }
 
+function validateFiniteCoordinate(
+  errors: string[],
+  path: string,
+  field: 'x' | 'y',
+  value: unknown,
+  requiresUiPixels: boolean,
+): void {
+  const fieldPath = `${path}.${field}`;
+
+  if (requiresUiPixels) {
+    if (!isFiniteInt(value)) {
+      errors.push(`${fieldPath} must be a finite integer number`);
+    }
+    return;
+  }
+
+  if (!isFiniteNumber(value)) {
+    errors.push(`${fieldPath} must be a finite number`);
+  }
+}
+
+function validateFiniteNonNegativeDimension(
+  errors: string[],
+  path: string,
+  field: 'width' | 'height',
+  value: unknown,
+  requiresUiPixels: boolean,
+): void {
+  const fieldPath = `${path}.${field}`;
+
+  if (requiresUiPixels) {
+    if (!isFiniteInt(value)) {
+      errors.push(`${fieldPath} must be a finite integer number`);
+      return;
+    }
+  } else if (!isFiniteNumber(value)) {
+    errors.push(`${fieldPath} must be a finite number`);
+    return;
+  }
+
+  if (value < 0) {
+    errors.push(`${fieldPath} must be non-negative`);
+  }
+}
+
+function validateFinitePositiveDimension(
+  errors: string[],
+  path: string,
+  field: 'fontSizePx',
+  value: unknown,
+  requiresUiPixels: boolean,
+): void {
+  const fieldPath = `${path}.${field}`;
+
+  if (requiresUiPixels) {
+    if (!isFiniteInt(value)) {
+      errors.push(`${fieldPath} must be a finite integer number`);
+      return;
+    }
+  } else if (!isFiniteNumber(value)) {
+    errors.push(`${fieldPath} must be a finite number`);
+    return;
+  }
+
+  if (value <= 0) {
+    errors.push(`${fieldPath} must be positive`);
+  }
+}
+
 function isUint32(value: unknown): value is number {
   return (
     typeof value === 'number' &&
@@ -118,42 +187,22 @@ function validateRectDraw(
   passId: RenderPassId | undefined,
 ): void {
   const requiresUiPixels = passId === 'ui';
-  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
-    errors.push(
-      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
-    errors.push(
-      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-
-  const width = draw['width'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(width)) {
-      errors.push(`${path}.width must be a finite integer number`);
-    } else if (width < 0) {
-      errors.push(`${path}.width must be non-negative`);
-    }
-  } else if (!isFiniteNumber(width)) {
-    errors.push(`${path}.width must be a finite number`);
-  } else if (width < 0) {
-    errors.push(`${path}.width must be non-negative`);
-  }
-
-  const height = draw['height'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(height)) {
-      errors.push(`${path}.height must be a finite integer number`);
-    } else if (height < 0) {
-      errors.push(`${path}.height must be non-negative`);
-    }
-  } else if (!isFiniteNumber(height)) {
-    errors.push(`${path}.height must be a finite number`);
-  } else if (height < 0) {
-    errors.push(`${path}.height must be non-negative`);
-  }
+  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
+  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'width',
+    draw['width'],
+    requiresUiPixels,
+  );
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'height',
+    draw['height'],
+    requiresUiPixels,
+  );
 
   if (!isUint32(draw['colorRgba'])) {
     errors.push(`${path}.colorRgba must be uint32 RGBA`);
@@ -172,42 +221,22 @@ function validateImageDraw(
   }
 
   const requiresUiPixels = passId === 'ui';
-  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
-    errors.push(
-      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
-    errors.push(
-      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-
-  const width = draw['width'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(width)) {
-      errors.push(`${path}.width must be a finite integer number`);
-    } else if (width < 0) {
-      errors.push(`${path}.width must be non-negative`);
-    }
-  } else if (!isFiniteNumber(width)) {
-    errors.push(`${path}.width must be a finite number`);
-  } else if (width < 0) {
-    errors.push(`${path}.width must be non-negative`);
-  }
-
-  const height = draw['height'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(height)) {
-      errors.push(`${path}.height must be a finite integer number`);
-    } else if (height < 0) {
-      errors.push(`${path}.height must be non-negative`);
-    }
-  } else if (!isFiniteNumber(height)) {
-    errors.push(`${path}.height must be a finite number`);
-  } else if (height < 0) {
-    errors.push(`${path}.height must be non-negative`);
-  }
+  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
+  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'width',
+    draw['width'],
+    requiresUiPixels,
+  );
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'height',
+    draw['height'],
+    requiresUiPixels,
+  );
 
   const tintRgba = draw['tintRgba'];
   if (tintRgba !== undefined && !isUint32(tintRgba)) {
@@ -222,16 +251,8 @@ function validateTextDraw(
   passId: RenderPassId | undefined,
 ): void {
   const requiresUiPixels = passId === 'ui';
-  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
-    errors.push(
-      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
-    errors.push(
-      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
+  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
+  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
 
   if (typeof draw['text'] !== 'string') {
     errors.push(`${path}.text must be a string`);
@@ -249,18 +270,13 @@ function validateTextDraw(
     errors.push(`${path}.fontAssetId must be non-empty when provided`);
   }
 
-  const fontSizePx = draw['fontSizePx'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(fontSizePx)) {
-      errors.push(`${path}.fontSizePx must be a finite integer number`);
-    } else if (fontSizePx <= 0) {
-      errors.push(`${path}.fontSizePx must be positive`);
-    }
-  } else if (!isFiniteNumber(fontSizePx)) {
-    errors.push(`${path}.fontSizePx must be a finite number`);
-  } else if (fontSizePx <= 0) {
-    errors.push(`${path}.fontSizePx must be positive`);
-  }
+  validateFinitePositiveDimension(
+    errors,
+    path,
+    'fontSizePx',
+    draw['fontSizePx'],
+    requiresUiPixels,
+  );
 }
 
 function validateScissorPushDraw(
@@ -270,42 +286,22 @@ function validateScissorPushDraw(
   passId: RenderPassId | undefined,
 ): void {
   const requiresUiPixels = passId === 'ui';
-  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
-    errors.push(
-      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
-    errors.push(
-      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
-    );
-  }
-
-  const width = draw['width'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(width)) {
-      errors.push(`${path}.width must be a finite integer number`);
-    } else if (width < 0) {
-      errors.push(`${path}.width must be non-negative`);
-    }
-  } else if (!isFiniteNumber(width)) {
-    errors.push(`${path}.width must be a finite number`);
-  } else if (width < 0) {
-    errors.push(`${path}.width must be non-negative`);
-  }
-
-  const height = draw['height'];
-  if (requiresUiPixels) {
-    if (!isFiniteInt(height)) {
-      errors.push(`${path}.height must be a finite integer number`);
-    } else if (height < 0) {
-      errors.push(`${path}.height must be non-negative`);
-    }
-  } else if (!isFiniteNumber(height)) {
-    errors.push(`${path}.height must be a finite number`);
-  } else if (height < 0) {
-    errors.push(`${path}.height must be non-negative`);
-  }
+  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
+  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'width',
+    draw['width'],
+    requiresUiPixels,
+  );
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'height',
+    draw['height'],
+    requiresUiPixels,
+  );
 }
 
 export function validateRenderCommandBuffer(
@@ -389,15 +385,15 @@ export function validateRenderCommandBuffer(
       });
       drawKinds.push(undefined);
       continue;
-    }
-
-    const kind = draw['kind'];
-    if (typeof kind !== 'string') {
-      errors.push(`${path}.kind must be a string`);
-      drawKinds.push(undefined);
-    } else {
-      drawKinds.push(kind);
-    }
+	    }
+	
+	    const kind = draw['kind'];
+	    if (typeof kind === 'string') {
+	      drawKinds.push(kind);
+	    } else {
+	      errors.push(`${path}.kind must be a string`);
+	      drawKinds.push(undefined);
+	    }
 
     const common = parseDrawCommon(errors, path, draw, passIndexById);
     drawOrderInfo.push(common);
