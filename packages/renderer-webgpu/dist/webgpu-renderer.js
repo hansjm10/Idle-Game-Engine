@@ -59,7 +59,11 @@ function colorRgbaToGpuColor(colorRgba) {
     };
 }
 function selectClearColor(rcb) {
-    const clearDraw = rcb.draws.find((draw) => draw.kind === 'clear');
+    const primaryPassId = rcb.passes[0]?.id;
+    const clearDrawByPass = primaryPassId === undefined
+        ? undefined
+        : rcb.draws.find((draw) => draw.kind === 'clear' && draw.passId === primaryPassId);
+    const clearDraw = clearDrawByPass ?? rcb.draws.find((draw) => draw.kind === 'clear');
     if (!clearDraw) {
         return { r: 0, g: 0, b: 0, a: 1 };
     }

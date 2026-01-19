@@ -42,5 +42,32 @@ describe('renderer-webgpu', () => {
 
     expect(__test__.selectClearColor(rcb)).toEqual({ r: 0, g: 0, b: 0, a: 1 });
   });
-});
 
+  it('prefers the clear draw matching the first pass', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: 1,
+        step: 0,
+        simTimeMs: 0,
+        contentHash: 'content:dev',
+      },
+      passes: [{ id: 'ui' }, { id: 'world' }],
+      draws: [
+        {
+          kind: 'clear',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0xff_00_00_ff,
+        },
+        {
+          kind: 'clear',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_ff_00_ff,
+        },
+      ],
+    } satisfies RenderCommandBuffer;
+
+    expect(__test__.selectClearColor(rcb)).toEqual({ r: 0, g: 1, b: 0, a: 1 });
+  });
+});
