@@ -46,6 +46,17 @@ describe('atlas-packer', () => {
     expect(packed.atlasHeightPx).toBe(64);
   });
 
+  it('throws when powerOfTwo is disabled and packing cannot fit within maxSizePx', () => {
+    const images = [
+      { assetId: 'a' as AssetId, width: 32, height: 32 },
+      { assetId: 'b' as AssetId, width: 32, height: 32 },
+    ];
+
+    expect(() => packAtlas(images, { maxSizePx: 32, paddingPx: 0, powerOfTwo: false })).toThrow(
+      'exceeded maxSizePx',
+    );
+  });
+
   it('throws on duplicate AssetIds', () => {
     const images = [
       { assetId: 'a' as AssetId, width: 8, height: 8 },

@@ -127,6 +127,9 @@ export function packAtlas(
   if (!Number.isFinite(maxSizePx) || maxSizePx <= 0) {
     throw new Error(`Invalid atlas maxSizePx: ${maxSizePx}`);
   }
+  if (!Number.isFinite(paddingPx) || paddingPx < 0) {
+    throw new Error(`Invalid atlas paddingPx: ${paddingPx}`);
+  }
 
   const images = [...inputImages].sort((a, b) => compareAssetId(a.assetId, b.assetId));
 
@@ -163,11 +166,13 @@ export function packAtlas(
       };
     }
 
-    if (powerOfTwo) {
-      atlasWidthPx *= 2;
-    } else {
-      atlasWidthPx = Math.min(maxSizePx, atlasWidthPx * 2);
+    const nextAtlasWidthPx = powerOfTwo ? atlasWidthPx * 2 : Math.min(maxSizePx, atlasWidthPx * 2);
+    if (nextAtlasWidthPx === atlasWidthPx) {
+      throw new Error(
+        `Atlas packing exceeded maxSizePx ${maxSizePx} (height needed ${atlasHeightCandidate}).`,
+      );
     }
+    atlasWidthPx = nextAtlasWidthPx;
 
     if (atlasWidthPx > maxSizePx) {
       throw new Error(
