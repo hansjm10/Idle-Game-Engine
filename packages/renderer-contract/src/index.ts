@@ -24,6 +24,8 @@ export type {
   RenderPass,
   RenderPassId,
   RendererContractSchemaVersion,
+  ScissorPopDraw,
+  ScissorPushDraw,
   Sha256Hex,
   SortKey,
   SpriteInstance,

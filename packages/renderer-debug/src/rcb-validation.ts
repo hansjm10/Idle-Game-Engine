@@ -13,6 +13,10 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isFiniteInt(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value);
+}
+
 function isUint32(value: unknown): value is number {
   return (
     typeof value === 'number' &&
@@ -111,22 +115,44 @@ function validateRectDraw(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
 ): void {
-  if (!isFiniteNumber(draw['x'])) {
-    errors.push(`${path}.x must be a finite number`);
+  const requiresUiPixels = passId === 'ui';
+  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
+    errors.push(
+      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
   }
-  if (!isFiniteNumber(draw['y'])) {
-    errors.push(`${path}.y must be a finite number`);
+  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
+    errors.push(
+      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
   }
 
   const width = draw['width'];
-  if (!isFiniteNumber(width) || width < 0) {
-    errors.push(`${path}.width must be a finite non-negative number`);
+  if (requiresUiPixels) {
+    if (!isFiniteInt(width)) {
+      errors.push(`${path}.width must be a finite integer number`);
+    } else if (width < 0) {
+      errors.push(`${path}.width must be non-negative`);
+    }
+  } else if (!isFiniteNumber(width)) {
+    errors.push(`${path}.width must be a finite number`);
+  } else if (width < 0) {
+    errors.push(`${path}.width must be non-negative`);
   }
 
   const height = draw['height'];
-  if (!isFiniteNumber(height) || height < 0) {
-    errors.push(`${path}.height must be a finite non-negative number`);
+  if (requiresUiPixels) {
+    if (!isFiniteInt(height)) {
+      errors.push(`${path}.height must be a finite integer number`);
+    } else if (height < 0) {
+      errors.push(`${path}.height must be non-negative`);
+    }
+  } else if (!isFiniteNumber(height)) {
+    errors.push(`${path}.height must be a finite number`);
+  } else if (height < 0) {
+    errors.push(`${path}.height must be non-negative`);
   }
 
   if (!isUint32(draw['colorRgba'])) {
@@ -138,27 +164,49 @@ function validateImageDraw(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
 ): void {
   const assetId = draw['assetId'];
   if (typeof assetId !== 'string' || assetId.length === 0) {
     errors.push(`${path}.assetId must be non-empty`);
   }
 
-  if (!isFiniteNumber(draw['x'])) {
-    errors.push(`${path}.x must be a finite number`);
+  const requiresUiPixels = passId === 'ui';
+  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
+    errors.push(
+      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
   }
-  if (!isFiniteNumber(draw['y'])) {
-    errors.push(`${path}.y must be a finite number`);
+  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
+    errors.push(
+      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
   }
 
   const width = draw['width'];
-  if (!isFiniteNumber(width) || width < 0) {
-    errors.push(`${path}.width must be a finite non-negative number`);
+  if (requiresUiPixels) {
+    if (!isFiniteInt(width)) {
+      errors.push(`${path}.width must be a finite integer number`);
+    } else if (width < 0) {
+      errors.push(`${path}.width must be non-negative`);
+    }
+  } else if (!isFiniteNumber(width)) {
+    errors.push(`${path}.width must be a finite number`);
+  } else if (width < 0) {
+    errors.push(`${path}.width must be non-negative`);
   }
 
   const height = draw['height'];
-  if (!isFiniteNumber(height) || height < 0) {
-    errors.push(`${path}.height must be a finite non-negative number`);
+  if (requiresUiPixels) {
+    if (!isFiniteInt(height)) {
+      errors.push(`${path}.height must be a finite integer number`);
+    } else if (height < 0) {
+      errors.push(`${path}.height must be non-negative`);
+    }
+  } else if (!isFiniteNumber(height)) {
+    errors.push(`${path}.height must be a finite number`);
+  } else if (height < 0) {
+    errors.push(`${path}.height must be non-negative`);
   }
 
   const tintRgba = draw['tintRgba'];
@@ -171,12 +219,18 @@ function validateTextDraw(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
 ): void {
-  if (!isFiniteNumber(draw['x'])) {
-    errors.push(`${path}.x must be a finite number`);
+  const requiresUiPixels = passId === 'ui';
+  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
+    errors.push(
+      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
   }
-  if (!isFiniteNumber(draw['y'])) {
-    errors.push(`${path}.y must be a finite number`);
+  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
+    errors.push(
+      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
   }
 
   if (typeof draw['text'] !== 'string') {
@@ -196,8 +250,61 @@ function validateTextDraw(
   }
 
   const fontSizePx = draw['fontSizePx'];
-  if (!isFiniteNumber(fontSizePx) || fontSizePx <= 0) {
-    errors.push(`${path}.fontSizePx must be a finite positive number`);
+  if (requiresUiPixels) {
+    if (!isFiniteInt(fontSizePx)) {
+      errors.push(`${path}.fontSizePx must be a finite integer number`);
+    } else if (fontSizePx <= 0) {
+      errors.push(`${path}.fontSizePx must be positive`);
+    }
+  } else if (!isFiniteNumber(fontSizePx)) {
+    errors.push(`${path}.fontSizePx must be a finite number`);
+  } else if (fontSizePx <= 0) {
+    errors.push(`${path}.fontSizePx must be positive`);
+  }
+}
+
+function validateScissorPushDraw(
+  errors: string[],
+  path: string,
+  draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
+): void {
+  const requiresUiPixels = passId === 'ui';
+  if (requiresUiPixels ? !isFiniteInt(draw['x']) : !isFiniteNumber(draw['x'])) {
+    errors.push(
+      `${path}.x must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
+  }
+  if (requiresUiPixels ? !isFiniteInt(draw['y']) : !isFiniteNumber(draw['y'])) {
+    errors.push(
+      `${path}.y must be a finite${requiresUiPixels ? ' integer' : ''} number`,
+    );
+  }
+
+  const width = draw['width'];
+  if (requiresUiPixels) {
+    if (!isFiniteInt(width)) {
+      errors.push(`${path}.width must be a finite integer number`);
+    } else if (width < 0) {
+      errors.push(`${path}.width must be non-negative`);
+    }
+  } else if (!isFiniteNumber(width)) {
+    errors.push(`${path}.width must be a finite number`);
+  } else if (width < 0) {
+    errors.push(`${path}.width must be non-negative`);
+  }
+
+  const height = draw['height'];
+  if (requiresUiPixels) {
+    if (!isFiniteInt(height)) {
+      errors.push(`${path}.height must be a finite integer number`);
+    } else if (height < 0) {
+      errors.push(`${path}.height must be non-negative`);
+    }
+  } else if (!isFiniteNumber(height)) {
+    errors.push(`${path}.height must be a finite number`);
+  } else if (height < 0) {
+    errors.push(`${path}.height must be non-negative`);
   }
 }
 
@@ -267,6 +374,8 @@ export function validateRenderCommandBuffer(
     sortKey: SortKey | undefined;
   }> = [];
 
+  const drawKinds: Array<string | undefined> = [];
+
   for (let index = 0; index < draws.length; index++) {
     const path = `draws[${index}]`;
     const draw = draws[index];
@@ -278,12 +387,16 @@ export function validateRenderCommandBuffer(
         passIndex: undefined,
         sortKey: undefined,
       });
+      drawKinds.push(undefined);
       continue;
     }
 
     const kind = draw['kind'];
     if (typeof kind !== 'string') {
       errors.push(`${path}.kind must be a string`);
+      drawKinds.push(undefined);
+    } else {
+      drawKinds.push(kind);
     }
 
     const common = parseDrawCommon(errors, path, draw, passIndexById);
@@ -294,17 +407,24 @@ export function validateRenderCommandBuffer(
         validateClearDraw(errors, path, draw);
         break;
       case 'rect':
-        validateRectDraw(errors, path, draw);
+        validateRectDraw(errors, path, draw, common.passId);
         break;
       case 'image':
-        validateImageDraw(errors, path, draw);
+        validateImageDraw(errors, path, draw, common.passId);
         break;
       case 'text':
-        validateTextDraw(errors, path, draw);
+        validateTextDraw(errors, path, draw, common.passId);
+        break;
+      case 'scissorPush':
+        validateScissorPushDraw(errors, path, draw, common.passId);
+        break;
+      case 'scissorPop':
         break;
       default:
         if (typeof kind === 'string') {
-          errors.push(`${path}.kind must be one of: clear, rect, image, text`);
+          errors.push(
+            `${path}.kind must be one of: clear, rect, image, text, scissorPush, scissorPop`,
+          );
         }
     }
   }
@@ -343,6 +463,46 @@ export function validateRenderCommandBuffer(
 
     previousPassIndex = passIndex;
     previousSortKey = sortKey;
+  }
+
+  let currentPassId: RenderPassId | undefined;
+  let scissorDepth = 0;
+
+  for (let index = 0; index < drawOrderInfo.length; index++) {
+    const { passId, passIndex } = drawOrderInfo[index];
+    if (passIndex === undefined || passId === undefined) {
+      currentPassId = undefined;
+      scissorDepth = 0;
+      continue;
+    }
+
+    if (currentPassId !== passId) {
+      if (currentPassId !== undefined && scissorDepth !== 0) {
+        errors.push(
+          `draws[${index}] scissor stack not empty when switching passId (depth ${scissorDepth})`,
+        );
+      }
+
+      currentPassId = passId;
+      scissorDepth = 0;
+    }
+
+    const kind = drawKinds[index];
+    if (kind === 'scissorPush') {
+      scissorDepth += 1;
+    } else if (kind === 'scissorPop') {
+      if (scissorDepth === 0) {
+        errors.push(`draws[${index}] scissorPop without matching scissorPush`);
+      } else {
+        scissorDepth -= 1;
+      }
+    }
+  }
+
+  if (currentPassId !== undefined && scissorDepth !== 0) {
+    errors.push(
+      `scissor stack not empty at end of draw list (depth ${scissorDepth})`,
+    );
   }
 
   if (errors.length > 0) {

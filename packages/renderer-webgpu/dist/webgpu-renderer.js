@@ -9,10 +9,10 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_renderSprites;
+var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_renderDraws;
 import { canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
 import { createAtlasLayout, packAtlas, } from './atlas-packer.js';
-import { buildSpriteInstances, orderDrawsByPassAndSortKey, } from './sprite-batching.js';
+import { orderDrawsByPassAndSortKey, } from './sprite-batching.js';
 export class WebGpuNotSupportedError extends Error {
     constructor() {
         super(...arguments);
@@ -90,6 +90,26 @@ function configureCanvasContext(options) {
         throw new WebGpuNotSupportedError(`Failed to configure WebGPU canvas context (format: ${options.format})${message ? `: ${message}` : ''}`);
     }
 }
+function isSameScissorRect(a, b) {
+    return (a.x === b.x &&
+        a.y === b.y &&
+        a.width === b.width &&
+        a.height === b.height);
+}
+function intersectScissorRect(a, b) {
+    const x0 = Math.max(a.x, b.x);
+    const y0 = Math.max(a.y, b.y);
+    const x1 = Math.min(a.x + a.width, b.x + b.width);
+    const y1 = Math.min(a.y + a.height, b.y + b.height);
+    const width = Math.max(0, x1 - x0);
+    const height = Math.max(0, y1 - y0);
+    return {
+        x: x0,
+        y: y0,
+        width,
+        height,
+    };
+}
 const GLOBALS_UNIFORM_BYTES = 32;
 const GLOBALS_UNIFORM_ALIGNMENT = 256;
 const WORLD_GLOBALS_OFFSET = 0;
@@ -153,6 +173,49 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
   let texel = textureSample(spriteTexture, spriteSampler, input.uv);
   return texel * input.color;
+}
+`;
+const RECT_SHADER = `
+struct Globals {
+  viewportSize: vec2<f32>,
+  devicePixelRatio: f32,
+  _pad0: f32,
+  camera: vec3<f32>,
+  _pad1: f32,
+}
+
+@group(0) @binding(0) var<uniform> globals: Globals;
+
+struct VertexInput {
+  @location(0) localPos: vec2<f32>,
+  @location(1) localUv: vec2<f32>,
+  @location(2) instancePosSize: vec4<f32>,
+  @location(4) instanceColor: vec4<f32>,
+}
+
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+  let localPx = input.instancePosSize.xy + input.localPos * input.instancePosSize.zw;
+  let cameraPx = (localPx - globals.camera.xy) * globals.camera.z;
+  let posPx = cameraPx * globals.devicePixelRatio;
+
+  let ndcX = (posPx.x / globals.viewportSize.x) * 2.0 - 1.0;
+  let ndcY = 1.0 - (posPx.y / globals.viewportSize.y) * 2.0;
+
+  var out: VertexOutput;
+  out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
+  out.color = input.instanceColor;
+  return out;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+  return input.color;
 }
 `;
 function getExternalImageSize(source) {
@@ -245,6 +308,7 @@ class WebGpuRendererImpl {
         _WebGpuRendererImpl_devicePixelRatio.set(this, 1);
         _WebGpuRendererImpl_worldCamera.set(this, { x: 0, y: 0, zoom: 1 });
         _WebGpuRendererImpl_spritePipeline.set(this, void 0);
+        _WebGpuRendererImpl_rectPipeline.set(this, void 0);
         _WebGpuRendererImpl_spriteSampler.set(this, void 0);
         _WebGpuRendererImpl_spriteUniformBuffer.set(this, void 0);
         _WebGpuRendererImpl_worldGlobalsBindGroup.set(this, void 0);
@@ -409,7 +473,7 @@ class WebGpuRendererImpl {
             ],
         });
         const orderedDraws = orderDrawsByPassAndSortKey(rcb);
-        __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_renderSprites).call(this, passEncoder, orderedDraws);
+        __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_renderDraws).call(this, passEncoder, orderedDraws);
         passEncoder.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }
@@ -417,8 +481,8 @@ class WebGpuRendererImpl {
         __classPrivateFieldSet(this, _WebGpuRendererImpl_disposed, true, "f");
     }
 }
-_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_ensureSpritePipeline = function _WebGpuRendererImpl_ensureSpritePipeline() {
-    if (__classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f")) {
+_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_ensureSpritePipeline = function _WebGpuRendererImpl_ensureSpritePipeline() {
+    if (__classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f") && __classPrivateFieldGet(this, _WebGpuRendererImpl_rectPipeline, "f")) {
         return;
     }
     const uniformBindGroupLayout = this.device.createBindGroupLayout({
@@ -475,6 +539,60 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         },
         fragment: {
             module: shaderModule,
+            entryPoint: 'fs_main',
+            targets: [
+                {
+                    format: this.format,
+                    blend: {
+                        color: {
+                            srcFactor: 'src-alpha',
+                            dstFactor: 'one-minus-src-alpha',
+                            operation: 'add',
+                        },
+                        alpha: {
+                            srcFactor: 'one',
+                            dstFactor: 'one-minus-src-alpha',
+                            operation: 'add',
+                        },
+                    },
+                },
+            ],
+        },
+        primitive: {
+            topology: 'triangle-list',
+            cullMode: 'none',
+        },
+    }), "f");
+    const rectPipelineLayout = this.device.createPipelineLayout({
+        bindGroupLayouts: [uniformBindGroupLayout],
+    });
+    const rectShaderModule = this.device.createShaderModule({ code: RECT_SHADER });
+    __classPrivateFieldSet(this, _WebGpuRendererImpl_rectPipeline, this.device.createRenderPipeline({
+        layout: rectPipelineLayout,
+        vertex: {
+            module: rectShaderModule,
+            entryPoint: 'vs_main',
+            buffers: [
+                {
+                    arrayStride: QUAD_VERTEX_STRIDE_BYTES,
+                    stepMode: 'vertex',
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' },
+                        { shaderLocation: 1, offset: 8, format: 'float32x2' },
+                    ],
+                },
+                {
+                    arrayStride: INSTANCE_STRIDE_BYTES,
+                    stepMode: 'instance',
+                    attributes: [
+                        { shaderLocation: 2, offset: 0, format: 'float32x4' },
+                        { shaderLocation: 4, offset: 32, format: 'float32x4' },
+                    ],
+                },
+            ],
+        },
+        fragment: {
+            module: rectShaderModule,
             entryPoint: 'fs_main',
             targets: [
                 {
@@ -571,52 +689,211 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         0,
     ]);
     this.device.queue.writeBuffer(buffer, offset, toArrayBuffer(data));
-}, _WebGpuRendererImpl_renderSprites = function _WebGpuRendererImpl_renderSprites(passEncoder, orderedDraws) {
-    if (!orderedDraws.some((entry) => entry.draw.kind === 'image')) {
+}, _WebGpuRendererImpl_toDeviceScissorRect = function _WebGpuRendererImpl_toDeviceScissorRect(options) {
+    const viewportWidth = this.canvas.width;
+    const viewportHeight = this.canvas.height;
+    const width = Number.isFinite(options.width) ? Math.max(0, options.width) : 0;
+    const height = Number.isFinite(options.height) ? Math.max(0, options.height) : 0;
+    const x0Input = Number.isFinite(options.x) ? options.x : 0;
+    const y0Input = Number.isFinite(options.y) ? options.y : 0;
+    const x1Input = x0Input + width;
+    const y1Input = y0Input + height;
+    const devicePixelRatio = __classPrivateFieldGet(this, _WebGpuRendererImpl_devicePixelRatio, "f");
+    let deviceX0 = 0;
+    let deviceY0 = 0;
+    let deviceX1 = 0;
+    let deviceY1 = 0;
+    if (options.passId === 'ui') {
+        deviceX0 = x0Input * devicePixelRatio;
+        deviceY0 = y0Input * devicePixelRatio;
+        deviceX1 = x1Input * devicePixelRatio;
+        deviceY1 = y1Input * devicePixelRatio;
+    }
+    else {
+        const camera = __classPrivateFieldGet(this, _WebGpuRendererImpl_worldCamera, "f");
+        deviceX0 = (x0Input - camera.x) * camera.zoom * devicePixelRatio;
+        deviceY0 = (y0Input - camera.y) * camera.zoom * devicePixelRatio;
+        deviceX1 = (x1Input - camera.x) * camera.zoom * devicePixelRatio;
+        deviceY1 = (y1Input - camera.y) * camera.zoom * devicePixelRatio;
+    }
+    const minX = Math.floor(Math.min(deviceX0, deviceX1));
+    const minY = Math.floor(Math.min(deviceY0, deviceY1));
+    const maxX = Math.ceil(Math.max(deviceX0, deviceX1));
+    const maxY = Math.ceil(Math.max(deviceY0, deviceY1));
+    const clampedX0 = Math.max(0, Math.min(viewportWidth, minX));
+    const clampedY0 = Math.max(0, Math.min(viewportHeight, minY));
+    const clampedX1 = Math.max(clampedX0, Math.min(viewportWidth, maxX));
+    const clampedY1 = Math.max(clampedY0, Math.min(viewportHeight, maxY));
+    return {
+        x: clampedX0,
+        y: clampedY0,
+        width: clampedX1 - clampedX0,
+        height: clampedY1 - clampedY0,
+    };
+}, _WebGpuRendererImpl_renderDraws = function _WebGpuRendererImpl_renderDraws(passEncoder, orderedDraws) {
+    const hasQuadDraws = orderedDraws.some((entry) => entry.draw.kind === 'rect' || entry.draw.kind === 'image');
+    if (!hasQuadDraws) {
         return;
     }
     const atlasUvByAssetId = __classPrivateFieldGet(this, _WebGpuRendererImpl_atlasUvByAssetId, "f");
     const textureBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteTextureBindGroup, "f");
-    if (!atlasUvByAssetId || !textureBindGroup) {
-        throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering sprites.');
+    if (orderedDraws.some((entry) => entry.draw.kind === 'image')) {
+        if (!atlasUvByAssetId || !textureBindGroup) {
+            throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.');
+        }
     }
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureSpritePipeline).call(this);
-    const spriteInstances = buildSpriteInstances({
-        orderedDraws,
-        uvByAssetId: atlasUvByAssetId,
-    });
-    if (spriteInstances.instanceCount <= 0) {
-        return;
-    }
-    const instanceBytes = spriteInstances.instances.byteLength;
-    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, instanceBytes);
-    const pipeline = __classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f");
+    const spritePipeline = __classPrivateFieldGet(this, _WebGpuRendererImpl_spritePipeline, "f");
+    const rectPipeline = __classPrivateFieldGet(this, _WebGpuRendererImpl_rectPipeline, "f");
     const vertexBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteVertexBuffer, "f");
     const indexBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteIndexBuffer, "f");
-    const instanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
     const worldGlobalsBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_worldGlobalsBindGroup, "f");
     const uiGlobalsBindGroup = __classPrivateFieldGet(this, _WebGpuRendererImpl_uiGlobalsBindGroup, "f");
-    if (!pipeline ||
+    if (!spritePipeline ||
+        !rectPipeline ||
         !vertexBuffer ||
         !indexBuffer ||
-        !instanceBuffer ||
         !worldGlobalsBindGroup ||
         !uiGlobalsBindGroup) {
-        throw new Error('Sprite pipeline is incomplete.');
+        throw new Error('Quad pipelines are incomplete.');
     }
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_writeGlobals).call(this, WORLD_GLOBALS_OFFSET, __classPrivateFieldGet(this, _WebGpuRendererImpl_worldCamera, "f"));
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_writeGlobals).call(this, UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
-    this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(spriteInstances.instances));
-    passEncoder.setPipeline(pipeline);
-    passEncoder.setBindGroup(1, textureBindGroup);
-    passEncoder.setVertexBuffer(0, vertexBuffer);
-    passEncoder.setVertexBuffer(1, instanceBuffer);
-    passEncoder.setIndexBuffer(indexBuffer, 'uint16');
-    for (const group of spriteInstances.groups) {
-        const globals = group.passId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
+    const viewportScissor = {
+        x: 0,
+        y: 0,
+        width: this.canvas.width,
+        height: this.canvas.height,
+    };
+    let appliedScissor;
+    const applyScissorRect = (rect) => {
+        if (appliedScissor && isSameScissorRect(appliedScissor, rect)) {
+            return;
+        }
+        passEncoder.setScissorRect(rect.x, rect.y, rect.width, rect.height);
+        appliedScissor = rect;
+    };
+    applyScissorRect(viewportScissor);
+    let currentPassId;
+    let scissorStack = [];
+    let currentScissor = viewportScissor;
+    let batchKind;
+    let batchPassId;
+    let batchInstances = [];
+    let batchInstanceCount = 0;
+    const flushBatch = () => {
+        if (!batchKind || !batchPassId || batchInstanceCount <= 0) {
+            batchKind = undefined;
+            batchPassId = undefined;
+            batchInstances = [];
+            batchInstanceCount = 0;
+            return;
+        }
+        if (currentScissor.width <= 0 || currentScissor.height <= 0) {
+            batchKind = undefined;
+            batchPassId = undefined;
+            batchInstances = [];
+            batchInstanceCount = 0;
+            return;
+        }
+        const instances = new Float32Array(batchInstances);
+        __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, instances.byteLength);
+        const ensuredInstanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
+        if (!ensuredInstanceBuffer) {
+            throw new Error('Sprite pipeline missing instance buffer.');
+        }
+        this.device.queue.writeBuffer(ensuredInstanceBuffer, 0, toArrayBuffer(instances));
+        const globals = batchPassId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
+        if (batchKind === 'image') {
+            if (!textureBindGroup) {
+                throw new Error('Sprite pipeline missing texture bind group.');
+            }
+            passEncoder.setPipeline(spritePipeline);
+            passEncoder.setBindGroup(1, textureBindGroup);
+        }
+        else {
+            passEncoder.setPipeline(rectPipeline);
+        }
         passEncoder.setBindGroup(0, globals);
-        passEncoder.drawIndexed(6, group.instanceCount, 0, 0, group.firstInstance);
+        passEncoder.setVertexBuffer(0, vertexBuffer);
+        passEncoder.setVertexBuffer(1, ensuredInstanceBuffer);
+        passEncoder.setIndexBuffer(indexBuffer, 'uint16');
+        passEncoder.drawIndexed(6, batchInstanceCount, 0, 0, 0);
+        batchKind = undefined;
+        batchPassId = undefined;
+        batchInstances = [];
+        batchInstanceCount = 0;
+    };
+    for (const entry of orderedDraws) {
+        const draw = entry.draw;
+        if (currentPassId !== entry.passId) {
+            flushBatch();
+            currentPassId = entry.passId;
+            scissorStack = [];
+            currentScissor = viewportScissor;
+            applyScissorRect(currentScissor);
+        }
+        switch (draw.kind) {
+            case 'scissorPush': {
+                flushBatch();
+                const scissor = __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_toDeviceScissorRect).call(this, {
+                    passId: entry.passId,
+                    x: draw.x,
+                    y: draw.y,
+                    width: draw.width,
+                    height: draw.height,
+                });
+                scissorStack.push(currentScissor);
+                currentScissor = intersectScissorRect(currentScissor, scissor);
+                applyScissorRect(currentScissor);
+                break;
+            }
+            case 'scissorPop': {
+                flushBatch();
+                currentScissor = scissorStack.pop() ?? viewportScissor;
+                applyScissorRect(currentScissor);
+                break;
+            }
+            case 'rect': {
+                if (batchKind !== 'rect' || batchPassId !== entry.passId) {
+                    flushBatch();
+                    batchKind = 'rect';
+                    batchPassId = entry.passId;
+                }
+                const rgba = draw.colorRgba >>> 0;
+                const red = clampByte((rgba >>> 24) & 0xff) / 255;
+                const green = clampByte((rgba >>> 16) & 0xff) / 255;
+                const blue = clampByte((rgba >>> 8) & 0xff) / 255;
+                const alpha = clampByte(rgba & 0xff) / 255;
+                batchInstances.push(draw.x, draw.y, draw.width, draw.height, 0, 0, 0, 0, red, green, blue, alpha);
+                batchInstanceCount += 1;
+                break;
+            }
+            case 'image': {
+                if (batchKind !== 'image' || batchPassId !== entry.passId) {
+                    flushBatch();
+                    batchKind = 'image';
+                    batchPassId = entry.passId;
+                }
+                if (!atlasUvByAssetId) {
+                    throw new Error('Sprite atlas missing UVs.');
+                }
+                const uv = atlasUvByAssetId.get(draw.assetId);
+                if (!uv) {
+                    throw new Error(`Atlas missing UVs for AssetId: ${draw.assetId}`);
+                }
+                const tintRgba = draw.tintRgba;
+                const tintAlpha = tintRgba === undefined ? 1 : ((tintRgba >>> 0) & 0xff) / 255;
+                batchInstances.push(draw.x, draw.y, draw.width, draw.height, uv.u0, uv.v0, uv.u1, uv.v1, 1, 1, 1, tintAlpha);
+                batchInstanceCount += 1;
+                break;
+            }
+            default:
+                flushBatch();
+                break;
+        }
     }
+    flushBatch();
 };
 function getNavigatorGpu() {
     const maybeNavigator = globalThis.navigator;

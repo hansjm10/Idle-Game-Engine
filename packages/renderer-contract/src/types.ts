@@ -1,4 +1,4 @@
-export const RENDERER_CONTRACT_SCHEMA_VERSION = 2 as const;
+export const RENDERER_CONTRACT_SCHEMA_VERSION = 3 as const;
 
 export type RendererContractSchemaVersion =
   typeof RENDERER_CONTRACT_SCHEMA_VERSION;
@@ -153,7 +153,29 @@ export interface TextDraw {
   readonly fontSizePx: number;
 }
 
-export type RenderDraw = ClearDraw | RectDraw | ImageDraw | TextDraw;
+export interface ScissorPushDraw {
+  readonly kind: 'scissorPush';
+  readonly passId: RenderPassId;
+  readonly sortKey: SortKey;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface ScissorPopDraw {
+  readonly kind: 'scissorPop';
+  readonly passId: RenderPassId;
+  readonly sortKey: SortKey;
+}
+
+export type RenderDraw =
+  | ClearDraw
+  | RectDraw
+  | ImageDraw
+  | TextDraw
+  | ScissorPushDraw
+  | ScissorPopDraw;
 
 export interface RenderCommandBuffer {
   readonly frame: FrameHeader;
