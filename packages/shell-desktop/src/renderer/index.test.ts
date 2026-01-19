@@ -46,6 +46,8 @@ describe('shell-desktop renderer entrypoint', () => {
 
     (globalThis as unknown as { idleEngine?: unknown }).idleEngine = {
       ping: vi.fn(async () => 'pong'),
+      sendControlEvent: vi.fn(),
+      onFrame: vi.fn(() => vi.fn()),
     };
 
     (globalThis as unknown as { addEventListener?: unknown }).addEventListener = vi.fn(

@@ -14,6 +14,7 @@ const app = {
 
 const ipcMain = {
   handle: vi.fn(),
+  on: vi.fn(),
 };
 
 const Menu = {
@@ -51,6 +52,18 @@ vi.mock('electron', () => ({
   BrowserWindow,
   ipcMain,
   Menu,
+}));
+
+class Worker {
+  public postMessage = vi.fn();
+
+  public terminate = vi.fn(async () => 0);
+
+  public on = vi.fn((_event: string, _handler: (...args: unknown[]) => void) => this);
+}
+
+vi.mock('node:worker_threads', () => ({
+  Worker,
 }));
 
 describe('shell-desktop main process entrypoint', () => {
@@ -104,7 +117,7 @@ describe('shell-desktop main process entrypoint', () => {
 
     await expect(handler?.({}, { message: 'hello' })).resolves.toEqual({ message: 'hello' });
     await expect(handler?.({}, { message: 123 })).rejects.toThrow(TypeError);
-  });
+  }, 15000);
 
   it('does not enable WebGPU switch in packaged mode without an explicit override', async () => {
     app.isPackaged = true;

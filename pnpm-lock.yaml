@@ -374,6 +374,12 @@ importers:
 
   packages/shell-desktop:
     dependencies:
+      '@idle-engine/controls':
+        specifier: workspace:*
+        version: link:../controls
+      '@idle-engine/core':
+        specifier: workspace:*
+        version: link:../core
       '@idle-engine/renderer-contract':
         specifier: workspace:*
         version: link:../renderer-contract
