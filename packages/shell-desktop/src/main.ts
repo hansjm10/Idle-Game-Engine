@@ -139,7 +139,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     lastTickMs = Date.now();
     tickTimer = setInterval(() => {
       const nowMs = Date.now();
-      const deltaMs = nowMs - lastTickMs;
+      const deltaMs = Math.max(0, nowMs - lastTickMs);
       lastTickMs = nowMs;
       postMessage({ kind: 'tick', deltaMs });
     }, tickIntervalMs);
@@ -308,6 +308,13 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    void createMainWindow();
+    void createMainWindow()
+      .then((mainWindow) => {
+        simWorkerController = createSimWorkerController(mainWindow);
+      })
+      .catch((error: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error(error);
+      });
   }
 });
