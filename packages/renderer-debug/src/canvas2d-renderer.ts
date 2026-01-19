@@ -23,6 +23,12 @@ export interface Canvas2dContextLike {
   textBaseline: CanvasTextBaseline;
   textAlign: CanvasTextAlign;
 
+  save(): void;
+  restore(): void;
+  beginPath(): void;
+  rect(x: number, y: number, width: number, height: number): void;
+  clip(): void;
+
   clearRect(x: number, y: number, width: number, height: number): void;
   fillRect(x: number, y: number, width: number, height: number): void;
   strokeRect(x: number, y: number, width: number, height: number): void;
@@ -169,6 +175,8 @@ export function renderRenderCommandBufferToCanvas2d(
   const pixelRatio = options.pixelRatio ?? 1;
   const assets = options.assets;
 
+  let scissorDepth = 0;
+
   for (const draw of rcb.draws) {
     switch (draw.kind) {
       case 'clear': {
@@ -186,10 +194,35 @@ export function renderRenderCommandBufferToCanvas2d(
       case 'text':
         drawText(ctx, draw, pixelRatio, assets);
         break;
+      case 'scissorPush': {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(
+          draw.x * pixelRatio,
+          draw.y * pixelRatio,
+          draw.width * pixelRatio,
+          draw.height * pixelRatio,
+        );
+        ctx.clip();
+        scissorDepth += 1;
+        break;
+      }
+      case 'scissorPop': {
+        if (scissorDepth > 0) {
+          ctx.restore();
+          scissorDepth -= 1;
+        }
+        break;
+      }
       default: {
         const exhaustiveCheck: never = draw;
         throw new Error(`Unsupported draw kind: ${String(exhaustiveCheck)}`);
       }
     }
+  }
+
+  while (scissorDepth > 0) {
+    ctx.restore();
+    scissorDepth -= 1;
   }
 }

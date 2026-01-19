@@ -12,6 +12,11 @@ export interface Canvas2dContextLike {
     font: string;
     textBaseline: CanvasTextBaseline;
     textAlign: CanvasTextAlign;
+    save(): void;
+    restore(): void;
+    beginPath(): void;
+    rect(x: number, y: number, width: number, height: number): void;
+    clip(): void;
     clearRect(x: number, y: number, width: number, height: number): void;
     fillRect(x: number, y: number, width: number, height: number): void;
     strokeRect(x: number, y: number, width: number, height: number): void;

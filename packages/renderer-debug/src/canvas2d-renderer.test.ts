@@ -24,6 +24,11 @@ function createFakeContext(): {
     font: '10px sans-serif',
     textBaseline: 'alphabetic',
     textAlign: 'start',
+    save: () => calls.push({ name: 'save', args: [] }),
+    restore: () => calls.push({ name: 'restore', args: [] }),
+    beginPath: () => calls.push({ name: 'beginPath', args: [] }),
+    rect: (...args) => calls.push({ name: 'rect', args }),
+    clip: () => calls.push({ name: 'clip', args: [] }),
     clearRect: (...args) => calls.push({ name: 'clearRect', args }),
     fillRect: (...args) => calls.push({ name: 'fillRect', args }),
     strokeRect: (...args) => calls.push({ name: 'strokeRect', args }),
@@ -218,6 +223,33 @@ describe('validateRenderCommandBuffer', () => {
     }
   });
 
+  it('flags scissorPop without matching scissorPush', () => {
+    const rcb: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 'scissorPop',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+        },
+      ],
+    };
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain(
+        'scissorPop without matching scissorPush',
+      );
+    }
+  });
+
   it('flags draws out of order across passes', () => {
     const rcb: RenderCommandBuffer = {
       frame: {
@@ -321,5 +353,67 @@ describe('renderRenderCommandBufferToCanvas2d', () => {
     expect(calls[1].args).toEqual([2, 4, 6, 8]);
     expect(calls[2].args).toEqual(['hello', 10, 12]);
     expect(calls[3].args).toEqual([14, 16, 18, 20]);
+  });
+
+  it('applies nested scissor clipping with pixelRatio scaling', () => {
+    const { ctx, calls } = createFakeContext();
+
+    const rcb: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 'scissorPush',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          x: 1,
+          y: 2,
+          width: 3,
+          height: 4,
+        },
+        {
+          kind: 'scissorPush',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+          x: 5,
+          y: 6,
+          width: 7,
+          height: 8,
+        },
+        {
+          kind: 'scissorPop',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+        },
+        {
+          kind: 'scissorPop',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+        },
+      ],
+    };
+
+    renderRenderCommandBufferToCanvas2d(ctx, rcb, { pixelRatio: 2 });
+
+    expect(calls.map((c) => c.name)).toEqual([
+      'save',
+      'beginPath',
+      'rect',
+      'clip',
+      'save',
+      'beginPath',
+      'rect',
+      'clip',
+      'restore',
+      'restore',
+    ]);
+
+    expect(calls[2]?.args).toEqual([2, 4, 6, 8]);
+    expect(calls[6]?.args).toEqual([10, 12, 14, 16]);
   });
 });

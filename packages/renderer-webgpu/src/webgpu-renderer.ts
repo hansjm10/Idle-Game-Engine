@@ -7,6 +7,7 @@ import type {
   AssetManifest,
   Camera2D,
   RenderCommandBuffer,
+  RenderPassId,
   Sha256Hex,
 } from '@idle-engine/renderer-contract';
 
@@ -16,7 +17,6 @@ import {
 } from './atlas-packer.js';
 import type { WebGpuAtlasLayout } from './atlas-packer.js';
 import {
-  buildSpriteInstances,
   orderDrawsByPassAndSortKey,
 } from './sprite-batching.js';
 import type {
@@ -159,6 +159,39 @@ function configureCanvasContext(options: {
   }
 }
 
+interface ScissorRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+function isSameScissorRect(a: ScissorRect, b: ScissorRect): boolean {
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.width === b.width &&
+    a.height === b.height
+  );
+}
+
+function intersectScissorRect(a: ScissorRect, b: ScissorRect): ScissorRect {
+  const x0 = Math.max(a.x, b.x);
+  const y0 = Math.max(a.y, b.y);
+  const x1 = Math.min(a.x + a.width, b.x + b.width);
+  const y1 = Math.min(a.y + a.height, b.y + b.height);
+
+  const width = Math.max(0, x1 - x0);
+  const height = Math.max(0, y1 - y0);
+
+  return {
+    x: x0,
+    y: y0,
+    width,
+    height,
+  };
+}
+
 const GLOBALS_UNIFORM_BYTES = 32;
 const GLOBALS_UNIFORM_ALIGNMENT = 256;
 const WORLD_GLOBALS_OFFSET = 0;
@@ -226,6 +259,50 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
   let texel = textureSample(spriteTexture, spriteSampler, input.uv);
   return texel * input.color;
+}
+`;
+
+const RECT_SHADER = `
+struct Globals {
+  viewportSize: vec2<f32>,
+  devicePixelRatio: f32,
+  _pad0: f32,
+  camera: vec3<f32>,
+  _pad1: f32,
+}
+
+@group(0) @binding(0) var<uniform> globals: Globals;
+
+struct VertexInput {
+  @location(0) localPos: vec2<f32>,
+  @location(1) localUv: vec2<f32>,
+  @location(2) instancePosSize: vec4<f32>,
+  @location(4) instanceColor: vec4<f32>,
+}
+
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+  let localPx = input.instancePosSize.xy + input.localPos * input.instancePosSize.zw;
+  let cameraPx = (localPx - globals.camera.xy) * globals.camera.z;
+  let posPx = cameraPx * globals.devicePixelRatio;
+
+  let ndcX = (posPx.x / globals.viewportSize.x) * 2.0 - 1.0;
+  let ndcY = 1.0 - (posPx.y / globals.viewportSize.y) * 2.0;
+
+  var out: VertexOutput;
+  out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
+  out.color = input.instanceColor;
+  return out;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+  return input.color;
 }
 `;
 
@@ -319,6 +396,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   #worldCamera: Camera2D = { x: 0, y: 0, zoom: 1 };
 
   #spritePipeline: GPURenderPipeline | undefined;
+  #rectPipeline: GPURenderPipeline | undefined;
   #spriteSampler: GPUSampler | undefined;
   #spriteUniformBuffer: GPUBuffer | undefined;
   #worldGlobalsBindGroup: GPUBindGroup | undefined;
@@ -516,7 +594,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   }
 
   #ensureSpritePipeline(): void {
-    if (this.#spritePipeline) {
+    if (this.#spritePipeline && this.#rectPipeline) {
       return;
     }
 
@@ -578,6 +656,63 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       },
       fragment: {
         module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format: this.format,
+            blend: {
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+            },
+          },
+        ],
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none',
+      },
+    });
+
+    const rectPipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [uniformBindGroupLayout],
+    });
+
+    const rectShaderModule = this.device.createShaderModule({ code: RECT_SHADER });
+
+    this.#rectPipeline = this.device.createRenderPipeline({
+      layout: rectPipelineLayout,
+      vertex: {
+        module: rectShaderModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: QUAD_VERTEX_STRIDE_BYTES,
+            stepMode: 'vertex',
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x2' },
+              { shaderLocation: 1, offset: 8, format: 'float32x2' },
+            ],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_BYTES,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 2, offset: 0, format: 'float32x4' },
+              { shaderLocation: 4, offset: 32, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: rectShaderModule,
         entryPoint: 'fs_main',
         targets: [
           {
@@ -690,64 +825,294 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.device.queue.writeBuffer(buffer, offset, toArrayBuffer(data));
   }
 
-  #renderSprites(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
-    if (!orderedDraws.some((entry) => entry.draw.kind === 'image')) {
-      return;
+  #toDeviceScissorRect(options: {
+    readonly passId: RenderPassId;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  }): ScissorRect {
+    const viewportWidth = this.canvas.width;
+    const viewportHeight = this.canvas.height;
+
+    const width = Number.isFinite(options.width) ? Math.max(0, options.width) : 0;
+    const height = Number.isFinite(options.height) ? Math.max(0, options.height) : 0;
+    const x0Input = Number.isFinite(options.x) ? options.x : 0;
+    const y0Input = Number.isFinite(options.y) ? options.y : 0;
+    const x1Input = x0Input + width;
+    const y1Input = y0Input + height;
+
+    const devicePixelRatio = this.#devicePixelRatio;
+
+    let deviceX0 = 0;
+    let deviceY0 = 0;
+    let deviceX1 = 0;
+    let deviceY1 = 0;
+
+    if (options.passId === 'ui') {
+      deviceX0 = x0Input * devicePixelRatio;
+      deviceY0 = y0Input * devicePixelRatio;
+      deviceX1 = x1Input * devicePixelRatio;
+      deviceY1 = y1Input * devicePixelRatio;
+    } else {
+      const camera = this.#worldCamera;
+      deviceX0 = (x0Input - camera.x) * camera.zoom * devicePixelRatio;
+      deviceY0 = (y0Input - camera.y) * camera.zoom * devicePixelRatio;
+      deviceX1 = (x1Input - camera.x) * camera.zoom * devicePixelRatio;
+      deviceY1 = (y1Input - camera.y) * camera.zoom * devicePixelRatio;
     }
 
-    const atlasUvByAssetId = this.#atlasUvByAssetId;
-    const textureBindGroup = this.#spriteTextureBindGroup;
-    if (!atlasUvByAssetId || !textureBindGroup) {
-      throw new Error('No sprite atlas loaded. Call renderer.loadAssets(...) before rendering sprites.');
-    }
+    const minX = Math.floor(Math.min(deviceX0, deviceX1));
+    const minY = Math.floor(Math.min(deviceY0, deviceY1));
+    const maxX = Math.ceil(Math.max(deviceX0, deviceX1));
+    const maxY = Math.ceil(Math.max(deviceY0, deviceY1));
+
+    const clampedX0 = Math.max(0, Math.min(viewportWidth, minX));
+    const clampedY0 = Math.max(0, Math.min(viewportHeight, minY));
+    const clampedX1 = Math.max(clampedX0, Math.min(viewportWidth, maxX));
+    const clampedY1 = Math.max(clampedY0, Math.min(viewportHeight, maxY));
+
+    return {
+      x: clampedX0,
+      y: clampedY0,
+      width: clampedX1 - clampedX0,
+      height: clampedY1 - clampedY0,
+    };
+  }
+
+	  #renderDraws(passEncoder: GPURenderPassEncoder, orderedDraws: readonly OrderedDraw[]): void {
+	    const hasQuadDraws = orderedDraws.some(
+	      (entry) => entry.draw.kind === 'rect' || entry.draw.kind === 'image',
+	    );
+	    if (!hasQuadDraws) {
+	      return;
+	    }
+	
+	    const atlasUvByAssetId = this.#atlasUvByAssetId;
+	    const textureBindGroup = this.#spriteTextureBindGroup;
+	    if (
+	      orderedDraws.some((entry) => entry.draw.kind === 'image') &&
+	      (!atlasUvByAssetId || !textureBindGroup)
+	    ) {
+	      throw new Error(
+	        'No sprite atlas loaded. Call renderer.loadAssets(...) before rendering image draws.',
+	      );
+	    }
 
     this.#ensureSpritePipeline();
 
-    const spriteInstances = buildSpriteInstances({
-      orderedDraws,
-      uvByAssetId: atlasUvByAssetId,
-    });
-    if (spriteInstances.instanceCount <= 0) {
-      return;
-    }
-
-    const instanceBytes = spriteInstances.instances.byteLength;
-    this.#ensureInstanceBuffer(instanceBytes);
-
-    const pipeline = this.#spritePipeline;
+    const spritePipeline = this.#spritePipeline;
+    const rectPipeline = this.#rectPipeline;
     const vertexBuffer = this.#spriteVertexBuffer;
     const indexBuffer = this.#spriteIndexBuffer;
-    const instanceBuffer = this.#spriteInstanceBuffer;
     const worldGlobalsBindGroup = this.#worldGlobalsBindGroup;
     const uiGlobalsBindGroup = this.#uiGlobalsBindGroup;
 
     if (
-      !pipeline ||
+      !spritePipeline ||
+      !rectPipeline ||
       !vertexBuffer ||
       !indexBuffer ||
-      !instanceBuffer ||
       !worldGlobalsBindGroup ||
       !uiGlobalsBindGroup
     ) {
-      throw new Error('Sprite pipeline is incomplete.');
+      throw new Error('Quad pipelines are incomplete.');
     }
 
     this.#writeGlobals(WORLD_GLOBALS_OFFSET, this.#worldCamera);
     this.#writeGlobals(UI_GLOBALS_OFFSET, { x: 0, y: 0, zoom: 1 });
 
-    this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(spriteInstances.instances));
+    const viewportScissor: ScissorRect = {
+      x: 0,
+      y: 0,
+      width: this.canvas.width,
+      height: this.canvas.height,
+    };
 
-    passEncoder.setPipeline(pipeline);
-    passEncoder.setBindGroup(1, textureBindGroup);
-    passEncoder.setVertexBuffer(0, vertexBuffer);
-    passEncoder.setVertexBuffer(1, instanceBuffer);
-    passEncoder.setIndexBuffer(indexBuffer, 'uint16');
+    let appliedScissor: ScissorRect | undefined;
+    const applyScissorRect = (rect: ScissorRect): void => {
+      if (appliedScissor && isSameScissorRect(appliedScissor, rect)) {
+        return;
+      }
 
-    for (const group of spriteInstances.groups) {
-      const globals = group.passId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
+      passEncoder.setScissorRect(rect.x, rect.y, rect.width, rect.height);
+      appliedScissor = rect;
+    };
+
+    applyScissorRect(viewportScissor);
+
+    let currentPassId: RenderPassId | undefined;
+    let scissorStack: ScissorRect[] = [];
+    let currentScissor = viewportScissor;
+
+    type BatchKind = 'rect' | 'image';
+	    let batchKind: BatchKind | undefined;
+	    let batchPassId: RenderPassId | undefined;
+	    let batchInstances: number[] = [];
+	    let batchInstanceCount = 0;
+
+	    const flushBatch = (): void => {
+	      if (!batchKind || !batchPassId || batchInstanceCount <= 0) {
+	        batchKind = undefined;
+	        batchPassId = undefined;
+        batchInstances = [];
+        batchInstanceCount = 0;
+        return;
+      }
+
+      if (currentScissor.width <= 0 || currentScissor.height <= 0) {
+        batchKind = undefined;
+        batchPassId = undefined;
+        batchInstances = [];
+        batchInstanceCount = 0;
+        return;
+      }
+
+      const instances = new Float32Array(batchInstances);
+      this.#ensureInstanceBuffer(instances.byteLength);
+
+      const ensuredInstanceBuffer = this.#spriteInstanceBuffer;
+      if (!ensuredInstanceBuffer) {
+        throw new Error('Sprite pipeline missing instance buffer.');
+      }
+
+      this.device.queue.writeBuffer(ensuredInstanceBuffer, 0, toArrayBuffer(instances));
+
+      const globals = batchPassId === 'world' ? worldGlobalsBindGroup : uiGlobalsBindGroup;
+
+      if (batchKind === 'image') {
+        if (!textureBindGroup) {
+          throw new Error('Sprite pipeline missing texture bind group.');
+        }
+        passEncoder.setPipeline(spritePipeline);
+        passEncoder.setBindGroup(1, textureBindGroup);
+      } else {
+        passEncoder.setPipeline(rectPipeline);
+      }
+
       passEncoder.setBindGroup(0, globals);
-      passEncoder.drawIndexed(6, group.instanceCount, 0, 0, group.firstInstance);
+      passEncoder.setVertexBuffer(0, vertexBuffer);
+      passEncoder.setVertexBuffer(1, ensuredInstanceBuffer);
+      passEncoder.setIndexBuffer(indexBuffer, 'uint16');
+      passEncoder.drawIndexed(6, batchInstanceCount, 0, 0, 0);
+
+      batchKind = undefined;
+      batchPassId = undefined;
+	      batchInstances = [];
+	      batchInstanceCount = 0;
+	    };
+
+	    const ensureBatch = (kind: BatchKind, passId: RenderPassId): void => {
+	      if (batchKind === kind && batchPassId === passId) {
+	        return;
+	      }
+	      flushBatch();
+	      batchKind = kind;
+	      batchPassId = passId;
+	    };
+
+	    const spriteUvOrThrow = (assetId: AssetId): SpriteUvRect => {
+	      if (!atlasUvByAssetId) {
+	        throw new Error('Sprite atlas missing UVs.');
+	      }
+
+	      const uv = atlasUvByAssetId.get(assetId);
+	      if (!uv) {
+	        throw new Error(`Atlas missing UVs for AssetId: ${assetId}`);
+	      }
+
+	      return uv;
+	    };
+
+	    for (const entry of orderedDraws) {
+	      const draw = entry.draw;
+
+      if (currentPassId !== entry.passId) {
+        flushBatch();
+        currentPassId = entry.passId;
+        scissorStack = [];
+        currentScissor = viewportScissor;
+        applyScissorRect(currentScissor);
+      }
+
+	      switch (draw.kind) {
+	        case 'scissorPush': {
+	          flushBatch();
+	          const scissor = this.#toDeviceScissorRect({
+            passId: entry.passId,
+            x: draw.x,
+            y: draw.y,
+            width: draw.width,
+            height: draw.height,
+          });
+          scissorStack.push(currentScissor);
+          currentScissor = intersectScissorRect(currentScissor, scissor);
+          applyScissorRect(currentScissor);
+          break;
+        }
+        case 'scissorPop': {
+          flushBatch();
+          currentScissor = scissorStack.pop() ?? viewportScissor;
+	          applyScissorRect(currentScissor);
+	          break;
+	        }
+	        case 'rect': {
+	          ensureBatch('rect', entry.passId);
+
+	          const rgba = draw.colorRgba >>> 0;
+	          const red = clampByte((rgba >>> 24) & 0xff) / 255;
+	          const green = clampByte((rgba >>> 16) & 0xff) / 255;
+          const blue = clampByte((rgba >>> 8) & 0xff) / 255;
+          const alpha = clampByte(rgba & 0xff) / 255;
+
+          batchInstances.push(
+            draw.x,
+            draw.y,
+            draw.width,
+            draw.height,
+            0,
+            0,
+            0,
+            0,
+            red,
+            green,
+            blue,
+            alpha,
+          );
+	          batchInstanceCount += 1;
+	          break;
+	        }
+	        case 'image': {
+	          ensureBatch('image', entry.passId);
+
+	          const uv = spriteUvOrThrow(draw.assetId);
+
+	          const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
+
+	          batchInstances.push(
+	            draw.x,
+	            draw.y,
+            draw.width,
+            draw.height,
+            uv.u0,
+            uv.v0,
+            uv.u1,
+            uv.v1,
+            1,
+            1,
+            1,
+            tintAlpha,
+          );
+          batchInstanceCount += 1;
+          break;
+        }
+        default:
+          flushBatch();
+          break;
+      }
     }
+
+    flushBatch();
   }
 
   render(rcb: RenderCommandBuffer): void {
@@ -771,7 +1136,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     });
 
     const orderedDraws = orderDrawsByPassAndSortKey(rcb);
-    this.#renderSprites(passEncoder, orderedDraws);
+    this.#renderDraws(passEncoder, orderedDraws);
 
     passEncoder.end();
 

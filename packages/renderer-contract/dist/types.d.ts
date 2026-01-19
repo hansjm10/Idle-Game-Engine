@@ -1,4 +1,4 @@
-export declare const RENDERER_CONTRACT_SCHEMA_VERSION: 2;
+export declare const RENDERER_CONTRACT_SCHEMA_VERSION: 3;
 export type RendererContractSchemaVersion = typeof RENDERER_CONTRACT_SCHEMA_VERSION;
 export type Sha256Hex = string;
 export type AssetId = string & {
@@ -125,7 +125,21 @@ export interface TextDraw {
     readonly fontAssetId?: AssetId;
     readonly fontSizePx: number;
 }
-export type RenderDraw = ClearDraw | RectDraw | ImageDraw | TextDraw;
+export interface ScissorPushDraw {
+    readonly kind: 'scissorPush';
+    readonly passId: RenderPassId;
+    readonly sortKey: SortKey;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+export interface ScissorPopDraw {
+    readonly kind: 'scissorPop';
+    readonly passId: RenderPassId;
+    readonly sortKey: SortKey;
+}
+export type RenderDraw = ClearDraw | RectDraw | ImageDraw | TextDraw | ScissorPushDraw | ScissorPopDraw;
 export interface RenderCommandBuffer {
     readonly frame: FrameHeader;
     readonly passes: readonly RenderPass[];

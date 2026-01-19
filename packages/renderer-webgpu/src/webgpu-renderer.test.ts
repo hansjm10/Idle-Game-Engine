@@ -145,6 +145,7 @@ describe('renderer-webgpu', () => {
       configure: ReturnType<typeof vi.fn>;
       beginRenderPass: ReturnType<typeof vi.fn>;
       drawIndexed: ReturnType<typeof vi.fn>;
+      setScissorRect: ReturnType<typeof vi.fn>;
       submit: ReturnType<typeof vi.fn>;
       writeBuffer: ReturnType<typeof vi.fn>;
       copyExternalImageToTexture: ReturnType<typeof vi.fn>;
@@ -157,12 +158,14 @@ describe('renderer-webgpu', () => {
       );
 
       const drawIndexed = vi.fn();
+      const setScissorRect = vi.fn();
       const passEncoder = {
         end: vi.fn(),
         setPipeline: vi.fn(),
         setBindGroup: vi.fn(),
         setVertexBuffer: vi.fn(),
         setIndexBuffer: vi.fn(),
+        setScissorRect,
         drawIndexed,
       } as unknown as GPURenderPassEncoder;
       const beginRenderPass = vi.fn(() => passEncoder);
@@ -243,6 +246,7 @@ describe('renderer-webgpu', () => {
         configure,
         beginRenderPass,
         drawIndexed,
+        setScissorRect,
         submit,
         writeBuffer,
         copyExternalImageToTexture,
@@ -470,6 +474,104 @@ describe('renderer-webgpu', () => {
 
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
+    it('draws rect instances without requiring a loaded atlas', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+            colorRgba: 0xff_00_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
+    it('applies scissorPush/scissorPop with devicePixelRatio scaling', async () => {
+      setDevicePixelRatio(2);
+      const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'scissorPush',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 1,
+            y: 2,
+            width: 3,
+            height: 4,
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'scissorPop',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(setScissorRect.mock.calls).toEqual([
+        [0, 0, 200, 100],
+        [2, 4, 6, 8],
+        [0, 0, 200, 100],
+      ]);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(2);
+      expect(drawIndexed).toHaveBeenNthCalledWith(1, 6, 1, 0, 0, 0);
+      expect(drawIndexed).toHaveBeenNthCalledWith(2, 6, 1, 0, 0, 0);
     });
 
     it('invokes onDeviceLost and no-ops render/resize after device loss', async () => {

@@ -13,6 +13,79 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isFiniteInt(value: unknown): value is number {
+  return isFiniteNumber(value) && Number.isInteger(value);
+}
+
+function validateFiniteCoordinate(
+  errors: string[],
+  path: string,
+  field: 'x' | 'y',
+  value: unknown,
+  requiresUiPixels: boolean,
+): void {
+  const fieldPath = `${path}.${field}`;
+
+  if (requiresUiPixels) {
+    if (!isFiniteInt(value)) {
+      errors.push(`${fieldPath} must be a finite integer number`);
+    }
+    return;
+  }
+
+  if (!isFiniteNumber(value)) {
+    errors.push(`${fieldPath} must be a finite number`);
+  }
+}
+
+function validateFiniteNonNegativeDimension(
+  errors: string[],
+  path: string,
+  field: 'width' | 'height',
+  value: unknown,
+  requiresUiPixels: boolean,
+): void {
+  const fieldPath = `${path}.${field}`;
+
+  if (requiresUiPixels) {
+    if (!isFiniteInt(value)) {
+      errors.push(`${fieldPath} must be a finite integer number`);
+      return;
+    }
+  } else if (!isFiniteNumber(value)) {
+    errors.push(`${fieldPath} must be a finite number`);
+    return;
+  }
+
+  if (value < 0) {
+    errors.push(`${fieldPath} must be non-negative`);
+  }
+}
+
+function validateFinitePositiveDimension(
+  errors: string[],
+  path: string,
+  field: 'fontSizePx',
+  value: unknown,
+  requiresUiPixels: boolean,
+): void {
+  const fieldPath = `${path}.${field}`;
+
+  if (requiresUiPixels) {
+    if (!isFiniteInt(value)) {
+      errors.push(`${fieldPath} must be a finite integer number`);
+      return;
+    }
+  } else if (!isFiniteNumber(value)) {
+    errors.push(`${fieldPath} must be a finite number`);
+    return;
+  }
+
+  if (value <= 0) {
+    errors.push(`${fieldPath} must be positive`);
+  }
+}
+
 function isUint32(value: unknown): value is number {
   return (
     typeof value === 'number' &&
@@ -107,27 +180,38 @@ function validateClearDraw(
   }
 }
 
+function validateRectGeometry(
+  errors: string[],
+  path: string,
+  draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
+): void {
+  const requiresUiPixels = passId === 'ui';
+  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
+  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'width',
+    draw['width'],
+    requiresUiPixels,
+  );
+  validateFiniteNonNegativeDimension(
+    errors,
+    path,
+    'height',
+    draw['height'],
+    requiresUiPixels,
+  );
+}
+
 function validateRectDraw(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
 ): void {
-  if (!isFiniteNumber(draw['x'])) {
-    errors.push(`${path}.x must be a finite number`);
-  }
-  if (!isFiniteNumber(draw['y'])) {
-    errors.push(`${path}.y must be a finite number`);
-  }
-
-  const width = draw['width'];
-  if (!isFiniteNumber(width) || width < 0) {
-    errors.push(`${path}.width must be a finite non-negative number`);
-  }
-
-  const height = draw['height'];
-  if (!isFiniteNumber(height) || height < 0) {
-    errors.push(`${path}.height must be a finite non-negative number`);
-  }
+  validateRectGeometry(errors, path, draw, passId);
 
   if (!isUint32(draw['colorRgba'])) {
     errors.push(`${path}.colorRgba must be uint32 RGBA`);
@@ -138,28 +222,14 @@ function validateImageDraw(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
 ): void {
   const assetId = draw['assetId'];
   if (typeof assetId !== 'string' || assetId.length === 0) {
     errors.push(`${path}.assetId must be non-empty`);
   }
 
-  if (!isFiniteNumber(draw['x'])) {
-    errors.push(`${path}.x must be a finite number`);
-  }
-  if (!isFiniteNumber(draw['y'])) {
-    errors.push(`${path}.y must be a finite number`);
-  }
-
-  const width = draw['width'];
-  if (!isFiniteNumber(width) || width < 0) {
-    errors.push(`${path}.width must be a finite non-negative number`);
-  }
-
-  const height = draw['height'];
-  if (!isFiniteNumber(height) || height < 0) {
-    errors.push(`${path}.height must be a finite non-negative number`);
-  }
+  validateRectGeometry(errors, path, draw, passId);
 
   const tintRgba = draw['tintRgba'];
   if (tintRgba !== undefined && !isUint32(tintRgba)) {
@@ -171,13 +241,11 @@ function validateTextDraw(
   errors: string[],
   path: string,
   draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
 ): void {
-  if (!isFiniteNumber(draw['x'])) {
-    errors.push(`${path}.x must be a finite number`);
-  }
-  if (!isFiniteNumber(draw['y'])) {
-    errors.push(`${path}.y must be a finite number`);
-  }
+  const requiresUiPixels = passId === 'ui';
+  validateFiniteCoordinate(errors, path, 'x', draw['x'], requiresUiPixels);
+  validateFiniteCoordinate(errors, path, 'y', draw['y'], requiresUiPixels);
 
   if (typeof draw['text'] !== 'string') {
     errors.push(`${path}.text must be a string`);
@@ -195,10 +263,22 @@ function validateTextDraw(
     errors.push(`${path}.fontAssetId must be non-empty when provided`);
   }
 
-  const fontSizePx = draw['fontSizePx'];
-  if (!isFiniteNumber(fontSizePx) || fontSizePx <= 0) {
-    errors.push(`${path}.fontSizePx must be a finite positive number`);
-  }
+  validateFinitePositiveDimension(
+    errors,
+    path,
+    'fontSizePx',
+    draw['fontSizePx'],
+    requiresUiPixels,
+  );
+}
+
+function validateScissorPushDraw(
+  errors: string[],
+  path: string,
+  draw: Record<string, unknown>,
+  passId: RenderPassId | undefined,
+): void {
+  validateRectGeometry(errors, path, draw, passId);
 }
 
 export function validateRenderCommandBuffer(
@@ -267,6 +347,8 @@ export function validateRenderCommandBuffer(
     sortKey: SortKey | undefined;
   }> = [];
 
+  const drawKinds: Array<string | undefined> = [];
+
   for (let index = 0; index < draws.length; index++) {
     const path = `draws[${index}]`;
     const draw = draws[index];
@@ -278,13 +360,17 @@ export function validateRenderCommandBuffer(
         passIndex: undefined,
         sortKey: undefined,
       });
+      drawKinds.push(undefined);
       continue;
-    }
-
-    const kind = draw['kind'];
-    if (typeof kind !== 'string') {
-      errors.push(`${path}.kind must be a string`);
-    }
+	    }
+	
+	    const kind = draw['kind'];
+	    if (typeof kind === 'string') {
+	      drawKinds.push(kind);
+	    } else {
+	      errors.push(`${path}.kind must be a string`);
+	      drawKinds.push(undefined);
+	    }
 
     const common = parseDrawCommon(errors, path, draw, passIndexById);
     drawOrderInfo.push(common);
@@ -294,17 +380,24 @@ export function validateRenderCommandBuffer(
         validateClearDraw(errors, path, draw);
         break;
       case 'rect':
-        validateRectDraw(errors, path, draw);
+        validateRectDraw(errors, path, draw, common.passId);
         break;
       case 'image':
-        validateImageDraw(errors, path, draw);
+        validateImageDraw(errors, path, draw, common.passId);
         break;
       case 'text':
-        validateTextDraw(errors, path, draw);
+        validateTextDraw(errors, path, draw, common.passId);
+        break;
+      case 'scissorPush':
+        validateScissorPushDraw(errors, path, draw, common.passId);
+        break;
+      case 'scissorPop':
         break;
       default:
         if (typeof kind === 'string') {
-          errors.push(`${path}.kind must be one of: clear, rect, image, text`);
+          errors.push(
+            `${path}.kind must be one of: clear, rect, image, text, scissorPush, scissorPop`,
+          );
         }
     }
   }
@@ -343,6 +436,46 @@ export function validateRenderCommandBuffer(
 
     previousPassIndex = passIndex;
     previousSortKey = sortKey;
+  }
+
+  let currentPassId: RenderPassId | undefined;
+  let scissorDepth = 0;
+
+  for (let index = 0; index < drawOrderInfo.length; index++) {
+    const { passId, passIndex } = drawOrderInfo[index];
+    if (passIndex === undefined || passId === undefined) {
+      currentPassId = undefined;
+      scissorDepth = 0;
+      continue;
+    }
+
+    if (currentPassId !== passId) {
+      if (currentPassId !== undefined && scissorDepth !== 0) {
+        errors.push(
+          `draws[${index}] scissor stack not empty when switching passId (depth ${scissorDepth})`,
+        );
+      }
+
+      currentPassId = passId;
+      scissorDepth = 0;
+    }
+
+    const kind = drawKinds[index];
+    if (kind === 'scissorPush') {
+      scissorDepth += 1;
+    } else if (kind === 'scissorPop') {
+      if (scissorDepth === 0) {
+        errors.push(`draws[${index}] scissorPop without matching scissorPush`);
+      } else {
+        scissorDepth -= 1;
+      }
+    }
+  }
+
+  if (currentPassId !== undefined && scissorDepth !== 0) {
+    errors.push(
+      `scissor stack not empty at end of draw list (depth ${scissorDepth})`,
+    );
   }
 
   if (errors.length > 0) {
