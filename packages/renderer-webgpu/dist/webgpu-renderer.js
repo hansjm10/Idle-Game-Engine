@@ -130,13 +130,20 @@ class WebGpuRendererImpl {
         this.format = options.format;
         __classPrivateFieldSet(this, _WebGpuRendererImpl_alphaMode, options.alphaMode, "f");
         __classPrivateFieldSet(this, _WebGpuRendererImpl_onDeviceLost, options.onDeviceLost, "f");
-        void this.device.lost.then((info) => {
+        void this.device.lost
+            .then((info) => {
             if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f")) {
                 return;
             }
             __classPrivateFieldSet(this, _WebGpuRendererImpl_lost, true, "f");
-            __classPrivateFieldGet(this, _WebGpuRendererImpl_onDeviceLost, "f")?.call(this, new WebGpuDeviceLostError(`WebGPU device lost${info.message ? `: ${info.message}` : ''}`, info.reason));
-        });
+            try {
+                __classPrivateFieldGet(this, _WebGpuRendererImpl_onDeviceLost, "f")?.call(this, new WebGpuDeviceLostError(`WebGPU device lost${info.message ? `: ${info.message}` : ''}`, info.reason));
+            }
+            catch (error) {
+                void error;
+            }
+        })
+            .catch(() => undefined);
     }
     resize(options) {
         if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f") || __classPrivateFieldGet(this, _WebGpuRendererImpl_lost, "f")) {

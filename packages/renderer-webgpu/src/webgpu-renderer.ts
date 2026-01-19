@@ -138,18 +138,24 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#alphaMode = options.alphaMode;
     this.#onDeviceLost = options.onDeviceLost;
 
-    void this.device.lost.then((info) => {
-      if (this.#disposed) {
-        return;
-      }
-      this.#lost = true;
-      this.#onDeviceLost?.(
-        new WebGpuDeviceLostError(
-          `WebGPU device lost${info.message ? `: ${info.message}` : ''}`,
-          info.reason,
-        ),
-      );
-    });
+    void this.device.lost
+      .then((info) => {
+        if (this.#disposed) {
+          return;
+        }
+        this.#lost = true;
+        try {
+          this.#onDeviceLost?.(
+            new WebGpuDeviceLostError(
+              `WebGPU device lost${info.message ? `: ${info.message}` : ''}`,
+              info.reason,
+            ),
+          );
+        } catch (error: unknown) {
+          void error;
+        }
+      })
+      .catch(() => undefined);
   }
 
   resize(options?: WebGpuRendererResizeOptions): void {

@@ -431,6 +431,28 @@ describe('renderer-webgpu', () => {
       expect(configure).not.toHaveBeenCalled();
     });
 
+    it('swallows failures thrown by onDeviceLost', async () => {
+      const unhandledRejection = vi.fn();
+      process.on('unhandledRejection', unhandledRejection);
+
+      try {
+        const { canvas, resolveDeviceLost } = createStubWebGpuEnvironment();
+        const onDeviceLost = vi.fn(() => {
+          throw new Error('boom');
+        });
+
+        await createWebGpuRenderer(canvas, { onDeviceLost });
+
+        resolveDeviceLost({ message: 'lost', reason: 'unknown' } as unknown as GPUDeviceLostInfo);
+        await flushMicrotasks();
+
+        expect(onDeviceLost).toHaveBeenCalledTimes(1);
+        expect(unhandledRejection).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', unhandledRejection);
+      }
+    });
+
     it('no-ops after dispose', async () => {
       const { canvas, beginRenderPass, submit } = createStubWebGpuEnvironment();
 
