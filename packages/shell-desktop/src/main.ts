@@ -6,7 +6,10 @@ import type { MenuItemConstructorOptions } from 'electron';
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
-app.commandLine.appendSwitch('enable-unsafe-webgpu');
+const enableUnsafeWebGpu = isDev || process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU === '1';
+if (enableUnsafeWebGpu) {
+  app.commandLine.appendSwitch('enable-unsafe-webgpu');
+}
 
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
