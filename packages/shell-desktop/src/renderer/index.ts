@@ -67,19 +67,25 @@ async function run(): Promise<void> {
       ],
     };
 
-    renderer.render(rcb);
+    try {
+      renderer.resize();
+      renderer.render(rcb);
+    } catch (error: unknown) {
+      void recover(String(error));
+      return;
+    }
     renderFrame += 1;
     animationFrame = requestAnimationFrame(render);
   };
 
-  const stopLoop = (): void => {
+  function stopLoop(): void {
     if (animationFrame !== undefined) {
       cancelAnimationFrame(animationFrame);
       animationFrame = undefined;
     }
-  };
+  }
 
-  const recover = async (reason: string): Promise<void> => {
+  async function recover(reason: string): Promise<void> {
     if (recovering) {
       return;
     }
@@ -110,7 +116,7 @@ async function run(): Promise<void> {
     } finally {
       recovering = false;
     }
-  };
+  }
 
   try {
     renderer = await createWebGpuRenderer(canvasElement, {

@@ -103,24 +103,29 @@ describe('shell-desktop renderer entrypoint', () => {
     delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
   });
 
-  it('starts IPC ping + WebGPU renderer loop', async () => {
-    await import('./index.ts');
-    await flushMicrotasks();
+	  it('starts IPC ping + WebGPU renderer loop', async () => {
+	    await import('./index.ts');
+	    await flushMicrotasks();
 
-    expect(createWebGpuRenderer).toHaveBeenCalledTimes(1);
-    expect(rafCallbacks.size).toBe(1);
-    expect(resizeObserverInstances).toHaveLength(1);
+	    expect(createWebGpuRenderer).toHaveBeenCalledTimes(1);
+	    expect(resizeObserverInstances).toHaveLength(1);
 
-    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
-    rafCallbacks.delete(id);
-    callback(0);
-    expect(rafCallbacks.size).toBe(1);
+	    const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
+	      resize: ReturnType<typeof vi.fn>;
+	    };
+	    expect(renderer.resize).not.toHaveBeenCalled();
+	    resizeObserverInstances[0]?.trigger();
+	    expect(renderer.resize).toHaveBeenCalledTimes(1);
 
-    resizeObserverInstances[0]?.trigger();
+	    expect(rafCallbacks.size).toBe(1);
+	    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+	    rafCallbacks.delete(id);
+	    callback(0);
+	    expect(rafCallbacks.size).toBe(1);
 
-    expect(beforeUnloadHandler).toBeTypeOf('function');
-    beforeUnloadHandler?.();
-  });
+	    expect(beforeUnloadHandler).toBeTypeOf('function');
+	    beforeUnloadHandler?.();
+	  });
 
   it('renders IPC errors to the output view', async () => {
     const idleEngine = (globalThis as unknown as { idleEngine: { ping: ReturnType<typeof vi.fn> } }).idleEngine;
@@ -129,13 +134,50 @@ describe('shell-desktop renderer entrypoint', () => {
     await import('./index.ts');
     await flushMicrotasks();
 
-    const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
-      .querySelector('#output') as { textContent: string };
-    expect(outputElement.textContent).toContain('IPC error:');
-  });
+	    const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
+	      .querySelector('#output') as { textContent: string };
+	    expect(outputElement.textContent).toContain('IPC error:');
+	  });
 
-  it('recovers when the WebGPU device is lost', async () => {
-    vi.useFakeTimers();
+	  it('recovers when render throws', async () => {
+	    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+	    const firstRenderer = {
+	      render: vi.fn(() => {
+	        throw new Error('render boom');
+	      }),
+	      resize: vi.fn(),
+	      dispose: vi.fn(),
+	    };
+	    const recoveredRenderer = { render: vi.fn(), resize: vi.fn(), dispose: vi.fn() };
+	    createWebGpuRenderer.mockResolvedValueOnce(firstRenderer).mockResolvedValueOnce(recoveredRenderer);
+
+	    await import('./index.ts');
+	    await flushMicrotasks();
+
+	    const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
+	      .querySelector('#output') as { textContent: string };
+
+	    expect(rafCallbacks.size).toBe(1);
+	    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+	    rafCallbacks.delete(id);
+	    callback(0);
+
+	    expect(firstRenderer.dispose).toHaveBeenCalledTimes(1);
+	    expect(outputElement.textContent).toContain('Attempting recovery');
+	    expect(rafCallbacks.size).toBe(0);
+
+	    await flushMicrotasks();
+	    await vi.advanceTimersByTimeAsync(1000);
+	    await flushMicrotasks();
+
+	    expect(createWebGpuRenderer).toHaveBeenCalledTimes(2);
+	    expect(outputElement.textContent).toContain('WebGPU ok (recovered).');
+	    expect(rafCallbacks.size).toBe(1);
+	  });
+
+	  it('recovers when the WebGPU device is lost', async () => {
+	    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 
     const firstRenderer = { render: vi.fn(), resize: vi.fn(), dispose: vi.fn() };
     const recoveredRenderer = { render: vi.fn(), resize: vi.fn(), dispose: vi.fn() };
