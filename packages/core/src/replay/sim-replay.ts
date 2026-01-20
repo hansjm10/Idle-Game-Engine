@@ -297,11 +297,11 @@ function cloneJsonValueInner(
     case 'string':
     case 'boolean':
       return value;
-	    case 'number':
-	      if (!Number.isFinite(value)) {
-	        throw new TypeError('Command payload contains non-finite number.');
-	      }
-	      return value;
+    case 'number':
+      if (!Number.isFinite(value)) {
+        throw new TypeError('Command payload contains non-finite number.');
+      }
+      return value;
     case 'object':
       break;
     default:
@@ -320,9 +320,9 @@ function cloneJsonValueInner(
     return cloned;
   }
 
-	  if (seen.has(value)) {
-	    throw new Error('Command payload contains a circular reference.');
-	  }
+  if (seen.has(value)) {
+    throw new Error('Command payload contains a circular reference.');
+  }
 
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) {
@@ -333,18 +333,18 @@ function cloneJsonValueInner(
     throw new Error('Command payload contains symbol keys.');
   }
 
-	  seen.add(value);
-	  const record = value as Record<string, unknown>;
-	  const result: Record<string, JsonValue> = {};
-	  for (const [key, entry] of Object.entries(record)) {
+  seen.add(value);
+  const record = value as Record<string, unknown>;
+  const result: Record<string, JsonValue> = {};
+  for (const [key, entry] of Object.entries(record)) {
     if (entry === undefined) {
       throw new Error('Command payload contains undefined value.');
     }
     result[key] = cloneJsonValueInner(entry, seen);
   }
-	  seen.delete(value);
-	  return result;
-	}
+  seen.delete(value);
+  return result;
+}
 
 function normalizeCommand(candidate: unknown): Command {
   if (!isRecord(candidate)) {
