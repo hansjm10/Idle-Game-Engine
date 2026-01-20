@@ -400,8 +400,24 @@ export function runSimReplay(options: RunSimReplayOptions): RunSimReplayResult {
     throw new Error('Replay snapshot version is not supported.');
   }
 
+  if (!Number.isInteger(replay.sim.startStep) || replay.sim.startStep < 0) {
+    throw new Error('Replay startStep must be a non-negative integer.');
+  }
+
+  if (!Number.isInteger(replay.sim.endStep) || replay.sim.endStep < 0) {
+    throw new Error('Replay endStep must be a non-negative integer.');
+  }
+
   if (!Number.isFinite(replay.sim.stepSizeMs) || replay.sim.stepSizeMs <= 0) {
     throw new Error('Replay stepSizeMs must be a positive, finite number.');
+  }
+
+  if (replay.sim.startStep !== snapshot.runtime.step) {
+    throw new Error('Replay startStep does not match the initial snapshot.');
+  }
+
+  if (replay.sim.stepSizeMs !== snapshot.runtime.stepSizeMs) {
+    throw new Error('Replay stepSizeMs does not match the initial snapshot.');
   }
 
   const wiring = restoreGameRuntimeFromSnapshot({
@@ -416,11 +432,6 @@ export function runSimReplay(options: RunSimReplayOptions): RunSimReplayResult {
     },
   }) as GameRuntimeWiring<IdleEngineRuntime>;
 
-  for (const command of replay.sim.commands) {
-    wiring.commandQueue.enqueue(command);
-  }
-
-  const stepSizeMs = replay.sim.stepSizeMs;
   const endStep = replay.sim.endStep;
   const startStep = wiring.runtime.getCurrentStep();
 
@@ -428,8 +439,67 @@ export function runSimReplay(options: RunSimReplayOptions): RunSimReplayResult {
     throw new Error('Replay endStep must be greater than or equal to the restored runtime step.');
   }
 
+  if (replay.sim.startStep !== startStep) {
+    throw new Error('Replay startStep does not match the restored runtime step.');
+  }
+
+  const stepSizeMs = wiring.runtime.getStepSizeMs();
+  if (stepSizeMs !== replay.sim.stepSizeMs) {
+    throw new Error('Replay stepSizeMs does not match the restored runtime step size.');
+  }
+
+  const commandsByStep = new Map<number, Command[]>();
+  const postSimCommands: Command[] = [];
+
+  for (const command of replay.sim.commands) {
+    if (command.step < startStep) {
+      throw new Error('Replay command step must be greater than or equal to the replay startStep.');
+    }
+    if (command.step < endStep) {
+      const bucket = commandsByStep.get(command.step);
+      if (bucket) {
+        bucket.push(command);
+      } else {
+        commandsByStep.set(command.step, [command]);
+      }
+      continue;
+    }
+    postSimCommands.push(command);
+  }
+
+  const enqueueRecordedCommands = (
+    commands: readonly Command[],
+    context: Readonly<{ step: number | null }>,
+  ): void => {
+    for (const command of commands) {
+      const accepted = wiring.commandQueue.enqueue(command);
+      if (accepted) {
+        continue;
+      }
+      telemetry.recordError('SimReplayCommandRejected', {
+        type: command.type,
+        priority: command.priority,
+        timestamp: command.timestamp,
+        step: command.step,
+        runtimeStep: wiring.runtime.getCurrentStep(),
+        ...(context.step === null ? {} : { contextStep: context.step }),
+      });
+      throw new Error('Replay command rejected by command queue.');
+    }
+  };
+
   while (wiring.runtime.getCurrentStep() < endStep) {
+    const currentStep = wiring.runtime.getCurrentStep();
+    const stepCommands = commandsByStep.get(currentStep);
+    if (stepCommands) {
+      enqueueRecordedCommands(stepCommands, { step: currentStep });
+      commandsByStep.delete(currentStep);
+    }
     wiring.runtime.tick(stepSizeMs);
+  }
+
+  if (postSimCommands.length > 0) {
+    enqueueRecordedCommands(postSimCommands, { step: null });
   }
 
   const endSnapshot = captureSnapshotFromWiring(wiring);

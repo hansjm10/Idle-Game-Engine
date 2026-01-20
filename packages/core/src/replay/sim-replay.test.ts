@@ -121,6 +121,54 @@ describe('sim replay', () => {
     );
   });
 
+  it(
+    'replays command streams larger than the default command queue size',
+    { timeout: 20_000 },
+    () => {
+      resetRNG();
+      setRNGSeed(4242);
+
+      const content = createContentPack({
+        resources: [createResourceDefinition('resource.gold')],
+        digest: { version: 1, hash: 'fnv1a-00000000' },
+      });
+
+      const wiring = createGameRuntime({
+        content,
+        stepSizeMs: 100,
+      });
+
+      const recorder = new SimReplayRecorder({
+        content,
+        wiring,
+        recordedAt: 0,
+        capturedAt: 0,
+      });
+
+      const steps = 10_050;
+      const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+      for (let index = 0; index < steps; index += 1) {
+        const step = wiring.runtime.getNextExecutableStep();
+        const timestamp = wiring.runtime.getCurrentStep() * stepSizeMs;
+        const command = {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          priority: CommandPriority.PLAYER,
+          payload: { resourceId: 'resource.gold', amount: 1 },
+          timestamp,
+          step,
+        };
+        expect(wiring.commandQueue.enqueue(command)).toBe(true);
+        recorder.recordCommand(command);
+        wiring.runtime.tick(stepSizeMs);
+      }
+
+      const replay = recorder.export({ capturedAt: 0 });
+      const result = runSimReplay({ content, replay });
+      expect(result.checksum).toBe(replay.sim.endStateChecksum);
+    },
+  );
+
   it('rejects invalid replay file headers', () => {
     const encoded = [
       JSON.stringify({
@@ -230,4 +278,3 @@ describe('sim replay', () => {
     expect(replay.sim.commands[0]?.type).toBe(RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE);
   });
 });
-
