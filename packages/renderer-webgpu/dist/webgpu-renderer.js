@@ -1146,8 +1146,13 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
 }, _WebGpuRendererImpl_handleImageDraw = function _WebGpuRendererImpl_handleImageDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'image', passId);
     const uv = __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_spriteUvOrThrow).call(this, state, draw.assetId);
-    const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
-    state.batchInstances.push(draw.x, draw.y, draw.width, draw.height, uv.u0, uv.v0, uv.u1, uv.v1, 1, 1, 1, tintAlpha);
+    const tintRgba = draw.tintRgba;
+    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
+    const tintRed = tint === undefined ? 1 : clampByte((tint >>> 24) & 0xff) / 255;
+    const tintGreen = tint === undefined ? 1 : clampByte((tint >>> 16) & 0xff) / 255;
+    const tintBlue = tint === undefined ? 1 : clampByte((tint >>> 8) & 0xff) / 255;
+    const tintAlpha = tint === undefined ? 1 : clampByte(tint & 0xff) / 255;
+    state.batchInstances.push(draw.x, draw.y, draw.width, draw.height, uv.u0, uv.v0, uv.u1, uv.v1, tintRed, tintGreen, tintBlue, tintAlpha);
     state.batchInstanceCount += 1;
 }, _WebGpuRendererImpl_handleTextDraw = function _WebGpuRendererImpl_handleTextDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'image', passId);

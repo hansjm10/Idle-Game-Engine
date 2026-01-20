@@ -60,6 +60,105 @@ export interface RenderCommandBufferToCanvas2dOptions {
   readonly validate?: boolean;
 }
 
+interface CanvasImageSourceSize {
+  readonly width: number;
+  readonly height: number;
+}
+
+type TintScratchCanvas = OffscreenCanvas | HTMLCanvasElement;
+type TintScratchContext = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
+type TintScratch = { canvas: TintScratchCanvas; ctx: TintScratchContext };
+
+let tintScratch: TintScratch | undefined;
+
+function pickFiniteNumber(
+  record: Record<string, unknown>,
+  keys: readonly string[],
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function getCanvasImageSourceSize(source: CanvasImageSource): CanvasImageSourceSize | undefined {
+  const record = source as unknown as Record<string, unknown>;
+  const width =
+    pickFiniteNumber(record, ['width', 'naturalWidth', 'videoWidth', 'codedWidth']) ??
+    0;
+  const height =
+    pickFiniteNumber(record, ['height', 'naturalHeight', 'videoHeight', 'codedHeight']) ??
+    0;
+
+  const widthInt = Math.floor(width);
+  const heightInt = Math.floor(height);
+  if (widthInt <= 0 || heightInt <= 0) {
+    return undefined;
+  }
+
+  return { width: widthInt, height: heightInt };
+}
+
+function createTintScratch(width: number, height: number): TintScratch | undefined {
+  const offscreenCanvasCtor = (
+    globalThis as unknown as { OffscreenCanvas?: typeof OffscreenCanvas }
+  ).OffscreenCanvas;
+
+  if (offscreenCanvasCtor) {
+    const canvas = new offscreenCanvasCtor(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return undefined;
+    }
+    return { canvas, ctx };
+  }
+
+  const canvas = (
+    globalThis as unknown as {
+      document?: { createElement(tagName: string): HTMLCanvasElement };
+    }
+  ).document?.createElement('canvas');
+  if (!canvas) {
+    return undefined;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return undefined;
+  }
+
+  return { canvas, ctx };
+}
+
+function resizeTintScratch(scratch: TintScratch, width: number, height: number): void {
+  if (scratch.canvas.width !== width) {
+    scratch.canvas.width = width;
+  }
+  if (scratch.canvas.height !== height) {
+    scratch.canvas.height = height;
+  }
+}
+
+function getTintScratch(width: number, height: number): TintScratch | undefined {
+  if (width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  tintScratch ??= createTintScratch(width, height);
+  if (!tintScratch) {
+    return undefined;
+  }
+
+  resizeTintScratch(tintScratch, width, height);
+  return tintScratch;
+}
+
 function drawRect(
   ctx: Canvas2dContextLike,
   draw: RectDraw,
@@ -142,17 +241,81 @@ function drawImage(
     return;
   }
 
-  // tintRgba is treated as opacity only (alpha byte); RGB is ignored.
-  const alpha =
-    draw.tintRgba !== undefined ? ((draw.tintRgba >>> 0) & 0xff) / 255 : 1;
-  ctx.globalAlpha = alpha;
+  const width = draw.width * pixelRatio;
+  const height = draw.height * pixelRatio;
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  const tintRgba = draw.tintRgba;
+  const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
+  const tintRed = tint === undefined ? 0xff : (tint >>> 24) & 0xff;
+  const tintGreen = tint === undefined ? 0xff : (tint >>> 16) & 0xff;
+  const tintBlue = tint === undefined ? 0xff : (tint >>> 8) & 0xff;
+  const tintAlphaByte = tint === undefined ? 0xff : tint & 0xff;
+  if (tintAlphaByte === 0) {
+    return;
+  }
+
+  const alpha = tintAlphaByte / 255;
+  const isWhiteTint = tintRed === 0xff && tintGreen === 0xff && tintBlue === 0xff;
+  if (isWhiteTint) {
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(
+      image,
+      draw.x * pixelRatio,
+      draw.y * pixelRatio,
+      width,
+      height,
+    );
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  const sourceSize = getCanvasImageSourceSize(image);
+  const scratch = getTintScratch(
+    sourceSize?.width ?? Math.max(1, Math.round(width)),
+    sourceSize?.height ?? Math.max(1, Math.round(height)),
+  );
+  if (!scratch) {
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(
+      image,
+      draw.x * pixelRatio,
+      draw.y * pixelRatio,
+      width,
+      height,
+    );
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  const { canvas: scratchCanvas, ctx: scratchCtx } = scratch;
+  scratchCtx.globalCompositeOperation = 'source-over';
+  scratchCtx.globalAlpha = 1;
+  scratchCtx.clearRect(0, 0, scratchCanvas.width, scratchCanvas.height);
+  scratchCtx.drawImage(image, 0, 0, scratchCanvas.width, scratchCanvas.height);
+
+  scratchCtx.globalCompositeOperation = 'multiply';
+  scratchCtx.globalAlpha = 1;
+  scratchCtx.fillStyle = `rgb(${tintRed}, ${tintGreen}, ${tintBlue})`;
+  scratchCtx.fillRect(0, 0, scratchCanvas.width, scratchCanvas.height);
+
+  scratchCtx.globalCompositeOperation = 'destination-in';
+  scratchCtx.globalAlpha = alpha;
+  scratchCtx.drawImage(image, 0, 0, scratchCanvas.width, scratchCanvas.height);
+
+  scratchCtx.globalCompositeOperation = 'source-over';
+  scratchCtx.globalAlpha = 1;
+
+  ctx.globalAlpha = 1;
 
   ctx.drawImage(
-    image,
+    scratchCanvas,
     draw.x * pixelRatio,
     draw.y * pixelRatio,
-    draw.width * pixelRatio,
-    draw.height * pixelRatio,
+    width,
+    height,
   );
 
   ctx.globalAlpha = 1;

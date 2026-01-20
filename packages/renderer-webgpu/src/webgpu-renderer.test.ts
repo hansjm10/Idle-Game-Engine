@@ -130,6 +130,52 @@ describe('renderer-webgpu', () => {
     expect(__test__.selectClearColor(rcb)).toEqual({ r: 0, g: 1, b: 0, a: 1 });
   });
 
+  it('selects a clear draw even when the RCB has no passes', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 0,
+        simTimeMs: 0,
+        contentHash: 'content:dev',
+      },
+      passes: [],
+      draws: [
+        {
+          kind: 'clear',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x12_34_56_78,
+        },
+      ],
+    } satisfies RenderCommandBuffer;
+
+    expect(__test__.selectClearColor(rcb)).toEqual(__test__.colorRgbaToGpuColor(0x12_34_56_78));
+  });
+
+  it('derives external image sizes from common dimensions and defaults to 0', () => {
+    expect(__test__.getExternalImageSize({} as unknown as GPUImageCopyExternalImageSource)).toEqual({
+      width: 0,
+      height: 0,
+    });
+
+    expect(
+      __test__.getExternalImageSize(
+        { naturalWidth: 10, naturalHeight: 20 } as unknown as GPUImageCopyExternalImageSource,
+      ),
+    ).toEqual({ width: 10, height: 20 });
+
+    expect(
+      __test__.getExternalImageSize(
+        {
+          width: Number.NaN,
+          height: Infinity,
+          videoWidth: 3.9,
+          videoHeight: 4.1,
+        } as unknown as GPUImageCopyExternalImageSource,
+      ),
+    ).toEqual({ width: 3, height: 4 });
+  });
+
   describe('createWebGpuRenderer', () => {
     function createStubWebGpuEnvironment(options?: {
       canvas?: Partial<HTMLCanvasElement> & { getContext?: unknown };
@@ -292,6 +338,25 @@ describe('renderer-webgpu', () => {
       expect(requestDevice).not.toHaveBeenCalled();
     });
 
+    it('passes requiredFeatures through to requestDevice', async () => {
+      const { canvas, adapter } = createStubWebGpuEnvironment();
+
+      const requiredFeature = 'timestamp-query' as unknown as GPUFeatureName;
+      await createWebGpuRenderer(canvas, {
+        requiredFeatures: [requiredFeature],
+        deviceDescriptor: {
+          requiredFeatures: ['depth-clip-control'] as unknown as GPUFeatureName[],
+        },
+      });
+
+      const requestDevice = (adapter as unknown as { requestDevice: ReturnType<typeof vi.fn> })
+        .requestDevice;
+      expect(requestDevice).toHaveBeenCalledTimes(1);
+      expect(requestDevice.mock.calls[0]?.[0]).toMatchObject({
+        requiredFeatures: [requiredFeature],
+      });
+    });
+
     it('throws when a WebGPU canvas context cannot be acquired', async () => {
       const adapter = {
         features: { has: () => true },
@@ -419,8 +484,157 @@ describe('renderer-webgpu', () => {
       expect(submit).toHaveBeenCalledTimes(1);
     });
 
+    it('throws when rendering image draws without a loaded sprite atlas', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'sprite:missing' as AssetId,
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('No sprite atlas loaded');
+    });
+
+    it('throws when a manifest contains a font but loadFont is not provided', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'font:demo' as AssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'assets.loadFont is not provided',
+      );
+    });
+
+    it('throws on duplicate AssetIds in an AssetManifest', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [
+          { id: 'sprite:dup' as AssetId, kind: 'image', contentHash: 'hash:1' },
+          { id: 'sprite:dup' as AssetId, kind: 'spriteSheet', contentHash: 'hash:2' },
+        ],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'AssetManifest contains duplicate AssetId',
+      );
+      expect(loadImage).not.toHaveBeenCalled();
+    });
+
+    it('throws when loaded atlas images have invalid dimensions', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:bad' as AssetId, kind: 'image', contentHash: 'hash:bad' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 0, height: 0 } as unknown as GPUImageCopyExternalImageSource));
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'has invalid dimensions 0x0',
+      );
+    });
+
+    it('loads image assets sorted by AssetId and exposes atlas state', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      expect(renderer.atlasLayout).toBeUndefined();
+      expect(renderer.atlasLayoutHash).toBeUndefined();
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [
+          { id: 'sprite:b' as AssetId, kind: 'image', contentHash: 'hash:b' },
+          { id: 'sprite:a' as AssetId, kind: 'image', contentHash: 'hash:a' },
+        ],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+
+      const state = await renderer.loadAssets(manifest, { loadImage });
+
+      expect(loadImage.mock.calls.map((call) => call[0])).toEqual(['sprite:a', 'sprite:b']);
+      expect(renderer.atlasLayout).toBeDefined();
+      expect(renderer.atlasLayoutHash).toBeDefined();
+      expect(state.layoutHash).toBe(renderer.atlasLayoutHash);
+    });
+
+    it('throws when rendering text draws without loaded bitmap fonts', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      await renderer.loadAssets(manifest, { loadImage });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId: 'font:missing' as AssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('No bitmap fonts loaded');
+    });
+
     it('uploads an atlas and draws sprite instances', async () => {
-      const { canvas, copyExternalImageToTexture, drawIndexed } = createStubWebGpuEnvironment();
+      const {
+        canvas,
+        copyExternalImageToTexture,
+        drawIndexed,
+        writeBuffer,
+      } = createStubWebGpuEnvironment();
 
       const renderer = await createWebGpuRenderer(canvas);
 
@@ -466,6 +680,17 @@ describe('renderer-webgpu', () => {
             y: 20,
             width: 30,
             height: 40,
+            tintRgba: 0x12_34_56_80,
+          },
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 50,
+            y: 60,
+            width: 70,
+            height: 80,
           },
         ],
       } satisfies RenderCommandBuffer;
@@ -473,7 +698,70 @@ describe('renderer-webgpu', () => {
       renderer.render(rcb);
 
       expect(drawIndexed).toHaveBeenCalledTimes(1);
-      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
+
+      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+        const data = call[2];
+        if (!(data instanceof ArrayBuffer) || data.byteLength !== 96) {
+          return false;
+        }
+
+        const instances = new Float32Array(data);
+        return (
+          instances[0] === 10 &&
+          instances[1] === 20 &&
+          instances[2] === 30 &&
+          instances[3] === 40
+        );
+      });
+
+      expect(instanceBufferWrite).toBeDefined();
+      if (!instanceBufferWrite) {
+        throw new Error('Expected an instance buffer upload for sprite instances.');
+      }
+      const instances = new Float32Array(instanceBufferWrite[2] as ArrayBuffer);
+
+      expect(instances.slice(8, 12)).toEqual(
+        new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
+      );
+      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
+    });
+
+    it('throws when image draws reference an AssetId missing from the loaded atlas', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0, powerOfTwo: true });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'sprite:unknown' as AssetId,
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Atlas missing UVs for AssetId');
     });
 
     it('draws rect instances without requiring a loaded atlas', async () => {
@@ -507,6 +795,188 @@ describe('renderer-webgpu', () => {
 
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
+    it('rejects bitmap fonts with invalid baseFontSizePx', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:bad' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 0,
+        lineHeightPx: 8,
+        glyphs: [],
+      }));
+
+      await expect(renderer.loadAssets(manifest, { loadImage, loadFont })).rejects.toThrow(
+        'invalid baseFontSizePx',
+      );
+    });
+
+    it('rejects bitmap fonts with invalid lineHeightPx', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:bad' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 0,
+        glyphs: [],
+      }));
+
+      await expect(renderer.loadAssets(manifest, { loadImage, loadFont })).rejects.toThrow(
+        'invalid lineHeightPx',
+      );
+    });
+
+    it('rejects bitmap fonts containing duplicate glyph codePoints', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:dup' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await expect(renderer.loadAssets(manifest, { loadImage, loadFont })).rejects.toThrow(
+        'duplicate glyph codePoint',
+      );
+    });
+
+    it.each([
+      {
+        name: 'invalid codePoints',
+        glyph: {
+          codePoint: -1,
+          x: 0,
+          y: 0,
+          width: 8,
+          height: 8,
+          xOffsetPx: 0,
+          yOffsetPx: 0,
+          xAdvancePx: 8,
+        },
+        expectedMessage: 'invalid glyph codePoint',
+      },
+      {
+        name: 'non-finite bounds',
+        glyph: {
+          codePoint: 0x41,
+          x: 0,
+          y: 0,
+          width: Number.NaN,
+          height: 8,
+          xOffsetPx: 0,
+          yOffsetPx: 0,
+          xAdvancePx: 8,
+        },
+        expectedMessage: 'has non-finite bounds',
+      },
+      {
+        name: 'negative sizes',
+        glyph: {
+          codePoint: 0x41,
+          x: 0,
+          y: 0,
+          width: -1,
+          height: 8,
+          xOffsetPx: 0,
+          yOffsetPx: 0,
+          xAdvancePx: 8,
+        },
+        expectedMessage: 'has negative size',
+      },
+      {
+        name: 'bounds exceeding the font image',
+        glyph: {
+          codePoint: 0x41,
+          x: 7,
+          y: 0,
+          width: 2,
+          height: 8,
+          xOffsetPx: 0,
+          yOffsetPx: 0,
+          xAdvancePx: 8,
+        },
+        expectedMessage: 'bounds exceed atlas image',
+      },
+      {
+        name: 'non-finite metrics',
+        glyph: {
+          codePoint: 0x41,
+          x: 0,
+          y: 0,
+          width: 8,
+          height: 8,
+          xOffsetPx: 0,
+          yOffsetPx: 0,
+          xAdvancePx: Number.NaN,
+        },
+        expectedMessage: 'has non-finite metrics',
+      },
+    ])('rejects bitmap font glyphs with $name', async ({ glyph, expectedMessage }) => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:bad-glyph' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [glyph],
+      }));
+
+      await expect(renderer.loadAssets(manifest, { loadImage, loadFont })).rejects.toThrow(expectedMessage);
     });
 
     it('renders bitmap text as sprite instances', async () => {
@@ -605,6 +1075,219 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
     });
 
+    it('falls back to the first available glyph when no fallback glyph is present', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:fallback' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'Z',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
+    it('throws when a text draw has an invalid fontSizePx', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 0,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Invalid fontSizePx');
+      expect(drawIndexed).not.toHaveBeenCalled();
+    });
+
+    it('handles control characters and no-ops when bitmap fonts contain no glyphs', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:empty' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A\rB\n\tC',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).not.toHaveBeenCalled();
+    });
+
+    it('throws when a text draw references an unknown fontAssetId', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId: 'font:unknown' as AssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Unknown fontAssetId');
+    });
+
     it('applies scissorPush/scissorPop with devicePixelRatio scaling', async () => {
       setDevicePixelRatio(2);
       const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
@@ -670,6 +1353,128 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenNthCalledWith(2, 6, 1, 0, 0, 0);
     });
 
+    it('skips draws when the current scissor rect is empty', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'scissorPush',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'scissorPop',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
+    it('applies scissorPush/scissorPop for world draws using the world camera', async () => {
+      setDevicePixelRatio(2);
+      const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+      renderer.setWorldCamera({ x: 10, y: 20, zoom: 2 });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'scissorPush',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 11,
+            y: 22,
+            width: 3,
+            height: 4,
+          },
+          {
+            kind: 'rect',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'scissorPop',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+          },
+          {
+            kind: 'rect',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(setScissorRect.mock.calls).toEqual([
+        [0, 0, 200, 100],
+        [4, 8, 12, 16],
+        [0, 0, 200, 100],
+      ]);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(2);
+      expect(drawIndexed).toHaveBeenNthCalledWith(1, 6, 1, 0, 0, 0);
+      expect(drawIndexed).toHaveBeenNthCalledWith(2, 6, 1, 0, 0, 0);
+    });
+
     it('invokes onDeviceLost and no-ops render/resize after device loss', async () => {
       const { canvas, beginRenderPass, submit, configure, resolveDeviceLost } =
         createStubWebGpuEnvironment();
@@ -716,6 +1521,35 @@ describe('renderer-webgpu', () => {
       expect(configure).not.toHaveBeenCalled();
     });
 
+    it('does not invoke onDeviceLost after dispose', async () => {
+      const { canvas, resolveDeviceLost } = createStubWebGpuEnvironment();
+      const onDeviceLost = vi.fn();
+
+      const renderer = await createWebGpuRenderer(canvas, { onDeviceLost });
+      renderer.dispose();
+
+      resolveDeviceLost({ message: 'lost', reason: 'unknown' } as unknown as GPUDeviceLostInfo);
+      await flushMicrotasks();
+
+      expect(onDeviceLost).not.toHaveBeenCalled();
+    });
+
+    it('rejects loadAssets after device loss', async () => {
+      const { canvas, resolveDeviceLost } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      resolveDeviceLost({ message: 'lost', reason: 'unknown' } as unknown as GPUDeviceLostInfo);
+      await flushMicrotasks();
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow('WebGPU device is lost.');
+    });
+
     it('swallows failures thrown by onDeviceLost', async () => {
       const unhandledRejection = vi.fn();
       process.on('unhandledRejection', unhandledRejection);
@@ -759,6 +1593,23 @@ describe('renderer-webgpu', () => {
 
       expect(beginRenderPass).not.toHaveBeenCalled();
       expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('rejects loadAssets after dispose', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+      renderer.dispose();
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'WebGPU renderer is disposed.',
+      );
     });
   });
 });
