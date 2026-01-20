@@ -483,7 +483,7 @@ describe('sim replay', () => {
 
     expect(() =>
       decodeSimReplayJsonLines(
-        createEncodedReplayLines([{ ...baseHeader, schemaVersion: 2 }, baseContent, baseAssets, baseSim, baseEnd]),
+        createEncodedReplayLines([{ ...baseHeader, schemaVersion: 3 }, baseContent, baseAssets, baseSim, baseEnd]),
       ),
     ).toThrow(/schemaVersion is not supported/i);
 

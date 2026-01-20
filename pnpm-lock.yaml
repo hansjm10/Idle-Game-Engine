@@ -204,6 +204,9 @@ importers:
       '@idle-engine/content-schema':
         specifier: workspace:*
         version: link:../content-schema
+      '@idle-engine/renderer-contract':
+        specifier: workspace:*
+        version: link:../renderer-contract
       prom-client:
         specifier: ^15.1.1
         version: 15.1.3
