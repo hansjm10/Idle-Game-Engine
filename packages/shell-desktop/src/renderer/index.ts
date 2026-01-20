@@ -15,10 +15,11 @@ async function run(): Promise<void> {
   const canvasElement = canvas;
 
   let ipcStatus = 'IPC pending…';
+  let simStatus = 'Sim pending…';
   let webgpuStatus = 'WebGPU pending…';
 
   function updateOutput(): void {
-    outputElement.textContent = [ipcStatus, webgpuStatus].join('\n');
+    outputElement.textContent = [ipcStatus, simStatus, webgpuStatus].join('\n');
   }
 
   updateOutput();
@@ -37,79 +38,103 @@ async function run(): Promise<void> {
   let animationFrame: number | undefined;
   let renderFrame = 0;
   let recovering = false;
+  let latestRcb: RenderCommandBuffer | undefined;
+  let unsubscribeFrames: (() => void) | undefined;
+
+  try {
+    unsubscribeFrames = (globalThis as unknown as Window).idleEngine.onFrame((frame) => {
+      latestRcb = frame;
+      simStatus = `Sim step=${frame.frame.step} simTimeMs=${frame.frame.simTimeMs}`;
+      updateOutput();
+    });
+  } catch (error: unknown) {
+    simStatus = `Sim error: ${String(error)}`;
+    updateOutput();
+  }
+
+  addEventListener('keydown', (event) => {
+    if (event.code === 'Space' && !event.repeat) {
+      (globalThis as unknown as Window).idleEngine.sendControlEvent({
+        intent: 'collect',
+        phase: 'start',
+      });
+    }
+  });
 
   const resizeObserver = new ResizeObserver(() => {
     renderer?.resize();
   });
   resizeObserver.observe(canvasElement);
 
+  const buildFallbackRcb = (frameCount: number): RenderCommandBuffer => ({
+    frame: {
+      schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+      step: latestRcb?.frame.step ?? 0,
+      simTimeMs: latestRcb?.frame.simTimeMs ?? 0,
+      renderFrame: frameCount,
+      contentHash: 'content:dev',
+    },
+    passes: [{ id: 'world' }, { id: 'ui' }],
+    draws: [
+      {
+        kind: 'clear',
+        passId: 'world',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+        colorRgba: clearColorRgba,
+      },
+      {
+        kind: 'rect',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+        x: 20,
+        y: 20,
+        width: 240,
+        height: 120,
+        colorRgba: 0x00_00_00_80,
+      },
+      {
+        kind: 'scissorPush',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+        x: 32,
+        y: 32,
+        width: 216,
+        height: 96,
+      },
+      {
+        kind: 'rect',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+        x: 32,
+        y: 32,
+        width: 300,
+        height: 32,
+        colorRgba: 0x2a_4f_8a_ff,
+      },
+      {
+        kind: 'rect',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+        x: 32,
+        y: 72,
+        width: 300,
+        height: 32,
+        colorRgba: 0x8a_2a_4f_ff,
+      },
+      {
+        kind: 'scissorPop',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 4 },
+      },
+    ],
+  });
+
   const render = (): void => {
     if (!renderer) {
       return;
     }
 
-    const rcb: RenderCommandBuffer = {
-      frame: {
-        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
-        step: 0,
-        simTimeMs: 0,
-        renderFrame,
-        contentHash: 'content:dev',
-      },
-      passes: [{ id: 'world' }, { id: 'ui' }],
-      draws: [
-        {
-          kind: 'clear',
-          passId: 'world',
-          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
-          colorRgba: clearColorRgba,
-        },
-        {
-          kind: 'rect',
-          passId: 'ui',
-          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
-          x: 20,
-          y: 20,
-          width: 240,
-          height: 120,
-          colorRgba: 0x00_00_00_80,
-        },
-        {
-          kind: 'scissorPush',
-          passId: 'ui',
-          sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
-          x: 32,
-          y: 32,
-          width: 216,
-          height: 96,
-        },
-        {
-          kind: 'rect',
-          passId: 'ui',
-          sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
-          x: 32,
-          y: 32,
-          width: 300,
-          height: 32,
-          colorRgba: 0x2a_4f_8a_ff,
-        },
-        {
-          kind: 'rect',
-          passId: 'ui',
-          sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
-          x: 32,
-          y: 72,
-          width: 300,
-          height: 32,
-          colorRgba: 0x8a_2a_4f_ff,
-        },
-        {
-          kind: 'scissorPop',
-          passId: 'ui',
-          sortKey: { sortKeyHi: 0, sortKeyLo: 4 },
-        },
-      ],
-    };
+    const rcb = latestRcb ?? buildFallbackRcb(renderFrame);
 
     try {
       renderer.resize();
@@ -179,6 +204,7 @@ async function run(): Promise<void> {
   addEventListener('beforeunload', () => {
     stopLoop();
     resizeObserver.disconnect();
+    unsubscribeFrames?.();
     renderer?.dispose();
   });
 }
