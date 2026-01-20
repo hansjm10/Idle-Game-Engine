@@ -189,6 +189,9 @@ describe('shell-desktop renderer entrypoint', () => {
     const capturedOptions: Array<{ onDeviceLost?: (error: { reason?: string }) => void }> = [];
     createWebGpuRenderer.mockImplementation(async (_canvas: unknown, options: { onDeviceLost?: (error: { reason?: string }) => void }) => {
       capturedOptions.push(options);
+      if (capturedOptions.length === 2) {
+        options.onDeviceLost?.({ reason: 'device-lost-during-recovery' });
+      }
       return capturedOptions.length === 1 ? firstRenderer : recoveredRenderer;
     });
 
@@ -208,6 +211,37 @@ describe('shell-desktop renderer entrypoint', () => {
     const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
       .querySelector('#output') as { textContent: string };
     expect(outputElement.textContent).toContain('WebGPU ok (recovered).');
+  });
+
+  it('reports when WebGPU recovery fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    const firstRenderer = {
+      render: vi.fn(() => {
+        throw new Error('render boom');
+      }),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    };
+    createWebGpuRenderer.mockResolvedValueOnce(firstRenderer).mockRejectedValueOnce(new Error('no adapter'));
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    const outputElement = (
+      globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }
+    ).document.querySelector('#output') as { textContent: string };
+
+    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+    rafCallbacks.delete(id);
+    callback(0);
+
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(1000);
+    await flushMicrotasks();
+
+    expect(firstRenderer.dispose).toHaveBeenCalledTimes(1);
+    expect(outputElement.textContent).toContain('WebGPU recovery failed:');
   });
 
   it('reports when WebGPU initialization fails', async () => {

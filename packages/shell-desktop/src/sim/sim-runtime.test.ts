@@ -53,5 +53,46 @@ describe('shell-desktop sim runtime', () => {
       colorRgba: 0x8a_2a_4f_ff,
     });
   });
-});
 
+  it('ignores collect resource commands for unknown resource ids', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    const command: Command = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'other', amount: 1 },
+      timestamp: 0,
+      step: sim.getNextStep(),
+    };
+
+    sim.enqueueCommands([command]);
+
+    const result = sim.tick(10);
+    const frame = result.frames[0];
+
+    const fillRect = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 0,
+      colorRgba: 0x2a_4f_8a_ff,
+    });
+  });
+
+  it('drops invalid commands from the queue', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([{} as unknown as Command]);
+
+    const result = sim.tick(10);
+    expect(result.frames).toHaveLength(1);
+    expect(result.frames[0]?.frame.step).toBe(0);
+  });
+});
