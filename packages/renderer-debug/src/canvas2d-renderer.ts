@@ -67,13 +67,9 @@ interface CanvasImageSourceSize {
 
 type TintScratchCanvas = OffscreenCanvas | HTMLCanvasElement;
 type TintScratchContext = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
+type TintScratch = { canvas: TintScratchCanvas; ctx: TintScratchContext };
 
-let tintScratch:
-  | {
-      canvas: TintScratchCanvas;
-      ctx: TintScratchContext;
-    }
-  | undefined;
+let tintScratch: TintScratch | undefined;
 
 function pickFiniteNumber(
   record: Record<string, unknown>,
@@ -106,54 +102,61 @@ function getCanvasImageSourceSize(source: CanvasImageSource): CanvasImageSourceS
   return { width: widthInt, height: heightInt };
 }
 
-function getTintScratch(width: number, height: number): typeof tintScratch {
-  if (width <= 0 || height <= 0) {
-    return undefined;
-  }
+function createTintScratch(width: number, height: number): TintScratch | undefined {
+  const offscreenCanvasCtor = (
+    globalThis as unknown as { OffscreenCanvas?: typeof OffscreenCanvas }
+  ).OffscreenCanvas;
 
-  if (!tintScratch) {
-    if (typeof OffscreenCanvas !== 'undefined') {
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        return undefined;
-      }
-      tintScratch = { canvas, ctx };
-    } else {
-      const canvas = (
-        globalThis as unknown as {
-          document?: { createElement(tagName: string): HTMLCanvasElement };
-        }
-      ).document?.createElement('canvas');
-      if (!canvas) {
-        return undefined;
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        return undefined;
-      }
-
-      tintScratch = { canvas, ctx };
+  if (offscreenCanvasCtor) {
+    const canvas = new offscreenCanvasCtor(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return undefined;
     }
+    return { canvas, ctx };
   }
 
-  if (!tintScratch) {
+  const canvas = (
+    globalThis as unknown as {
+      document?: { createElement(tagName: string): HTMLCanvasElement };
+    }
+  ).document?.createElement('canvas');
+  if (!canvas) {
     return undefined;
   }
 
-  const scratch = tintScratch;
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return undefined;
+  }
+
+  return { canvas, ctx };
+}
+
+function resizeTintScratch(scratch: TintScratch, width: number, height: number): void {
   if (scratch.canvas.width !== width) {
     scratch.canvas.width = width;
   }
   if (scratch.canvas.height !== height) {
     scratch.canvas.height = height;
   }
+}
 
-  return scratch;
+function getTintScratch(width: number, height: number): TintScratch | undefined {
+  if (width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  tintScratch ??= createTintScratch(width, height);
+  if (!tintScratch) {
+    return undefined;
+  }
+
+  resizeTintScratch(tintScratch, width, height);
+  return tintScratch;
 }
 
 function drawRect(

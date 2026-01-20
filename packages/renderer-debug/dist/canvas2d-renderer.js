@@ -23,44 +23,46 @@ function getCanvasImageSourceSize(source) {
     }
     return { width: widthInt, height: heightInt };
 }
-function getTintScratch(width, height) {
-    if (width <= 0 || height <= 0) {
+function createTintScratch(width, height) {
+    const offscreenCanvasCtor = globalThis.OffscreenCanvas;
+    if (offscreenCanvasCtor) {
+        const canvas = new offscreenCanvasCtor(width, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            return undefined;
+        }
+        return { canvas, ctx };
+    }
+    const canvas = globalThis.document?.createElement('canvas');
+    if (!canvas) {
         return undefined;
     }
-    if (!tintScratch) {
-        if (typeof OffscreenCanvas !== 'undefined') {
-            const canvas = new OffscreenCanvas(width, height);
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                return undefined;
-            }
-            tintScratch = { canvas, ctx };
-        }
-        else {
-            const canvas = globalThis.document?.createElement('canvas');
-            if (!canvas) {
-                return undefined;
-            }
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                return undefined;
-            }
-            tintScratch = { canvas, ctx };
-        }
-    }
-    if (!tintScratch) {
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
         return undefined;
     }
-    const scratch = tintScratch;
+    return { canvas, ctx };
+}
+function resizeTintScratch(scratch, width, height) {
     if (scratch.canvas.width !== width) {
         scratch.canvas.width = width;
     }
     if (scratch.canvas.height !== height) {
         scratch.canvas.height = height;
     }
-    return scratch;
+}
+function getTintScratch(width, height) {
+    if (width <= 0 || height <= 0) {
+        return undefined;
+    }
+    tintScratch ?? (tintScratch = createTintScratch(width, height));
+    if (!tintScratch) {
+        return undefined;
+    }
+    resizeTintScratch(tintScratch, width, height);
+    return tintScratch;
 }
 function drawRect(ctx, draw, pixelRatio) {
     ctx.globalAlpha = 1;
