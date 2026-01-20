@@ -53,6 +53,122 @@ describe('sprite-batching', () => {
     ]);
   });
 
+  it('sorts by sortKeyHi before sortKeyLo', () => {
+    const rcb = {
+      frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      passes: [{ id: 'world' }],
+      draws: [
+        {
+          kind: 'image',
+          passId: 'world',
+          sortKey: { sortKeyHi: 1, sortKeyLo: 0 },
+          assetId: 'b' as AssetId,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+        {
+          kind: 'image',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 999 },
+          assetId: 'a' as AssetId,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const ordered = orderDrawsByPassAndSortKey(rcb);
+    expect(ordered.map((entry) => (entry.draw.kind === 'image' ? entry.draw.assetId : ''))).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('skips clear draws and sorts unknown passes after known ones', () => {
+    const rcb = {
+      frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      passes: [{ id: 'world' }],
+      draws: [
+        {
+          kind: 'clear',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_00_00_ff,
+        },
+        {
+          kind: 'image',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          assetId: 'b' as AssetId,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+        {
+          kind: 'image',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          assetId: 'a' as AssetId,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const ordered = orderDrawsByPassAndSortKey(rcb);
+    expect(ordered.map((entry) => entry.draw.kind)).toEqual(['image', 'image']);
+    expect(ordered.map((entry) => (entry.draw.kind === 'image' ? entry.draw.assetId : ''))).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  it('builds empty instance buffers when there are no image draws', () => {
+    const result = buildSpriteInstances({
+      orderedDraws: [],
+      uvByAssetId: new Map(),
+    });
+
+    expect(result.instanceCount).toBe(0);
+    expect(result.instances).toEqual(new Float32Array([]));
+    expect(result.groups).toEqual([]);
+  });
+
+  it('throws when atlas UVs are missing for an image draw', () => {
+    const rcb = {
+      frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      passes: [{ id: 'world' }],
+      draws: [
+        {
+          kind: 'image',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          assetId: 'sprite:missing' as AssetId,
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const ordered = orderDrawsByPassAndSortKey(rcb);
+
+    expect(() =>
+      buildSpriteInstances({
+        orderedDraws: ordered,
+        uvByAssetId: new Map(),
+      }),
+    ).toThrow('Atlas missing UVs for AssetId');
+  });
+
   it('builds per-pass instance groups and respects tintRgba (0xRRGGBBAA)', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
