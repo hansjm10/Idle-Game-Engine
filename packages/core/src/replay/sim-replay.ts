@@ -695,6 +695,36 @@ function readReplayInitialSnapshot(value: unknown): GameStateSnapshot {
   return value as unknown as GameStateSnapshot;
 }
 
+function appendReplayCommandChunk(options: {
+  readonly commands: Command[];
+  readonly chunk: unknown;
+  readonly maxCommands: number;
+}): void {
+  const { commands, chunk, maxCommands } = options;
+  if (!Array.isArray(chunk)) {
+    throw new TypeError('Replay command chunk must contain commands array.');
+  }
+
+  for (const command of chunk) {
+    commands.push(normalizeCommand(command));
+    if (commands.length > maxCommands) {
+      throw new Error('Replay command stream exceeds configured command limit.');
+    }
+  }
+}
+
+function parseReplayEndRecord(record: Extract<SimReplayRecord, { type: 'end' }>): Readonly<{
+  readonly endStep: number;
+  readonly endStateChecksum: string;
+  readonly expectedCommandCount: number;
+}> {
+  return Object.freeze({
+    endStep: readNonNegativeInt(record.endStep, 'end.endStep'),
+    endStateChecksum: readNonEmptyString(record.endStateChecksum, 'end.endStateChecksum'),
+    expectedCommandCount: readNonNegativeInt(record.commandCount, 'end.commandCount'),
+  });
+}
+
 function readReplayCommandsAndEndRecord(options: {
   readonly lines: readonly string[];
   readonly startIndex: number;
@@ -707,51 +737,26 @@ function readReplayCommandsAndEndRecord(options: {
   const { lines, startIndex, maxCommands } = options;
 
   const commands: Command[] = [];
-  let endStep: number | null = null;
-  let endStateChecksum: string | null = null;
-  let expectedCommandCount: number | null = null;
 
   for (let index = startIndex; index < lines.length; index += 1) {
     const record = readSimReplayRecord(lines[index] ?? '');
     if (record.type === 'commands') {
-      if (!Array.isArray(record.commands)) {
-        throw new TypeError('Replay command chunk must contain commands array.');
-      }
-
-      for (const command of record.commands) {
-        commands.push(normalizeCommand(command));
-        if (commands.length > maxCommands) {
-          throw new Error('Replay command stream exceeds configured command limit.');
-        }
-      }
+      appendReplayCommandChunk({ commands, chunk: record.commands, maxCommands });
       continue;
     }
 
     if (record.type === 'end') {
-      endStep = readNonNegativeInt(record.endStep, 'end.endStep');
-      endStateChecksum = readNonEmptyString(
-        record.endStateChecksum,
-        'end.endStateChecksum',
-      );
-      expectedCommandCount = readNonNegativeInt(
-        record.commandCount,
-        'end.commandCount',
-      );
-      break;
+      const { endStep, endStateChecksum, expectedCommandCount } = parseReplayEndRecord(record);
+      if (expectedCommandCount !== commands.length) {
+        throw new Error('Replay command count does not match footer.');
+      }
+      return { commands: Object.freeze(commands), endStep, endStateChecksum };
     }
 
     throw new Error(`Unexpected replay record type: ${record.type}`);
   }
 
-  if (endStep === null || endStateChecksum === null || expectedCommandCount === null) {
-    throw new Error('Replay is missing end record.');
-  }
-
-  if (expectedCommandCount !== commands.length) {
-    throw new Error('Replay command count does not match footer.');
-  }
-
-  return { commands: Object.freeze(commands), endStep, endStateChecksum };
+  throw new Error('Replay is missing end record.');
 }
 
 export function decodeSimReplayJsonLines(
