@@ -43,7 +43,7 @@ async function run(): Promise<void> {
 
   try {
     unsubscribeFrames = (globalThis as unknown as Window).idleEngine.onFrame((frame) => {
-      latestRcb = frame as RenderCommandBuffer;
+      latestRcb = frame;
       simStatus = `Sim step=${frame.frame.step} simTimeMs=${frame.frame.simTimeMs}`;
       updateOutput();
     });
