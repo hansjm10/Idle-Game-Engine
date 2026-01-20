@@ -420,7 +420,12 @@ describe('renderer-webgpu', () => {
     });
 
     it('uploads an atlas and draws sprite instances', async () => {
-      const { canvas, copyExternalImageToTexture, drawIndexed } = createStubWebGpuEnvironment();
+      const {
+        canvas,
+        copyExternalImageToTexture,
+        drawIndexed,
+        writeBuffer,
+      } = createStubWebGpuEnvironment();
 
       const renderer = await createWebGpuRenderer(canvas);
 
@@ -466,6 +471,17 @@ describe('renderer-webgpu', () => {
             y: 20,
             width: 30,
             height: 40,
+            tintRgba: 0x12_34_56_80,
+          },
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 50,
+            y: 60,
+            width: 70,
+            height: 80,
           },
         ],
       } satisfies RenderCommandBuffer;
@@ -473,7 +489,33 @@ describe('renderer-webgpu', () => {
       renderer.render(rcb);
 
       expect(drawIndexed).toHaveBeenCalledTimes(1);
-      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
+
+      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+        const data = call[2];
+        if (!(data instanceof ArrayBuffer) || data.byteLength !== 96) {
+          return false;
+        }
+
+        const instances = new Float32Array(data);
+        return (
+          instances[0] === 10 &&
+          instances[1] === 20 &&
+          instances[2] === 30 &&
+          instances[3] === 40
+        );
+      });
+
+      expect(instanceBufferWrite).toBeDefined();
+      if (!instanceBufferWrite) {
+        throw new Error('Expected an instance buffer upload for sprite instances.');
+      }
+      const instances = new Float32Array(instanceBufferWrite[2] as ArrayBuffer);
+
+      expect(instances.slice(8, 12)).toEqual(
+        new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
+      );
+      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
     });
 
     it('draws rect instances without requiring a loaded atlas', async () => {
