@@ -1,0 +1,676 @@
+import type { NormalizedContentPack } from '@idle-engine/content-schema';
+
+import { CommandPriority, type Command } from '../command.js';
+import type { GameRuntimeWiring } from '../game-runtime-wiring.js';
+import { telemetry } from '../telemetry.js';
+import { captureGameStateSnapshot } from '../state-sync/capture.js';
+import { computeStateChecksum } from '../state-sync/checksum.js';
+import { restoreGameRuntimeFromSnapshot } from '../state-sync/restore-runtime.js';
+import type { GameStateSnapshot } from '../state-sync/types.js';
+import { RUNTIME_VERSION } from '../version.js';
+import type { IdleEngineRuntime } from '../index.js';
+
+export const SIM_REPLAY_FILE_TYPE = 'idle-engine-sim-replay' as const;
+export const SIM_REPLAY_SCHEMA_VERSION = 1 as const;
+
+export type SimReplaySchemaVersion = typeof SIM_REPLAY_SCHEMA_VERSION;
+
+export type SimReplayContentDigest = Readonly<{
+  readonly version: number | string;
+  readonly hash: string;
+}>;
+
+export type SimReplayWiringConfig = Readonly<{
+  readonly enableProduction: boolean;
+  readonly enableAutomation: boolean;
+  readonly enableTransforms: boolean;
+  readonly enableEntities: boolean;
+}>;
+
+export type SimReplayHeaderV1 = Readonly<{
+  readonly fileType: typeof SIM_REPLAY_FILE_TYPE;
+  readonly schemaVersion: 1;
+  readonly recordedAt: number;
+  readonly runtimeVersion: string;
+}>;
+
+export type SimReplayContentV1 = Readonly<{
+  readonly packId: string;
+  readonly packVersion: string;
+  readonly digest: SimReplayContentDigest;
+}>;
+
+export type SimReplayAssetsV1 = Readonly<{
+  readonly manifestHash?: string | null;
+}>;
+
+export type SimReplaySimV1 = Readonly<{
+  readonly wiring: SimReplayWiringConfig;
+  readonly stepSizeMs: number;
+  readonly startStep: number;
+  readonly endStep: number;
+  readonly initialSnapshot: GameStateSnapshot;
+  readonly commands: readonly Command[];
+  readonly endStateChecksum: string;
+}>;
+
+export type SimReplayV1 = Readonly<{
+  readonly header: SimReplayHeaderV1;
+  readonly content: SimReplayContentV1;
+  readonly assets: SimReplayAssetsV1;
+  readonly sim: SimReplaySimV1;
+}>;
+
+export type SimReplay = SimReplayV1;
+
+type SimReplayRecord =
+  | Readonly<{
+      readonly type: 'header';
+      readonly fileType: typeof SIM_REPLAY_FILE_TYPE;
+      readonly schemaVersion: 1;
+      readonly recordedAt: number;
+      readonly runtimeVersion: string;
+    }>
+  | Readonly<{
+      readonly type: 'content';
+      readonly packId: string;
+      readonly packVersion: string;
+      readonly digest: SimReplayContentDigest;
+    }>
+  | Readonly<{
+      readonly type: 'assets';
+      readonly manifestHash?: string | null;
+    }>
+  | Readonly<{
+      readonly type: 'sim';
+      readonly wiring: SimReplayWiringConfig;
+      readonly stepSizeMs: number;
+      readonly startStep: number;
+      readonly initialSnapshot: GameStateSnapshot;
+    }>
+  | Readonly<{
+      readonly type: 'commands';
+      readonly chunkIndex: number;
+      readonly commands: readonly Command[];
+    }>
+  | Readonly<{
+      readonly type: 'end';
+      readonly endStep: number;
+      readonly endStateChecksum: string;
+      readonly commandCount: number;
+    }>;
+
+export interface EncodeSimReplayOptions {
+  readonly maxCommandsPerChunk?: number;
+}
+
+export interface DecodeSimReplayOptions {
+  readonly maxCommands?: number;
+  readonly maxLines?: number;
+}
+
+export interface RunSimReplayOptions {
+  readonly content: NormalizedContentPack;
+  readonly replay: SimReplay;
+}
+
+export interface RunSimReplayResult {
+  readonly snapshot: GameStateSnapshot;
+  readonly checksum: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  return value;
+}
+
+function readFiniteNumber(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number.`);
+  }
+  return value;
+}
+
+function readPositiveFiniteNumber(value: unknown, label: string): number {
+  const numeric = readFiniteNumber(value, label);
+  if (numeric <= 0) {
+    throw new Error(`${label} must be a positive number.`);
+  }
+  return numeric;
+}
+
+function readNonNegativeInt(value: unknown, label: string): number {
+  const numeric = readFiniteNumber(value, label);
+  if (!Number.isInteger(numeric) || numeric < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+  return numeric;
+}
+
+function normalizeDigest(value: unknown): SimReplayContentDigest {
+  if (!isRecord(value)) {
+    throw new Error('content.digest must be an object.');
+  }
+
+  const hash = readNonEmptyString(value.hash, 'content.digest.hash');
+  const rawVersion = value.version;
+
+  if (typeof rawVersion !== 'number' && typeof rawVersion !== 'string') {
+    throw new Error('content.digest.version must be a number or string.');
+  }
+
+  return Object.freeze({
+    version: rawVersion,
+    hash,
+  });
+}
+
+type JsonPrimitive = string | number | boolean | null;
+
+type JsonValue =
+  | JsonPrimitive
+  | { readonly [key: string]: JsonValue }
+  | readonly JsonValue[];
+
+function cloneJsonValue(value: unknown): JsonValue {
+  const seen = new WeakSet<object>();
+  return cloneJsonValueInner(value, seen);
+}
+
+function cloneJsonValueInner(
+  value: unknown,
+  seen: WeakSet<object>,
+): JsonValue {
+  if (value === null) {
+    return null;
+  }
+
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
+      return value;
+    case 'number':
+      if (!Number.isFinite(value)) {
+        throw new Error('Command payload contains non-finite number.');
+      }
+      return value;
+    case 'object':
+      break;
+    default:
+      throw new Error(
+        `Command payload contains unsupported JSON type: ${typeof value}`,
+      );
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) {
+      throw new Error('Command payload contains a circular reference.');
+    }
+    seen.add(value);
+    const cloned = value.map((entry) => cloneJsonValueInner(entry, seen));
+    seen.delete(value);
+    return cloned;
+  }
+
+  if (seen.has(value as object)) {
+    throw new Error('Command payload contains a circular reference.');
+  }
+
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    throw new Error('Command payload must be a plain JSON object.');
+  }
+
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new Error('Command payload contains symbol keys.');
+  }
+
+  seen.add(value as object);
+  const record = value as Record<string, unknown>;
+  const result: Record<string, JsonValue> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (entry === undefined) {
+      throw new Error('Command payload contains undefined value.');
+    }
+    result[key] = cloneJsonValueInner(entry, seen);
+  }
+  seen.delete(value as object);
+  return result;
+}
+
+function normalizeCommand(candidate: unknown): Command {
+  if (!isRecord(candidate)) {
+    throw new Error('Command must be an object.');
+  }
+
+  const type = readNonEmptyString(candidate.type, 'command.type');
+  const priorityValue = readFiniteNumber(candidate.priority, 'command.priority');
+  const timestamp = readFiniteNumber(candidate.timestamp, 'command.timestamp');
+  const step = readNonNegativeInt(candidate.step, 'command.step');
+
+  if (!Object.values(CommandPriority).includes(priorityValue as CommandPriority)) {
+    throw new Error('command.priority must be a valid CommandPriority value.');
+  }
+
+  const payload = cloneJsonValue(candidate.payload);
+  const requestId =
+    candidate.requestId === undefined
+      ? undefined
+      : readNonEmptyString(candidate.requestId, 'command.requestId');
+
+  return Object.freeze({
+    type,
+    priority: priorityValue as CommandPriority,
+    payload,
+    timestamp,
+    step,
+    ...(requestId === undefined ? {} : { requestId }),
+  });
+}
+
+function captureSnapshotFromWiring(
+  wiring: GameRuntimeWiring<IdleEngineRuntime>,
+  capturedAt?: number,
+): GameStateSnapshot {
+  return captureGameStateSnapshot({
+    runtime: wiring.runtime,
+    progressionCoordinator: wiring.coordinator,
+    commandQueue: wiring.commandQueue,
+    productionSystem: wiring.productionSystem,
+    getAutomationState: () => wiring.automationSystem?.getState() ?? new Map(),
+    getTransformState: () => wiring.transformSystem?.getState() ?? new Map(),
+    getEntityState: () => wiring.entitySystem?.getState() ?? {
+      entities: new Map(),
+      instances: new Map(),
+      entityInstances: new Map(),
+    },
+    getPrdState: () => wiring.prdRegistry.captureState(),
+    ...(capturedAt === undefined ? {} : { capturedAt }),
+  });
+}
+
+function toWiringConfig(wiring: GameRuntimeWiring): SimReplayWiringConfig {
+  return Object.freeze({
+    enableProduction: wiring.productionSystem !== undefined,
+    enableAutomation: wiring.automationSystem !== undefined,
+    enableTransforms: wiring.transformSystem !== undefined,
+    enableEntities: wiring.entitySystem !== undefined,
+  });
+}
+
+export class SimReplayRecorder {
+  private readonly content: NormalizedContentPack;
+  private readonly wiring: GameRuntimeWiring<IdleEngineRuntime>;
+  private readonly wiringConfig: SimReplayWiringConfig;
+  private readonly recordedAt: number;
+  private readonly startSnapshot: GameStateSnapshot;
+  private readonly commands: Command[] = [];
+
+  constructor(options: {
+    readonly content: NormalizedContentPack;
+    readonly wiring: GameRuntimeWiring<IdleEngineRuntime>;
+    readonly recordedAt?: number;
+    readonly capturedAt?: number;
+  }) {
+    this.content = options.content;
+    this.wiring = options.wiring;
+    this.wiringConfig = toWiringConfig(options.wiring);
+    this.recordedAt = options.recordedAt ?? Date.now();
+    this.startSnapshot = captureSnapshotFromWiring(
+      options.wiring,
+      options.capturedAt,
+    );
+  }
+
+  recordCommand(command: Command): void {
+    this.commands.push(normalizeCommand(command));
+  }
+
+  export(options?: { readonly capturedAt?: number }): SimReplay {
+    const endSnapshot = captureSnapshotFromWiring(
+      this.wiring,
+      options?.capturedAt,
+    );
+    const endStateChecksum = computeStateChecksum(endSnapshot);
+
+    const digest = normalizeDigest(this.content.digest as unknown);
+
+    return Object.freeze({
+      header: {
+        fileType: SIM_REPLAY_FILE_TYPE,
+        schemaVersion: SIM_REPLAY_SCHEMA_VERSION,
+        recordedAt: this.recordedAt,
+        runtimeVersion: RUNTIME_VERSION,
+      },
+      content: {
+        packId: this.content.metadata.id,
+        packVersion: this.content.metadata.version,
+        digest,
+      },
+      assets: {
+        manifestHash: null,
+      },
+      sim: {
+        wiring: this.wiringConfig,
+        stepSizeMs: this.startSnapshot.runtime.stepSizeMs,
+        startStep: this.startSnapshot.runtime.step,
+        endStep: endSnapshot.runtime.step,
+        initialSnapshot: this.startSnapshot,
+        commands: Object.freeze([...this.commands]),
+        endStateChecksum,
+      },
+    });
+  }
+}
+
+function assertReplayMatchesContentDigest(
+  replay: SimReplay,
+  content: NormalizedContentPack,
+): void {
+  const expectedDigest = normalizeDigest(content.digest as unknown);
+  const actual = replay.content.digest;
+
+  if (
+    actual.hash !== expectedDigest.hash ||
+    String(actual.version) !== String(expectedDigest.version)
+  ) {
+    telemetry.recordError('SimReplayContentDigestMismatch', {
+      expected: expectedDigest,
+      received: actual,
+      packId: replay.content.packId,
+      packVersion: replay.content.packVersion,
+    });
+    throw new Error('Content digest mismatch. Replay is not compatible with the provided content pack.');
+  }
+}
+
+export function runSimReplay(options: RunSimReplayOptions): RunSimReplayResult {
+  const { content, replay } = options;
+
+  assertReplayMatchesContentDigest(replay, content);
+
+  const snapshot = replay.sim.initialSnapshot;
+  if (snapshot.version !== 1) {
+    throw new Error('Replay snapshot version is not supported.');
+  }
+
+  if (!Number.isFinite(replay.sim.stepSizeMs) || replay.sim.stepSizeMs <= 0) {
+    throw new Error('Replay stepSizeMs must be a positive, finite number.');
+  }
+
+  const wiring = restoreGameRuntimeFromSnapshot({
+    content,
+    snapshot,
+    enableProduction: replay.sim.wiring.enableProduction,
+    enableAutomation: replay.sim.wiring.enableAutomation,
+    enableTransforms: replay.sim.wiring.enableTransforms,
+    enableEntities: replay.sim.wiring.enableEntities,
+    runtimeOptions: {
+      maxStepsPerFrame: 1,
+    },
+  }) as GameRuntimeWiring<IdleEngineRuntime>;
+
+  for (const command of replay.sim.commands) {
+    wiring.commandQueue.enqueue(command);
+  }
+
+  const stepSizeMs = replay.sim.stepSizeMs;
+  const endStep = replay.sim.endStep;
+  const startStep = wiring.runtime.getCurrentStep();
+
+  if (endStep < startStep) {
+    throw new Error('Replay endStep must be greater than or equal to the restored runtime step.');
+  }
+
+  while (wiring.runtime.getCurrentStep() < endStep) {
+    wiring.runtime.tick(stepSizeMs);
+  }
+
+  const endSnapshot = captureSnapshotFromWiring(wiring);
+  const checksum = computeStateChecksum(endSnapshot);
+
+  if (checksum !== replay.sim.endStateChecksum) {
+    telemetry.recordError('SimReplayChecksumMismatch', {
+      expected: replay.sim.endStateChecksum,
+      received: checksum,
+      endStep: endSnapshot.runtime.step,
+    });
+    throw new Error('Replay end-state checksum mismatch.');
+  }
+
+  return { snapshot: endSnapshot, checksum };
+}
+
+function assertPositiveInteger(value: number, label: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+}
+
+export function encodeSimReplayJsonLines(
+  replay: SimReplay,
+  options: EncodeSimReplayOptions = {},
+): string {
+  const maxCommandsPerChunk = options.maxCommandsPerChunk ?? 1000;
+  assertPositiveInteger(maxCommandsPerChunk, 'maxCommandsPerChunk');
+
+  const records: SimReplayRecord[] = [
+    {
+      type: 'header',
+      ...replay.header,
+    },
+    {
+      type: 'content',
+      ...replay.content,
+    },
+    {
+      type: 'assets',
+      ...replay.assets,
+    },
+    {
+      type: 'sim',
+      wiring: replay.sim.wiring,
+      stepSizeMs: replay.sim.stepSizeMs,
+      startStep: replay.sim.startStep,
+      initialSnapshot: replay.sim.initialSnapshot,
+    },
+  ];
+
+  const commands = replay.sim.commands;
+  let chunkIndex = 0;
+  for (let i = 0; i < commands.length; i += maxCommandsPerChunk) {
+    records.push({
+      type: 'commands',
+      chunkIndex,
+      commands: commands.slice(i, i + maxCommandsPerChunk),
+    });
+    chunkIndex += 1;
+  }
+
+  records.push({
+    type: 'end',
+    endStep: replay.sim.endStep,
+    endStateChecksum: replay.sim.endStateChecksum,
+    commandCount: commands.length,
+  });
+
+  return `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
+}
+
+const DEFAULT_MAX_SIM_REPLAY_COMMANDS = 1_000_000;
+const DEFAULT_MAX_SIM_REPLAY_LINES = 2_000_000;
+
+export function decodeSimReplayJsonLines(
+  input: string,
+  options: DecodeSimReplayOptions = {},
+): SimReplay {
+  if (typeof input !== 'string') {
+    throw new Error('Replay input must be a string.');
+  }
+
+  const maxCommands = options.maxCommands ?? DEFAULT_MAX_SIM_REPLAY_COMMANDS;
+  const maxLines = options.maxLines ?? DEFAULT_MAX_SIM_REPLAY_LINES;
+
+  if (!Number.isInteger(maxCommands) || maxCommands <= 0) {
+    throw new Error('maxCommands must be a positive integer.');
+  }
+
+  if (!Number.isInteger(maxLines) || maxLines <= 0) {
+    throw new Error('maxLines must be a positive integer.');
+  }
+
+  const lines = input
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) {
+    throw new Error('Replay input is empty.');
+  }
+
+  if (lines.length > maxLines) {
+    throw new Error('Replay input exceeds configured line limit.');
+  }
+
+  const readRecord = (line: string): SimReplayRecord => {
+    const parsed = JSON.parse(line) as unknown;
+    if (!isRecord(parsed)) {
+      throw new Error('Replay record must be an object.');
+    }
+    const type = readNonEmptyString(parsed.type, 'record.type');
+    return { ...(parsed as Record<string, unknown>), type } as SimReplayRecord;
+  };
+
+  const headerRecord = readRecord(lines[0] ?? '');
+  if (headerRecord.type !== 'header') {
+    throw new Error('Replay header record must appear first.');
+  }
+  if (headerRecord.fileType !== SIM_REPLAY_FILE_TYPE) {
+    throw new Error('Replay fileType is not supported.');
+  }
+  if (headerRecord.schemaVersion !== SIM_REPLAY_SCHEMA_VERSION) {
+    throw new Error('Replay schemaVersion is not supported.');
+  }
+
+  const contentRecord = readRecord(lines[1] ?? '');
+  if (contentRecord.type !== 'content') {
+    throw new Error('Replay content record must appear second.');
+  }
+
+  const assetsRecord = readRecord(lines[2] ?? '');
+  if (assetsRecord.type !== 'assets') {
+    throw new Error('Replay assets record must appear third.');
+  }
+
+  const simRecord = readRecord(lines[3] ?? '');
+  if (simRecord.type !== 'sim') {
+    throw new Error('Replay sim record must appear fourth.');
+  }
+
+  const commands: Command[] = [];
+  let endStep: number | null = null;
+  let endStateChecksum: string | null = null;
+  let expectedCommandCount: number | null = null;
+
+  for (let index = 4; index < lines.length; index += 1) {
+    const record = readRecord(lines[index] ?? '');
+    if (record.type === 'commands') {
+      if (!Array.isArray(record.commands)) {
+        throw new Error('Replay command chunk must contain commands array.');
+      }
+
+      for (const command of record.commands) {
+        commands.push(normalizeCommand(command));
+        if (commands.length > maxCommands) {
+          throw new Error('Replay command stream exceeds configured command limit.');
+        }
+      }
+      continue;
+    }
+
+    if (record.type === 'end') {
+      endStep = readNonNegativeInt(record.endStep, 'end.endStep');
+      endStateChecksum = readNonEmptyString(
+        record.endStateChecksum,
+        'end.endStateChecksum',
+      );
+      expectedCommandCount = readNonNegativeInt(
+        record.commandCount,
+        'end.commandCount',
+      );
+      break;
+    }
+
+    throw new Error(`Unexpected replay record type: ${record.type}`);
+  }
+
+  if (endStep === null || endStateChecksum === null || expectedCommandCount === null) {
+    throw new Error('Replay is missing end record.');
+  }
+
+  if (expectedCommandCount !== commands.length) {
+    throw new Error('Replay command count does not match footer.');
+  }
+
+  const wiringValue = simRecord.wiring;
+  if (!isRecord(wiringValue)) {
+    throw new Error('sim.wiring must be an object.');
+  }
+
+  const wiring: SimReplayWiringConfig = Object.freeze({
+    enableProduction: Boolean(wiringValue.enableProduction),
+    enableAutomation: Boolean(wiringValue.enableAutomation),
+    enableTransforms: Boolean(wiringValue.enableTransforms),
+    enableEntities: Boolean(wiringValue.enableEntities),
+  });
+
+  const startSnapshot = simRecord.initialSnapshot as unknown;
+  if (!isRecord(startSnapshot)) {
+    throw new Error('sim.initialSnapshot must be an object.');
+  }
+
+  const stepSizeMs = readPositiveFiniteNumber(simRecord.stepSizeMs, 'sim.stepSizeMs');
+  const startStep = readNonNegativeInt(simRecord.startStep, 'sim.startStep');
+
+  const packId = readNonEmptyString(contentRecord.packId, 'content.packId');
+  const packVersion = readNonEmptyString(contentRecord.packVersion, 'content.packVersion');
+  const digest = normalizeDigest(contentRecord.digest);
+
+  const recordedAt = readFiniteNumber(headerRecord.recordedAt, 'header.recordedAt');
+  const runtimeVersion = readNonEmptyString(headerRecord.runtimeVersion, 'header.runtimeVersion');
+
+  return Object.freeze({
+    header: {
+      fileType: SIM_REPLAY_FILE_TYPE,
+      schemaVersion: SIM_REPLAY_SCHEMA_VERSION,
+      recordedAt,
+      runtimeVersion,
+    },
+    content: {
+      packId,
+      packVersion,
+      digest,
+    },
+    assets: {
+      manifestHash:
+        assetsRecord.manifestHash === undefined || assetsRecord.manifestHash === null
+          ? null
+          : readNonEmptyString(assetsRecord.manifestHash, 'assets.manifestHash'),
+    },
+    sim: {
+      wiring,
+      stepSizeMs,
+      startStep,
+      endStep,
+      initialSnapshot: startSnapshot as unknown as GameStateSnapshot,
+      commands: Object.freeze(commands),
+      endStateChecksum,
+    },
+  });
+}
