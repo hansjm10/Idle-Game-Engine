@@ -1588,5 +1588,25 @@ export type {
 } from './state-sync/restore.js';
 export type { RestoreGameRuntimeFromSnapshotOptions } from './state-sync/restore-runtime.js';
 export type { GameStateSnapshot } from './state-sync/types.js';
+export {
+  SIM_REPLAY_FILE_TYPE,
+  SIM_REPLAY_SCHEMA_VERSION,
+  SimReplayRecorder,
+  decodeSimReplayJsonLines,
+  encodeSimReplayJsonLines,
+  runSimReplay,
+	  type DecodeSimReplayOptions,
+	  type EncodeSimReplayOptions,
+	  type RunSimReplayOptions,
+	  type RunSimReplayResult,
+	  type SimReplayAssetsV1,
+	  type SimReplayContentDigest,
+	  type SimReplayContentV1,
+  type SimReplayHeaderV1,
+  type SimReplaySchemaVersion,
+  type SimReplaySimV1,
+  type SimReplayV1,
+  type SimReplayWiringConfig,
+} from './replay/sim-replay.js';
 // Test utilities - useful for consumers writing tests for their game logic
 export { createTickContext, createMockEventPublisher } from './test-utils.js';
