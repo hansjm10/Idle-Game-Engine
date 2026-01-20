@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "paths": {
+      "@idle-engine/core": ["packages/core/src/index.ts"],
+      "@idle-engine/controls": ["packages/controls/src/index.ts"],
+      "@idle-engine/content-schema": [
+        "packages/content-schema/src/index.ts",
+        "packages/content-schema/src/index.d.ts"
+      ],
+      "@idle-engine/content-schema/runtime-helpers": [
+        "packages/content-schema/src/runtime-helpers.ts",
+        "packages/content-schema/src/runtime-helpers.d.ts"
+      ]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.cts", "../core/src/object-hasown.d.ts"],
+  "exclude": ["dist", "node_modules"]
+}

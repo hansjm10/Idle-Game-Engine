@@ -106,7 +106,7 @@ describe('shell-desktop renderer entrypoint', () => {
   });
 
   it('starts IPC ping + WebGPU renderer loop', async () => {
-    await import('./index.ts');
+    await import('./index.js');
     await flushMicrotasks();
 
     expect(createWebGpuRenderer).toHaveBeenCalledTimes(1);
@@ -133,7 +133,7 @@ describe('shell-desktop renderer entrypoint', () => {
     const idleEngine = (globalThis as unknown as { idleEngine: { ping: ReturnType<typeof vi.fn> } }).idleEngine;
     idleEngine.ping.mockRejectedValueOnce(new Error('no ipc'));
 
-    await import('./index.ts');
+    await import('./index.js');
     await flushMicrotasks();
 
     const outputElement = (
@@ -155,7 +155,7 @@ describe('shell-desktop renderer entrypoint', () => {
     const recoveredRenderer = { render: vi.fn(), resize: vi.fn(), dispose: vi.fn() };
     createWebGpuRenderer.mockResolvedValueOnce(firstRenderer).mockResolvedValueOnce(recoveredRenderer);
 
-    await import('./index.ts');
+    await import('./index.js');
     await flushMicrotasks();
 
     const outputElement = (
@@ -192,7 +192,7 @@ describe('shell-desktop renderer entrypoint', () => {
       return capturedOptions.length === 1 ? firstRenderer : recoveredRenderer;
     });
 
-    await import('./index.ts');
+    await import('./index.js');
     await flushMicrotasks();
 
     expect(capturedOptions).toHaveLength(1);
@@ -213,7 +213,7 @@ describe('shell-desktop renderer entrypoint', () => {
   it('reports when WebGPU initialization fails', async () => {
     createWebGpuRenderer.mockRejectedValueOnce(new Error('no adapter'));
 
-    await import('./index.ts');
+    await import('./index.js');
     await flushMicrotasks();
 
     const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
