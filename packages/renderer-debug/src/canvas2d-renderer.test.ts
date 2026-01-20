@@ -416,4 +416,121 @@ describe('renderRenderCommandBufferToCanvas2d', () => {
     expect(calls[2]?.args).toEqual([2, 4, 6, 8]);
     expect(calls[6]?.args).toEqual([10, 12, 14, 16]);
   });
+
+  it('applies tintRgba as RGBA tint when assets are available', () => {
+    const globalRecord = globalThis as unknown as Record<string, unknown>;
+    const originalOffscreenCanvas = globalRecord.OffscreenCanvas;
+    const offscreenCalls: Array<{
+      name: string;
+      args: readonly unknown[];
+      state: {
+        globalCompositeOperation: string;
+        globalAlpha: number;
+        fillStyle: unknown;
+      };
+    }> = [];
+
+    class FakeOffscreenContext {
+      globalCompositeOperation = 'source-over';
+      globalAlpha = 1;
+      fillStyle: unknown = '';
+
+      clearRect(...args: readonly unknown[]): void {
+        offscreenCalls.push({ name: 'clearRect', args, state: this.#state() });
+      }
+
+      fillRect(...args: readonly unknown[]): void {
+        offscreenCalls.push({ name: 'fillRect', args, state: this.#state() });
+      }
+
+      drawImage(...args: readonly unknown[]): void {
+        offscreenCalls.push({ name: 'drawImage', args, state: this.#state() });
+      }
+
+      #state(): {
+        globalCompositeOperation: string;
+        globalAlpha: number;
+        fillStyle: unknown;
+      } {
+        return {
+          globalCompositeOperation: this.globalCompositeOperation,
+          globalAlpha: this.globalAlpha,
+          fillStyle: this.fillStyle,
+        };
+      }
+    }
+
+    class FakeOffscreenCanvas {
+      width: number;
+      height: number;
+      #ctx: FakeOffscreenContext;
+
+      constructor(width: number, height: number) {
+        this.width = width;
+        this.height = height;
+        this.#ctx = new FakeOffscreenContext();
+      }
+
+      getContext(type: string): FakeOffscreenContext | null {
+        if (type !== '2d') {
+          return null;
+        }
+        return this.#ctx;
+      }
+    }
+
+    globalRecord.OffscreenCanvas = FakeOffscreenCanvas as unknown as typeof OffscreenCanvas;
+
+    try {
+      const { ctx, calls } = createFakeContext();
+      const image = { width: 2, height: 3 } as unknown as CanvasImageSource;
+
+      const rcb: RenderCommandBuffer = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 1,
+          simTimeMs: 16,
+          contentHash: 'content',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'image:test' as AssetId,
+            x: 1,
+            y: 2,
+            width: 2,
+            height: 3,
+            tintRgba: 0x12_34_56_80,
+          },
+        ],
+      };
+
+      renderRenderCommandBufferToCanvas2d(ctx, rcb, {
+        assets: { resolveImage: () => image },
+      });
+
+      expect(calls.map((c) => c.name)).toEqual(['drawImage']);
+      expect(calls[0]?.args[0]).toBeInstanceOf(FakeOffscreenCanvas);
+
+      const multiplyFill = offscreenCalls.find((call) => call.name === 'fillRect');
+      expect(multiplyFill?.state.globalCompositeOperation).toBe('multiply');
+      expect(multiplyFill?.state.fillStyle).toBe('rgb(18, 52, 86)');
+
+      let maskDraw: (typeof offscreenCalls)[number] | undefined;
+      for (let index = offscreenCalls.length - 1; index >= 0; index -= 1) {
+        const call = offscreenCalls[index];
+        if (call?.name === 'drawImage') {
+          maskDraw = call;
+          break;
+        }
+      }
+      expect(maskDraw?.state.globalCompositeOperation).toBe('destination-in');
+      expect(maskDraw?.state.globalAlpha).toBeCloseTo(0x80 / 0xff);
+    } finally {
+      globalRecord.OffscreenCanvas = originalOffscreenCanvas;
+    }
+  });
 });
