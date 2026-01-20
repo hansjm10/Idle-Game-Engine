@@ -53,7 +53,7 @@ describe('sprite-batching', () => {
     ]);
   });
 
-  it('builds per-pass instance groups and respects alpha-only tinting', () => {
+  it('builds per-pass instance groups and respects tintRgba (0xRRGGBBAA)', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
       passes: [{ id: 'world' }, { id: 'ui' }],
@@ -98,7 +98,14 @@ describe('sprite-batching', () => {
     ]);
 
     const instanceStride = 12;
-    const spriteAAlpha = result.instances[instanceStride - 1];
-    expect(spriteAAlpha).toBeCloseTo(0x80 / 255);
+    const spriteAColorOffset = instanceStride - 4;
+    expect(result.instances.slice(spriteAColorOffset, spriteAColorOffset + 4)).toEqual(
+      new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
+    );
+
+    const spriteBColorOffset = instanceStride + (instanceStride - 4);
+    expect(result.instances.slice(spriteBColorOffset, spriteBColorOffset + 4)).toEqual(
+      new Float32Array([1, 1, 1, 1]),
+    );
   });
 });

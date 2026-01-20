@@ -1606,7 +1606,12 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#ensureQuadBatch(state, 'image', passId);
 
     const uv = this.#spriteUvOrThrow(state, draw.assetId);
-    const tintAlpha = (((draw.tintRgba ?? 0xff) >>> 0) & 0xff) / 255;
+    const tintRgba = draw.tintRgba;
+    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
+    const tintRed = tint === undefined ? 1 : clampByte((tint >>> 24) & 0xff) / 255;
+    const tintGreen = tint === undefined ? 1 : clampByte((tint >>> 16) & 0xff) / 255;
+    const tintBlue = tint === undefined ? 1 : clampByte((tint >>> 8) & 0xff) / 255;
+    const tintAlpha = tint === undefined ? 1 : clampByte(tint & 0xff) / 255;
 
     state.batchInstances.push(
       draw.x,
@@ -1617,9 +1622,9 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       uv.v0,
       uv.u1,
       uv.v1,
-      1,
-      1,
-      1,
+      tintRed,
+      tintGreen,
+      tintBlue,
       tintAlpha,
     );
     state.batchInstanceCount += 1;

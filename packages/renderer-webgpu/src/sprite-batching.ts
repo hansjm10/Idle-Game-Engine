@@ -151,7 +151,11 @@ export function buildSpriteInstances(options: {
     }
 
     const tintRgba = imageDraw.draw.tintRgba;
-    const tintAlpha = tintRgba === undefined ? 1 : ((tintRgba >>> 0) & 0xff) / 255;
+    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
+    const tintRed = tint === undefined ? 1 : ((tint >>> 24) & 0xff) / 255;
+    const tintGreen = tint === undefined ? 1 : ((tint >>> 16) & 0xff) / 255;
+    const tintBlue = tint === undefined ? 1 : ((tint >>> 8) & 0xff) / 255;
+    const tintAlpha = tint === undefined ? 1 : (tint & 0xff) / 255;
 
     instances[writeOffset++] = imageDraw.draw.x;
     instances[writeOffset++] = imageDraw.draw.y;
@@ -161,9 +165,9 @@ export function buildSpriteInstances(options: {
     instances[writeOffset++] = uv.v0;
     instances[writeOffset++] = uv.u1;
     instances[writeOffset++] = uv.v1;
-    instances[writeOffset++] = 1;
-    instances[writeOffset++] = 1;
-    instances[writeOffset++] = 1;
+    instances[writeOffset++] = tintRed;
+    instances[writeOffset++] = tintGreen;
+    instances[writeOffset++] = tintBlue;
     instances[writeOffset++] = tintAlpha;
   }
 
