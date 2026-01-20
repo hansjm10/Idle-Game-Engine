@@ -14,6 +14,21 @@ function compareSortKey(a, b) {
     }
     return compareNumbers(a.sortKeyLo, b.sortKeyLo);
 }
+function writeTintIntoInstanceBuffer(instances, writeOffset, tintRgba) {
+    if (tintRgba === undefined) {
+        instances[writeOffset++] = 1;
+        instances[writeOffset++] = 1;
+        instances[writeOffset++] = 1;
+        instances[writeOffset++] = 1;
+        return writeOffset;
+    }
+    const tint = tintRgba >>> 0;
+    instances[writeOffset++] = ((tint >>> 24) & 0xff) / 255;
+    instances[writeOffset++] = ((tint >>> 16) & 0xff) / 255;
+    instances[writeOffset++] = ((tint >>> 8) & 0xff) / 255;
+    instances[writeOffset++] = (tint & 0xff) / 255;
+    return writeOffset;
+}
 export function orderDrawsByPassAndSortKey(rcb) {
     const passIndexById = new Map();
     for (let index = 0; index < rcb.passes.length; index += 1) {
@@ -78,9 +93,6 @@ export function buildSpriteInstances(options) {
     }
     for (let index = 0; index < imageDraws.length; index += 1) {
         const imageDraw = imageDraws[index];
-        if (!imageDraw) {
-            continue;
-        }
         if (currentGroupPass === undefined) {
             currentGroupPass = imageDraw.passId;
             currentGroupFirstInstance = index;
@@ -94,12 +106,6 @@ export function buildSpriteInstances(options) {
         if (!uv) {
             throw new Error(`Atlas missing UVs for AssetId: ${imageDraw.draw.assetId}`);
         }
-        const tintRgba = imageDraw.draw.tintRgba;
-        const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
-        const tintRed = tint === undefined ? 1 : ((tint >>> 24) & 0xff) / 255;
-        const tintGreen = tint === undefined ? 1 : ((tint >>> 16) & 0xff) / 255;
-        const tintBlue = tint === undefined ? 1 : ((tint >>> 8) & 0xff) / 255;
-        const tintAlpha = tint === undefined ? 1 : (tint & 0xff) / 255;
         instances[writeOffset++] = imageDraw.draw.x;
         instances[writeOffset++] = imageDraw.draw.y;
         instances[writeOffset++] = imageDraw.draw.width;
@@ -108,10 +114,7 @@ export function buildSpriteInstances(options) {
         instances[writeOffset++] = uv.v0;
         instances[writeOffset++] = uv.u1;
         instances[writeOffset++] = uv.v1;
-        instances[writeOffset++] = tintRed;
-        instances[writeOffset++] = tintGreen;
-        instances[writeOffset++] = tintBlue;
-        instances[writeOffset++] = tintAlpha;
+        writeOffset = writeTintIntoInstanceBuffer(instances, writeOffset, imageDraw.draw.tintRgba);
     }
     pushGroup(imageDraws.length);
     return {
