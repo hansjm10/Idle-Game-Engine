@@ -1,15 +1,15 @@
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
 var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
     if (kind === "m") throw new TypeError("Private method is not writable");
     if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
     return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
 };
-var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
-    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
-    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
-    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
-};
-var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
+var _QuadInstanceWriter_scratchColor, _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_quadInstanceWriter, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
 import { WORLD_FIXED_POINT_SCALE, canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
 import { createAtlasLayout, packAtlas, } from './atlas-packer.js';
 import { orderDrawsByPassAndSortKey, } from './sprite-batching.js';
@@ -117,6 +117,89 @@ const UI_GLOBALS_OFFSET = GLOBALS_UNIFORM_ALIGNMENT;
 const GLOBALS_BUFFER_SIZE = GLOBALS_UNIFORM_ALIGNMENT * 2;
 const QUAD_VERTEX_STRIDE_BYTES = 16;
 const INSTANCE_STRIDE_BYTES = 48;
+const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / Float32Array.BYTES_PER_ELEMENT;
+const ZERO_SPRITE_UV_RECT = { u0: 0, v0: 0, u1: 0, v1: 0 };
+class QuadInstanceWriter {
+    constructor(initialCapacityFloats = 0) {
+        Object.defineProperty(this, "buffer", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "lengthFloats", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: 0
+        });
+        _QuadInstanceWriter_scratchColor.set(this, { red: 1, green: 1, blue: 1, alpha: 1 });
+        this.buffer = new Float32Array(initialCapacityFloats);
+    }
+    reset() {
+        this.lengthFloats = 0;
+    }
+    reserveInstances(additionalInstances) {
+        if (additionalInstances <= 0) {
+            return;
+        }
+        this.ensureCapacity(this.lengthFloats + additionalInstances * INSTANCE_STRIDE_FLOATS);
+    }
+    ensureCapacity(requiredFloats) {
+        if (this.buffer.length >= requiredFloats) {
+            return;
+        }
+        const nextCapacity = Math.max(256, this.buffer.length * 2, requiredFloats);
+        const next = new Float32Array(nextCapacity);
+        if (this.lengthFloats > 0) {
+            next.set(this.buffer.subarray(0, this.lengthFloats));
+        }
+        this.buffer = next;
+    }
+    writeInstance(x, y, width, height, uv, color) {
+        const nextLengthFloats = this.lengthFloats + INSTANCE_STRIDE_FLOATS;
+        this.ensureCapacity(nextLengthFloats);
+        const offset = this.lengthFloats;
+        const buffer = this.buffer;
+        buffer[offset] = x;
+        buffer[offset + 1] = y;
+        buffer[offset + 2] = width;
+        buffer[offset + 3] = height;
+        buffer[offset + 4] = uv.u0;
+        buffer[offset + 5] = uv.v0;
+        buffer[offset + 6] = uv.u1;
+        buffer[offset + 7] = uv.v1;
+        buffer[offset + 8] = color.red;
+        buffer[offset + 9] = color.green;
+        buffer[offset + 10] = color.blue;
+        buffer[offset + 11] = color.alpha;
+        this.lengthFloats = nextLengthFloats;
+    }
+    writeInstanceRgba(x, y, width, height, uv, rgba) {
+        const color = __classPrivateFieldGet(this, _QuadInstanceWriter_scratchColor, "f");
+        if (rgba === undefined) {
+            color.red = 1;
+            color.green = 1;
+            color.blue = 1;
+            color.alpha = 1;
+        }
+        else {
+            const packed = rgba >>> 0;
+            color.red = clampByte((packed >>> 24) & 0xff) / 255;
+            color.green = clampByte((packed >>> 16) & 0xff) / 255;
+            color.blue = clampByte((packed >>> 8) & 0xff) / 255;
+            color.alpha = clampByte(packed & 0xff) / 255;
+        }
+        this.writeInstance(x, y, width, height, uv, color);
+    }
+    get instanceCount() {
+        return this.lengthFloats / INSTANCE_STRIDE_FLOATS;
+    }
+    get usedByteLength() {
+        return this.lengthFloats * Float32Array.BYTES_PER_ELEMENT;
+    }
+}
+_QuadInstanceWriter_scratchColor = new WeakMap();
 const QUAD_VERTEX_DATA = new Float32Array([
     0, 0, 0, 0,
     1, 0, 1, 0,
@@ -481,6 +564,7 @@ function applyBitmapTextControlCharacter(char, pen, lineHeightPx, tabAdvancePx) 
 function appendBitmapTextInstances(options) {
     const pen = { x: 0, y: 0 };
     let appended = 0;
+    options.batchInstances.reserveInstances(options.text.length);
     for (const glyphText of options.text) {
         if (applyBitmapTextControlCharacter(glyphText, pen, options.font.lineHeightPx, options.tabAdvancePx)) {
             continue;
@@ -498,7 +582,7 @@ function appendBitmapTextInstances(options) {
             const glyphY = options.y + (pen.y + glyph.yOffsetPx) * options.scale;
             const glyphW = glyph.widthPx * options.scale;
             const glyphH = glyph.heightPx * options.scale;
-            options.batchInstances.push(glyphX, glyphY, glyphW, glyphH, glyph.uv.u0, glyph.uv.v0, glyph.uv.u1, glyph.uv.v1, options.color.red, options.color.green, options.color.blue, options.color.alpha);
+            options.batchInstances.writeInstance(glyphX, glyphY, glyphW, glyphH, glyph.uv, options.color);
             appended += 1;
         }
         pen.x += glyph.xAdvancePx;
@@ -557,6 +641,7 @@ class WebGpuRendererImpl {
         _WebGpuRendererImpl_spriteInstanceBufferSize.set(this, 0);
         _WebGpuRendererImpl_spriteTextureBindGroupLayout.set(this, void 0);
         _WebGpuRendererImpl_spriteTextureBindGroup.set(this, void 0);
+        _WebGpuRendererImpl_quadInstanceWriter.set(this, new QuadInstanceWriter());
         _WebGpuRendererImpl_atlasLayout.set(this, void 0);
         _WebGpuRendererImpl_atlasLayoutHash.set(this, void 0);
         _WebGpuRendererImpl_atlasUvByAssetId.set(this, void 0);
@@ -670,7 +755,7 @@ class WebGpuRendererImpl {
         __classPrivateFieldSet(this, _WebGpuRendererImpl_disposed, true, "f");
     }
 }
-_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_worldFixedPointInvScale = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_bitmapFontByAssetId = new WeakMap(), _WebGpuRendererImpl_defaultBitmapFontAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_assertReadyForAssetLoad = function _WebGpuRendererImpl_assertReadyForAssetLoad() {
+_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_worldFixedPointInvScale = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_quadInstanceWriter = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_bitmapFontByAssetId = new WeakMap(), _WebGpuRendererImpl_defaultBitmapFontAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_assertReadyForAssetLoad = function _WebGpuRendererImpl_assertReadyForAssetLoad() {
     if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f")) {
         throw new Error('WebGPU renderer is disposed.');
     }
@@ -986,6 +1071,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         uiGlobalsBindGroup,
     };
 }, _WebGpuRendererImpl_createQuadRenderState = function _WebGpuRendererImpl_createQuadRenderState(passEncoder, orderedDraws) {
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_quadInstanceWriter, "f").reset();
     const hasQuadDraws = orderedDraws.some((entry) => entry.draw.kind === 'rect' ||
         entry.draw.kind === 'image' ||
         entry.draw.kind === 'text');
@@ -1025,8 +1111,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         currentScissor: viewportScissor,
         batchKind: undefined,
         batchPassId: undefined,
-        batchInstances: [],
-        batchInstanceCount: 0,
+        batchInstances: __classPrivateFieldGet(this, _WebGpuRendererImpl_quadInstanceWriter, "f"),
     };
 }, _WebGpuRendererImpl_applyScissorRect = function _WebGpuRendererImpl_applyScissorRect(state, rect) {
     if (state.appliedScissor && isSameScissorRect(state.appliedScissor, rect)) {
@@ -1037,13 +1122,13 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
 }, _WebGpuRendererImpl_resetQuadBatch = function _WebGpuRendererImpl_resetQuadBatch(state) {
     state.batchKind = undefined;
     state.batchPassId = undefined;
-    state.batchInstances = [];
-    state.batchInstanceCount = 0;
+    state.batchInstances.reset();
 }, _WebGpuRendererImpl_flushQuadBatch = function _WebGpuRendererImpl_flushQuadBatch(state) {
     const kind = state.batchKind;
     const passId = state.batchPassId;
-    const instanceCount = state.batchInstanceCount;
-    if (!kind || !passId || instanceCount <= 0) {
+    const instanceCount = state.batchInstances.instanceCount;
+    const usedBytes = state.batchInstances.usedByteLength;
+    if (!kind || !passId || instanceCount <= 0 || usedBytes <= 0) {
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_resetQuadBatch).call(this, state);
         return;
     }
@@ -1051,13 +1136,12 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_resetQuadBatch).call(this, state);
         return;
     }
-    const instances = new Float32Array(state.batchInstances);
-    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, instances.byteLength);
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, usedBytes);
     const instanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
     if (!instanceBuffer) {
         throw new Error('Sprite pipeline missing instance buffer.');
     }
-    this.device.queue.writeBuffer(instanceBuffer, 0, toArrayBuffer(instances));
+    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedBytes);
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
     if (kind === 'image') {
         if (!state.textureBindGroup) {
@@ -1144,25 +1228,12 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
 }, _WebGpuRendererImpl_handleRectDraw = function _WebGpuRendererImpl_handleRectDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'rect', passId);
     const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
-    const rgba = draw.colorRgba >>> 0;
-    const red = clampByte((rgba >>> 24) & 0xff) / 255;
-    const green = clampByte((rgba >>> 16) & 0xff) / 255;
-    const blue = clampByte((rgba >>> 8) & 0xff) / 255;
-    const alpha = clampByte(rgba & 0xff) / 255;
-    state.batchInstances.push(draw.x * coordScale, draw.y * coordScale, draw.width * coordScale, draw.height * coordScale, 0, 0, 0, 0, red, green, blue, alpha);
-    state.batchInstanceCount += 1;
+    state.batchInstances.writeInstanceRgba(draw.x * coordScale, draw.y * coordScale, draw.width * coordScale, draw.height * coordScale, ZERO_SPRITE_UV_RECT, draw.colorRgba);
 }, _WebGpuRendererImpl_handleImageDraw = function _WebGpuRendererImpl_handleImageDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'image', passId);
     const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
     const uv = __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_spriteUvOrThrow).call(this, state, draw.assetId);
-    const tintRgba = draw.tintRgba;
-    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
-    const tintRed = tint === undefined ? 1 : clampByte((tint >>> 24) & 0xff) / 255;
-    const tintGreen = tint === undefined ? 1 : clampByte((tint >>> 16) & 0xff) / 255;
-    const tintBlue = tint === undefined ? 1 : clampByte((tint >>> 8) & 0xff) / 255;
-    const tintAlpha = tint === undefined ? 1 : clampByte(tint & 0xff) / 255;
-    state.batchInstances.push(draw.x * coordScale, draw.y * coordScale, draw.width * coordScale, draw.height * coordScale, uv.u0, uv.v0, uv.u1, uv.v1, tintRed, tintGreen, tintBlue, tintAlpha);
-    state.batchInstanceCount += 1;
+    state.batchInstances.writeInstanceRgba(draw.x * coordScale, draw.y * coordScale, draw.width * coordScale, draw.height * coordScale, uv, draw.tintRgba);
 }, _WebGpuRendererImpl_handleTextDraw = function _WebGpuRendererImpl_handleTextDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'image', passId);
     const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
@@ -1185,7 +1256,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const alpha = clampByte(rgba & 0xff) / 255;
     const spaceGlyph = font.glyphByCodePoint.get(0x20) ?? font.fallbackGlyph;
     const tabAdvancePx = (spaceGlyph?.xAdvancePx ?? 0) * 4;
-    state.batchInstanceCount += appendBitmapTextInstances({
+    appendBitmapTextInstances({
         batchInstances: state.batchInstances,
         x: draw.x * coordScale,
         y: draw.y * coordScale,
