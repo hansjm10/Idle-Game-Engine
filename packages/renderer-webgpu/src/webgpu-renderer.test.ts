@@ -306,6 +306,33 @@ describe('renderer-webgpu', () => {
       };
     }
 
+    function getWriteBufferFloat32Payload(call: unknown[]): Float32Array | undefined {
+      if (call.length < 3) {
+        return undefined;
+      }
+
+      const data = call[2];
+      const dataOffset = typeof call[3] === 'number' ? call[3] : 0;
+      const size = typeof call[4] === 'number' ? call[4] : undefined;
+
+      if (data instanceof ArrayBuffer) {
+        const byteLength = size ?? data.byteLength - dataOffset;
+        return new Float32Array(data, dataOffset, byteLength / Float32Array.BYTES_PER_ELEMENT);
+      }
+
+      if (ArrayBuffer.isView(data)) {
+        const view = data as ArrayBufferView;
+        const byteLength = size ?? view.byteLength - dataOffset;
+        return new Float32Array(
+          view.buffer,
+          view.byteOffset + dataOffset,
+          byteLength / Float32Array.BYTES_PER_ELEMENT,
+        );
+      }
+
+      return undefined;
+    }
+
     it('throws when WebGPU is unavailable', async () => {
       setNavigator(undefined);
 
@@ -632,7 +659,7 @@ describe('renderer-webgpu', () => {
       expect(() => renderer.render(rcb)).toThrow('No bitmap fonts loaded');
     });
 
-	    it('uploads an atlas and draws sprite instances', async () => {
+		    it('uploads an atlas and draws sprite instances', async () => {
       const {
         canvas,
         copyExternalImageToTexture,
@@ -705,12 +732,11 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
 
       const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-        const data = call[2];
-        if (!(data instanceof ArrayBuffer) || data.byteLength !== 96) {
+        const instances = getWriteBufferFloat32Payload(call);
+        if (!instances || instances.byteLength !== 96) {
           return false;
         }
 
-        const instances = new Float32Array(data);
         return (
           instances[0] === 10 &&
           instances[1] === 20 &&
@@ -723,17 +749,79 @@ describe('renderer-webgpu', () => {
       if (!instanceBufferWrite) {
         throw new Error('Expected an instance buffer upload for sprite instances.');
       }
-      const instances = new Float32Array(instanceBufferWrite[2] as ArrayBuffer);
+      const instances = getWriteBufferFloat32Payload(instanceBufferWrite);
+      if (!instances) {
+        throw new Error('Expected sprite instance buffer payload to be readable.');
+      }
 
       expect(instances.slice(8, 12)).toEqual(
         new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
       );
-	      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
-	    });
+		      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
+		    });
 
-	    it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
-	      const { canvas, writeBuffer, drawIndexed } = createStubWebGpuEnvironment();
-	      const renderer = await createWebGpuRenderer(canvas);
+    it('reuses the quad instance upload buffer across renders', async () => {
+      const { canvas, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 1,
+            y: 2,
+            width: 3,
+            height: 4,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 5,
+            y: 6,
+            width: 7,
+            height: 8,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+      renderer.render(rcb);
+
+      const instanceWrites = writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array);
+      expect(instanceWrites).toHaveLength(2);
+
+      const firstWrite = instanceWrites[0];
+      const secondWrite = instanceWrites[1];
+      if (!firstWrite || !secondWrite) {
+        throw new Error('Expected quad instance uploads to be recorded.');
+      }
+
+      const firstPayload = firstWrite[2] as Float32Array;
+      const secondPayload = secondWrite[2] as Float32Array;
+      const firstSize = firstWrite[4] as number;
+      const secondSize = secondWrite[4] as number;
+
+      expect(firstSize).toBe(96);
+      expect(secondSize).toBe(96);
+      expect(firstPayload.byteLength).toBeGreaterThan(firstSize);
+      expect(secondPayload).toBe(firstPayload);
+    });
+
+		    it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
+		      const { canvas, writeBuffer, drawIndexed } = createStubWebGpuEnvironment();
+		      const renderer = await createWebGpuRenderer(canvas);
 
 	      const manifest = {
 	        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
@@ -775,32 +863,34 @@ describe('renderer-webgpu', () => {
 
 	      renderer.render(rcb);
 
-	      expect(drawIndexed).toHaveBeenCalledTimes(1);
-	      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+		      expect(drawIndexed).toHaveBeenCalledTimes(1);
+		      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
 
-	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-	        const data = call[2];
-	        if (!(data instanceof ArrayBuffer) || data.byteLength !== 48) {
-	          return false;
-	        }
+		      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+		        const instances = getWriteBufferFloat32Payload(call);
+		        if (!instances || instances.byteLength !== 48) {
+		          return false;
+		        }
 
-	        const instances = new Float32Array(data);
-	        return (
-	          instances[0] === 10 &&
-	          instances[1] === 20 &&
-	          instances[2] === 30 &&
+		        return (
+		          instances[0] === 10 &&
+		          instances[1] === 20 &&
+		          instances[2] === 30 &&
 	          instances[3] === 40
 	        );
 	      });
 
 	      expect(instanceBufferWrite).toBeDefined();
-	      if (!instanceBufferWrite) {
-	        throw new Error('Expected an instance buffer upload for sprite instances.');
-	      }
+		      if (!instanceBufferWrite) {
+		        throw new Error('Expected an instance buffer upload for sprite instances.');
+		      }
 
-	      const instances = new Float32Array(instanceBufferWrite[2] as ArrayBuffer);
-	      expect(instances.slice(8, 12)).toEqual(new Float32Array([1, 1, 1, 1]));
-	    });
+		      const instances = getWriteBufferFloat32Payload(instanceBufferWrite);
+		      if (!instances) {
+		        throw new Error('Expected sprite instance buffer payload to be readable.');
+		      }
+		      expect(instances.slice(8, 12)).toEqual(new Float32Array([1, 1, 1, 1]));
+		    });
 
     it('throws when image draws reference an AssetId missing from the loaded atlas', async () => {
       const { canvas } = createStubWebGpuEnvironment();
