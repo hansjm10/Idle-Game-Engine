@@ -174,6 +174,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     await expect(handler?.({}, { message: 'hello' })).resolves.toEqual({ message: 'hello' });
     await expect(handler?.({}, { message: 123 })).rejects.toThrow(TypeError);
+    await expect(handler?.({}, null)).rejects.toThrow(TypeError);
+    await expect(handler?.({}, [])).rejects.toThrow(TypeError);
   }, 15000);
 
   it('recreates the sim worker when activated with no open windows', async () => {
@@ -205,6 +207,8 @@ describe('shell-desktop main process entrypoint', () => {
   });
 
   it('recreates the sim worker when the renderer reloads', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
     await import('./main.js');
     await flushMicrotasks();
 
@@ -219,16 +223,30 @@ describe('shell-desktop main process entrypoint', () => {
     const didFinishLoadHandler = didFinishLoadCall?.[1] as undefined | (() => void);
     expect(didFinishLoadHandler).toBeTypeOf('function');
 
+    Worker.instances[0]?.terminate.mockRejectedValueOnce(new Error('terminate failed'));
     didFinishLoadHandler?.();
     await flushMicrotasks();
 
     expect(Worker.instances[0]?.terminate).toHaveBeenCalledTimes(1);
     expect(Worker.instances).toHaveLength(2);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+
+    didFinishLoadHandler?.();
+    await flushMicrotasks();
+
+    expect(Worker.instances).toHaveLength(2);
+
+    consoleError.mockRestore();
   });
 
   it('starts the sim tick loop and forwards frames to the renderer', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await import('./main.js');
     await flushMicrotasks();
@@ -259,6 +277,17 @@ describe('shell-desktop main process entrypoint', () => {
     await vi.advanceTimersByTimeAsync(32);
     expect(worker?.postMessage).toHaveBeenCalledWith({ kind: 'tick', deltaMs: 16 });
 
+    let frameSends = 0;
+    mainWindow?.webContents.send.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.frame) {
+        frameSends += 1;
+        if (frameSends === 1) {
+          throw new Error('frame send failed');
+        }
+      }
+      return undefined;
+    });
+
     const frameA = { frame: { step: 0, simTimeMs: 0 } };
     const frameB = { frame: { step: 1, simTimeMs: 16 } };
     worker?.emitMessage({ kind: 'frames', frames: [frameA, frameB], nextStep: 2 });
@@ -269,6 +298,8 @@ describe('shell-desktop main process entrypoint', () => {
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
+
+    consoleError.mockRestore();
   });
 
   it('stops the tick loop and notifies the renderer when the sim worker exits', async () => {
@@ -287,6 +318,7 @@ describe('shell-desktop main process entrypoint', () => {
     expect(worker).toBeDefined();
 
     worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
     await flushMicrotasks();
 
     await vi.advanceTimersByTimeAsync(32);
@@ -297,11 +329,20 @@ describe('shell-desktop main process entrypoint', () => {
     );
     expect(tickCallsBeforeExit).toHaveLength(2);
 
+    mainWindow?.webContents.send.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.simStatus) {
+        throw new Error('send failed');
+      }
+      return undefined;
+    });
+    worker?.terminate.mockRejectedValueOnce(new Error('terminate failed'));
+
     worker?.emitExit(1);
     expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
       IPC_CHANNELS.simStatus,
       expect.objectContaining({ kind: 'crashed', exitCode: 1 }),
     );
+    await flushMicrotasks();
 
     await vi.advanceTimersByTimeAsync(64);
     const tickCallsAfterExit = worker?.postMessage.mock.calls.filter(
@@ -310,6 +351,29 @@ describe('shell-desktop main process entrypoint', () => {
     expect(tickCallsAfterExit).toHaveLength(2);
 
     expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('notifies the renderer when the sim worker exits cleanly', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitExit(0);
+
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'stopped', exitCode: 0 }),
+    );
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('Sim stopped'), expect.anything());
+
     consoleError.mockRestore();
   });
 
@@ -354,6 +418,29 @@ describe('shell-desktop main process entrypoint', () => {
     );
     expect(tickCallsAfterAdvance).toHaveLength(1);
 
+    const didFinishLoadCall = mainWindow?.webContents.on.mock.calls.find((call) => call[0] === 'did-finish-load');
+    const didFinishLoadHandler = didFinishLoadCall?.[1] as undefined | (() => void);
+    didFinishLoadHandler?.();
+    await flushMicrotasks();
+
+    const nextWorker = Worker.instances[1];
+    expect(nextWorker).toBeDefined();
+
+    nextWorker?.postMessage.mockImplementation((message: unknown) => {
+      if (typeof message === 'object' && message !== null && (message as { kind?: unknown }).kind === 'tick') {
+        throw 'tick exploded';
+      }
+    });
+
+    nextWorker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(16);
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed', reason: 'tick exploded' }),
+    );
+
     expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
   });
@@ -396,17 +483,67 @@ describe('shell-desktop main process entrypoint', () => {
     expect(controlEventCall).toBeDefined();
     const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
 
+    controlEventHandler?.({}, null);
+    controlEventHandler?.({}, []);
+    controlEventHandler?.({}, { intent: '', phase: 'start' });
+    controlEventHandler?.({}, { intent: 'collect', phase: 'nope' });
+    expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
+
     controlEventHandler?.({}, { intent: 'collect', phase: 'end' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
     controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
     expect(worker?.postMessage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
+    const enqueueCallsBeforeFailure = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length;
+
+    worker?.emitMessageError(new Error('message payload failed'));
+    worker?.emitMessageError('message payload failed');
+    await flushMicrotasks();
+
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    const enqueueCallsAfterFailure = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length;
+    expect(enqueueCallsAfterFailure).toBe(enqueueCallsBeforeFailure);
+
     worker?.emitMessage({ kind: 'error', error: 'sim-worker error' });
     worker?.emitError(new Error('worker crashed'));
+    worker?.emitError('worker crashed');
     expect(consoleError).toHaveBeenCalled();
 
     consoleError.mockRestore();
+  });
+
+  it('installs the application menu with macOS roles on darwin', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      expect(Menu.buildFromTemplate).toHaveBeenCalledTimes(1);
+      const template = Menu.buildFromTemplate.mock.calls[0]?.[0] as unknown as Array<{ label?: string; submenu?: unknown }>;
+      expect(template[0]).toMatchObject({ label: app.name });
+      expect(template[0]?.submenu).toEqual(
+        expect.arrayContaining([expect.objectContaining({ role: 'about' }), expect.objectContaining({ role: 'quit' })]),
+      );
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+        enumerable: true,
+        writable: false,
+      });
+    }
   });
 
   it('logs startup failures without crashing the process', async () => {

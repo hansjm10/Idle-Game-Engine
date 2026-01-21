@@ -72,7 +72,10 @@ describe('shell-desktop sim worker', () => {
 
   it('ticks and emits frames', async () => {
     const runtime = {
-      tick: vi.fn(() => ({ frames: [{ id: 'frame' }], nextStep: 3 })),
+      tick: vi
+        .fn()
+        .mockReturnValueOnce({ frames: [{ id: 'frame-a' }], nextStep: 3 })
+        .mockReturnValueOnce({ frames: [{ id: 'frame-b' }], nextStep: 4 }),
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 16),
       getNextStep: vi.fn(() => 0),
@@ -94,13 +97,20 @@ describe('shell-desktop sim worker', () => {
     await import('./sim-worker.js');
 
     messageHandler?.({ kind: 'tick', deltaMs: 5 });
+    messageHandler?.({ kind: 'tick', deltaMs: 6 });
 
     expect(createSimRuntime).toHaveBeenCalledTimes(1);
     expect(runtime.tick).toHaveBeenCalledWith(5);
+    expect(runtime.tick).toHaveBeenCalledWith(6);
     expect(parentPort.postMessage).toHaveBeenCalledWith({
       kind: 'frames',
-      frames: [{ id: 'frame' }],
+      frames: [{ id: 'frame-a' }],
       nextStep: 3,
+    });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'frames',
+      frames: [{ id: 'frame-b' }],
+      nextStep: 4,
     });
   });
 
@@ -158,9 +168,14 @@ describe('shell-desktop sim worker', () => {
 
   it('emits worker errors when handlers throw', async () => {
     const createSimRuntime = vi.fn(() => ({
-      tick: vi.fn(() => {
-        throw new Error('boom');
-      }),
+      tick: vi
+        .fn()
+        .mockImplementationOnce(() => {
+          throw new Error('boom');
+        })
+        .mockImplementationOnce(() => {
+          throw 'kaboom';
+        }),
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(),
       getNextStep: vi.fn(),
@@ -181,7 +196,9 @@ describe('shell-desktop sim worker', () => {
     await import('./sim-worker.js');
 
     messageHandler?.({ kind: 'tick', deltaMs: 1 });
+    messageHandler?.({ kind: 'tick', deltaMs: 2 });
 
     expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'error', error: 'boom' });
+    expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'error', error: 'kaboom' });
   });
 });
