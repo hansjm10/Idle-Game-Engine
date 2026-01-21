@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSpriteInstances, orderDrawsByPassAndSortKey } from './sprite-batching.js';
-import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import { RENDERER_CONTRACT_SCHEMA_VERSION, WORLD_FIXED_POINT_SCALE } from '@idle-engine/renderer-contract';
 import type {
   AssetId,
   RenderCommandBuffer,
@@ -139,6 +139,47 @@ describe('sprite-batching', () => {
     expect(result.instanceCount).toBe(0);
     expect(result.instances).toEqual(new Float32Array([]));
     expect(result.groups).toEqual([]);
+  });
+
+  it('dequantizes world-pass image draw coordinates from fixed-point ints', () => {
+    const rcb = {
+      frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      passes: [{ id: 'world' }, { id: 'ui' }],
+      draws: [
+        {
+          kind: 'image',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          assetId: 'sprite:a' as AssetId,
+          x: 10 * WORLD_FIXED_POINT_SCALE,
+          y: 20 * WORLD_FIXED_POINT_SCALE,
+          width: 30 * WORLD_FIXED_POINT_SCALE,
+          height: 40 * WORLD_FIXED_POINT_SCALE,
+        },
+        {
+          kind: 'image',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          assetId: 'sprite:b' as AssetId,
+          x: 5,
+          y: 6,
+          width: 7,
+          height: 8,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const ordered = orderDrawsByPassAndSortKey(rcb);
+    const result = buildSpriteInstances({
+      orderedDraws: ordered,
+      uvByAssetId: new Map([
+        ['sprite:a' as AssetId, { u0: 0, v0: 0, u1: 1, v1: 1 }],
+        ['sprite:b' as AssetId, { u0: 0, v0: 0, u1: 1, v1: 1 }],
+      ]),
+    });
+
+    expect(result.instances.slice(0, 4)).toEqual(new Float32Array([10, 20, 30, 40]));
+    expect(result.instances.slice(12, 16)).toEqual(new Float32Array([5, 6, 7, 8]));
   });
 
   it('throws when atlas UVs are missing for an image draw', () => {

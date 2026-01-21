@@ -18,6 +18,7 @@ WebGPU renderer backend for the Idle Engine renderer contract, including determi
 
 - `requiredFeatures`: validated against `adapter.features`; missing features throw `WebGpuNotSupportedError`.
 - `preferredFormats`: when provided, the first entry is used. The implementation does not probe format support or fall back to later entries.
+- `worldFixedPointScale`: scale factor for world-pass draw coordinates (defaults to `WORLD_FIXED_POINT_SCALE`). Set to `1` if you are supplying world coordinates as unscaled floats.
 - `onDeviceLost`: invoked when `device.lost` resolves; after loss, the renderer no-ops `render/resize`.
 
 ## Environment
@@ -29,7 +30,7 @@ WebGPU renderer backend for the Idle Engine renderer contract, including determi
 
 ```ts
 import { createWebGpuRenderer } from '@idle-engine/renderer-webgpu';
-import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import { RENDERER_CONTRACT_SCHEMA_VERSION, WORLD_FIXED_POINT_SCALE } from '@idle-engine/renderer-contract';
 import type { AssetId, AssetManifest, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
@@ -75,10 +76,10 @@ const rcb: RenderCommandBuffer = {
       passId: 'world',
       sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
       assetId: demoAssetId,
-      x: 20,
-      y: 20,
-      width: 64,
-      height: 64,
+      x: 20 * WORLD_FIXED_POINT_SCALE,
+      y: 20 * WORLD_FIXED_POINT_SCALE,
+      width: 64 * WORLD_FIXED_POINT_SCALE,
+      height: 64 * WORLD_FIXED_POINT_SCALE,
     },
   ],
 };

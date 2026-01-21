@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import { RENDERER_CONTRACT_SCHEMA_VERSION, WORLD_FIXED_POINT_SCALE } from '@idle-engine/renderer-contract';
 import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 import type { Canvas2dContextLike } from './canvas2d-renderer.js';
@@ -376,8 +376,8 @@ describe('validateRenderCommandBuffer', () => {
   });
 });
 
-describe('renderRenderCommandBufferToCanvas2d', () => {
-  it('renders draws in order with pixelRatio scaling', async () => {
+	describe('renderRenderCommandBufferToCanvas2d', () => {
+	  it('renders draws in order with pixelRatio scaling', async () => {
     vi.resetModules();
     const { renderRenderCommandBufferToCanvas2d } = await import(
       './canvas2d-renderer.js'
@@ -399,8 +399,44 @@ describe('renderRenderCommandBufferToCanvas2d', () => {
 
     expect(calls[1].args).toEqual([2, 4, 6, 8]);
     expect(calls[2].args).toEqual(['hello', 10, 12]);
-    expect(calls[3].args).toEqual([14, 16, 18, 20]);
-  });
+	    expect(calls[3].args).toEqual([14, 16, 18, 20]);
+	  });
+
+	  it('dequantizes world-pass fixed-point coordinates', async () => {
+	    vi.resetModules();
+	    const { renderRenderCommandBufferToCanvas2d } = await import(
+	      './canvas2d-renderer.js'
+	    );
+
+	    const { ctx, calls } = createFakeContext();
+
+	    const rcb: RenderCommandBuffer = {
+	      frame: {
+	        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+	        step: 1,
+	        simTimeMs: 16,
+	        contentHash: 'content',
+	      },
+	      passes: [{ id: 'world' }],
+	      draws: [
+	        {
+	          kind: 'image',
+	          passId: 'world',
+	          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+	          assetId: 'image:missing' as AssetId,
+	          x: 10 * WORLD_FIXED_POINT_SCALE,
+	          y: 20 * WORLD_FIXED_POINT_SCALE,
+	          width: 30 * WORLD_FIXED_POINT_SCALE,
+	          height: 40 * WORLD_FIXED_POINT_SCALE,
+	        },
+	      ],
+	    };
+
+	    renderRenderCommandBufferToCanvas2d(ctx, rcb, { pixelRatio: 2 });
+
+	    expect(calls.map((c) => c.name)).toEqual(['fillRect', 'strokeRect', 'fillText']);
+	    expect(calls[0].args).toEqual([20, 40, 60, 80]);
+	  });
 
   it('applies nested scissor clipping with pixelRatio scaling', async () => {
     vi.resetModules();

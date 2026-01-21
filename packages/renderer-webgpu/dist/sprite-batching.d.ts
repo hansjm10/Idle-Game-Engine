@@ -27,6 +27,7 @@ export declare function orderDrawsByPassAndSortKey(rcb: RenderCommandBuffer): re
 export declare function buildSpriteInstances(options: {
     readonly orderedDraws: readonly OrderedDraw[];
     readonly uvByAssetId: ReadonlyMap<AssetId, SpriteUvRect>;
+    readonly worldFixedPointScale?: number;
 }): SpriteInstanceBuildResult;
 export declare const __test__: {
     compareSortKey: typeof compareSortKey;

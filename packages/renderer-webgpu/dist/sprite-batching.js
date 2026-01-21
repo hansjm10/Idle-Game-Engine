@@ -1,3 +1,4 @@
+import { WORLD_FIXED_POINT_SCALE } from '@idle-engine/renderer-contract';
 function compareNumbers(a, b) {
     if (a < b) {
         return -1;
@@ -66,6 +67,11 @@ export function orderDrawsByPassAndSortKey(rcb) {
 }
 const FLOATS_PER_SPRITE_INSTANCE = 12;
 export function buildSpriteInstances(options) {
+    const worldFixedPointScale = options.worldFixedPointScale ?? WORLD_FIXED_POINT_SCALE;
+    if (!Number.isFinite(worldFixedPointScale) || worldFixedPointScale <= 0) {
+        throw new Error('Sprite batching expected worldFixedPointScale to be a positive number.');
+    }
+    const worldFixedPointInvScale = 1 / worldFixedPointScale;
     const imageDraws = [];
     for (const entry of options.orderedDraws) {
         if (entry.draw.kind === 'image') {
@@ -106,10 +112,11 @@ export function buildSpriteInstances(options) {
         if (!uv) {
             throw new Error(`Atlas missing UVs for AssetId: ${imageDraw.draw.assetId}`);
         }
-        instances[writeOffset++] = imageDraw.draw.x;
-        instances[writeOffset++] = imageDraw.draw.y;
-        instances[writeOffset++] = imageDraw.draw.width;
-        instances[writeOffset++] = imageDraw.draw.height;
+        const coordScale = imageDraw.passId === 'world' ? worldFixedPointInvScale : 1;
+        instances[writeOffset++] = imageDraw.draw.x * coordScale;
+        instances[writeOffset++] = imageDraw.draw.y * coordScale;
+        instances[writeOffset++] = imageDraw.draw.width * coordScale;
+        instances[writeOffset++] = imageDraw.draw.height * coordScale;
         instances[writeOffset++] = uv.u0;
         instances[writeOffset++] = uv.v0;
         instances[writeOffset++] = uv.u1;

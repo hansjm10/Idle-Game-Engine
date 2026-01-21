@@ -1,4 +1,5 @@
 import {
+  WORLD_FIXED_POINT_SCALE,
   canonicalEncodeForHash,
   sha256Hex,
 } from '@idle-engine/renderer-contract';
@@ -91,6 +92,13 @@ export interface WebGpuRendererCreateOptions {
   readonly deviceDescriptor?: GPUDeviceDescriptor;
   readonly requiredFeatures?: readonly GPUFeatureName[];
   readonly preferredFormats?: readonly GPUTextureFormat[];
+  /**
+   * World-pass draw coordinates in `RenderCommandBuffer` are expected to be fixed-point integers
+   * produced by `compileViewModelToRenderCommandBuffer` (`value * worldFixedPointScale`).
+   *
+   * Set to `1` if you are supplying world coordinates as unscaled floats.
+   */
+  readonly worldFixedPointScale?: number;
   readonly onDeviceLost?: (error: WebGpuDeviceLostError) => void;
 }
 
@@ -842,6 +850,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   #lost = false;
   #devicePixelRatio = 1;
   #worldCamera: Camera2D = { x: 0, y: 0, zoom: 1 };
+  readonly #worldFixedPointInvScale: number;
 
   #spritePipeline: GPURenderPipeline | undefined;
   #rectPipeline: GPURenderPipeline | undefined;
@@ -861,7 +870,6 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   #atlasUvByAssetId: Map<AssetId, SpriteUvRect> | undefined;
   #bitmapFontByAssetId: Map<AssetId, WebGpuBitmapFontRuntime> | undefined;
   #defaultBitmapFontAssetId: AssetId | undefined;
-
   constructor(options: {
     canvas: HTMLCanvasElement;
     context: GPUCanvasContext;
@@ -869,6 +877,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     device: GPUDevice;
     format: GPUTextureFormat;
     alphaMode: GPUCanvasAlphaMode;
+    worldFixedPointScale?: number;
     onDeviceLost?: (error: WebGpuDeviceLostError) => void;
   }) {
     this.canvas = options.canvas;
@@ -878,6 +887,12 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.format = options.format;
     this.#alphaMode = options.alphaMode;
     this.#onDeviceLost = options.onDeviceLost;
+
+    const worldFixedPointScale = options.worldFixedPointScale ?? WORLD_FIXED_POINT_SCALE;
+    if (!Number.isFinite(worldFixedPointScale) || worldFixedPointScale <= 0) {
+      throw new Error('WebGPU renderer expected worldFixedPointScale to be a positive number.');
+    }
+    this.#worldFixedPointInvScale = 1 / worldFixedPointScale;
 
     this.device.lost
       .then((info) => {
@@ -1545,23 +1560,24 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
   }
 
-  #handleScissorPushDraw(
-    state: WebGpuQuadRenderState,
-    passId: RenderPassId,
-    draw: Extract<OrderedDraw['draw'], { kind: 'scissorPush' }>,
-  ): void {
-    this.#flushQuadBatch(state);
-    const scissor = this.#toDeviceScissorRect({
-      passId,
-      x: draw.x,
-      y: draw.y,
-      width: draw.width,
-      height: draw.height,
-    });
-    state.scissorStack.push(state.currentScissor);
-    state.currentScissor = intersectScissorRect(state.currentScissor, scissor);
-    this.#applyScissorRect(state, state.currentScissor);
-  }
+	  #handleScissorPushDraw(
+	    state: WebGpuQuadRenderState,
+	    passId: RenderPassId,
+	    draw: Extract<OrderedDraw['draw'], { kind: 'scissorPush' }>,
+	  ): void {
+	    this.#flushQuadBatch(state);
+	    const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
+	    const scissor = this.#toDeviceScissorRect({
+	      passId,
+	      x: draw.x * coordScale,
+	      y: draw.y * coordScale,
+	      width: draw.width * coordScale,
+	      height: draw.height * coordScale,
+	    });
+	    state.scissorStack.push(state.currentScissor);
+	    state.currentScissor = intersectScissorRect(state.currentScissor, scissor);
+	    this.#applyScissorRect(state, state.currentScissor);
+	  }
 
   #handleScissorPopDraw(state: WebGpuQuadRenderState): void {
     this.#flushQuadBatch(state);
@@ -1569,27 +1585,28 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#applyScissorRect(state, state.currentScissor);
   }
 
-  #handleRectDraw(
-    state: WebGpuQuadRenderState,
-    passId: RenderPassId,
-    draw: Extract<OrderedDraw['draw'], { kind: 'rect' }>,
-  ): void {
-    this.#ensureQuadBatch(state, 'rect', passId);
-    const rgba = draw.colorRgba >>> 0;
-    const red = clampByte((rgba >>> 24) & 0xff) / 255;
-    const green = clampByte((rgba >>> 16) & 0xff) / 255;
-    const blue = clampByte((rgba >>> 8) & 0xff) / 255;
+	  #handleRectDraw(
+	    state: WebGpuQuadRenderState,
+	    passId: RenderPassId,
+	    draw: Extract<OrderedDraw['draw'], { kind: 'rect' }>,
+	  ): void {
+	    this.#ensureQuadBatch(state, 'rect', passId);
+	    const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
+	    const rgba = draw.colorRgba >>> 0;
+	    const red = clampByte((rgba >>> 24) & 0xff) / 255;
+	    const green = clampByte((rgba >>> 16) & 0xff) / 255;
+	    const blue = clampByte((rgba >>> 8) & 0xff) / 255;
     const alpha = clampByte(rgba & 0xff) / 255;
 
-    state.batchInstances.push(
-      draw.x,
-      draw.y,
-      draw.width,
-      draw.height,
-      0,
-      0,
-      0,
-      0,
+	    state.batchInstances.push(
+	      draw.x * coordScale,
+	      draw.y * coordScale,
+	      draw.width * coordScale,
+	      draw.height * coordScale,
+	      0,
+	      0,
+	      0,
+	      0,
       red,
       green,
       blue,
@@ -1598,29 +1615,30 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     state.batchInstanceCount += 1;
   }
 
-  #handleImageDraw(
-    state: WebGpuQuadRenderState,
-    passId: RenderPassId,
-    draw: Extract<OrderedDraw['draw'], { kind: 'image' }>,
-  ): void {
-    this.#ensureQuadBatch(state, 'image', passId);
+	  #handleImageDraw(
+	    state: WebGpuQuadRenderState,
+	    passId: RenderPassId,
+	    draw: Extract<OrderedDraw['draw'], { kind: 'image' }>,
+	  ): void {
+	    this.#ensureQuadBatch(state, 'image', passId);
+	    const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
 
-    const uv = this.#spriteUvOrThrow(state, draw.assetId);
-    const tintRgba = draw.tintRgba;
-    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
-    const tintRed = tint === undefined ? 1 : clampByte((tint >>> 24) & 0xff) / 255;
+	    const uv = this.#spriteUvOrThrow(state, draw.assetId);
+	    const tintRgba = draw.tintRgba;
+	    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
+	    const tintRed = tint === undefined ? 1 : clampByte((tint >>> 24) & 0xff) / 255;
     const tintGreen = tint === undefined ? 1 : clampByte((tint >>> 16) & 0xff) / 255;
     const tintBlue = tint === undefined ? 1 : clampByte((tint >>> 8) & 0xff) / 255;
     const tintAlpha = tint === undefined ? 1 : clampByte(tint & 0xff) / 255;
 
-    state.batchInstances.push(
-      draw.x,
-      draw.y,
-      draw.width,
-      draw.height,
-      uv.u0,
-      uv.v0,
-      uv.u1,
+	    state.batchInstances.push(
+	      draw.x * coordScale,
+	      draw.y * coordScale,
+	      draw.width * coordScale,
+	      draw.height * coordScale,
+	      uv.u0,
+	      uv.v0,
+	      uv.u1,
       uv.v1,
       tintRed,
       tintGreen,
@@ -1630,17 +1648,18 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     state.batchInstanceCount += 1;
   }
 
-  #handleTextDraw(
-    state: WebGpuQuadRenderState,
-    passId: RenderPassId,
-    draw: Extract<OrderedDraw['draw'], { kind: 'text' }>,
-  ): void {
-    this.#ensureQuadBatch(state, 'image', passId);
+	  #handleTextDraw(
+	    state: WebGpuQuadRenderState,
+	    passId: RenderPassId,
+	    draw: Extract<OrderedDraw['draw'], { kind: 'text' }>,
+	  ): void {
+	    this.#ensureQuadBatch(state, 'image', passId);
+	    const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
 
-    const fontAssetId = draw.fontAssetId ?? state.defaultBitmapFontAssetId;
-    if (!fontAssetId) {
-      throw new Error('Text draw missing fontAssetId and no default font is available.');
-    }
+	    const fontAssetId = draw.fontAssetId ?? state.defaultBitmapFontAssetId;
+	    if (!fontAssetId) {
+	      throw new Error('Text draw missing fontAssetId and no default font is available.');
+	    }
 
     const font = state.bitmapFontByAssetId?.get(fontAssetId);
     if (!font) {
@@ -1659,15 +1678,15 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     const alpha = clampByte(rgba & 0xff) / 255;
 
     const spaceGlyph = font.glyphByCodePoint.get(0x20) ?? font.fallbackGlyph;
-    const tabAdvancePx = (spaceGlyph?.xAdvancePx ?? 0) * 4;
+	    const tabAdvancePx = (spaceGlyph?.xAdvancePx ?? 0) * 4;
 
-    state.batchInstanceCount += appendBitmapTextInstances({
-      batchInstances: state.batchInstances,
-      x: draw.x,
-      y: draw.y,
-      text: draw.text,
-      font,
-      scale,
+	    state.batchInstanceCount += appendBitmapTextInstances({
+	      batchInstances: state.batchInstances,
+	      x: draw.x * coordScale,
+	      y: draw.y * coordScale,
+	      text: draw.text,
+	      font,
+	      scale,
       tabAdvancePx,
       color: { red, green, blue, alpha },
     });
@@ -1806,15 +1825,16 @@ export async function createWebGpuRenderer(
   const alphaMode = options?.alphaMode ?? 'opaque';
   configureCanvasContext({ context, device, format, alphaMode });
 
-  const renderer = new WebGpuRendererImpl({
-    canvas,
-    context,
-    adapter,
-    device,
-    format,
-    alphaMode,
-    onDeviceLost: options?.onDeviceLost,
-  });
+	  const renderer = new WebGpuRendererImpl({
+	    canvas,
+	    context,
+	    adapter,
+	    device,
+	    format,
+	    alphaMode,
+	    worldFixedPointScale: options?.worldFixedPointScale,
+	    onDeviceLost: options?.onDeviceLost,
+	  });
   renderer.resize();
 
   return renderer;

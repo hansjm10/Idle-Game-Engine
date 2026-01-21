@@ -1,3 +1,4 @@
+import { WORLD_FIXED_POINT_SCALE } from '@idle-engine/renderer-contract';
 import type {
   AssetId,
   ImageDraw,
@@ -56,6 +57,13 @@ export interface RenderCommandBufferToCanvas2dOptions {
    * while other draws multiply coordinates by `pixelRatio`.
    */
   readonly pixelRatio?: number;
+  /**
+   * World-pass draw coordinates are expected to be fixed-point integers emitted by the render
+   * compiler (`value * worldFixedPointScale`).
+   *
+   * Set to `1` if you are supplying world coordinates as unscaled floats.
+   */
+  readonly worldFixedPointScale?: number;
   readonly assets?: RendererDebugAssets;
   readonly validate?: boolean;
 }
@@ -163,14 +171,15 @@ function drawRect(
   ctx: Canvas2dContextLike,
   draw: RectDraw,
   pixelRatio: number,
+  coordScale: number,
 ): void {
   ctx.globalAlpha = 1;
   ctx.fillStyle = rgbaToCssColor(draw.colorRgba);
   ctx.fillRect(
-    draw.x * pixelRatio,
-    draw.y * pixelRatio,
-    draw.width * pixelRatio,
-    draw.height * pixelRatio,
+    draw.x * coordScale * pixelRatio,
+    draw.y * coordScale * pixelRatio,
+    draw.width * coordScale * pixelRatio,
+    draw.height * coordScale * pixelRatio,
   );
 }
 
@@ -179,6 +188,7 @@ function drawText(
   draw: TextDraw,
   pixelRatio: number,
   assets: RendererDebugAssets | undefined,
+  coordScale: number,
 ): void {
   ctx.globalAlpha = 1;
   ctx.fillStyle = rgbaToCssColor(draw.colorRgba);
@@ -192,30 +202,31 @@ function drawText(
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
 
-  ctx.fillText(draw.text, draw.x * pixelRatio, draw.y * pixelRatio);
+  ctx.fillText(draw.text, draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio);
 }
 
 function drawMissingAssetPlaceholder(
   ctx: Canvas2dContextLike,
   draw: ImageDraw,
   pixelRatio: number,
+  coordScale: number,
 ): void {
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(255, 0, 255, 0.75)';
   ctx.fillRect(
-    draw.x * pixelRatio,
-    draw.y * pixelRatio,
-    draw.width * pixelRatio,
-    draw.height * pixelRatio,
+    draw.x * coordScale * pixelRatio,
+    draw.y * coordScale * pixelRatio,
+    draw.width * coordScale * pixelRatio,
+    draw.height * coordScale * pixelRatio,
   );
 
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
   ctx.lineWidth = 1;
   ctx.strokeRect(
-    draw.x * pixelRatio,
-    draw.y * pixelRatio,
-    draw.width * pixelRatio,
-    draw.height * pixelRatio,
+    draw.x * coordScale * pixelRatio,
+    draw.y * coordScale * pixelRatio,
+    draw.width * coordScale * pixelRatio,
+    draw.height * coordScale * pixelRatio,
   );
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
@@ -224,8 +235,8 @@ function drawMissingAssetPlaceholder(
   ctx.textAlign = 'left';
   ctx.fillText(
     `missing: ${draw.assetId}`,
-    draw.x * pixelRatio + 2 * pixelRatio,
-    draw.y * pixelRatio + 2 * pixelRatio,
+    draw.x * coordScale * pixelRatio + 2 * pixelRatio,
+    draw.y * coordScale * pixelRatio + 2 * pixelRatio,
   );
 }
 
@@ -234,15 +245,16 @@ function drawImage(
   draw: ImageDraw,
   pixelRatio: number,
   assets: RendererDebugAssets | undefined,
+  coordScale: number,
 ): void {
   const image = assets?.resolveImage ? assets.resolveImage(draw.assetId) : undefined;
   if (!image) {
-    drawMissingAssetPlaceholder(ctx, draw, pixelRatio);
+    drawMissingAssetPlaceholder(ctx, draw, pixelRatio, coordScale);
     return;
   }
 
-  const width = draw.width * pixelRatio;
-  const height = draw.height * pixelRatio;
+  const width = draw.width * coordScale * pixelRatio;
+  const height = draw.height * coordScale * pixelRatio;
   if (width <= 0 || height <= 0) {
     return;
   }
@@ -263,8 +275,8 @@ function drawImage(
     ctx.globalAlpha = alpha;
     ctx.drawImage(
       image,
-      draw.x * pixelRatio,
-      draw.y * pixelRatio,
+      draw.x * coordScale * pixelRatio,
+      draw.y * coordScale * pixelRatio,
       width,
       height,
     );
@@ -281,8 +293,8 @@ function drawImage(
     ctx.globalAlpha = alpha;
     ctx.drawImage(
       image,
-      draw.x * pixelRatio,
-      draw.y * pixelRatio,
+      draw.x * coordScale * pixelRatio,
+      draw.y * coordScale * pixelRatio,
       width,
       height,
     );
@@ -312,8 +324,8 @@ function drawImage(
 
   ctx.drawImage(
     scratchCanvas,
-    draw.x * pixelRatio,
-    draw.y * pixelRatio,
+    draw.x * coordScale * pixelRatio,
+    draw.y * coordScale * pixelRatio,
     width,
     height,
   );
@@ -338,9 +350,16 @@ export function renderRenderCommandBufferToCanvas2d(
   const pixelRatio = options.pixelRatio ?? 1;
   const assets = options.assets;
 
+  const worldFixedPointScale = options.worldFixedPointScale ?? WORLD_FIXED_POINT_SCALE;
+  if (!Number.isFinite(worldFixedPointScale) || worldFixedPointScale <= 0) {
+    throw new Error('Canvas2D renderer expected worldFixedPointScale to be a positive number.');
+  }
+  const worldFixedPointInvScale = 1 / worldFixedPointScale;
+
   let scissorDepth = 0;
 
   for (const draw of rcb.draws) {
+    const coordScale = draw.passId === 'world' ? worldFixedPointInvScale : 1;
     switch (draw.kind) {
       case 'clear': {
         ctx.globalAlpha = 1;
@@ -349,22 +368,22 @@ export function renderRenderCommandBufferToCanvas2d(
         break;
       }
       case 'rect':
-        drawRect(ctx, draw, pixelRatio);
+        drawRect(ctx, draw, pixelRatio, coordScale);
         break;
       case 'image':
-        drawImage(ctx, draw, pixelRatio, assets);
+        drawImage(ctx, draw, pixelRatio, assets, coordScale);
         break;
       case 'text':
-        drawText(ctx, draw, pixelRatio, assets);
+        drawText(ctx, draw, pixelRatio, assets, coordScale);
         break;
       case 'scissorPush': {
         ctx.save();
         ctx.beginPath();
         ctx.rect(
-          draw.x * pixelRatio,
-          draw.y * pixelRatio,
-          draw.width * pixelRatio,
-          draw.height * pixelRatio,
+          draw.x * coordScale * pixelRatio,
+          draw.y * coordScale * pixelRatio,
+          draw.width * coordScale * pixelRatio,
+          draw.height * coordScale * pixelRatio,
         );
         ctx.clip();
         scissorDepth += 1;
