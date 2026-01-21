@@ -4,6 +4,7 @@ import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
+import { monotonicNowMs } from './monotonic-time.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
@@ -127,8 +128,20 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   const maxStepsPerFrame = 50;
 
   const tickIntervalMs = 16;
-  let lastTickMs = Date.now();
+  const MAX_TICK_DELTA_MS = 250;
+  let lastTickMs = 0;
   let tickTimer: NodeJS.Timeout | undefined;
+
+  const clampTickDeltaMs = (rawDeltaMs: number): number => {
+    if (!Number.isFinite(rawDeltaMs)) {
+      return 0;
+    }
+    const deltaMs = Math.trunc(rawDeltaMs);
+    if (deltaMs <= 0) {
+      return 0;
+    }
+    return Math.min(deltaMs, MAX_TICK_DELTA_MS);
+  };
 
   const stopTickLoop = (): void => {
     if (tickTimer) {
@@ -183,11 +196,12 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       return;
     }
 
-    lastTickMs = Date.now();
+    lastTickMs = monotonicNowMs();
     tickTimer = setInterval(() => {
-      const nowMs = Date.now();
-      const deltaMs = Math.max(0, nowMs - lastTickMs);
+      const nowMs = monotonicNowMs();
+      const rawDeltaMs = nowMs - lastTickMs;
       lastTickMs = nowMs;
+      const deltaMs = clampTickDeltaMs(rawDeltaMs);
       safePostMessage({ kind: 'tick', deltaMs });
     }, tickIntervalMs);
 
