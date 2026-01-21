@@ -272,5 +272,430 @@ describe('visual replay', () => {
       }),
     ).rejects.toThrow(/"event":"visual_replay_mismatch"/);
   });
-});
 
+  it('replays schemaVersion 1 streams without visual builders', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(wiring.runtime.getStepSizeMs());
+    wiring.runtime.tick(wiring.runtime.getStepSizeMs());
+
+    const replayV2 = recorder.export({ capturedAt: 0 });
+    const replayV1 = {
+      ...replayV2,
+      header: { ...replayV2.header, schemaVersion: 1 as const },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayV1));
+    const result = await runCombinedReplay({ content, replay: decoded });
+
+    expect(result.checksum).toBe(replayV2.sim.endStateChecksum);
+    expect(result.viewModelFramesValidated).toBe(0);
+    expect(result.rcbFramesValidated).toBe(0);
+  });
+
+  it('requires buildViewModel when replay includes ViewModel frames', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const viewModel = buildViewModel({ step, simTimeMs, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [
+          {
+            step,
+            hash: await hashViewModel(viewModel),
+            viewModel,
+          },
+        ],
+        rcbs: [],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(runCombinedReplay({ content, replay: decoded })).rejects.toThrow(
+      /buildViewModel was not provided/i,
+    );
+  });
+
+  it('requires buildRenderCommandBuffers when replay includes RenderCommandBuffer frames', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const rcb = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: await hashRenderCommandBuffer(rcb),
+            rcb,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(runCombinedReplay({ content, replay: decoded })).rejects.toThrow(
+      /buildRenderCommandBuffers was not provided/i,
+    );
+  });
+
+  it('fails when replay is missing recorded ViewModel frames', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const viewModel = buildViewModel({ step, simTimeMs, contentHash, goldAmount });
+    const viewModelFrames: SimReplayViewModelFrameV2[] = [
+      {
+        step,
+        hash: await hashViewModel(viewModel),
+        viewModel,
+      },
+    ];
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: { viewModels: viewModelFrames, rcbs: [] },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildViewModel: ({ wiring: replayWiring, step: replayStep, simTimeMs: replaySimTimeMs }) =>
+          buildViewModel({
+            step: replayStep,
+            simTimeMs: replaySimTimeMs,
+            contentHash: content.digest.hash,
+            goldAmount: getGoldAmount(replayWiring),
+          }),
+      }),
+    ).rejects.toThrow(/missing recorded ViewModel frames/i);
+  });
+
+  it('throws when buildRenderCommandBuffers does not return an array', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const rcb = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: 'not-validated',
+            rcb,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildRenderCommandBuffers: () => ({}) as unknown as RenderCommandBuffer[],
+      }),
+    ).rejects.toThrow(/must return an array/i);
+  });
+
+  it('fails when replay produces more RenderCommandBuffer frames than were recorded', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const rcb = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: await hashRenderCommandBuffer(rcb),
+            rcb,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildRenderCommandBuffers: () => [rcb, rcb],
+      }),
+    ).rejects.toThrow(/more RenderCommandBuffer frames than were recorded/i);
+  });
+
+  it('validates that RenderCommandBuffer.frame.renderFrame is a non-negative integer', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const recorded = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: 'not-validated',
+            rcb: recorded,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildRenderCommandBuffers: () => [
+          buildRcb({ step, simTimeMs, renderFrame: -1, contentHash, goldAmount }),
+        ],
+      }),
+    ).rejects.toThrow(/renderFrame must be a non-negative integer/i);
+  });
+
+  it('fails when replay RenderCommandBuffer frames are misaligned', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const recorded = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: 'not-validated',
+            rcb: recorded,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildRenderCommandBuffers: () => [
+          buildRcb({ step: step + 1, simTimeMs, renderFrame: step, contentHash, goldAmount }),
+        ],
+      }),
+    ).rejects.toThrow(/frame alignment mismatch/i);
+  });
+
+  it('fails when replay contains unvalidated recorded ViewModel frames', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    const step = wiring.runtime.getCurrentStep();
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const viewModel = buildViewModel({ step, simTimeMs, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [
+          {
+            step,
+            hash: 'not-validated',
+            viewModel,
+          },
+        ],
+        rcbs: [],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildViewModel: () => viewModel,
+      }),
+    ).rejects.toThrow(/did not validate all recorded ViewModel frames/i);
+  });
+
+  it('fails when replay contains unvalidated recorded RenderCommandBuffer frames', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    const step = wiring.runtime.getCurrentStep();
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const rcb = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: 'not-validated',
+            rcb,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildRenderCommandBuffers: () => [rcb],
+      }),
+    ).rejects.toThrow(/did not validate all recorded RenderCommandBuffer frames/i);
+  });
+});
