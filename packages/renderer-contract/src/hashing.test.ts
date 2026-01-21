@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { hashRenderCommandBuffer, hashViewModel } from './hashing.js';
+import {
+  canonicalizeForHash,
+  hashRenderCommandBuffer,
+  hashViewModel,
+  normalizeNumbersForHash,
+  sha256Hex,
+} from './index.js';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from './types.js';
 import type {
   RenderCommandBuffer,
@@ -8,6 +14,10 @@ import type {
 } from './types.js';
 
 describe('hashing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('hashes ViewModel deterministically (independent of object key insertion order)', async () => {
     const a: ViewModel = {
       frame: {
@@ -42,6 +52,42 @@ describe('hashing', () => {
     };
 
     await expect(hashViewModel(a)).resolves.toEqual(await hashViewModel(b));
+  });
+
+  it('normalizes null and rejects unsupported types before hashing', () => {
+    expect(normalizeNumbersForHash(null)).toBeNull();
+
+    expect(() => normalizeNumbersForHash(1n)).toThrow(/bigint/);
+    expect(() => normalizeNumbersForHash(Symbol('symbol'))).toThrow(/symbol/);
+    expect(() => normalizeNumbersForHash(() => 'fn')).toThrow(/function/);
+  });
+
+  it('throws when canonicalization does not produce a string', () => {
+    expect(() => canonicalizeForHash(undefined)).toThrow(
+      'Failed to canonicalize value for hashing.',
+    );
+  });
+
+  it('throws when WebCrypto is unavailable', async () => {
+    vi.stubGlobal('crypto', {} as Crypto);
+    await expect(sha256Hex(new Uint8Array([1, 2, 3]))).rejects.toThrow(
+      /WebCrypto is unavailable/,
+    );
+  });
+
+  it('hashes Uint8Array subarray views', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const view = bytes.subarray(1, 4);
+
+    await expect(sha256Hex(view)).resolves.toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('hashes SharedArrayBuffer-backed views', async () => {
+    const buffer = new SharedArrayBuffer(4);
+    const bytes = new Uint8Array(buffer);
+    bytes.set([1, 2, 3, 4]);
+
+    await expect(sha256Hex(bytes)).resolves.toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('normalizes -0 to 0 before hashing', async () => {
