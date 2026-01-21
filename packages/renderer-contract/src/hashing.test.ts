@@ -117,6 +117,67 @@ describe('hashing', () => {
     await expect(hashViewModel(infinity)).rejects.toThrow(/Infinity/);
   });
 
+  it('rejects Map, Set, and non-plain objects for hashing', async () => {
+    class NotPlain {
+      readonly value = 1;
+    }
+
+    const viewModelWithMap = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content:abc',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+      extra: new Map([['a', 1]]),
+    } as unknown as ViewModel;
+
+    const viewModelWithSet = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content:abc',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+      extra: new Set([1]),
+    } as unknown as ViewModel;
+
+    const viewModelWithClassInstance = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content:abc',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+      extra: new NotPlain(),
+    } as unknown as ViewModel;
+
+    await expect(hashViewModel(viewModelWithMap)).rejects.toThrow(/Map/);
+    await expect(hashViewModel(viewModelWithSet)).rejects.toThrow(/Set/);
+    await expect(hashViewModel(viewModelWithClassInstance)).rejects.toThrow(/non-plain/);
+  });
+
   it('hashes RenderCommandBuffer deterministically', async () => {
     const a: RenderCommandBuffer = {
       frame: {
