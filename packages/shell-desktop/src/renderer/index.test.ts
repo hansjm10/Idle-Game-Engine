@@ -7,6 +7,7 @@ vi.mock('../../../renderer-webgpu/dist/index.js', () => ({
 }));
 
 type BeforeUnloadHandler = (() => void) | undefined;
+type KeydownHandler = ((event: { code: string; repeat?: boolean }) => void) | undefined;
 
 async function flushMicrotasks(maxTurns = 10): Promise<void> {
   for (let i = 0; i < maxTurns; i += 1) {
@@ -16,6 +17,7 @@ async function flushMicrotasks(maxTurns = 10): Promise<void> {
 
 describe('shell-desktop renderer entrypoint', () => {
   let beforeUnloadHandler: BeforeUnloadHandler;
+  let keydownHandler: KeydownHandler;
   let rafCallbacks: Map<number, FrameRequestCallback>;
   let nextRafId: number;
   let resizeObserverInstances: Array<{ trigger: () => void; disconnect: () => void }>;
@@ -25,6 +27,7 @@ describe('shell-desktop renderer entrypoint', () => {
     vi.clearAllMocks();
 
     beforeUnloadHandler = undefined;
+    keydownHandler = undefined;
     rafCallbacks = new Map();
     nextRafId = 1;
     resizeObserverInstances = [];
@@ -48,12 +51,16 @@ describe('shell-desktop renderer entrypoint', () => {
       ping: vi.fn(async () => 'pong'),
       sendControlEvent: vi.fn(),
       onFrame: vi.fn(() => vi.fn()),
+      onSimStatus: vi.fn(() => vi.fn()),
     };
 
     (globalThis as unknown as { addEventListener?: unknown }).addEventListener = vi.fn(
-      (event: string, handler: () => void) => {
+      (event: string, handler: (...args: unknown[]) => void) => {
         if (event === 'beforeunload') {
           beforeUnloadHandler = handler;
+        }
+        if (event === 'keydown') {
+          keydownHandler = handler as KeydownHandler;
         }
       },
     );
@@ -103,6 +110,107 @@ describe('shell-desktop renderer entrypoint', () => {
     delete (globalThis as unknown as { requestAnimationFrame?: unknown }).requestAnimationFrame;
     delete (globalThis as unknown as { cancelAnimationFrame?: unknown }).cancelAnimationFrame;
     delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+  });
+
+  it('does nothing when required DOM elements are missing', async () => {
+    const documentMock = globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } };
+    documentMock.document.querySelector.mockImplementation((selector: string) => {
+      if (selector === '#output') {
+        return null;
+      }
+      if (selector === '#canvas') {
+        return {} as unknown as HTMLCanvasElement;
+      }
+      return null;
+    });
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    const idleEngine = (globalThis as unknown as { idleEngine: { ping: ReturnType<typeof vi.fn> } }).idleEngine;
+    expect(idleEngine.ping).not.toHaveBeenCalled();
+    expect(createWebGpuRenderer).not.toHaveBeenCalled();
+  });
+
+  it('renders sim status updates and forwards key events', async () => {
+    let simStatusListener: ((status: unknown) => void) | undefined;
+    let frameListener: ((frame: unknown) => void) | undefined;
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onSimStatus: ReturnType<typeof vi.fn>;
+          onFrame: ReturnType<typeof vi.fn>;
+          sendControlEvent: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onSimStatus.mockImplementation((handler: (status: unknown) => void) => {
+      simStatusListener = handler;
+      return vi.fn();
+    });
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
+    });
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
+      .querySelector('#output') as { textContent: string };
+
+    simStatusListener?.({ kind: 'starting' });
+    expect(outputElement.textContent).toContain('Sim starting…');
+
+    simStatusListener?.({ kind: 'running' });
+    expect(outputElement.textContent).toContain('Sim running.');
+
+    simStatusListener?.({ kind: 'crashed', reason: 'boom' });
+    expect(outputElement.textContent).not.toContain('exitCode=');
+
+    simStatusListener?.({ kind: 'crashed', reason: 'boom', exitCode: 1 });
+    expect(outputElement.textContent).toContain('Sim crashed');
+    expect(outputElement.textContent).toContain('exitCode=1');
+    expect(outputElement.textContent).toContain('boom');
+
+    frameListener?.({ frame: { step: 7, simTimeMs: 112 } });
+    expect(outputElement.textContent).toContain('Sim step=7 simTimeMs=112');
+
+    expect(keydownHandler).toBeTypeOf('function');
+    keydownHandler?.({ code: 'KeyA', repeat: false });
+    keydownHandler?.({ code: 'Space', repeat: true });
+    expect(idleEngine.sendControlEvent).not.toHaveBeenCalled();
+
+    keydownHandler?.({ code: 'Space', repeat: false });
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith({ intent: 'collect', phase: 'start' });
+  });
+
+  it('renders IPC subscription failures to the output view', async () => {
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onSimStatus: ReturnType<typeof vi.fn>;
+          onFrame: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onSimStatus.mockImplementation(() => {
+      throw new Error('no sim');
+    });
+    idleEngine.onFrame.mockImplementation(() => {
+      throw new Error('no frame');
+    });
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    const outputElement = (globalThis as unknown as { document: { querySelector: ReturnType<typeof vi.fn> } }).document
+      .querySelector('#output') as { textContent: string };
+    expect(outputElement.textContent).toContain('Sim error:');
   });
 
   it('starts IPC ping + WebGPU renderer loop', async () => {
@@ -166,7 +274,9 @@ describe('shell-desktop renderer entrypoint', () => {
     const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
     rafCallbacks.delete(id);
     callback(0);
+    callback(0);
 
+    expect(firstRenderer.render).toHaveBeenCalledTimes(1);
     expect(firstRenderer.dispose).toHaveBeenCalledTimes(1);
     expect(outputElement.textContent).toContain('Attempting recovery');
     expect(rafCallbacks.size).toBe(0);
@@ -191,6 +301,7 @@ describe('shell-desktop renderer entrypoint', () => {
       capturedOptions.push(options);
       if (capturedOptions.length === 2) {
         options.onDeviceLost?.({ reason: 'device-lost-during-recovery' });
+        options.onDeviceLost?.({});
       }
       return capturedOptions.length === 1 ? firstRenderer : recoveredRenderer;
     });
@@ -199,8 +310,10 @@ describe('shell-desktop renderer entrypoint', () => {
     await flushMicrotasks();
 
     expect(capturedOptions).toHaveLength(1);
+    capturedOptions[0]?.onDeviceLost?.({});
     capturedOptions[0]?.onDeviceLost?.({ reason: 'test' });
     capturedOptions[0]?.onDeviceLost?.({ reason: 'ignored-while-recovering' });
+    capturedOptions[0]?.onDeviceLost?.({ reason: undefined });
 
     await flushMicrotasks();
     await vi.advanceTimersByTimeAsync(1000);

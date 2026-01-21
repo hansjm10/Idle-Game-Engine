@@ -40,6 +40,24 @@ async function run(): Promise<void> {
   let recovering = false;
   let latestRcb: RenderCommandBuffer | undefined;
   let unsubscribeFrames: (() => void) | undefined;
+  let unsubscribeSimStatus: (() => void) | undefined;
+
+  try {
+    unsubscribeSimStatus = (globalThis as unknown as Window).idleEngine.onSimStatus((status) => {
+      if (status.kind === 'starting') {
+        simStatus = 'Sim starting…';
+      } else if (status.kind === 'running') {
+        simStatus = 'Sim running.';
+      } else {
+        const exitCode = status.exitCode === undefined ? '' : ` (exitCode=${status.exitCode})`;
+        simStatus = `Sim ${status.kind}${exitCode}: ${status.reason}. Reload to restart.`;
+      }
+      updateOutput();
+    });
+  } catch (error: unknown) {
+    simStatus = `Sim error: ${String(error)}`;
+    updateOutput();
+  }
 
   try {
     unsubscribeFrames = (globalThis as unknown as Window).idleEngine.onFrame((frame) => {
@@ -205,6 +223,7 @@ async function run(): Promise<void> {
     stopLoop();
     resizeObserver.disconnect();
     unsubscribeFrames?.();
+    unsubscribeSimStatus?.();
     renderer?.dispose();
   });
 }

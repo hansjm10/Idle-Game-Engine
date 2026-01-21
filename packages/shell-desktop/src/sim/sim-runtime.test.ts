@@ -95,4 +95,83 @@ describe('shell-desktop sim runtime', () => {
     expect(result.frames).toHaveLength(1);
     expect(result.frames[0]?.frame.step).toBe(0);
   });
+
+  it('drops commands with invalid fields', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    sim.enqueueCommands([
+      null as unknown as Command,
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        priority: Number.NaN,
+        payload: { resourceId: 'demo', amount: 1 },
+        timestamp: 0,
+        step: 0,
+      },
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        priority: CommandPriority.PLAYER,
+        payload: { resourceId: 'demo', amount: 1 },
+        timestamp: 0,
+        step: Number.NaN,
+      },
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        priority: CommandPriority.PLAYER,
+        payload: { resourceId: 'demo', amount: 1 },
+        timestamp: Number.NaN,
+        step: 0,
+      },
+    ]);
+
+    const result = sim.tick(10);
+    const frame = result.frames[0];
+
+    const fillRect = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 0,
+      colorRgba: 0x2a_4f_8a_ff,
+    });
+  });
+
+  it('normalizes commands scheduled before the next step', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    const command: Command = {
+      type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      priority: CommandPriority.PLAYER,
+      payload: { resourceId: 'demo', amount: 1 },
+      timestamp: 999,
+      step: -5,
+    };
+
+    sim.enqueueCommands([command]);
+
+    const result = sim.tick(10);
+    const frame = result.frames[0];
+
+    const fillRect = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+
+    expect(fillRect).toMatchObject({
+      kind: 'rect',
+      passId: 'ui',
+      width: 14,
+      colorRgba: 0x8a_2a_4f_ff,
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import type { IdleEngineApi, IpcInvokeMap, ShellFramePayload } from './ipc.js';
+import type { IdleEngineApi, IpcInvokeMap, ShellFramePayload, ShellSimStatusPayload } from './ipc.js';
 
 const electron = require('electron') as typeof import('electron');
 
@@ -10,6 +10,7 @@ const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
   controlEvent: 'idle-engine:control-event',
   frame: 'idle-engine:frame',
+  simStatus: 'idle-engine:sim-status',
 } as const;
 
 async function invoke<K extends keyof IpcInvokeMap>(
@@ -36,6 +37,17 @@ const idleEngineApi: IdleEngineApi = {
 
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.frame, listener);
+    };
+  },
+  onSimStatus: (handler) => {
+    const listener = (_event: unknown, status: unknown) => {
+      handler(status as ShellSimStatusPayload);
+    };
+
+    ipcRenderer.on(IPC_CHANNELS.simStatus, listener);
+
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.simStatus, listener);
     };
   },
 };
