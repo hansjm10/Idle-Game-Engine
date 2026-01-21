@@ -141,6 +141,16 @@ describe('sprite-batching', () => {
     expect(result.groups).toEqual([]);
   });
 
+  it('throws when worldFixedPointScale is invalid', () => {
+    expect(() =>
+      buildSpriteInstances({
+        orderedDraws: [],
+        uvByAssetId: new Map(),
+        worldFixedPointScale: 0,
+      }),
+    ).toThrow('Sprite batching expected worldFixedPointScale to be a positive number.');
+  });
+
   it('dequantizes world-pass image draw coordinates from fixed-point ints', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },

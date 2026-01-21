@@ -475,6 +475,14 @@ describe('renderer-webgpu', () => {
       expect(configure).toHaveBeenCalledTimes(2);
     });
 
+    it('throws when worldFixedPointScale is invalid', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+
+      await expect(createWebGpuRenderer(canvas, { worldFixedPointScale: 0 })).rejects.toThrow(
+        'WebGPU renderer expected worldFixedPointScale to be a positive number.',
+      );
+    });
+
     it('clears using the selected render command buffer clear color', async () => {
       const { canvas, beginRenderPass, submit } = createStubWebGpuEnvironment();
 
@@ -817,6 +825,111 @@ describe('renderer-webgpu', () => {
       expect(secondSize).toBe(96);
       expect(firstPayload.byteLength).toBeGreaterThan(firstSize);
       expect(secondPayload).toBe(firstPayload);
+    });
+
+    it('flushes quad batches when encountering unknown draw kinds', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 1,
+            y: 2,
+            width: 3,
+            height: 4,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'future-draw',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+            x: 5,
+            y: 6,
+            width: 7,
+            height: 8,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } as unknown as RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(2);
+      expect(drawIndexed).toHaveBeenNthCalledWith(1, 6, 1, 0, 0, 0);
+      expect(drawIndexed).toHaveBeenNthCalledWith(2, 6, 1, 0, 0, 0);
+    });
+
+    it('preserves quad instance data when the batch buffer grows', async () => {
+      const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const draws: RenderCommandBuffer['draws'] = Array.from({ length: 22 }, (_value, index) => ({
+        kind: 'rect',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: index },
+        x: index,
+        y: 0,
+        width: 1,
+        height: 1,
+        colorRgba: 0xff_ff_ff_ff,
+      }));
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws,
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 22, 0, 0, 0);
+
+      const instanceWrites = writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array);
+      expect(instanceWrites).toHaveLength(1);
+
+      const instanceWrite = instanceWrites[0];
+      if (!instanceWrite) {
+        throw new Error('Expected a quad instance upload to be recorded.');
+      }
+
+      const usedBytes = instanceWrite[4] as number;
+      expect(usedBytes).toBe(22 * 48);
+
+      const payload = instanceWrite[2] as Float32Array;
+      expect(payload.byteLength).toBeGreaterThan(usedBytes);
+
+      const instances = getWriteBufferFloat32Payload(instanceWrite);
+      if (!instances) {
+        throw new Error('Expected quad instance buffer payload to be readable.');
+      }
+
+      expect(instances.length).toBe((22 * 48) / Float32Array.BYTES_PER_ELEMENT);
+      expect(instances[0]).toBe(0);
+      expect(instances[12]).toBe(1);
+      expect(instances[120]).toBe(10);
+      expect(instances[252]).toBe(21);
     });
 
     it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
@@ -1242,6 +1355,81 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
     });
 
+    it('defaults to the lexicographically-first bitmap font when fontAssetId is omitted', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetIdA = 'font:a' as AssetId;
+      const fontAssetIdB = 'font:b' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [
+          { id: fontAssetIdB, kind: 'font', contentHash: 'hash:font:b' },
+          { id: fontAssetIdA, kind: 'font', contentHash: 'hash:font:a' },
+        ],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async (assetId: AssetId) => {
+        if (assetId === fontAssetIdA) {
+          return {
+            image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+            baseFontSizePx: 8,
+            lineHeightPx: 8,
+            glyphs: [
+              {
+                codePoint: 0x41,
+                x: 0,
+                y: 0,
+                width: 8,
+                height: 8,
+                xOffsetPx: 0,
+                yOffsetPx: 0,
+                xAdvancePx: 8,
+              },
+            ],
+          };
+        }
+
+        return {
+          image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+          baseFontSizePx: 8,
+          lineHeightPx: 8,
+          glyphs: [],
+        };
+      });
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
     it('falls back to the first available glyph when no fallback glyph is present', async () => {
       const { canvas, drawIndexed } = createStubWebGpuEnvironment();
 
@@ -1395,6 +1583,126 @@ describe('renderer-webgpu', () => {
 
       renderer.render(rcb);
 
+      expect(drawIndexed).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when a text draw has an empty string payload', async () => {
+      const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: '',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).not.toHaveBeenCalled();
+      expect(writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array)).toHaveLength(0);
+    });
+
+    it('throws when a text draw has a blank fontAssetId', async () => {
+      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId: '' as AssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow(
+        'Text draw missing fontAssetId and no default font is available.',
+      );
       expect(drawIndexed).not.toHaveBeenCalled();
     });
 
