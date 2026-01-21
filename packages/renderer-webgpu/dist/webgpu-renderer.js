@@ -9,8 +9,8 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
-import { canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
+var _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
+import { WORLD_FIXED_POINT_SCALE, canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
 import { createAtlasLayout, packAtlas, } from './atlas-packer.js';
 import { orderDrawsByPassAndSortKey, } from './sprite-batching.js';
 export class WebGpuNotSupportedError extends Error {
@@ -544,6 +544,7 @@ class WebGpuRendererImpl {
         _WebGpuRendererImpl_lost.set(this, false);
         _WebGpuRendererImpl_devicePixelRatio.set(this, 1);
         _WebGpuRendererImpl_worldCamera.set(this, { x: 0, y: 0, zoom: 1 });
+        _WebGpuRendererImpl_worldFixedPointInvScale.set(this, void 0);
         _WebGpuRendererImpl_spritePipeline.set(this, void 0);
         _WebGpuRendererImpl_rectPipeline.set(this, void 0);
         _WebGpuRendererImpl_spriteSampler.set(this, void 0);
@@ -568,6 +569,11 @@ class WebGpuRendererImpl {
         this.format = options.format;
         __classPrivateFieldSet(this, _WebGpuRendererImpl_alphaMode, options.alphaMode, "f");
         __classPrivateFieldSet(this, _WebGpuRendererImpl_onDeviceLost, options.onDeviceLost, "f");
+        const worldFixedPointScale = options.worldFixedPointScale ?? WORLD_FIXED_POINT_SCALE;
+        if (!Number.isFinite(worldFixedPointScale) || worldFixedPointScale <= 0) {
+            throw new Error('WebGPU renderer expected worldFixedPointScale to be a positive number.');
+        }
+        __classPrivateFieldSet(this, _WebGpuRendererImpl_worldFixedPointInvScale, 1 / worldFixedPointScale, "f");
         this.device.lost
             .then((info) => {
             if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f")) {
@@ -664,7 +670,7 @@ class WebGpuRendererImpl {
         __classPrivateFieldSet(this, _WebGpuRendererImpl_disposed, true, "f");
     }
 }
-_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_bitmapFontByAssetId = new WeakMap(), _WebGpuRendererImpl_defaultBitmapFontAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_assertReadyForAssetLoad = function _WebGpuRendererImpl_assertReadyForAssetLoad() {
+_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_worldFixedPointInvScale = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_bitmapFontByAssetId = new WeakMap(), _WebGpuRendererImpl_defaultBitmapFontAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_assertReadyForAssetLoad = function _WebGpuRendererImpl_assertReadyForAssetLoad() {
     if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f")) {
         throw new Error('WebGPU renderer is disposed.');
     }
@@ -1120,12 +1126,13 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     }
 }, _WebGpuRendererImpl_handleScissorPushDraw = function _WebGpuRendererImpl_handleScissorPushDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_flushQuadBatch).call(this, state);
+    const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
     const scissor = __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_toDeviceScissorRect).call(this, {
         passId,
-        x: draw.x,
-        y: draw.y,
-        width: draw.width,
-        height: draw.height,
+        x: draw.x * coordScale,
+        y: draw.y * coordScale,
+        width: draw.width * coordScale,
+        height: draw.height * coordScale,
     });
     state.scissorStack.push(state.currentScissor);
     state.currentScissor = intersectScissorRect(state.currentScissor, scissor);
@@ -1136,15 +1143,17 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_applyScissorRect).call(this, state, state.currentScissor);
 }, _WebGpuRendererImpl_handleRectDraw = function _WebGpuRendererImpl_handleRectDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'rect', passId);
+    const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
     const rgba = draw.colorRgba >>> 0;
     const red = clampByte((rgba >>> 24) & 0xff) / 255;
     const green = clampByte((rgba >>> 16) & 0xff) / 255;
     const blue = clampByte((rgba >>> 8) & 0xff) / 255;
     const alpha = clampByte(rgba & 0xff) / 255;
-    state.batchInstances.push(draw.x, draw.y, draw.width, draw.height, 0, 0, 0, 0, red, green, blue, alpha);
+    state.batchInstances.push(draw.x * coordScale, draw.y * coordScale, draw.width * coordScale, draw.height * coordScale, 0, 0, 0, 0, red, green, blue, alpha);
     state.batchInstanceCount += 1;
 }, _WebGpuRendererImpl_handleImageDraw = function _WebGpuRendererImpl_handleImageDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'image', passId);
+    const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
     const uv = __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_spriteUvOrThrow).call(this, state, draw.assetId);
     const tintRgba = draw.tintRgba;
     const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
@@ -1152,10 +1161,11 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const tintGreen = tint === undefined ? 1 : clampByte((tint >>> 16) & 0xff) / 255;
     const tintBlue = tint === undefined ? 1 : clampByte((tint >>> 8) & 0xff) / 255;
     const tintAlpha = tint === undefined ? 1 : clampByte(tint & 0xff) / 255;
-    state.batchInstances.push(draw.x, draw.y, draw.width, draw.height, uv.u0, uv.v0, uv.u1, uv.v1, tintRed, tintGreen, tintBlue, tintAlpha);
+    state.batchInstances.push(draw.x * coordScale, draw.y * coordScale, draw.width * coordScale, draw.height * coordScale, uv.u0, uv.v0, uv.u1, uv.v1, tintRed, tintGreen, tintBlue, tintAlpha);
     state.batchInstanceCount += 1;
 }, _WebGpuRendererImpl_handleTextDraw = function _WebGpuRendererImpl_handleTextDraw(state, passId, draw) {
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureQuadBatch).call(this, state, 'image', passId);
+    const coordScale = passId === 'world' ? __classPrivateFieldGet(this, _WebGpuRendererImpl_worldFixedPointInvScale, "f") : 1;
     const fontAssetId = draw.fontAssetId ?? state.defaultBitmapFontAssetId;
     if (!fontAssetId) {
         throw new Error('Text draw missing fontAssetId and no default font is available.');
@@ -1177,8 +1187,8 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const tabAdvancePx = (spaceGlyph?.xAdvancePx ?? 0) * 4;
     state.batchInstanceCount += appendBitmapTextInstances({
         batchInstances: state.batchInstances,
-        x: draw.x,
-        y: draw.y,
+        x: draw.x * coordScale,
+        y: draw.y * coordScale,
         text: draw.text,
         font,
         scale,
@@ -1260,6 +1270,7 @@ export async function createWebGpuRenderer(canvas, options) {
         device,
         format,
         alphaMode,
+        worldFixedPointScale: options?.worldFixedPointScale,
         onDeviceLost: options?.onDeviceLost,
     });
     renderer.resize();

@@ -36,6 +36,13 @@ export interface RenderCommandBufferToCanvas2dOptions {
      * while other draws multiply coordinates by `pixelRatio`.
      */
     readonly pixelRatio?: number;
+    /**
+     * World-pass draw coordinates are expected to be fixed-point integers emitted by the render
+     * compiler (`value * worldFixedPointScale`).
+     *
+     * Set to `1` if you are supplying world coordinates as unscaled floats.
+     */
+    readonly worldFixedPointScale?: number;
     readonly assets?: RendererDebugAssets;
     readonly validate?: boolean;
 }

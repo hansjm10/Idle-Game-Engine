@@ -47,6 +47,13 @@ export interface WebGpuRendererCreateOptions {
     readonly deviceDescriptor?: GPUDeviceDescriptor;
     readonly requiredFeatures?: readonly GPUFeatureName[];
     readonly preferredFormats?: readonly GPUTextureFormat[];
+    /**
+     * World-pass draw coordinates in `RenderCommandBuffer` are expected to be fixed-point integers
+     * produced by `compileViewModelToRenderCommandBuffer` (`value * worldFixedPointScale`).
+     *
+     * Set to `1` if you are supplying world coordinates as unscaled floats.
+     */
+    readonly worldFixedPointScale?: number;
     readonly onDeviceLost?: (error: WebGpuDeviceLostError) => void;
 }
 export interface WebGpuRenderer {
