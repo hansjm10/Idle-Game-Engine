@@ -401,6 +401,24 @@ describe('renderer-webgpu', () => {
       });
     });
 
+    it('passes deviceDescriptor.requiredFeatures through when requiredFeatures is omitted', async () => {
+      const { canvas, adapter } = createStubWebGpuEnvironment();
+
+      const deviceDescriptorFeature = 'depth-clip-control' as unknown as GPUFeatureName;
+      await createWebGpuRenderer(canvas, {
+        deviceDescriptor: {
+          requiredFeatures: [deviceDescriptorFeature] as unknown as GPUFeatureName[],
+        },
+      });
+
+      const requestDevice = (adapter as unknown as { requestDevice: ReturnType<typeof vi.fn> })
+        .requestDevice;
+      expect(requestDevice).toHaveBeenCalledTimes(1);
+      expect(requestDevice.mock.calls[0]?.[0]).toMatchObject({
+        requiredFeatures: [deviceDescriptorFeature],
+      });
+    });
+
     it('throws when a WebGPU canvas context cannot be acquired', async () => {
       const adapter = {
         features: { has: () => true },
@@ -472,6 +490,42 @@ describe('renderer-webgpu', () => {
       await expect(
         createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
       ).rejects.toThrow(`format: ${preferredFormat}`);
+    });
+
+    it('wraps context.configure failures when the thrown Error has an empty message', async () => {
+      const preferredFormat = 'rgba8unorm' as GPUTextureFormat;
+      const { canvas } = createStubWebGpuEnvironment({
+        configureImplementation: () => {
+          throw new Error('');
+        },
+      });
+
+      await expect(
+        createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
+      ).rejects.toBeInstanceOf(WebGpuNotSupportedError);
+      await expect(
+        createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
+      ).rejects.toThrow(new RegExp(`\\(format: ${preferredFormat}\\)$`));
+    });
+
+    it('wraps context.configure failures when throwing non-Error values', async () => {
+      const preferredFormat = 'rgba8unorm' as GPUTextureFormat;
+      const { canvas } = createStubWebGpuEnvironment({
+        configureImplementation: () => {
+          const configureError = new Error('configure failed');
+          (configureError as unknown as { toString: () => string }).toString = () =>
+            'configure failed';
+          Object.setPrototypeOf(configureError, null);
+          throw configureError;
+        },
+      });
+
+      await expect(
+        createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
+      ).rejects.toBeInstanceOf(WebGpuNotSupportedError);
+      await expect(
+        createWebGpuRenderer(canvas, { preferredFormats: [preferredFormat] }),
+      ).rejects.toThrow('configure failed');
     });
 
     it('configures the canvas context when resized and avoids redundant reconfiguration', async () => {
@@ -674,6 +728,28 @@ describe('renderer-webgpu', () => {
       expect(secondTexture.destroy).not.toHaveBeenCalled();
     });
 
+    it('throws when sprite atlas texture bindings are unavailable', async () => {
+      const { canvas, device } = createStubWebGpuEnvironment();
+      (device as unknown as { createSampler: ReturnType<typeof vi.fn> }).createSampler = vi.fn(
+        () => undefined,
+      );
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'Sprite pipeline missing texture bindings.',
+      );
+    });
+
     it('throws when rendering text draws without loaded bitmap fonts', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -811,6 +887,64 @@ describe('renderer-webgpu', () => {
         new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
       );
       expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
+    });
+
+    it('renders ui image draws without applying world fixed-point scaling', async () => {
+      const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0 });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+
+      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+        const instances = getWriteBufferFloat32Payload(call);
+        if (!instances || instances.byteLength !== 48) {
+          return false;
+        }
+
+        return (
+          instances[0] === 10 &&
+          instances[1] === 20 &&
+          instances[2] === 30 &&
+          instances[3] === 40
+        );
+      });
+
+      expect(instanceBufferWrite).toBeDefined();
     });
 
     it('reuses the quad instance upload buffer across renders', async () => {
@@ -1184,6 +1318,114 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
     });
 
+    it('throws when the sprite pipeline globals buffer is missing', async () => {
+      const { canvas, createBuffer, drawIndexed } = createStubWebGpuEnvironment();
+      createBuffer.mockImplementationOnce(() => undefined as unknown as GPUBuffer);
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+            colorRgba: 0xff_00_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Sprite pipeline missing globals buffer.');
+      expect(drawIndexed).not.toHaveBeenCalled();
+    });
+
+    it('throws when quad pipelines are incomplete', async () => {
+      const { canvas, device } = createStubWebGpuEnvironment();
+      (device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn> }).createRenderPipeline =
+        vi
+          .fn()
+          .mockImplementationOnce(() => undefined)
+          .mockImplementation(() => ({} as unknown as GPURenderPipeline));
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+            colorRgba: 0xff_00_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Quad pipelines are incomplete.');
+    });
+
+    it('throws when instance buffer allocation fails', async () => {
+      const { canvas, createBuffer, drawIndexed } = createStubWebGpuEnvironment();
+
+      let bufferCalls = 0;
+      createBuffer.mockImplementation(() => {
+        bufferCalls += 1;
+        if (bufferCalls === 4) {
+          return undefined as unknown as GPUBuffer;
+        }
+
+        return ({ destroy: vi.fn() } as unknown as GPUBuffer);
+      });
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+            colorRgba: 0xff_00_00_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Sprite pipeline missing instance buffer.');
+      expect(drawIndexed).not.toHaveBeenCalled();
+    });
+
     it('rejects bitmap fonts with invalid baseFontSizePx', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -1460,6 +1702,80 @@ describe('renderer-webgpu', () => {
 
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
+    });
+
+    it('scales world-pass text draw coordinates from fixed point', async () => {
+      const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont }, { maxAtlasSizePx: 64, paddingPx: 0 });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10 * WORLD_FIXED_POINT_SCALE,
+            y: 20 * WORLD_FIXED_POINT_SCALE,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+
+      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+        const instances = getWriteBufferFloat32Payload(call);
+        if (!instances || instances.byteLength !== 48) {
+          return false;
+        }
+
+        return instances[0] === 10 && instances[1] === 20;
+      });
+
+      expect(instanceBufferWrite).toBeDefined();
     });
 
     it('defaults to the lexicographically-first bitmap font when fontAssetId is omitted', async () => {
@@ -1991,6 +2307,106 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
     });
 
+    it('treats non-finite scissor rect inputs as zero-size and skips draws', async () => {
+      setDevicePixelRatio(2);
+      const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'scissorPush',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: Number.NaN,
+            y: Infinity,
+            width: Number.NaN,
+            height: Infinity,
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_00_00_ff,
+          },
+          {
+            kind: 'scissorPop',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0x00_ff_00_ff,
+          },
+        ],
+      } as unknown as RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(setScissorRect.mock.calls).toEqual([
+        [0, 0, 200, 100],
+        [0, 0, 0, 0],
+        [0, 0, 200, 100],
+      ]);
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
+    it('tolerates scissorPop without a matching scissorPush', async () => {
+      const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'scissorPop',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_ff_ff_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(setScissorRect).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+    });
+
     it('applies scissorPush/scissorPop for world draws using the world camera', async () => {
       setDevicePixelRatio(2);
       const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
@@ -2103,6 +2519,21 @@ describe('renderer-webgpu', () => {
       expect(configure).not.toHaveBeenCalled();
     });
 
+    it('formats device lost errors when the GPUDeviceLostInfo message is empty', async () => {
+      const { canvas, resolveDeviceLost } = createStubWebGpuEnvironment();
+      const onDeviceLost = vi.fn();
+
+      await createWebGpuRenderer(canvas, { onDeviceLost });
+
+      resolveDeviceLost({ message: '', reason: 'unknown' } as unknown as GPUDeviceLostInfo);
+      await flushMicrotasks();
+
+      expect(onDeviceLost).toHaveBeenCalledTimes(1);
+      const [deviceLostError] = onDeviceLost.mock.calls[0] ?? [];
+      expect(deviceLostError).toBeInstanceOf(WebGpuDeviceLostError);
+      expect((deviceLostError as Error).message).toBe('WebGPU device lost');
+    });
+
     it('does not invoke onDeviceLost after dispose', async () => {
       const { canvas, resolveDeviceLost } = createStubWebGpuEnvironment();
       const onDeviceLost = vi.fn();
@@ -2192,6 +2623,67 @@ describe('renderer-webgpu', () => {
       await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
         'WebGPU renderer is disposed.',
       );
+    });
+
+    it('swallows errors thrown by GPU resource destroy on dispose', async () => {
+      const { canvas, createBuffer, createTexture } = createStubWebGpuEnvironment();
+
+      createBuffer.mockImplementation(
+        () =>
+          ({
+            destroy: vi.fn(() => {
+              throw new Error('destroy failed');
+            }),
+          }) as unknown as GPUBuffer,
+      );
+
+      createTexture.mockImplementation(
+        () =>
+          ({
+            createView: vi.fn(() => ({} as unknown as GPUTextureView)),
+            destroy: vi.fn(() => {
+              throw new Error('destroy failed');
+            }),
+          }) as unknown as GPUTexture,
+      );
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0 });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(() => renderer.dispose()).not.toThrow();
     });
 
     it('destroys owned GPU textures and buffers on dispose', async () => {
