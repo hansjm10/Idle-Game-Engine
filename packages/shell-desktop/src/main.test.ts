@@ -2,6 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from './ipc.js';
 
+let monotonicNowSequence: number[] = [];
+
+const monotonicNowMs = vi.fn(() => {
+  const nextValue = monotonicNowSequence.shift();
+  if (nextValue === undefined) {
+    throw new Error('monotonicNowMs sequence exhausted');
+  }
+  return nextValue;
+});
+
+const setMonotonicNowSequence = (values: readonly number[]): void => {
+  monotonicNowSequence = [...values];
+};
+
 async function flushMicrotasks(maxTurns = 10): Promise<void> {
   for (let i = 0; i < maxTurns; i += 1) {
     await Promise.resolve();
@@ -119,6 +133,10 @@ vi.mock('node:worker_threads', () => ({
   Worker,
 }));
 
+vi.mock('./monotonic-time.js', () => ({
+  monotonicNowMs,
+}));
+
 describe('shell-desktop main process entrypoint', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalEnableUnsafeWebGpu = process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU;
@@ -130,6 +148,7 @@ describe('shell-desktop main process entrypoint', () => {
     BrowserWindow.windows = [];
     BrowserWindow.shouldRejectLoadFile = false;
     Worker.instances = [];
+    monotonicNowSequence = [];
 
     if (originalNodeEnv === undefined) {
       delete process.env.NODE_ENV;
@@ -244,7 +263,7 @@ describe('shell-desktop main process entrypoint', () => {
 
   it('starts the sim tick loop and forwards frames to the renderer', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(0);
+    setMonotonicNowSequence([0, 16, 32]);
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -302,9 +321,36 @@ describe('shell-desktop main process entrypoint', () => {
     consoleError.mockRestore();
   });
 
+  it('clamps tick deltaMs when the monotonic clock jumps', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([1000, 900, 2000, 2016]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(48);
+
+    const tickCalls = worker?.postMessage.mock.calls
+      .map((call) => call[0] as { kind?: string; deltaMs?: number })
+      .filter((message) => message.kind === 'tick');
+
+    expect(tickCalls).toHaveLength(3);
+    expect(tickCalls?.map((message) => message.deltaMs)).toEqual([0, 250, 16]);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('stops the tick loop and notifies the renderer when the sim worker exits', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(0);
+    setMonotonicNowSequence([0, 16, 32]);
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -379,7 +425,7 @@ describe('shell-desktop main process entrypoint', () => {
 
   it('treats postMessage exceptions as sim-worker fatal and clears the tick loop', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(0);
+    setMonotonicNowSequence([0, 16]);
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -432,6 +478,7 @@ describe('shell-desktop main process entrypoint', () => {
       }
     });
 
+    setMonotonicNowSequence([100, 116]);
     nextWorker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
     await flushMicrotasks();
 
@@ -469,6 +516,8 @@ describe('shell-desktop main process entrypoint', () => {
   });
 
   it('handles control events and worker errors', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     await import('./main.js');
