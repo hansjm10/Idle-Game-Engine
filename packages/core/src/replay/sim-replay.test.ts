@@ -483,7 +483,7 @@ describe('sim replay', () => {
 
     expect(() =>
       decodeSimReplayJsonLines(
-        createEncodedReplayLines([{ ...baseHeader, schemaVersion: 2 }, baseContent, baseAssets, baseSim, baseEnd]),
+        createEncodedReplayLines([{ ...baseHeader, schemaVersion: 3 }, baseContent, baseAssets, baseSim, baseEnd]),
       ),
     ).toThrow(/schemaVersion is not supported/i);
 
@@ -825,6 +825,224 @@ describe('sim replay', () => {
         replay: { ...replay, sim: { ...replay.sim, endStateChecksum: 'deadbeef' } },
       }),
     ).toThrow(/checksum mismatch/i);
+  });
+
+  describe('sim replay visual frame decoding', () => {
+    const baseContent = Object.freeze({
+      type: 'content',
+      packId: 'pack.test',
+      packVersion: '1.0.0',
+      digest: { version: 1, hash: 'fnv1a-00000000' },
+    });
+
+    const baseAssets = Object.freeze({ type: 'assets', manifestHash: null });
+
+    const baseWiring = Object.freeze({
+      enableProduction: false,
+      enableAutomation: false,
+      enableTransforms: false,
+      enableEntities: false,
+      registerOfflineCatchup: true,
+    });
+
+    const baseSim = Object.freeze({
+      type: 'sim',
+      wiring: baseWiring,
+      stepSizeMs: 100,
+      startStep: 0,
+      initialSnapshot: createMinimalSnapshot(),
+    });
+
+    const createHeader = (schemaVersion: 1 | 2) =>
+      Object.freeze({
+        type: 'header',
+        fileType: 'idle-engine-sim-replay',
+        schemaVersion,
+        recordedAt: 0,
+        runtimeVersion: '0.0.0',
+      });
+
+    const createEndRecord = (options: {
+      readonly schemaVersion: 1 | 2;
+      readonly viewModelFrameCount?: number;
+      readonly rcbFrameCount?: number;
+    }) =>
+      Object.freeze({
+        type: 'end',
+        endStep: 0,
+        endStateChecksum: '00000000',
+        commandCount: 0,
+        ...(options.schemaVersion === 2
+          ? {
+              viewModelFrameCount: options.viewModelFrameCount ?? 0,
+              rcbFrameCount: options.rcbFrameCount ?? 0,
+            }
+          : {}),
+      });
+
+    const createViewModelFrame = (step: number, viewModel: unknown) =>
+      Object.freeze({
+        step,
+        hash: 'hash',
+        viewModel,
+      });
+
+    const createRcbFrame = (renderFrame: number, step: number, rcb: unknown) =>
+      Object.freeze({
+        renderFrame,
+        step,
+        hash: 'hash',
+        rcb,
+      });
+
+    it('rejects ViewModel frame records in schemaVersion 1 replays', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(1),
+        baseContent,
+        baseAssets,
+        baseSim,
+        { type: 'viewModelFrames', chunkIndex: 0, frames: [] },
+        createEndRecord({ schemaVersion: 1 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/does not support viewModelFrames/i);
+    });
+
+    it('rejects viewModelFrames entries that are not objects', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        { type: 'viewModelFrames', chunkIndex: 0, frames: [null] },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 1, rcbFrameCount: 0 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/ViewModel frame must be an object/i);
+    });
+
+    it('rejects viewModelFrames when step mismatches the embedded ViewModel payload', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        {
+          type: 'viewModelFrames',
+          chunkIndex: 0,
+          frames: [createViewModelFrame(0, { frame: { step: 1 } })],
+        },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 1, rcbFrameCount: 0 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/does not match viewModel\.frame\.step/i);
+    });
+
+    it('requires ViewModel frames to be sorted by step', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        {
+          type: 'viewModelFrames',
+          chunkIndex: 0,
+          frames: [
+            createViewModelFrame(1, { frame: { step: 1 } }),
+            createViewModelFrame(0, { frame: { step: 0 } }),
+          ],
+        },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 2, rcbFrameCount: 0 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/must be sorted by step/i);
+    });
+
+    it('rejects RenderCommandBuffer frame records in schemaVersion 1 replays', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(1),
+        baseContent,
+        baseAssets,
+        baseSim,
+        { type: 'rcbFrames', chunkIndex: 0, frames: [] },
+        createEndRecord({ schemaVersion: 1 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/does not support rcbFrames/i);
+    });
+
+    it('rejects rcbFrames when renderFrame mismatches the embedded RenderCommandBuffer payload', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        {
+          type: 'rcbFrames',
+          chunkIndex: 0,
+          frames: [createRcbFrame(0, 0, { frame: { step: 0, renderFrame: 1 } })],
+        },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 0, rcbFrameCount: 1 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/does not match rcb\.frame\.renderFrame/i);
+    });
+
+    it('requires RenderCommandBuffer frames to be sorted by renderFrame', () => {
+      const encoded = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        {
+          type: 'rcbFrames',
+          chunkIndex: 0,
+          frames: [
+            createRcbFrame(1, 1, { frame: { step: 1, renderFrame: 1 } }),
+            createRcbFrame(0, 0, { frame: { step: 0, renderFrame: 0 } }),
+          ],
+        },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 0, rcbFrameCount: 2 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(encoded)).toThrow(/must be sorted by renderFrame/i);
+    });
+
+    it('validates recorded visual frame counts against the replay footer', () => {
+      const viewModelFooterMismatch = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        {
+          type: 'viewModelFrames',
+          chunkIndex: 0,
+          frames: [createViewModelFrame(0, { frame: { step: 0 } })],
+        },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 2, rcbFrameCount: 0 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(viewModelFooterMismatch)).toThrow(
+        /ViewModel frame count does not match footer/i,
+      );
+
+      const rcbFooterMismatch = createEncodedReplayLines([
+        createHeader(2),
+        baseContent,
+        baseAssets,
+        baseSim,
+        {
+          type: 'rcbFrames',
+          chunkIndex: 0,
+          frames: [createRcbFrame(0, 0, { frame: { step: 0, renderFrame: 0 } })],
+        },
+        createEndRecord({ schemaVersion: 2, viewModelFrameCount: 0, rcbFrameCount: 2 }),
+      ]);
+
+      expect(() => decodeSimReplayJsonLines(rcbFooterMismatch)).toThrow(
+        /RenderCommandBuffer frame count does not match footer/i,
+      );
+    });
   });
 
   it('fails when replay enqueues more commands than the restored command queue can accept', () => {
