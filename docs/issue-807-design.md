@@ -146,11 +146,11 @@ The current tests in `packages/shell-desktop/src/main.test.ts` use `vi.useFakeTi
 - **Tooling / A11y**: N/A.
 
 ## 11. Risks & Mitigations
-- **Risk**: Switching to a high-resolution clock introduces fractional deltas that change sim behavior.  
+- **Risk**: Switching to a high-resolution clock introduces fractional deltas that change sim behavior.\
   **Mitigation**: Use integer millisecond deltas (e.g., hrtime conversion or explicit rounding) to preserve current semantics.
-- **Risk**: Clamp value too low causes the sim to run “slow” after long stalls (lost time).  
+- **Risk**: Clamp value too low causes the sim to run “slow” after long stalls (lost time).\
   **Mitigation**: Confirm `MAX_TICK_DELTA_MS` (250ms) is desired for UX; consider tying clamp to `stepSizeMs`/`maxStepsPerFrame` if needed.
-- **Risk**: Tests become flaky if they depend on real time (hrtime/performance).  
+- **Risk**: Tests become flaky if they depend on real time (hrtime/performance).\
   **Mitigation**: Mock the monotonic clock source in tests; do not rely on real elapsed time.
 
 ## 12. Rollout Plan
