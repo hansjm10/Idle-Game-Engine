@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
-import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent } from './ipc.js';
+import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
@@ -117,20 +117,69 @@ let simWorkerController: SimWorkerController | undefined;
 function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerController {
   const worker = new Worker(new URL('./sim-worker.js', import.meta.url));
 
+  let isDisposing = false;
+  let hasFailed = false;
+
+  type ShellSimFailureStatusPayload = Extract<ShellSimStatusPayload, { kind: 'stopped' | 'crashed' }>;
+
   let stepSizeMs = 16;
   let nextStep = 0;
   const maxStepsPerFrame = 50;
-
-  const postMessage = (message: SimWorkerInboundMessage): void => {
-    worker.postMessage(message);
-  };
 
   const tickIntervalMs = 16;
   let lastTickMs = Date.now();
   let tickTimer: NodeJS.Timeout | undefined;
 
-  const startTickLoop = (): void => {
+  const stopTickLoop = (): void => {
     if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = undefined;
+    }
+  };
+
+  const sendSimStatus = (status: ShellSimStatusPayload): void => {
+    try {
+      mainWindow.webContents.send(IPC_CHANNELS.simStatus, status);
+    } catch (error: unknown) {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    }
+  };
+
+  const handleWorkerFailure = (status: ShellSimFailureStatusPayload, details?: unknown): void => {
+    if (hasFailed || isDisposing) {
+      return;
+    }
+
+    hasFailed = true;
+    stopTickLoop();
+
+    // eslint-disable-next-line no-console
+    console.error(status.kind === 'stopped' ? `[shell-desktop] Sim stopped: ${status.reason}` : `[shell-desktop] Sim crashed: ${status.reason}`, details);
+
+    sendSimStatus(status);
+
+    void worker.terminate().catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    });
+  };
+
+  const safePostMessage = (message: SimWorkerInboundMessage): void => {
+    if (hasFailed || isDisposing) {
+      return;
+    }
+
+    try {
+      worker.postMessage(message);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      handleWorkerFailure({ kind: 'crashed', reason }, error);
+    }
+  };
+
+  const startTickLoop = (): void => {
+    if (tickTimer || hasFailed || isDisposing) {
       return;
     }
 
@@ -139,13 +188,13 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       const nowMs = Date.now();
       const deltaMs = Math.max(0, nowMs - lastTickMs);
       lastTickMs = nowMs;
-      postMessage({ kind: 'tick', deltaMs });
+      safePostMessage({ kind: 'tick', deltaMs });
     }, tickIntervalMs);
 
     tickTimer.unref?.();
   };
 
-  postMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
+  safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
 
   worker.on('message', (message: SimWorkerOutboundMessage) => {
     if (message.kind === 'ready') {
@@ -164,14 +213,37 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
 
     if (message.kind === 'error') {
-      // eslint-disable-next-line no-console
-      console.error(message.error);
+      handleWorkerFailure({ kind: 'crashed', reason: message.error }, message.error);
     }
   });
 
   worker.on('error', (error: unknown) => {
-    // eslint-disable-next-line no-console
-    console.error(error);
+    handleWorkerFailure(
+      { kind: 'crashed', reason: error instanceof Error ? error.message : String(error) },
+      error,
+    );
+  });
+
+  worker.on('messageerror', (error: unknown) => {
+    handleWorkerFailure(
+      { kind: 'crashed', reason: error instanceof Error ? error.message : String(error) },
+      error,
+    );
+  });
+
+  worker.on('exit', (exitCode: number) => {
+    if (isDisposing) {
+      return;
+    }
+
+    handleWorkerFailure(
+      {
+        kind: exitCode === 0 ? 'stopped' : 'crashed',
+        reason: `Sim worker exited with code ${exitCode}.`,
+        exitCode,
+      },
+      { exitCode },
+    );
   });
 
   const sendControlEvent = (event: ShellControlEvent): void => {
@@ -185,15 +257,16 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     if (commands.length === 0) {
       return;
     }
-    postMessage({ kind: 'enqueueCommands', commands });
+    safePostMessage({ kind: 'enqueueCommands', commands });
   };
 
   const dispose = (): void => {
-    if (tickTimer) {
-      clearInterval(tickTimer);
-      tickTimer = undefined;
-    }
-    void worker.terminate();
+    isDisposing = true;
+    stopTickLoop();
+    void worker.terminate().catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    });
   };
 
   return { sendControlEvent, dispose };

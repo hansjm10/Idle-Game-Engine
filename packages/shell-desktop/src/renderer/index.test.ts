@@ -48,6 +48,7 @@ describe('shell-desktop renderer entrypoint', () => {
       ping: vi.fn(async () => 'pong'),
       sendControlEvent: vi.fn(),
       onFrame: vi.fn(() => vi.fn()),
+      onSimStatus: vi.fn(() => vi.fn()),
     };
 
     (globalThis as unknown as { addEventListener?: unknown }).addEventListener = vi.fn(

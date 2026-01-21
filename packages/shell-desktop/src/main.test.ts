@@ -75,6 +75,8 @@ class Worker {
 
   public messageHandler: ((message: unknown) => void) | undefined;
   public errorHandler: ((error: unknown) => void) | undefined;
+  public exitHandler: ((exitCode: number) => void) | undefined;
+  public messageErrorHandler: ((error: unknown) => void) | undefined;
 
   public on = vi.fn((event: string, handler: (...args: unknown[]) => void) => {
     if (event === 'message') {
@@ -82,6 +84,12 @@ class Worker {
     }
     if (event === 'error') {
       this.errorHandler = handler as (error: unknown) => void;
+    }
+    if (event === 'exit') {
+      this.exitHandler = handler as (exitCode: number) => void;
+    }
+    if (event === 'messageerror') {
+      this.messageErrorHandler = handler as (error: unknown) => void;
     }
     return this;
   });
@@ -92,6 +100,14 @@ class Worker {
 
   emitError(error: unknown): void {
     this.errorHandler?.(error);
+  }
+
+  emitExit(exitCode: number): void {
+    this.exitHandler?.(exitCode);
+  }
+
+  emitMessageError(error: unknown): void {
+    this.messageErrorHandler?.(error);
   }
 
   constructor(_script: unknown) {
@@ -231,6 +247,116 @@ describe('shell-desktop main process entrypoint', () => {
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
+  });
+
+  it('stops the tick loop and notifies the renderer when the sim worker exits', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(32);
+    expect(worker?.postMessage).toHaveBeenCalledWith({ kind: 'tick', deltaMs: 16 });
+
+    const tickCallsBeforeExit = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCallsBeforeExit).toHaveLength(2);
+
+    worker?.emitExit(1);
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed', exitCode: 1 }),
+    );
+
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCallsAfterExit = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCallsAfterExit).toHaveLength(2);
+
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('treats postMessage exceptions as sim-worker fatal and clears the tick loop', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.postMessage.mockImplementation((message: unknown) => {
+      if (typeof message === 'object' && message !== null && (message as { kind?: unknown }).kind === 'tick') {
+        throw new Error('postMessage failed');
+      }
+    });
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(16);
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed' }),
+    );
+
+    const tickCallsAfterFailure = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCallsAfterFailure).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCallsAfterAdvance = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCallsAfterAdvance).toHaveLength(1);
+
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('does not treat worker exit during disposal as a crash', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+
+    worker?.emitExit(0);
+
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.simStatus, expect.anything());
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it('handles control events and worker errors', async () => {

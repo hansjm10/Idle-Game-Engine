@@ -32,6 +32,7 @@ describe('shell-desktop preload', () => {
     expect(typeof api.ping).toBe('function');
     expect(typeof api.sendControlEvent).toBe('function');
     expect(typeof api.onFrame).toBe('function');
+    expect(typeof api.onSimStatus).toBe('function');
 
     const message = 'hello-from-test';
     await expect(api.ping(message)).resolves.toBe('pong-from-test');
@@ -44,16 +45,29 @@ describe('shell-desktop preload', () => {
     });
 
     const frameHandler = vi.fn();
-    on.mockImplementationOnce((_channel: string, listener: (...args: unknown[]) => void) => {
-      listener({}, { frame: { step: 1 } });
-    });
+    const simStatusHandler = vi.fn();
+    on
+      .mockImplementationOnce((_channel: string, listener: (...args: unknown[]) => void) => {
+        listener({}, { frame: { step: 1 } });
+      })
+      .mockImplementationOnce((_channel: string, listener: (...args: unknown[]) => void) => {
+        listener({}, { kind: 'crashed', reason: 'test crash', exitCode: 1 });
+      });
 
     const unsubscribe = api.onFrame(frameHandler);
     expect(on).toHaveBeenCalledTimes(1);
     expect(on).toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.any(Function));
     expect(frameHandler).toHaveBeenCalledWith({ frame: { step: 1 } });
 
+    const unsubscribeSimStatus = api.onSimStatus(simStatusHandler);
+    expect(on).toHaveBeenCalledTimes(2);
+    expect(on).toHaveBeenCalledWith(IPC_CHANNELS.simStatus, expect.any(Function));
+    expect(simStatusHandler).toHaveBeenCalledWith({ kind: 'crashed', reason: 'test crash', exitCode: 1 });
+
     unsubscribe();
     expect(removeListener).toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.any(Function));
+
+    unsubscribeSimStatus();
+    expect(removeListener).toHaveBeenCalledWith(IPC_CHANNELS.simStatus, expect.any(Function));
   });
 });
