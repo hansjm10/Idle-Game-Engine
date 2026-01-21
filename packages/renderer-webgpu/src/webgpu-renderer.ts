@@ -942,6 +942,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   #spriteInstanceBufferSize = 0;
   #spriteTextureBindGroupLayout: GPUBindGroupLayout | undefined;
   #spriteTextureBindGroup: GPUBindGroup | undefined;
+  #atlasTexture: GPUTexture | undefined;
   readonly #quadInstanceWriter = new QuadInstanceWriter();
 
   #atlasLayout: WebGpuAtlasLayout | undefined;
@@ -1025,6 +1026,30 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
   }
 
+  #safeDestroyBuffer(buffer: GPUBuffer | undefined): void {
+    if (!buffer) {
+      return;
+    }
+
+    try {
+      buffer.destroy();
+    } catch {
+      return;
+    }
+  }
+
+  #safeDestroyTexture(texture: GPUTexture | undefined): void {
+    if (!texture) {
+      return;
+    }
+
+    try {
+      texture.destroy();
+    } catch {
+      return;
+    }
+  }
+
   #createAtlasTextureAndUpload(options: {
     readonly packed: PackedAtlas;
     readonly loadedSources: readonly LoadedAtlasSource[];
@@ -1100,8 +1125,11 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     const layout = createAtlasLayout(packed);
     const layoutHash = await sha256Hex(canonicalEncodeForHash(layout));
 
+    const previousAtlasTexture = this.#atlasTexture;
     const atlasTexture = this.#createAtlasTextureAndUpload({ packed, loadedSources });
     this.#spriteTextureBindGroup = this.#createSpriteAtlasBindGroup(atlasTexture);
+    this.#atlasTexture = atlasTexture;
+    this.#safeDestroyTexture(previousAtlasTexture);
 
     const uvByAssetId = buildUvByAssetId(packed);
     const { bitmapFontByAssetId, defaultBitmapFontAssetId } = buildBitmapFontRuntimeState({
@@ -1328,11 +1356,14 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
 
     const size = Math.max(1024, this.#spriteInstanceBufferSize * 2, requiredBytes);
-    this.#spriteInstanceBuffer = this.device.createBuffer({
+    const previousBuffer = this.#spriteInstanceBuffer;
+    const nextBuffer = this.device.createBuffer({
       size,
       usage: GPU_BUFFER_USAGE.VERTEX | GPU_BUFFER_USAGE.COPY_DST,
     });
+    this.#spriteInstanceBuffer = nextBuffer;
     this.#spriteInstanceBufferSize = size;
+    this.#safeDestroyBuffer(previousBuffer);
   }
 
   #writeGlobals(offset: number, camera: Camera2D): void {
@@ -1791,7 +1822,38 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   }
 
   dispose(): void {
+    if (this.#disposed) {
+      return;
+    }
+
     this.#disposed = true;
+
+    this.#safeDestroyTexture(this.#atlasTexture);
+    this.#atlasTexture = undefined;
+    this.#spriteTextureBindGroup = undefined;
+    this.#spriteTextureBindGroupLayout = undefined;
+
+    this.#safeDestroyBuffer(this.#spriteInstanceBuffer);
+    this.#spriteInstanceBuffer = undefined;
+    this.#spriteInstanceBufferSize = 0;
+    this.#safeDestroyBuffer(this.#spriteIndexBuffer);
+    this.#spriteIndexBuffer = undefined;
+    this.#safeDestroyBuffer(this.#spriteVertexBuffer);
+    this.#spriteVertexBuffer = undefined;
+    this.#safeDestroyBuffer(this.#spriteUniformBuffer);
+    this.#spriteUniformBuffer = undefined;
+    this.#worldGlobalsBindGroup = undefined;
+    this.#uiGlobalsBindGroup = undefined;
+
+    this.#spritePipeline = undefined;
+    this.#rectPipeline = undefined;
+    this.#spriteSampler = undefined;
+
+    this.#atlasLayout = undefined;
+    this.#atlasLayoutHash = undefined;
+    this.#atlasUvByAssetId = undefined;
+    this.#bitmapFontByAssetId = undefined;
+    this.#defaultBitmapFontAssetId = undefined;
   }
 }
 

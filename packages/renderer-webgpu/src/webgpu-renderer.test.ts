@@ -199,6 +199,8 @@ describe('renderer-webgpu', () => {
       submit: ReturnType<typeof vi.fn>;
       writeBuffer: ReturnType<typeof vi.fn>;
       copyExternalImageToTexture: ReturnType<typeof vi.fn>;
+      createBuffer: ReturnType<typeof vi.fn>;
+      createTexture: ReturnType<typeof vi.fn>;
       getPreferredCanvasFormat?: ReturnType<typeof vi.fn>;
       getPreferredFormat?: ReturnType<typeof vi.fn>;
       resolveDeviceLost: (info: GPUDeviceLostInfo) => void;
@@ -229,6 +231,20 @@ describe('renderer-webgpu', () => {
       const copyExternalImageToTexture = vi.fn();
       const queue = { submit, writeBuffer, copyExternalImageToTexture } as unknown as GPUQueue;
 
+      const createBuffer = vi.fn(
+        () =>
+          ({
+            destroy: vi.fn(),
+          }) as unknown as GPUBuffer,
+      );
+      const createTexture = vi.fn(
+        () =>
+          ({
+            createView: vi.fn(() => ({} as unknown as GPUTextureView)),
+            destroy: vi.fn(),
+          }) as unknown as GPUTexture,
+      );
+
       let resolveDeviceLost: (info: GPUDeviceLostInfo) => void = () => undefined;
       const deviceLost = new Promise<GPUDeviceLostInfo>((resolve) => {
         resolveDeviceLost = resolve;
@@ -242,14 +258,9 @@ describe('renderer-webgpu', () => {
         createPipelineLayout: vi.fn(() => ({} as unknown as GPUPipelineLayout)),
         createRenderPipeline: vi.fn(() => ({} as unknown as GPURenderPipeline)),
         createSampler: vi.fn(() => ({} as unknown as GPUSampler)),
-        createBuffer: vi.fn(() => ({} as unknown as GPUBuffer)),
+        createBuffer,
         createBindGroup: vi.fn(() => ({} as unknown as GPUBindGroup)),
-        createTexture: vi.fn(
-          () =>
-            ({
-              createView: vi.fn(() => ({} as unknown as GPUTextureView)),
-            }) as unknown as GPUTexture,
-        ),
+        createTexture,
       } as unknown as GPUDevice;
 
       const adapter = {
@@ -300,6 +311,8 @@ describe('renderer-webgpu', () => {
         submit,
         writeBuffer,
         copyExternalImageToTexture,
+        createBuffer,
+        createTexture,
         getPreferredCanvasFormat,
         getPreferredFormat,
         resolveDeviceLost,
@@ -629,6 +642,38 @@ describe('renderer-webgpu', () => {
       expect(state.layoutHash).toBe(renderer.atlasLayoutHash);
     });
 
+    it('destroys the previous atlas texture when loadAssets is called again', async () => {
+      const { canvas, createTexture } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+
+      await renderer.loadAssets(manifest, { loadImage });
+      await renderer.loadAssets(manifest, { loadImage });
+
+      expect(createTexture).toHaveBeenCalledTimes(2);
+
+      const firstTexture = createTexture.mock.results[0]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      const secondTexture = createTexture.mock.results[1]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      if (!firstTexture || !secondTexture) {
+        throw new Error('Expected two atlas textures to be created.');
+      }
+
+      expect(firstTexture.destroy).toHaveBeenCalledTimes(1);
+      expect(secondTexture.destroy).not.toHaveBeenCalled();
+    });
+
     it('throws when rendering text draws without loaded bitmap fonts', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -930,6 +975,68 @@ describe('renderer-webgpu', () => {
       expect(instances[12]).toBe(1);
       expect(instances[120]).toBe(10);
       expect(instances[252]).toBe(21);
+    });
+
+    it('destroys the previous GPU instance buffer when growing', async () => {
+      const { canvas, createBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const frame: RenderCommandBuffer['frame'] = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 0,
+        simTimeMs: 0,
+        contentHash: 'content:dev',
+      };
+
+      const rcbSmall = {
+        frame,
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_ff_ff_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      const rcbLarge = {
+        frame,
+        passes: [{ id: 'ui' }],
+        draws: Array.from({ length: 30 }, (_value, index) => ({
+          kind: 'rect',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: index },
+          x: index,
+          y: 0,
+          width: 1,
+          height: 1,
+          colorRgba: 0xff_ff_ff_ff,
+        })),
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcbSmall);
+      renderer.render(rcbLarge);
+
+      expect(createBuffer).toHaveBeenCalledTimes(5);
+
+      const firstInstanceBuffer = createBuffer.mock.results[3]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      const secondInstanceBuffer = createBuffer.mock.results[4]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      if (!firstInstanceBuffer || !secondInstanceBuffer) {
+        throw new Error('Expected two instance buffer allocations.');
+      }
+
+      expect(firstInstanceBuffer.destroy).toHaveBeenCalledTimes(1);
+      expect(secondInstanceBuffer.destroy).not.toHaveBeenCalled();
     });
 
     it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
@@ -2085,6 +2192,79 @@ describe('renderer-webgpu', () => {
       await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
         'WebGPU renderer is disposed.',
       );
+    });
+
+    it('destroys owned GPU textures and buffers on dispose', async () => {
+      const { canvas, createBuffer, createTexture } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0 });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'clear',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            colorRgba: 0x00_00_00_ff,
+          },
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(createTexture).toHaveBeenCalledTimes(1);
+      expect(createBuffer).toHaveBeenCalledTimes(4);
+
+      const atlasTexture = createTexture.mock.results[0]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      if (!atlasTexture) {
+        throw new Error('Expected an atlas texture to be created.');
+      }
+
+      const buffers = createBuffer.mock.results.map((result) => result.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      });
+
+      renderer.dispose();
+
+      expect(atlasTexture.destroy).toHaveBeenCalledTimes(1);
+      for (const buffer of buffers) {
+        expect(buffer.destroy).toHaveBeenCalledTimes(1);
+      }
+
+      renderer.dispose();
+
+      expect(atlasTexture.destroy).toHaveBeenCalledTimes(1);
+      for (const buffer of buffers) {
+        expect(buffer.destroy).toHaveBeenCalledTimes(1);
+      }
     });
   });
 });
