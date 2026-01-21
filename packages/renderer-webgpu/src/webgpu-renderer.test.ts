@@ -92,7 +92,7 @@ describe('renderer-webgpu', () => {
   });
 
   it('defaults to opaque black when RCB has no clear draw', () => {
-	      const rcb = {
+    const rcb = {
       frame: {
         schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         step: 0,
@@ -528,18 +528,18 @@ describe('renderer-webgpu', () => {
         },
         passes: [{ id: 'world' }],
         draws: [
-	          {
-	            kind: 'image',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
-	            assetId: 'sprite:missing' as AssetId,
-	            x: 10 * WORLD_FIXED_POINT_SCALE,
-	            y: 20 * WORLD_FIXED_POINT_SCALE,
-	            width: 30 * WORLD_FIXED_POINT_SCALE,
-	            height: 40 * WORLD_FIXED_POINT_SCALE,
-	          },
-	        ],
-	      } satisfies RenderCommandBuffer;
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'sprite:missing' as AssetId,
+            x: 10 * WORLD_FIXED_POINT_SCALE,
+            y: 20 * WORLD_FIXED_POINT_SCALE,
+            width: 30 * WORLD_FIXED_POINT_SCALE,
+            height: 40 * WORLD_FIXED_POINT_SCALE,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
 
       expect(() => renderer.render(rcb)).toThrow('No sprite atlas loaded');
     });
@@ -659,7 +659,7 @@ describe('renderer-webgpu', () => {
       expect(() => renderer.render(rcb)).toThrow('No bitmap fonts loaded');
     });
 
-		    it('uploads an atlas and draws sprite instances', async () => {
+    it('uploads an atlas and draws sprite instances', async () => {
       const {
         canvas,
         copyExternalImageToTexture,
@@ -702,29 +702,29 @@ describe('renderer-webgpu', () => {
             sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
             colorRgba: 0x00_00_00_ff,
           },
-	          {
-	            kind: 'image',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
-	            assetId: 'sprite:demo' as AssetId,
-	            x: 10 * WORLD_FIXED_POINT_SCALE,
-	            y: 20 * WORLD_FIXED_POINT_SCALE,
-	            width: 30 * WORLD_FIXED_POINT_SCALE,
-	            height: 40 * WORLD_FIXED_POINT_SCALE,
-	            tintRgba: 0x12_34_56_80,
-	          },
-	          {
-	            kind: 'image',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
-	            assetId: 'sprite:demo' as AssetId,
-	            x: 50 * WORLD_FIXED_POINT_SCALE,
-	            y: 60 * WORLD_FIXED_POINT_SCALE,
-	            width: 70 * WORLD_FIXED_POINT_SCALE,
-	            height: 80 * WORLD_FIXED_POINT_SCALE,
-	          },
-	        ],
-	      } satisfies RenderCommandBuffer;
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 10 * WORLD_FIXED_POINT_SCALE,
+            y: 20 * WORLD_FIXED_POINT_SCALE,
+            width: 30 * WORLD_FIXED_POINT_SCALE,
+            height: 40 * WORLD_FIXED_POINT_SCALE,
+            tintRgba: 0x12_34_56_80,
+          },
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+            assetId: 'sprite:demo' as AssetId,
+            x: 50 * WORLD_FIXED_POINT_SCALE,
+            y: 60 * WORLD_FIXED_POINT_SCALE,
+            width: 70 * WORLD_FIXED_POINT_SCALE,
+            height: 80 * WORLD_FIXED_POINT_SCALE,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
 
       renderer.render(rcb);
 
@@ -757,8 +757,8 @@ describe('renderer-webgpu', () => {
       expect(instances.slice(8, 12)).toEqual(
         new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
       );
-		      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
-		    });
+      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
+    });
 
     it('reuses the quad instance upload buffer across renders', async () => {
       const { canvas, writeBuffer } = createStubWebGpuEnvironment();
@@ -819,78 +819,80 @@ describe('renderer-webgpu', () => {
       expect(secondPayload).toBe(firstPayload);
     });
 
-		    it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
-		      const { canvas, writeBuffer, drawIndexed } = createStubWebGpuEnvironment();
-		      const renderer = await createWebGpuRenderer(canvas);
+    it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
+      const { canvas, writeBuffer, drawIndexed } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
 
-	      const manifest = {
-	        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
-	        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
-	      } satisfies AssetManifest;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
 
-	      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
-	      await renderer.loadAssets(
-	        manifest,
-	        { loadImage },
-	        { maxAtlasSizePx: 64, paddingPx: 0, powerOfTwo: true },
-	      );
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      await renderer.loadAssets(
+        manifest,
+        { loadImage },
+        { maxAtlasSizePx: 64, paddingPx: 0, powerOfTwo: true },
+      );
 
-	      const rcb = compileViewModelToRenderCommandBuffer({
-	        frame: {
-	          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
-	          step: 0,
-	          simTimeMs: 0,
-	          contentHash: 'content:dev',
-	        },
-	        scene: {
-	          camera: { x: 0, y: 0, zoom: 1 },
-	          sprites: [
-	            {
-	              id: 'sprite',
-	              assetId: 'sprite:demo' as AssetId,
-	              x: 10,
-	              y: 20,
-	              z: 0,
-	              width: 30,
-	              height: 40,
-	            },
-	          ],
-	        },
-	        ui: {
-	          nodes: [],
-	        },
-	      });
+      const rcb = compileViewModelToRenderCommandBuffer({
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+          sprites: [
+            {
+              id: 'sprite',
+              assetId: 'sprite:demo' as AssetId,
+              x: 10,
+              y: 20,
+              z: 0,
+              width: 30,
+              height: 40,
+            },
+          ],
+        },
+        ui: {
+          nodes: [],
+        },
+      });
 
-	      renderer.render(rcb);
+      renderer.render(rcb);
 
-		      expect(drawIndexed).toHaveBeenCalledTimes(1);
-		      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
+      expect(drawIndexed).toHaveBeenCalledTimes(1);
+      expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
 
-		      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-		        const instances = getWriteBufferFloat32Payload(call);
-		        if (!instances || instances.byteLength !== 48) {
-		          return false;
-		        }
+      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+        const instances = getWriteBufferFloat32Payload(call);
+        if (!instances || instances.byteLength !== 48) {
+          return false;
+        }
 
-		        return (
-		          instances[0] === 10 &&
-		          instances[1] === 20 &&
-		          instances[2] === 30 &&
-	          instances[3] === 40
-	        );
-	      });
+        return (
+          instances[0] === 10 &&
+          instances[1] === 20 &&
+          instances[2] === 30 &&
+          instances[3] === 40
+        );
+      });
 
-	      expect(instanceBufferWrite).toBeDefined();
-		      if (!instanceBufferWrite) {
-		        throw new Error('Expected an instance buffer upload for sprite instances.');
-		      }
+      expect(instanceBufferWrite).toBeDefined();
+      if (!instanceBufferWrite) {
+        throw new Error('Expected an instance buffer upload for sprite instances.');
+      }
 
-		      const instances = getWriteBufferFloat32Payload(instanceBufferWrite);
-		      if (!instances) {
-		        throw new Error('Expected sprite instance buffer payload to be readable.');
-		      }
-		      expect(instances.slice(8, 12)).toEqual(new Float32Array([1, 1, 1, 1]));
-		    });
+      const instances = getWriteBufferFloat32Payload(instanceBufferWrite);
+      if (!instances) {
+        throw new Error('Expected sprite instance buffer payload to be readable.');
+      }
+      expect(instances.slice(8, 12)).toEqual(new Float32Array([1, 1, 1, 1]));
+    });
 
     it('throws when image draws reference an AssetId missing from the loaded atlas', async () => {
       const { canvas } = createStubWebGpuEnvironment();
@@ -913,18 +915,18 @@ describe('renderer-webgpu', () => {
         },
         passes: [{ id: 'world' }],
         draws: [
-	          {
-	            kind: 'image',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
-	            assetId: 'sprite:unknown' as AssetId,
-	            x: 0,
-	            y: 0,
-	            width: 10 * WORLD_FIXED_POINT_SCALE,
-	            height: 10 * WORLD_FIXED_POINT_SCALE,
-	          },
-	        ],
-	      } satisfies RenderCommandBuffer;
+          {
+            kind: 'image',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: 'sprite:unknown' as AssetId,
+            x: 0,
+            y: 0,
+            width: 10 * WORLD_FIXED_POINT_SCALE,
+            height: 10 * WORLD_FIXED_POINT_SCALE,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
 
       expect(() => renderer.render(rcb)).toThrow('Atlas missing UVs for AssetId');
     });
@@ -1590,40 +1592,40 @@ describe('renderer-webgpu', () => {
         },
         passes: [{ id: 'world' }],
         draws: [
-	          {
-	            kind: 'scissorPush',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
-	            x: 11 * WORLD_FIXED_POINT_SCALE,
-	            y: 22 * WORLD_FIXED_POINT_SCALE,
-	            width: 3 * WORLD_FIXED_POINT_SCALE,
-	            height: 4 * WORLD_FIXED_POINT_SCALE,
-	          },
-	          {
-	            kind: 'rect',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
-	            x: 0,
-	            y: 0,
-	            width: 1 * WORLD_FIXED_POINT_SCALE,
-	            height: 1 * WORLD_FIXED_POINT_SCALE,
-	            colorRgba: 0xff_00_00_ff,
-	          },
+          {
+            kind: 'scissorPush',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 11 * WORLD_FIXED_POINT_SCALE,
+            y: 22 * WORLD_FIXED_POINT_SCALE,
+            width: 3 * WORLD_FIXED_POINT_SCALE,
+            height: 4 * WORLD_FIXED_POINT_SCALE,
+          },
+          {
+            kind: 'rect',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1 * WORLD_FIXED_POINT_SCALE,
+            height: 1 * WORLD_FIXED_POINT_SCALE,
+            colorRgba: 0xff_00_00_ff,
+          },
           {
             kind: 'scissorPop',
             passId: 'world',
             sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
           },
-	          {
-	            kind: 'rect',
-	            passId: 'world',
-	            sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
-	            x: 0,
-	            y: 0,
-	            width: 1 * WORLD_FIXED_POINT_SCALE,
-	            height: 1 * WORLD_FIXED_POINT_SCALE,
-	            colorRgba: 0x00_ff_00_ff,
-	          },
+          {
+            kind: 'rect',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+            x: 0,
+            y: 0,
+            width: 1 * WORLD_FIXED_POINT_SCALE,
+            height: 1 * WORLD_FIXED_POINT_SCALE,
+            colorRgba: 0x00_ff_00_ff,
+          },
         ],
       } satisfies RenderCommandBuffer;
 
