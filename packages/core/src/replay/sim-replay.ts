@@ -619,6 +619,34 @@ function runReplaySimulation(options: {
   }
 }
 
+async function runReplaySimulationWithCallback(options: {
+  readonly wiring: GameRuntimeWiring<IdleEngineRuntime>;
+  readonly endStep: number;
+  readonly stepSizeMs: number;
+  readonly commandsByStep: Map<number, Command[]>;
+  readonly onProcessedStep: (options: {
+    readonly processedStep: number;
+    readonly simTimeMs: number;
+  }) => Promise<void>;
+}): Promise<void> {
+  const { wiring, endStep, stepSizeMs, commandsByStep, onProcessedStep } = options;
+
+  while (wiring.runtime.getCurrentStep() < endStep) {
+    const currentStep = wiring.runtime.getCurrentStep();
+    const stepCommands = commandsByStep.get(currentStep);
+    if (stepCommands) {
+      enqueueRecordedCommands(wiring, stepCommands, currentStep);
+      commandsByStep.delete(currentStep);
+    }
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const processedStep = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = processedStep * stepSizeMs;
+    await onProcessedStep({ processedStep, simTimeMs });
+  }
+}
+
 function captureReplayResultAndValidateChecksum(
   replay: SimReplay,
   wiring: GameRuntimeWiring<IdleEngineRuntime>,
@@ -680,25 +708,246 @@ function throwVisualReplayMismatch(summary: VisualReplayMismatchSummary): never 
   throw new VisualReplayMismatchError(summary);
 }
 
+function getReplayVisualFrames(replay: SimReplay): Readonly<{
+  readonly viewModelFrames: readonly SimReplayViewModelFrameV2[];
+  readonly rcbFrames: readonly SimReplayRenderCommandBufferFrameV2[];
+}> {
+  if (!isSimReplayV2(replay)) {
+    return { viewModelFrames: [], rcbFrames: [] };
+  }
+
+  return {
+    viewModelFrames: replay.frames?.viewModels ?? [],
+    rcbFrames: replay.frames?.rcbs ?? [],
+  };
+}
+
+function assertVisualReplayBuildersProvided(options: {
+  readonly viewModelFrames: readonly SimReplayViewModelFrameV2[];
+  readonly rcbFrames: readonly SimReplayRenderCommandBufferFrameV2[];
+  readonly buildViewModel: RunCombinedReplayOptions['buildViewModel'];
+  readonly buildRenderCommandBuffers: RunCombinedReplayOptions['buildRenderCommandBuffers'];
+}): void {
+  const { viewModelFrames, rcbFrames, buildViewModel, buildRenderCommandBuffers } = options;
+
+  if (viewModelFrames.length > 0 && buildViewModel === undefined) {
+    throw new Error('Replay contains ViewModel frames but buildViewModel was not provided.');
+  }
+
+  if (rcbFrames.length > 0 && buildRenderCommandBuffers === undefined) {
+    throw new Error(
+      'Replay contains RenderCommandBuffer frames but buildRenderCommandBuffers was not provided.',
+    );
+  }
+}
+
+async function validateRecordedViewModelFrame(options: {
+  readonly wiring: GameRuntimeWiring<IdleEngineRuntime>;
+  readonly buildViewModel: RunCombinedReplayOptions['buildViewModel'];
+  readonly processedStep: number;
+  readonly simTimeMs: number;
+  readonly frames: readonly SimReplayViewModelFrameV2[];
+  readonly cursor: number;
+}): Promise<Readonly<{ viewModel: ViewModel | undefined; nextCursor: number }>> {
+  const { wiring, buildViewModel, processedStep, simTimeMs, frames, cursor } = options;
+
+  if (frames.length === 0) {
+    return { viewModel: undefined, nextCursor: cursor };
+  }
+
+  const expected = frames[cursor];
+  if (!expected) {
+    telemetry.recordError('VisualReplayMissingViewModelFrame', {
+      step: processedStep,
+      expected: frames.length,
+      consumed: cursor,
+    });
+    throw new Error('Replay is missing recorded ViewModel frames.');
+  }
+
+  if (expected.step !== processedStep) {
+    telemetry.recordError('VisualReplayViewModelFrameMisaligned', {
+      expectedStep: expected.step,
+      actualStep: processedStep,
+    });
+    throw new Error('Replay ViewModel frame step mismatch.');
+  }
+
+  const viewModel = await buildViewModel!({
+    wiring,
+    step: processedStep,
+    simTimeMs,
+  });
+
+  const actualHash = await hashViewModel(viewModel);
+  if (actualHash !== expected.hash) {
+    throwVisualReplayMismatch({
+      event: 'visual_replay_mismatch',
+      schemaVersion: 1,
+      stream: 'viewModel',
+      step: processedStep,
+      expectedHash: expected.hash,
+      actualHash,
+    });
+  }
+
+  return { viewModel, nextCursor: cursor + 1 };
+}
+
+function requireExpectedRcbFrame(options: {
+  readonly frames: readonly SimReplayRenderCommandBufferFrameV2[];
+  readonly cursor: number;
+  readonly processedStep: number;
+}): SimReplayRenderCommandBufferFrameV2 {
+  const { frames, cursor, processedStep } = options;
+
+  const expected = frames[cursor];
+  if (expected) {
+    return expected;
+  }
+
+  telemetry.recordError('VisualReplayUnexpectedRcbFrame', {
+    step: processedStep,
+    expected: frames.length,
+    consumed: cursor,
+  });
+  throw new Error('Replay produced more RenderCommandBuffer frames than were recorded.');
+}
+
+function readRcbRenderFrame(rcb: RenderCommandBuffer): number {
+  const renderFrame = rcb.frame.renderFrame;
+  if (
+    typeof renderFrame !== 'number' ||
+    !Number.isInteger(renderFrame) ||
+    renderFrame < 0
+  ) {
+    throw new Error('RenderCommandBuffer.frame.renderFrame must be a non-negative integer.');
+  }
+
+  return renderFrame;
+}
+
+function assertRcbFrameAligned(options: {
+  readonly expected: SimReplayRenderCommandBufferFrameV2;
+  readonly rcb: RenderCommandBuffer;
+  readonly actualRenderFrame: number;
+}): void {
+  const { expected, rcb, actualRenderFrame } = options;
+
+  if (actualRenderFrame !== expected.renderFrame || rcb.frame.step !== expected.step) {
+    telemetry.recordError('VisualReplayRcbFrameMisaligned', {
+      expectedRenderFrame: expected.renderFrame,
+      actualRenderFrame,
+      expectedStep: expected.step,
+      actualStep: rcb.frame.step,
+    });
+    throw new Error('Replay RenderCommandBuffer frame alignment mismatch.');
+  }
+}
+
+async function assertRcbHashMatches(
+  rcb: RenderCommandBuffer,
+  expected: SimReplayRenderCommandBufferFrameV2,
+): Promise<void> {
+  const actualHash = await hashRenderCommandBuffer(rcb);
+  if (actualHash === expected.hash) {
+    return;
+  }
+
+  throwVisualReplayMismatch({
+    event: 'visual_replay_mismatch',
+    schemaVersion: 1,
+    stream: 'rcb',
+    step: expected.step,
+    renderFrame: expected.renderFrame,
+    expectedHash: expected.hash,
+    actualHash,
+  });
+}
+
+async function validateRecordedRcbFrames(options: {
+  readonly wiring: GameRuntimeWiring<IdleEngineRuntime>;
+  readonly buildRenderCommandBuffers: RunCombinedReplayOptions['buildRenderCommandBuffers'];
+  readonly processedStep: number;
+  readonly simTimeMs: number;
+  readonly viewModel: ViewModel | undefined;
+  readonly frames: readonly SimReplayRenderCommandBufferFrameV2[];
+  readonly cursor: number;
+}): Promise<number> {
+  const {
+    wiring,
+    buildRenderCommandBuffers,
+    processedStep,
+    simTimeMs,
+    viewModel,
+    frames,
+    cursor: initialCursor,
+  } = options;
+
+  if (frames.length === 0) {
+    return initialCursor;
+  }
+
+  const produced = await buildRenderCommandBuffers!({
+    wiring,
+    step: processedStep,
+    simTimeMs,
+    ...(viewModel === undefined ? {} : { viewModel }),
+  });
+
+  if (!Array.isArray(produced)) {
+    throw new TypeError('buildRenderCommandBuffers must return an array.');
+  }
+
+  let cursor = initialCursor;
+  for (const rcb of produced) {
+    const expected = requireExpectedRcbFrame({ frames, cursor, processedStep });
+    const actualRenderFrame = readRcbRenderFrame(rcb);
+    assertRcbFrameAligned({ expected, rcb, actualRenderFrame });
+    await assertRcbHashMatches(rcb, expected);
+    cursor += 1;
+  }
+
+  return cursor;
+}
+
+function assertAllVisualFramesValidated(options: {
+  readonly viewModelFrames: readonly SimReplayViewModelFrameV2[];
+  readonly viewModelCursor: number;
+  readonly rcbFrames: readonly SimReplayRenderCommandBufferFrameV2[];
+  readonly rcbCursor: number;
+}): void {
+  const { viewModelFrames, viewModelCursor, rcbFrames, rcbCursor } = options;
+
+  if (viewModelCursor !== viewModelFrames.length) {
+    telemetry.recordError('VisualReplayMissingViewModelFrames', {
+      expected: viewModelFrames.length,
+      consumed: viewModelCursor,
+    });
+    throw new Error('Replay did not validate all recorded ViewModel frames.');
+  }
+
+  if (rcbCursor !== rcbFrames.length) {
+    telemetry.recordError('VisualReplayMissingRcbFrames', {
+      expected: rcbFrames.length,
+      consumed: rcbCursor,
+    });
+    throw new Error('Replay did not validate all recorded RenderCommandBuffer frames.');
+  }
+}
+
 export async function runCombinedReplay(
   options: RunCombinedReplayOptions,
 ): Promise<RunCombinedReplayResult> {
   const { content, replay } = options;
 
-  const viewModelFrames = isSimReplayV2(replay)
-    ? replay.frames?.viewModels ?? []
-    : [];
-  const rcbFrames = isSimReplayV2(replay) ? replay.frames?.rcbs ?? [] : [];
-
-  if (viewModelFrames.length > 0 && options.buildViewModel === undefined) {
-    throw new Error('Replay contains ViewModel frames but buildViewModel was not provided.');
-  }
-
-  if (rcbFrames.length > 0 && options.buildRenderCommandBuffers === undefined) {
-    throw new Error(
-      'Replay contains RenderCommandBuffer frames but buildRenderCommandBuffers was not provided.',
-    );
-  }
+  const { viewModelFrames, rcbFrames } = getReplayVisualFrames(replay);
+  assertVisualReplayBuildersProvided({
+    viewModelFrames,
+    rcbFrames,
+    buildViewModel: options.buildViewModel,
+    buildRenderCommandBuffers: options.buildRenderCommandBuffers,
+  });
 
   assertReplayMatchesContentDigest(replay, content);
   const snapshot = assertReplaySimSnapshotIsSupported(replay);
@@ -729,140 +978,44 @@ export async function runCombinedReplay(
   let viewModelCursor = 0;
   let rcbCursor = 0;
 
-  while (wiring.runtime.getCurrentStep() < endStep) {
-    const currentStep = wiring.runtime.getCurrentStep();
-    const stepCommands = commandsByStep.get(currentStep);
-    if (stepCommands) {
-      enqueueRecordedCommands(wiring, stepCommands, currentStep);
-      commandsByStep.delete(currentStep);
-    }
-
-    wiring.runtime.tick(stepSizeMs);
-
-    const processedStep = wiring.runtime.getCurrentStep() - 1;
-    const simTimeMs = processedStep * stepSizeMs;
-
-    let viewModel: ViewModel | undefined;
-
-    if (viewModelFrames.length > 0) {
-      const expected = viewModelFrames[viewModelCursor];
-      if (!expected) {
-        telemetry.recordError('VisualReplayMissingViewModelFrame', {
-          step: processedStep,
-          expected: viewModelFrames.length,
-          consumed: viewModelCursor,
-        });
-        throw new Error('Replay is missing recorded ViewModel frames.');
-      }
-
-      if (expected.step !== processedStep) {
-        telemetry.recordError('VisualReplayViewModelFrameMisaligned', {
-          expectedStep: expected.step,
-          actualStep: processedStep,
-        });
-        throw new Error('Replay ViewModel frame step mismatch.');
-      }
-
-      viewModel = await options.buildViewModel!({
+  await runReplaySimulationWithCallback({
+    wiring,
+    endStep,
+    stepSizeMs,
+    commandsByStep,
+    onProcessedStep: async ({ processedStep, simTimeMs }) => {
+      const { viewModel, nextCursor } = await validateRecordedViewModelFrame({
         wiring,
-        step: processedStep,
+        buildViewModel: options.buildViewModel,
+        processedStep,
         simTimeMs,
+        frames: viewModelFrames,
+        cursor: viewModelCursor,
       });
+      viewModelCursor = nextCursor;
 
-      const actualHash = await hashViewModel(viewModel);
-      if (actualHash !== expected.hash) {
-        throwVisualReplayMismatch({
-          event: 'visual_replay_mismatch',
-          schemaVersion: 1,
-          stream: 'viewModel',
-          step: processedStep,
-          expectedHash: expected.hash,
-          actualHash,
-        });
-      }
-
-      viewModelCursor += 1;
-    }
-
-    if (rcbFrames.length > 0) {
-      const produced = await options.buildRenderCommandBuffers!({
+      rcbCursor = await validateRecordedRcbFrames({
         wiring,
-        step: processedStep,
+        buildRenderCommandBuffers: options.buildRenderCommandBuffers,
+        processedStep,
         simTimeMs,
-        ...(viewModel === undefined ? {} : { viewModel }),
+        viewModel,
+        frames: rcbFrames,
+        cursor: rcbCursor,
       });
-
-      if (!Array.isArray(produced)) {
-        throw new TypeError('buildRenderCommandBuffers must return an array.');
-      }
-
-      for (const rcb of produced) {
-        const expected = rcbFrames[rcbCursor];
-        if (!expected) {
-          telemetry.recordError('VisualReplayUnexpectedRcbFrame', {
-            step: processedStep,
-            expected: rcbFrames.length,
-            consumed: rcbCursor,
-          });
-          throw new Error('Replay produced more RenderCommandBuffer frames than were recorded.');
-        }
-
-        const actualRenderFrame = rcb.frame.renderFrame;
-        if (
-          typeof actualRenderFrame !== 'number' ||
-          !Number.isInteger(actualRenderFrame) ||
-          actualRenderFrame < 0
-        ) {
-          throw new Error('RenderCommandBuffer.frame.renderFrame must be a non-negative integer.');
-        }
-
-        if (actualRenderFrame !== expected.renderFrame || rcb.frame.step !== expected.step) {
-          telemetry.recordError('VisualReplayRcbFrameMisaligned', {
-            expectedRenderFrame: expected.renderFrame,
-            actualRenderFrame,
-            expectedStep: expected.step,
-            actualStep: rcb.frame.step,
-          });
-          throw new Error('Replay RenderCommandBuffer frame alignment mismatch.');
-        }
-
-        const actualHash = await hashRenderCommandBuffer(rcb);
-        if (actualHash !== expected.hash) {
-          throwVisualReplayMismatch({
-            event: 'visual_replay_mismatch',
-            schemaVersion: 1,
-            stream: 'rcb',
-            step: expected.step,
-            renderFrame: expected.renderFrame,
-            expectedHash: expected.hash,
-            actualHash,
-          });
-        }
-
-        rcbCursor += 1;
-      }
-    }
-  }
+    },
+  });
 
   if (postSimCommands.length > 0) {
     enqueueRecordedCommands(wiring, postSimCommands, null);
   }
 
-  if (viewModelCursor !== viewModelFrames.length) {
-    telemetry.recordError('VisualReplayMissingViewModelFrames', {
-      expected: viewModelFrames.length,
-      consumed: viewModelCursor,
-    });
-    throw new Error('Replay did not validate all recorded ViewModel frames.');
-  }
-
-  if (rcbCursor !== rcbFrames.length) {
-    telemetry.recordError('VisualReplayMissingRcbFrames', {
-      expected: rcbFrames.length,
-      consumed: rcbCursor,
-    });
-    throw new Error('Replay did not validate all recorded RenderCommandBuffer frames.');
-  }
+  assertAllVisualFramesValidated({
+    viewModelFrames,
+    viewModelCursor,
+    rcbFrames,
+    rcbCursor,
+  });
 
   const simResult = captureReplayResultAndValidateChecksum(replay, wiring);
 
@@ -1155,6 +1308,120 @@ function normalizeRcbFrame(candidate: unknown): SimReplayRenderCommandBufferFram
   });
 }
 
+type ReplayBodyParseState = {
+  commands: Command[];
+  viewModelFrames: SimReplayViewModelFrameV2[];
+  rcbFrames: SimReplayRenderCommandBufferFrameV2[];
+  lastViewModelStep: number;
+  lastRcbRenderFrame: number;
+};
+
+function handleReplayCommandsRecord(options: {
+  readonly record: Extract<SimReplayRecord, { type: 'commands' }>;
+  readonly state: ReplayBodyParseState;
+  readonly maxCommands: number;
+}): void {
+  const { record, state, maxCommands } = options;
+  appendReplayCommandChunk({ commands: state.commands, chunk: record.commands, maxCommands });
+}
+
+function handleReplayViewModelFramesRecord(options: {
+  readonly record: Extract<SimReplayRecord, { type: 'viewModelFrames' }>;
+  readonly schemaVersion: SimReplaySchemaVersion;
+  readonly state: ReplayBodyParseState;
+  readonly maxViewModelFrames: number;
+}): void {
+  const { record, schemaVersion, state, maxViewModelFrames } = options;
+
+  if (schemaVersion !== 2) {
+    throw new Error('Replay schemaVersion does not support viewModelFrames records.');
+  }
+  if (!Array.isArray(record.frames)) {
+    throw new TypeError('Replay viewModelFrames record must contain frames array.');
+  }
+
+  for (const frameCandidate of record.frames) {
+    const frame = normalizeViewModelFrame(frameCandidate);
+    if (frame.step <= state.lastViewModelStep) {
+      throw new Error('Replay ViewModel frames must be sorted by step.');
+    }
+    state.lastViewModelStep = frame.step;
+    state.viewModelFrames.push(frame);
+    if (state.viewModelFrames.length > maxViewModelFrames) {
+      throw new Error('Replay ViewModel frame stream exceeds configured frame limit.');
+    }
+  }
+}
+
+function handleReplayRcbFramesRecord(options: {
+  readonly record: Extract<SimReplayRecord, { type: 'rcbFrames' }>;
+  readonly schemaVersion: SimReplaySchemaVersion;
+  readonly state: ReplayBodyParseState;
+  readonly maxRcbFrames: number;
+}): void {
+  const { record, schemaVersion, state, maxRcbFrames } = options;
+
+  if (schemaVersion !== 2) {
+    throw new Error('Replay schemaVersion does not support rcbFrames records.');
+  }
+  if (!Array.isArray(record.frames)) {
+    throw new TypeError('Replay rcbFrames record must contain frames array.');
+  }
+
+  for (const frameCandidate of record.frames) {
+    const frame = normalizeRcbFrame(frameCandidate);
+    if (frame.renderFrame <= state.lastRcbRenderFrame) {
+      throw new Error('Replay RenderCommandBuffer frames must be sorted by renderFrame.');
+    }
+    state.lastRcbRenderFrame = frame.renderFrame;
+    state.rcbFrames.push(frame);
+    if (state.rcbFrames.length > maxRcbFrames) {
+      throw new Error('Replay RenderCommandBuffer frame stream exceeds configured frame limit.');
+    }
+  }
+}
+
+function finalizeReplayBodyParse(options: {
+  readonly record: Extract<SimReplayRecord, { type: 'end' }>;
+  readonly schemaVersion: SimReplaySchemaVersion;
+  readonly state: ReplayBodyParseState;
+}): Readonly<{
+  readonly commands: readonly Command[];
+  readonly viewModelFrames: readonly SimReplayViewModelFrameV2[];
+  readonly rcbFrames: readonly SimReplayRenderCommandBufferFrameV2[];
+  readonly endStep: number;
+  readonly endStateChecksum: string;
+}> {
+  const { record, schemaVersion, state } = options;
+  const {
+    endStep,
+    endStateChecksum,
+    expectedCommandCount,
+    expectedViewModelFrameCount,
+    expectedRcbFrameCount,
+  } = parseReplayEndRecord(record, schemaVersion);
+  if (expectedCommandCount !== state.commands.length) {
+    throw new Error('Replay command count does not match footer.');
+  }
+
+  if (schemaVersion === 2) {
+    if (expectedViewModelFrameCount !== state.viewModelFrames.length) {
+      throw new Error('Replay ViewModel frame count does not match footer.');
+    }
+    if (expectedRcbFrameCount !== state.rcbFrames.length) {
+      throw new Error('Replay RenderCommandBuffer frame count does not match footer.');
+    }
+  }
+
+  return {
+    commands: Object.freeze(state.commands),
+    viewModelFrames: Object.freeze(state.viewModelFrames),
+    rcbFrames: Object.freeze(state.rcbFrames),
+    endStep,
+    endStateChecksum,
+  };
+}
+
 function readReplayBodyAndEndRecord(options: {
   readonly lines: readonly string[];
   readonly startIndex: number;
@@ -1169,106 +1436,39 @@ function readReplayBodyAndEndRecord(options: {
   readonly endStep: number;
   readonly endStateChecksum: string;
 }> {
-  const {
-    lines,
-    startIndex,
-    schemaVersion,
-    maxCommands,
-    maxViewModelFrames,
-    maxRcbFrames,
-  } = options;
+  const { lines, startIndex, schemaVersion, maxCommands, maxViewModelFrames, maxRcbFrames } =
+    options;
 
-  const commands: Command[] = [];
-  const viewModelFrames: SimReplayViewModelFrameV2[] = [];
-  const rcbFrames: SimReplayRenderCommandBufferFrameV2[] = [];
-
-  let lastViewModelStep = -1;
-  let lastRcbRenderFrame = -1;
+  const state: ReplayBodyParseState = {
+    commands: [],
+    viewModelFrames: [],
+    rcbFrames: [],
+    lastViewModelStep: -1,
+    lastRcbRenderFrame: -1,
+  };
 
   for (let index = startIndex; index < lines.length; index += 1) {
     const record = readSimReplayRecord(lines[index] ?? '');
-    if (record.type === 'commands') {
-      appendReplayCommandChunk({ commands, chunk: record.commands, maxCommands });
-      continue;
+    switch (record.type) {
+      case 'commands':
+        handleReplayCommandsRecord({ record, state, maxCommands });
+        break;
+      case 'viewModelFrames':
+        handleReplayViewModelFramesRecord({
+          record,
+          schemaVersion,
+          state,
+          maxViewModelFrames,
+        });
+        break;
+      case 'rcbFrames':
+        handleReplayRcbFramesRecord({ record, schemaVersion, state, maxRcbFrames });
+        break;
+      case 'end':
+        return finalizeReplayBodyParse({ record, schemaVersion, state });
+      default:
+        throw new Error(`Unexpected replay record type: ${record.type}`);
     }
-
-    if (record.type === 'viewModelFrames') {
-      if (schemaVersion !== 2) {
-        throw new Error('Replay schemaVersion does not support viewModelFrames records.');
-      }
-      if (!Array.isArray(record.frames)) {
-        throw new TypeError('Replay viewModelFrames record must contain frames array.');
-      }
-
-      for (const frameCandidate of record.frames) {
-        const frame = normalizeViewModelFrame(frameCandidate);
-        if (frame.step <= lastViewModelStep) {
-          throw new Error('Replay ViewModel frames must be sorted by step.');
-        }
-        lastViewModelStep = frame.step;
-        viewModelFrames.push(frame);
-        if (viewModelFrames.length > maxViewModelFrames) {
-          throw new Error('Replay ViewModel frame stream exceeds configured frame limit.');
-        }
-      }
-
-      continue;
-    }
-
-    if (record.type === 'rcbFrames') {
-      if (schemaVersion !== 2) {
-        throw new Error('Replay schemaVersion does not support rcbFrames records.');
-      }
-      if (!Array.isArray(record.frames)) {
-        throw new TypeError('Replay rcbFrames record must contain frames array.');
-      }
-
-      for (const frameCandidate of record.frames) {
-        const frame = normalizeRcbFrame(frameCandidate);
-        if (frame.renderFrame <= lastRcbRenderFrame) {
-          throw new Error('Replay RenderCommandBuffer frames must be sorted by renderFrame.');
-        }
-        lastRcbRenderFrame = frame.renderFrame;
-        rcbFrames.push(frame);
-        if (rcbFrames.length > maxRcbFrames) {
-          throw new Error('Replay RenderCommandBuffer frame stream exceeds configured frame limit.');
-        }
-      }
-
-      continue;
-    }
-
-    if (record.type === 'end') {
-      const {
-        endStep,
-        endStateChecksum,
-        expectedCommandCount,
-        expectedViewModelFrameCount,
-        expectedRcbFrameCount,
-      } = parseReplayEndRecord(record, schemaVersion);
-      if (expectedCommandCount !== commands.length) {
-        throw new Error('Replay command count does not match footer.');
-      }
-
-      if (schemaVersion === 2) {
-        if (expectedViewModelFrameCount !== viewModelFrames.length) {
-          throw new Error('Replay ViewModel frame count does not match footer.');
-        }
-        if (expectedRcbFrameCount !== rcbFrames.length) {
-          throw new Error('Replay RenderCommandBuffer frame count does not match footer.');
-        }
-      }
-
-      return {
-        commands: Object.freeze(commands),
-        viewModelFrames: Object.freeze(viewModelFrames),
-        rcbFrames: Object.freeze(rcbFrames),
-        endStep,
-        endStateChecksum,
-      };
-    }
-
-    throw new Error(`Unexpected replay record type: ${record.type}`);
   }
 
   throw new Error('Replay is missing end record.');
