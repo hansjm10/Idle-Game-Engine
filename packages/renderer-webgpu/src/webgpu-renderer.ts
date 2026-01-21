@@ -234,9 +234,15 @@ const QUAD_VERTEX_STRIDE_BYTES = 16;
 const INSTANCE_STRIDE_BYTES = 48;
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / Float32Array.BYTES_PER_ELEMENT;
 
+type QuadInstanceColor = { readonly red: number; readonly green: number; readonly blue: number; readonly alpha: number };
+type MutableQuadInstanceColor = { red: number; green: number; blue: number; alpha: number };
+
+const ZERO_SPRITE_UV_RECT: SpriteUvRect = { u0: 0, v0: 0, u1: 0, v1: 0 };
+
 class QuadInstanceWriter {
   buffer: Float32Array<ArrayBuffer>;
   lengthFloats = 0;
+  readonly #scratchColor: MutableQuadInstanceColor = { red: 1, green: 1, blue: 1, alpha: 1 };
 
   constructor(initialCapacityFloats = 0) {
     this.buffer = new Float32Array(initialCapacityFloats);
@@ -267,20 +273,7 @@ class QuadInstanceWriter {
     this.buffer = next;
   }
 
-  writeInstance(
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    u0: number,
-    v0: number,
-    u1: number,
-    v1: number,
-    red: number,
-    green: number,
-    blue: number,
-    alpha: number,
-  ): void {
+  writeInstance(x: number, y: number, width: number, height: number, uv: SpriteUvRect, color: QuadInstanceColor): void {
     const nextLengthFloats = this.lengthFloats + INSTANCE_STRIDE_FLOATS;
     this.ensureCapacity(nextLengthFloats);
 
@@ -291,16 +284,34 @@ class QuadInstanceWriter {
     buffer[offset + 1] = y;
     buffer[offset + 2] = width;
     buffer[offset + 3] = height;
-    buffer[offset + 4] = u0;
-    buffer[offset + 5] = v0;
-    buffer[offset + 6] = u1;
-    buffer[offset + 7] = v1;
-    buffer[offset + 8] = red;
-    buffer[offset + 9] = green;
-    buffer[offset + 10] = blue;
-    buffer[offset + 11] = alpha;
+    buffer[offset + 4] = uv.u0;
+    buffer[offset + 5] = uv.v0;
+    buffer[offset + 6] = uv.u1;
+    buffer[offset + 7] = uv.v1;
+    buffer[offset + 8] = color.red;
+    buffer[offset + 9] = color.green;
+    buffer[offset + 10] = color.blue;
+    buffer[offset + 11] = color.alpha;
 
     this.lengthFloats = nextLengthFloats;
+  }
+
+  writeInstanceRgba(x: number, y: number, width: number, height: number, uv: SpriteUvRect, rgba: number | undefined): void {
+    const color = this.#scratchColor;
+    if (rgba === undefined) {
+      color.red = 1;
+      color.green = 1;
+      color.blue = 1;
+      color.alpha = 1;
+    } else {
+      const packed = rgba >>> 0;
+      color.red = clampByte((packed >>> 24) & 0xff) / 255;
+      color.green = clampByte((packed >>> 16) & 0xff) / 255;
+      color.blue = clampByte((packed >>> 8) & 0xff) / 255;
+      color.alpha = clampByte(packed & 0xff) / 255;
+    }
+
+    this.writeInstance(x, y, width, height, uv, color);
   }
 
   get instanceCount(): number {
@@ -866,7 +877,7 @@ function appendBitmapTextInstances(options: {
   readonly font: WebGpuBitmapFontRuntime;
   readonly scale: number;
   readonly tabAdvancePx: number;
-  readonly color: { readonly red: number; readonly green: number; readonly blue: number; readonly alpha: number };
+  readonly color: QuadInstanceColor;
 }): number {
   const pen = { x: 0, y: 0 };
   let appended = 0;
@@ -894,20 +905,7 @@ function appendBitmapTextInstances(options: {
       const glyphW = glyph.widthPx * options.scale;
       const glyphH = glyph.heightPx * options.scale;
 
-      options.batchInstances.writeInstance(
-        glyphX,
-        glyphY,
-        glyphW,
-        glyphH,
-        glyph.uv.u0,
-        glyph.uv.v0,
-        glyph.uv.u1,
-        glyph.uv.v1,
-        options.color.red,
-        options.color.green,
-        options.color.blue,
-        options.color.alpha,
-      );
+      options.batchInstances.writeInstance(glyphX, glyphY, glyphW, glyphH, glyph.uv, options.color);
       appended += 1;
     }
 
@@ -1673,25 +1671,13 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   ): void {
     this.#ensureQuadBatch(state, 'rect', passId);
     const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
-    const rgba = draw.colorRgba >>> 0;
-    const red = clampByte((rgba >>> 24) & 0xff) / 255;
-    const green = clampByte((rgba >>> 16) & 0xff) / 255;
-    const blue = clampByte((rgba >>> 8) & 0xff) / 255;
-    const alpha = clampByte(rgba & 0xff) / 255;
-
-    state.batchInstances.writeInstance(
+    state.batchInstances.writeInstanceRgba(
       draw.x * coordScale,
       draw.y * coordScale,
       draw.width * coordScale,
       draw.height * coordScale,
-      0,
-      0,
-      0,
-      0,
-      red,
-      green,
-      blue,
-      alpha,
+      ZERO_SPRITE_UV_RECT,
+      draw.colorRgba,
     );
   }
 
@@ -1704,26 +1690,13 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
 
     const uv = this.#spriteUvOrThrow(state, draw.assetId);
-    const tintRgba = draw.tintRgba;
-    const tint = tintRgba === undefined ? undefined : tintRgba >>> 0;
-    const tintRed = tint === undefined ? 1 : clampByte((tint >>> 24) & 0xff) / 255;
-    const tintGreen = tint === undefined ? 1 : clampByte((tint >>> 16) & 0xff) / 255;
-    const tintBlue = tint === undefined ? 1 : clampByte((tint >>> 8) & 0xff) / 255;
-    const tintAlpha = tint === undefined ? 1 : clampByte(tint & 0xff) / 255;
-
-    state.batchInstances.writeInstance(
+    state.batchInstances.writeInstanceRgba(
       draw.x * coordScale,
       draw.y * coordScale,
       draw.width * coordScale,
       draw.height * coordScale,
-      uv.u0,
-      uv.v0,
-      uv.u1,
-      uv.v1,
-      tintRed,
-      tintGreen,
-      tintBlue,
-      tintAlpha,
+      uv,
+      draw.tintRgba,
     );
   }
 
