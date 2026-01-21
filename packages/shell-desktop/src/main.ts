@@ -207,7 +207,12 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     if (message.kind === 'frames') {
       nextStep = message.nextStep;
       for (const frame of message.frames) {
-        mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
+        try {
+          mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
+        } catch (error: unknown) {
+          // eslint-disable-next-line no-console
+          console.error(error);
+        }
       }
       return;
     }
@@ -347,6 +352,15 @@ async function createMainWindow(): Promise<BrowserWindow> {
     if (url !== mainWindow.webContents.getURL()) {
       event.preventDefault();
     }
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (!simWorkerController) {
+      return;
+    }
+
+    simWorkerController.dispose();
+    simWorkerController = createSimWorkerController(mainWindow);
   });
 
   await mainWindow.loadFile(rendererHtmlPath);

@@ -204,6 +204,28 @@ describe('shell-desktop main process entrypoint', () => {
     expect(Worker.instances).toHaveLength(2);
   });
 
+  it('recreates the sim worker when the renderer reloads', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    expect(Worker.instances).toHaveLength(1);
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const didFinishLoadCall = mainWindow?.webContents.on.mock.calls.find((call) => call[0] === 'did-finish-load');
+    expect(didFinishLoadCall).toBeDefined();
+
+    const didFinishLoadHandler = didFinishLoadCall?.[1] as undefined | (() => void);
+    expect(didFinishLoadHandler).toBeTypeOf('function');
+
+    didFinishLoadHandler?.();
+    await flushMicrotasks();
+
+    expect(Worker.instances[0]?.terminate).toHaveBeenCalledTimes(1);
+    expect(Worker.instances).toHaveLength(2);
+  });
+
   it('starts the sim tick loop and forwards frames to the renderer', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
