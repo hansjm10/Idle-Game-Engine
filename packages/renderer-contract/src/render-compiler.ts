@@ -38,13 +38,10 @@ function compareNumbers(a: number, b: number): number {
 }
 
 function compareStrings(a: string, b: string): number {
-  if (a < b) {
-    return -1;
+  if (a === b) {
+    return 0;
   }
-  if (a > b) {
-    return 1;
-  }
-  return 0;
+  return a < b ? -1 : 1;
 }
 
 function compareSortKey(a: SortKey, b: SortKey): number {
@@ -57,7 +54,7 @@ function compareSortKey(a: SortKey, b: SortKey): number {
 
 function requireFiniteNumber(value: number, label: string): number {
   if (!Number.isFinite(value)) {
-    throw new Error(`Render compiler expected ${label} to be a finite number.`);
+    throw new TypeError(`Render compiler expected ${label} to be a finite number.`);
   }
   return value;
 }
@@ -76,7 +73,7 @@ function quantizeToInt(value: number, scale: number, label: string): number {
   const finite = requireFiniteNumber(value, label);
   const scaled = finite * scale;
   if (!Number.isFinite(scaled)) {
-    throw new Error(`Render compiler expected ${label} to be within quantizable range.`);
+    throw new TypeError(`Render compiler expected ${label} to be within quantizable range.`);
   }
   const quantized = roundAwayFromZero(scaled);
   return quantized === 0 ? 0 : quantized;
@@ -84,17 +81,17 @@ function quantizeToInt(value: number, scale: number, label: string): number {
 
 function requireInt32(value: number, label: string): number {
   if (!Number.isInteger(value)) {
-    throw new Error(`Render compiler expected ${label} to be an integer.`);
+    throw new TypeError(`Render compiler expected ${label} to be an integer.`);
   }
   if (value < -2147483648 || value > 2147483647) {
-    throw new Error(`Render compiler expected ${label} to fit in int32.`);
+    throw new TypeError(`Render compiler expected ${label} to fit in int32.`);
   }
   return value;
 }
 
 function encodeSignedInt32ToSortableUint32(value: number, label: string): number {
   const int32 = requireInt32(value, label);
-  return ((int32 | 0) ^ 0x80000000) >>> 0;
+  return (int32 ^ 0x80000000) >>> 0;
 }
 
 function requireNonEmptyString(value: string, label: string): string {
@@ -275,7 +272,7 @@ function compileUiMeterNode(
   const value = requireFiniteNumber(node.value, `UiMeterNode(${options.id}).value`);
   const max = requireFiniteNumber(node.max, `UiMeterNode(${options.id}).max`);
 
-  const clampedMax = max > 0 ? max : 0;
+  const clampedMax = Math.max(0, max);
   const clampedValue = clampedMax > 0 ? Math.max(0, Math.min(value, clampedMax)) : 0;
   const fillWidth =
     clampedMax === 0 ? 0 : Math.max(0, Math.min(options.width, Math.floor((options.width * clampedValue) / clampedMax)));
@@ -362,4 +359,3 @@ export const __test__ = {
   quantizeToInt,
   encodeSignedInt32ToSortableUint32,
 };
-
