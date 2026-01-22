@@ -18,6 +18,79 @@ describe('hashing', () => {
     vi.unstubAllGlobals();
   });
 
+  describe('RFC 8785 canonicalization edge cases', () => {
+    it('serializes top-level null', () => {
+      expect(canonicalizeForHash(null)).toBe('null');
+    });
+
+    it('serializes top-level booleans', () => {
+      expect(canonicalizeForHash(true)).toBe('true');
+      expect(canonicalizeForHash(false)).toBe('false');
+    });
+
+    it('serializes top-level numbers', () => {
+      expect(canonicalizeForHash(42)).toBe('42');
+      expect(canonicalizeForHash(3.14159)).toBe('3.14159');
+      expect(canonicalizeForHash(0)).toBe('0');
+      expect(canonicalizeForHash(-0)).toBe('0'); // -0 normalized to 0
+    });
+
+    it('serializes top-level strings with proper escaping', () => {
+      expect(canonicalizeForHash('hello')).toBe('"hello"');
+      expect(canonicalizeForHash('with "quotes"')).toBe('"with \\"quotes\\""');
+      expect(canonicalizeForHash('line\nbreak')).toBe('"line\\nbreak"');
+    });
+
+    it('serializes empty structures', () => {
+      expect(canonicalizeForHash([])).toBe('[]');
+      expect(canonicalizeForHash({})).toBe('{}');
+    });
+
+    it('converts undefined array elements to null (RFC 8785 §3.2.2)', () => {
+      expect(canonicalizeForHash([1, undefined, 3])).toBe('[1,null,3]');
+      expect(canonicalizeForHash([undefined])).toBe('[null]');
+    });
+
+    it('omits undefined object values (RFC 8785 §3.2.3)', () => {
+      expect(canonicalizeForHash({ a: 1, b: undefined, c: 3 })).toBe('{"a":1,"c":3}');
+      expect(canonicalizeForHash({ only: undefined })).toBe('{}');
+    });
+
+    it('sorts object keys lexicographically by UTF-16 code units (RFC 8785 §3.2.3)', () => {
+      // Standard ASCII key ordering
+      expect(canonicalizeForHash({ b: 1, a: 2, c: 3 })).toBe('{"a":2,"b":1,"c":3}');
+
+      // Uppercase sorts before lowercase in UTF-16 (A=65, a=97)
+      expect(canonicalizeForHash({ a: 1, A: 2 })).toBe('{"A":2,"a":1}');
+
+      // Digits sort before letters (0=48, A=65, a=97)
+      expect(canonicalizeForHash({ a: 1, '1': 2, A: 3 })).toBe('{"1":2,"A":3,"a":1}');
+
+      // Special characters in keys
+      expect(canonicalizeForHash({ 'a-b': 1, 'a_c': 2 })).toBe('{"a-b":1,"a_c":2}');
+    });
+
+    it('handles nested structures with deterministic ordering', () => {
+      const nested = {
+        z: { b: 2, a: 1 },
+        a: [3, { y: 4, x: 5 }],
+      };
+      expect(canonicalizeForHash(nested)).toBe('{"a":[3,{"x":5,"y":4}],"z":{"a":1,"b":2}}');
+    });
+
+    it('handles null-prototype objects', () => {
+      const nullProto = Object.create(null) as Record<string, unknown>;
+      nullProto['b'] = 1;
+      nullProto['a'] = 2;
+      expect(canonicalizeForHash(nullProto)).toBe('{"a":2,"b":1}');
+    });
+
+    it('handles deeply nested arrays and objects', () => {
+      const deep = { a: [[[{ b: 1 }]]] };
+      expect(canonicalizeForHash(deep)).toBe('{"a":[[[{"b":1}]]]}');
+    });
+  });
+
   it('hashes ViewModel deterministically (independent of object key insertion order)', async () => {
     const a: ViewModel = {
       frame: {
