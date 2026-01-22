@@ -1,5 +1,3 @@
-import canonicalize from 'canonicalize';
-
 import type {
   RenderCommandBuffer,
   Sha256Hex,
@@ -8,9 +6,70 @@ import type {
 
 const textEncoder = new TextEncoder();
 
+/**
+ * Locale-independent string comparator for RFC 8785 key sorting.
+ * Compares by UTF-16 code units (JavaScript's native string ordering).
+ */
+function compareStrings(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
+
+/**
+ * RFC 8785 JSON Canonicalization Scheme (JCS) serializer.
+ * Produces deterministic JSON by:
+ * - Sorting object keys lexicographically
+ * - Using JSON.stringify() number/string encoding
+ * - Omitting undefined values and symbol keys
+ *
+ * Assumes input has been validated by normalizeNumbersForHash().
+ */
+function rfc8785Serialize(value: unknown): string | undefined {
+  if (value === null) {
+    return 'null';
+  }
+
+  switch (typeof value) {
+    case 'boolean':
+      return value ? 'true' : 'false';
+    case 'number':
+      // JSON.stringify handles IEEE 754 number formatting per RFC 8785
+      return JSON.stringify(value);
+    case 'string':
+      return JSON.stringify(value);
+    case 'undefined':
+      return undefined;
+    case 'object': {
+      if (Array.isArray(value)) {
+        const elements = value.map((element) => {
+          const serialized = rfc8785Serialize(element);
+          return serialized ?? 'null';
+        });
+        return '[' + elements.join(',') + ']';
+      }
+
+      // Plain object: sort keys lexicographically
+      // RFC 8785 requires locale-independent ordering
+      const keys = Object.keys(value as Record<string, unknown>).sort(compareStrings);
+      const pairs: string[] = [];
+      for (const key of keys) {
+        const v = (value as Record<string, unknown>)[key];
+        const serializedValue = rfc8785Serialize(v);
+        if (serializedValue !== undefined) {
+          pairs.push(JSON.stringify(key) + ':' + serializedValue);
+        }
+      }
+      return '{' + pairs.join(',') + '}';
+    }
+    default:
+      return undefined;
+  }
+}
+
 export function canonicalizeForHash(value: unknown): string {
   const normalized = normalizeNumbersForHash(value);
-  const result = canonicalize(normalized);
+  const result = rfc8785Serialize(normalized);
 
   if (typeof result !== 'string') {
     throw new Error('Failed to canonicalize value for hashing.');
