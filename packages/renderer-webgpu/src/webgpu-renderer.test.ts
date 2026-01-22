@@ -1173,6 +1173,86 @@ describe('renderer-webgpu', () => {
       expect(secondInstanceBuffer.destroy).not.toHaveBeenCalled();
     });
 
+    it('defers destroying previous instance buffers until after submission when growing mid-frame', async () => {
+      const { canvas, createBuffer, submit } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const frame: RenderCommandBuffer['frame'] = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 0,
+        simTimeMs: 0,
+        contentHash: 'content:dev',
+      };
+
+      const rcb = {
+        frame,
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_ff_ff_ff,
+          },
+          {
+            kind: 'scissorPush',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 50,
+          },
+          ...Array.from({ length: 22 }, (_value, index) => ({
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 2 + index },
+            x: index,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_ff_ff_ff,
+          })),
+          {
+            kind: 'scissorPop',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 24 },
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      renderer.render(rcb);
+
+      expect(submit).toHaveBeenCalledTimes(1);
+
+      expect(createBuffer).toHaveBeenCalledTimes(5);
+
+      const firstInstanceBuffer = createBuffer.mock.results[3]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      const secondInstanceBuffer = createBuffer.mock.results[4]?.value as unknown as {
+        destroy: ReturnType<typeof vi.fn>;
+      };
+      if (!firstInstanceBuffer || !secondInstanceBuffer) {
+        throw new Error('Expected two instance buffer allocations.');
+      }
+
+      expect(firstInstanceBuffer.destroy).toHaveBeenCalledTimes(1);
+      expect(secondInstanceBuffer.destroy).not.toHaveBeenCalled();
+
+      const submitOrder = submit.mock.invocationCallOrder[0];
+      const destroyOrder = firstInstanceBuffer.destroy.mock.invocationCallOrder[0];
+      if (!submitOrder || !destroyOrder) {
+        throw new Error('Expected submit and destroy to have an invocation call order.');
+      }
+
+      expect(destroyOrder).toBeGreaterThan(submitOrder);
+    });
+
     it('renders render-compiler output (world pass fixed-point coordinates)', async () => {
       const { canvas, writeBuffer, drawIndexed } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);

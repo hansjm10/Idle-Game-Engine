@@ -940,6 +940,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   #spriteIndexBuffer: GPUBuffer | undefined;
   #spriteInstanceBuffer: GPUBuffer | undefined;
   #spriteInstanceBufferSize = 0;
+  readonly #retiredInstanceBuffers: GPUBuffer[] = [];
   #spriteTextureBindGroupLayout: GPUBindGroupLayout | undefined;
   #spriteTextureBindGroup: GPUBindGroup | undefined;
   #atlasTexture: GPUTexture | undefined;
@@ -1048,6 +1049,18 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     } catch {
       return;
     }
+  }
+
+  #flushRetiredInstanceBuffers(): void {
+    if (this.#retiredInstanceBuffers.length === 0) {
+      return;
+    }
+
+    for (const buffer of this.#retiredInstanceBuffers) {
+      this.#safeDestroyBuffer(buffer);
+    }
+
+    this.#retiredInstanceBuffers.length = 0;
   }
 
   #createAtlasTextureAndUpload(options: {
@@ -1363,7 +1376,9 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     });
     this.#spriteInstanceBuffer = nextBuffer;
     this.#spriteInstanceBufferSize = size;
-    this.#safeDestroyBuffer(previousBuffer);
+    if (previousBuffer) {
+      this.#retiredInstanceBuffers.push(previousBuffer);
+    }
   }
 
   #writeGlobals(offset: number, camera: Camera2D): void {
@@ -1813,12 +1828,16 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       ],
     });
 
-    const orderedDraws = orderDrawsByPassAndSortKey(rcb);
-    this.#renderDraws(passEncoder, orderedDraws);
+    try {
+      const orderedDraws = orderDrawsByPassAndSortKey(rcb);
+      this.#renderDraws(passEncoder, orderedDraws);
 
-    passEncoder.end();
+      passEncoder.end();
 
-    this.device.queue.submit([commandEncoder.finish()]);
+      this.device.queue.submit([commandEncoder.finish()]);
+    } finally {
+      this.#flushRetiredInstanceBuffers();
+    }
   }
 
   dispose(): void {
@@ -1833,6 +1852,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#spriteTextureBindGroup = undefined;
     this.#spriteTextureBindGroupLayout = undefined;
 
+    this.#flushRetiredInstanceBuffers();
     this.#safeDestroyBuffer(this.#spriteInstanceBuffer);
     this.#spriteInstanceBuffer = undefined;
     this.#spriteInstanceBufferSize = 0;
