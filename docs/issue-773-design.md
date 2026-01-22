@@ -60,10 +60,10 @@ A new static markdown file `docs/content-schema-reference.md` will be added to t
 ### 6.2 Detailed Design
 The document will be structured as follows:
 
-1.  **Upgrade Categories**: Table of values (`global`, `resource`, etc.) with descriptions.
-2.  **Achievement Track Kinds**: List of kinds (`resource`, `generator-level`, etc.) with schema snippets showing required fields.
-3.  **Automation Target Types**: Table of values (`generator`, `system`, etc.) with usage context.
-4.  **Condition Kinds**: List of kinds (`resourceThreshold`, `upgradeOwned`, etc.) with special attention to non-obvious properties like `requiredPurchases`.
+1. **Upgrade Categories**: Table of values (`global`, `resource`, etc.) with descriptions.
+2. **Achievement Track Kinds**: List of kinds (`resource`, `generator-level`, etc.) with schema snippets showing required fields.
+3. **Automation Target Types**: Table of values (`generator`, `system`, etc.) with usage context.
+4. **Condition Kinds**: List of kinds (`resourceThreshold`, `upgradeOwned`, etc.) with special attention to non-obvious properties like `requiredPurchases`.
 
 ### 6.3 Operational Considerations
 - **Deployment**: Standard Docusaurus build.
