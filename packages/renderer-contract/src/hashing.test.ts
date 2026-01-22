@@ -89,6 +89,14 @@ describe('hashing', () => {
       const deep = { a: [[[{ b: 1 }]]] };
       expect(canonicalizeForHash(deep)).toBe('{"a":[[[{"b":1}]]]}');
     });
+
+    it('rejects objects with toJSON methods (functions are not supported)', () => {
+      // Unlike JSON.stringify which calls toJSON(), our implementation
+      // iterates object keys directly. Objects with toJSON methods fail
+      // because normalizeNumbersForHash encounters the function value.
+      const withToJSON = { value: 1, toJSON: () => ({ serialized: true }) };
+      expect(() => canonicalizeForHash(withToJSON)).toThrow(/function/);
+    });
   });
 
   it('hashes ViewModel deterministically (independent of object key insertion order)', async () => {
