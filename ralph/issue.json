@@ -12,7 +12,7 @@
     "reviewClean": true,
     "reviewPasses": 3,
     "reviewCleanPasses": 3,
-    "coverageClean": false,
+    "coverageClean": true,
     "coverageNeedsFix": false,
     "coveragePasses": 1,
     "sonarClean": false
