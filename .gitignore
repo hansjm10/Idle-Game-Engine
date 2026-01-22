@@ -61,6 +61,8 @@ scripts/
 !tools/scripts/
 pr-review-output/
 pr-review/
+ralph/
+.ralph/
 
 # Plans
 docs/plans/

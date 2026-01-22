@@ -26,12 +26,14 @@ function rfc8785Serialize(value) {
             if (Array.isArray(value)) {
                 const elements = value.map((element) => {
                     const serialized = rfc8785Serialize(element);
-                    return serialized === undefined ? 'null' : serialized;
+                    return serialized ?? 'null';
                 });
                 return '[' + elements.join(',') + ']';
             }
             // Plain object: sort keys lexicographically
-            const keys = Object.keys(value).sort();
+            // RFC 8785 requires locale-independent ordering; explicit comparator silences S2871
+            const keys = Object.keys(value)
+                .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
             const pairs = [];
             for (const key of keys) {
                 const v = value[key];

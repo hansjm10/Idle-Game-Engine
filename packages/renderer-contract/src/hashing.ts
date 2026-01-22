@@ -34,7 +34,7 @@ function rfc8785Serialize(value: unknown): string | undefined {
       if (Array.isArray(value)) {
         const elements = value.map((element) => {
           const serialized = rfc8785Serialize(element);
-          return serialized === undefined ? 'null' : serialized;
+          return serialized ?? 'null';
         });
         return '[' + elements.join(',') + ']';
       }
