@@ -40,7 +40,9 @@ function rfc8785Serialize(value: unknown): string | undefined {
       }
 
       // Plain object: sort keys lexicographically
-      const keys = Object.keys(value as Record<string, unknown>).sort();
+      // RFC 8785 requires locale-independent ordering; explicit comparator silences S2871
+      const keys = Object.keys(value as Record<string, unknown>)
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
       const pairs: string[] = [];
       for (const key of keys) {
         const v = (value as Record<string, unknown>)[key];
