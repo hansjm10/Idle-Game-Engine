@@ -43,6 +43,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'content-dsl-schema-design',
         'content-dsl-usage-guidelines',
+        'content-schema-reference',
         'content-compiler-design',
         'content-schema-rollout-decisions',
         'content-validation-cli-design',
