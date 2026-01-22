@@ -289,10 +289,6 @@ importers:
         version: 5.0.0
 
   packages/renderer-contract:
-    dependencies:
-      canonicalize:
-        specifier: ^2.0.0
-        version: 2.1.0
     devDependencies:
       '@idle-engine/config-eslint':
         specifier: workspace:*

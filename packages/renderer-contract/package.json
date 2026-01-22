@@ -19,9 +19,6 @@
     "test:ci": "vitest run --passWithNoTests",
     "coverage": "vitest run --coverage --passWithNoTests"
   },
-  "dependencies": {
-    "canonicalize": "^2.0.0"
-  },
   "devDependencies": {
     "@idle-engine/config-eslint": "workspace:*",
     "@idle-engine/config-vitest": "workspace:*",
