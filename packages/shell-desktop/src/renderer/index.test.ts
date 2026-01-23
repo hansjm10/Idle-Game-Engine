@@ -407,6 +407,33 @@ describe('shell-desktop renderer entrypoint', () => {
     );
   });
 
+  it('cancels pending pointer move raf callbacks on unload', async () => {
+    await import('./index.js');
+    await flushMicrotasks();
+
+    expect(rafCallbacks.size).toBe(1);
+
+    expect(pointerMoveHandler).toBeTypeOf('function');
+    pointerMoveHandler?.({
+      clientX: 30,
+      clientY: 45,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(rafCallbacks.size).toBe(2);
+
+    expect(beforeUnloadHandler).toBeTypeOf('function');
+    beforeUnloadHandler?.();
+
+    expect(rafCallbacks.size).toBe(0);
+  });
+
   it('renders IPC subscription failures to the output view', async () => {
     const idleEngine = (
       globalThis as unknown as {

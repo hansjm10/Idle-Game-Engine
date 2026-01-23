@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
-import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
+import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -39,8 +39,6 @@ const DEMO_CONTROL_SCHEME: ControlScheme = {
     },
   ],
 };
-
-const SHELL_CONTROL_EVENT_COMMAND_TYPE = 'SHELL_CONTROL_EVENT' as const;
 
 function assertPingRequest(
   request: unknown,

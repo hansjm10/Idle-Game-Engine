@@ -304,6 +304,11 @@ async function run(): Promise<void> {
   }
 
   addEventListener('beforeunload', () => {
+    if (pointerMoveRaf !== undefined) {
+      cancelAnimationFrame(pointerMoveRaf);
+      pointerMoveRaf = undefined;
+      pendingPointerMove = undefined;
+    }
     stopLoop();
     resizeObserver.disconnect();
     unsubscribeFrames?.();

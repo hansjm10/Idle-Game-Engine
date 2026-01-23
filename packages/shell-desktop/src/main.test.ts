@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IPC_CHANNELS } from './ipc.js';
+import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 
 let monotonicNowSequence: number[] = [];
 
@@ -580,11 +581,36 @@ describe('shell-desktop main process entrypoint', () => {
         kind: 'enqueueCommands',
         commands: expect.arrayContaining([
           expect.objectContaining({
-            type: 'SHELL_CONTROL_EVENT',
+            type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
             payload: { event: passthroughEvent },
           }),
         ]),
       }),
+    );
+
+    const collectPassthroughEvent = {
+      intent: 'collect',
+      phase: 'start',
+      metadata: { passthrough: true },
+    };
+    const enqueueMessagesBeforeCollectPassthrough =
+      worker?.postMessage.mock.calls
+        .map((call) => call[0] as { kind?: string; commands?: Array<{ type?: string }> })
+        .filter((message) => message.kind === 'enqueueCommands')
+        .length ?? 0;
+    controlEventHandler?.({}, collectPassthroughEvent);
+    const enqueueMessagesAfterCollectPassthrough =
+      worker?.postMessage.mock.calls
+        .map((call) => call[0] as { kind?: string; commands?: Array<{ type?: string }> })
+        .filter((message) => message.kind === 'enqueueCommands') ?? [];
+    expect(enqueueMessagesAfterCollectPassthrough).toHaveLength(enqueueMessagesBeforeCollectPassthrough + 1);
+    const collectPassthroughMessage =
+      enqueueMessagesAfterCollectPassthrough[enqueueMessagesAfterCollectPassthrough.length - 1];
+    expect(collectPassthroughMessage?.commands).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE })]),
+    );
+    expect(collectPassthroughMessage?.commands).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: SHELL_CONTROL_EVENT_COMMAND_TYPE })]),
     );
 
     controlEventHandler?.({}, { intent: 'collect', phase: 'start' });

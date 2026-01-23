@@ -9,6 +9,8 @@ export const IPC_CHANNELS = {
   simStatus: 'idle-engine:sim-status',
 } as const;
 
+export const SHELL_CONTROL_EVENT_COMMAND_TYPE = 'SHELL_CONTROL_EVENT' as const;
+
 export type PingRequest = {
   message: string;
 };
@@ -23,6 +25,18 @@ export type ShellControlEvent = Readonly<{
   intent: string;
   phase: ShellControlEventPhase;
   value?: number;
+  /**
+   * Optional extra event data passed through the IPC boundary.
+   *
+   * Reserved keys used by the desktop shell:
+   * - `passthrough: true`: if the active control scheme produces no commands for
+   *   the event, the main process may enqueue a `SHELL_CONTROL_EVENT` command
+   *   containing the raw event.
+   *
+   * Pointer events emitted by the desktop renderer include metadata such as:
+   * - `x`, `y` (canvas-relative coordinates), `button`, `buttons`, `pointerType`,
+   *   `modifiers` and (for wheel) `deltaX`, `deltaY`, `deltaZ`, `deltaMode`.
+   */
   metadata?: Readonly<Record<string, unknown>>;
 }>;
 
