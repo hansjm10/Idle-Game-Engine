@@ -107,6 +107,13 @@ type SimWorkerFramesMessage = Readonly<{
   nextStep: number;
 }>;
 
+type SimWorkerFrameMessage = Readonly<{
+  kind: 'frame';
+  frame?: RenderCommandBuffer;
+  droppedFrames: number;
+  nextStep: number;
+}>;
+
 type SimWorkerErrorMessage = Readonly<{
   kind: 'error';
   error: string;
@@ -115,6 +122,7 @@ type SimWorkerErrorMessage = Readonly<{
 type SimWorkerOutboundMessage =
   | SimWorkerReadyMessage
   | SimWorkerFramesMessage
+  | SimWorkerFrameMessage
   | SimWorkerErrorMessage;
 
 type SimWorkerController = Readonly<{
@@ -229,13 +237,29 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     if (message.kind === 'frames') {
       nextStep = message.nextStep;
-      for (const frame of message.frames) {
-        try {
-          mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
-        } catch (error: unknown) {
-          // eslint-disable-next-line no-console
-          console.error(error);
-        }
+      const frame = message.frames[message.frames.length - 1];
+      if (!frame) {
+        return;
+      }
+      try {
+        mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
+      } catch (error: unknown) {
+        // eslint-disable-next-line no-console
+        console.error(error);
+      }
+      return;
+    }
+
+    if (message.kind === 'frame') {
+      nextStep = message.nextStep;
+      if (!message.frame) {
+        return;
+      }
+      try {
+        mainWindow.webContents.send(IPC_CHANNELS.frame, message.frame);
+      } catch (error: unknown) {
+        // eslint-disable-next-line no-console
+        console.error(error);
       }
       return;
     }

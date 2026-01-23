@@ -312,8 +312,19 @@ describe('shell-desktop main process entrypoint', () => {
     const frameB = { frame: { step: 1, simTimeMs: 16 } };
     worker?.emitMessage({ kind: 'frames', frames: [frameA, frameB], nextStep: 2 });
 
-    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameA);
     expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameB);
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, frameA);
+
+    mainWindow?.webContents.send.mockClear();
+    worker?.emitMessage({ kind: 'frames', frames: [], nextStep: 2 });
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.anything());
+
+    worker?.emitMessage({ kind: 'frame', frame: frameB, droppedFrames: 0, nextStep: 2 });
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameB);
+
+    mainWindow?.webContents.send.mockClear();
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 2 });
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.anything());
 
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
