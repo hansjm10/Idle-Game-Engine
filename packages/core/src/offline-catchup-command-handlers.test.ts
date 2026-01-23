@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { NumericFormula } from '@idle-engine/content-schema';
 
@@ -20,6 +20,7 @@ import {
   serializeProgressionCoordinatorState,
 } from './progression-coordinator-save.js';
 import { IdleEngineRuntime } from './index.js';
+import { resetTelemetry, setTelemetry } from './telemetry.js';
 
 const STEP_SIZE_MS = 100;
 
@@ -138,7 +139,67 @@ function runFrameDeltas(
   }
 }
 
+function createTelemetryCapture() {
+  const recordError = vi.fn();
+
+  setTelemetry({
+    recordError,
+    recordWarning: vi.fn(),
+    recordProgress: vi.fn(),
+    recordCounters: vi.fn(),
+    recordTick: vi.fn(),
+  });
+
+  return { recordError };
+}
+
+function createDirectHandlerHarness(stepSizeMs = STEP_SIZE_MS) {
+  const dispatcher = new CommandDispatcher();
+
+  const coordinator = {
+    resourceState: {
+      getIndex: () => undefined,
+      addAmount: () => {},
+      getAmount: () => 0,
+      spendAmount: () => {},
+    },
+  } as unknown as ReturnType<typeof createProgressionCoordinator>;
+
+  const runtime = {
+    getStepSizeMs: vi.fn(() => stepSizeMs),
+    creditTime: vi.fn(),
+  };
+
+  registerOfflineCatchupCommandHandler({
+    dispatcher,
+    coordinator,
+    runtime,
+  });
+
+  const handler = dispatcher.getHandler(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+  if (!handler) {
+    throw new Error('Expected OFFLINE_CATCHUP handler to be registered');
+  }
+
+  const context = {
+    step: 10,
+    timestamp: 0,
+    priority: CommandPriority.SYSTEM,
+    events: {
+      publish: () => {
+        throw new Error('Expected events publisher to be unused');
+      },
+    },
+  } as const;
+
+  return { handler, runtime, context };
+}
+
 describe('OFFLINE_CATCHUP command handler', () => {
+  afterEach(() => {
+    resetTelemetry();
+  });
+
   it('matches applyOfflineProgress outcomes after save/load', () => {
     const baseline = createHarness(0);
     baseline.coordinator.incrementGeneratorOwned('generator.mine', 1);
@@ -270,5 +331,78 @@ describe('OFFLINE_CATCHUP command handler', () => {
     harness.runtime.tick(STEP_SIZE_MS);
 
     expect(harness.runtime.getCurrentStep()).toBe(3);
+  });
+
+  it('records telemetry and ignores invalid payload types', () => {
+    const { handler, runtime, context } = createDirectHandlerHarness();
+    const { recordError } = createTelemetryCapture();
+
+    handler('invalid' as any, context);
+
+    expect(recordError).toHaveBeenCalledWith(
+      'OfflineCatchupInvalidPayload',
+      expect.objectContaining({
+        payloadType: 'string',
+        step: context.step,
+        priority: context.priority,
+      }),
+    );
+    expect(runtime.creditTime).not.toHaveBeenCalled();
+  });
+
+  it('records telemetry and ignores invalid resourceDeltas shapes', () => {
+    const { handler, runtime, context } = createDirectHandlerHarness();
+    const { recordError } = createTelemetryCapture();
+
+    handler({ elapsedMs: STEP_SIZE_MS, resourceDeltas: [] } as any, context);
+
+    expect(recordError).toHaveBeenCalledWith(
+      'OfflineCatchupInvalidResourceDeltas',
+      expect.objectContaining({
+        step: context.step,
+        priority: context.priority,
+      }),
+    );
+    expect(runtime.creditTime).not.toHaveBeenCalled();
+  });
+
+  it('ignores invalid elapsedMs without querying step size', () => {
+    const { handler, runtime, context } = createDirectHandlerHarness();
+
+    handler({ elapsedMs: Number.NaN, resourceDeltas: {} } as any, context);
+
+    expect(runtime.getStepSizeMs).not.toHaveBeenCalled();
+    expect(runtime.creditTime).not.toHaveBeenCalled();
+  });
+
+  it('ignores offline catchup when runtime step size is invalid', () => {
+    const { handler, runtime, context } = createDirectHandlerHarness(0);
+
+    handler({ elapsedMs: STEP_SIZE_MS, resourceDeltas: {} } as any, context);
+
+    expect(runtime.getStepSizeMs).toHaveBeenCalled();
+    expect(runtime.creditTime).not.toHaveBeenCalled();
+  });
+
+  it('credits remaining offline time beyond the current tick', () => {
+    const { handler, runtime, context } = createDirectHandlerHarness();
+
+    handler(
+      { elapsedMs: STEP_SIZE_MS * 2 + 50, resourceDeltas: {} } as any,
+      context,
+    );
+
+    expect(runtime.creditTime).toHaveBeenCalledWith(STEP_SIZE_MS + 50);
+  });
+
+  it('does not credit time when maxSteps is zero', () => {
+    const { handler, runtime, context } = createDirectHandlerHarness();
+
+    handler(
+      { elapsedMs: STEP_SIZE_MS * 5, maxSteps: 0, resourceDeltas: {} } as any,
+      context,
+    );
+
+    expect(runtime.creditTime).not.toHaveBeenCalled();
   });
 });
