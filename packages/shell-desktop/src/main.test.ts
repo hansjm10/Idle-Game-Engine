@@ -333,6 +333,32 @@ describe('shell-desktop main process entrypoint', () => {
     consoleError.mockRestore();
   });
 
+  it('logs an error when forwarding a coalesced frame fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    mainWindow?.webContents.send.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.frame) {
+        throw new Error('frame send failed');
+      }
+      return undefined;
+    });
+
+    const frame = { frame: { step: 0, simTimeMs: 0 } };
+    worker?.emitMessage({ kind: 'frame', frame, droppedFrames: 0, nextStep: 1 });
+
+    expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ message: 'frame send failed' }));
+    consoleError.mockRestore();
+  });
+
   it('clamps tick deltaMs when the monotonic clock jumps', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([1000, 900, 2000, 2016]);
