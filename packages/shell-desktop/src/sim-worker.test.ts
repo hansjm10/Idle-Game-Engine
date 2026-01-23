@@ -70,12 +70,12 @@ describe('shell-desktop sim worker', () => {
     expect(parentPort.postMessage).not.toHaveBeenCalled();
   });
 
-  it('ticks and emits frames', async () => {
+  it('ticks and emits coalesced frames', async () => {
     const runtime = {
       tick: vi
         .fn()
         .mockReturnValueOnce({ frames: [{ id: 'frame-a' }], nextStep: 3 })
-        .mockReturnValueOnce({ frames: [{ id: 'frame-b' }], nextStep: 4 }),
+        .mockReturnValueOnce({ frames: [{ id: 'frame-b1' }, { id: 'frame-b2' }], nextStep: 4 }),
       enqueueCommands: vi.fn(),
       getStepSizeMs: vi.fn(() => 16),
       getNextStep: vi.fn(() => 0),
@@ -103,14 +103,48 @@ describe('shell-desktop sim worker', () => {
     expect(runtime.tick).toHaveBeenCalledWith(5);
     expect(runtime.tick).toHaveBeenCalledWith(6);
     expect(parentPort.postMessage).toHaveBeenCalledWith({
-      kind: 'frames',
-      frames: [{ id: 'frame-a' }],
+      kind: 'frame',
+      frame: { id: 'frame-a' },
+      droppedFrames: 0,
       nextStep: 3,
     });
     expect(parentPort.postMessage).toHaveBeenCalledWith({
-      kind: 'frames',
-      frames: [{ id: 'frame-b' }],
+      kind: 'frame',
+      frame: { id: 'frame-b2' },
+      droppedFrames: 1,
       nextStep: 4,
+    });
+  });
+
+  it('emits a frame message without a frame when the sim produces none', async () => {
+    const runtime = {
+      tick: vi.fn().mockReturnValueOnce({ frames: [], nextStep: 3 }),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 16),
+      getNextStep: vi.fn(() => 0),
+    };
+    const createSimRuntime = vi.fn(() => runtime);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'tick', deltaMs: 5 });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'frame',
+      droppedFrames: 0,
+      nextStep: 3,
     });
   });
 

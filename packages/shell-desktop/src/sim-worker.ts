@@ -26,9 +26,10 @@ type WorkerReadyMessage = Readonly<{
   nextStep: number;
 }>;
 
-type WorkerFramesMessage = Readonly<{
-  kind: 'frames';
-  frames: readonly RenderCommandBuffer[];
+type WorkerFrameMessage = Readonly<{
+  kind: 'frame';
+  frame?: RenderCommandBuffer;
+  droppedFrames: number;
   nextStep: number;
 }>;
 
@@ -37,7 +38,7 @@ type WorkerErrorMessage = Readonly<{
   error: string;
 }>;
 
-type WorkerOutboundMessage = WorkerReadyMessage | WorkerFramesMessage | WorkerErrorMessage;
+type WorkerOutboundMessage = WorkerReadyMessage | WorkerFrameMessage | WorkerErrorMessage;
 
 if (!parentPort) {
   throw new Error('shell-desktop sim worker requires parentPort');
@@ -85,7 +86,13 @@ parentPort.on('message', (message: unknown) => {
       }
       const activeRuntime = ensureRuntime();
       const result = activeRuntime.tick(tick.deltaMs);
-      emit({ kind: 'frames', frames: result.frames, nextStep: result.nextStep });
+      const droppedFrames = Math.max(0, result.frames.length - 1);
+      const frame = result.frames.at(-1);
+      if (frame) {
+        emit({ kind: 'frame', frame, droppedFrames, nextStep: result.nextStep });
+      } else {
+        emit({ kind: 'frame', droppedFrames, nextStep: result.nextStep });
+      }
       return;
     }
 
