@@ -346,6 +346,67 @@ describe('shell-desktop renderer entrypoint', () => {
     );
   });
 
+  it('ignores empty pointer move flushes and forwards pointer-up events', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    expect(pointerMoveHandler).toBeTypeOf('function');
+
+    pointerMoveHandler?.({
+      clientX: 22,
+      clientY: 28,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: true,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    const rafEntries = Array.from(rafCallbacks.entries());
+    const [moveId, moveCallback] = rafEntries[rafEntries.length - 1] as [number, FrameRequestCallback];
+    rafCallbacks.delete(moveId);
+    moveCallback(0);
+
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledTimes(1);
+    moveCallback(0);
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledTimes(1);
+
+    expect(pointerUpHandler).toBeTypeOf('function');
+    pointerUpHandler?.({
+      clientX: 50,
+      clientY: 60,
+      button: 1,
+      buttons: 0,
+      pointerType: 'pen',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'mouse-up',
+        phase: 'end',
+        metadata: expect.objectContaining({
+          passthrough: true,
+          x: 50 - canvasRect.left,
+          y: 60 - canvasRect.top,
+          button: 1,
+          buttons: 0,
+          pointerType: 'pen',
+          modifiers: { alt: false, ctrl: false, meta: true, shift: false },
+        }),
+      }),
+    );
+  });
+
   it('renders IPC subscription failures to the output view', async () => {
     const idleEngine = (
       globalThis as unknown as {

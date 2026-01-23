@@ -348,6 +348,33 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('treats non-finite tick deltas as zero', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, Number.NaN]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(16);
+
+    const tickCalls = worker?.postMessage.mock.calls
+      .map((call) => call[0] as { kind?: string; deltaMs?: number })
+      .filter((message) => message.kind === 'tick');
+
+    expect(tickCalls).toHaveLength(1);
+    expect(tickCalls?.[0]?.deltaMs).toBe(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('stops the tick loop and notifies the renderer when the sim worker exits', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16, 32]);
@@ -534,6 +561,7 @@ describe('shell-desktop main process entrypoint', () => {
 
     controlEventHandler?.({}, null);
     controlEventHandler?.({}, []);
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', metadata: [] });
     controlEventHandler?.({}, { intent: '', phase: 'start' });
     controlEventHandler?.({}, { intent: 'collect', phase: 'nope' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
