@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { IDLE_ENGINE_API_KEY, IPC_CHANNELS } from './ipc.js';
+import { IDLE_ENGINE_API_KEY, IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 
 describe('shell-desktop IPC contract', () => {
   it('uses stable, explicit identifiers', () => {
@@ -9,5 +9,6 @@ describe('shell-desktop IPC contract', () => {
     expect(IPC_CHANNELS.controlEvent).toBe('idle-engine:control-event');
     expect(IPC_CHANNELS.frame).toBe('idle-engine:frame');
     expect(IPC_CHANNELS.simStatus).toBe('idle-engine:sim-status');
+    expect(SHELL_CONTROL_EVENT_COMMAND_TYPE).toBe('SHELL_CONTROL_EVENT');
   });
 });

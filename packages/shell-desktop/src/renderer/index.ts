@@ -79,6 +79,90 @@ async function run(): Promise<void> {
     }
   });
 
+  const buildPointerModifiers = (event: MouseEvent): Readonly<Record<string, boolean>> => ({
+    alt: event.altKey,
+    ctrl: event.ctrlKey,
+    meta: event.metaKey,
+    shift: event.shiftKey,
+  });
+
+  const buildPointerMetadataBase = (event: MouseEvent): Readonly<Record<string, unknown>> => {
+    const rect = canvasElement.getBoundingClientRect();
+    return {
+      passthrough: true,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+      button: event.button,
+      buttons: event.buttons,
+      modifiers: buildPointerModifiers(event),
+    };
+  };
+
+  const sendPointerControlEvent = (
+    intent: string,
+    phase: 'start' | 'repeat' | 'end',
+    metadata: Readonly<Record<string, unknown>>,
+  ): void => {
+    (globalThis as unknown as Window).idleEngine.sendControlEvent({
+      intent,
+      phase,
+      metadata,
+    });
+  };
+
+  const sendPointerEvent = (intent: string, phase: 'start' | 'repeat' | 'end', event: PointerEvent): void => {
+    sendPointerControlEvent(intent, phase, {
+      ...buildPointerMetadataBase(event),
+      pointerType: event.pointerType,
+    });
+  };
+
+  const sendWheelEvent = (event: WheelEvent): void => {
+    sendPointerControlEvent('mouse-wheel', 'repeat', {
+      ...buildPointerMetadataBase(event),
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      deltaZ: event.deltaZ,
+      deltaMode: event.deltaMode,
+    });
+  };
+
+  let pendingPointerMove: PointerEvent | undefined;
+  let pointerMoveRaf: number | undefined;
+
+  const flushPointerMove = (): void => {
+    const event = pendingPointerMove;
+    pendingPointerMove = undefined;
+    pointerMoveRaf = undefined;
+    if (!event) {
+      return;
+    }
+    sendPointerEvent('mouse-move', 'repeat', event);
+  };
+
+  canvasElement.addEventListener('pointerdown', (event) => {
+    sendPointerEvent('mouse-down', 'start', event);
+  });
+
+  canvasElement.addEventListener('pointerup', (event) => {
+    sendPointerEvent('mouse-up', 'end', event);
+  });
+
+  canvasElement.addEventListener('pointermove', (event) => {
+    pendingPointerMove = event;
+    if (pointerMoveRaf !== undefined) {
+      return;
+    }
+    // Coalesce pointer moves to one event per frame.
+    pointerMoveRaf = requestAnimationFrame(() => {
+      flushPointerMove();
+    });
+  });
+
+  canvasElement.addEventListener('wheel', (event) => {
+    sendWheelEvent(event);
+  });
+
   const resizeObserver = new ResizeObserver(() => {
     renderer?.resize();
   });
@@ -220,6 +304,11 @@ async function run(): Promise<void> {
   }
 
   addEventListener('beforeunload', () => {
+    if (pointerMoveRaf !== undefined) {
+      cancelAnimationFrame(pointerMoveRaf);
+      pointerMoveRaf = undefined;
+      pendingPointerMove = undefined;
+    }
     stopLoop();
     resizeObserver.disconnect();
     unsubscribeFrames?.();

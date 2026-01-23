@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IPC_CHANNELS } from './ipc.js';
+import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 
 let monotonicNowSequence: number[] = [];
 
@@ -348,6 +349,33 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('treats non-finite tick deltas as zero', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, Number.NaN]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    await vi.advanceTimersByTimeAsync(16);
+
+    const tickCalls = worker?.postMessage.mock.calls
+      .map((call) => call[0] as { kind?: string; deltaMs?: number })
+      .filter((message) => message.kind === 'tick');
+
+    expect(tickCalls).toHaveLength(1);
+    expect(tickCalls?.[0]?.deltaMs).toBe(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('stops the tick loop and notifies the renderer when the sim worker exits', async () => {
     vi.useFakeTimers();
     setMonotonicNowSequence([0, 16, 32]);
@@ -534,12 +562,56 @@ describe('shell-desktop main process entrypoint', () => {
 
     controlEventHandler?.({}, null);
     controlEventHandler?.({}, []);
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', metadata: [] });
     controlEventHandler?.({}, { intent: '', phase: 'start' });
     controlEventHandler?.({}, { intent: 'collect', phase: 'nope' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
     controlEventHandler?.({}, { intent: 'collect', phase: 'end' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
+
+    const passthroughEvent = {
+      intent: 'mouse-move',
+      phase: 'repeat',
+      metadata: { x: 12, y: 34, passthrough: true },
+    };
+    controlEventHandler?.({}, passthroughEvent);
+    expect(worker?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'enqueueCommands',
+        commands: expect.arrayContaining([
+          expect.objectContaining({
+            type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
+            payload: { event: passthroughEvent },
+          }),
+        ]),
+      }),
+    );
+
+    const collectPassthroughEvent = {
+      intent: 'collect',
+      phase: 'start',
+      metadata: { passthrough: true },
+    };
+    const enqueueMessagesBeforeCollectPassthrough =
+      worker?.postMessage.mock.calls
+        .map((call) => call[0] as { kind?: string; commands?: Array<{ type?: string }> })
+        .filter((message) => message.kind === 'enqueueCommands')
+        .length ?? 0;
+    controlEventHandler?.({}, collectPassthroughEvent);
+    const enqueueMessagesAfterCollectPassthrough =
+      worker?.postMessage.mock.calls
+        .map((call) => call[0] as { kind?: string; commands?: Array<{ type?: string }> })
+        .filter((message) => message.kind === 'enqueueCommands') ?? [];
+    expect(enqueueMessagesAfterCollectPassthrough).toHaveLength(enqueueMessagesBeforeCollectPassthrough + 1);
+    const collectPassthroughMessage =
+      enqueueMessagesAfterCollectPassthrough[enqueueMessagesAfterCollectPassthrough.length - 1];
+    expect(collectPassthroughMessage?.commands).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE })]),
+    );
+    expect(collectPassthroughMessage?.commands).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: SHELL_CONTROL_EVENT_COMMAND_TYPE })]),
+    );
 
     controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
     expect(worker?.postMessage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
