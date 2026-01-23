@@ -65,11 +65,11 @@ The section will detail:
 1.  **Generator Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers`
 2.  **Upgrade Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * RepeatableAdjustment` (no global multipliers; RepeatableAdjustment comes from `repeatable.costCurve` for repeatable upgrades, defaults to 1 otherwise)
 3.  **Curve Formulas**:
-    *   **Exponential**: $Cost(level) = base \times growth^{level} + offset$
+    *   **Exponential**: `Cost(level) = base * growth^level + offset`
         *   *Note: Explicitly clarify that `offset` is added to the result, not the level.*
-    *   **Linear**: $Cost(level) = base + slope \times level$
-    *   **Constant**: $Cost(level) = value$
-    *   **Polynomial**: $Cost(level) = \sum (coefficient_i \times level^i)$
+    *   **Linear**: `Cost(level) = base + slope * level`
+    *   **Constant**: `Cost(level) = value`
+    *   **Polynomial**: `Cost(level) = sum(coefficient_i * level^i)`
 4.  **Examples**: JSON snippets + calculated values for levels 0, 1, 10.
 
 ### 6.2 Detailed Design
