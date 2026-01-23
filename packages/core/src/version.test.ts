@@ -18,7 +18,7 @@ describe('version constants', () => {
     it('matches the expected version for current release', () => {
       // This test documents the current version and will need updating
       // when the package version is bumped
-      expect(RUNTIME_VERSION).toBe('0.4.0');
+      expect(RUNTIME_VERSION).toBe('0.5.0');
     });
   });
 
