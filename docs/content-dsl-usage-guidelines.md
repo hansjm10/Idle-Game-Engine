@@ -1638,20 +1638,35 @@ checklist with the relevant test suites (for example `pnpm test --filter core`).
 
 This section details the exact mathematical formulas used to calculate generator and upgrade costs.
 
-### The Master Formula
+### Generator Cost Formula
 
-The final cost of a generator or upgrade is calculated as:
+The final cost of a generator is calculated as:
 
 ```
 FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers
 ```
 
 Where:
-- **BaseCostFromCurve**: The result of evaluating the `costCurve` formula at the current level (purchase index).
+- **BaseCostFromCurve**: The result of evaluating the `costCurve` formula at the current purchase index.
 - **CostMultiplier**: The `costMultiplier` property defined in the purchase config (often used as the base price).
-- **GlobalMultipliers**: Runtime multipliers from upgrades, events, or prestige effects (e.g. `modifyGeneratorCost`).
+- **GlobalMultipliers**: Runtime multipliers from upgrade effects (e.g., `modifyGeneratorCost`). Defaults to 1 if no effects apply.
 
 > **Note**: `offset` in exponential curves is applied to the curve result *before* the multipliers.
+
+### Upgrade Cost Formula
+
+Upgrade costs are calculated differently from generators and do **not** use global multipliers:
+
+```
+FinalCost = BaseCostFromCurve * CostMultiplier * RepeatableAdjustment
+```
+
+Where:
+- **BaseCostFromCurve**: The result of evaluating the `costCurve` formula at the current purchase level.
+- **CostMultiplier**: The `costMultiplier` property defined in the upgrade's cost config.
+- **RepeatableAdjustment**: For repeatable upgrades, the result of evaluating `repeatable.costCurve` at the current purchase level. Defaults to 1 for non-repeatable upgrades.
+
+> **Important**: Unlike generators, upgrade costs are not affected by runtime multipliers from other upgrades or effects. Content authors modeling upgrade costs in spreadsheets should use this formula, not the generator formula.
 
 ### Curve Formulas
 

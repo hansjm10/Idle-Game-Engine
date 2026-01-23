@@ -62,14 +62,15 @@ Where `evaluateNumericFormula` behaves as follows:
 We will add a new section "Cost Calculation Formulas" to `docs/content-dsl-usage-guidelines.md` (or `docs/content-quick-reference.md` as requested, but "Usage Guidelines" seems more appropriate for deep dives).
 
 The section will detail:
-1.  **The Master Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers`
-2.  **Curve Formulas**:
+1.  **Generator Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers`
+2.  **Upgrade Cost Formula**: `FinalCost = BaseCostFromCurve * CostMultiplier * RepeatableAdjustment` (no global multipliers; RepeatableAdjustment comes from `repeatable.costCurve` for repeatable upgrades, defaults to 1 otherwise)
+3.  **Curve Formulas**:
     *   **Exponential**: $Cost(level) = base \times growth^{level} + offset$
         *   *Note: Explicitly clarify that `offset` is added to the result, not the level.*
     *   **Linear**: $Cost(level) = base + slope \times level$
     *   **Constant**: $Cost(level) = value$
     *   **Polynomial**: $Cost(level) = \sum (coefficient_i \times level^i)$
-3.  **Examples**: JSON snippets + calculated values for levels 0, 1, 10.
+4.  **Examples**: JSON snippets + calculated values for levels 0, 1, 10.
 
 ### 6.2 Detailed Design
 No code changes.
