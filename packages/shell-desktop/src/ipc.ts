@@ -23,6 +23,7 @@ export type ShellControlEvent = Readonly<{
   intent: string;
   phase: ShellControlEventPhase;
   value?: number;
+  metadata?: Readonly<Record<string, unknown>>;
 }>;
 
 export type ShellFramePayload = RenderCommandBuffer;

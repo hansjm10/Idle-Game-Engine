@@ -541,6 +541,24 @@ describe('shell-desktop main process entrypoint', () => {
     controlEventHandler?.({}, { intent: 'collect', phase: 'end' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
+    const passthroughEvent = {
+      intent: 'mouse-move',
+      phase: 'repeat',
+      metadata: { x: 12, y: 34, passthrough: true },
+    };
+    controlEventHandler?.({}, passthroughEvent);
+    expect(worker?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'enqueueCommands',
+        commands: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'SHELL_CONTROL_EVENT',
+            payload: { event: passthroughEvent },
+          }),
+        ]),
+      }),
+    );
+
     controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
     expect(worker?.postMessage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 

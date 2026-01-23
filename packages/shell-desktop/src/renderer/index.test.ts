@@ -8,6 +8,8 @@ vi.mock('../../../renderer-webgpu/dist/index.js', () => ({
 
 type BeforeUnloadHandler = (() => void) | undefined;
 type KeydownHandler = ((event: { code: string; repeat?: boolean }) => void) | undefined;
+type PointerHandler = ((event: PointerEvent) => void) | undefined;
+type WheelHandler = ((event: WheelEvent) => void) | undefined;
 
 async function flushMicrotasks(maxTurns = 10): Promise<void> {
   for (let i = 0; i < maxTurns; i += 1) {
@@ -18,9 +20,14 @@ async function flushMicrotasks(maxTurns = 10): Promise<void> {
 describe('shell-desktop renderer entrypoint', () => {
   let beforeUnloadHandler: BeforeUnloadHandler;
   let keydownHandler: KeydownHandler;
+  let pointerDownHandler: PointerHandler;
+  let pointerUpHandler: PointerHandler;
+  let pointerMoveHandler: PointerHandler;
+  let wheelHandler: WheelHandler;
   let rafCallbacks: Map<number, FrameRequestCallback>;
   let nextRafId: number;
   let resizeObserverInstances: Array<{ trigger: () => void; disconnect: () => void }>;
+  let canvasRect: { left: number; top: number };
 
   beforeEach(() => {
     vi.resetModules();
@@ -28,12 +35,34 @@ describe('shell-desktop renderer entrypoint', () => {
 
     beforeUnloadHandler = undefined;
     keydownHandler = undefined;
+    pointerDownHandler = undefined;
+    pointerUpHandler = undefined;
+    pointerMoveHandler = undefined;
+    wheelHandler = undefined;
     rafCallbacks = new Map();
     nextRafId = 1;
     resizeObserverInstances = [];
+    canvasRect = { left: 10, top: 20 };
 
     const outputElement = { textContent: '' } as unknown as HTMLPreElement;
-    const canvasElement = {} as unknown as HTMLCanvasElement;
+    const canvasElement = {
+      addEventListener: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'pointerdown') {
+          pointerDownHandler = handler as PointerHandler;
+        }
+        if (event === 'pointerup') {
+          pointerUpHandler = handler as PointerHandler;
+        }
+        if (event === 'pointermove') {
+          pointerMoveHandler = handler as PointerHandler;
+        }
+        if (event === 'wheel') {
+          wheelHandler = handler as WheelHandler;
+        }
+      }),
+      removeEventListener: vi.fn(),
+      getBoundingClientRect: vi.fn(() => canvasRect),
+    } as unknown as HTMLCanvasElement;
 
     (globalThis as unknown as { document?: unknown }).document = {
       querySelector: vi.fn((selector: string) => {
@@ -186,6 +215,135 @@ describe('shell-desktop renderer entrypoint', () => {
 
     keydownHandler?.({ code: 'Space', repeat: false });
     expect(idleEngine.sendControlEvent).toHaveBeenCalledWith({ intent: 'collect', phase: 'start' });
+  });
+
+  it('forwards pointer events with passthrough metadata', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    expect(pointerDownHandler).toBeTypeOf('function');
+    expect(pointerUpHandler).toBeTypeOf('function');
+    expect(wheelHandler).toBeTypeOf('function');
+
+    pointerDownHandler?.({
+      clientX: 30,
+      clientY: 45,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+    } as PointerEvent);
+
+    wheelHandler?.({
+      clientX: 40,
+      clientY: 55,
+      button: 0,
+      buttons: 0,
+      deltaX: 1,
+      deltaY: 2,
+      deltaZ: 0,
+      deltaMode: 0,
+      altKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+    } as WheelEvent);
+
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'mouse-down',
+        phase: 'start',
+        metadata: expect.objectContaining({
+          passthrough: true,
+          x: 30 - canvasRect.left,
+          y: 45 - canvasRect.top,
+          button: 0,
+          buttons: 1,
+          pointerType: 'mouse',
+          modifiers: { alt: false, ctrl: false, meta: false, shift: true },
+        }),
+      }),
+    );
+
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'mouse-wheel',
+        phase: 'repeat',
+        metadata: expect.objectContaining({
+          passthrough: true,
+          x: 40 - canvasRect.left,
+          y: 55 - canvasRect.top,
+          deltaX: 1,
+          deltaY: 2,
+          deltaZ: 0,
+          deltaMode: 0,
+          modifiers: { alt: false, ctrl: true, meta: false, shift: false },
+        }),
+      }),
+    );
+  });
+
+  it('coalesces pointer move events to one per frame', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    expect(pointerMoveHandler).toBeTypeOf('function');
+
+    pointerMoveHandler?.({
+      clientX: 30,
+      clientY: 45,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    pointerMoveHandler?.({
+      clientX: 36,
+      clientY: 50,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendControlEvent).not.toHaveBeenCalled();
+
+    const rafEntries = Array.from(rafCallbacks.entries());
+    const [moveId, moveCallback] = rafEntries[rafEntries.length - 1] as [number, FrameRequestCallback];
+    rafCallbacks.delete(moveId);
+    moveCallback(0);
+
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledTimes(1);
+    expect(idleEngine.sendControlEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'mouse-move',
+        phase: 'repeat',
+        metadata: expect.objectContaining({
+          passthrough: true,
+          x: 36 - canvasRect.left,
+          y: 50 - canvasRect.top,
+          pointerType: 'mouse',
+        }),
+      }),
+    );
   });
 
   it('renders IPC subscription failures to the output view', async () => {

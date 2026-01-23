@@ -40,6 +40,8 @@ const DEMO_CONTROL_SCHEME: ControlScheme = {
   ],
 };
 
+const SHELL_CONTROL_EVENT_COMMAND_TYPE = 'SHELL_CONTROL_EVENT' as const;
+
 function assertPingRequest(
   request: unknown,
 ): asserts request is IpcInvokeMap[typeof IPC_CHANNELS.ping]['request'] {
@@ -59,11 +61,20 @@ function isShellControlEvent(value: unknown): value is ShellControlEvent {
   }
   const intent = (value as { intent?: unknown }).intent;
   const phase = (value as { phase?: unknown }).phase;
+  const metadata = (value as { metadata?: unknown }).metadata;
   if (typeof intent !== 'string' || intent.trim().length === 0) {
     return false;
   }
+  if (metadata !== undefined) {
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
+      return false;
+    }
+  }
   return phase === 'start' || phase === 'repeat' || phase === 'end';
 }
+
+const shouldPassthroughControlEvent = (event: ShellControlEvent): boolean =>
+  event.metadata?.['passthrough'] === true;
 
 type SimWorkerInitMessage = Readonly<{
   kind: 'init';
@@ -273,10 +284,24 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     };
 
     const commands = createControlCommands(DEMO_CONTROL_SCHEME, event, context);
-    if (commands.length === 0) {
+    if (commands.length > 0) {
+      safePostMessage({ kind: 'enqueueCommands', commands });
       return;
     }
-    safePostMessage({ kind: 'enqueueCommands', commands });
+
+    if (!shouldPassthroughControlEvent(event)) {
+      return;
+    }
+
+    const passthroughCommand: Command<{ event: ShellControlEvent }> = {
+      type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
+      payload: { event },
+      priority: context.priority,
+      timestamp: context.timestamp,
+      step: context.step,
+    };
+
+    safePostMessage({ kind: 'enqueueCommands', commands: [passthroughCommand] });
   };
 
   const dispose = (): void => {
