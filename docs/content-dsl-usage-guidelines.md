@@ -1634,64 +1634,111 @@ checklist with the relevant test suites (for example `pnpm test --filter core`).
 - `packages/content-sample/README.md` — regeneration workflow and runtime
   manifest integration.
 
-## Formula Invariants & Cost Semantics
+## Cost Calculation Formulas
 
-Content formulas must evaluate to finite, non-negative numbers across deterministic contexts. The schema and CLI suites enforce this via property-based tests (see `packages/content-schema/src/base/formulas.property.test.ts` and `tools/content-schema-cli/src/__tests__/validation.property.test.ts`). Authors should follow these rules when declaring rates and costs:
+This section details the exact mathematical formulas used to calculate generator and upgrade costs.
 
-- Generator rates and consumption values: use `NumericFormula` that remain ≥ 0. Prefer clamping via `max(0, …)` or the `abs`/`sqrt` helpers when composing expressions.
-- Purchase cost calculation: cost = `costMultiplier × evaluate(costCurve, level)` where `level` is the current purchase index (owned count). For upgrades, if `repeatable.costCurve` is present, multiply that in as well. See `docs/progression-coordinator-design.md` §6.2.7.
-- Avoid NaN/Infinity: inputs are validated (`finiteNumberSchema`), and formulas with impossible evaluations are rejected.
-- Piecewise: ensure strictly increasing `untilLevel` thresholds and a final catch-all segment.
+### The Master Formula
 
-Note: `costMultiplier` is a multiplier applied to the cost curve result. If you want `costCurve.base` to be the starting cost, set `costMultiplier` to `1`.
-
-Breaking change (next major release): `baseCost` has been removed. Update generator `purchase` and upgrade `cost` blocks to use `costMultiplier`, then rerun `pnpm generate` to refresh compiled artifacts before upgrading.
-
-### Exponential Cost Curve Formula
-
-The exponential formula evaluates as: `base × growth^level + offset`
-
-When used as a `costCurve`, this combines with `costMultiplier` to produce:
+The final cost of a generator or upgrade is calculated as:
 
 ```
-totalCost = costMultiplier × (base × growth^level + offset)
+FinalCost = BaseCostFromCurve * CostMultiplier * GlobalMultipliers
 ```
 
-**Important**: The `base` parameter defaults to `1`. For the standard idle game cost curve where `costMultiplier` alone represents the level-0 cost, simply omit `base`:
+Where:
+- **BaseCostFromCurve**: The result of evaluating the `costCurve` formula at the current level (purchase index).
+- **CostMultiplier**: The `costMultiplier` property defined in the purchase config (often used as the base price).
+- **GlobalMultipliers**: Runtime multipliers from upgrades, events, or prestige effects (e.g. `modifyGeneratorCost`).
 
+> **Note**: `offset` in exponential curves is applied to the curve result *before* the multipliers.
+
+### Curve Formulas
+
+The `evaluateNumericFormula` function determines `BaseCostFromCurve` based on the curve type:
+
+#### Exponential
+```
+Cost(level) = base * growth^level + offset
+```
+
+- **base**: Scaling factor (defaults to 1).
+- **growth**: The exponent base (e.g. 1.15 for 15% increase per level).
+- **offset**: Constant added to the result (defaults to 0).
+- **level**: The current purchase index (0, 1, 2...).
+
+> **Important**: The `offset` is added to the result, not the level. To shift the level, mathematically adjust the base (e.g. `base * growth^k`).
+
+#### Linear
+```
+Cost(level) = base + slope * level
+```
+
+- **base**: Starting value at level 0.
+- **slope**: Amount added per level.
+
+#### Constant
+```
+Cost(level) = value
+```
+
+#### Polynomial
+```
+Cost(level) = sum(coefficient_i * level^i)
+```
+
+Defined as an array of coefficients `[c0, c1, c2...]` corresponding to `c0 + c1*x + c2*x^2 ...`
+
+#### Piecewise
+Evaluates different formulas based on level thresholds.
+
+### Examples
+
+Assuming `GlobalMultipliers = 1`.
+
+#### Standard Exponential Cost
+Config:
 ```json
 {
-  "costMultiplier": 120,
-  "costCurve": { "kind": "exponential", "growth": 1.15 }
+  "purchase": {
+    "costMultiplier": 100,
+    "costCurve": { "kind": "exponential", "growth": 1.10 }
+  }
 }
-// At level 0: 120 × 1 × 1.15^0 = 120
-// At level 1: 120 × 1 × 1.15^1 = 138
 ```
+(Implied `base: 1`, `offset: 0`)
 
-**Alternate pattern**: If you want `costCurve.base` to define the starting cost, use `costMultiplier: 1`:
+- **Level 0**: `100 * (1 * 1.10^0 + 0) = 100`
+- **Level 1**: `100 * (1 * 1.10^1 + 0) = 110`
+- **Level 10**: `100 * (1 * 1.10^10 + 0) ≈ 259.37`
 
+#### Linear Cost with Offset
+Config:
 ```json
 {
-  "costMultiplier": 1,
-  "costCurve": { "kind": "exponential", "base": 120, "growth": 1.15 }
+  "purchase": {
+    "costMultiplier": 10,
+    "costCurve": { "kind": "linear", "base": 5, "slope": 2 }
+  }
 }
-// At level 0: 1 × 120 × 1.15^0 = 120
-// At level 1: 1 × 120 × 1.15^1 = 138
 ```
 
-**Common mistake**: Setting `base` equal to `costMultiplier` multiplies twice:
+- **Level 0**: `10 * (5 + 2 * 0) = 50`
+- **Level 1**: `10 * (5 + 2 * 1) = 70`
+- **Level 5**: `10 * (5 + 2 * 5) = 150`
 
-```json
-{
-  "costMultiplier": 10,
-  "costCurve": { "kind": "exponential", "base": 10, "growth": 1.15 }
-}
-// At level 0: 10 × 10 × 1.15^0 = 100 (not 10!)
-```
+### Invariants & Validation
 
-Use a non-default `base` only when you need an additional scaling factor independent of `costMultiplier`.
+Content formulas must evaluate to finite, non-negative numbers across deterministic contexts. The schema and CLI suites enforce this via property-based tests.
 
-Automation authoring guidance:
+- **Generator rates and consumption values**: use `NumericFormula` that remain ≥ 0. Prefer clamping via `max(0, …)` or the `abs`/`sqrt` helpers when composing expressions.
+- **Avoid NaN/Infinity**: inputs are validated (`finiteNumberSchema`), and formulas with impossible evaluations are rejected.
+- **Piecewise**: ensure strictly increasing `untilLevel` thresholds and a final catch-all segment.
+
+> **Breaking change (next major release)**: `baseCost` has been removed. Update generator `purchase` and upgrade `cost` blocks to use `costMultiplier`, then rerun `pnpm generate` to refresh compiled artifacts before upgrading.
+
+### Automation Guidance
+
 - `resourceCost.rate` represents units per second; keep bounds realistic for your economy to avoid runaway drains.
 - `cooldown` must be finite (milliseconds). Use a number or a `NumericFormula`; prefer ≥ 0. Extremely small values can lead to noisy behavior during testing.
 - Keep `generate --check` warning-free for shipping packs. The sample pack is treated as the reference baseline.
