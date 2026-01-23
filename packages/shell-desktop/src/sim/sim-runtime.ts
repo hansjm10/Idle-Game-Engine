@@ -1,5 +1,6 @@
 import { IdleEngineRuntime, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
 import type { Command, RuntimeCommandPayloads } from '@idle-engine/core';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
@@ -18,10 +19,15 @@ export type SimRuntime = Readonly<{
   enqueueCommands: (commands: readonly Command[]) => void;
   getStepSizeMs: () => number;
   getNextStep: () => number;
+  hasCommandHandler: (type: string) => boolean;
 }>;
 
 type CollectResourcePayload =
   RuntimeCommandPayloads[typeof RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE];
+
+type ShellControlEventCommandPayload = Readonly<{
+  event: ShellControlEvent;
+}>;
 
 type DemoState = {
   tickCount: number;
@@ -164,6 +170,12 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     state.lastCollectedStep = context.step;
   });
 
+  dispatcher.register(SHELL_CONTROL_EVENT_COMMAND_TYPE, (payload: ShellControlEventCommandPayload) => {
+    void payload;
+  });
+
+  const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;
+
   runtime.addSystem({
     id: 'demo-state',
     tick: () => {
@@ -206,5 +218,6 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     enqueueCommands,
     getStepSizeMs: () => runtime.getStepSizeMs(),
     getNextStep: () => runtime.getNextExecutableStep(),
+    hasCommandHandler,
   };
 }

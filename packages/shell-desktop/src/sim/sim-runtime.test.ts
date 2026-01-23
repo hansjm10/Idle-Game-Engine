@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { createSimRuntime } from './sim-runtime.js';
+import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type { Command } from '@idle-engine/core';
 
 describe('shell-desktop sim runtime', () => {
@@ -173,5 +174,11 @@ describe('shell-desktop sim runtime', () => {
       width: 14,
       colorRgba: 0x8a_2a_4f_ff,
     });
+  });
+
+  it('registers a handler for passthrough control event commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(sim.hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE)).toBe(true);
   });
 });
