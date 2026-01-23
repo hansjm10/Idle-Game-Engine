@@ -170,9 +170,7 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
     state.lastCollectedStep = context.step;
   });
 
-  dispatcher.register(SHELL_CONTROL_EVENT_COMMAND_TYPE, (payload: ShellControlEventCommandPayload) => {
-    void payload;
-  });
+  dispatcher.register(SHELL_CONTROL_EVENT_COMMAND_TYPE, (_payload: ShellControlEventCommandPayload) => undefined);
 
   const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;
 
