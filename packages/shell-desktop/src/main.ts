@@ -237,7 +237,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     if (message.kind === 'frames') {
       nextStep = message.nextStep;
-      const frame = message.frames.slice(-1)[0];
+      const frame = message.frames.at(-1);
       if (!frame) {
         return;
       }
