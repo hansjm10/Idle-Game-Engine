@@ -3,52 +3,52 @@
 import { mkdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { parseArgs } from 'node:util';
 
 import { build } from 'esbuild';
 
-function printUsageAndExit() {
-  console.error(
-    [
-      'Usage: node tools/scripts/bundle-renderer.mjs [--package-root <path>] [--entry <path>] [--outfile <path>]',
-      '',
-      'Defaults:',
-      '  --package-root  <cwd>',
-      "  --entry         'src/renderer/index.ts'",
-      "  --outfile       'dist/renderer/index.js'",
-      '',
-      'Bundles a renderer entrypoint into a browser-resolvable ES module.',
-    ].join('\n'),
-  );
-  process.exit(1);
-}
+const USAGE = `
+Usage: node tools/scripts/bundle-renderer.mjs [--package-root <path>] [--entry <path>] [--outfile <path>]
 
-function readArgValue(args, flag) {
-  const index = args.indexOf(flag);
-  if (index === -1) {
-    return undefined;
-  }
-  const value = args[index + 1];
-  if (!value || value.startsWith('-')) {
-    return undefined;
-  }
-  return value;
+Defaults:
+  --package-root  <cwd>
+  --entry         src/renderer/index.ts
+  --outfile       dist/renderer/index.js
+
+Bundles a renderer entrypoint into a browser-resolvable ES module.
+`.trim();
+
+function printUsageAndExit(exitCode = 1) {
+  console.error(USAGE);
+  process.exit(exitCode);
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  if (args.includes('--help') || args.includes('-h')) {
-    printUsageAndExit();
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: process.argv.slice(2),
+      options: {
+        help: { type: 'boolean', short: 'h' },
+        'package-root': { type: 'string' },
+        entry: { type: 'string' },
+        outfile: { type: 'string' },
+      },
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Invalid arguments: ${message}`);
+    printUsageAndExit(1);
+    return;
   }
 
-  const packageRoot = path.resolve(readArgValue(args, '--package-root') ?? process.cwd());
-  const entryPoint = path.resolve(
-    packageRoot,
-    readArgValue(args, '--entry') ?? path.join('src', 'renderer', 'index.ts'),
-  );
-  const outFile = path.resolve(
-    packageRoot,
-    readArgValue(args, '--outfile') ?? path.join('dist', 'renderer', 'index.js'),
-  );
+  if (values.help) {
+    printUsageAndExit(0);
+  }
+
+  const packageRoot = path.resolve(values['package-root'] ?? process.cwd());
+  const entryPoint = path.resolve(packageRoot, values.entry ?? path.join('src', 'renderer', 'index.ts'));
+  const outFile = path.resolve(packageRoot, values.outfile ?? path.join('dist', 'renderer', 'index.js'));
 
   const entryStat = await stat(entryPoint).catch((error) => {
     throw new Error(
@@ -90,9 +90,7 @@ async function main() {
   }
 }
 
-try {
-  await main();
-} catch (error) {
+await main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-}
+  process.exitCode = 1;
+});
