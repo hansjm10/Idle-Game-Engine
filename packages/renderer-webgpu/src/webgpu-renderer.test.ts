@@ -699,6 +699,106 @@ describe('renderer-webgpu', () => {
       expect(submit).toHaveBeenCalledTimes(1);
     });
 
+    it('throws when RenderCommandBuffer schemaVersion is unsupported', async () => {
+      const { canvas, beginRenderPass, submit } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION + 1,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'world' }],
+        draws: [],
+      } as unknown as RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('RenderCommandBuffer schemaVersion');
+      expect(beginRenderPass).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('throws when RenderCommandBuffer exceeds maxDrawsPerFrame', async () => {
+      const { canvas, beginRenderPass, submit } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas, {
+        limits: {
+          maxDrawsPerFrame: 1,
+        },
+      });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_ff_ff_ff,
+          },
+          {
+            kind: 'rect',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            colorRgba: 0xff_ff_ff_ff,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('limits.maxDrawsPerFrame');
+      expect(beginRenderPass).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('throws when a TextDraw exceeds maxTextLength', async () => {
+      const { canvas, beginRenderPass, submit } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas, {
+        limits: {
+          maxTextLength: 2,
+        },
+      });
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 0,
+            y: 0,
+            text: 'abc',
+            colorRgba: 0xff_ff_ff_ff,
+            fontSizePx: 10,
+          },
+        ],
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('limits.maxTextLength');
+      expect(beginRenderPass).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    });
+
     it('throws when rendering image draws without a loaded sprite atlas', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -759,6 +859,51 @@ describe('renderer-webgpu', () => {
       } as unknown as RenderCommandBuffer;
 
       expect(() => renderer.render(rcb)).toThrow('Sprite atlas missing UVs.');
+    });
+
+    it('throws when AssetManifest schemaVersion is unsupported', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION + 1,
+        assets: [{ id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } as unknown as AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'AssetManifest schemaVersion',
+      );
+      expect(loadImage).not.toHaveBeenCalled();
+    });
+
+    it('throws when AssetManifest exceeds maxAssets', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas, {
+        limits: {
+          maxAssets: 1,
+        },
+      });
+
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [
+          { id: 'sprite:a' as AssetId, kind: 'image', contentHash: 'hash:a' },
+          { id: 'sprite:b' as AssetId, kind: 'image', contentHash: 'hash:b' },
+        ],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+
+      await expect(renderer.loadAssets(manifest, { loadImage })).rejects.toThrow(
+        'limits.maxAssets',
+      );
+      expect(loadImage).not.toHaveBeenCalled();
     });
 
     it('throws when a manifest contains a font but loadFont is not provided', async () => {

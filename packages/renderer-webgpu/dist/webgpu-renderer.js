@@ -9,8 +9,8 @@ var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
     return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
 };
-var _QuadInstanceWriter_scratchColor, _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_retiredInstanceBuffers, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasTexture, _WebGpuRendererImpl_quadInstanceWriter, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_safeDestroyBuffer, _WebGpuRendererImpl_safeDestroyTexture, _WebGpuRendererImpl_flushRetiredInstanceBuffers, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
-import { WORLD_FIXED_POINT_SCALE, canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
+var _QuadInstanceWriter_scratchColor, _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_limits, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_retiredInstanceBuffers, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasTexture, _WebGpuRendererImpl_quadInstanceWriter, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_assertSupportedAssetManifest, _WebGpuRendererImpl_assertSupportedRenderCommandBuffer, _WebGpuRendererImpl_safeDestroyBuffer, _WebGpuRendererImpl_safeDestroyTexture, _WebGpuRendererImpl_flushRetiredInstanceBuffers, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
+import { RENDERER_CONTRACT_SCHEMA_VERSION, WORLD_FIXED_POINT_SCALE, canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
 import { createAtlasLayout, packAtlas, } from './atlas-packer.js';
 import { orderDrawsByPassAndSortKey, } from './sprite-batching.js';
 export class WebGpuNotSupportedError extends Error {
@@ -42,6 +42,11 @@ export class WebGpuDeviceLostError extends Error {
         this.reason = reason;
     }
 }
+const DEFAULT_WEBGPU_RENDERER_LIMITS = {
+    maxAssets: 10000,
+    maxDrawsPerFrame: 100000,
+    maxTextLength: 10000,
+};
 function clampByte(value) {
     if (!Number.isFinite(value)) {
         return 0;
@@ -89,6 +94,22 @@ function configureCanvasContext(options) {
         const message = error instanceof Error ? error.message : String(error);
         throw new WebGpuNotSupportedError(`Failed to configure WebGPU canvas context (format: ${options.format})${message ? `: ${message}` : ''}`);
     }
+}
+function parsePositiveIntegerLimit(value, fallback, path) {
+    if (value === undefined) {
+        return fallback;
+    }
+    if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+        throw new Error(`WebGPU renderer expected ${path} to be a positive integer.`);
+    }
+    return value;
+}
+function resolveWebGpuRendererLimits(limits) {
+    return {
+        maxAssets: parsePositiveIntegerLimit(limits?.maxAssets, DEFAULT_WEBGPU_RENDERER_LIMITS.maxAssets, 'limits.maxAssets'),
+        maxDrawsPerFrame: parsePositiveIntegerLimit(limits?.maxDrawsPerFrame, DEFAULT_WEBGPU_RENDERER_LIMITS.maxDrawsPerFrame, 'limits.maxDrawsPerFrame'),
+        maxTextLength: parsePositiveIntegerLimit(limits?.maxTextLength, DEFAULT_WEBGPU_RENDERER_LIMITS.maxTextLength, 'limits.maxTextLength'),
+    };
 }
 function isSameScissorRect(a, b) {
     return (a.x === b.x &&
@@ -668,6 +689,7 @@ class WebGpuRendererImpl {
         });
         _WebGpuRendererImpl_alphaMode.set(this, void 0);
         _WebGpuRendererImpl_onDeviceLost.set(this, void 0);
+        _WebGpuRendererImpl_limits.set(this, void 0);
         _WebGpuRendererImpl_disposed.set(this, false);
         _WebGpuRendererImpl_lost.set(this, false);
         _WebGpuRendererImpl_devicePixelRatio.set(this, 1);
@@ -700,6 +722,7 @@ class WebGpuRendererImpl {
         this.format = options.format;
         __classPrivateFieldSet(this, _WebGpuRendererImpl_alphaMode, options.alphaMode, "f");
         __classPrivateFieldSet(this, _WebGpuRendererImpl_onDeviceLost, options.onDeviceLost, "f");
+        __classPrivateFieldSet(this, _WebGpuRendererImpl_limits, options.limits, "f");
         const worldFixedPointScale = options.worldFixedPointScale ?? WORLD_FIXED_POINT_SCALE;
         if (!Number.isFinite(worldFixedPointScale) || worldFixedPointScale <= 0) {
             throw new Error('WebGPU renderer expected worldFixedPointScale to be a positive number.');
@@ -743,6 +766,7 @@ class WebGpuRendererImpl {
     }
     async loadAssets(manifest, assets, options) {
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_assertReadyForAssetLoad).call(this);
+        __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_assertSupportedAssetManifest).call(this, manifest);
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureSpritePipeline).call(this);
         const atlasEntries = getSortedRenderableAtlasEntries(manifest);
         const { loadedFontByAssetId, loadedSources } = await loadAtlasSources({
@@ -782,6 +806,7 @@ class WebGpuRendererImpl {
         if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f") || __classPrivateFieldGet(this, _WebGpuRendererImpl_lost, "f")) {
             return;
         }
+        __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_assertSupportedRenderCommandBuffer).call(this, rcb);
         const colorTextureView = this.context.getCurrentTexture().createView();
         const clearColor = selectClearColor(rcb);
         const commandEncoder = this.device.createCommandEncoder();
@@ -836,12 +861,38 @@ class WebGpuRendererImpl {
         __classPrivateFieldSet(this, _WebGpuRendererImpl_defaultBitmapFontAssetId, undefined, "f");
     }
 }
-_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_worldFixedPointInvScale = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_retiredInstanceBuffers = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasTexture = new WeakMap(), _WebGpuRendererImpl_quadInstanceWriter = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_bitmapFontByAssetId = new WeakMap(), _WebGpuRendererImpl_defaultBitmapFontAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_assertReadyForAssetLoad = function _WebGpuRendererImpl_assertReadyForAssetLoad() {
+_WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost = new WeakMap(), _WebGpuRendererImpl_limits = new WeakMap(), _WebGpuRendererImpl_disposed = new WeakMap(), _WebGpuRendererImpl_lost = new WeakMap(), _WebGpuRendererImpl_devicePixelRatio = new WeakMap(), _WebGpuRendererImpl_worldCamera = new WeakMap(), _WebGpuRendererImpl_worldFixedPointInvScale = new WeakMap(), _WebGpuRendererImpl_spritePipeline = new WeakMap(), _WebGpuRendererImpl_rectPipeline = new WeakMap(), _WebGpuRendererImpl_spriteSampler = new WeakMap(), _WebGpuRendererImpl_spriteUniformBuffer = new WeakMap(), _WebGpuRendererImpl_worldGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_uiGlobalsBindGroup = new WeakMap(), _WebGpuRendererImpl_spriteVertexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteIndexBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBuffer = new WeakMap(), _WebGpuRendererImpl_spriteInstanceBufferSize = new WeakMap(), _WebGpuRendererImpl_retiredInstanceBuffers = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroupLayout = new WeakMap(), _WebGpuRendererImpl_spriteTextureBindGroup = new WeakMap(), _WebGpuRendererImpl_atlasTexture = new WeakMap(), _WebGpuRendererImpl_quadInstanceWriter = new WeakMap(), _WebGpuRendererImpl_atlasLayout = new WeakMap(), _WebGpuRendererImpl_atlasLayoutHash = new WeakMap(), _WebGpuRendererImpl_atlasUvByAssetId = new WeakMap(), _WebGpuRendererImpl_bitmapFontByAssetId = new WeakMap(), _WebGpuRendererImpl_defaultBitmapFontAssetId = new WeakMap(), _WebGpuRendererImpl_instances = new WeakSet(), _WebGpuRendererImpl_assertReadyForAssetLoad = function _WebGpuRendererImpl_assertReadyForAssetLoad() {
     if (__classPrivateFieldGet(this, _WebGpuRendererImpl_disposed, "f")) {
         throw new Error('WebGPU renderer is disposed.');
     }
     if (__classPrivateFieldGet(this, _WebGpuRendererImpl_lost, "f")) {
         throw new Error('WebGPU device is lost.');
+    }
+}, _WebGpuRendererImpl_assertSupportedAssetManifest = function _WebGpuRendererImpl_assertSupportedAssetManifest(manifest) {
+    if (manifest.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
+        throw new Error(`AssetManifest schemaVersion ${manifest.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`);
+    }
+    if (manifest.assets.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxAssets) {
+        throw new Error(`AssetManifest exceeds limits.maxAssets: ${manifest.assets.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxAssets}.`);
+    }
+}, _WebGpuRendererImpl_assertSupportedRenderCommandBuffer = function _WebGpuRendererImpl_assertSupportedRenderCommandBuffer(rcb) {
+    if (rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
+        throw new Error(`RenderCommandBuffer schemaVersion ${rcb.frame.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`);
+    }
+    if (rcb.draws.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxDrawsPerFrame) {
+        throw new Error(`RenderCommandBuffer exceeds limits.maxDrawsPerFrame: ${rcb.draws.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxDrawsPerFrame}.`);
+    }
+    if (__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength > 0) {
+        for (let index = 0; index < rcb.draws.length; index += 1) {
+            const draw = rcb.draws[index];
+            const text = draw.text;
+            if (typeof text !== 'string') {
+                continue;
+            }
+            if (text.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength) {
+                throw new Error(`RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength}.`);
+            }
+        }
     }
 }, _WebGpuRendererImpl_safeDestroyBuffer = function _WebGpuRendererImpl_safeDestroyBuffer(buffer) {
     if (!buffer) {
@@ -1455,6 +1506,7 @@ export async function createWebGpuRenderer(canvas, options) {
         device,
         format,
         alphaMode,
+        limits: resolveWebGpuRendererLimits(options?.limits),
         worldFixedPointScale: options?.worldFixedPointScale,
         onDeviceLost: options?.onDeviceLost,
     });

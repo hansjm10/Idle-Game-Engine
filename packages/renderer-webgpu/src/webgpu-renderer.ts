@@ -1,4 +1,5 @@
 import {
+  RENDERER_CONTRACT_SCHEMA_VERSION,
   WORLD_FIXED_POINT_SCALE,
   canonicalEncodeForHash,
   sha256Hex,
@@ -39,6 +40,40 @@ export class WebGpuDeviceLostError extends Error {
     this.reason = reason;
   }
 }
+
+export interface WebGpuRendererLimits {
+  /**
+   * Maximum number of entries allowed in `AssetManifest.assets`.
+   *
+   * Default: 10_000
+   */
+  readonly maxAssets?: number;
+  /**
+   * Maximum number of draws allowed in a single `RenderCommandBuffer`.
+   *
+   * Default: 100_000
+   */
+  readonly maxDrawsPerFrame?: number;
+  /**
+   * Maximum text length (measured in JavaScript UTF-16 code units, i.e. `text.length`)
+   * allowed per `TextDraw`.
+   *
+   * Default: 10_000
+   */
+  readonly maxTextLength?: number;
+}
+
+interface WebGpuRendererResolvedLimits {
+  readonly maxAssets: number;
+  readonly maxDrawsPerFrame: number;
+  readonly maxTextLength: number;
+}
+
+const DEFAULT_WEBGPU_RENDERER_LIMITS: WebGpuRendererResolvedLimits = {
+  maxAssets: 10_000,
+  maxDrawsPerFrame: 100_000,
+  maxTextLength: 10_000,
+};
 
 export interface WebGpuRendererResizeOptions {
   readonly devicePixelRatio?: number;
@@ -92,6 +127,12 @@ export interface WebGpuRendererCreateOptions {
   readonly deviceDescriptor?: GPUDeviceDescriptor;
   readonly requiredFeatures?: readonly GPUFeatureName[];
   readonly preferredFormats?: readonly GPUTextureFormat[];
+  /**
+   * Caps applied to untrusted inputs passed to `loadAssets(...)` and `render(...)`.
+   *
+   * Defaults are documented in `WebGpuRendererLimits`.
+   */
+  readonly limits?: WebGpuRendererLimits;
   /**
    * World-pass draw coordinates in `RenderCommandBuffer` are expected to be fixed-point integers
    * produced by `compileViewModelToRenderCommandBuffer` (`value * worldFixedPointScale`).
@@ -189,6 +230,42 @@ function configureCanvasContext(options: {
       }`,
     );
   }
+}
+
+function parsePositiveIntegerLimit(
+  value: number | undefined,
+  fallback: number,
+  path: string,
+): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`WebGPU renderer expected ${path} to be a positive integer.`);
+  }
+
+  return value;
+}
+
+function resolveWebGpuRendererLimits(limits: WebGpuRendererLimits | undefined): WebGpuRendererResolvedLimits {
+  return {
+    maxAssets: parsePositiveIntegerLimit(
+      limits?.maxAssets,
+      DEFAULT_WEBGPU_RENDERER_LIMITS.maxAssets,
+      'limits.maxAssets',
+    ),
+    maxDrawsPerFrame: parsePositiveIntegerLimit(
+      limits?.maxDrawsPerFrame,
+      DEFAULT_WEBGPU_RENDERER_LIMITS.maxDrawsPerFrame,
+      'limits.maxDrawsPerFrame',
+    ),
+    maxTextLength: parsePositiveIntegerLimit(
+      limits?.maxTextLength,
+      DEFAULT_WEBGPU_RENDERER_LIMITS.maxTextLength,
+      'limits.maxTextLength',
+    ),
+  };
 }
 
 interface ScissorRect {
@@ -987,6 +1064,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
   readonly #alphaMode: GPUCanvasAlphaMode;
   readonly #onDeviceLost: ((error: WebGpuDeviceLostError) => void) | undefined;
+  readonly #limits: WebGpuRendererResolvedLimits;
   #disposed = false;
   #lost = false;
   #devicePixelRatio = 1;
@@ -1021,6 +1099,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     device: GPUDevice;
     format: GPUTextureFormat;
     alphaMode: GPUCanvasAlphaMode;
+    limits: WebGpuRendererResolvedLimits;
     worldFixedPointScale?: number;
     onDeviceLost?: (error: WebGpuDeviceLostError) => void;
   }) {
@@ -1031,6 +1110,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.format = options.format;
     this.#alphaMode = options.alphaMode;
     this.#onDeviceLost = options.onDeviceLost;
+    this.#limits = options.limits;
 
     const worldFixedPointScale = options.worldFixedPointScale ?? WORLD_FIXED_POINT_SCALE;
     if (!Number.isFinite(worldFixedPointScale) || worldFixedPointScale <= 0) {
@@ -1087,6 +1167,50 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
     if (this.#lost) {
       throw new Error('WebGPU device is lost.');
+    }
+  }
+
+  #assertSupportedAssetManifest(manifest: AssetManifest): void {
+    if (manifest.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
+      throw new Error(
+        `AssetManifest schemaVersion ${manifest.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`,
+      );
+    }
+
+    if (manifest.assets.length > this.#limits.maxAssets) {
+      throw new Error(
+        `AssetManifest exceeds limits.maxAssets: ${manifest.assets.length} > ${this.#limits.maxAssets}.`,
+      );
+    }
+  }
+
+  #assertSupportedRenderCommandBuffer(rcb: RenderCommandBuffer): void {
+    if (rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
+      throw new Error(
+        `RenderCommandBuffer schemaVersion ${rcb.frame.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`,
+      );
+    }
+
+    if (rcb.draws.length > this.#limits.maxDrawsPerFrame) {
+      throw new Error(
+        `RenderCommandBuffer exceeds limits.maxDrawsPerFrame: ${rcb.draws.length} > ${this.#limits.maxDrawsPerFrame}.`,
+      );
+    }
+
+    if (this.#limits.maxTextLength > 0) {
+      for (let index = 0; index < rcb.draws.length; index += 1) {
+        const draw = rcb.draws[index];
+        const text = (draw as unknown as { readonly text?: unknown }).text;
+        if (typeof text !== 'string') {
+          continue;
+        }
+
+        if (text.length > this.#limits.maxTextLength) {
+          throw new Error(
+            `RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${this.#limits.maxTextLength}.`,
+          );
+        }
+      }
     }
   }
 
@@ -1183,6 +1307,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     options?: WebGpuRendererLoadAssetsOptions,
   ): Promise<WebGpuRendererAtlasState> {
     this.#assertReadyForAssetLoad();
+    this.#assertSupportedAssetManifest(manifest);
 
     this.#ensureSpritePipeline();
 
@@ -1876,6 +2001,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       return;
     }
 
+    this.#assertSupportedRenderCommandBuffer(rcb);
+
     const colorTextureView = this.context.getCurrentTexture().createView();
     const clearColor = selectClearColor(rcb);
 
@@ -2028,6 +2155,7 @@ export async function createWebGpuRenderer(
     device,
     format,
     alphaMode,
+    limits: resolveWebGpuRendererLimits(options?.limits),
     worldFixedPointScale: options?.worldFixedPointScale,
     onDeviceLost: options?.onDeviceLost,
   });

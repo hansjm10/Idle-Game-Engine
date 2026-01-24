@@ -8,6 +8,27 @@ export declare class WebGpuDeviceLostError extends Error {
     readonly reason: GPUDeviceLostReason | undefined;
     constructor(message: string, reason?: GPUDeviceLostReason);
 }
+export interface WebGpuRendererLimits {
+    /**
+     * Maximum number of entries allowed in `AssetManifest.assets`.
+     *
+     * Default: 10_000
+     */
+    readonly maxAssets?: number;
+    /**
+     * Maximum number of draws allowed in a single `RenderCommandBuffer`.
+     *
+     * Default: 100_000
+     */
+    readonly maxDrawsPerFrame?: number;
+    /**
+     * Maximum text length (measured in JavaScript UTF-16 code units, i.e. `text.length`)
+     * allowed per `TextDraw`.
+     *
+     * Default: 10_000
+     */
+    readonly maxTextLength?: number;
+}
 export interface WebGpuRendererResizeOptions {
     readonly devicePixelRatio?: number;
 }
@@ -47,6 +68,12 @@ export interface WebGpuRendererCreateOptions {
     readonly deviceDescriptor?: GPUDeviceDescriptor;
     readonly requiredFeatures?: readonly GPUFeatureName[];
     readonly preferredFormats?: readonly GPUTextureFormat[];
+    /**
+     * Caps applied to untrusted inputs passed to `loadAssets(...)` and `render(...)`.
+     *
+     * Defaults are documented in `WebGpuRendererLimits`.
+     */
+    readonly limits?: WebGpuRendererLimits;
     /**
      * World-pass draw coordinates in `RenderCommandBuffer` are expected to be fixed-point integers
      * produced by `compileViewModelToRenderCommandBuffer` (`value * worldFixedPointScale`).
