@@ -82,6 +82,14 @@ describe('renderer-webgpu', () => {
     });
   });
 
+  it('clamps non-finite byte inputs to 0', () => {
+    const isFiniteSpy = vi.spyOn(Number, 'isFinite').mockReturnValue(false);
+
+    expect(__test__.colorRgbaToGpuColor(0xff_00_00_ff)).toEqual({ r: 0, g: 0, b: 0, a: 0 });
+
+    isFiniteSpy.mockRestore();
+  });
+
   it('derives a sane canvas pixel size', () => {
     const canvas = {
       clientWidth: 0,
@@ -550,6 +558,107 @@ describe('renderer-webgpu', () => {
       );
     });
 
+    it('copies BufferSource views into ArrayBuffers before queue.writeBuffer', async () => {
+      const originalFloat32Array = globalThis.Float32Array;
+      const originalUint16Array = globalThis.Uint16Array;
+
+      const PatchedFloat32Array = function (...args: unknown[]): Float32Array {
+        const Base = originalFloat32Array as unknown as { new (...args: unknown[]): Float32Array };
+
+        if (Array.isArray(args[0])) {
+          const base = new Base(args[0]);
+          const padBytes = originalFloat32Array.BYTES_PER_ELEMENT;
+          const buffer = new ArrayBuffer(base.byteLength + padBytes);
+          const view = new originalFloat32Array(buffer, padBytes, base.length);
+          view.set(base);
+          return view;
+        }
+
+        return new Base(...args);
+      } as unknown as typeof Float32Array;
+      PatchedFloat32Array.prototype = originalFloat32Array.prototype;
+      Object.defineProperty(PatchedFloat32Array, 'BYTES_PER_ELEMENT', {
+        value: originalFloat32Array.BYTES_PER_ELEMENT,
+      });
+
+      const PatchedUint16Array = function (...args: unknown[]): Uint16Array {
+        const Base = originalUint16Array as unknown as { new (...args: unknown[]): Uint16Array };
+
+        if (Array.isArray(args[0]) && typeof SharedArrayBuffer !== 'undefined') {
+          const base = new Base(args[0]);
+          const padBytes = originalUint16Array.BYTES_PER_ELEMENT;
+          const buffer = new SharedArrayBuffer(base.byteLength + padBytes);
+          const view = new originalUint16Array(buffer, padBytes, base.length);
+          view.set(base);
+          return view;
+        }
+
+        return new Base(...args);
+      } as unknown as typeof Uint16Array;
+      PatchedUint16Array.prototype = originalUint16Array.prototype;
+      Object.defineProperty(PatchedUint16Array, 'BYTES_PER_ELEMENT', {
+        value: originalUint16Array.BYTES_PER_ELEMENT,
+      });
+
+      try {
+        const globals = globalThis as unknown as {
+          Float32Array: typeof Float32Array;
+          Uint16Array: typeof Uint16Array;
+        };
+        globals.Float32Array = PatchedFloat32Array;
+        globals.Uint16Array = PatchedUint16Array;
+
+        vi.resetModules();
+        const { createWebGpuRenderer: createPatchedRenderer } = await import('./webgpu-renderer.js');
+
+        const { canvas, writeBuffer } = createStubWebGpuEnvironment();
+        const renderer = await createPatchedRenderer(canvas);
+
+        renderer.render({
+          frame: {
+            schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+            step: 0,
+            simTimeMs: 0,
+            contentHash: 'content:dev',
+          },
+          passes: [{ id: 'ui' }],
+          draws: [
+            {
+              kind: 'rect',
+              passId: 'ui',
+              sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+              colorRgba: 0xff_ff_ff_ff,
+            },
+          ],
+        } satisfies RenderCommandBuffer);
+
+        const vertexWrite = writeBuffer.mock.calls[0];
+        const indexWrite = writeBuffer.mock.calls[1];
+        if (!vertexWrite || !indexWrite) {
+          throw new Error('Expected vertex/index buffer uploads.');
+        }
+
+        const vertexData = vertexWrite[2] as unknown;
+        const indexData = indexWrite[2] as unknown;
+
+        expect(vertexData).toBeInstanceOf(ArrayBuffer);
+        expect((vertexData as ArrayBuffer).byteLength).toBe(64);
+        expect(indexData).toBeInstanceOf(ArrayBuffer);
+        expect((indexData as ArrayBuffer).byteLength).toBe(12);
+      } finally {
+        const globals = globalThis as unknown as {
+          Float32Array: typeof Float32Array;
+          Uint16Array: typeof Uint16Array;
+        };
+        globals.Float32Array = originalFloat32Array;
+        globals.Uint16Array = originalUint16Array;
+      }
+    });
+
     it('clears using the selected render command buffer clear color', async () => {
       const { canvas, beginRenderPass, submit } = createStubWebGpuEnvironment();
 
@@ -617,6 +726,39 @@ describe('renderer-webgpu', () => {
       } satisfies RenderCommandBuffer;
 
       expect(() => renderer.render(rcb)).toThrow('No sprite atlas loaded');
+    });
+
+    it('throws when sprite UVs are requested without atlas UV state', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      let kindReads = 0;
+      const draw = {
+        get kind() {
+          kindReads += 1;
+          return kindReads <= 5 ? 'rect' : 'image';
+        },
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+        assetId: 'sprite:missing' as AssetId,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+      } as unknown as RenderCommandBuffer['draws'][number];
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [draw],
+      } as unknown as RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Sprite atlas missing UVs.');
     });
 
     it('throws when a manifest contains a font but loadFont is not provided', async () => {
@@ -750,6 +892,57 @@ describe('renderer-webgpu', () => {
       );
     });
 
+    it('throws when flushing image batches without a texture bind group', async () => {
+      const { canvas, device } = createStubWebGpuEnvironment();
+      (device as unknown as { createBindGroup: ReturnType<typeof vi.fn> }).createBindGroup = vi
+        .fn()
+        .mockImplementationOnce(() => ({} as unknown as GPUBindGroup))
+        .mockImplementationOnce(() => ({} as unknown as GPUBindGroup))
+        .mockImplementationOnce(() => undefined as unknown as GPUBindGroup);
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const spriteAssetId = 'sprite:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: spriteAssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0 });
+
+      let kindReads = 0;
+      const draw = {
+        get kind() {
+          kindReads += 1;
+          return kindReads <= 5 ? 'rect' : 'image';
+        },
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+        assetId: spriteAssetId,
+        x: 10,
+        y: 20,
+        width: 30,
+        height: 40,
+        colorRgba: 0xff_ff_ff_ff,
+      } as unknown as RenderCommandBuffer['draws'][number];
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [draw],
+      } as unknown as RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).toThrow('Sprite pipeline missing texture bind group.');
+    });
+
     it('throws when rendering text draws without loaded bitmap fonts', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -786,6 +979,164 @@ describe('renderer-webgpu', () => {
       } satisfies RenderCommandBuffer;
 
       expect(() => renderer.render(rcb)).toThrow('No bitmap fonts loaded');
+    });
+
+    it('zeros inset UV ranges when the atlas size is treated as invalid', async () => {
+      const { canvas, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const originalIsFinite = Number.isFinite;
+      let insetCalls = 0;
+      const isFiniteSpy = vi.spyOn(Number, 'isFinite').mockImplementation((value: number) => {
+        const stack = new Error().stack ?? '';
+        if (stack.includes('buildInsetUvRange')) {
+          insetCalls += 1;
+          if (insetCalls === 1) {
+            return false;
+          }
+        }
+        return originalIsFinite(value);
+      });
+
+      const spriteAssetId = 'sprite:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: spriteAssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0 });
+      isFiniteSpy.mockRestore();
+
+      const atlasLayout = renderer.atlasLayout;
+      if (!atlasLayout) {
+        throw new Error('Expected atlasLayout to be defined after loadAssets.');
+      }
+      const atlasEntry = atlasLayout.entries.find((entry) => entry.assetId === spriteAssetId);
+      if (!atlasEntry) {
+        throw new Error('Expected atlas entry for sprite:demo.');
+      }
+      const expectedV = new Float32Array([
+        (atlasEntry.y + 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.y + atlasEntry.height - 0.5) / atlasLayout.atlasHeightPx,
+      ]);
+
+      renderer.render({
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: spriteAssetId,
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+          },
+        ],
+      } satisfies RenderCommandBuffer);
+
+      const instanceWrite = writeBuffer.mock.calls.find((call) => call[2] instanceof Float32Array);
+      expect(instanceWrite).toBeDefined();
+      if (!instanceWrite) {
+        throw new Error('Expected an instance buffer upload.');
+      }
+
+      const instances = getWriteBufferFloat32Payload(instanceWrite);
+      if (!instances) {
+        throw new Error('Expected instance buffer payload to be readable.');
+      }
+
+      expect(instances.slice(4, 8)).toEqual(new Float32Array([0, expectedV[0] ?? 0, 0, expectedV[1] ?? 0]));
+    });
+
+    it('zeros inset UV ranges when the start or size is treated as invalid', async () => {
+      const { canvas, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const originalIsFinite = Number.isFinite;
+      let insetCalls = 0;
+      const isFiniteSpy = vi.spyOn(Number, 'isFinite').mockImplementation((value: number) => {
+        const stack = new Error().stack ?? '';
+        if (stack.includes('buildInsetUvRange')) {
+          insetCalls += 1;
+          if (insetCalls === 2) {
+            return false;
+          }
+        }
+        return originalIsFinite(value);
+      });
+
+      const spriteAssetId = 'sprite:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: spriteAssetId, kind: 'image', contentHash: 'hash:demo' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+
+      await renderer.loadAssets(manifest, { loadImage }, { maxAtlasSizePx: 64, paddingPx: 0 });
+      isFiniteSpy.mockRestore();
+
+      const atlasLayout = renderer.atlasLayout;
+      if (!atlasLayout) {
+        throw new Error('Expected atlasLayout to be defined after loadAssets.');
+      }
+      const atlasEntry = atlasLayout.entries.find((entry) => entry.assetId === spriteAssetId);
+      if (!atlasEntry) {
+        throw new Error('Expected atlas entry for sprite:demo.');
+      }
+      const expectedV = new Float32Array([
+        (atlasEntry.y + 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.y + atlasEntry.height - 0.5) / atlasLayout.atlasHeightPx,
+      ]);
+
+      renderer.render({
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'image',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            assetId: spriteAssetId,
+            x: 10,
+            y: 20,
+            width: 30,
+            height: 40,
+          },
+        ],
+      } satisfies RenderCommandBuffer);
+
+      const instanceWrite = writeBuffer.mock.calls.find((call) => call[2] instanceof Float32Array);
+      expect(instanceWrite).toBeDefined();
+      if (!instanceWrite) {
+        throw new Error('Expected an instance buffer upload.');
+      }
+
+      const instances = getWriteBufferFloat32Payload(instanceWrite);
+      if (!instances) {
+        throw new Error('Expected instance buffer payload to be readable.');
+      }
+
+      expect(instances.slice(4, 8)).toEqual(new Float32Array([0, expectedV[0] ?? 0, 0, expectedV[1] ?? 0]));
     });
 
     it('uploads an atlas and draws sprite instances', async () => {
@@ -2204,6 +2555,62 @@ describe('renderer-webgpu', () => {
       } satisfies RenderCommandBuffer;
 
       renderer.render(rcb);
+
+      expect(drawIndexed).not.toHaveBeenCalled();
+      expect(writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array)).toHaveLength(0);
+    });
+
+    it('skips text draw glyphs when string iteration yields empty segments', async () => {
+      const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:demo' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(
+        async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource),
+      );
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        glyphs: [],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      const weirdText = {
+        length: 1,
+        *[Symbol.iterator]() {
+          yield '';
+        },
+      } as unknown as string;
+
+      renderer.render({
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: weirdText,
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer);
 
       expect(drawIndexed).not.toHaveBeenCalled();
       expect(writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array)).toHaveLength(0);
