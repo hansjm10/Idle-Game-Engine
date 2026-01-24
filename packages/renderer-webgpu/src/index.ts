@@ -6,6 +6,7 @@ export type {
   WebGpuRendererAtlasState,
   WebGpuRendererLoadAssetsOptions,
   WebGpuRendererCreateOptions,
+  WebGpuRendererLimits,
   WebGpuRendererResizeOptions,
 } from './webgpu-renderer.js';
 

@@ -18,6 +18,11 @@ WebGPU renderer backend for the Idle Engine renderer contract, including determi
 
 - `requiredFeatures`: validated against `adapter.features`; missing features throw `WebGpuNotSupportedError`.
 - `preferredFormats`: when provided, the first entry is used. The implementation does not probe format support or fall back to later entries.
+- `limits`: caps for untrusted `AssetManifest` / `RenderCommandBuffer` inputs (schema mismatch and limit violations throw).
+  - Defaults:
+    - `maxAssets`: `10_000`
+    - `maxDrawsPerFrame`: `100_000`
+    - `maxTextLength`: `10_000` (measured as JavaScript `text.length` UTF-16 code units)
 - `worldFixedPointScale`: scale factor for world-pass draw coordinates (defaults to `WORLD_FIXED_POINT_SCALE`). Set to `1` if you are supplying world coordinates as unscaled floats.
 - `onDeviceLost`: invoked when `device.lost` resolves; after loss, the renderer no-ops `render/resize`.
 
@@ -39,6 +44,12 @@ if (!canvas) throw new Error('Missing canvas');
 const renderer = await createWebGpuRenderer(canvas, {
   onDeviceLost: (error) => {
     console.error('Device lost', error.reason);
+  },
+  limits: {
+    // Raise limits if you are running trusted content.
+    maxAssets: 20_000,
+    maxDrawsPerFrame: 200_000,
+    maxTextLength: 50_000,
   },
 });
 
