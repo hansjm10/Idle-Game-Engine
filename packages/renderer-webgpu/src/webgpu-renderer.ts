@@ -1191,6 +1191,26 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
   }
 
+  #assertTextLengthWithinLimits(draws: RenderCommandBuffer['draws']): void {
+    if (this.#limits.maxTextLength <= 0) {
+      return;
+    }
+
+    for (let index = 0; index < draws.length; index += 1) {
+      const draw = draws[index];
+      const text = (draw as unknown as { readonly text?: unknown }).text;
+      if (typeof text !== 'string') {
+        continue;
+      }
+
+      if (text.length > this.#limits.maxTextLength) {
+        throw new Error(
+          `RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${this.#limits.maxTextLength}.`,
+        );
+      }
+    }
+  }
+
   #assertSupportedRenderCommandBuffer(rcb: RenderCommandBuffer): void {
     if (rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
       throw new Error(
@@ -1213,10 +1233,10 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     const zoom = camera['zoom'];
 
     if (typeof x !== 'number' || !Number.isFinite(x)) {
-      throw new Error('RenderCommandBuffer.scene.camera.x must be a finite number.');
+      throw new TypeError('RenderCommandBuffer.scene.camera.x must be a finite number.');
     }
     if (typeof y !== 'number' || !Number.isFinite(y)) {
-      throw new Error('RenderCommandBuffer.scene.camera.y must be a finite number.');
+      throw new TypeError('RenderCommandBuffer.scene.camera.y must be a finite number.');
     }
     if (typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0) {
       throw new Error('RenderCommandBuffer.scene.camera.zoom must be a positive number.');
@@ -1228,21 +1248,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       );
     }
 
-    if (this.#limits.maxTextLength > 0) {
-      for (let index = 0; index < rcb.draws.length; index += 1) {
-        const draw = rcb.draws[index];
-        const text = (draw as unknown as { readonly text?: unknown }).text;
-        if (typeof text !== 'string') {
-          continue;
-        }
-
-        if (text.length > this.#limits.maxTextLength) {
-          throw new Error(
-            `RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${this.#limits.maxTextLength}.`,
-          );
-        }
-      }
-    }
+    this.#assertTextLengthWithinLimits(rcb.draws);
   }
 
   #safeDestroyBuffer(buffer: GPUBuffer | undefined): void {
