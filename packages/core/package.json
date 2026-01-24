@@ -47,7 +47,7 @@
     "clean": "rimraf dist",
     "lint": "eslint --max-warnings=0 'src/**/*.ts'",
     "test": "vitest",
-    "test:schema-compat": "vitest run --passWithNoTests src/__tests__/schema-compat.test.ts",
+    "test:schema-compat": "pnpm --filter @idle-engine/content-schema build && vitest run --passWithNoTests src/__tests__/schema-compat.test.ts",
     "test:ci": "vitest run --passWithNoTests",
     "coverage": "vitest run --coverage --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
