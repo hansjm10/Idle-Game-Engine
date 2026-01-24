@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-issue-810-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">shell-desktop — Bundle renderer deps (issue-810) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/issue-810-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="shell-desktop — Bundle renderer deps (issue-810) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/issue-810-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-810-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-810-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.5fa33a5b.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.0e49d150.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a class="navbar__item navbar__link" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><main class="docMainContainer_BJhZ docMainContainerEnhanced_qZTj"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>shell-desktop — Bundle renderer deps (issue-810)</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Bundle <code>@idle-engine/shell-desktop</code> renderer dependencies (avoid <code>dist/</code>-relative imports)</li>
+<li class=""><strong>Authors</strong>: Ralph (AI agent)</li>
+<li class=""><strong>Reviewers</strong>: Jordan Hans (hansjm10), Desktop Shell Maintainers</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-01-24</li>
+<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/810" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/810</a></li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p>The <code>@idle-engine/shell-desktop</code> renderer currently imports sibling workspace packages via deep relative paths that point into checked-in <code>dist/</code> outputs (for example <code>../../../renderer-webgpu/dist/index.js</code>). This works in-repo but is brittle for packaging (it assumes a monorepo directory layout at runtime) and makes it easy to accidentally run against stale builds. This design bundles the renderer entrypoint into a self-contained <code>dist/renderer/index.js</code> (plus optional sourcemap), so the desktop renderer no longer relies on <code>../../../*/dist/*</code> imports while keeping dev and packaged builds working.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="background">Background<a href="#background" class="hash-link" aria-label="Direct link to Background" title="Direct link to Background" translate="no">​</a></h3>
+<ul>
+<li class="">The Electron main process loads <code>dist/renderer/index.html</code>, which in turn loads <code>dist/renderer/index.js</code> as an ES module.</li>
+<li class="">The renderer TS entrypoint is <code>packages/shell-desktop/src/renderer/index.ts</code>.</li>
+<li class="">Today, that entrypoint imports renderer dependencies via deep relative paths into sibling package <code>dist/</code> directories:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop/src/renderer/index.ts</code> imports <code>../../../renderer-contract/dist/index.js</code> and <code>../../../renderer-webgpu/dist/index.js</code>.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="problem">Problem<a href="#problem" class="hash-link" aria-label="Direct link to Problem" title="Direct link to Problem" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Packaging brittleness</strong>: The runtime file layout for packaged Electron apps typically does not preserve monorepo sibling directories, so <code>../../../renderer-webgpu/dist/index.js</code> is likely to break when the app is packaged or moved.</li>
+<li class=""><strong>Stale dependency risk</strong>: Because imports point directly at checked-in <code>dist/</code> outputs, it is easy to run with stale compiled JS when upstream packages change but are not rebuilt.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="forces">Forces<a href="#forces" class="hash-link" aria-label="Direct link to Forces" title="Direct link to Forces" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>CSP</strong>: <code>index.html</code> uses <code>script-src &#x27;self&#x27;</code>; the solution must keep scripts as local files (no remote fetching, no inline script injection).</li>
+<li class=""><strong>Keep current runtime shape</strong>: <code>main.ts</code> expects the renderer files at <code>dist/renderer/*</code>.</li>
+<li class=""><strong>Minimal churn</strong>: Prefer a targeted build pipeline change over a broad refactor of renderer packages.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="goals">Goals<a href="#goals" class="hash-link" aria-label="Direct link to Goals" title="Direct link to Goals" translate="no">​</a></h3>
+<ul>
+<li class="">Remove <code>../../../*/dist/*</code> relative imports from the built renderer JS.</li>
+<li class="">Keep <code>pnpm --filter @idle-engine/shell-desktop run start</code> working for local development.</li>
+<li class="">Ensure packaged builds can load the renderer without depending on a monorepo directory layout.</li>
+<li class="">Keep the renderer code deterministic and browser-compatible (no Node-only imports in the bundled output).</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="non-goals">Non-Goals<a href="#non-goals" class="hash-link" aria-label="Direct link to Non-Goals" title="Direct link to Non-Goals" translate="no">​</a></h3>
+<ul>
+<li class="">Introducing a full Electron packaging pipeline (e.g., electron-builder) if it does not already exist.</li>
+<li class="">Refactoring <code>@idle-engine/renderer-webgpu</code> or <code>@idle-engine/renderer-contract</code> public APIs.</li>
+<li class="">Changing renderer feature behavior (input handling, IPC wiring, WebGPU rendering).</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="primary-stakeholders">Primary Stakeholders<a href="#primary-stakeholders" class="hash-link" aria-label="Direct link to Primary Stakeholders" title="Direct link to Primary Stakeholders" translate="no">​</a></h3>
+<ul>
+<li class="">Desktop shell maintainers (Electron app)</li>
+<li class="">Renderer maintainers (<code>@idle-engine/renderer-webgpu</code>, <code>@idle-engine/renderer-contract</code>)</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="agent-roles">Agent Roles<a href="#agent-roles" class="hash-link" aria-label="Direct link to Agent Roles" title="Direct link to Agent Roles" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Docs Agent</strong>: Maintain this design doc and follow-up docs if build steps change.</li>
+<li class=""><strong>Runtime Implementation Agent</strong>: Implement the bundling pipeline and update imports/tests.</li>
+<li class=""><strong>Validation Agent</strong>: Add/adjust CI checks and tests to prevent regressions.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="affected-packagesservices">Affected Packages/Services<a href="#affected-packagesservices" class="hash-link" aria-label="Direct link to Affected Packages/Services" title="Direct link to Affected Packages/Services" translate="no">​</a></h3>
+<ul>
+<li class=""><code>packages/shell-desktop</code> (renderer build and tests)</li>
+<li class=""><code>packages/renderer-webgpu</code> (consumed by bundle)</li>
+<li class=""><code>packages/renderer-contract</code> (consumed by bundle)</li>
+<li class=""><code>tools/scripts/*</code> (optional: new bundling script)</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="compatibility-considerations">Compatibility Considerations<a href="#compatibility-considerations" class="hash-link" aria-label="Direct link to Compatibility Considerations" title="Direct link to Compatibility Considerations" translate="no">​</a></h3>
+<ul>
+<li class="">The renderer output must remain compatible with Electron’s renderer runtime (Chromium) and the existing CSP.</li>
+<li class="">The Electron main/preload code should not need to change its URL/path assumptions for <code>dist/renderer</code>.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class="">Renderer assets are served from <code>packages/shell-desktop/dist/renderer/</code>:<!-- -->
+<ul>
+<li class="">Static assets are copied by <code>tools/scripts/copy-renderer-assets.mjs</code>.</li>
+<li class="">TypeScript emits <code>dist/renderer/index.js</code> via <code>tsc -p packages/shell-desktop/tsconfig.json</code>.</li>
+</ul>
+</li>
+<li class=""><code>packages/shell-desktop/src/renderer/index.ts</code> imports sibling packages via deep relative paths into their <code>dist/</code> folders, and <code>packages/shell-desktop/src/renderer/index.test.ts</code> mocks the same deep relative import.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<p>Bundle the renderer entrypoint (<code>packages/shell-desktop/src/renderer/index.ts</code>) into a self-contained JS artifact located at <code>packages/shell-desktop/dist/renderer/index.js</code>. The bundle inlines (or otherwise localizes) dependencies like <code>@idle-engine/renderer-webgpu</code> and <code>@idle-engine/renderer-contract</code>, removing the need for any runtime imports that traverse outside <code>dist/renderer/</code>.</p>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="runtime-changes">Runtime Changes<a href="#runtime-changes" class="hash-link" aria-label="Direct link to Runtime Changes" title="Direct link to Runtime Changes" translate="no">​</a></h4>
+<ul>
+<li class="">No runtime behavior changes are intended; the renderer continues to:<!-- -->
+<ul>
+<li class="">Use <code>window.idleEngine</code> (from preload) for IPC.</li>
+<li class="">Render via <code>createWebGpuRenderer</code>.</li>
+<li class="">Consume <code>RenderCommandBuffer</code> frames and display status.</li>
+</ul>
+</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="data--schemas">Data &amp; Schemas<a href="#data--schemas" class="hash-link" aria-label="Direct link to Data &amp; Schemas" title="Direct link to Data &amp; Schemas" translate="no">​</a></h4>
+<ul>
+<li class="">No schema changes.</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="apis--contracts">APIs &amp; Contracts<a href="#apis--contracts" class="hash-link" aria-label="Direct link to APIs &amp; Contracts" title="Direct link to APIs &amp; Contracts" translate="no">​</a></h4>
+<ul>
+<li class="">Replace deep relative imports in <code>packages/shell-desktop/src/renderer/index.ts</code> with package imports:<!-- -->
+<ul>
+<li class=""><code>@idle-engine/renderer-webgpu</code></li>
+<li class=""><code>@idle-engine/renderer-contract</code></li>
+</ul>
+</li>
+<li class="">The bundler resolves those imports at build time and produces a browser-resolvable output (no bare specifiers in the final <code>dist/renderer/index.js</code>).</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="tooling--automation">Tooling &amp; Automation<a href="#tooling--automation" class="hash-link" aria-label="Direct link to Tooling &amp; Automation" title="Direct link to Tooling &amp; Automation" translate="no">​</a></h4>
+<p>Add a renderer bundling step to <code>@idle-engine/shell-desktop</code>’s build:</p>
+<ul>
+<li class=""><strong>Recommended</strong>: <code>esbuild</code> bundle invoked from a small Node script (either in <code>tools/scripts/</code> or <code>packages/shell-desktop/scripts/</code>).<!-- -->
+<ul>
+<li class="">Entry: <code>packages/shell-desktop/src/renderer/index.ts</code></li>
+<li class="">Output: <code>packages/shell-desktop/dist/renderer/index.js</code></li>
+<li class="">Settings: <code>platform: &#x27;browser&#x27;</code>, <code>format: &#x27;esm&#x27;</code>, <code>bundle: true</code>, <code>target: &#x27;es2022&#x27;</code> (or the repo’s standard target)</li>
+<li class="">Optional: generate sourcemaps in dev builds only.</li>
+</ul>
+</li>
+<li class="">Update <code>packages/shell-desktop/package.json</code> build script to run bundling after <code>tsc</code>, and keep <code>copy-renderer-assets.mjs</code> for <code>.html</code>/<code>.css</code>.</li>
+<li class="">Update <code>packages/shell-desktop/src/renderer/index.test.ts</code> mocks to match the new import paths (mock <code>@idle-engine/renderer-webgpu</code> instead of a deep relative <code>dist/</code> import).</li>
+<li class="">Add a small validation check (test or build-time assertion) that the bundled output does not contain <code>../../../renderer-*/dist/</code> paths.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="deployment">Deployment<a href="#deployment" class="hash-link" aria-label="Direct link to Deployment" title="Direct link to Deployment" translate="no">​</a></h4>
+<ul>
+<li class="">No runtime deployment changes beyond producing a different <code>dist/renderer/index.js</code> artifact.</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="telemetry--observability">Telemetry &amp; Observability<a href="#telemetry--observability" class="hash-link" aria-label="Direct link to Telemetry &amp; Observability" title="Direct link to Telemetry &amp; Observability" translate="no">​</a></h4>
+<ul>
+<li class="">No changes. (Optional follow-up: add a renderer “bundle version” string to status output for easier diagnostics.)</li>
+</ul>
+<h4 class="anchor anchorTargetStickyNavbar_pQUT" id="security--compliance">Security &amp; Compliance<a href="#security--compliance" class="hash-link" aria-label="Direct link to Security &amp; Compliance" title="Direct link to Security &amp; Compliance" translate="no">​</a></h4>
+<ul>
+<li class="">Ensure bundling does not introduce CSP violations (no inline script, no remote fetches, avoid <code>eval</code>-based sourcemaps).</li>
+<li class="">Keep dependency surface small: bundle only what the renderer needs.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>feat(shell-desktop): bundle renderer deps</td><td>Add bundler step producing <code>dist/renderer/index.js</code> and remove deep relative imports</td><td>Runtime Implementation Agent</td><td>Design doc approved</td><td>Renderer output has no <code>../../../*/dist/*</code> imports; <code>pnpm --filter @idle-engine/shell-desktop run start</code> works</td></tr><tr><td>test(shell-desktop): update renderer mocks</td><td>Update <code>src/renderer/index.test.ts</code> to mock package imports and add regression check on bundle output</td><td>Validation Agent</td><td>Bundler in place</td><td>Tests pass; bundle output assertion passes</td></tr><tr><td>chore(shell-desktop): document build steps</td><td>Update package README/docs with how to build renderer bundle</td><td>Docs Agent</td><td>Bundler in place</td><td>Docs mention new build artifacts and troubleshooting</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1</strong>: Implement bundling + update imports/tests; land build output change.</li>
+<li class=""><strong>Phase 2</strong>: Add stricter CI guardrails (bundle output validation) and optional sourcemap/minification tweaks.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class="">Hand-off package:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop/src/renderer/index.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/renderer/index.test.ts</code></li>
+<li class=""><code>packages/shell-desktop/package.json</code></li>
+<li class=""><code>tools/scripts/copy-renderer-assets.mjs</code></li>
+</ul>
+</li>
+<li class="">Validation commands (expected):<!-- -->
+<ul>
+<li class=""><code>pnpm --filter @idle-engine/shell-desktop run build</code></li>
+<li class=""><code>pnpm --filter @idle-engine/shell-desktop run test</code></li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class="">Do not edit checked-in <code>dist/</code> outputs by hand; change sources and build scripts only.</li>
+<li class="">Keep renderer output inside <code>packages/shell-desktop/dist/renderer/</code> (or subfolders), so packaging can include a single directory.</li>
+<li class="">Prefer a single-file bundle initially (simpler packaging), unless code-splitting is explicitly required.</li>
+<li class="">Validation hooks:<!-- -->
+<ul>
+<li class="">Ensure <code>dist/renderer/index.js</code> contains no <code>../../../renderer-*/dist/</code> strings after build.</li>
+<li class="">Ensure the renderer still loads under the existing CSP (no runtime errors on page load).</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Vendor/copy dependencies into <code>dist/renderer/</code></strong>: Copy <code>packages/renderer-*/dist/*</code> into <code>dist/renderer/vendor/</code> and rewrite imports. This avoids bundler tooling but still duplicates compiled code and requires manual dependency graph maintenance.</li>
+<li class=""><strong>Import maps</strong>: Add an import map to <code>index.html</code> to map <code>@idle-engine/*</code> to relative file URLs. This keeps modules separate but complicates packaging (must ship and maintain the mapped paths) and still risks stale <code>dist/</code> usage.</li>
+<li class=""><strong>Enable Node-style resolution in renderer</strong>: Not recommended; increases security risk and diverges from browser module semantics.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Update existing renderer unit tests (<code>packages/shell-desktop/src/renderer/index.test.ts</code>) to mock package imports.</li>
+<li class="">Add a regression test or build check that the bundled <code>dist/renderer/index.js</code> has no <code>dist/</code>-relative imports outside <code>dist/renderer</code>.</li>
+</ul>
+</li>
+<li class=""><strong>Manual QA</strong>:<!-- -->
+<ul>
+<li class="">Run <code>pnpm --filter @idle-engine/shell-desktop run start</code> and verify:<!-- -->
+<ul>
+<li class="">The window loads without module resolution errors.</li>
+<li class="">IPC ping succeeds.</li>
+<li class="">WebGPU renderer initializes and frames render or fallback path is stable.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Packaging smoke</strong> (if packaging workflow exists): verify the renderer loads from the packaged app without accessing sibling packages.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Bundler introduces new build dependency</strong>: Mitigate by keeping the bundler script small and isolated to <code>packages/shell-desktop</code>.</li>
+<li class=""><strong>CSP / sourcemap issues</strong>: Use external sourcemaps (or disable in production) and avoid eval-based dev tooling.</li>
+<li class=""><strong>Output drift vs. <code>tsc</code> emit</strong>: Make the bundling step authoritative for <code>dist/renderer/index.js</code> and add a guard to prevent regressions.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ul>
+<li class="">Land bundling as part of <code>@idle-engine/shell-desktop</code> build.</li>
+<li class="">Update tests and add bundle output guardrails in the same PR.</li>
+<li class="">(Optional) Add a follow-up to validate packaged mode once a packaging workflow is defined.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
+<ul>
+<li class="">Should the renderer bundle be single-file only, or is code-splitting acceptable for this project’s packaging goals?</li>
+<li class="">Should the bundler resolve workspace dependencies from source (<code>src/</code>) or from package exports (<code>dist/</code>), and should <code>shell-desktop</code>’s build depend on building renderer packages first?</li>
+<li class="">Do we want production minification and/or sourcemaps, and what is the policy for shipping <code>.map</code> files?</li>
+<li class="">Is there an intended Electron packaging tool/workflow to validate “packaged mode” in CI?</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ul>
+<li class="">Add a documented “packaged build” workflow once the project selects an Electron packaging solution.</li>
+<li class="">Consider consolidating renderer build tooling across future shells (desktop/web) if more bundling needs emerge.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class="">Issue: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/810" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/810</a></li>
+<li class=""><code>packages/shell-desktop/src/renderer/index.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/renderer/index.test.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/renderer/index.html</code></li>
+<li class=""><code>packages/shell-desktop/package.json</code></li>
+<li class=""><code>tools/scripts/copy-renderer-assets.mjs</code></li>
+<li class=""><code>packages/renderer-webgpu/package.json</code></li>
+<li class=""><code>packages/renderer-contract/package.json</code></li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Renderer (Electron)</strong>: The Chromium-based process that runs <code>index.html</code> and Web APIs like WebGPU.</li>
+<li class=""><strong>Bundle</strong>: A build artifact where multiple modules are combined into a single (or a few) JS files for simpler loading.</li>
+<li class=""><strong>CSP</strong>: Content Security Policy; rules restricting which scripts/styles may load and execute.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-01-24</td><td>Ralph (AI agent)</td><td>Initial draft for issue-810</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/issue-810-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a><ul><li><a href="#background" class="table-of-contents__link toc-highlight">Background</a></li><li><a href="#problem" class="table-of-contents__link toc-highlight">Problem</a></li><li><a href="#forces" class="table-of-contents__link toc-highlight">Forces</a></li></ul></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a><ul><li><a href="#goals" class="table-of-contents__link toc-highlight">Goals</a></li><li><a href="#non-goals" class="table-of-contents__link toc-highlight">Non-Goals</a></li></ul></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a><ul><li><a href="#primary-stakeholders" class="table-of-contents__link toc-highlight">Primary Stakeholders</a></li><li><a href="#agent-roles" class="table-of-contents__link toc-highlight">Agent Roles</a></li><li><a href="#affected-packagesservices" class="table-of-contents__link toc-highlight">Affected Packages/Services</a></li><li><a href="#compatibility-considerations" class="table-of-contents__link toc-highlight">Compatibility Considerations</a></li></ul></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
