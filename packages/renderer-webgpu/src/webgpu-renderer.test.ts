@@ -390,6 +390,30 @@ describe('renderer-webgpu', () => {
       expect(requestDevice).not.toHaveBeenCalled();
     });
 
+    it.each([
+      {
+        name: 'limits.maxAssets is zero',
+        limits: { maxAssets: 0 },
+        expectedPath: 'limits.maxAssets',
+      },
+      {
+        name: 'limits.maxDrawsPerFrame is non-integer',
+        limits: { maxDrawsPerFrame: 1.5 },
+        expectedPath: 'limits.maxDrawsPerFrame',
+      },
+      {
+        name: 'limits.maxTextLength is non-finite',
+        limits: { maxTextLength: Number.NaN },
+        expectedPath: 'limits.maxTextLength',
+      },
+    ])('throws when $name', async ({ limits, expectedPath }) => {
+      const { canvas } = createStubWebGpuEnvironment();
+
+      await expect(createWebGpuRenderer(canvas, { limits })).rejects.toThrow(
+        `WebGPU renderer expected ${expectedPath} to be a positive integer.`,
+      );
+    });
+
     it('passes requiredFeatures through to requestDevice', async () => {
       const { canvas, adapter } = createStubWebGpuEnvironment();
 
