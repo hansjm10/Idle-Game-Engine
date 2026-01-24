@@ -523,6 +523,61 @@ interface WebGpuBitmapFontRuntime {
   readonly fallbackGlyph: WebGpuBitmapFontRuntimeGlyph | undefined;
 }
 
+function buildInsetUvRange(options: {
+  readonly startPx: number;
+  readonly sizePx: number;
+  readonly atlasSizePx: number;
+}): { readonly t0: number; readonly t1: number } {
+  if (!Number.isFinite(options.atlasSizePx) || options.atlasSizePx <= 0) {
+    return { t0: 0, t1: 0 };
+  }
+
+  if (!Number.isFinite(options.startPx) || !Number.isFinite(options.sizePx)) {
+    return { t0: 0, t1: 0 };
+  }
+
+  if (options.sizePx <= 1) {
+    const centerPx = options.startPx + Math.max(0, options.sizePx) / 2;
+    const minCenterPx = 0.5;
+    const maxCenterPx = Math.max(minCenterPx, options.atlasSizePx - 0.5);
+    const clampedCenterPx = Math.min(maxCenterPx, Math.max(minCenterPx, centerPx));
+    const value = clampedCenterPx / options.atlasSizePx;
+    return { t0: value, t1: value };
+  }
+
+  return {
+    t0: (options.startPx + 0.5) / options.atlasSizePx,
+    t1: (options.startPx + options.sizePx - 0.5) / options.atlasSizePx,
+  };
+}
+
+function buildInsetSpriteUvRect(options: {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly atlasWidthPx: number;
+  readonly atlasHeightPx: number;
+}): SpriteUvRect {
+  const u = buildInsetUvRange({
+    startPx: options.x,
+    sizePx: options.width,
+    atlasSizePx: options.atlasWidthPx,
+  });
+  const v = buildInsetUvRange({
+    startPx: options.y,
+    sizePx: options.height,
+    atlasSizePx: options.atlasHeightPx,
+  });
+
+  return {
+    u0: u.t0,
+    v0: v.t0,
+    u1: u.t1,
+    v1: v.t1,
+  };
+}
+
 function buildBitmapFontRuntimeGlyph(options: {
   readonly glyph: WebGpuBitmapFontGlyph;
   readonly fontAssetId: AssetId;
@@ -569,18 +624,18 @@ function buildBitmapFontRuntimeGlyph(options: {
 
   const atlasX0 = options.atlasEntry.x + x;
   const atlasY0 = options.atlasEntry.y + y;
-  const atlasX1 = atlasX0 + width;
-  const atlasY1 = atlasY0 + height;
 
   return {
     codePoint,
     runtimeGlyph: {
-      uv: {
-        u0: atlasX0 / options.atlasWidthPx,
-        v0: atlasY0 / options.atlasHeightPx,
-        u1: atlasX1 / options.atlasWidthPx,
-        v1: atlasY1 / options.atlasHeightPx,
-      },
+      uv: buildInsetSpriteUvRect({
+        x: atlasX0,
+        y: atlasY0,
+        width,
+        height,
+        atlasWidthPx: options.atlasWidthPx,
+        atlasHeightPx: options.atlasHeightPx,
+      }),
       widthPx: width,
       heightPx: height,
       xOffsetPx,
@@ -760,12 +815,17 @@ type PackedAtlas = ReturnType<typeof packAtlas>;
 function buildUvByAssetId(packed: PackedAtlas): Map<AssetId, SpriteUvRect> {
   const uvByAssetId = new Map<AssetId, SpriteUvRect>();
   for (const entry of packed.entries) {
-    uvByAssetId.set(entry.assetId, {
-      u0: entry.x / packed.atlasWidthPx,
-      v0: entry.y / packed.atlasHeightPx,
-      u1: (entry.x + entry.width) / packed.atlasWidthPx,
-      v1: (entry.y + entry.height) / packed.atlasHeightPx,
-    });
+    uvByAssetId.set(
+      entry.assetId,
+      buildInsetSpriteUvRect({
+        x: entry.x,
+        y: entry.y,
+        width: entry.width,
+        height: entry.height,
+        atlasWidthPx: packed.atlasWidthPx,
+        atlasHeightPx: packed.atlasHeightPx,
+      }),
+    );
   }
   return uvByAssetId;
 }

@@ -798,10 +798,11 @@ describe('renderer-webgpu', () => {
 
       const renderer = await createWebGpuRenderer(canvas);
 
+      const spriteAssetId = 'sprite:demo' as AssetId;
       const manifest = {
         schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
         assets: [
-          { id: 'sprite:demo' as AssetId, kind: 'image', contentHash: 'hash:demo' },
+          { id: spriteAssetId, kind: 'image', contentHash: 'hash:demo' },
         ],
       } satisfies AssetManifest;
 
@@ -813,8 +814,23 @@ describe('renderer-webgpu', () => {
         { maxAtlasSizePx: 64, paddingPx: 0, powerOfTwo: true },
       );
 
-      expect(loadImage).toHaveBeenCalledWith('sprite:demo', 'hash:demo');
+      expect(loadImage).toHaveBeenCalledWith(spriteAssetId, 'hash:demo');
       expect(copyExternalImageToTexture).toHaveBeenCalledTimes(1);
+
+      const atlasLayout = renderer.atlasLayout;
+      if (!atlasLayout) {
+        throw new Error('Expected atlasLayout to be defined after loadAssets.');
+      }
+      const atlasEntry = atlasLayout.entries.find((entry) => entry.assetId === spriteAssetId);
+      if (!atlasEntry) {
+        throw new Error('Expected atlas entry for sprite:demo.');
+      }
+      const expectedUv = new Float32Array([
+        (atlasEntry.x + 0.5) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + atlasEntry.width - 0.5) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + atlasEntry.height - 0.5) / atlasLayout.atlasHeightPx,
+      ]);
 
       const rcb = {
         frame: {
@@ -835,7 +851,7 @@ describe('renderer-webgpu', () => {
             kind: 'image',
             passId: 'world',
             sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
-            assetId: 'sprite:demo' as AssetId,
+            assetId: spriteAssetId,
             x: 10 * WORLD_FIXED_POINT_SCALE,
             y: 20 * WORLD_FIXED_POINT_SCALE,
             width: 30 * WORLD_FIXED_POINT_SCALE,
@@ -846,7 +862,7 @@ describe('renderer-webgpu', () => {
             kind: 'image',
             passId: 'world',
             sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
-            assetId: 'sprite:demo' as AssetId,
+            assetId: spriteAssetId,
             x: 50 * WORLD_FIXED_POINT_SCALE,
             y: 60 * WORLD_FIXED_POINT_SCALE,
             width: 70 * WORLD_FIXED_POINT_SCALE,
@@ -883,9 +899,11 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected sprite instance buffer payload to be readable.');
       }
 
+      expect(instances.slice(4, 8)).toEqual(expectedUv);
       expect(instances.slice(8, 12)).toEqual(
         new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
       );
+      expect(instances.slice(16, 20)).toEqual(expectedUv);
       expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
     });
 
@@ -1689,7 +1707,7 @@ describe('renderer-webgpu', () => {
     });
 
     it('renders bitmap text as sprite instances', async () => {
-      const { canvas, drawIndexed } = createStubWebGpuEnvironment();
+      const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
 
       const renderer = await createWebGpuRenderer(canvas);
 
@@ -1755,6 +1773,27 @@ describe('renderer-webgpu', () => {
 
       expect(loadFont).toHaveBeenCalledWith(fontAssetId, 'hash:font');
 
+      const atlasLayout = renderer.atlasLayout;
+      if (!atlasLayout) {
+        throw new Error('Expected atlasLayout to be defined after loadAssets.');
+      }
+      const atlasEntry = atlasLayout.entries.find((entry) => entry.assetId === fontAssetId);
+      if (!atlasEntry) {
+        throw new Error('Expected atlas entry for font:demo.');
+      }
+      const expectedUvA = new Float32Array([
+        (atlasEntry.x + 0 + 0.5) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0 + 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + 0 + 8 - 0.5) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0 + 8 - 0.5) / atlasLayout.atlasHeightPx,
+      ]);
+      const expectedUvB = new Float32Array([
+        (atlasEntry.x + 8 + 0.5) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0 + 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + 8 + 8 - 0.5) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0 + 8 - 0.5) / atlasLayout.atlasHeightPx,
+      ]);
+
       const rcb = {
         frame: {
           schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
@@ -1782,6 +1821,27 @@ describe('renderer-webgpu', () => {
 
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
+
+      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+        const instances = getWriteBufferFloat32Payload(call);
+        if (!instances || instances.byteLength !== 96) {
+          return false;
+        }
+
+        return instances[0] === 10 && instances[1] === 20;
+      });
+
+      expect(instanceBufferWrite).toBeDefined();
+      if (!instanceBufferWrite) {
+        throw new Error('Expected an instance buffer upload for bitmap text.');
+      }
+      const instances = getWriteBufferFloat32Payload(instanceBufferWrite);
+      if (!instances) {
+        throw new Error('Expected bitmap text instance buffer payload to be readable.');
+      }
+
+      expect(instances.slice(4, 8)).toEqual(expectedUvA);
+      expect(instances.slice(16, 20)).toEqual(expectedUvB);
     });
 
     it('scales world-pass text draw coordinates from fixed point', async () => {
