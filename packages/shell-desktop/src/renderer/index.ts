@@ -1,7 +1,7 @@
-import { RENDERER_CONTRACT_SCHEMA_VERSION } from '../../../renderer-contract/dist/index.js';
-import { createWebGpuRenderer } from '../../../renderer-webgpu/dist/index.js';
-import type { RenderCommandBuffer } from '../../../renderer-contract/dist/index.js';
-import type { WebGpuRenderer } from '../../../renderer-webgpu/dist/index.js';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import { createWebGpuRenderer } from '@idle-engine/renderer-webgpu';
+import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
+import type { WebGpuRenderer } from '@idle-engine/renderer-webgpu';
 
 const output = document.querySelector<HTMLPreElement>('#output');
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');

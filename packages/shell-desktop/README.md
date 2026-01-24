@@ -17,5 +17,5 @@ pnpm --filter @idle-engine/shell-desktop run start
 
 ## Notes
 - The renderer process runs with `contextIsolation: true` and `nodeIntegration: false`; the preload exposes a minimal, typed API on `window.idleEngine`.
-- The build copies renderer static assets from `src/renderer` into `dist/renderer` via `tools/scripts/copy-renderer-assets.mjs`.
+- The build bundles `src/renderer/index.ts` into `dist/renderer/index.js` (so the renderer does not rely on `../../../*/dist/*` imports) and copies static assets via `tools/scripts/copy-renderer-assets.mjs`.
 - On Linux in headless/CI environments you may need an X/Wayland display (e.g. `xvfb-run`) to launch the window.
