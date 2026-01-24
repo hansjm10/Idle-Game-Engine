@@ -81,6 +81,13 @@ async function main() {
       'Renderer bundle includes dist-relative workspace imports. Use package imports and ensure bundling runs as part of the build.',
     );
   }
+
+  const packageImportPatterns = [/\bfrom ['"]@idle-engine\//, /\bimport ['"]@idle-engine\//];
+  if (packageImportPatterns.some((pattern) => pattern.test(bundledOutput))) {
+    throw new Error(
+      'Renderer bundle includes unresolved package imports. Ensure dependencies are bundled so the output can run in a packaged browser environment.',
+    );
+  }
 }
 
 try {
@@ -89,4 +96,3 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-
