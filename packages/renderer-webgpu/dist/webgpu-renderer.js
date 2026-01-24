@@ -232,6 +232,7 @@ struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
   @location(1) color: vec4<f32>,
+  @location(2) uvRect: vec4<f32>,
 }
 
 @vertex
@@ -249,12 +250,22 @@ fn vs_main(input: VertexInput) -> VertexOutput {
   out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
   out.uv = uv;
   out.color = input.instanceColor;
+  out.uvRect = input.instanceUvRect;
   return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-  let texel = textureSample(spriteTexture, spriteSampler, input.uv);
+  let texSize = vec2<f32>(textureDimensions(spriteTexture));
+  let halfTexel = vec2<f32>(0.5) / texSize;
+
+  let uvRectMin = input.uvRect.xy;
+  let uvRectMax = input.uvRect.zw;
+  let uvRectSize = max(vec2<f32>(0.0), uvRectMax - uvRectMin);
+  let inset = min(halfTexel, uvRectSize * 0.5);
+
+  let uv = clamp(input.uv, uvRectMin + inset, uvRectMax - inset);
+  let texel = textureSample(spriteTexture, spriteSampler, uv);
   return texel * input.color;
 }
 `;
@@ -354,6 +365,37 @@ const GPU_BUFFER_USAGE = globalThis
 };
 const GPU_TEXTURE_USAGE = globalThis
     .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
+function buildInsetUvRange(options) {
+    if (!Number.isFinite(options.atlasSizePx) || options.atlasSizePx <= 0) {
+        return { t0: 0, t1: 0 };
+    }
+    if (!Number.isFinite(options.startPx) || !Number.isFinite(options.sizePx)) {
+        return { t0: 0, t1: 0 };
+    }
+    const sizePx = Math.max(0, options.sizePx);
+    return {
+        t0: options.startPx / options.atlasSizePx,
+        t1: (options.startPx + sizePx) / options.atlasSizePx,
+    };
+}
+function buildInsetSpriteUvRect(options) {
+    const u = buildInsetUvRange({
+        startPx: options.x,
+        sizePx: options.width,
+        atlasSizePx: options.atlasWidthPx,
+    });
+    const v = buildInsetUvRange({
+        startPx: options.y,
+        sizePx: options.height,
+        atlasSizePx: options.atlasHeightPx,
+    });
+    return {
+        u0: u.t0,
+        v0: v.t0,
+        u1: u.t1,
+        v1: v.t1,
+    };
+}
 function buildBitmapFontRuntimeGlyph(options) {
     const codePoint = options.glyph.codePoint;
     if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
@@ -377,17 +419,17 @@ function buildBitmapFontRuntimeGlyph(options) {
     }
     const atlasX0 = options.atlasEntry.x + x;
     const atlasY0 = options.atlasEntry.y + y;
-    const atlasX1 = atlasX0 + width;
-    const atlasY1 = atlasY0 + height;
     return {
         codePoint,
         runtimeGlyph: {
-            uv: {
-                u0: atlasX0 / options.atlasWidthPx,
-                v0: atlasY0 / options.atlasHeightPx,
-                u1: atlasX1 / options.atlasWidthPx,
-                v1: atlasY1 / options.atlasHeightPx,
-            },
+            uv: buildInsetSpriteUvRect({
+                x: atlasX0,
+                y: atlasY0,
+                width,
+                height,
+                atlasWidthPx: options.atlasWidthPx,
+                atlasHeightPx: options.atlasHeightPx,
+            }),
             widthPx: width,
             heightPx: height,
             xOffsetPx,
@@ -503,12 +545,14 @@ function buildAtlasImages(options) {
 function buildUvByAssetId(packed) {
     const uvByAssetId = new Map();
     for (const entry of packed.entries) {
-        uvByAssetId.set(entry.assetId, {
-            u0: entry.x / packed.atlasWidthPx,
-            v0: entry.y / packed.atlasHeightPx,
-            u1: (entry.x + entry.width) / packed.atlasWidthPx,
-            v1: (entry.y + entry.height) / packed.atlasHeightPx,
-        });
+        uvByAssetId.set(entry.assetId, buildInsetSpriteUvRect({
+            x: entry.x,
+            y: entry.y,
+            width: entry.width,
+            height: entry.height,
+            atlasWidthPx: packed.atlasWidthPx,
+            atlasHeightPx: packed.atlasHeightPx,
+        }));
     }
     return uvByAssetId;
 }
