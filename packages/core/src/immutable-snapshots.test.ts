@@ -238,6 +238,22 @@ describe('immutable-snapshots', () => {
 
         expect(isImmutableTypedArraySnapshot(receivedArray)).toBe(true);
       });
+
+      it('wraps typed array results returned by map() and filter()', () => {
+        const original = new Uint8Array([1, 2, 3]);
+        const immutable = createImmutableTypedArrayView(original);
+
+        const mapped = immutable.map((value) => value + 1);
+        expect(isImmutableTypedArraySnapshot(mapped)).toBe(true);
+        expect([...mapped]).toEqual([2, 3, 4]);
+        expect(() => {
+          (mapped as any)[0] = 0;
+        }).toThrow(TypeError);
+
+        const filtered = immutable.filter((value) => value > 1);
+        expect(isImmutableTypedArraySnapshot(filtered)).toBe(true);
+        expect([...filtered]).toEqual([2, 3]);
+      });
     });
 
     describe('buffer access', () => {
@@ -248,6 +264,65 @@ describe('immutable-snapshots', () => {
         const buffer = immutable.buffer;
         expect(buffer).toBeDefined();
         expect(buffer.byteLength).toBe(3);
+      });
+
+      it('exposes ArrayBuffer snapshot helpers and caches snapshots', () => {
+        const buffer = new ArrayBuffer(4);
+        const original = new Uint8Array(buffer);
+        original.set([1, 2, 3, 4]);
+
+        const immutableA = createImmutableTypedArrayView(original);
+        const immutableB = createImmutableTypedArrayView(new Uint8Array(buffer));
+
+        expect(immutableA.buffer).toBe(immutableB.buffer);
+
+        const snapshot = immutableA.buffer as any;
+        expect(Object.prototype.toString.call(snapshot)).toBe(
+          '[object ImmutableArrayBufferSnapshot]',
+        );
+        expect(snapshot.toUint8Array()).toEqual(new Uint8Array([1, 2, 3, 4]));
+        expect(new Uint8Array(snapshot.toArrayBuffer())).toEqual(
+          new Uint8Array([1, 2, 3, 4]),
+        );
+        expect(snapshot.valueOf()).not.toBe(buffer);
+        expect(new Uint8Array(snapshot.valueOf())).toEqual(
+          new Uint8Array([1, 2, 3, 4]),
+        );
+        expect(snapshot.toDataView().getUint8(0)).toBe(1);
+
+        const sliced = snapshot.slice(1, 3);
+        expect(sliced.byteLength).toBe(2);
+        expect(sliced.toUint8Array()).toEqual(new Uint8Array([2, 3]));
+      });
+
+      it('supports SharedArrayBuffer-backed typed arrays', () => {
+        const sharedBuffer = new SharedArrayBuffer(4);
+        const original = new Uint8Array(sharedBuffer);
+        original.set([1, 2, 3, 4]);
+
+        const immutableA = createImmutableTypedArrayView(original);
+        const immutableB = createImmutableTypedArrayView(
+          new Uint8Array(sharedBuffer),
+        );
+
+        expect(immutableA.buffer).toBe(immutableB.buffer);
+
+        const snapshot = immutableA.buffer as any;
+        expect(Object.prototype.toString.call(snapshot)).toBe(
+          '[object ImmutableSharedArrayBufferSnapshot]',
+        );
+        expect(snapshot.toUint8Array()).toEqual(new Uint8Array([1, 2, 3, 4]));
+
+        const sliced = snapshot.slice(-2);
+        expect(sliced.byteLength).toBe(2);
+        expect(sliced.toUint8Array()).toEqual(new Uint8Array([3, 4]));
+
+        const empty = snapshot.slice(3, 1);
+        expect(empty.byteLength).toBe(0);
+
+        const clonedShared = snapshot.toSharedArrayBuffer();
+        expect(clonedShared).not.toBe(sharedBuffer);
+        expect(new Uint8Array(clonedShared)).toEqual(new Uint8Array([1, 2, 3, 4]));
       });
 
       it('byteOffset is preserved', () => {
@@ -263,6 +338,13 @@ describe('immutable-snapshots', () => {
         const immutable = createImmutableTypedArrayView(original);
 
         expect(immutable.byteLength).toBe(24); // 3 * 8 bytes
+      });
+
+      it('preserves the typed array constructor', () => {
+        const original = new Uint8Array([1, 2, 3]);
+        const immutable = createImmutableTypedArrayView(original);
+
+        expect(immutable.constructor).toBe(Uint8Array);
       });
     });
 

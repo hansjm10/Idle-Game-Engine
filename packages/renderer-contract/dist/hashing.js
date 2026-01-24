@@ -1,5 +1,16 @@
 const textEncoder = new TextEncoder();
 /**
+ * Locale-independent string comparator for RFC 8785 key sorting.
+ * Compares by UTF-16 code units (JavaScript's native string ordering).
+ */
+function compareStrings(a, b) {
+    if (a < b)
+        return -1;
+    if (a > b)
+        return 1;
+    return 0;
+}
+/**
  * RFC 8785 JSON Canonicalization Scheme (JCS) serializer.
  * Produces deterministic JSON by:
  * - Sorting object keys lexicographically
@@ -31,9 +42,8 @@ function rfc8785Serialize(value) {
                 return '[' + elements.join(',') + ']';
             }
             // Plain object: sort keys lexicographically
-            // RFC 8785 requires locale-independent ordering; explicit comparator silences S2871
-            const keys = Object.keys(value)
-                .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+            // RFC 8785 requires locale-independent ordering
+            const keys = Object.keys(value).sort(compareStrings);
             const pairs = [];
             for (const key of keys) {
                 const v = value[key];

@@ -1192,6 +1192,16 @@ structured `FeatureViolation` errors or warnings (see
 - [ ] If runtime contracts evolve, update this table and the pack metadata in
   the same pull request to avoid drift.
 
+### Schema evolution policy
+
+- When adding or changing `FEATURE_GATES`, bump `@idle-engine/core` (and run
+  `pnpm generate:version`) in the same pull request.
+- Require `pnpm --filter @idle-engine/core test:schema-compat` to pass before
+  merging any change that touches `packages/content-schema/src/runtime-compat.ts`
+  or runtime feature contracts.
+- Core publishing runs the same guardrail via `@idle-engine/core`'s
+  `prepublishOnly` hook.
+
 ### Migration matrix
 
 Use this matrix to plan schema evolution and pack migrations in lockstep with

@@ -52,6 +52,9 @@ jobs:
       - name: Validate Generated Version File
         run: node tools/scripts/generate-version.mjs --check
 
+      - name: Core Schema Compatibility
+        run: pnpm --filter @idle-engine/core test:schema-compat
+
       - name: Build (except docs)
         run: pnpm -r --filter "!@idle-engine/docs" run build
 

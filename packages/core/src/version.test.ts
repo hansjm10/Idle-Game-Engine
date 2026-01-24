@@ -6,6 +6,7 @@ import { RUNTIME_VERSION, PERSISTENCE_SCHEMA_VERSION } from './version.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const versionFilePath = join(__dirname, 'version.ts');
+const packageJsonPath = join(__dirname, '..', 'package.json');
 
 describe('version constants', () => {
   describe('RUNTIME_VERSION', () => {
@@ -15,10 +16,14 @@ describe('version constants', () => {
       expect(RUNTIME_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
     });
 
-    it('matches the expected version for current release', () => {
-      // This test documents the current version and will need updating
-      // when the package version is bumped
-      expect(RUNTIME_VERSION).toBe('0.4.0');
+    it('matches packages/core/package.json version', async () => {
+      const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8')) as {
+        readonly version?: unknown;
+      };
+
+      expect(packageJson.version).toBeDefined();
+      expect(typeof packageJson.version).toBe('string');
+      expect(RUNTIME_VERSION).toBe(packageJson.version);
     });
   });
 
