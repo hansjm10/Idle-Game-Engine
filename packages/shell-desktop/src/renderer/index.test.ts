@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createWebGpuRenderer = vi.fn();
 
-vi.mock('../../../renderer-webgpu/dist/index.js', () => ({
+vi.mock('@idle-engine/renderer-webgpu', () => ({
   createWebGpuRenderer,
 }));
 

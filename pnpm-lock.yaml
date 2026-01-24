@@ -404,6 +404,9 @@ importers:
       electron:
         specifier: ^32.3.1
         version: 32.3.3
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.10
       eslint:
         specifier: ^9.37.0
         version: 9.37.0(jiti@1.21.7)
