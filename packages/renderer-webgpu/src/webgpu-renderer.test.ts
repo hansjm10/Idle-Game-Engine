@@ -107,6 +107,9 @@ describe('renderer-webgpu', () => {
         simTimeMs: 0,
         contentHash: 'content:dev',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'world' }],
       draws: [],
     } satisfies RenderCommandBuffer;
@@ -121,6 +124,9 @@ describe('renderer-webgpu', () => {
         step: 0,
         simTimeMs: 0,
         contentHash: 'content:dev',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }, { id: 'world' }],
       draws: [
@@ -149,6 +155,9 @@ describe('renderer-webgpu', () => {
         step: 0,
         simTimeMs: 0,
         contentHash: 'content:dev',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [],
       draws: [
@@ -645,6 +654,9 @@ describe('renderer-webgpu', () => {
             simTimeMs: 0,
             contentHash: 'content:dev',
           },
+          scene: {
+            camera: { x: 0, y: 0, zoom: 1 },
+          },
           passes: [{ id: 'ui' }],
           draws: [
             {
@@ -694,6 +706,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'world' }],
         draws: [
@@ -758,6 +773,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -803,6 +821,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -833,6 +854,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'world' }],
         draws: [
@@ -877,6 +901,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [draw],
@@ -1105,6 +1132,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [draw],
       } as unknown as RenderCommandBuffer;
@@ -1130,6 +1160,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -1199,6 +1232,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -1279,6 +1315,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -1358,6 +1397,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'world' }],
         draws: [
@@ -1448,6 +1490,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -1495,6 +1540,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -1555,6 +1603,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -1614,6 +1665,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws,
       } satisfies RenderCommandBuffer;
@@ -1662,6 +1716,9 @@ describe('renderer-webgpu', () => {
 
       const rcbSmall = {
         frame,
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -1679,6 +1736,9 @@ describe('renderer-webgpu', () => {
 
       const rcbLarge = {
         frame,
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: Array.from({ length: 30 }, (_value, index) => ({
           kind: 'rect',
@@ -1724,6 +1784,9 @@ describe('renderer-webgpu', () => {
 
       const rcb = {
         frame,
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -1885,6 +1948,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'world' }],
         draws: [
           {
@@ -1914,6 +1980,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -1948,6 +2017,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -1984,6 +2056,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -2024,6 +2099,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -2321,6 +2399,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2404,6 +2485,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'world' }],
         draws: [
@@ -2492,6 +2576,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2552,6 +2639,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2601,6 +2691,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2647,6 +2740,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -2707,6 +2803,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2765,6 +2864,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2822,6 +2924,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -2883,6 +2988,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -2914,6 +3022,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -2978,6 +3089,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -3034,6 +3148,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -3096,6 +3213,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -3128,7 +3248,6 @@ describe('renderer-webgpu', () => {
       const { canvas, drawIndexed, setScissorRect } = createStubWebGpuEnvironment();
 
       const renderer = await createWebGpuRenderer(canvas);
-      renderer.setWorldCamera({ x: 10, y: 20, zoom: 2 });
 
       const rcb = {
         frame: {
@@ -3136,6 +3255,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 10, y: 20, zoom: 2 },
         },
         passes: [{ id: 'world' }],
         draws: [
@@ -3202,6 +3324,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'world' }],
         draws: [],
@@ -3314,6 +3439,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'world' }],
         draws: [],
       } satisfies RenderCommandBuffer;
@@ -3382,6 +3510,9 @@ describe('renderer-webgpu', () => {
           simTimeMs: 0,
           contentHash: 'content:dev',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'world' }],
         draws: [
           {
@@ -3422,6 +3553,9 @@ describe('renderer-webgpu', () => {
           step: 0,
           simTimeMs: 0,
           contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'world' }],
         draws: [

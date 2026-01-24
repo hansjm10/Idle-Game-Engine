@@ -89,6 +89,9 @@ function createSampleRcb(): RenderCommandBuffer {
       simTimeMs: 16,
       contentHash: 'content',
     },
+    scene: {
+      camera: { x: 0, y: 0, zoom: 1 },
+    },
     passes: [{ id: 'ui' }],
     draws: [
       {
@@ -140,6 +143,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }],
       draws: [
         {
@@ -180,6 +186,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }],
       draws: [],
     } as unknown as RenderCommandBuffer;
@@ -200,6 +209,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }],
       draws: [
@@ -226,6 +238,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }, { id: 'ui' }],
       draws: [],
     };
@@ -244,6 +259,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }],
       draws: [
@@ -273,6 +291,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }],
       draws: [
         {
@@ -299,6 +320,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
@@ -417,6 +441,9 @@ describe('validateRenderCommandBuffer', () => {
 	        simTimeMs: 16,
 	        contentHash: 'content',
 	      },
+	      scene: {
+	        camera: { x: 0, y: 0, zoom: 1 },
+	      },
 	      passes: [{ id: 'world' }],
 	      draws: [
 	        {
@@ -452,6 +479,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }],
       draws: [
@@ -520,6 +550,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }],
       draws: [
         {
@@ -572,6 +605,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }],
       draws: [
         {
@@ -601,6 +637,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }],
       draws: [
@@ -643,6 +682,9 @@ describe('validateRenderCommandBuffer', () => {
         simTimeMs: 16,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'ui' }],
       draws: [
         {
@@ -681,6 +723,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }],
       draws: [
@@ -721,6 +766,9 @@ describe('validateRenderCommandBuffer', () => {
         step: 1,
         simTimeMs: 16,
         contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
       },
       passes: [{ id: 'ui' }],
       draws: [
@@ -771,6 +819,9 @@ describe('validateRenderCommandBuffer', () => {
           step: 1,
           simTimeMs: 16,
           contentHash: 'content',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -880,6 +931,9 @@ describe('validateRenderCommandBuffer', () => {
           simTimeMs: 16,
           contentHash: 'content',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -957,6 +1011,9 @@ describe('validateRenderCommandBuffer', () => {
           step: 1,
           simTimeMs: 16,
           contentHash: 'content',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [
@@ -1071,6 +1128,9 @@ describe('validateRenderCommandBuffer', () => {
           simTimeMs: 16,
           contentHash: 'content',
         },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
         passes: [{ id: 'ui' }],
         draws: [
           {
@@ -1160,6 +1220,9 @@ describe('validateRenderCommandBuffer', () => {
           step: 1,
           simTimeMs: 16,
           contentHash: 'content',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
         },
         passes: [{ id: 'ui' }],
         draws: [

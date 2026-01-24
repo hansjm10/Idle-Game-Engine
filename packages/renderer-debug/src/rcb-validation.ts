@@ -305,6 +305,30 @@ export function validateRenderCommandBuffer(
     }
   }
 
+  const sceneValue = rcbValue['scene'];
+  if (!isRecord(sceneValue)) {
+    errors.push('scene must be an object');
+  } else {
+    const cameraValue = sceneValue['camera'];
+    if (!isRecord(cameraValue)) {
+      errors.push('scene.camera must be an object');
+    } else {
+      const cameraX = cameraValue['x'];
+      const cameraY = cameraValue['y'];
+      const cameraZoom = cameraValue['zoom'];
+
+      if (!isFiniteNumber(cameraX)) {
+        errors.push('scene.camera.x must be a finite number');
+      }
+      if (!isFiniteNumber(cameraY)) {
+        errors.push('scene.camera.y must be a finite number');
+      }
+      if (!isFiniteNumber(cameraZoom) || cameraZoom <= 0) {
+        errors.push('scene.camera.zoom must be a positive number');
+      }
+    }
+  }
+
   const passesValue = rcbValue['passes'];
   const drawsValue = rcbValue['draws'];
 

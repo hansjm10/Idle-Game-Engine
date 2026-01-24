@@ -313,6 +313,9 @@ describe('hashing', () => {
         simTimeMs: 32,
         contentHash: 'content:abc',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [
         { id: 'world' },
         { id: 'ui' },
@@ -340,6 +343,9 @@ describe('hashing', () => {
         { id: 'world' },
         { id: 'ui' },
       ],
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       frame: {
         contentHash: 'content:abc',
         simTimeMs: 32,
@@ -351,5 +357,31 @@ describe('hashing', () => {
     await expect(hashRenderCommandBuffer(a)).resolves.toEqual(
       await hashRenderCommandBuffer(b),
     );
+  });
+
+  it('includes scene.camera in RenderCommandBuffer hashes', async () => {
+    const base: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'world' }],
+      draws: [],
+    };
+
+    const hashA = await hashRenderCommandBuffer(base);
+    const hashB = await hashRenderCommandBuffer({
+      ...base,
+      scene: {
+        camera: { x: 0, y: 0, zoom: 2 },
+      },
+    });
+
+    expect(hashA).not.toEqual(hashB);
   });
 });

@@ -93,6 +93,9 @@ describe('visual replay', () => {
       renderFrame: options.renderFrame,
       contentHash: options.contentHash,
     },
+    scene: {
+      camera: { x: 0, y: 0, zoom: 1 },
+    },
     passes: [{ id: 'world' }, { id: 'ui' }],
     draws: [
       {
@@ -271,6 +274,58 @@ describe('visual replay', () => {
           }),
       }),
     ).rejects.toThrow(/"event":"visual_replay_mismatch"/);
+  });
+
+  it('reports a diffable mismatch summary when the RCB camera differs', async () => {
+    resetRNG();
+    setRNGSeed(4242);
+
+    const content = createGoldContentPack();
+    const wiring = createGameRuntime({ content, stepSizeMs: 100 });
+    const stepSizeMs = wiring.runtime.getStepSizeMs();
+
+    const recorder = new SimReplayRecorder({ content, wiring, recordedAt: 0, capturedAt: 0 });
+
+    wiring.runtime.tick(stepSizeMs);
+
+    const step = wiring.runtime.getCurrentStep() - 1;
+    const simTimeMs = step * stepSizeMs;
+    const goldAmount = getGoldAmount(wiring);
+    const contentHash = content.digest.hash;
+
+    const recordedRcb = buildRcb({ step, simTimeMs, renderFrame: step, contentHash, goldAmount });
+    const replay = recorder.export({ capturedAt: 0 });
+    const replayWithFrames = {
+      ...replay,
+      frames: {
+        viewModels: [],
+        rcbs: [
+          {
+            renderFrame: step,
+            step,
+            hash: await hashRenderCommandBuffer(recordedRcb),
+            rcb: recordedRcb,
+          },
+        ],
+      },
+    };
+
+    const decoded = decodeSimReplayJsonLines(encodeSimReplayJsonLines(replayWithFrames));
+
+    await expect(
+      runCombinedReplay({
+        content,
+        replay: decoded,
+        buildRenderCommandBuffers: () => [
+          {
+            ...recordedRcb,
+            scene: {
+              camera: { x: 1, y: 0, zoom: 1 },
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/"stream":"rcb"/);
   });
 
   it('replays schemaVersion 1 streams without visual builders', async () => {

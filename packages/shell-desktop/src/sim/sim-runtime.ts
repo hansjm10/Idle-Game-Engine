@@ -119,6 +119,9 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
         simTimeMs,
         contentHash: 'content:dev',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
         {

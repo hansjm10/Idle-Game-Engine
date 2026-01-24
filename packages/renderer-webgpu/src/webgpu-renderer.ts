@@ -158,9 +158,16 @@ export interface WebGpuRenderer {
     assets: WebGpuRendererAssets,
     options?: WebGpuRendererLoadAssetsOptions,
   ): Promise<WebGpuRendererAtlasState>;
+  /**
+   * @deprecated Provide the camera per-frame via `rcb.scene.camera`.
+   */
   setWorldCamera(camera: Camera2D): void;
   render(rcb: RenderCommandBuffer): void;
   dispose(): void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function clampByte(value: number): number {
@@ -1191,6 +1198,30 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       );
     }
 
+    const scene = (rcb as unknown as { readonly scene?: unknown }).scene;
+    if (!isRecord(scene)) {
+      throw new Error('RenderCommandBuffer.scene must be an object.');
+    }
+
+    const camera = scene['camera'];
+    if (!isRecord(camera)) {
+      throw new Error('RenderCommandBuffer.scene.camera must be an object.');
+    }
+
+    const x = camera['x'];
+    const y = camera['y'];
+    const zoom = camera['zoom'];
+
+    if (typeof x !== 'number' || !Number.isFinite(x)) {
+      throw new Error('RenderCommandBuffer.scene.camera.x must be a finite number.');
+    }
+    if (typeof y !== 'number' || !Number.isFinite(y)) {
+      throw new Error('RenderCommandBuffer.scene.camera.y must be a finite number.');
+    }
+    if (typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0) {
+      throw new Error('RenderCommandBuffer.scene.camera.zoom must be a positive number.');
+    }
+
     if (rcb.draws.length > this.#limits.maxDrawsPerFrame) {
       throw new Error(
         `RenderCommandBuffer exceeds limits.maxDrawsPerFrame: ${rcb.draws.length} > ${this.#limits.maxDrawsPerFrame}.`,
@@ -2002,6 +2033,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
 
     this.#assertSupportedRenderCommandBuffer(rcb);
+    this.#worldCamera = rcb.scene.camera;
 
     const colorTextureView = this.context.getCurrentTexture().createView();
     const clearColor = selectClearColor(rcb);

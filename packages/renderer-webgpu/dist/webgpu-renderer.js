@@ -47,6 +47,9 @@ const DEFAULT_WEBGPU_RENDERER_LIMITS = {
     maxDrawsPerFrame: 100000,
     maxTextLength: 10000,
 };
+function isRecord(value) {
+    return typeof value === 'object' && value !== null;
+}
 function clampByte(value) {
     if (!Number.isFinite(value)) {
         return 0;
@@ -807,6 +810,7 @@ class WebGpuRendererImpl {
             return;
         }
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_assertSupportedRenderCommandBuffer).call(this, rcb);
+        __classPrivateFieldSet(this, _WebGpuRendererImpl_worldCamera, rcb.scene.camera, "f");
         const colorTextureView = this.context.getCurrentTexture().createView();
         const clearColor = selectClearColor(rcb);
         const commandEncoder = this.device.createCommandEncoder();
@@ -878,6 +882,26 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
 }, _WebGpuRendererImpl_assertSupportedRenderCommandBuffer = function _WebGpuRendererImpl_assertSupportedRenderCommandBuffer(rcb) {
     if (rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
         throw new Error(`RenderCommandBuffer schemaVersion ${rcb.frame.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`);
+    }
+    const scene = rcb.scene;
+    if (!isRecord(scene)) {
+        throw new Error('RenderCommandBuffer.scene must be an object.');
+    }
+    const camera = scene['camera'];
+    if (!isRecord(camera)) {
+        throw new Error('RenderCommandBuffer.scene.camera must be an object.');
+    }
+    const x = camera['x'];
+    const y = camera['y'];
+    const zoom = camera['zoom'];
+    if (typeof x !== 'number' || !Number.isFinite(x)) {
+        throw new Error('RenderCommandBuffer.scene.camera.x must be a finite number.');
+    }
+    if (typeof y !== 'number' || !Number.isFinite(y)) {
+        throw new Error('RenderCommandBuffer.scene.camera.y must be a finite number.');
+    }
+    if (typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0) {
+        throw new Error('RenderCommandBuffer.scene.camera.zoom must be a positive number.');
     }
     if (rcb.draws.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxDrawsPerFrame) {
         throw new Error(`RenderCommandBuffer exceeds limits.maxDrawsPerFrame: ${rcb.draws.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxDrawsPerFrame}.`);

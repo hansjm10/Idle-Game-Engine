@@ -65,43 +65,66 @@ function getTintScratch(width, height) {
     resizeTintScratch(tintScratch, width, height);
     return tintScratch;
 }
-function drawRect(ctx, draw, pixelRatio, coordScale) {
+function drawRect(ctx, draw, pixelRatio, coordScale, camera) {
+    const isWorld = draw.passId === 'world';
+    const zoom = isWorld && Number.isFinite(camera.zoom) && camera.zoom > 0 ? camera.zoom : 1;
+    const cameraX = isWorld && Number.isFinite(camera.x) ? camera.x : 0;
+    const cameraY = isWorld && Number.isFinite(camera.y) ? camera.y : 0;
     ctx.globalAlpha = 1;
     ctx.fillStyle = rgbaToCssColor(draw.colorRgba);
-    ctx.fillRect(draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, draw.width * coordScale * pixelRatio, draw.height * coordScale * pixelRatio);
+    ctx.fillRect((draw.x * coordScale - cameraX) * zoom * pixelRatio, (draw.y * coordScale - cameraY) * zoom * pixelRatio, draw.width * coordScale * zoom * pixelRatio, draw.height * coordScale * zoom * pixelRatio);
 }
-function drawText(ctx, draw, pixelRatio, assets, coordScale) {
+function drawText(ctx, draw, pixelRatio, assets, coordScale, camera) {
+    const isWorld = draw.passId === 'world';
+    const zoom = isWorld && Number.isFinite(camera.zoom) && camera.zoom > 0 ? camera.zoom : 1;
+    const cameraX = isWorld && Number.isFinite(camera.x) ? camera.x : 0;
+    const cameraY = isWorld && Number.isFinite(camera.y) ? camera.y : 0;
     ctx.globalAlpha = 1;
     ctx.fillStyle = rgbaToCssColor(draw.colorRgba);
     const fontFamily = draw.fontAssetId && assets?.resolveFontFamily
         ? assets.resolveFontFamily(draw.fontAssetId)
         : undefined;
-    ctx.font = `${draw.fontSizePx * pixelRatio}px ${fontFamily ?? 'sans-serif'}`;
+    ctx.font = `${draw.fontSizePx * zoom * pixelRatio}px ${fontFamily ?? 'sans-serif'}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText(draw.text, draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio);
+    ctx.fillText(draw.text, (draw.x * coordScale - cameraX) * zoom * pixelRatio, (draw.y * coordScale - cameraY) * zoom * pixelRatio);
 }
-function drawMissingAssetPlaceholder(ctx, draw, pixelRatio, coordScale) {
+function drawMissingAssetPlaceholder(ctx, draw, pixelRatio, coordScale, camera) {
+    const isWorld = draw.passId === 'world';
+    const zoom = isWorld && Number.isFinite(camera.zoom) && camera.zoom > 0 ? camera.zoom : 1;
+    const cameraX = isWorld && Number.isFinite(camera.x) ? camera.x : 0;
+    const cameraY = isWorld && Number.isFinite(camera.y) ? camera.y : 0;
+    const x = (draw.x * coordScale - cameraX) * zoom * pixelRatio;
+    const y = (draw.y * coordScale - cameraY) * zoom * pixelRatio;
+    const width = draw.width * coordScale * zoom * pixelRatio;
+    const height = draw.height * coordScale * zoom * pixelRatio;
+    const inset = 2 * zoom * pixelRatio;
     ctx.globalAlpha = 1;
     ctx.fillStyle = 'rgba(255, 0, 255, 0.75)';
-    ctx.fillRect(draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, draw.width * coordScale * pixelRatio, draw.height * coordScale * pixelRatio);
+    ctx.fillRect(x, y, width, height);
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, draw.width * coordScale * pixelRatio, draw.height * coordScale * pixelRatio);
+    ctx.strokeRect(x, y, width, height);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-    ctx.font = `${12 * pixelRatio}px sans-serif`;
+    ctx.font = `${12 * zoom * pixelRatio}px sans-serif`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText(`missing: ${draw.assetId}`, draw.x * coordScale * pixelRatio + 2 * pixelRatio, draw.y * coordScale * pixelRatio + 2 * pixelRatio);
+    ctx.fillText(`missing: ${draw.assetId}`, x + inset, y + inset);
 }
-function drawImage(ctx, draw, pixelRatio, assets, coordScale) {
+function drawImage(ctx, draw, pixelRatio, assets, coordScale, camera) {
     const image = assets?.resolveImage ? assets.resolveImage(draw.assetId) : undefined;
     if (!image) {
-        drawMissingAssetPlaceholder(ctx, draw, pixelRatio, coordScale);
+        drawMissingAssetPlaceholder(ctx, draw, pixelRatio, coordScale, camera);
         return;
     }
-    const width = draw.width * coordScale * pixelRatio;
-    const height = draw.height * coordScale * pixelRatio;
+    const isWorld = draw.passId === 'world';
+    const zoom = isWorld && Number.isFinite(camera.zoom) && camera.zoom > 0 ? camera.zoom : 1;
+    const cameraX = isWorld && Number.isFinite(camera.x) ? camera.x : 0;
+    const cameraY = isWorld && Number.isFinite(camera.y) ? camera.y : 0;
+    const x = (draw.x * coordScale - cameraX) * zoom * pixelRatio;
+    const y = (draw.y * coordScale - cameraY) * zoom * pixelRatio;
+    const width = draw.width * coordScale * zoom * pixelRatio;
+    const height = draw.height * coordScale * zoom * pixelRatio;
     if (width <= 0 || height <= 0) {
         return;
     }
@@ -118,7 +141,7 @@ function drawImage(ctx, draw, pixelRatio, assets, coordScale) {
     const isWhiteTint = tintRed === 0xff && tintGreen === 0xff && tintBlue === 0xff;
     if (isWhiteTint) {
         ctx.globalAlpha = alpha;
-        ctx.drawImage(image, draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, width, height);
+        ctx.drawImage(image, x, y, width, height);
         ctx.globalAlpha = 1;
         return;
     }
@@ -126,7 +149,7 @@ function drawImage(ctx, draw, pixelRatio, assets, coordScale) {
     const scratch = getTintScratch(sourceSize?.width ?? Math.max(1, Math.round(width)), sourceSize?.height ?? Math.max(1, Math.round(height)));
     if (!scratch) {
         ctx.globalAlpha = alpha;
-        ctx.drawImage(image, draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, width, height);
+        ctx.drawImage(image, x, y, width, height);
         ctx.globalAlpha = 1;
         return;
     }
@@ -145,7 +168,7 @@ function drawImage(ctx, draw, pixelRatio, assets, coordScale) {
     scratchCtx.globalCompositeOperation = 'source-over';
     scratchCtx.globalAlpha = 1;
     ctx.globalAlpha = 1;
-    ctx.drawImage(scratchCanvas, draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, width, height);
+    ctx.drawImage(scratchCanvas, x, y, width, height);
     ctx.globalAlpha = 1;
 }
 export function renderRenderCommandBufferToCanvas2d(ctx, rcb, options = {}) {
@@ -162,6 +185,7 @@ export function renderRenderCommandBufferToCanvas2d(ctx, rcb, options = {}) {
         throw new Error('Canvas2D renderer expected worldFixedPointScale to be a positive number.');
     }
     const worldFixedPointInvScale = 1 / worldFixedPointScale;
+    const worldCamera = rcb.scene.camera;
     let scissorDepth = 0;
     for (const draw of rcb.draws) {
         const coordScale = draw.passId === 'world' ? worldFixedPointInvScale : 1;
@@ -173,18 +197,24 @@ export function renderRenderCommandBufferToCanvas2d(ctx, rcb, options = {}) {
                 break;
             }
             case 'rect':
-                drawRect(ctx, draw, pixelRatio, coordScale);
+                drawRect(ctx, draw, pixelRatio, coordScale, worldCamera);
                 break;
             case 'image':
-                drawImage(ctx, draw, pixelRatio, assets, coordScale);
+                drawImage(ctx, draw, pixelRatio, assets, coordScale, worldCamera);
                 break;
             case 'text':
-                drawText(ctx, draw, pixelRatio, assets, coordScale);
+                drawText(ctx, draw, pixelRatio, assets, coordScale, worldCamera);
                 break;
             case 'scissorPush': {
+                const isWorld = draw.passId === 'world';
+                const zoom = isWorld && Number.isFinite(worldCamera.zoom) && worldCamera.zoom > 0
+                    ? worldCamera.zoom
+                    : 1;
+                const cameraX = isWorld && Number.isFinite(worldCamera.x) ? worldCamera.x : 0;
+                const cameraY = isWorld && Number.isFinite(worldCamera.y) ? worldCamera.y : 0;
                 ctx.save();
                 ctx.beginPath();
-                ctx.rect(draw.x * coordScale * pixelRatio, draw.y * coordScale * pixelRatio, draw.width * coordScale * pixelRatio, draw.height * coordScale * pixelRatio);
+                ctx.rect((draw.x * coordScale - cameraX) * zoom * pixelRatio, (draw.y * coordScale - cameraY) * zoom * pixelRatio, draw.width * coordScale * zoom * pixelRatio, draw.height * coordScale * zoom * pixelRatio);
                 ctx.clip();
                 scissorDepth += 1;
                 break;

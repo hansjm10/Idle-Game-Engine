@@ -13,6 +13,9 @@ function createRcb(step: number): RenderCommandBuffer {
       simTimeMs: step * 16,
       contentHash: 'content',
     },
+    scene: {
+      camera: { x: 0, y: 0, zoom: 1 },
+    },
     passes: [{ id: 'ui' }],
     draws: [],
   };

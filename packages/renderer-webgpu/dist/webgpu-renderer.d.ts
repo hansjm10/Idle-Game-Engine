@@ -93,6 +93,9 @@ export interface WebGpuRenderer {
     readonly atlasLayoutHash: Sha256Hex | undefined;
     resize(options?: WebGpuRendererResizeOptions): void;
     loadAssets(manifest: AssetManifest, assets: WebGpuRendererAssets, options?: WebGpuRendererLoadAssetsOptions): Promise<WebGpuRendererAtlasState>;
+    /**
+     * @deprecated Provide the camera per-frame via `rcb.scene.camera`.
+     */
     setWorldCamera(camera: Camera2D): void;
     render(rcb: RenderCommandBuffer): void;
     dispose(): void;

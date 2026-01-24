@@ -176,6 +176,9 @@ async function run(): Promise<void> {
       renderFrame: frameCount,
       contentHash: 'content:dev',
     },
+    scene: {
+      camera: latestRcb?.scene?.camera ?? { x: 0, y: 0, zoom: 1 },
+    },
     passes: [{ id: 'world' }, { id: 'ui' }],
     draws: [
       {
