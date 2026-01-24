@@ -9,7 +9,7 @@ var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
     return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
 };
-var _QuadInstanceWriter_scratchColor, _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_limits, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_retiredInstanceBuffers, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasTexture, _WebGpuRendererImpl_quadInstanceWriter, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_assertSupportedAssetManifest, _WebGpuRendererImpl_assertSupportedRenderCommandBuffer, _WebGpuRendererImpl_safeDestroyBuffer, _WebGpuRendererImpl_safeDestroyTexture, _WebGpuRendererImpl_flushRetiredInstanceBuffers, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
+var _QuadInstanceWriter_scratchColor, _WebGpuRendererImpl_instances, _WebGpuRendererImpl_alphaMode, _WebGpuRendererImpl_onDeviceLost, _WebGpuRendererImpl_limits, _WebGpuRendererImpl_disposed, _WebGpuRendererImpl_lost, _WebGpuRendererImpl_devicePixelRatio, _WebGpuRendererImpl_worldCamera, _WebGpuRendererImpl_worldFixedPointInvScale, _WebGpuRendererImpl_spritePipeline, _WebGpuRendererImpl_rectPipeline, _WebGpuRendererImpl_spriteSampler, _WebGpuRendererImpl_spriteUniformBuffer, _WebGpuRendererImpl_worldGlobalsBindGroup, _WebGpuRendererImpl_uiGlobalsBindGroup, _WebGpuRendererImpl_spriteVertexBuffer, _WebGpuRendererImpl_spriteIndexBuffer, _WebGpuRendererImpl_spriteInstanceBuffer, _WebGpuRendererImpl_spriteInstanceBufferSize, _WebGpuRendererImpl_retiredInstanceBuffers, _WebGpuRendererImpl_spriteTextureBindGroupLayout, _WebGpuRendererImpl_spriteTextureBindGroup, _WebGpuRendererImpl_atlasTexture, _WebGpuRendererImpl_quadInstanceWriter, _WebGpuRendererImpl_atlasLayout, _WebGpuRendererImpl_atlasLayoutHash, _WebGpuRendererImpl_atlasUvByAssetId, _WebGpuRendererImpl_bitmapFontByAssetId, _WebGpuRendererImpl_defaultBitmapFontAssetId, _WebGpuRendererImpl_assertReadyForAssetLoad, _WebGpuRendererImpl_assertSupportedAssetManifest, _WebGpuRendererImpl_assertTextLengthWithinLimits, _WebGpuRendererImpl_assertSupportedRenderCommandBuffer, _WebGpuRendererImpl_safeDestroyBuffer, _WebGpuRendererImpl_safeDestroyTexture, _WebGpuRendererImpl_flushRetiredInstanceBuffers, _WebGpuRendererImpl_createAtlasTextureAndUpload, _WebGpuRendererImpl_createSpriteAtlasBindGroup, _WebGpuRendererImpl_ensureSpritePipeline, _WebGpuRendererImpl_ensureInstanceBuffer, _WebGpuRendererImpl_writeGlobals, _WebGpuRendererImpl_toDeviceScissorRect, _WebGpuRendererImpl_getQuadPipelinesOrThrow, _WebGpuRendererImpl_createQuadRenderState, _WebGpuRendererImpl_applyScissorRect, _WebGpuRendererImpl_resetQuadBatch, _WebGpuRendererImpl_flushQuadBatch, _WebGpuRendererImpl_ensureQuadBatch, _WebGpuRendererImpl_setQuadPass, _WebGpuRendererImpl_spriteUvOrThrow, _WebGpuRendererImpl_renderQuadDrawEntry, _WebGpuRendererImpl_handleScissorPushDraw, _WebGpuRendererImpl_handleScissorPopDraw, _WebGpuRendererImpl_handleRectDraw, _WebGpuRendererImpl_handleImageDraw, _WebGpuRendererImpl_handleTextDraw, _WebGpuRendererImpl_renderDraws;
 import { RENDERER_CONTRACT_SCHEMA_VERSION, WORLD_FIXED_POINT_SCALE, canonicalEncodeForHash, sha256Hex, } from '@idle-engine/renderer-contract';
 import { createAtlasLayout, packAtlas, } from './atlas-packer.js';
 import { orderDrawsByPassAndSortKey, } from './sprite-batching.js';
@@ -879,6 +879,20 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     if (manifest.assets.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxAssets) {
         throw new Error(`AssetManifest exceeds limits.maxAssets: ${manifest.assets.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxAssets}.`);
     }
+}, _WebGpuRendererImpl_assertTextLengthWithinLimits = function _WebGpuRendererImpl_assertTextLengthWithinLimits(draws) {
+    if (__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength <= 0) {
+        return;
+    }
+    for (let index = 0; index < draws.length; index += 1) {
+        const draw = draws[index];
+        const text = draw.text;
+        if (typeof text !== 'string') {
+            continue;
+        }
+        if (text.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength) {
+            throw new Error(`RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength}.`);
+        }
+    }
 }, _WebGpuRendererImpl_assertSupportedRenderCommandBuffer = function _WebGpuRendererImpl_assertSupportedRenderCommandBuffer(rcb) {
     if (rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
         throw new Error(`RenderCommandBuffer schemaVersion ${rcb.frame.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`);
@@ -895,10 +909,10 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const y = camera['y'];
     const zoom = camera['zoom'];
     if (typeof x !== 'number' || !Number.isFinite(x)) {
-        throw new Error('RenderCommandBuffer.scene.camera.x must be a finite number.');
+        throw new TypeError('RenderCommandBuffer.scene.camera.x must be a finite number.');
     }
     if (typeof y !== 'number' || !Number.isFinite(y)) {
-        throw new Error('RenderCommandBuffer.scene.camera.y must be a finite number.');
+        throw new TypeError('RenderCommandBuffer.scene.camera.y must be a finite number.');
     }
     if (typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0) {
         throw new Error('RenderCommandBuffer.scene.camera.zoom must be a positive number.');
@@ -906,18 +920,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     if (rcb.draws.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxDrawsPerFrame) {
         throw new Error(`RenderCommandBuffer exceeds limits.maxDrawsPerFrame: ${rcb.draws.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxDrawsPerFrame}.`);
     }
-    if (__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength > 0) {
-        for (let index = 0; index < rcb.draws.length; index += 1) {
-            const draw = rcb.draws[index];
-            const text = draw.text;
-            if (typeof text !== 'string') {
-                continue;
-            }
-            if (text.length > __classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength) {
-                throw new Error(`RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${__classPrivateFieldGet(this, _WebGpuRendererImpl_limits, "f").maxTextLength}.`);
-            }
-        }
-    }
+    __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_assertTextLengthWithinLimits).call(this, rcb.draws);
 }, _WebGpuRendererImpl_safeDestroyBuffer = function _WebGpuRendererImpl_safeDestroyBuffer(buffer) {
     if (!buffer) {
         return;

@@ -174,15 +174,9 @@ export function validateRenderCommandBuffer(rcb) {
         }
     }
     const sceneValue = rcbValue['scene'];
-    if (!isRecord(sceneValue)) {
-        errors.push('scene must be an object');
-    }
-    else {
+    if (isRecord(sceneValue)) {
         const cameraValue = sceneValue['camera'];
-        if (!isRecord(cameraValue)) {
-            errors.push('scene.camera must be an object');
-        }
-        else {
+        if (isRecord(cameraValue)) {
             const cameraX = cameraValue['x'];
             const cameraY = cameraValue['y'];
             const cameraZoom = cameraValue['zoom'];
@@ -196,6 +190,12 @@ export function validateRenderCommandBuffer(rcb) {
                 errors.push('scene.camera.zoom must be a positive number');
             }
         }
+        else {
+            errors.push('scene.camera must be an object');
+        }
+    }
+    else {
+        errors.push('scene must be an object');
     }
     const passesValue = rcbValue['passes'];
     const drawsValue = rcbValue['draws'];
