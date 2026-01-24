@@ -232,6 +232,7 @@ struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
   @location(1) color: vec4<f32>,
+  @location(2) uvRect: vec4<f32>,
 }
 
 @vertex
@@ -249,12 +250,22 @@ fn vs_main(input: VertexInput) -> VertexOutput {
   out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
   out.uv = uv;
   out.color = input.instanceColor;
+  out.uvRect = input.instanceUvRect;
   return out;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-  let texel = textureSample(spriteTexture, spriteSampler, input.uv);
+  let texSize = vec2<f32>(textureDimensions(spriteTexture));
+  let halfTexel = vec2<f32>(0.5) / texSize;
+
+  let uvRectMin = input.uvRect.xy;
+  let uvRectMax = input.uvRect.zw;
+  let uvRectSize = max(vec2<f32>(0.0), uvRectMax - uvRectMin);
+  let inset = min(halfTexel, uvRectSize * 0.5);
+
+  let uv = clamp(input.uv, uvRectMin + inset, uvRectMax - inset);
+  let texel = textureSample(spriteTexture, spriteSampler, uv);
   return texel * input.color;
 }
 `;
@@ -361,17 +372,10 @@ function buildInsetUvRange(options) {
     if (!Number.isFinite(options.startPx) || !Number.isFinite(options.sizePx)) {
         return { t0: 0, t1: 0 };
     }
-    if (options.sizePx <= 1) {
-        const centerPx = options.startPx + Math.max(0, options.sizePx) / 2;
-        const minCenterPx = 0.5;
-        const maxCenterPx = Math.max(minCenterPx, options.atlasSizePx - 0.5);
-        const clampedCenterPx = Math.min(maxCenterPx, Math.max(minCenterPx, centerPx));
-        const value = clampedCenterPx / options.atlasSizePx;
-        return { t0: value, t1: value };
-    }
+    const sizePx = Math.max(0, options.sizePx);
     return {
-        t0: (options.startPx + 0.5) / options.atlasSizePx,
-        t1: (options.startPx + options.sizePx - 0.5) / options.atlasSizePx,
+        t0: options.startPx / options.atlasSizePx,
+        t1: (options.startPx + sizePx) / options.atlasSizePx,
     };
 }
 function buildInsetSpriteUvRect(options) {

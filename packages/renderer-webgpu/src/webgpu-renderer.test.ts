@@ -1020,8 +1020,8 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected atlas entry for sprite:demo.');
       }
       const expectedV = new Float32Array([
-        (atlasEntry.y + 0.5) / atlasLayout.atlasHeightPx,
-        (atlasEntry.y + atlasEntry.height - 0.5) / atlasLayout.atlasHeightPx,
+        atlasEntry.y / atlasLayout.atlasHeightPx,
+        (atlasEntry.y + atlasEntry.height) / atlasLayout.atlasHeightPx,
       ]);
 
       renderer.render({
@@ -1099,8 +1099,8 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected atlas entry for sprite:demo.');
       }
       const expectedV = new Float32Array([
-        (atlasEntry.y + 0.5) / atlasLayout.atlasHeightPx,
-        (atlasEntry.y + atlasEntry.height - 0.5) / atlasLayout.atlasHeightPx,
+        atlasEntry.y / atlasLayout.atlasHeightPx,
+        (atlasEntry.y + atlasEntry.height) / atlasLayout.atlasHeightPx,
       ]);
 
       renderer.render({
@@ -1177,10 +1177,10 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected atlas entry for sprite:demo.');
       }
       const expectedUv = new Float32Array([
-        (atlasEntry.x + 0.5) / atlasLayout.atlasWidthPx,
-        (atlasEntry.y + 0.5) / atlasLayout.atlasHeightPx,
-        (atlasEntry.x + atlasEntry.width - 0.5) / atlasLayout.atlasWidthPx,
-        (atlasEntry.y + atlasEntry.height - 0.5) / atlasLayout.atlasHeightPx,
+        atlasEntry.x / atlasLayout.atlasWidthPx,
+        atlasEntry.y / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + atlasEntry.width) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + atlasEntry.height) / atlasLayout.atlasHeightPx,
       ]);
 
       const rcb = {
@@ -2133,16 +2133,16 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected atlas entry for font:demo.');
       }
       const expectedUvA = new Float32Array([
-        (atlasEntry.x + 0 + 0.5) / atlasLayout.atlasWidthPx,
-        (atlasEntry.y + 0 + 0.5) / atlasLayout.atlasHeightPx,
-        (atlasEntry.x + 0 + 8 - 0.5) / atlasLayout.atlasWidthPx,
-        (atlasEntry.y + 0 + 8 - 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + 0) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + 0 + 8) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0 + 8) / atlasLayout.atlasHeightPx,
       ]);
       const expectedUvB = new Float32Array([
-        (atlasEntry.x + 8 + 0.5) / atlasLayout.atlasWidthPx,
-        (atlasEntry.y + 0 + 0.5) / atlasLayout.atlasHeightPx,
-        (atlasEntry.x + 8 + 8 - 0.5) / atlasLayout.atlasWidthPx,
-        (atlasEntry.y + 0 + 8 - 0.5) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + 8) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0) / atlasLayout.atlasHeightPx,
+        (atlasEntry.x + 8 + 8) / atlasLayout.atlasWidthPx,
+        (atlasEntry.y + 0 + 8) / atlasLayout.atlasHeightPx,
       ]);
 
       const rcb = {
