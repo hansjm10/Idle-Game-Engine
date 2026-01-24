@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 
 import { mkdir, readFile, stat } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
 import { parseArgs } from 'node:util';
-
-import { build } from 'esbuild';
 
 const USAGE = `
 Usage: node tools/scripts/bundle-renderer.mjs [--package-root <path>] [--entry <path>] [--outfile <path>]
@@ -21,6 +20,29 @@ Bundles a renderer entrypoint into a browser-resolvable ES module.
 function printUsageAndExit(exitCode = 1) {
   console.error(USAGE);
   process.exit(exitCode);
+}
+
+function loadEsbuild(packageRoot) {
+  const packageRequire = createRequire(path.join(packageRoot, 'package.json'));
+  try {
+    return packageRequire('esbuild');
+  } catch (packageError) {
+    const scriptRequire = createRequire(import.meta.url);
+    try {
+      return scriptRequire('esbuild');
+    } catch (scriptError) {
+      const packageMessage = packageError instanceof Error ? packageError.message : String(packageError);
+      const scriptMessage = scriptError instanceof Error ? scriptError.message : String(scriptError);
+      throw new Error(
+        [
+          `Failed to resolve esbuild from package root ${packageRoot}.`,
+          "Add 'esbuild' to that package's devDependencies (recommended) or to the repository root.",
+          `Resolution from package root failed: ${packageMessage}`,
+          `Resolution from tools/scripts failed: ${scriptMessage}`,
+        ].join('\n'),
+      );
+    }
+  }
 }
 
 async function main() {
@@ -64,6 +86,7 @@ async function main() {
 
   await mkdir(path.dirname(outFile), { recursive: true });
 
+  const { build } = loadEsbuild(packageRoot);
   await build({
     entryPoints: [entryPoint],
     outfile: outFile,
