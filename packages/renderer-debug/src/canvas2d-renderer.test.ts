@@ -178,6 +178,49 @@ describe('validateRenderCommandBuffer', () => {
     }
   });
 
+  it('flags out-of-order sort keys by sortKeyHi', () => {
+    const rcb: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 'rect',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 1, sortKeyLo: 0 },
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          colorRgba: 0xff_00_00_ff,
+        },
+        {
+          kind: 'rect',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          colorRgba: 0xff_00_00_ff,
+        },
+      ],
+    };
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('sortKey out of order');
+    }
+  });
+
   it('flags schemaVersion mismatches', () => {
     const rcb = {
       frame: {
@@ -198,6 +241,52 @@ describe('validateRenderCommandBuffer', () => {
     if (!result.ok) {
       expect(result.errors.join('\n')).toContain(
         `frame.schemaVersion must equal ${RENDERER_CONTRACT_SCHEMA_VERSION}`,
+      );
+    }
+  });
+
+  it('flags non-uint32 schemaVersion and missing arrays', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: '4',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: null,
+      draws: null,
+    } as unknown as RenderCommandBuffer;
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('frame.schemaVersion must be uint32');
+      expect(result.errors.join('\n')).toContain('passes must be an array');
+      expect(result.errors.join('\n')).toContain('draws must be an array');
+    }
+  });
+
+  it('flags malformed pass entries', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [null, { id: 'nope' }],
+      draws: [],
+    } as unknown as RenderCommandBuffer;
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.join('\n')).toContain('passes[0] must be an object');
+      expect(result.errors.join('\n')).toContain(
+        "passes[1].id must be 'world' or 'ui'",
       );
     }
   });
@@ -227,6 +316,262 @@ describe('validateRenderCommandBuffer', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.join('\n')).toContain('draws[0].kind must be a string');
+    }
+  });
+
+  it('validates draw fields across passes and kinds', () => {
+    const rcb = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'ui' }, { id: 'world' }],
+      draws: [
+        {
+          kind: 'clear',
+          passId: 'nope',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_00_00_ff,
+        },
+        {
+          kind: 'clear',
+          passId: 'ui',
+          sortKey: { sortKeyHi: -1, sortKeyLo: '0' },
+          colorRgba: 'bad',
+        },
+        {
+          kind: 'rect',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+          x: 1.5,
+          y: 0,
+          width: -1,
+          height: 1,
+          colorRgba: 'bad',
+        },
+        {
+          kind: 'scissorPush',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 2 },
+          x: 0,
+          y: 0,
+          width: 1.5,
+          height: 1,
+        },
+        {
+          kind: 'image',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+          assetId: 'asset:test',
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          tintRgba: 'bad',
+        },
+        {
+          kind: 'text',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 4 },
+          x: 0,
+          y: 0,
+          text: 123,
+          colorRgba: 'bad',
+          fontAssetId: '',
+          fontSizePx: 0,
+        },
+        {
+          kind: 'text',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 5 },
+          x: 0,
+          y: 0,
+          text: 'ok',
+          colorRgba: 0x00_00_00_ff,
+          fontSizePx: 1.5,
+        },
+        {
+          kind: 'triangle',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 6 },
+        },
+        null,
+        {
+          kind: 'rect',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          x: Number.NaN,
+          y: 0,
+          width: Number.NaN,
+          height: 1,
+          colorRgba: 0x00_00_00_ff,
+        },
+        {
+          kind: 'text',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+          x: 0,
+          y: 0,
+          text: 'ok',
+          colorRgba: 0x00_00_00_ff,
+          fontSizePx: Number.NaN,
+        },
+      ],
+    } as unknown as RenderCommandBuffer;
+
+    const result = validateRenderCommandBuffer(rcb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const errors = result.errors.join('\n');
+      expect(errors).toContain("draws[0].passId must be 'world' or 'ui'");
+      expect(errors).toContain('draws[1].sortKey.sortKeyHi must be uint32');
+      expect(errors).toContain('draws[1].sortKey.sortKeyLo must be uint32');
+      expect(errors).toContain('draws[1].colorRgba must be uint32 RGBA');
+      expect(errors).toContain('draws[2].x must be a finite integer number');
+      expect(errors).toContain('draws[2].width must be non-negative');
+      expect(errors).toContain('draws[2].colorRgba must be uint32 RGBA');
+      expect(errors).toContain('draws[3].width must be a finite integer number');
+      expect(errors).toContain('draws[4].tintRgba must be uint32 RGBA when provided');
+      expect(errors).toContain('draws[5].text must be a string');
+      expect(errors).toContain('draws[5].fontAssetId must be non-empty when provided');
+      expect(errors).toContain('draws[5].fontSizePx must be positive');
+      expect(errors).toContain('draws[6].fontSizePx must be a finite integer number');
+      expect(errors).toContain(
+        'draws[7].kind must be one of: clear, rect, image, text, scissorPush, scissorPop',
+      );
+      expect(errors).toContain('draws[8] must be an object');
+      expect(errors).toContain('draws[9].x must be a finite number');
+      expect(errors).toContain('draws[9].width must be a finite number');
+      expect(errors).toContain('draws[10].fontSizePx must be a finite number');
+    }
+  });
+
+  it('flags malformed scene.camera values', () => {
+    const missingCamera = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: null,
+      },
+      passes: [],
+      draws: [],
+    } as unknown as RenderCommandBuffer;
+
+    const missingCameraResult = validateRenderCommandBuffer(missingCamera);
+    expect(missingCameraResult.ok).toBe(false);
+    if (!missingCameraResult.ok) {
+      expect(missingCameraResult.errors.join('\n')).toContain(
+        'scene.camera must be an object',
+      );
+    }
+
+    const invalidCamera = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: Number.NaN, y: Number.POSITIVE_INFINITY, zoom: 0 },
+      },
+      passes: [],
+      draws: [],
+    } as unknown as RenderCommandBuffer;
+
+    const invalidCameraResult = validateRenderCommandBuffer(invalidCamera);
+    expect(invalidCameraResult.ok).toBe(false);
+    if (!invalidCameraResult.ok) {
+      expect(invalidCameraResult.errors.join('\n')).toContain(
+        'scene.camera.x must be a finite number',
+      );
+      expect(invalidCameraResult.errors.join('\n')).toContain(
+        'scene.camera.y must be a finite number',
+      );
+      expect(invalidCameraResult.errors.join('\n')).toContain(
+        'scene.camera.zoom must be a positive number',
+      );
+    }
+  });
+
+  it('flags scissor stack errors (dangling clips)', () => {
+    const unbalancedPassSwitch: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'world' }, { id: 'ui' }],
+      draws: [
+        {
+          kind: 'scissorPush',
+          passId: 'world',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+        {
+          kind: 'clear',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          colorRgba: 0x00_00_00_ff,
+        },
+      ],
+    };
+
+    const passSwitchResult = validateRenderCommandBuffer(unbalancedPassSwitch);
+    expect(passSwitchResult.ok).toBe(false);
+    if (!passSwitchResult.ok) {
+      expect(passSwitchResult.errors.join('\n')).toContain(
+        'scissor stack not empty when switching passId',
+      );
+    }
+
+    const unbalancedEnd: RenderCommandBuffer = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      passes: [{ id: 'ui' }],
+      draws: [
+        {
+          kind: 'scissorPush',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+      ],
+    };
+
+    const endResult = validateRenderCommandBuffer(unbalancedEnd);
+    expect(endResult.ok).toBe(false);
+    if (!endResult.ok) {
+      expect(endResult.errors.join('\n')).toContain(
+        'scissor stack not empty at end of draw list',
+      );
     }
   });
 
@@ -464,6 +809,69 @@ describe('validateRenderCommandBuffer', () => {
 	    expect(calls.map((c) => c.name)).toEqual(['fillRect', 'strokeRect', 'fillText']);
 	    expect(calls[0].args).toEqual([20, 40, 60, 80]);
 	  });
+
+    it('throws when worldFixedPointScale is not positive', async () => {
+      vi.resetModules();
+      const { renderRenderCommandBufferToCanvas2d } = await import(
+        './canvas2d-renderer.js'
+      );
+
+      const { ctx } = createFakeContext();
+      const rcb = createSampleRcb();
+
+      expect(() =>
+        renderRenderCommandBufferToCanvas2d(ctx, rcb, { worldFixedPointScale: 0 })
+      ).toThrow(/worldFixedPointScale/i);
+    });
+
+    it('applies camera transforms to world scissor rectangles', async () => {
+      vi.resetModules();
+      const { renderRenderCommandBufferToCanvas2d } = await import(
+        './canvas2d-renderer.js'
+      );
+
+      const { ctx, calls } = createFakeContext();
+
+      const rcb: RenderCommandBuffer = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 1,
+          simTimeMs: 16,
+          contentHash: 'content',
+        },
+        scene: {
+          camera: { x: 2, y: 1, zoom: 3 },
+        },
+        passes: [{ id: 'world' }],
+        draws: [
+          {
+            kind: 'scissorPush',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10 * WORLD_FIXED_POINT_SCALE,
+            y: 5 * WORLD_FIXED_POINT_SCALE,
+            width: 4 * WORLD_FIXED_POINT_SCALE,
+            height: 2 * WORLD_FIXED_POINT_SCALE,
+          },
+          {
+            kind: 'scissorPop',
+            passId: 'world',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 1 },
+          },
+        ],
+      };
+
+      renderRenderCommandBufferToCanvas2d(ctx, rcb, { pixelRatio: 2 });
+
+      expect(calls.map((c) => c.name)).toEqual([
+        'save',
+        'beginPath',
+        'rect',
+        'clip',
+        'restore',
+      ]);
+      expect(calls[2]?.args).toEqual([48, 24, 24, 12]);
+    });
 
   it('applies nested scissor clipping with pixelRatio scaling', async () => {
     vi.resetModules();
