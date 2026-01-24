@@ -483,6 +483,62 @@ describe('shell-desktop renderer entrypoint', () => {
     beforeUnloadHandler?.();
   });
 
+  it('uses the latest frame values in fallback render buffers', async () => {
+    let frameListener: ((frame: unknown) => void) | undefined;
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
+    });
+
+    vi.doMock('@idle-engine/renderer-contract', () => {
+      let injected = false;
+
+      return {
+        get RENDERER_CONTRACT_SCHEMA_VERSION() {
+          if (!injected) {
+            injected = true;
+            frameListener?.({ frame: { step: 123, simTimeMs: 456 } });
+          }
+          return 1;
+        },
+      };
+    });
+
+    try {
+      await import('./index.js');
+      await flushMicrotasks();
+
+      const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
+        render: ReturnType<typeof vi.fn>;
+      };
+
+      const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+      rafCallbacks.delete(id);
+      callback(0);
+
+      expect(renderer.render).toHaveBeenCalledTimes(1);
+      expect(renderer.render).toHaveBeenCalledWith(
+        expect.objectContaining({
+          frame: expect.objectContaining({
+            step: 123,
+            simTimeMs: 456,
+          }),
+        }),
+      );
+    } finally {
+      vi.doUnmock('@idle-engine/renderer-contract');
+    }
+  });
+
   it('renders IPC errors to the output view', async () => {
     const idleEngine = (globalThis as unknown as { idleEngine: { ping: ReturnType<typeof vi.fn> } }).idleEngine;
     idleEngine.ping.mockRejectedValueOnce(new Error('no ipc'));
