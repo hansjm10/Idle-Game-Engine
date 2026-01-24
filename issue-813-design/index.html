@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-issue-813-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">renderer-webgpu: validate schema versions and cap untrusted inputs (Issue 813) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/issue-813-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="renderer-webgpu: validate schema versions and cap untrusted inputs (Issue 813) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/issue-813-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-813-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-813-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.6649263a.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.6abcfb33.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a class="navbar__item navbar__link" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><main class="docMainContainer_BJhZ docMainContainerEnhanced_qZTj"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>renderer-webgpu: validate schema versions and cap untrusted inputs (Issue 813)</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Validate renderer contract schema versions and cap untrusted inputs in <code>@idle-engine/renderer-webgpu</code></li>
+<li class=""><strong>Authors</strong>: Codex (AI)</li>
+<li class=""><strong>Reviewers</strong>: @hansjm10</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-01-24</li>
+<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/813" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/813</a></li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p><code>@idle-engine/renderer-webgpu</code> currently accepts untrusted <code>AssetManifest</code> and <code>RenderCommandBuffer</code> inputs without validating <code>schemaVersion</code> or enforcing basic resource limits (asset count, draws per frame, text length). This creates avoidable failure modes: silent schema mismatches can produce undefined behavior, and oversized inputs can trigger excessive allocations or per-frame work that freezes/crashes the browser (DoS). This design adds fail-fast schema version checks at <code>loadAssets()</code> and <code>render()</code>, introduces configurable input limits with safe defaults, and adds unit tests + documentation for the default caps.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Background</strong>:<!-- -->
+<ul>
+<li class="">The renderer contract lives in <code>@idle-engine/renderer-contract</code> and defines <code>AssetManifest</code>, <code>RenderCommandBuffer</code>, and <code>RENDERER_CONTRACT_SCHEMA_VERSION</code>.</li>
+<li class="">The WebGPU backend (<code>packages/renderer-webgpu/src/webgpu-renderer.ts</code>) has two public entry points for untrusted payloads:<!-- -->
+<ul>
+<li class=""><code>WebGpuRenderer.loadAssets(manifest, assets, ...)</code> (manifest-driven atlas construction)</li>
+<li class=""><code>WebGpuRenderer.render(rcb)</code> (per-frame draw processing and GPU submission)</li>
+</ul>
+</li>
+<li class="">These payloads can originate from content packs, mods, or replay files, and should be treated as untrusted by default.</li>
+</ul>
+</li>
+<li class=""><strong>Problem</strong>:<!-- -->
+<ul>
+<li class=""><strong>Schema version mismatch</strong>: <code>loadAssets()</code> does not validate <code>manifest.schemaVersion</code>, and <code>render()</code> does not validate <code>rcb.frame.schemaVersion</code>, despite the contract having an explicit version constant.</li>
+<li class=""><strong>Denial of Service</strong>: there are no caps on input sizes. Notably:<!-- -->
+<ul>
+<li class="">Huge <code>manifest.assets</code> forces large sorts and many async <code>loadImage/loadFont</code> calls.</li>
+<li class="">Huge <code>rcb.draws</code> forces sorting/processing and multiple <code>Array.prototype.some(...)</code> scans.</li>
+<li class="">Huge <code>TextDraw.text</code> can trigger large instance reservations (<code>reserveInstances(text.length)</code>) and significant per-frame CPU/memory pressure.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Forces</strong>:<!-- -->
+<ul>
+<li class="">Keep the renderer deterministic (especially for atlas layout/hashing).</li>
+<li class="">Keep the public API small and backward-compatible for valid inputs.</li>
+<li class="">Fail fast with clear, actionable error messages (no silent corruption).</li>
+<li class="">Avoid adding heavy runtime dependencies (e.g., schema validators) unless necessary.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Goals</strong>:<!-- -->
+<ul>
+<li class="">Reject incompatible schema versions at the earliest entry points:<!-- -->
+<ul>
+<li class=""><code>manifest.schemaVersion === RENDERER_CONTRACT_SCHEMA_VERSION</code></li>
+<li class=""><code>rcb.frame.schemaVersion === RENDERER_CONTRACT_SCHEMA_VERSION</code></li>
+</ul>
+</li>
+<li class="">Add configurable limits (with defaults) to cap:<!-- -->
+<ul>
+<li class="">maximum assets per manifest</li>
+<li class="">maximum draws per frame</li>
+<li class="">maximum text length per <code>TextDraw</code></li>
+</ul>
+</li>
+<li class="">Ensure limit violations fail fast before expensive work (sorting, allocations, GPU submission).</li>
+<li class="">Add deterministic unit tests covering schema mismatch and limit enforcement.</li>
+<li class="">Document default limits in package docs (README and/or exported JSDoc).</li>
+</ul>
+</li>
+<li class=""><strong>Non-Goals</strong>:<!-- -->
+<ul>
+<li class="">Full structural validation of the entire renderer contract payload (beyond the minimal checks described here).</li>
+<li class="">Introducing per-field numeric validation everywhere (e.g., checking all coordinates are finite) as part of Issue 813.</li>
+<li class="">Adding new renderer-contract schema versions or migration tooling.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Primary Stakeholders</strong>:<!-- -->
+<ul>
+<li class="">Renderer maintainers (<code>packages/renderer-webgpu</code>)</li>
+<li class="">Host applications that run untrusted content/replays (<code>packages/shell-desktop</code>, future web shells)</li>
+<li class="">Content pack authors (indirectly; they see clearer errors on mismatch)</li>
+</ul>
+</li>
+<li class=""><strong>Agent Roles</strong>:<!-- -->
+<ul>
+<li class=""><strong>Docs Agent</strong>: Maintain this design doc and capture decisions/open questions.</li>
+<li class=""><strong>Renderer Implementation Agent</strong>: Implement schema checks + caps in <code>webgpu-renderer.ts</code>.</li>
+<li class=""><strong>Test Agent</strong>: Add unit tests to <code>packages/renderer-webgpu/src/webgpu-renderer.test.ts</code>.</li>
+<li class=""><strong>Docs/Release Agent</strong>: Update <code>packages/renderer-webgpu/README.md</code> to document limits and configuration.</li>
+</ul>
+</li>
+<li class=""><strong>Affected Packages/Services</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/renderer-webgpu/src/webgpu-renderer.ts</code> (validation and limits)</li>
+<li class=""><code>packages/renderer-webgpu/src/webgpu-renderer.test.ts</code> (new unit tests)</li>
+<li class=""><code>packages/renderer-webgpu/README.md</code> (document defaults)</li>
+<li class=""><code>packages/renderer-contract/src/types.ts</code> (reference for schema constant; no changes expected)</li>
+</ul>
+</li>
+<li class=""><strong>Compatibility Considerations</strong>:<!-- -->
+<ul>
+<li class="">This change is intentionally stricter: callers passing mismatched schema versions or oversized inputs will now receive immediate errors.</li>
+<li class="">Limits must be configurable so trusted/controlled environments can raise caps when necessary.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class="">Contract schema versioning exists:<!-- -->
+<ul>
+<li class=""><code>packages/renderer-contract/src/types.ts</code> exports <code>RENDERER_CONTRACT_SCHEMA_VERSION</code> and uses it in <code>AssetManifest.schemaVersion</code> and <code>FrameHeader.schemaVersion</code>.</li>
+</ul>
+</li>
+<li class=""><code>WebGpuRenderer.loadAssets(...)</code> behavior:<!-- -->
+<ul>
+<li class="">Builds deterministic atlas layout by filtering/sorting <code>manifest.assets</code> (<code>getSortedRenderableAtlasEntries(...)</code>) and packing sources.</li>
+<li class="">Does not validate <code>manifest.schemaVersion</code> and does not cap <code>manifest.assets.length</code>.</li>
+<li class="">Performs some validation (e.g., rejects duplicate <code>AssetId</code> among renderable atlas entries), but only after iterating/sorting.</li>
+</ul>
+</li>
+<li class=""><code>WebGpuRenderer.render(...)</code> behavior:<!-- -->
+<ul>
+<li class="">Immediately sorts/rewrites draw order via <code>orderDrawsByPassAndSortKey(rcb)</code> and then iterates draws to emit instance data + submit GPU work.</li>
+<li class="">Does not validate <code>rcb.frame.schemaVersion</code> and does not cap <code>rcb.draws.length</code>.</li>
+<li class="">Text draws can allocate proportional to <code>draw.text.length</code> via <code>appendBitmapTextInstances(...)</code>.</li>
+</ul>
+</li>
+<li class="">Related prior work:<!-- -->
+<ul>
+<li class=""><code>packages/renderer-debug/src/rcb-validation.ts</code> includes a <code>validateRenderCommandBuffer(...)</code> helper that checks <code>frame.schemaVersion</code> and many structural/numeric constraints, but <code>renderer-webgpu</code> does not use it today.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<ul>
+<li class="">Add a small input validation layer at the entry points of <code>@idle-engine/renderer-webgpu</code>:<!-- -->
+<ul>
+<li class=""><strong>Schema version checks</strong> in <code>loadAssets()</code> and <code>render()</code>.</li>
+<li class=""><strong>Limit checks</strong> in <code>loadAssets()</code> and <code>render()</code> using renderer-owned caps.</li>
+</ul>
+</li>
+<li class="">Expose caps via <code>WebGpuRendererCreateOptions</code> so hosts can tune limits based on their trust model and performance envelope.</li>
+<li class="">Keep checks lightweight, synchronous, and fail-fast:<!-- -->
+<ul>
+<li class="">Reject oversized <code>manifest.assets</code> before sorting/loading.</li>
+<li class="">Reject oversized <code>rcb.draws</code> before ordering/sorting.</li>
+<li class="">Reject oversized <code>TextDraw.text</code> before instance reservations.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Runtime Changes</strong>:<!-- -->
+<ol>
+<li class="">Import the schema version constant in <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code>:<!-- -->
+<ul>
+<li class="">Add <code>RENDERER_CONTRACT_SCHEMA_VERSION</code> to the value imports from <code>@idle-engine/renderer-contract</code>.</li>
+</ul>
+</li>
+<li class="">Add a public limits shape and defaults:<!-- -->
+<ul>
+<li class=""><code>export interface WebGpuRendererLimits { maxAssets?: number; maxDrawsPerFrame?: number; maxTextLength?: number }</code></li>
+<li class="">Defaults (initial proposal, aligned with Issue 813): <code>maxAssets = 10_000</code>, <code>maxDrawsPerFrame = 100_000</code>, <code>maxTextLength = 10_000</code>.</li>
+<li class="">Defaults should be applied once during <code>createWebGpuRenderer(...)</code> / <code>WebGpuRendererImpl</code> construction to avoid per-call recomputation.</li>
+</ul>
+</li>
+<li class="">Extend <code>WebGpuRendererCreateOptions</code> with an optional <code>limits</code> field:<!-- -->
+<ul>
+<li class=""><code>readonly limits?: WebGpuRendererLimits;</code></li>
+</ul>
+</li>
+<li class="">Enforce schema + caps:<!-- -->
+<ul>
+<li class="">In <code>loadAssets(manifest, ...)</code>:<!-- -->
+<ul>
+<li class="">Throw if <code>manifest.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION</code>.</li>
+<li class="">Throw if <code>manifest.assets.length &gt; limits.maxAssets</code>.</li>
+<li class="">Perform these checks before <code>getSortedRenderableAtlasEntries(manifest)</code>.</li>
+</ul>
+</li>
+<li class="">In <code>render(rcb)</code>:<!-- -->
+<ul>
+<li class="">Throw if <code>rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION</code>.</li>
+<li class="">Throw if <code>rcb.draws.length &gt; limits.maxDrawsPerFrame</code>.</li>
+<li class="">Scan draws (only if within draw-count limit) and throw if any <code>TextDraw.text.length &gt; limits.maxTextLength</code>.</li>
+<li class="">Perform these checks before <code>orderDrawsByPassAndSortKey(rcb)</code> to avoid <code>O(n log n)</code> work on rejected inputs.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="">Error messages:<!-- -->
+<ul>
+<li class="">Prefer stable, descriptive messages that include the actual and expected values, e.g.:<!-- -->
+<ul>
+<li class=""><code>AssetManifest schemaVersion X is not supported (expected Y).</code></li>
+<li class=""><code>RenderCommandBuffer frame.schemaVersion X is not supported (expected Y).</code></li>
+<li class=""><code>Draw count exceeds limit: N &gt; maxDrawsPerFrame</code></li>
+<li class=""><code>Text length exceeds limit: N &gt; maxTextLength</code></li>
+</ul>
+</li>
+<li class="">(Open question) whether to introduce dedicated error classes for hosts to catch/recover without string matching.</li>
+</ul>
+</li>
+</ol>
+</li>
+<li class=""><strong>Data &amp; Schemas</strong>:<!-- -->
+<ul>
+<li class="">No renderer-contract schema changes. This work enforces the existing <code>RENDERER_CONTRACT_SCHEMA_VERSION</code>.</li>
+</ul>
+</li>
+<li class=""><strong>APIs &amp; Contracts</strong>:<!-- -->
+<ul>
+<li class="">Adds optional <code>limits</code> to <code>WebGpuRendererCreateOptions</code> only; no required call-site changes for valid inputs.</li>
+<li class="">No changes to <code>@idle-engine/renderer-contract</code> public types required.</li>
+</ul>
+</li>
+<li class=""><strong>Tooling &amp; Automation</strong>:<!-- -->
+<ul>
+<li class="">Add unit tests under <code>packages/renderer-webgpu/src/webgpu-renderer.test.ts</code>.</li>
+<li class="">Update <code>packages/renderer-webgpu/README.md</code> to document default limits and configuration.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Deployment</strong>: Standard package release for <code>@idle-engine/renderer-webgpu</code>.</li>
+<li class=""><strong>Telemetry &amp; Observability</strong>: No new logging in core library paths; hosts can catch and instrument errors as needed.</li>
+<li class=""><strong>Security &amp; Compliance</strong>:<!-- -->
+<ul>
+<li class="">Reduces availability risk from untrusted content/replays by bounding resource usage at the API boundary.</li>
+<li class="">Converts silent schema mismatch into explicit rejection, improving safety and debuggability.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td><code>bug(renderer-webgpu): validate schema versions at entry points</code></td><td>Import <code>RENDERER_CONTRACT_SCHEMA_VERSION</code> and enforce <code>manifest.schemaVersion</code> and <code>rcb.frame.schemaVersion</code> checks</td><td>Renderer Implementation Agent</td><td>Design approval</td><td>Clear thrown errors for mismatches; unit tests cover both cases</td></tr><tr><td><code>feat(renderer-webgpu): add and enforce WebGpuRendererLimits</code></td><td>Add <code>limits</code> to create options, defaults, and enforce <code>maxAssets/maxDrawsPerFrame/maxTextLength</code></td><td>Renderer Implementation Agent</td><td>Schema checks</td><td>Oversized inputs rejected before sorting/allocation; tests cover each limit</td></tr><tr><td><code>test(renderer-webgpu): add DoS hardening regression tests</code></td><td>Add unit tests for mismatch + limit violations and ensure errors are descriptive</td><td>Test Agent</td><td>Implementation</td><td>Vitest suite covers schema mismatch and caps; tests deterministic</td></tr><tr><td><code>docs(renderer-webgpu): document default limits</code></td><td>Document defaults and how to override in <code>packages/renderer-webgpu/README.md</code> (or exported JSDoc)</td><td>Docs/Release Agent</td><td>Implementation</td><td>README includes defaults and <code>limits</code> example; no console noise in tests</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1</strong>: Implement schema version validation + unit tests.</li>
+<li class=""><strong>Phase 2</strong>: Implement caps + unit tests + README/JSDoc documentation.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Hand-off Package</strong>:<!-- -->
+<ul>
+<li class="">Issue 813: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/813" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/813</a></li>
+<li class="">Entry points: <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code> (<code>loadAssets</code>, <code>render</code>, <code>createWebGpuRenderer</code>)</li>
+<li class="">Contract schema: <code>packages/renderer-contract/src/types.ts</code></li>
+<li class="">Existing validation patterns: <code>packages/renderer-debug/src/rcb-validation.ts</code></li>
+<li class="">Test harness: <code>packages/renderer-webgpu/src/webgpu-renderer.test.ts</code></li>
+</ul>
+</li>
+<li class=""><strong>Communication Cadence</strong>: Single reviewer pass once tests + docs are updated.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Context Packets</strong>:<!-- -->
+<ul>
+<li class="">Read Issue 813 body and review current <code>loadAssets</code> and <code>render</code> implementations to identify where expensive work begins.</li>
+<li class="">Confirm how <code>appendBitmapTextInstances</code> allocates/reserves instances so <code>maxTextLength</code> blocks worst-case allocations.</li>
+</ul>
+</li>
+<li class=""><strong>Prompting &amp; Constraints</strong>:<!-- -->
+<ul>
+<li class="">Do not edit checked-in <code>dist/</code> outputs.</li>
+<li class="">Preserve ES module imports and type-only import/export rules (<code>import type { ... }</code>).</li>
+<li class="">Keep validation logic small and deterministic; avoid console output that could corrupt <code>vitest-llm-reporter</code>.</li>
+</ul>
+</li>
+<li class=""><strong>Safety Rails</strong>:<!-- -->
+<ul>
+<li class="">Validation must occur before sorting/packing/allocations whenever possible.</li>
+<li class="">Prefer throwing errors (fail-fast) over truncation/clamping for contract violations.</li>
+</ul>
+</li>
+<li class=""><strong>Validation Hooks</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm test --filter @idle-engine/renderer-webgpu</code></li>
+<li class=""><code>pnpm lint --filter @idle-engine/renderer-webgpu</code> (or <code>pnpm lint</code>)</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>Do nothing / rely on TypeScript types</strong>: Rejected; does not protect runtime from untrusted JSON/replay inputs.</li>
+<li class=""><strong>Full schema validation (e.g., AJV/Zod) for manifests + RCB</strong>: More complete but adds runtime overhead and dependencies; can be a follow-up if needed.</li>
+<li class=""><strong>Reuse <code>@idle-engine/renderer-debug</code> validation directly</strong>: Would add an undesirable dependency edge for a production renderer and still doesn’t address asset manifest caps.</li>
+<li class=""><strong>Truncate oversized inputs instead of throwing</strong>: Avoids hard failures but risks silent corruption and non-obvious rendering differences; not aligned with schema versioning.</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Add tests that assert:<!-- -->
+<ul>
+<li class=""><code>loadAssets()</code> throws when <code>manifest.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION</code>.</li>
+<li class=""><code>render()</code> throws when <code>rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION</code>.</li>
+<li class=""><code>loadAssets()</code> throws when <code>manifest.assets.length &gt; maxAssets</code> (and does so before invoking <code>assets.loadImage/loadFont</code>).</li>
+<li class=""><code>render()</code> throws when <code>rcb.draws.length &gt; maxDrawsPerFrame</code> (and does so before GPU submission).</li>
+<li class=""><code>render()</code> throws when any <code>TextDraw.text.length &gt; maxTextLength</code> (and does so before instance buffer reservations).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Performance</strong>:<!-- -->
+<ul>
+<li class="">Validation adds small <code>O(n)</code> scanning for text lengths (bounded by <code>maxDrawsPerFrame</code>), while preventing <code>O(n log n)</code> sorting and large allocations on rejected inputs.</li>
+</ul>
+</li>
+<li class=""><strong>Tooling / A11y</strong>:<!-- -->
+<ul>
+<li class="">Manual validation in a WebGPU host (Electron shell) by feeding intentionally malformed replays/packs and confirming error surfacing and no tab freeze.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Breaking existing consumers with old schema versions</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: clear error message pointing at expected schema version; ensure contract version bumps are coordinated.</li>
+</ul>
+</li>
+<li class=""><strong>Default caps too low for legitimate content</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: expose <code>limits</code> in <code>WebGpuRendererCreateOptions</code>; document how to raise limits for trusted environments.</li>
+</ul>
+</li>
+<li class=""><strong>Validation overhead on hot render loop</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: keep checks minimal; only scan for text length after draw-count is within bounds.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Milestones</strong>: Ship as a patch/minor update to <code>@idle-engine/renderer-webgpu</code> (depending on semver interpretation of “throws on invalid input”).</li>
+<li class=""><strong>Migration Strategy</strong>: None for compliant callers; update any replays/content packs that carry stale schema versions.</li>
+<li class=""><strong>Communication</strong>: Note in release notes and issue comment that the renderer now enforces schema versions and default input caps.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
+<ol>
+<li class="">Should limits be configured only at renderer creation (<code>createWebGpuRenderer(..., { limits })</code>), or should <code>loadAssets</code>/<code>render</code> also accept per-call overrides?</li>
+<li class="">Should the library introduce dedicated error classes (e.g., <code>WebGpuRendererSchemaMismatchError</code>, <code>WebGpuRendererLimitExceededError</code>) to allow safe host-side recovery without string matching?</li>
+<li class="">Should <code>maxTextLength</code> be defined in terms of JavaScript UTF-16 code units (<code>text.length</code>) or Unicode code points (iteration count of <code>for (const ch of text)</code>)?</li>
+<li class="">Should we also cap <code>passes.length</code> and/or scissor stack depth to avoid other unbounded structures (follow-up or included in this issue)?</li>
+<li class="">Are the proposed defaults (<code>10k</code> assets, <code>100k</code> draws, <code>10k</code> chars) appropriate for the intended content scale, or should they be tuned based on empirical packs?</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ul>
+<li class="">Consider promoting a shared, dependency-light validation helper into <code>@idle-engine/renderer-contract</code> (so multiple renderers/hosts can reuse it).</li>
+<li class="">Add optional stricter validation modes for hosts running fully untrusted content:<!-- -->
+<ul>
+<li class="">finite number validation for coordinates/dimensions</li>
+<li class="">string non-emptiness checks for IDs</li>
+<li class="">per-kind draw validation (similar to <code>renderer-debug</code>’s <code>validateRenderCommandBuffer</code>)</li>
+</ul>
+</li>
+<li class="">Add fuzz/property-based tests that generate random manifests/RCBs within caps to ensure renderer robustness.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class="">Issue 813: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/813" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/813</a></li>
+<li class="">Contract schema version + types: <code>packages/renderer-contract/src/types.ts</code></li>
+<li class="">WebGPU entry points: <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code></li>
+<li class="">Existing RCB validation helper (debug tooling): <code>packages/renderer-debug/src/rcb-validation.ts</code></li>
+<li class="">WebGPU renderer README example (mentions schema version constant): <code>packages/renderer-webgpu/README.md</code></li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>AssetManifest</strong>: Renderer input that lists asset IDs, kinds, and content hashes to build a sprite atlas.</li>
+<li class=""><strong>RenderCommandBuffer (RCB)</strong>: Per-frame renderer input containing passes and ordered draws.</li>
+<li class=""><strong>Schema version</strong>: Integer constant (<code>RENDERER_CONTRACT_SCHEMA_VERSION</code>) indicating the expected field layout for contract payloads.</li>
+<li class=""><strong>DoS (Denial of Service)</strong>: Attacks/inputs that exhaust CPU/memory or otherwise freeze/crash the host.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-01-24</td><td>Codex (AI)</td><td>Initial draft</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/issue-813-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
