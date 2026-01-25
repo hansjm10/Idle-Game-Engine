@@ -14,6 +14,23 @@ type ContentId = z.infer<typeof contentIdSchema>;
 type ScriptId = z.infer<typeof scriptIdSchema>;
 type SystemAutomationTargetId = z.infer<typeof systemAutomationTargetIdSchema>;
 
+/**
+ * Target type for automation commands.
+ *
+ * - `generator`: Toggle a generator's enabled state. Uses `targetId` and optionally
+ *   `targetEnabled` (default true). Generates a `TOGGLE_GENERATOR` command.
+ *
+ * - `upgrade`: Purchase an upgrade. Uses `targetId`. Generates a `PURCHASE_UPGRADE` command.
+ *
+ * - `purchaseGenerator`: Buy generator levels. Uses `targetId` and optionally
+ *   `targetCount` (default 1). Generates a `PURCHASE_GENERATOR` command.
+ *
+ * - `collectResource`: Add resources directly. Uses `targetId` and optionally
+ *   `targetAmount` (default 1). Generates a `COLLECT_RESOURCE` command.
+ *
+ * - `system`: Trigger system commands. Uses `systemTargetId` (not `targetId`).
+ *   Valid system targets: `system:prestige`, `system:save`, `system:reset`.
+ */
 type AutomationTargetType =
   | 'generator'
   | 'upgrade'
@@ -133,9 +150,13 @@ export const automationDefinitionSchema: z.ZodType<
     id: contentIdSchema,
     name: localizedTextSchema,
     description: localizedTextSchema,
-    targetType: z.enum(
-      ['generator', 'upgrade', 'purchaseGenerator', 'collectResource', 'system'] as const,
-    ),
+    targetType: z
+      .enum(
+        ['generator', 'upgrade', 'purchaseGenerator', 'collectResource', 'system'] as const,
+      )
+      .describe(
+        'Target type: generator (toggle), upgrade (purchase), purchaseGenerator (buy levels), collectResource (add resources), system (system commands)',
+      ),
     targetId: contentIdSchema.optional(),
     systemTargetId: systemAutomationTargetIdSchema.optional(),
     targetEnabled: z.boolean().optional(),
