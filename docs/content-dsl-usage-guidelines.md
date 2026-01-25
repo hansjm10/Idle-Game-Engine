@@ -45,10 +45,10 @@ Start from the structure maintained in `packages/content-sample`:
 
 ### TypeScript Configuration
 
-Content packs must include specific TypeScript declaration settings in their
-`tsconfig.json` to ensure proper `.d.ts` file generation. Without these
-settings, the `"types"` field in `package.json` will point to non-existent
-files, breaking type checking for consumers.
+Content packs must include specific TypeScript settings in their `tsconfig.json`
+to ensure proper module resolution and `.d.ts` file generation. Without these
+settings, TypeScript compilation will fail or the `"types"` field in
+`package.json` will point to non-existent files.
 
 **Required settings:**
 
@@ -57,6 +57,9 @@ files, breaking type checking for consumers.
 | `declaration` | `true` | Generates `.d.ts` type declaration files in `dist/` |
 | `declarationMap` | `true` | Enables "Go to Definition" to navigate to source `.ts` files |
 | `sourceMap` | `true` | Enables debugging with original TypeScript source |
+| `module` | `NodeNext` | Use Node.js ESM module system semantics |
+| `moduleResolution` | `NodeNext` | Resolve `.js` imports to `.ts` files per Node.js ESM rules |
+| `types` | `["node"]` | Include Node.js type definitions (required when overriding base config) |
 
 **Recommended `tsconfig.json` template:**
 
@@ -68,17 +71,28 @@ files, breaking type checking for consumers.
     "rootDir": "src",
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
 }
 ```
 
+> **Why `NodeNext` module resolution is required**: The content compiler
+> generates TypeScript modules that use ESM-compatible imports with explicit
+> `.js` extensions (e.g., `import { ... } from './generated/pack.generated.js'`).
+> The base config uses `"moduleResolution": "Node"`, which cannot resolve these
+> `.js` imports to their corresponding `.ts` source files during compilation.
+> Content packs must override with `NodeNext` to enable this resolution.
+>
 > **Why these settings are not in `tsconfig.base.json`**: The base config
 > intentionally omits declaration settings because not all packages require
-> them. Content packs must explicitly enable declarations to generate the
-> `.d.ts` files that consuming packages depend on.
+> them. It uses `Node` module resolution because not all packages use ESM
+> imports with `.js` extensions. Content packs must explicitly configure both
+> to work with the content compiler's generated output.
 
 See `packages/content-sample/tsconfig.json` for the canonical reference
 implementation.
@@ -123,9 +137,10 @@ documentation.
 - [ ] Create a new workspace package (for example `packages/<pack-slug>`) with a
   `content/` directory that mirrors the layout in
   `packages/content-sample/README.md`.
-- [ ] Configure `tsconfig.json` with required declaration settings (`declaration`,
-  `declarationMap`, `sourceMap`)—see the TypeScript Configuration section above
-  or copy from `packages/content-sample/tsconfig.json`.
+- [ ] Configure `tsconfig.json` with required module resolution and declaration
+  settings (`module`, `moduleResolution`, `types`, `declaration`, `declarationMap`,
+  `sourceMap`)—see the TypeScript Configuration section above or copy from
+  `packages/content-sample/tsconfig.json`.
 - [ ] Create `eslint.config.js` with `restrictCoreInternals: 'error'`—see the
   ESLint Configuration section above or copy from
   `packages/content-sample/eslint.config.js`.
