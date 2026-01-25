@@ -386,4 +386,96 @@ describe('Achievement track types', () => {
     expect(snapshot4.achievements?.[1]?.completions).toBe(1);
     expect(snapshot4.achievements?.[2]?.completions).toBe(1);
   });
+
+  it('ignores achievement emitEvent rewards when no event publisher is provided', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const emitEventAchievement = createAchievementDefinition('achievement.emit-event', {
+      track: {
+        kind: 'script' as const,
+        scriptId: 'script.test-condition',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+      reward: {
+        kind: 'emitEvent' as const,
+        eventId: 'runtime:test',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [emitEventAchievement],
+    });
+
+    let scriptResult = false;
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      evaluateScriptCondition: () => scriptResult,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot1 = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+
+    scriptResult = true;
+    coordinator.updateForStep(1);
+    const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+
+  it('reports errors when achievement event publishers throw', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const emitEventAchievement = createAchievementDefinition('achievement.emit-event', {
+      track: {
+        kind: 'script' as const,
+        scriptId: 'script.test-condition',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+      reward: {
+        kind: 'emitEvent' as const,
+        eventId: 'runtime:test',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [emitEventAchievement],
+    });
+
+    let scriptResult = false;
+    const errors: Error[] = [];
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      evaluateScriptCondition: () => scriptResult,
+      onError: (error) => errors.push(error),
+    });
+
+    scriptResult = true;
+    coordinator.updateForStep(1, {
+      events: {
+        publish: () => {
+          throw new Error('boom');
+        },
+      },
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain('Achievement event publish failed for "runtime:test"');
+    expect(errors[0]?.message).toContain('boom');
+  });
 });
