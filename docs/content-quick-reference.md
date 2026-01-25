@@ -6,6 +6,22 @@ description: Condensed content-authoring cheatsheet for Idle Engine packs.
 Use this as a fast lookup. For narrative guidance and full examples, see
 `docs/content-dsl-usage-guidelines.md`.
 
+## Required tsconfig.json settings
+
+Content packs must include these settings in `tsconfig.json` for proper type exports:
+
+```json
+{
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  }
+}
+```
+
+See `packages/content-sample/tsconfig.json` for the complete template.
+
 ## Quick start (createGame)
 
 Once you have a normalized content pack, bootstrap a runtime with the high-level factory:
