@@ -1,4 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { randomUUID } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
@@ -20,6 +23,9 @@ if (enableUnsafeWebGpu) {
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
 
+const resolveGameMode = (): string =>
+  (process.env.IDLE_ENGINE_GAME ?? 'demo').trim().toLowerCase();
+
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
   version: '1',
@@ -39,6 +45,29 @@ const DEMO_CONTROL_SCHEME: ControlScheme = {
     },
   ],
 };
+
+const TEST_GAME_CONTROL_SCHEME: ControlScheme = {
+  id: 'shell-desktop-test-game',
+  version: '1',
+  actions: [
+    {
+      id: 'collect-gold',
+      commandType: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+      payload: { resourceId: 'test-game.gold', amount: 1 },
+    },
+  ],
+  bindings: [
+    {
+      id: 'collect-space',
+      intent: 'collect',
+      actionId: 'collect-gold',
+      phases: ['start'],
+    },
+  ],
+};
+
+const resolveControlScheme = (): ControlScheme =>
+  resolveGameMode() === 'test-game' ? TEST_GAME_CONTROL_SCHEME : DEMO_CONTROL_SCHEME;
 
 function assertPingRequest(
   request: unknown,
@@ -90,10 +119,23 @@ type SimWorkerEnqueueCommandsMessage = Readonly<{
   commands: readonly Command[];
 }>;
 
+type SimWorkerSerializeMessage = Readonly<{
+  kind: 'serialize';
+  requestId: string;
+}>;
+
+type SimWorkerHydrateMessage = Readonly<{
+  kind: 'hydrate';
+  requestId: string;
+  save: unknown;
+}>;
+
 type SimWorkerInboundMessage =
   | SimWorkerInitMessage
   | SimWorkerTickMessage
-  | SimWorkerEnqueueCommandsMessage;
+  | SimWorkerEnqueueCommandsMessage
+  | SimWorkerSerializeMessage
+  | SimWorkerHydrateMessage;
 
 type SimWorkerReadyMessage = Readonly<{
   kind: 'ready';
@@ -119,18 +161,114 @@ type SimWorkerErrorMessage = Readonly<{
   error: string;
 }>;
 
+type SimWorkerSerializedMessage = Readonly<{
+  kind: 'serialized';
+  requestId: string;
+  save?: unknown;
+  error?: string;
+}>;
+
+type SimWorkerHydratedMessage = Readonly<{
+  kind: 'hydrated';
+  requestId: string;
+  success: boolean;
+  nextStep?: number;
+  stepSizeMs?: number;
+  error?: string;
+}>;
+
 type SimWorkerOutboundMessage =
   | SimWorkerReadyMessage
   | SimWorkerFramesMessage
   | SimWorkerFrameMessage
+  | SimWorkerSerializedMessage
+  | SimWorkerHydratedMessage
   | SimWorkerErrorMessage;
 
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
+  enqueueCommand: <TPayload extends object>(
+    type: string,
+    payload: TPayload,
+    priority: CommandPriority,
+  ) => void;
+  requestSerialize: () => Promise<unknown>;
+  requestHydrate: (save: unknown) => Promise<void>;
   dispose: () => void;
 }>;
 
 let simWorkerController: SimWorkerController | undefined;
+
+const getTestGameSavePath = (): string =>
+  join(app.getPath('userData'), 'test-game-save.json');
+
+const saveTestGameState = async (): Promise<void> => {
+  if (resolveGameMode() !== 'test-game') {
+    return;
+  }
+
+  const controller = simWorkerController;
+  if (!controller) {
+    // eslint-disable-next-line no-console
+    console.error('[shell-desktop] Cannot save: sim worker is not running.');
+    return;
+  }
+
+  try {
+    const save = await controller.requestSerialize();
+    const savePath = getTestGameSavePath();
+    await writeFile(savePath, JSON.stringify(save, null, 2), 'utf8');
+    // eslint-disable-next-line no-console
+    console.info(`[shell-desktop] Saved test game state to ${savePath}`);
+  } catch (error: unknown) {
+    // eslint-disable-next-line no-console
+    console.error('[shell-desktop] Failed to save test game state.', error);
+  }
+};
+
+const loadTestGameState = async (): Promise<void> => {
+  if (resolveGameMode() !== 'test-game') {
+    return;
+  }
+
+  const controller = simWorkerController;
+  if (!controller) {
+    // eslint-disable-next-line no-console
+    console.error('[shell-desktop] Cannot load: sim worker is not running.');
+    return;
+  }
+
+  const savePath = getTestGameSavePath();
+  try {
+    const raw = await readFile(savePath, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    await controller.requestHydrate(parsed);
+    // eslint-disable-next-line no-console
+    console.info(`[shell-desktop] Loaded test game state from ${savePath}`);
+  } catch (error: unknown) {
+    // eslint-disable-next-line no-console
+    console.error(`[shell-desktop] Failed to load test game state from ${savePath}.`, error);
+  }
+};
+
+const enqueueOfflineCatchup = (elapsedMs: number): void => {
+  if (resolveGameMode() !== 'test-game') {
+    return;
+  }
+
+  const controller = simWorkerController;
+  if (!controller) {
+    // eslint-disable-next-line no-console
+    console.error('[shell-desktop] Cannot apply offline catch-up: sim worker is not running.');
+    return;
+  }
+
+  controller.enqueueCommand(
+    RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    { elapsedMs, resourceDeltas: {} },
+    CommandPriority.SYSTEM,
+  );
+};
 
 function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerController {
   const worker = new Worker(new URL('./sim-worker.js', import.meta.url));
@@ -142,7 +280,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   let stepSizeMs = 16;
   let nextStep = 0;
-  const maxStepsPerFrame = 50;
+  const maxStepsPerFrame = resolveGameMode() === 'test-game' ? 5000 : 50;
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
@@ -167,6 +305,28 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
   };
 
+  type PendingRequest<TValue> = Readonly<{
+    resolve: (value: TValue) => void;
+    reject: (error: Error) => void;
+  }>;
+
+  const pendingSerializeRequests = new Map<string, PendingRequest<unknown>>();
+  const pendingHydrateRequests = new Map<string, PendingRequest<void>>();
+
+  const rejectPendingRequests = (reason: string): void => {
+    const error = new Error(reason);
+
+    for (const request of pendingSerializeRequests.values()) {
+      request.reject(error);
+    }
+    pendingSerializeRequests.clear();
+
+    for (const request of pendingHydrateRequests.values()) {
+      request.reject(error);
+    }
+    pendingHydrateRequests.clear();
+  };
+
   const sendSimStatus = (status: ShellSimStatusPayload): void => {
     try {
       mainWindow.webContents.send(IPC_CHANNELS.simStatus, status);
@@ -183,6 +343,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     hasFailed = true;
     stopTickLoop();
+    rejectPendingRequests(status.reason);
 
     // eslint-disable-next-line no-console
     console.error(status.kind === 'stopped' ? `[shell-desktop] Sim stopped: ${status.reason}` : `[shell-desktop] Sim crashed: ${status.reason}`, details);
@@ -264,6 +425,49 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       return;
     }
 
+    if (message.kind === 'serialized') {
+      const request = pendingSerializeRequests.get(message.requestId);
+      if (!request) {
+        return;
+      }
+      pendingSerializeRequests.delete(message.requestId);
+
+      if (message.error) {
+        request.reject(new Error(message.error));
+        return;
+      }
+      if (message.save === undefined) {
+        request.reject(new Error('Sim worker did not return a save payload.'));
+        return;
+      }
+
+      request.resolve(message.save);
+      return;
+    }
+
+    if (message.kind === 'hydrated') {
+      const request = pendingHydrateRequests.get(message.requestId);
+      if (!request) {
+        return;
+      }
+      pendingHydrateRequests.delete(message.requestId);
+
+      if (!message.success) {
+        request.reject(new Error(message.error ?? 'Sim worker failed to hydrate save.'));
+        return;
+      }
+
+      if (typeof message.stepSizeMs === 'number' && Number.isFinite(message.stepSizeMs) && message.stepSizeMs > 0) {
+        stepSizeMs = message.stepSizeMs;
+      }
+      if (typeof message.nextStep === 'number' && Number.isFinite(message.nextStep) && message.nextStep >= 0) {
+        nextStep = message.nextStep;
+      }
+
+      request.resolve(undefined);
+      return;
+    }
+
     if (message.kind === 'error') {
       handleWorkerFailure({ kind: 'crashed', reason: message.error }, message.error);
     }
@@ -305,7 +509,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       priority: CommandPriority.PLAYER,
     };
 
-    const commands = createControlCommands(DEMO_CONTROL_SCHEME, event, context);
+    const commands = createControlCommands(resolveControlScheme(), event, context);
     if (commands.length > 0) {
       safePostMessage({ kind: 'enqueueCommands', commands });
       return;
@@ -326,16 +530,60 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     safePostMessage({ kind: 'enqueueCommands', commands: [passthroughCommand] });
   };
 
+  const enqueueCommand = <TPayload extends object>(
+    type: string,
+    payload: TPayload,
+    priority: CommandPriority,
+  ): void => {
+    safePostMessage({
+      kind: 'enqueueCommands',
+      commands: [
+        {
+          type,
+          payload,
+          priority,
+          timestamp: nextStep * stepSizeMs,
+          step: nextStep,
+        },
+      ],
+    });
+  };
+
+  const requestSerialize = async (): Promise<unknown> => {
+    if (hasFailed || isDisposing) {
+      throw new Error('Sim worker is not available.');
+    }
+
+    const requestId = randomUUID();
+    return await new Promise((resolve, reject) => {
+      pendingSerializeRequests.set(requestId, { resolve, reject });
+      safePostMessage({ kind: 'serialize', requestId });
+    });
+  };
+
+  const requestHydrate = async (save: unknown): Promise<void> => {
+    if (hasFailed || isDisposing) {
+      throw new Error('Sim worker is not available.');
+    }
+
+    const requestId = randomUUID();
+    return await new Promise((resolve, reject) => {
+      pendingHydrateRequests.set(requestId, { resolve, reject });
+      safePostMessage({ kind: 'hydrate', requestId, save });
+    });
+  };
+
   const dispose = (): void => {
     isDisposing = true;
     stopTickLoop();
+    rejectPendingRequests('Sim worker disposed.');
     void worker.terminate().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.error(error);
     });
   };
 
-  return { sendControlEvent, dispose };
+  return { sendControlEvent, enqueueCommand, requestSerialize, requestHydrate, dispose };
 }
 
 function registerIpcHandlers(): void {
@@ -356,6 +604,43 @@ function registerIpcHandlers(): void {
 }
 
 function installAppMenu(): void {
+  const isTestGame = resolveGameMode() === 'test-game';
+
+  const gameSubmenu: MenuItemConstructorOptions[] = [
+    {
+      label: 'Save',
+      accelerator: 'CmdOrCtrl+S',
+      enabled: isTestGame,
+      click: () => {
+        void saveTestGameState();
+      },
+    },
+    {
+      label: 'Load',
+      accelerator: 'CmdOrCtrl+O',
+      enabled: isTestGame,
+      click: () => {
+        void loadTestGameState();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Offline catch-up (1h)',
+      enabled: isTestGame,
+      click: () => enqueueOfflineCatchup(60 * 60 * 1000),
+    },
+    {
+      label: 'Offline catch-up (6h)',
+      enabled: isTestGame,
+      click: () => enqueueOfflineCatchup(6 * 60 * 60 * 1000),
+    },
+    {
+      label: 'Offline catch-up (12h)',
+      enabled: isTestGame,
+      click: () => enqueueOfflineCatchup(12 * 60 * 60 * 1000),
+    },
+  ];
+
   const viewSubmenu: MenuItemConstructorOptions[] = [
     { role: 'reload' },
     { role: 'forceReload' },
@@ -381,6 +666,7 @@ function installAppMenu(): void {
           },
         ]
       : []),
+    { label: 'Game', submenu: gameSubmenu },
     { label: 'View', submenu: viewSubmenu },
     { role: 'windowMenu' },
   ];

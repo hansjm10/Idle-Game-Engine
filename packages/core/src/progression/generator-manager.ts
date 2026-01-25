@@ -51,6 +51,13 @@ export type GeneratorRecord = {
 
 const DEFAULT_RATE_CONTEXT: FormulaEvaluationContext = {
   variables: { level: 1, time: 0, deltaTime: 0 },
+  entities: {
+    resource: () => 0,
+    generator: () => 0,
+    upgrade: () => 0,
+    automation: () => 0,
+    prestigeLayer: () => 0,
+  },
 };
 
 function buildGeneratorRates(

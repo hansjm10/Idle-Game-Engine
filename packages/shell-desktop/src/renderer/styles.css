@@ -30,6 +30,7 @@ main.overlay {
   gap: 16px;
   align-content: start;
   max-width: 520px;
+  pointer-events: none;
 }
 
 h1 {

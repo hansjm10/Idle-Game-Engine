@@ -1,0 +1,24 @@
+{
+  "packSlug": "@idle-engine/test-game-pack",
+  "eventTypes": [
+    {
+      "namespace": "test-game",
+      "name": "milestone-reached",
+      "version": 1,
+      "schema": "./events/test-game-milestone-reached.schema.json"
+    },
+    {
+      "namespace": "test-game",
+      "name": "prestige-ready",
+      "version": 1,
+      "schema": "./events/test-game-prestige-ready.schema.json"
+    },
+    {
+      "namespace": "test-game",
+      "name": "mission-complete",
+      "version": 1,
+      "schema": "./events/test-game-mission-complete.schema.json"
+    }
+  ]
+}
+

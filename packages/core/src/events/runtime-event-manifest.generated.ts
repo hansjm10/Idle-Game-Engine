@@ -26,6 +26,24 @@ export const CONTENT_EVENT_DEFINITIONS = [
     version: 2,
     schema: 'packages/content-sample/content/events/sample-reactor-primed.schema.json',
   },
+  {
+    packSlug: '@idle-engine/test-game-pack',
+    type: 'test-game:milestone-reached' as RuntimeEventType,
+    version: 1,
+    schema: 'packages/content-test-game/content/events/test-game-milestone-reached.schema.json',
+  },
+  {
+    packSlug: '@idle-engine/test-game-pack',
+    type: 'test-game:mission-complete' as RuntimeEventType,
+    version: 1,
+    schema: 'packages/content-test-game/content/events/test-game-mission-complete.schema.json',
+  },
+  {
+    packSlug: '@idle-engine/test-game-pack',
+    type: 'test-game:prestige-ready' as RuntimeEventType,
+    version: 1,
+    schema: 'packages/content-test-game/content/events/test-game-prestige-ready.schema.json',
+  },
 ] as const satisfies readonly ContentEventDefinition[];
 
 export const CONTENT_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = [
@@ -33,6 +51,24 @@ export const CONTENT_EVENT_CHANNELS: ReadonlyArray<EventChannelConfiguration> = 
     definition: {
       type: 'sample:reactor-primed' as RuntimeEventType,
       version: 2,
+    },
+  },
+  {
+    definition: {
+      type: 'test-game:milestone-reached' as RuntimeEventType,
+      version: 1,
+    },
+  },
+  {
+    definition: {
+      type: 'test-game:mission-complete' as RuntimeEventType,
+      version: 1,
+    },
+  },
+  {
+    definition: {
+      type: 'test-game:prestige-ready' as RuntimeEventType,
+      version: 1,
     },
   },
 ];
@@ -93,6 +129,27 @@ export const GENERATED_RUNTIME_EVENT_DEFINITIONS = [
     packSlug: '@idle-engine/sample-pack',
     schema: 'packages/content-sample/content/events/sample-reactor-primed.schema.json',
   },
+  {
+    channel: 9,
+    type: 'test-game:milestone-reached' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/test-game-pack',
+    schema: 'packages/content-test-game/content/events/test-game-milestone-reached.schema.json',
+  },
+  {
+    channel: 10,
+    type: 'test-game:mission-complete' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/test-game-pack',
+    schema: 'packages/content-test-game/content/events/test-game-mission-complete.schema.json',
+  },
+  {
+    channel: 11,
+    type: 'test-game:prestige-ready' as RuntimeEventType,
+    version: 1,
+    packSlug: '@idle-engine/test-game-pack',
+    schema: 'packages/content-test-game/content/events/test-game-prestige-ready.schema.json',
+  },
 ] as const satisfies readonly GeneratedRuntimeEventDefinition[];
 
 export const GENERATED_RUNTIME_EVENT_MANIFEST = {
@@ -142,15 +199,33 @@ export const GENERATED_RUNTIME_EVENT_MANIFEST = {
       type: 'sample:reactor-primed' as RuntimeEventType,
       version: 2,
     },
+    {
+      channel: 9,
+      type: 'test-game:milestone-reached' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 10,
+      type: 'test-game:mission-complete' as RuntimeEventType,
+      version: 1,
+    },
+    {
+      channel: 11,
+      type: 'test-game:prestige-ready' as RuntimeEventType,
+      version: 1,
+    },
   ] as const satisfies readonly RuntimeEventManifestEntry[],
-  hash: '7d1632fb' as RuntimeEventManifestHash,
+  hash: '3ef14b25' as RuntimeEventManifestHash,
 } as const;
 
 export type ContentRuntimeEventType =
-  'sample:reactor-primed';
+  'sample:reactor-primed' | 'test-game:milestone-reached' | 'test-game:mission-complete' | 'test-game:prestige-ready';
 
 declare module './runtime-event.js' {
   interface RuntimeEventPayloadMap {
     'sample:reactor-primed': unknown;
+    'test-game:milestone-reached': unknown;
+    'test-game:mission-complete': unknown;
+    'test-game:prestige-ready': unknown;
   }
 }
