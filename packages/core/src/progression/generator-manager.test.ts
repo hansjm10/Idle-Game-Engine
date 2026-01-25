@@ -8,6 +8,12 @@ import type { EvaluatedUpgradeEffects } from '../upgrade-effects.js';
 import { GeneratorManager } from './generator-manager.js';
 import type { FormulaEvaluationContextFactory } from './formula-context.js';
 
+type ExpressionNode = Extract<NumericFormula, { kind: 'expression' }>['expression'];
+type ExpressionRefTarget = Extract<ExpressionNode, { kind: 'ref' }>['target'];
+type FormulaContentId = Exclude<ExpressionRefTarget, { type: 'variable' }>['id'];
+
+const cid = (value: string) => value as FormulaContentId;
+
 const EMPTY_UPGRADE_EFFECTS: EvaluatedUpgradeEffects = {
   generatorRateMultipliers: new Map(),
   generatorCostMultipliers: new Map(),
@@ -43,7 +49,7 @@ describe('GeneratorManager', () => {
             kind: 'expression',
             expression: {
               kind: 'ref',
-              target: { type: 'resource', id: 'resource.energy' },
+              target: { type: 'resource', id: cid('resource.energy') },
             },
           } satisfies NumericFormula,
         },
@@ -62,4 +68,3 @@ describe('GeneratorManager', () => {
     ]);
   });
 });
-

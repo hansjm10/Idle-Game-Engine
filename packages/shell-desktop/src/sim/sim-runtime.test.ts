@@ -221,7 +221,7 @@ describe('shell-desktop sim runtime (test-game)', () => {
     const originalGameMode = process.env.IDLE_ENGINE_GAME;
     process.env.IDLE_ENGINE_GAME = 'test-game';
 
-    const findGoldLine = (frame: { draws: Array<{ kind?: string; text?: string }> }): string => {
+    const findGoldLine = (frame: { draws: ReadonlyArray<{ kind?: string; text?: string }> }): string => {
       const gold = frame.draws.find((draw) => draw.kind === 'text' && typeof draw.text === 'string' && draw.text.startsWith('Gold:'));
       expect(gold).toBeDefined();
       return (gold as { text: string }).text;

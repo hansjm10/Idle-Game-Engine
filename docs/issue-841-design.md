@@ -192,7 +192,7 @@ packages/content-test-game/
 | `test-game.auto-collect-gems` | resourceThreshold (gold >= 1000) | collectResource | Collect gems when gold high |
 | `test-game.auto-upgrade` | commandQueueEmpty | upgrade | Purchase next available upgrade |
 | `test-game.auto-prestige` | event (prestige-ready) | system | System target: execute prestige |
-| `test-game.auto-generator-toggle` | resourceThreshold (mana <= 100) | generator | Toggle generator off when mana low |
+| `test-game.auto-generator-toggle` | resourceThreshold (mana `<=` 100) | generator | Toggle generator off when mana low |
 | `test-game.formula-cooldown-auto` | interval | purchaseGenerator | Formula-based cooldown |
 
 #### 6.2.6 Entities (2-3 entity types)
