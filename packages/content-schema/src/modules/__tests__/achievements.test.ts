@@ -30,6 +30,28 @@ describe('achievementDefinitionSchema', () => {
     });
   });
 
+  it('derives progress target from generator-count threshold when omitted', () => {
+    const definition = achievementDefinitionSchema.parse({
+      ...baseAchievement,
+      id: 'generator-count',
+      track: {
+        kind: 'generator-count',
+        threshold: { kind: 'constant', value: 5 },
+      },
+    });
+
+    expect(definition.progress.target).toEqual({
+      kind: 'constant',
+      value: 5,
+    });
+    expect(definition.track).toEqual(
+      expect.objectContaining({
+        kind: 'generator-count',
+        comparator: 'gte',
+      }),
+    );
+  });
+
   it('requires repeatable configuration when progress mode is repeatable', () => {
     expect(() =>
       achievementDefinitionSchema.parse({

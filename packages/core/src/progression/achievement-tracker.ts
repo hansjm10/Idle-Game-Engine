@@ -127,17 +127,20 @@ export class AchievementTracker {
   private readonly onError?: (error: Error) => void;
   private readonly createFormulaEvaluationContext: FormulaEvaluationContextFactory;
   private readonly getCustomMetricValue?: (metricId: string) => number;
+  private readonly allGeneratorIds: readonly string[];
 
   constructor(options: {
     readonly achievements: readonly NormalizedAchievement[];
     readonly initialState?: readonly ProgressionAchievementState[];
     readonly createFormulaEvaluationContext: FormulaEvaluationContextFactory;
+    readonly generatorIds?: readonly string[];
     readonly onError?: (error: Error) => void;
     readonly getCustomMetricValue?: (metricId: string) => number;
   }) {
     this.onError = options.onError;
     this.createFormulaEvaluationContext = options.createFormulaEvaluationContext;
     this.getCustomMetricValue = options.getCustomMetricValue;
+    this.allGeneratorIds = options.generatorIds ?? [];
 
     const initialAchievements = new Map(
       (options.initialState ?? []).map((achievement) => [achievement.id, achievement]),
@@ -459,6 +462,17 @@ export class AchievementTracker {
         return conditionContext.getResourceAmount(achievement.track.resourceId);
       case 'generator-level':
         return conditionContext.getGeneratorLevel(achievement.track.generatorId);
+      case 'generator-count': {
+        const generatorIds = achievement.track.generatorIds ?? this.allGeneratorIds;
+        let count = 0;
+        for (const generatorId of generatorIds) {
+          const owned = conditionContext.getGeneratorLevel(generatorId);
+          if (Number.isFinite(owned)) {
+            count += owned;
+          }
+        }
+        return count;
+      }
       case 'upgrade-owned':
         return conditionContext.getUpgradePurchases(achievement.track.upgradeId);
       case 'flag':
@@ -485,7 +499,7 @@ export class AchievementTracker {
     const left = Number.isFinite(measurement) ? measurement : 0;
     const right = Number.isFinite(target) ? target : 0;
 
-    if (achievement.track.kind === 'resource') {
+    if (achievement.track.kind === 'resource' || achievement.track.kind === 'generator-count') {
       return compareWithComparator(left, right, achievement.track.comparator, conditionContext);
     }
 

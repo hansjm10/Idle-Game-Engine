@@ -31,6 +31,7 @@ Used in the `track` field of an Achievement definition to determine how progress
 | :--- | :--- | :--- |
 | `resource` | `resourceId`, `threshold`, `comparator` | Tracks the amount of a specific resource. |
 | `generator-level` | `generatorId`, `level` | Tracks the level of a specific generator. |
+| `generator-count` | `threshold`, `comparator` (optional: `generatorIds`) | Tracks the total number of owned generators, optionally filtered to a subset. |
 | `upgrade-owned` | `upgradeId` (optional: `purchases`) | Tracks if a specific upgrade has been purchased. |
 | `flag` | `flagId` | Tracks if a specific game flag is set. |
 | `script` | `scriptId` | specific script execution conditions (see script docs). |
@@ -43,7 +44,7 @@ Used in the `track` field of an Achievement definition to determine how progress
 {
   "kind": "resource",
   "resourceId": "gold",
-  "threshold": 1000,
+  "threshold": { "kind": "constant", "value": 1000 },
   "comparator": "gte"
 }
 
@@ -51,7 +52,15 @@ Used in the `track` field of an Achievement definition to determine how progress
 {
   "kind": "generator-level",
   "generatorId": "mine",
-  "level": 10
+  "level": { "kind": "constant", "value": 10 }
+}
+
+// Generator Count Track
+{
+  "kind": "generator-count",
+  "threshold": { "kind": "constant", "value": 25 },
+  "comparator": "gte",
+  "generatorIds": ["cursor", "grandma"]
 }
 ```
 
