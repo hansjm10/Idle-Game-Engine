@@ -1826,6 +1826,15 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       return;
     }
 
+    const sourceBuffer = state.batchInstances.buffer;
+    const usedFloats = state.batchInstances.lengthFloats;
+
+    if (!Number.isFinite(usedBytes) || usedFloats > sourceBuffer.length) {
+      throw new Error(
+        `Instance buffer size mismatch: usedFloats=${usedFloats}, bufferLength=${sourceBuffer.length}, instanceCount=${instanceCount}`,
+      );
+    }
+
     this.#ensureInstanceBuffer(usedBytes);
 
     const instanceBuffer = this.#spriteInstanceBuffer;
@@ -1833,7 +1842,14 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       throw new Error('Sprite pipeline missing instance buffer.');
     }
 
-    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedBytes);
+    if (usedBytes > this.#spriteInstanceBufferSize) {
+      throw new Error(
+        `GPU instance buffer too small: usedBytes=${usedBytes}, gpuBufferSize=${this.#spriteInstanceBufferSize}`,
+      );
+    }
+
+    const instanceData = toArrayBuffer(sourceBuffer.subarray(0, usedFloats));
+    this.device.queue.writeBuffer(instanceBuffer, 0, instanceData);
 
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
 

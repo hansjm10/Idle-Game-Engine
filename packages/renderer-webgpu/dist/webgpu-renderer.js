@@ -387,8 +387,7 @@ const GPU_BUFFER_USAGE = globalThis
     VERTEX: 32,
     UNIFORM: 64,
 };
-const GPU_TEXTURE_USAGE = globalThis
-    .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
+const GPU_TEXTURE_USAGE = globalThis.GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
 function buildInsetUvRange(options) {
     if (!Number.isFinite(options.atlasSizePx) || options.atlasSizePx <= 0) {
         return { t0: 0, t1: 0 };
@@ -953,7 +952,11 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const atlasTexture = this.device.createTexture({
         size: [options.packed.atlasWidthPx, options.packed.atlasHeightPx, 1],
         format: 'rgba8unorm',
-        usage: GPU_TEXTURE_USAGE.TEXTURE_BINDING | GPU_TEXTURE_USAGE.COPY_DST,
+        // RENDER_ATTACHMENT is required by copyExternalImageToTexture in Chrome/Dawn
+        // because the copy may be internally implemented using a render pass.
+        usage: GPU_TEXTURE_USAGE.TEXTURE_BINDING |
+            GPU_TEXTURE_USAGE.COPY_DST |
+            GPU_TEXTURE_USAGE.RENDER_ATTACHMENT,
     });
     const sourceByAssetId = new Map();
     for (const { entry, source } of options.loadedSources) {
@@ -1328,12 +1331,21 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_resetQuadBatch).call(this, state);
         return;
     }
+    const sourceBuffer = state.batchInstances.buffer;
+    const usedFloats = state.batchInstances.lengthFloats;
+    if (!Number.isFinite(usedBytes) || usedFloats > sourceBuffer.length) {
+        throw new Error(`Instance buffer size mismatch: usedFloats=${usedFloats}, bufferLength=${sourceBuffer.length}, instanceCount=${instanceCount}`);
+    }
     __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_ensureInstanceBuffer).call(this, usedBytes);
     const instanceBuffer = __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBuffer, "f");
     if (!instanceBuffer) {
         throw new Error('Sprite pipeline missing instance buffer.');
     }
-    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedBytes);
+    if (usedBytes > __classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBufferSize, "f")) {
+        throw new Error(`GPU instance buffer too small: usedBytes=${usedBytes}, gpuBufferSize=${__classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBufferSize, "f")}`);
+    }
+    const instanceData = toArrayBuffer(sourceBuffer.subarray(0, usedFloats));
+    this.device.queue.writeBuffer(instanceBuffer, 0, instanceData);
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
     if (kind === 'image') {
         if (!state.textureBindGroup) {

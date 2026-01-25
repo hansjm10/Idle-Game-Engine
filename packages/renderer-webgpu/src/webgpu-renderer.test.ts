@@ -363,6 +363,19 @@ describe('renderer-webgpu', () => {
       return undefined;
     }
 
+    const INSTANCE_STRIDE_BYTES = 48;
+
+    function isInstanceBufferWrite(call: unknown[]): boolean {
+      const data = call[2];
+      if (data instanceof ArrayBuffer) {
+        return data.byteLength > 0 && data.byteLength % INSTANCE_STRIDE_BYTES === 0;
+      }
+      if (data instanceof Float32Array) {
+        return data.byteLength > 0 && data.byteLength % INSTANCE_STRIDE_BYTES === 0;
+      }
+      return false;
+    }
+
     it('throws when WebGPU is unavailable', async () => {
       setNavigator(undefined);
 
@@ -1251,7 +1264,7 @@ describe('renderer-webgpu', () => {
         ],
       } satisfies RenderCommandBuffer);
 
-      const instanceWrite = writeBuffer.mock.calls.find((call) => call[2] instanceof Float32Array);
+      const instanceWrite = writeBuffer.mock.calls.find((call) => isInstanceBufferWrite(call));
       expect(instanceWrite).toBeDefined();
       if (!instanceWrite) {
         throw new Error('Expected an instance buffer upload.');
@@ -1333,7 +1346,7 @@ describe('renderer-webgpu', () => {
         ],
       } satisfies RenderCommandBuffer);
 
-      const instanceWrite = writeBuffer.mock.calls.find((call) => call[2] instanceof Float32Array);
+      const instanceWrite = writeBuffer.mock.calls.find((call) => isInstanceBufferWrite(call));
       expect(instanceWrite).toBeDefined();
       if (!instanceWrite) {
         throw new Error('Expected an instance buffer upload.');
@@ -1572,7 +1585,7 @@ describe('renderer-webgpu', () => {
       renderer.render(rcb);
       renderer.render(rcb);
 
-      const instanceWrites = writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array);
+      const instanceWrites = writeBuffer.mock.calls.filter((call) => isInstanceBufferWrite(call));
       expect(instanceWrites).toHaveLength(2);
 
       const firstWrite = instanceWrites[0];
@@ -1581,15 +1594,11 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected quad instance uploads to be recorded.');
       }
 
-      const firstPayload = firstWrite[2] as Float32Array;
-      const secondPayload = secondWrite[2] as Float32Array;
-      const firstSize = firstWrite[4] as number;
-      const secondSize = secondWrite[4] as number;
+      const firstPayload = firstWrite[2] as ArrayBuffer;
+      const secondPayload = secondWrite[2] as ArrayBuffer;
 
-      expect(firstSize).toBe(96);
-      expect(secondSize).toBe(96);
-      expect(firstPayload.byteLength).toBeGreaterThan(firstSize);
-      expect(secondPayload).toBe(firstPayload);
+      expect(firstPayload.byteLength).toBe(96);
+      expect(secondPayload.byteLength).toBe(96);
     });
 
     it('flushes quad batches when encountering unknown draw kinds', async () => {
@@ -1677,7 +1686,7 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 22, 0, 0, 0);
 
-      const instanceWrites = writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array);
+      const instanceWrites = writeBuffer.mock.calls.filter((call) => isInstanceBufferWrite(call));
       expect(instanceWrites).toHaveLength(1);
 
       const instanceWrite = instanceWrites[0];
@@ -1685,11 +1694,8 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected a quad instance upload to be recorded.');
       }
 
-      const usedBytes = instanceWrite[4] as number;
-      expect(usedBytes).toBe(22 * 48);
-
-      const payload = instanceWrite[2] as Float32Array;
-      expect(payload.byteLength).toBeGreaterThan(usedBytes);
+      const payload = instanceWrite[2] as ArrayBuffer;
+      expect(payload.byteLength).toBe(22 * 48);
 
       const instances = getWriteBufferFloat32Payload(instanceWrite);
       if (!instances) {
@@ -2825,7 +2831,7 @@ describe('renderer-webgpu', () => {
       renderer.render(rcb);
 
       expect(drawIndexed).not.toHaveBeenCalled();
-      expect(writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array)).toHaveLength(0);
+      expect(writeBuffer.mock.calls.filter((call) => isInstanceBufferWrite(call))).toHaveLength(0);
     });
 
     it('skips text draw glyphs when string iteration yields empty segments', async () => {
@@ -2884,7 +2890,7 @@ describe('renderer-webgpu', () => {
       } satisfies RenderCommandBuffer);
 
       expect(drawIndexed).not.toHaveBeenCalled();
-      expect(writeBuffer.mock.calls.filter((call) => call[2] instanceof Float32Array)).toHaveLength(0);
+      expect(writeBuffer.mock.calls.filter((call) => isInstanceBufferWrite(call))).toHaveLength(0);
     });
 
     it('throws when a text draw has a blank fontAssetId', async () => {
