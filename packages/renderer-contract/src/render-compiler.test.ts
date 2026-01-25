@@ -8,6 +8,28 @@ import type { ViewModel } from './types.js';
 import { renderCompilerFixtureViewModel } from './__fixtures__/render-compiler.js';
 
 describe('render compiler', () => {
+  it('copies camera into the RenderCommandBuffer scene', () => {
+    const viewModel: ViewModel = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 0,
+        simTimeMs: 0,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 1.25, y: -2.5, zoom: 3 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+    };
+
+    const rcb = compileViewModelToRenderCommandBuffer(viewModel);
+
+    expect(rcb.scene.camera).toEqual(viewModel.scene.camera);
+  });
+
   it('quantizes world-space sprite coordinates to fixed-point integers', () => {
     const viewModel: ViewModel = {
       frame: {
@@ -52,6 +74,26 @@ describe('render compiler', () => {
     expect(draw && Number.isInteger(draw.y)).toBe(true);
     expect(draw && Number.isInteger(draw.width)).toBe(true);
     expect(draw && Number.isInteger(draw.height)).toBe(true);
+  });
+
+  it('rejects camera zoom values that are not positive', () => {
+    const viewModel: ViewModel = {
+      frame: {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        step: 1,
+        simTimeMs: 16,
+        contentHash: 'content:test',
+      },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 0 },
+        sprites: [],
+      },
+      ui: {
+        nodes: [],
+      },
+    };
+
+    expect(() => compileViewModelToRenderCommandBuffer(viewModel)).toThrow(/camera\.zoom/i);
   });
 
   it('orders sprite draws deterministically (independent of input array order)', async () => {
@@ -413,7 +455,7 @@ describe('render compiler', () => {
   it('produces stable hashes for golden fixtures', async () => {
     const rcb = compileViewModelToRenderCommandBuffer(renderCompilerFixtureViewModel);
     await expect(hashRenderCommandBuffer(rcb)).resolves.toEqual(
-      'dac6cf9d5a6300421744b298afc5d0dd652762d75a46c8b5724c69dcc518d27e',
+      'f53fcdc13a10171a33aed7414eabb42f0e793414229e5d0b1e826bad66e818c2',
     );
   });
 });

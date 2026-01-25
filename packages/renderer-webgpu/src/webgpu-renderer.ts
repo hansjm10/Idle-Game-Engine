@@ -158,9 +158,16 @@ export interface WebGpuRenderer {
     assets: WebGpuRendererAssets,
     options?: WebGpuRendererLoadAssetsOptions,
   ): Promise<WebGpuRendererAtlasState>;
+  /**
+   * @deprecated Provide the camera per-frame via `rcb.scene.camera`.
+   */
   setWorldCamera(camera: Camera2D): void;
   render(rcb: RenderCommandBuffer): void;
   dispose(): void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function clampByte(value: number): number {
@@ -1184,11 +1191,55 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
   }
 
+  #assertTextLengthWithinLimits(draws: RenderCommandBuffer['draws']): void {
+    if (this.#limits.maxTextLength <= 0) {
+      return;
+    }
+
+    for (let index = 0; index < draws.length; index += 1) {
+      const draw = draws[index];
+      const text = (draw as unknown as { readonly text?: unknown }).text;
+      if (typeof text !== 'string') {
+        continue;
+      }
+
+      if (text.length > this.#limits.maxTextLength) {
+        throw new Error(
+          `RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${this.#limits.maxTextLength}.`,
+        );
+      }
+    }
+  }
+
   #assertSupportedRenderCommandBuffer(rcb: RenderCommandBuffer): void {
     if (rcb.frame.schemaVersion !== RENDERER_CONTRACT_SCHEMA_VERSION) {
       throw new Error(
         `RenderCommandBuffer schemaVersion ${rcb.frame.schemaVersion} is not supported. Expected ${RENDERER_CONTRACT_SCHEMA_VERSION}.`,
       );
+    }
+
+    const scene = (rcb as unknown as { readonly scene?: unknown }).scene;
+    if (!isRecord(scene)) {
+      throw new Error('RenderCommandBuffer.scene must be an object.');
+    }
+
+    const camera = scene['camera'];
+    if (!isRecord(camera)) {
+      throw new Error('RenderCommandBuffer.scene.camera must be an object.');
+    }
+
+    const x = camera['x'];
+    const y = camera['y'];
+    const zoom = camera['zoom'];
+
+    if (typeof x !== 'number' || !Number.isFinite(x)) {
+      throw new TypeError('RenderCommandBuffer.scene.camera.x must be a finite number.');
+    }
+    if (typeof y !== 'number' || !Number.isFinite(y)) {
+      throw new TypeError('RenderCommandBuffer.scene.camera.y must be a finite number.');
+    }
+    if (typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom <= 0) {
+      throw new Error('RenderCommandBuffer.scene.camera.zoom must be a positive number.');
     }
 
     if (rcb.draws.length > this.#limits.maxDrawsPerFrame) {
@@ -1197,21 +1248,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       );
     }
 
-    if (this.#limits.maxTextLength > 0) {
-      for (let index = 0; index < rcb.draws.length; index += 1) {
-        const draw = rcb.draws[index];
-        const text = (draw as unknown as { readonly text?: unknown }).text;
-        if (typeof text !== 'string') {
-          continue;
-        }
-
-        if (text.length > this.#limits.maxTextLength) {
-          throw new Error(
-            `RenderCommandBuffer exceeds limits.maxTextLength: draws[${index}].text.length ${text.length} > ${this.#limits.maxTextLength}.`,
-          );
-        }
-      }
-    }
+    this.#assertTextLengthWithinLimits(rcb.draws);
   }
 
   #safeDestroyBuffer(buffer: GPUBuffer | undefined): void {
@@ -2002,6 +2039,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
 
     this.#assertSupportedRenderCommandBuffer(rcb);
+    this.#worldCamera = rcb.scene.camera;
 
     const colorTextureView = this.context.getCurrentTexture().createView();
     const clearColor = selectClearColor(rcb);

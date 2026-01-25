@@ -324,6 +324,16 @@ export function compileViewModelToRenderCommandBuffer(
     throw new Error('Render compiler expected worldFixedPointScale to be a positive number.');
   }
 
+  const cameraX = requireFiniteNumber(viewModel.scene.camera.x, 'ViewModel.scene.camera.x');
+  const cameraY = requireFiniteNumber(viewModel.scene.camera.y, 'ViewModel.scene.camera.y');
+  const cameraZoom = requireFiniteNumber(
+    viewModel.scene.camera.zoom,
+    'ViewModel.scene.camera.zoom',
+  );
+  if (cameraZoom <= 0) {
+    throw new Error('Render compiler expected ViewModel.scene.camera.zoom to be positive.');
+  }
+
   const passes = createPasses();
   const entries: DrawEntry[] = [];
 
@@ -349,6 +359,13 @@ export function compileViewModelToRenderCommandBuffer(
       simTimeMs: viewModel.frame.simTimeMs,
       contentHash: viewModel.frame.contentHash,
       renderFrame: viewModel.frame.renderFrame,
+    },
+    scene: {
+      camera: {
+        x: cameraX,
+        y: cameraY,
+        zoom: cameraZoom,
+      },
     },
     passes,
     draws,

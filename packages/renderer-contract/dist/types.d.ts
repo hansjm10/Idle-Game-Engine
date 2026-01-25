@@ -1,4 +1,4 @@
-export declare const RENDERER_CONTRACT_SCHEMA_VERSION: 3;
+export declare const RENDERER_CONTRACT_SCHEMA_VERSION: 4;
 export type RendererContractSchemaVersion = typeof RENDERER_CONTRACT_SCHEMA_VERSION;
 export type Sha256Hex = string;
 export type AssetId = string & {
@@ -142,6 +142,9 @@ export interface ScissorPopDraw {
 export type RenderDraw = ClearDraw | RectDraw | ImageDraw | TextDraw | ScissorPushDraw | ScissorPopDraw;
 export interface RenderCommandBuffer {
     readonly frame: FrameHeader;
+    readonly scene: {
+        readonly camera: Camera2D;
+    };
     readonly passes: readonly RenderPass[];
     readonly draws: readonly RenderDraw[];
 }

@@ -47,6 +47,9 @@ describe('createRenderCommandBufferStepper', () => {
         simTimeMs: 0,
         contentHash: 'content',
       },
+      scene: {
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
       passes: [],
       draws: [],
     });
@@ -72,4 +75,3 @@ describe('createRenderCommandBufferStepper', () => {
     expect(stepper.prev()).toBe(first);
   });
 });
-

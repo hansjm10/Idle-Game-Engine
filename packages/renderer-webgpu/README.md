@@ -74,6 +74,7 @@ await renderer.loadAssets(manifest, {
 
 const rcb: RenderCommandBuffer = {
   frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+  scene: { camera: { x: 0, y: 0, zoom: 1 } },
   passes: [{ id: 'world' }],
   draws: [
     {

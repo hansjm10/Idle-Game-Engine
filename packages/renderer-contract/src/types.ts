@@ -1,4 +1,4 @@
-export const RENDERER_CONTRACT_SCHEMA_VERSION = 3 as const;
+export const RENDERER_CONTRACT_SCHEMA_VERSION = 4 as const;
 
 export type RendererContractSchemaVersion =
   typeof RENDERER_CONTRACT_SCHEMA_VERSION;
@@ -179,6 +179,9 @@ export type RenderDraw =
 
 export interface RenderCommandBuffer {
   readonly frame: FrameHeader;
+  readonly scene: {
+    readonly camera: Camera2D;
+  };
   readonly passes: readonly RenderPass[];
   readonly draws: readonly RenderDraw[];
 }

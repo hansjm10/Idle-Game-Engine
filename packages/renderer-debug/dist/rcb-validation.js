@@ -173,6 +173,30 @@ export function validateRenderCommandBuffer(rcb) {
             errors.push(`frame.schemaVersion must equal ${RENDERER_CONTRACT_SCHEMA_VERSION}`);
         }
     }
+    const sceneValue = rcbValue['scene'];
+    if (isRecord(sceneValue)) {
+        const cameraValue = sceneValue['camera'];
+        if (isRecord(cameraValue)) {
+            const cameraX = cameraValue['x'];
+            const cameraY = cameraValue['y'];
+            const cameraZoom = cameraValue['zoom'];
+            if (!isFiniteNumber(cameraX)) {
+                errors.push('scene.camera.x must be a finite number');
+            }
+            if (!isFiniteNumber(cameraY)) {
+                errors.push('scene.camera.y must be a finite number');
+            }
+            if (!isFiniteNumber(cameraZoom) || cameraZoom <= 0) {
+                errors.push('scene.camera.zoom must be a positive number');
+            }
+        }
+        else {
+            errors.push('scene.camera must be an object');
+        }
+    }
+    else {
+        errors.push('scene must be an object');
+    }
     const passesValue = rcbValue['passes'];
     const drawsValue = rcbValue['draws'];
     if (!Array.isArray(passesValue)) {

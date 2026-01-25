@@ -10,6 +10,7 @@ describe('sprite-batching', () => {
   it('sorts draws by pass order and sortKey stably', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      scene: { camera: { x: 0, y: 0, zoom: 1 } },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
         {
@@ -56,6 +57,7 @@ describe('sprite-batching', () => {
   it('sorts by sortKeyHi before sortKeyLo', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      scene: { camera: { x: 0, y: 0, zoom: 1 } },
       passes: [{ id: 'world' }],
       draws: [
         {
@@ -91,6 +93,7 @@ describe('sprite-batching', () => {
   it('skips clear draws and sorts unknown passes after known ones', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      scene: { camera: { x: 0, y: 0, zoom: 1 } },
       passes: [{ id: 'world' }],
       draws: [
         {
@@ -154,6 +157,7 @@ describe('sprite-batching', () => {
   it('dequantizes world-pass image draw coordinates from fixed-point ints', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      scene: { camera: { x: 0, y: 0, zoom: 1 } },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
         {
@@ -195,6 +199,7 @@ describe('sprite-batching', () => {
   it('throws when atlas UVs are missing for an image draw', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      scene: { camera: { x: 0, y: 0, zoom: 1 } },
       passes: [{ id: 'world' }],
       draws: [
         {
@@ -223,6 +228,7 @@ describe('sprite-batching', () => {
   it('builds per-pass instance groups and respects tintRgba (0xRRGGBBAA)', () => {
     const rcb = {
       frame: { schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION, step: 0, simTimeMs: 0, contentHash: 'content:dev' },
+      scene: { camera: { x: 0, y: 0, zoom: 1 } },
       passes: [{ id: 'world' }, { id: 'ui' }],
       draws: [
         {
