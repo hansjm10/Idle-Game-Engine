@@ -1,0 +1,3066 @@
+import {
+  createModuleIndices,
+  rehydrateNormalizedPack,
+} from '@idle-engine/content-compiler/runtime';
+
+const serialized = {
+  "artifactHash": "23d7fdc3c2d00a9644a8768b3b23c9df6f7ea62b05bd51e5b56fbb4bffde2505",
+  "digest": {
+    "hash": "fnv1a-86633006",
+    "version": 1
+  },
+  "formatVersion": 1,
+  "metadata": {
+    "authors": [
+      "Idle Engine Team"
+    ],
+    "defaultLocale": "en-US",
+    "engine": ">=0.5.0 <1.0.0",
+    "id": "@idle-engine/test-game-pack",
+    "links": [
+      {
+        "href": "https://github.com/hansjm10/Idle-Game-Engine/blob/main/docs/issue-841-design.md",
+        "kind": "docs",
+        "label": "Issue #841 Design"
+      }
+    ],
+    "summary": {
+      "default": "Comprehensive stress-test content for exercising Idle-Game-Engine features in a playable shell scenario.",
+      "variants": {
+        "en-US": "Comprehensive stress-test content for exercising Idle-Game-Engine features in a playable shell scenario."
+      }
+    },
+    "supportedLocales": [
+      "en-US"
+    ],
+    "tags": [
+      "development",
+      "stress",
+      "test-game"
+    ],
+    "title": {
+      "default": "Test Game Content Pack",
+      "variants": {
+        "en-US": "Test Game Content Pack"
+      }
+    },
+    "version": "0.1.0"
+  },
+  "modules": {
+    "achievements": [
+      {
+        "category": "progression",
+        "description": {
+          "default": "Reach 1 gold.",
+          "variants": {
+            "en-US": "Reach 1 gold."
+          }
+        },
+        "displayOrder": 1,
+        "id": "test-game.first-gold",
+        "name": {
+          "default": "First Gold",
+          "variants": {
+            "en-US": "First Gold"
+          }
+        },
+        "onUnlockEvents": [
+          "test-game:milestone-reached"
+        ],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "reward": {
+          "eventId": "test-game:milestone-reached",
+          "kind": "emitEvent"
+        },
+        "tags": [],
+        "tier": "bronze",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "test-game.gold",
+          "threshold": {
+            "kind": "constant",
+            "value": 1
+          }
+        }
+      },
+      {
+        "category": "progression",
+        "description": {
+          "default": "Reach 500 gold.",
+          "variants": {
+            "en-US": "Reach 500 gold."
+          }
+        },
+        "displayOrder": 2,
+        "id": "test-game.gold-hoarder",
+        "name": {
+          "default": "Gold Hoarder",
+          "variants": {
+            "en-US": "Gold Hoarder"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "incremental",
+          "target": {
+            "kind": "constant",
+            "value": 500
+          }
+        },
+        "tags": [],
+        "tier": "silver",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "test-game.gold",
+          "threshold": {
+            "kind": "constant",
+            "value": 500
+          }
+        }
+      },
+      {
+        "category": "progression",
+        "description": {
+          "default": "Reach gold mine level 25.",
+          "variants": {
+            "en-US": "Reach gold mine level 25."
+          }
+        },
+        "displayOrder": 3,
+        "id": "test-game.mine-master",
+        "name": {
+          "default": "Mine Master",
+          "variants": {
+            "en-US": "Mine Master"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 25
+          }
+        },
+        "tags": [],
+        "tier": "gold",
+        "track": {
+          "generatorId": "test-game.gold-mine",
+          "kind": "generator-level",
+          "level": {
+            "kind": "constant",
+            "value": 25
+          }
+        }
+      },
+      {
+        "category": "collection",
+        "description": {
+          "default": "Own a total of 5 generator levels.",
+          "variants": {
+            "en-US": "Own a total of 5 generator levels."
+          }
+        },
+        "displayOrder": 4,
+        "id": "test-game.generator-collector",
+        "name": {
+          "default": "Generator Collector",
+          "variants": {
+            "en-US": "Generator Collector"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 5
+          }
+        },
+        "tags": [],
+        "tier": "bronze",
+        "track": {
+          "comparator": "gte",
+          "kind": "generator-count",
+          "threshold": {
+            "kind": "constant",
+            "value": 5
+          }
+        }
+      },
+      {
+        "category": "collection",
+        "description": {
+          "default": "Buy the repeatable essence infusion 10 times.",
+          "variants": {
+            "en-US": "Buy the repeatable essence infusion 10 times."
+          }
+        },
+        "displayOrder": 5,
+        "id": "test-game.repeatable-upgrade-collector",
+        "name": {
+          "default": "Repeatable Collector",
+          "variants": {
+            "en-US": "Repeatable Collector"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "incremental",
+          "target": {
+            "kind": "constant",
+            "value": 10
+          }
+        },
+        "tags": [],
+        "tier": "silver",
+        "track": {
+          "kind": "upgrade-owned",
+          "purchases": {
+            "kind": "constant",
+            "value": 10
+          },
+          "upgradeId": "test-game.repeatable-essence-rate"
+        }
+      },
+      {
+        "category": "automation",
+        "description": {
+          "default": "Set the automation-enabled flag.",
+          "variants": {
+            "en-US": "Set the automation-enabled flag."
+          }
+        },
+        "displayOrder": 6,
+        "id": "test-game.automation-flagged",
+        "name": {
+          "default": "Automation Flagged",
+          "variants": {
+            "en-US": "Automation Flagged"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "tags": [],
+        "tier": "bronze",
+        "track": {
+          "flagId": "test-game.flag.automation-enabled",
+          "kind": "flag"
+        }
+      },
+      {
+        "category": "progression",
+        "description": {
+          "default": "Reach 1000 gold via custom metric tracking.",
+          "variants": {
+            "en-US": "Reach 1000 gold via custom metric tracking."
+          }
+        },
+        "displayOrder": 7,
+        "id": "test-game.custom-metric-tracker",
+        "name": {
+          "default": "Metric Tracker",
+          "variants": {
+            "en-US": "Metric Tracker"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "repeatable",
+          "repeatable": {
+            "maxRepeats": 3,
+            "resetWindow": {
+              "kind": "constant",
+              "value": 60000
+            },
+            "rewardScaling": {
+              "kind": "constant",
+              "value": 1
+            }
+          },
+          "target": {
+            "kind": "constant",
+            "value": 1000
+          }
+        },
+        "tags": [],
+        "tier": "gold",
+        "track": {
+          "kind": "custom-metric",
+          "metricId": "test-game.metric.gold-gauge",
+          "threshold": {
+            "kind": "constant",
+            "value": 1000
+          }
+        }
+      },
+      {
+        "category": "prestige",
+        "description": {
+          "default": "Signal that prestige is ready (emits event).",
+          "variants": {
+            "en-US": "Signal that prestige is ready (emits event)."
+          }
+        },
+        "displayOrder": 8,
+        "id": "test-game.prestige-ready-signal",
+        "name": {
+          "default": "Prestige Ready",
+          "variants": {
+            "en-US": "Prestige Ready"
+          }
+        },
+        "onUnlockEvents": [
+          "test-game:prestige-ready"
+        ],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 100
+          }
+        },
+        "reward": {
+          "eventId": "test-game:prestige-ready",
+          "kind": "emitEvent"
+        },
+        "tags": [],
+        "tier": "silver",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "test-game.essence",
+          "threshold": {
+            "kind": "constant",
+            "value": 100
+          }
+        }
+      },
+      {
+        "category": "prestige",
+        "description": {
+          "default": "Earn 1 prestige point.",
+          "variants": {
+            "en-US": "Earn 1 prestige point."
+          }
+        },
+        "displayOrder": 9,
+        "id": "test-game.first-prestige",
+        "name": {
+          "default": "First Prestige",
+          "variants": {
+            "en-US": "First Prestige"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "tags": [],
+        "tier": "platinum",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "test-game.prestige-points",
+          "threshold": {
+            "kind": "constant",
+            "value": 1
+          }
+        }
+      },
+      {
+        "category": "progression",
+        "description": {
+          "default": "Unlocks only when nested conditions (depth 3+) are satisfied.",
+          "variants": {
+            "en-US": "Unlocks only when nested conditions (depth 3+) are satisfied."
+          }
+        },
+        "displayOrder": 10,
+        "id": "test-game.deep-nested-conditions",
+        "name": {
+          "default": "Deep Nested Conditions",
+          "variants": {
+            "en-US": "Deep Nested Conditions"
+          }
+        },
+        "onUnlockEvents": [],
+        "progress": {
+          "mode": "oneShot",
+          "target": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "tags": [],
+        "tier": "platinum",
+        "track": {
+          "comparator": "gte",
+          "kind": "resource",
+          "resourceId": "test-game.dark-matter",
+          "threshold": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "unlockCondition": {
+          "conditions": [
+            {
+              "conditions": [
+                {
+                  "amount": {
+                    "kind": "constant",
+                    "value": 25
+                  },
+                  "comparator": "gte",
+                  "kind": "resourceThreshold",
+                  "resourceId": "test-game.essence"
+                },
+                {
+                  "condition": {
+                    "flagId": "test-game.flag.automation-enabled",
+                    "kind": "flag"
+                  },
+                  "kind": "not"
+                }
+              ],
+              "kind": "anyOf"
+            },
+            {
+              "conditions": [
+                {
+                  "comparator": "gte",
+                  "generatorId": "test-game.gold-mine",
+                  "kind": "generatorLevel",
+                  "level": {
+                    "kind": "constant",
+                    "value": 10
+                  }
+                },
+                {
+                  "amount": {
+                    "kind": "constant",
+                    "value": 1
+                  },
+                  "comparator": "gt",
+                  "kind": "resourceThreshold",
+                  "resourceId": "test-game.gems"
+                },
+                {
+                  "condition": {
+                    "amount": {
+                      "kind": "constant",
+                      "value": 0
+                    },
+                    "comparator": "lt",
+                    "kind": "resourceThreshold",
+                    "resourceId": "test-game.gold"
+                  },
+                  "kind": "not"
+                }
+              ],
+              "kind": "allOf"
+            }
+          ],
+          "kind": "allOf"
+        },
+        "visibilityCondition": {
+          "kind": "always"
+        }
+      }
+    ],
+    "automations": [
+      {
+        "cooldown": {
+          "expression": {
+            "args": [
+              {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 500
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "test-game.gold",
+                      "type": "resource"
+                    }
+                  },
+                  "op": "div",
+                  "right": {
+                    "kind": "literal",
+                    "value": 20
+                  }
+                }
+              },
+              {
+                "kind": "literal",
+                "value": 500
+              },
+              {
+                "kind": "literal",
+                "value": 5000
+              }
+            ],
+            "kind": "call",
+            "name": "clamp"
+          },
+          "kind": "expression"
+        },
+        "description": {
+          "default": "Buys 1 gold mine every few seconds.",
+          "variants": {
+            "en-US": "Buys 1 gold mine every few seconds."
+          }
+        },
+        "enabledByDefault": false,
+        "id": "test-game.auto-buy-gold-mine",
+        "name": {
+          "default": "Auto Buy Gold Mines",
+          "variants": {
+            "en-US": "Auto Buy Gold Mines"
+          }
+        },
+        "order": 1,
+        "resourceCost": {
+          "rate": {
+            "kind": "constant",
+            "value": 0.5
+          },
+          "resourceId": "test-game.mana"
+        },
+        "targetCount": {
+          "kind": "constant",
+          "value": 1
+        },
+        "targetId": "test-game.gold-mine",
+        "targetType": "purchaseGenerator",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 2000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "never"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 0
+        },
+        "description": {
+          "default": "Buys ticket printers when the prestige-ready event fires.",
+          "variants": {
+            "en-US": "Buys ticket printers when the prestige-ready event fires."
+          }
+        },
+        "enabledByDefault": true,
+        "id": "test-game.auto-buy-ticket-printer",
+        "name": {
+          "default": "Auto Buy Ticket Printer",
+          "variants": {
+            "en-US": "Auto Buy Ticket Printer"
+          }
+        },
+        "order": 5,
+        "targetId": "test-game.ticket-printer",
+        "targetType": "purchaseGenerator",
+        "trigger": {
+          "eventId": "test-game:prestige-ready",
+          "kind": "event"
+        },
+        "unlockCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 3000
+        },
+        "description": {
+          "default": "Buys the Gold Boost upgrade when the command queue is empty.",
+          "variants": {
+            "en-US": "Buys the Gold Boost upgrade when the command queue is empty."
+          }
+        },
+        "enabledByDefault": false,
+        "id": "test-game.auto-buy-upgrade",
+        "name": {
+          "default": "Auto Buy Upgrades",
+          "variants": {
+            "en-US": "Auto Buy Upgrades"
+          }
+        },
+        "order": 3,
+        "targetId": "test-game.gold-boost",
+        "targetType": "upgrade",
+        "trigger": {
+          "kind": "commandQueueEmpty"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 2500
+        },
+        "description": {
+          "default": "Collects gems when gold is high.",
+          "variants": {
+            "en-US": "Collects gems when gold is high."
+          }
+        },
+        "enabledByDefault": false,
+        "id": "test-game.auto-collect-gems",
+        "name": {
+          "default": "Auto Collect Gems",
+          "variants": {
+            "en-US": "Auto Collect Gems"
+          }
+        },
+        "order": 2,
+        "targetAmount": {
+          "kind": "constant",
+          "value": 1
+        },
+        "targetId": "test-game.gems",
+        "targetType": "collectResource",
+        "trigger": {
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gold",
+          "threshold": {
+            "kind": "constant",
+            "value": 200
+          }
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 15000
+        },
+        "description": {
+          "default": "Exercises system automation target mapping (offline-catchup).",
+          "variants": {
+            "en-US": "Exercises system automation target mapping (offline-catchup)."
+          }
+        },
+        "enabledByDefault": false,
+        "id": "test-game.auto-offline-catchup-pulse",
+        "name": {
+          "default": "Offline Catch-up Pulse",
+          "variants": {
+            "en-US": "Offline Catch-up Pulse"
+          }
+        },
+        "order": 6,
+        "systemTargetId": "offline-catchup",
+        "targetType": "system",
+        "trigger": {
+          "interval": {
+            "kind": "constant",
+            "value": 15000
+          },
+          "kind": "interval"
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      },
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 1000
+        },
+        "description": {
+          "default": "Disables the essence refinery when mana is low.",
+          "variants": {
+            "en-US": "Disables the essence refinery when mana is low."
+          }
+        },
+        "enabledByDefault": false,
+        "id": "test-game.auto-toggle-refinery-off",
+        "name": {
+          "default": "Toggle Refinery Off (Low Mana)",
+          "variants": {
+            "en-US": "Toggle Refinery Off (Low Mana)"
+          }
+        },
+        "order": 4,
+        "targetEnabled": false,
+        "targetId": "test-game.essence-refinery",
+        "targetType": "generator",
+        "trigger": {
+          "comparator": "lte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.mana",
+          "threshold": {
+            "kind": "constant",
+            "value": 5
+          }
+        },
+        "unlockCondition": {
+          "kind": "always"
+        }
+      }
+    ],
+    "entities": [
+      {
+        "description": {
+          "default": "A tracked hero entity used for mission testing and stat-driven success rates.",
+          "variants": {
+            "en-US": "A tracked hero entity used for mission testing and stat-driven success rates."
+          }
+        },
+        "id": "test-game.hero",
+        "maxCount": {
+          "kind": "constant",
+          "value": 5
+        },
+        "name": {
+          "default": "Hero",
+          "variants": {
+            "en-US": "Hero"
+          }
+        },
+        "order": 1,
+        "progression": {
+          "levelFormula": {
+            "base": 10,
+            "kind": "linear",
+            "slope": 5
+          },
+          "maxLevel": 50,
+          "statGrowth": {
+            "test-game.hero.luck": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.1
+            },
+            "test-game.hero.power": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.1
+            },
+            "test-game.hero.speed": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.1
+            }
+          }
+        },
+        "startCount": 1,
+        "stats": [
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 5
+            },
+            "id": "test-game.hero.power",
+            "maxValue": {
+              "kind": "constant",
+              "value": 100
+            },
+            "minValue": {
+              "kind": "constant",
+              "value": 0
+            },
+            "name": {
+              "default": "Power",
+              "variants": {
+                "en-US": "Power"
+              }
+            }
+          },
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 3
+            },
+            "id": "test-game.hero.speed",
+            "maxValue": {
+              "kind": "constant",
+              "value": 100
+            },
+            "minValue": {
+              "kind": "constant",
+              "value": 0
+            },
+            "name": {
+              "default": "Speed",
+              "variants": {
+                "en-US": "Speed"
+              }
+            }
+          },
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 1
+            },
+            "id": "test-game.hero.luck",
+            "maxValue": {
+              "kind": "constant",
+              "value": 100
+            },
+            "minValue": {
+              "kind": "constant",
+              "value": 0
+            },
+            "name": {
+              "default": "Luck",
+              "variants": {
+                "en-US": "Luck"
+              }
+            }
+          }
+        ],
+        "tags": [],
+        "trackInstances": true,
+        "unlocked": true,
+        "visible": true
+      },
+      {
+        "description": {
+          "default": "A tracked worker entity with simple progression, used to cover entity instance management.",
+          "variants": {
+            "en-US": "A tracked worker entity with simple progression, used to cover entity instance management."
+          }
+        },
+        "id": "test-game.worker",
+        "maxCount": {
+          "kind": "constant",
+          "value": 10
+        },
+        "name": {
+          "default": "Worker",
+          "variants": {
+            "en-US": "Worker"
+          }
+        },
+        "order": 2,
+        "progression": {
+          "levelFormula": {
+            "base": 5,
+            "kind": "linear",
+            "slope": 3
+          },
+          "maxLevel": 25,
+          "statGrowth": {
+            "test-game.worker.efficiency": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.05
+            },
+            "test-game.worker.stamina": {
+              "base": 1,
+              "kind": "linear",
+              "slope": 0.05
+            }
+          }
+        },
+        "startCount": 2,
+        "stats": [
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 2
+            },
+            "id": "test-game.worker.efficiency",
+            "maxValue": {
+              "kind": "constant",
+              "value": 50
+            },
+            "minValue": {
+              "kind": "constant",
+              "value": 0
+            },
+            "name": {
+              "default": "Efficiency",
+              "variants": {
+                "en-US": "Efficiency"
+              }
+            }
+          },
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 4
+            },
+            "id": "test-game.worker.stamina",
+            "maxValue": {
+              "kind": "constant",
+              "value": 50
+            },
+            "minValue": {
+              "kind": "constant",
+              "value": 0
+            },
+            "name": {
+              "default": "Stamina",
+              "variants": {
+                "en-US": "Stamina"
+              }
+            }
+          }
+        ],
+        "tags": [],
+        "trackInstances": true,
+        "unlockCondition": {
+          "comparator": "gte",
+          "generatorId": "test-game.gold-mine",
+          "kind": "generatorLevel",
+          "level": {
+            "kind": "constant",
+            "value": 5
+          }
+        },
+        "unlocked": false,
+        "visible": true
+      },
+      {
+        "description": {
+          "default": "A non-instance-tracked entity used for count-based mechanics.",
+          "variants": {
+            "en-US": "A non-instance-tracked entity used for count-based mechanics."
+          }
+        },
+        "id": "test-game.artifact",
+        "name": {
+          "default": "Artifact",
+          "variants": {
+            "en-US": "Artifact"
+          }
+        },
+        "order": 3,
+        "startCount": 0,
+        "stats": [
+          {
+            "baseValue": {
+              "kind": "constant",
+              "value": 1
+            },
+            "id": "test-game.artifact.bonus",
+            "name": {
+              "default": "Bonus",
+              "variants": {
+                "en-US": "Bonus"
+              }
+            }
+          }
+        ],
+        "tags": [],
+        "trackInstances": false,
+        "unlockCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        },
+        "unlocked": false,
+        "visible": true
+      }
+    ],
+    "generators": [
+      {
+        "baseUnlock": {
+          "kind": "always"
+        },
+        "consumes": [],
+        "effects": [],
+        "id": "test-game.gold-mine",
+        "initialLevel": 0,
+        "maxLevel": 50,
+        "name": {
+          "default": "Gold Mine",
+          "variants": {
+            "en-US": "Gold Mine"
+          }
+        },
+        "order": 1,
+        "produces": [
+          {
+            "rate": {
+              "base": 0.25,
+              "kind": "linear",
+              "slope": 0.05
+            },
+            "resourceId": "test-game.gold"
+          }
+        ],
+        "purchase": {
+          "costCurve": {
+            "base": 1,
+            "growth": 1.15,
+            "kind": "exponential"
+          },
+          "costMultiplier": 10,
+          "currencyId": "test-game.gold",
+          "maxBulk": 10
+        },
+        "tags": []
+      },
+      {
+        "baseUnlock": {
+          "comparator": "gte",
+          "generatorId": "test-game.gold-mine",
+          "kind": "generatorLevel",
+          "level": {
+            "kind": "constant",
+            "value": 5
+          }
+        },
+        "consumes": [],
+        "effects": [],
+        "id": "test-game.mana-well",
+        "initialLevel": 0,
+        "maxLevel": 25,
+        "name": {
+          "default": "Mana Well",
+          "variants": {
+            "en-US": "Mana Well"
+          }
+        },
+        "order": 2,
+        "produces": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.1
+            },
+            "resourceId": "test-game.mana"
+          }
+        ],
+        "purchase": {
+          "costCurve": {
+            "coefficients": [
+              1,
+              0.5,
+              0.05
+            ],
+            "kind": "polynomial"
+          },
+          "costMultiplier": 25,
+          "currencyId": "test-game.gold",
+          "maxBulk": 5
+        },
+        "tags": []
+      },
+      {
+        "baseUnlock": {
+          "amount": {
+            "kind": "constant",
+            "value": 75
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gold"
+        },
+        "consumes": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.03
+            },
+            "resourceId": "test-game.mana"
+          }
+        ],
+        "effects": [],
+        "id": "test-game.gem-extractor",
+        "initialLevel": 0,
+        "maxLevel": 20,
+        "name": {
+          "default": "Gem Extractor",
+          "variants": {
+            "en-US": "Gem Extractor"
+          }
+        },
+        "order": 3,
+        "produces": [
+          {
+            "rate": {
+              "coefficients": [
+                0.02,
+                0.01
+              ],
+              "kind": "polynomial"
+            },
+            "resourceId": "test-game.gems"
+          }
+        ],
+        "purchase": {
+          "costs": [
+            {
+              "costCurve": {
+                "base": 1,
+                "kind": "linear",
+                "slope": 0.2
+              },
+              "costMultiplier": 50,
+              "resourceId": "test-game.gold"
+            },
+            {
+              "costCurve": {
+                "base": 1,
+                "kind": "linear",
+                "slope": 0.1
+              },
+              "costMultiplier": 10,
+              "resourceId": "test-game.mana"
+            }
+          ],
+          "maxBulk": 5
+        },
+        "tags": []
+      },
+      {
+        "baseUnlock": {
+          "conditions": [
+            {
+              "conditions": [
+                {
+                  "amount": {
+                    "kind": "constant",
+                    "value": 10
+                  },
+                  "comparator": "gte",
+                  "kind": "resourceThreshold",
+                  "resourceId": "test-game.gems"
+                },
+                {
+                  "comparator": "gte",
+                  "generatorId": "test-game.mana-well",
+                  "kind": "generatorLevel",
+                  "level": {
+                    "kind": "constant",
+                    "value": 3
+                  }
+                }
+              ],
+              "kind": "anyOf"
+            },
+            {
+              "condition": {
+                "kind": "never"
+              },
+              "kind": "not"
+            }
+          ],
+          "kind": "allOf"
+        },
+        "consumes": [
+          {
+            "rate": {
+              "base": 0.2,
+              "kind": "linear",
+              "slope": 0.05
+            },
+            "resourceId": "test-game.gold"
+          },
+          {
+            "rate": {
+              "base": 0.1,
+              "kind": "linear",
+              "slope": 0.02
+            },
+            "resourceId": "test-game.mana"
+          }
+        ],
+        "effects": [],
+        "id": "test-game.essence-refinery",
+        "initialLevel": 0,
+        "maxLevel": 15,
+        "name": {
+          "default": "Essence Refinery",
+          "variants": {
+            "en-US": "Essence Refinery"
+          }
+        },
+        "order": 4,
+        "produces": [
+          {
+            "rate": {
+              "kind": "piecewise",
+              "pieces": [
+                {
+                  "formula": {
+                    "base": 0.01,
+                    "kind": "linear",
+                    "slope": 0.002
+                  },
+                  "untilLevel": 10
+                },
+                {
+                  "formula": {
+                    "base": 0.03,
+                    "kind": "linear",
+                    "slope": 0.001
+                  }
+                }
+              ]
+            },
+            "resourceId": "test-game.essence"
+          }
+        ],
+        "purchase": {
+          "costCurve": {
+            "kind": "piecewise",
+            "pieces": [
+              {
+                "formula": {
+                  "base": 1,
+                  "growth": 1.2,
+                  "kind": "exponential"
+                },
+                "untilLevel": 10
+              },
+              {
+                "formula": {
+                  "base": 1,
+                  "growth": 1.35,
+                  "kind": "exponential",
+                  "offset": 10
+                }
+              }
+            ]
+          },
+          "costMultiplier": 10,
+          "currencyId": "test-game.gems",
+          "maxBulk": 3
+        },
+        "tags": [],
+        "visibilityCondition": {
+          "conditions": [
+            {
+              "kind": "prestigeUnlocked",
+              "prestigeLayerId": "test-game.ascension"
+            },
+            {
+              "amount": {
+                "kind": "constant",
+                "value": 5
+              },
+              "comparator": "gte",
+              "kind": "resourceThreshold",
+              "resourceId": "test-game.gems"
+            }
+          ],
+          "kind": "anyOf"
+        }
+      },
+      {
+        "baseUnlock": {
+          "kind": "upgradeOwned",
+          "requiredPurchases": 1,
+          "upgradeId": "test-game.dark-matter-unlock"
+        },
+        "consumes": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.05
+            },
+            "resourceId": "test-game.essence"
+          }
+        ],
+        "effects": [],
+        "id": "test-game.dark-matter-reactor",
+        "initialLevel": 0,
+        "maxLevel": 10,
+        "name": {
+          "default": "Dark Matter Reactor",
+          "variants": {
+            "en-US": "Dark Matter Reactor"
+          }
+        },
+        "order": 5,
+        "produces": [
+          {
+            "rate": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "args": [
+                    {
+                      "kind": "unary",
+                      "op": "sqrt",
+                      "operand": {
+                        "kind": "ref",
+                        "target": {
+                          "id": "test-game.essence",
+                          "type": "resource"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "literal",
+                      "value": 0
+                    },
+                    {
+                      "kind": "literal",
+                      "value": 1000
+                    }
+                  ],
+                  "kind": "call",
+                  "name": "clamp"
+                },
+                "op": "div",
+                "right": {
+                  "kind": "literal",
+                  "value": 100
+                }
+              },
+              "kind": "expression"
+            },
+            "resourceId": "test-game.dark-matter"
+          }
+        ],
+        "purchase": {
+          "costCurve": {
+            "base": 1,
+            "growth": 1.3,
+            "kind": "exponential"
+          },
+          "costMultiplier": 200,
+          "currencyId": "test-game.essence",
+          "maxBulk": 2
+        },
+        "tags": []
+      },
+      {
+        "baseUnlock": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        },
+        "consumes": [],
+        "effects": [],
+        "id": "test-game.ticket-printer",
+        "initialLevel": 0,
+        "maxLevel": 10,
+        "name": {
+          "default": "Ticket Printer",
+          "variants": {
+            "en-US": "Ticket Printer"
+          }
+        },
+        "order": 6,
+        "produces": [
+          {
+            "rate": {
+              "kind": "constant",
+              "value": 0.01
+            },
+            "resourceId": "test-game.tickets"
+          }
+        ],
+        "purchase": {
+          "costCurve": {
+            "base": 1,
+            "kind": "linear",
+            "slope": 0
+          },
+          "costMultiplier": 1,
+          "currencyId": "test-game.prestige-points"
+        },
+        "tags": [],
+        "visibilityCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        }
+      }
+    ],
+    "metrics": [
+      {
+        "attributes": [],
+        "description": {
+          "default": "Custom metric value provider returns current gold amount.",
+          "variants": {
+            "en-US": "Custom metric value provider returns current gold amount."
+          }
+        },
+        "id": "test-game.metric.gold-gauge",
+        "kind": "gauge",
+        "name": {
+          "default": "Gold (Metric)",
+          "variants": {
+            "en-US": "Gold (Metric)"
+          }
+        },
+        "order": 1,
+        "source": {
+          "kind": "content"
+        },
+        "unit": "gold"
+      },
+      {
+        "attributes": [],
+        "description": {
+          "default": "Counts simulation steps (provided by shell).",
+          "variants": {
+            "en-US": "Counts simulation steps (provided by shell)."
+          }
+        },
+        "id": "test-game.metric.step-counter",
+        "kind": "counter",
+        "name": {
+          "default": "Step Counter",
+          "variants": {
+            "en-US": "Step Counter"
+          }
+        },
+        "order": 2,
+        "source": {
+          "kind": "content"
+        },
+        "unit": "steps"
+      },
+      {
+        "aggregation": "distribution",
+        "attributes": [],
+        "description": {
+          "default": "Histogram placeholder for mission duration aggregation.",
+          "variants": {
+            "en-US": "Histogram placeholder for mission duration aggregation."
+          }
+        },
+        "id": "test-game.metric.mission-duration",
+        "kind": "histogram",
+        "name": {
+          "default": "Mission Duration",
+          "variants": {
+            "en-US": "Mission Duration"
+          }
+        },
+        "order": 3,
+        "source": {
+          "kind": "content"
+        },
+        "unit": "ms"
+      }
+    ],
+    "prestigeLayers": [
+      {
+        "id": "test-game.ascension",
+        "name": {
+          "default": "Ascension",
+          "variants": {
+            "en-US": "Ascension"
+          }
+        },
+        "order": 1,
+        "resetGenerators": [
+          "test-game.dark-matter-reactor",
+          "test-game.essence-refinery",
+          "test-game.gem-extractor",
+          "test-game.gold-mine",
+          "test-game.mana-well"
+        ],
+        "resetTargets": [
+          "test-game.dark-matter",
+          "test-game.essence",
+          "test-game.gems",
+          "test-game.gold",
+          "test-game.mana"
+        ],
+        "resetUpgrades": [
+          "test-game.automation-flag",
+          "test-game.dark-matter-unlock",
+          "test-game.gem-efficiency",
+          "test-game.gold-boost",
+          "test-game.mana-capacity",
+          "test-game.milestone-signal",
+          "test-game.mine-efficiency",
+          "test-game.refinery-consumption-reducer",
+          "test-game.repeatable-essence-rate"
+        ],
+        "retention": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "kind": "resource",
+            "resourceId": "test-game.prestige-points"
+          },
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 2
+            },
+            "kind": "resource",
+            "resourceId": "test-game.tickets"
+          }
+        ],
+        "reward": {
+          "baseReward": {
+            "expression": {
+              "args": [
+                {
+                  "kind": "unary",
+                  "op": "floor",
+                  "operand": {
+                    "kind": "binary",
+                    "left": {
+                      "kind": "binary",
+                      "left": {
+                        "kind": "ref",
+                        "target": {
+                          "id": "test-game.gold",
+                          "type": "resource"
+                        }
+                      },
+                      "op": "add",
+                      "right": {
+                        "kind": "binary",
+                        "left": {
+                          "kind": "literal",
+                          "value": 10
+                        },
+                        "op": "mul",
+                        "right": {
+                          "kind": "ref",
+                          "target": {
+                            "id": "test-game.gems",
+                            "type": "resource"
+                          }
+                        }
+                      }
+                    },
+                    "op": "div",
+                    "right": {
+                      "kind": "literal",
+                      "value": 1000
+                    }
+                  }
+                },
+                {
+                  "kind": "literal",
+                  "value": 1
+                },
+                {
+                  "kind": "literal",
+                  "value": 5000
+                }
+              ],
+              "kind": "call",
+              "name": "clamp"
+            },
+            "kind": "expression"
+          },
+          "resourceId": "test-game.prestige-points"
+        },
+        "summary": {
+          "default": "Reset tier 1 resources and upgrades for prestige points.",
+          "variants": {
+            "en-US": "Reset tier 1 resources and upgrades for prestige points."
+          }
+        },
+        "unlockCondition": {
+          "conditions": [
+            {
+              "amount": {
+                "kind": "constant",
+                "value": 100
+              },
+              "comparator": "gte",
+              "kind": "resourceThreshold",
+              "resourceId": "test-game.essence"
+            },
+            {
+              "comparator": "gte",
+              "generatorId": "test-game.gold-mine",
+              "kind": "generatorLevel",
+              "level": {
+                "kind": "constant",
+                "value": 10
+              }
+            }
+          ],
+          "kind": "allOf"
+        }
+      },
+      {
+        "id": "test-game.omega",
+        "name": {
+          "default": "Omega",
+          "variants": {
+            "en-US": "Omega"
+          }
+        },
+        "order": 2,
+        "resetTargets": [
+          "test-game.dark-matter",
+          "test-game.essence",
+          "test-game.gems",
+          "test-game.gold",
+          "test-game.mana",
+          "test-game.prestige-points"
+        ],
+        "retention": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "kind": "resource",
+            "resourceId": "test-game.omega-points"
+          }
+        ],
+        "reward": {
+          "baseReward": {
+            "expression": {
+              "args": [
+                {
+                  "kind": "literal",
+                  "value": 1
+                },
+                {
+                  "args": [
+                    {
+                      "kind": "literal",
+                      "value": 250
+                    },
+                    {
+                      "kind": "unary",
+                      "op": "ceil",
+                      "operand": {
+                        "kind": "binary",
+                        "left": {
+                          "kind": "binary",
+                          "left": {
+                            "kind": "ref",
+                            "target": {
+                              "id": "test-game.prestige-points",
+                              "type": "resource"
+                            }
+                          },
+                          "op": "pow",
+                          "right": {
+                            "kind": "literal",
+                            "value": 1.1
+                          }
+                        },
+                        "op": "div",
+                        "right": {
+                          "kind": "literal",
+                          "value": 10
+                        }
+                      }
+                    },
+                    {
+                      "kind": "unary",
+                      "op": "round",
+                      "operand": {
+                        "kind": "binary",
+                        "left": {
+                          "kind": "unary",
+                          "op": "ln",
+                          "operand": {
+                            "kind": "binary",
+                            "left": {
+                              "kind": "literal",
+                              "value": 1
+                            },
+                            "op": "add",
+                            "right": {
+                              "kind": "ref",
+                              "target": {
+                                "id": "test-game.prestige-points",
+                                "type": "resource"
+                              }
+                            }
+                          }
+                        },
+                        "op": "add",
+                        "right": {
+                          "kind": "unary",
+                          "op": "log10",
+                          "operand": {
+                            "kind": "binary",
+                            "left": {
+                              "kind": "literal",
+                              "value": 10
+                            },
+                            "op": "add",
+                            "right": {
+                              "kind": "ref",
+                              "target": {
+                                "id": "test-game.gems",
+                                "type": "resource"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "kind": "call",
+                  "name": "min3"
+                },
+                {
+                  "kind": "unary",
+                  "op": "abs",
+                  "operand": {
+                    "kind": "binary",
+                    "left": {
+                      "kind": "ref",
+                      "target": {
+                        "id": "test-game.gold",
+                        "type": "resource"
+                      }
+                    },
+                    "op": "sub",
+                    "right": {
+                      "kind": "literal",
+                      "value": 0
+                    }
+                  }
+                }
+              ],
+              "kind": "call",
+              "name": "max3"
+            },
+            "kind": "expression"
+          },
+          "resourceId": "test-game.omega-points"
+        },
+        "summary": {
+          "default": "Secondary prestige layer resetting most progress for omega points.",
+          "variants": {
+            "en-US": "Secondary prestige layer resetting most progress for omega points."
+          }
+        },
+        "unlockCondition": {
+          "conditions": [
+            {
+              "amount": {
+                "kind": "constant",
+                "value": 25
+              },
+              "comparator": "gte",
+              "kind": "resourceThreshold",
+              "resourceId": "test-game.prestige-points"
+            },
+            {
+              "comparator": "gte",
+              "count": 1,
+              "kind": "prestigeCountThreshold",
+              "prestigeLayerId": "test-game.ascension"
+            }
+          ],
+          "kind": "allOf"
+        }
+      }
+    ],
+    "resources": [
+      {
+        "capacity": null,
+        "category": "primary",
+        "dirtyTolerance": 0.000001,
+        "economyClassification": "soft",
+        "id": "test-game.gold",
+        "name": {
+          "default": "Gold",
+          "variants": {
+            "en-US": "Gold"
+          }
+        },
+        "order": 1,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 1,
+        "unlocked": true,
+        "visible": true
+      },
+      {
+        "capacity": null,
+        "category": "currency",
+        "economyClassification": "hard",
+        "id": "test-game.gems",
+        "name": {
+          "default": "Gems",
+          "variants": {
+            "en-US": "Gems"
+          }
+        },
+        "order": 2,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 1,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 50
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gold"
+        },
+        "unlocked": false,
+        "visible": true
+      },
+      {
+        "capacity": 200,
+        "category": "automation",
+        "economyClassification": "soft",
+        "id": "test-game.mana",
+        "name": {
+          "default": "Mana",
+          "variants": {
+            "en-US": "Mana"
+          }
+        },
+        "order": 3,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 1,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gold"
+        },
+        "unlocked": false,
+        "visible": true
+      },
+      {
+        "capacity": null,
+        "category": "primary",
+        "economyClassification": "soft",
+        "id": "test-game.essence",
+        "name": {
+          "default": "Essence",
+          "variants": {
+            "en-US": "Essence"
+          }
+        },
+        "order": 4,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 2,
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 10
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gems"
+        },
+        "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": null,
+        "category": "primary",
+        "economyClassification": "soft",
+        "id": "test-game.dark-matter",
+        "name": {
+          "default": "Dark Matter",
+          "variants": {
+            "en-US": "Dark Matter"
+          }
+        },
+        "order": 5,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 2,
+        "unlockCondition": {
+          "kind": "upgradeOwned",
+          "requiredPurchases": 1,
+          "upgradeId": "test-game.dark-matter-unlock"
+        },
+        "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": null,
+        "category": "prestige",
+        "economyClassification": "soft",
+        "id": "test-game.prestige-points",
+        "name": {
+          "default": "Prestige Points",
+          "variants": {
+            "en-US": "Prestige Points"
+          }
+        },
+        "order": 6,
+        "prestige": {
+          "layerId": "test-game.ascension",
+          "resetRetention": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "startAmount": 0,
+        "tags": [],
+        "tier": 3,
+        "unlockCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        },
+        "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": null,
+        "category": "misc",
+        "economyClassification": "soft",
+        "id": "test-game.ascension-prestige-count",
+        "name": {
+          "default": "Ascension Count",
+          "variants": {
+            "en-US": "Ascension Count"
+          }
+        },
+        "order": 7,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 3,
+        "unlocked": true,
+        "visible": false
+      },
+      {
+        "capacity": null,
+        "category": "prestige",
+        "economyClassification": "soft",
+        "id": "test-game.omega-points",
+        "name": {
+          "default": "Omega Points",
+          "variants": {
+            "en-US": "Omega Points"
+          }
+        },
+        "order": 8,
+        "prestige": {
+          "layerId": "test-game.omega",
+          "resetRetention": {
+            "kind": "constant",
+            "value": 1
+          }
+        },
+        "startAmount": 0,
+        "tags": [],
+        "tier": 4,
+        "unlockCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.omega"
+        },
+        "unlocked": false,
+        "visible": false
+      },
+      {
+        "capacity": null,
+        "category": "misc",
+        "economyClassification": "soft",
+        "id": "test-game.omega-prestige-count",
+        "name": {
+          "default": "Omega Count",
+          "variants": {
+            "en-US": "Omega Count"
+          }
+        },
+        "order": 9,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 4,
+        "unlocked": true,
+        "visible": false
+      },
+      {
+        "capacity": 10,
+        "category": "currency",
+        "dirtyTolerance": 0.5,
+        "economyClassification": "hard",
+        "id": "test-game.tickets",
+        "name": {
+          "default": "Tickets",
+          "variants": {
+            "en-US": "Tickets"
+          }
+        },
+        "order": 10,
+        "startAmount": 0,
+        "tags": [],
+        "tier": 1,
+        "unlockCondition": {
+          "kind": "prestigeCompleted",
+          "prestigeLayerId": "test-game.ascension"
+        },
+        "unlocked": false,
+        "visible": true
+      }
+    ],
+    "runtimeEvents": [],
+    "transforms": [
+      {
+        "cooldown": {
+          "kind": "constant",
+          "value": 5000
+        },
+        "description": {
+          "default": "Batch convert gems into gold over time.",
+          "variants": {
+            "en-US": "Batch convert gems into gold over time."
+          }
+        },
+        "duration": {
+          "kind": "constant",
+          "value": 30000
+        },
+        "id": "test-game.batch-production",
+        "inputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 10
+            },
+            "resourceId": "test-game.gems"
+          }
+        ],
+        "mode": "batch",
+        "name": {
+          "default": "Batch Production",
+          "variants": {
+            "en-US": "Batch Production"
+          }
+        },
+        "order": 2,
+        "outputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 250
+            },
+            "resourceId": "test-game.gold"
+          }
+        ],
+        "safety": {
+          "maxOutstandingBatches": 3,
+          "maxRunsPerTick": 2
+        },
+        "tags": [],
+        "trigger": {
+          "kind": "manual"
+        },
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 10
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gems"
+        }
+      },
+      {
+        "description": {
+          "default": "Send a hero on a multi-stage mission.",
+          "variants": {
+            "en-US": "Send a hero on a multi-stage mission."
+          }
+        },
+        "duration": {
+          "kind": "constant",
+          "value": 120000
+        },
+        "entityRequirements": [
+          {
+            "count": {
+              "kind": "constant",
+              "value": 1
+            },
+            "entityId": "test-game.hero",
+            "minStats": {
+              "test-game.hero.power": {
+                "kind": "constant",
+                "value": 1
+              }
+            },
+            "preferHighStats": [
+              "test-game.hero.luck"
+            ],
+            "returnOnComplete": true
+          }
+        ],
+        "id": "test-game.expedition",
+        "initialStage": "travel",
+        "inputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 10
+            },
+            "resourceId": "test-game.essence"
+          }
+        ],
+        "mode": "mission",
+        "name": {
+          "default": "Expedition",
+          "variants": {
+            "en-US": "Expedition"
+          }
+        },
+        "order": 3,
+        "outcomes": {
+          "critical": {
+            "chance": {
+              "kind": "constant",
+              "value": 0.1
+            },
+            "entityExperience": {
+              "kind": "constant",
+              "value": 25
+            },
+            "message": {
+              "default": "Critical success!",
+              "variants": {}
+            },
+            "outputs": [
+              {
+                "amount": {
+                  "kind": "constant",
+                  "value": 100
+                },
+                "resourceId": "test-game.gems"
+              }
+            ]
+          },
+          "failure": {
+            "entityDamage": {
+              "kind": "constant",
+              "value": 1
+            },
+            "message": {
+              "default": "The expedition fails.",
+              "variants": {}
+            },
+            "outputs": [
+              {
+                "amount": {
+                  "kind": "constant",
+                  "value": 50
+                },
+                "resourceId": "test-game.gold"
+              }
+            ]
+          },
+          "success": {
+            "entityExperience": {
+              "kind": "constant",
+              "value": 10
+            },
+            "message": {
+              "default": "The expedition succeeds!",
+              "variants": {}
+            },
+            "outputs": [
+              {
+                "amount": {
+                  "kind": "constant",
+                  "value": 25
+                },
+                "resourceId": "test-game.gems"
+              }
+            ]
+          }
+        },
+        "outputs": [],
+        "stages": [
+          {
+            "checkpoint": {
+              "entityExperience": {
+                "kind": "constant",
+                "value": 1
+              },
+              "message": {
+                "default": "Travel checkpoint reached.",
+                "variants": {}
+              },
+              "outputs": [
+                {
+                  "amount": {
+                    "kind": "constant",
+                    "value": 10
+                  },
+                  "resourceId": "test-game.gold"
+                }
+              ]
+            },
+            "duration": {
+              "kind": "constant",
+              "value": 30000
+            },
+            "id": "travel",
+            "name": {
+              "default": "Travel",
+              "variants": {}
+            },
+            "nextStage": "explore"
+          },
+          {
+            "decision": {
+              "defaultOption": "safe",
+              "options": [
+                {
+                  "description": {
+                    "default": "Lower reward, higher success.",
+                    "variants": {}
+                  },
+                  "id": "safe",
+                  "label": {
+                    "default": "Safe Path",
+                    "variants": {}
+                  },
+                  "modifiers": {
+                    "outputMultiplier": {
+                      "kind": "constant",
+                      "value": 0.8
+                    },
+                    "successRateBonus": {
+                      "kind": "constant",
+                      "value": 0.1
+                    }
+                  },
+                  "nextStage": "return"
+                },
+                {
+                  "description": {
+                    "default": "Higher reward, lower success.",
+                    "variants": {}
+                  },
+                  "id": "risky",
+                  "label": {
+                    "default": "Risky Shortcut",
+                    "variants": {}
+                  },
+                  "modifiers": {
+                    "outputMultiplier": {
+                      "kind": "constant",
+                      "value": 1.25
+                    },
+                    "successRateBonus": {
+                      "kind": "constant",
+                      "value": -0.1
+                    }
+                  },
+                  "nextStage": "return"
+                }
+              ],
+              "prompt": {
+                "default": "Choose a path.",
+                "variants": {}
+              },
+              "timeout": {
+                "kind": "constant",
+                "value": 15000
+              }
+            },
+            "duration": {
+              "kind": "constant",
+              "value": 60000
+            },
+            "id": "explore",
+            "name": {
+              "default": "Explore",
+              "variants": {}
+            }
+          },
+          {
+            "checkpoint": {
+              "message": {
+                "default": "Return checkpoint reached.",
+                "variants": {}
+              },
+              "outputs": [
+                {
+                  "amount": {
+                    "kind": "constant",
+                    "value": 10
+                  },
+                  "resourceId": "test-game.gold"
+                }
+              ]
+            },
+            "duration": {
+              "kind": "constant",
+              "value": 30000
+            },
+            "id": "return",
+            "name": {
+              "default": "Return",
+              "variants": {}
+            },
+            "nextStage": null
+          }
+        ],
+        "successRate": {
+          "baseRate": {
+            "kind": "constant",
+            "value": 0.5
+          },
+          "statModifiers": [
+            {
+              "entityScope": "average",
+              "stat": "test-game.hero.luck",
+              "weight": {
+                "kind": "constant",
+                "value": 0.02
+              }
+            }
+          ],
+          "usePRD": true
+        },
+        "tags": [],
+        "trigger": {
+          "kind": "manual"
+        },
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 10
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.essence"
+        }
+      },
+      {
+        "description": {
+          "default": "Convert gold into essence.",
+          "variants": {
+            "en-US": "Convert gold into essence."
+          }
+        },
+        "id": "test-game.refine-essence",
+        "inputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 100
+            },
+            "resourceId": "test-game.gold"
+          }
+        ],
+        "mode": "instant",
+        "name": {
+          "default": "Refine Essence",
+          "variants": {
+            "en-US": "Refine Essence"
+          }
+        },
+        "order": 1,
+        "outputs": [
+          {
+            "amount": {
+              "kind": "constant",
+              "value": 1
+            },
+            "resourceId": "test-game.essence"
+          }
+        ],
+        "tags": [],
+        "trigger": {
+          "kind": "manual"
+        },
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 100
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gold"
+        }
+      }
+    ],
+    "upgrades": [
+      {
+        "category": "resource",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 100,
+          "currencyId": "test-game.gold"
+        },
+        "description": {
+          "default": "Increase gold production by 25%.",
+          "variants": {
+            "en-US": "Increase gold production by 25%."
+          }
+        },
+        "effects": [
+          {
+            "kind": "modifyResourceRate",
+            "operation": "multiply",
+            "resourceId": "test-game.gold",
+            "value": {
+              "kind": "constant",
+              "value": 1.25
+            }
+          }
+        ],
+        "id": "test-game.gold-boost",
+        "name": {
+          "default": "Gold Boost",
+          "variants": {
+            "en-US": "Gold Boost"
+          }
+        },
+        "order": 1,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.gold",
+            "kind": "resource"
+          }
+        ]
+      },
+      {
+        "category": "resource",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 250,
+          "currencyId": "test-game.gold"
+        },
+        "description": {
+          "default": "Increase mana capacity by 200.",
+          "variants": {
+            "en-US": "Increase mana capacity by 200."
+          }
+        },
+        "effects": [
+          {
+            "kind": "modifyResourceCapacity",
+            "operation": "add",
+            "resourceId": "test-game.mana",
+            "value": {
+              "kind": "constant",
+              "value": 200
+            }
+          }
+        ],
+        "id": "test-game.mana-capacity",
+        "name": {
+          "default": "Mana Reservoir",
+          "variants": {
+            "en-US": "Mana Reservoir"
+          }
+        },
+        "order": 2,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.mana",
+            "kind": "resource"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 25
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gold"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 400,
+          "currencyId": "test-game.gold"
+        },
+        "description": {
+          "default": "Gold mines produce 50% more gold.",
+          "variants": {
+            "en-US": "Gold mines produce 50% more gold."
+          }
+        },
+        "effects": [
+          {
+            "generatorId": "test-game.gold-mine",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.5
+            }
+          }
+        ],
+        "id": "test-game.mine-efficiency",
+        "name": {
+          "default": "Mine Efficiency",
+          "variants": {
+            "en-US": "Mine Efficiency"
+          }
+        },
+        "order": 3,
+        "prerequisites": [
+          {
+            "kind": "upgradeOwned",
+            "requiredPurchases": 1,
+            "upgradeId": "test-game.gold-boost"
+          }
+        ],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.gold-mine",
+            "kind": "generator"
+          }
+        ]
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 20,
+          "currencyId": "test-game.gems"
+        },
+        "description": {
+          "default": "Gem extractors cost 10% less.",
+          "variants": {
+            "en-US": "Gem extractors cost 10% less."
+          }
+        },
+        "effects": [
+          {
+            "generatorId": "test-game.gem-extractor",
+            "kind": "modifyGeneratorCost",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 0.9
+            }
+          }
+        ],
+        "id": "test-game.gem-efficiency",
+        "name": {
+          "default": "Gem Efficiency",
+          "variants": {
+            "en-US": "Gem Efficiency"
+          }
+        },
+        "order": 4,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.gem-extractor",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 5
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.gems"
+        }
+      },
+      {
+        "category": "generator",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 40,
+          "currencyId": "test-game.gems"
+        },
+        "description": {
+          "default": "Reduce essence refinery mana consumption by 20%.",
+          "variants": {
+            "en-US": "Reduce essence refinery mana consumption by 20%."
+          }
+        },
+        "effects": [
+          {
+            "generatorId": "test-game.essence-refinery",
+            "kind": "modifyGeneratorConsumption",
+            "operation": "multiply",
+            "resourceId": "test-game.mana",
+            "value": {
+              "kind": "constant",
+              "value": 0.8
+            }
+          }
+        ],
+        "id": "test-game.refinery-consumption-reducer",
+        "name": {
+          "default": "Refinery Filters",
+          "variants": {
+            "en-US": "Refinery Filters"
+          }
+        },
+        "order": 5,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.essence-refinery",
+            "kind": "generator"
+          }
+        ]
+      },
+      {
+        "category": "resource",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 50,
+          "currencyId": "test-game.essence"
+        },
+        "description": {
+          "default": "Unlock dark matter and its reactor.",
+          "variants": {
+            "en-US": "Unlock dark matter and its reactor."
+          }
+        },
+        "effects": [
+          {
+            "kind": "unlockResource",
+            "resourceId": "test-game.dark-matter"
+          },
+          {
+            "generatorId": "test-game.dark-matter-reactor",
+            "kind": "unlockGenerator"
+          }
+        ],
+        "id": "test-game.dark-matter-unlock",
+        "name": {
+          "default": "Dark Matter Unlock",
+          "variants": {
+            "en-US": "Dark Matter Unlock"
+          }
+        },
+        "order": 6,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.dark-matter",
+            "kind": "resource"
+          }
+        ]
+      },
+      {
+        "category": "resource",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 2,
+          "currencyId": "test-game.prestige-points"
+        },
+        "description": {
+          "default": "Adjust ticket dirty tolerance for edge-case testing.",
+          "variants": {
+            "en-US": "Adjust ticket dirty tolerance for edge-case testing."
+          }
+        },
+        "effects": [
+          {
+            "kind": "alterDirtyTolerance",
+            "operation": "multiply",
+            "resourceId": "test-game.tickets",
+            "value": {
+              "kind": "constant",
+              "value": 0.1
+            }
+          }
+        ],
+        "id": "test-game.dirty-tolerance-tweak",
+        "name": {
+          "default": "Ticket Precision",
+          "variants": {
+            "en-US": "Ticket Precision"
+          }
+        },
+        "order": 7,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.tickets",
+            "kind": "resource"
+          }
+        ],
+        "unlockCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        }
+      },
+      {
+        "category": "automation",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 25,
+          "currencyId": "test-game.gems"
+        },
+        "description": {
+          "default": "Unlock automation that buys gold mines on an interval.",
+          "variants": {
+            "en-US": "Unlock automation that buys gold mines on an interval."
+          }
+        },
+        "effects": [
+          {
+            "automationId": "test-game.auto-buy-gold-mine",
+            "kind": "grantAutomation"
+          }
+        ],
+        "id": "test-game.auto-buy-gold-mine-unlock",
+        "name": {
+          "default": "Auto Buy: Gold Mine",
+          "variants": {
+            "en-US": "Auto Buy: Gold Mine"
+          }
+        },
+        "order": 8,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.auto-buy-gold-mine",
+            "kind": "automation"
+          }
+        ]
+      },
+      {
+        "category": "automation",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 5,
+          "currencyId": "test-game.gems"
+        },
+        "description": {
+          "default": "Grants a flag for flag-based achievement testing.",
+          "variants": {
+            "en-US": "Grants a flag for flag-based achievement testing."
+          }
+        },
+        "effects": [
+          {
+            "flagId": "test-game.flag.automation-enabled",
+            "kind": "grantFlag",
+            "value": true
+          }
+        ],
+        "id": "test-game.automation-flag",
+        "name": {
+          "default": "Automation Enabled",
+          "variants": {
+            "en-US": "Automation Enabled"
+          }
+        },
+        "order": 9,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "kind": "global"
+          }
+        ]
+      },
+      {
+        "category": "global",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 1000,
+          "currencyId": "test-game.gold"
+        },
+        "description": {
+          "default": "Emits a milestone event when purchased.",
+          "variants": {
+            "en-US": "Emits a milestone event when purchased."
+          }
+        },
+        "effects": [
+          {
+            "eventId": "test-game:milestone-reached",
+            "kind": "emitEvent"
+          }
+        ],
+        "id": "test-game.milestone-signal",
+        "name": {
+          "default": "Milestone Signal",
+          "variants": {
+            "en-US": "Milestone Signal"
+          }
+        },
+        "order": 10,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "kind": "global"
+          }
+        ]
+      },
+      {
+        "category": "resource",
+        "cost": {
+          "costCurve": {
+            "base": 1,
+            "kind": "linear",
+            "slope": 0.2
+          },
+          "costMultiplier": 25,
+          "currencyId": "test-game.essence"
+        },
+        "description": {
+          "default": "Repeatable upgrade that boosts essence refinery output.",
+          "variants": {
+            "en-US": "Repeatable upgrade that boosts essence refinery output."
+          }
+        },
+        "effects": [
+          {
+            "generatorId": "test-game.essence-refinery",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "kind": "constant",
+              "value": 1.05
+            }
+          }
+        ],
+        "id": "test-game.repeatable-essence-rate",
+        "name": {
+          "default": "Repeatable Essence Infusion",
+          "variants": {
+            "en-US": "Repeatable Essence Infusion"
+          }
+        },
+        "order": 11,
+        "prerequisites": [],
+        "repeatable": {
+          "costCurve": {
+            "base": 1,
+            "growth": 1.35,
+            "kind": "exponential"
+          },
+          "effectCurve": {
+            "base": 1,
+            "kind": "linear",
+            "slope": 0.05
+          },
+          "maxPurchases": 10
+        },
+        "tags": [],
+        "targets": [
+          {
+            "id": "test-game.essence-refinery",
+            "kind": "generator"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 1
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.essence"
+        }
+      },
+      {
+        "category": "prestige",
+        "cost": {
+          "costCurve": {
+            "kind": "constant",
+            "value": 1
+          },
+          "costMultiplier": 0,
+          "currencyId": "test-game.prestige-points"
+        },
+        "description": {
+          "default": "Scale generator rates based on prestige points.",
+          "variants": {
+            "en-US": "Scale generator rates based on prestige points."
+          }
+        },
+        "effects": [
+          {
+            "generatorId": "test-game.gold-mine",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "test-game.prestige-points",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          },
+          {
+            "generatorId": "test-game.gem-extractor",
+            "kind": "modifyGeneratorRate",
+            "operation": "multiply",
+            "value": {
+              "expression": {
+                "kind": "binary",
+                "left": {
+                  "kind": "literal",
+                  "value": 1
+                },
+                "op": "add",
+                "right": {
+                  "kind": "binary",
+                  "left": {
+                    "kind": "literal",
+                    "value": 0.01
+                  },
+                  "op": "mul",
+                  "right": {
+                    "kind": "ref",
+                    "target": {
+                      "id": "test-game.prestige-points",
+                      "type": "resource"
+                    }
+                  }
+                }
+              },
+              "kind": "expression"
+            }
+          }
+        ],
+        "id": "test-game.ascension-surge",
+        "name": {
+          "default": "Ascension Surge",
+          "variants": {
+            "en-US": "Ascension Surge"
+          }
+        },
+        "order": 12,
+        "prerequisites": [],
+        "tags": [],
+        "targets": [
+          {
+            "kind": "global"
+          }
+        ],
+        "unlockCondition": {
+          "amount": {
+            "kind": "constant",
+            "value": 1
+          },
+          "comparator": "gte",
+          "kind": "resourceThreshold",
+          "resourceId": "test-game.prestige-points"
+        },
+        "visibilityCondition": {
+          "kind": "prestigeUnlocked",
+          "prestigeLayerId": "test-game.ascension"
+        }
+      }
+    ]
+  },
+  "warnings": []
+} as unknown as Parameters<typeof rehydrateNormalizedPack>[0];
+
+const runtimeEnv = (globalThis as typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+}).process;
+
+const shouldVerifyDigest = runtimeEnv?.env?.NODE_ENV !== 'production';
+
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_TEST_U2D_GAME_U2D_PACK = rehydrateNormalizedPack(serialized, {
+  verifyDigest: shouldVerifyDigest,
+});
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_TEST_U2D_GAME_U2D_PACK_DIGEST = serialized.digest;
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_TEST_U2D_GAME_U2D_PACK_ARTIFACT_HASH = serialized.artifactHash;
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_TEST_U2D_GAME_U2D_PACK_INDICES = createModuleIndices(PACK__U40_IDLE_U2D_ENGINE_U2F_TEST_U2D_GAME_U2D_PACK);
+export const PACK__U40_IDLE_U2D_ENGINE_U2F_TEST_U2D_GAME_U2D_PACK_SUMMARY = Object.freeze({
+  slug: serialized.metadata.id,
+  version: serialized.metadata.version,
+  digest: serialized.digest,
+  artifactHash: serialized.artifactHash,
+  warningCount: serialized.warnings.length,
+  resourceIds: serialized.modules.resources.map((resource) => resource.id),
+  entityIds: serialized.modules.entities.map((entity) => entity.id),
+});
+

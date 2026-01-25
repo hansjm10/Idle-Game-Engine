@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@idle-engine/controls": "workspace:*",
+    "@idle-engine/content-test-game": "workspace:*",
     "@idle-engine/core": "workspace:*",
     "@idle-engine/renderer-contract": "workspace:*",
     "@idle-engine/renderer-webgpu": "workspace:*"

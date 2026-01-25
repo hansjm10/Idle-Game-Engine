@@ -20,6 +20,17 @@ type WorkerEnqueueCommandsMessage = Readonly<{
   commands: readonly Command[];
 }>;
 
+type WorkerSerializeMessage = Readonly<{
+  kind: 'serialize';
+  requestId: string;
+}>;
+
+type WorkerHydrateMessage = Readonly<{
+  kind: 'hydrate';
+  requestId: string;
+  save: unknown;
+}>;
+
 type WorkerReadyMessage = Readonly<{
   kind: 'ready';
   stepSizeMs: number;
@@ -38,19 +49,45 @@ type WorkerErrorMessage = Readonly<{
   error: string;
 }>;
 
-type WorkerOutboundMessage = WorkerReadyMessage | WorkerFrameMessage | WorkerErrorMessage;
+type WorkerSerializedMessage = Readonly<{
+  kind: 'serialized';
+  requestId: string;
+  save?: unknown;
+  error?: string;
+}>;
+
+type WorkerHydratedMessage = Readonly<{
+  kind: 'hydrated';
+  requestId: string;
+  success: boolean;
+  nextStep?: number;
+  stepSizeMs?: number;
+  error?: string;
+}>;
+
+type WorkerOutboundMessage =
+  | WorkerReadyMessage
+  | WorkerFrameMessage
+  | WorkerSerializedMessage
+  | WorkerHydratedMessage
+  | WorkerErrorMessage;
 
 if (!parentPort) {
   throw new Error('shell-desktop sim worker requires parentPort');
 }
 
 let runtime: SimRuntime | undefined;
+let runtimeOptions:
+  | Readonly<{ stepSizeMs?: number; maxStepsPerFrame?: number }>
+  | undefined;
 
-const ensureRuntime = (options?: { readonly stepSizeMs?: number; readonly maxStepsPerFrame?: number }): SimRuntime => {
+const ensureRuntime = (
+  options?: Readonly<{ stepSizeMs?: number; maxStepsPerFrame?: number }>,
+): SimRuntime => {
   if (runtime) {
     return runtime;
   }
-  runtime = createSimRuntime(options);
+  runtime = createSimRuntime(options ?? runtimeOptions);
   return runtime;
 };
 
@@ -67,10 +104,11 @@ parentPort.on('message', (message: unknown) => {
     const kind = (message as { kind?: unknown }).kind;
     if (kind === 'init') {
       const init = message as WorkerInitMessage;
-      runtime = createSimRuntime({
+      runtimeOptions = {
         stepSizeMs: init.stepSizeMs,
         maxStepsPerFrame: init.maxStepsPerFrame,
-      });
+      };
+      runtime = createSimRuntime(runtimeOptions);
       emit({
         kind: 'ready',
         stepSizeMs: runtime.getStepSizeMs(),
@@ -99,6 +137,68 @@ parentPort.on('message', (message: unknown) => {
     if (kind === 'enqueueCommands') {
       const payload = message as WorkerEnqueueCommandsMessage;
       ensureRuntime().enqueueCommands(payload.commands);
+      return;
+    }
+
+    if (kind === 'serialize') {
+      const request = message as WorkerSerializeMessage;
+      const requestId = request.requestId;
+      if (typeof requestId !== 'string' || requestId.length === 0) {
+        return;
+      }
+
+      const activeRuntime = ensureRuntime();
+      if (typeof activeRuntime.serialize !== 'function') {
+        emit({ kind: 'serialized', requestId, error: 'Serialize is not supported by this runtime.' });
+        return;
+      }
+
+      try {
+        emit({ kind: 'serialized', requestId, save: activeRuntime.serialize() });
+      } catch (error: unknown) {
+        emit({ kind: 'serialized', requestId, error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+
+    if (kind === 'hydrate') {
+      const request = message as WorkerHydrateMessage;
+      const requestId = request.requestId;
+      if (typeof requestId !== 'string' || requestId.length === 0) {
+        return;
+      }
+
+      const activeRuntime = ensureRuntime();
+      if (typeof activeRuntime.hydrate !== 'function') {
+        emit({ kind: 'hydrated', requestId, success: false, error: 'Hydrate is not supported by this runtime.' });
+        return;
+      }
+
+      const previousRuntime = runtime;
+      const replacement = createSimRuntime(runtimeOptions);
+      runtime = replacement;
+
+      try {
+        if (typeof replacement.hydrate !== 'function') {
+          throw new Error('Hydrate is not supported by this runtime.');
+        }
+        replacement.hydrate(request.save);
+        emit({
+          kind: 'hydrated',
+          requestId,
+          success: true,
+          stepSizeMs: replacement.getStepSizeMs(),
+          nextStep: replacement.getNextStep(),
+        });
+      } catch (error: unknown) {
+        runtime = previousRuntime;
+        emit({
+          kind: 'hydrated',
+          requestId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return;
     }
 

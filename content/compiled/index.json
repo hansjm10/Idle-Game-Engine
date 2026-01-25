@@ -25,6 +25,147 @@
         "json": "packages/content-sample/content/compiled/@idle-engine/sample-pack.normalized.json",
         "module": "packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts"
       }
+    },
+    {
+      "slug": "@idle-engine/test-game-pack",
+      "status": "compiled",
+      "version": "0.1.0",
+      "digest": {
+        "version": 1,
+        "hash": "fnv1a-86633006"
+      },
+      "artifactHash": "23d7fdc3c2d00a9644a8768b3b23c9df6f7ea62b05bd51e5b56fbb4bffde2505",
+      "warnings": [],
+      "balance": {
+        "warnings": [
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.mana\" unlocks after dependent content \"test-game.gem-extractor\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              2,
+              "purchase",
+              "costs",
+              1,
+              "resourceId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.mana\" unlocks after dependent content \"test-game.gem-extractor\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              2,
+              "consumes",
+              0,
+              "resourceId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.essence\" unlocks after dependent content \"test-game.dark-matter-reactor\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              4,
+              "purchase",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.essence\" unlocks after dependent content \"test-game.dark-matter-reactor\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              4,
+              "consumes",
+              0,
+              "resourceId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.prestige-points\" unlocks after dependent content \"test-game.ticket-printer\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              5,
+              "purchase",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.gems\" unlocks after dependent content \"test-game.refinery-consumption-reducer\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              4,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.essence\" unlocks after dependent content \"test-game.dark-matter-unlock\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              5,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.prestige-points\" unlocks after dependent content \"test-game.dirty-tolerance-tweak\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              6,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.gems\" unlocks after dependent content \"test-game.auto-buy-gold-mine-unlock\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              7,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.gems\" unlocks after dependent content \"test-game.automation-flag\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              8,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          }
+        ],
+        "errors": [],
+        "warningCount": 10,
+        "errorCount": 0
+      },
+      "dependencies": {
+        "requires": [],
+        "optional": [],
+        "conflicts": []
+      },
+      "artifacts": {
+        "json": "packages/content-test-game/content/compiled/@idle-engine/test-game-pack.normalized.json",
+        "module": "packages/content-test-game/src/generated/@idle-engine/test-game-pack.generated.ts"
+      }
     }
   ]
 }
