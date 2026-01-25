@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://idle-engine.dev/schemas/test-game/prestige-ready.json",
+  "title": "test-game:prestige-ready",
+  "type": "object",
+  "properties": {
+    "layerId": { "type": "string" },
+    "estimatedReward": { "type": "number" }
+  },
+  "required": ["layerId"],
+  "additionalProperties": false
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://idle-engine.dev/schemas/test-game/mission-complete.json",
+  "title": "test-game:mission-complete",
+  "type": "object",
+  "properties": {
+    "missionId": { "type": "string" },
+    "outcome": { "type": "string", "enum": ["success", "failure"] },
+    "durationMs": { "type": "number" }
+  },
+  "required": ["missionId", "outcome"],
+  "additionalProperties": false
+}

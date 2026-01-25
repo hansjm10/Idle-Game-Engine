@@ -1,0 +1,38 @@
+{
+  "name": "@idle-engine/content-test-game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./dist/*": "./dist/*",
+    "./src/generated/*": "./src/generated/*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint --max-warnings=0 'src/**/*.ts'",
+    "test": "vitest",
+    "test:ci": "vitest run --passWithNoTests",
+    "coverage": "vitest run --coverage --passWithNoTests"
+  },
+  "dependencies": {
+    "@idle-engine/content-compiler": "workspace:*",
+    "@idle-engine/content-schema": "workspace:*",
+    "@idle-engine/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@idle-engine/config-eslint": "workspace:*",
+    "@idle-engine/config-vitest": "workspace:*",
+    "@vitest/coverage-v8": "^3.2.4",
+    "@types/node": "^24.9.1",
+    "eslint": "^9.37.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "vitest-llm-reporter": "^1.2.0"
+  }
+}

@@ -25,6 +25,101 @@
         "json": "packages/content-sample/content/compiled/@idle-engine/sample-pack.normalized.json",
         "module": "packages/content-sample/src/generated/@idle-engine/sample-pack.generated.ts"
       }
+    },
+    {
+      "slug": "@idle-engine/test-game",
+      "status": "compiled",
+      "version": "0.1.0",
+      "digest": {
+        "version": 1,
+        "hash": "fnv1a-20e3221b"
+      },
+      "artifactHash": "0348ca2c5ceaeab9c46c47c2e79020e8af15efee37cc559939089583055a87ab",
+      "warnings": [],
+      "balance": {
+        "warnings": [
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.essence\" unlocks after dependent content \"test-game.dark-matter-harvester\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              5,
+              "purchase",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.essence\" unlocks after dependent content \"test-game.dark-matter-harvester\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              5,
+              "consumes",
+              0,
+              "resourceId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.prestige-points\" unlocks after dependent content \"test-game.prestige-reactor\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              6,
+              "purchase",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.dark-matter\" unlocks after dependent content \"test-game.prestige-reactor\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "generators",
+              6,
+              "consumes",
+              0,
+              "resourceId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.auto-tokens\" unlocks after dependent content \"test-game.auto-speed\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              2,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          },
+          {
+            "code": "balance.unlock.ordering",
+            "message": "Resource \"test-game.prestige-points\" unlocks after dependent content \"test-game.prestige-multiplier\". Gate the dependent unlock on the resource or unlock the resource earlier.",
+            "path": [
+              "upgrades",
+              3,
+              "cost",
+              "currencyId"
+            ],
+            "severity": "warning"
+          }
+        ],
+        "errors": [],
+        "warningCount": 6,
+        "errorCount": 0
+      },
+      "dependencies": {
+        "requires": [],
+        "optional": [],
+        "conflicts": []
+      },
+      "artifacts": {
+        "json": "packages/content-test-game/content/compiled/@idle-engine/test-game.normalized.json",
+        "module": "packages/content-test-game/src/generated/@idle-engine/test-game.generated.ts"
+      }
     }
   ]
 }
