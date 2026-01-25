@@ -76,7 +76,10 @@ function printPnpmNotFoundError() {
 
 function runCommand(command, args) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: 'inherit' });
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+      shell: process.platform === 'win32' && command === 'pnpm',
+    });
 
     child.on('error', (error) => {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
