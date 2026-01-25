@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import { testGameContentArtifactHash } from '@idle-engine/content-test-game';
 import { createSimRuntime } from './sim-runtime.js';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type { Command } from '@idle-engine/core';
+import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 
 describe('shell-desktop sim runtime', () => {
   it('emits per-step frames with deterministic timing', () => {
@@ -180,5 +182,34 @@ describe('shell-desktop sim runtime', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
     expect(sim.hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE)).toBe(true);
+  });
+});
+
+describe('shell-desktop sim runtime (test-game)', () => {
+  it('boots and emits renderer frames', () => {
+    const originalGameMode = process.env.IDLE_ENGINE_GAME;
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 20, maxStepsPerFrame: 1 });
+
+      expect(sim.getStepSizeMs()).toBe(20);
+      expect(sim.serialize).toBeTypeOf('function');
+      expect(sim.hydrate).toBeTypeOf('function');
+      expect(sim.hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE)).toBe(true);
+
+      const result = sim.tick(20);
+      expect(result.frames.length).toBeGreaterThan(0);
+
+      const frame = result.frames.at(-1);
+      expect(frame?.frame.schemaVersion).toBe(RENDERER_CONTRACT_SCHEMA_VERSION);
+      expect(frame?.frame.contentHash).toBe(testGameContentArtifactHash);
+    } finally {
+      if (originalGameMode === undefined) {
+        delete process.env.IDLE_ENGINE_GAME;
+      } else {
+        process.env.IDLE_ENGINE_GAME = originalGameMode;
+      }
+    }
   });
 });
