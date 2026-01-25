@@ -83,8 +83,8 @@ describe('docs/content-schema-reference.md', () => {
     const section = sliceSection(docs, '## Automation Target Types', '## Condition Kinds');
     const documented = extractTableItems(section);
 
-    // Extract from source: targetType: z.enum(['generator', 'upgrade', ...])
-    const match = source.match(/targetType: z\.enum\(\s*\[([^\]]+)\]/);
+    // Extract from source: targetType: z.enum(['generator', 'upgrade', ...]) or with chained .describe()
+    const match = source.match(/targetType: z\s*\.enum\(\s*\[([^\]]+)\]/);
     if (!match) throw new Error('Could not find targetType enum in automations.ts');
 
     const codeValues = match[1]
