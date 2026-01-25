@@ -54,7 +54,7 @@ function buildPnpmArgs(scriptName, pnpmArgs, scriptArgs) {
   const args = ['-r', ...pnpmArgs, 'run'];
 
   if (scriptName === 'test:ci') {
-    const workspaceConcurrency = process.env.TEST_CI_WORKSPACE_CONCURRENCY ?? '4';
+    const workspaceConcurrency = process.env.TEST_CI_WORKSPACE_CONCURRENCY || '4';
     args.push('--no-sort', '--workspace-concurrency', workspaceConcurrency, 'test:ci');
   } else {
     args.push('--if-present', scriptName);
