@@ -8,6 +8,7 @@
       "@idle-engine/core/internals": ["packages/core/src/internals.ts"],
       "@idle-engine/controls": ["packages/controls/src/index.ts"],
       "@idle-engine/content-test-game": ["packages/content-test-game/src/index.ts"],
+      "@idle-engine/content-compiler/runtime": ["packages/content-compiler/src/runtime.ts"],
       "@idle-engine/content-schema": [
         "packages/content-schema/src/index.ts",
         "packages/content-schema/src/index.d.ts"
