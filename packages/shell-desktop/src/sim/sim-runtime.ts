@@ -512,12 +512,17 @@ function createTestGameSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
 
       addButton(
         buyId,
-        generator.canAfford ? 'Buy' : 'Buy',
+        'Buy',
         baseX + 340,
         cursorY,
         60,
         20,
-        () => enqueuePlayerCommand(RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR, { generatorId: generator.id, count: 1 }),
+        () => {
+          if (!generator.canAfford) {
+            return;
+          }
+          enqueuePlayerCommand(RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR, { generatorId: generator.id, count: 1 });
+        },
       );
 
       addButton(

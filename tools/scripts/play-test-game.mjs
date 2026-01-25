@@ -1,13 +1,26 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
-execSync('pnpm generate', { stdio: 'inherit' });
+const PNPM_EXEC_PATH = process.env.npm_execpath;
+if (typeof PNPM_EXEC_PATH !== 'string' || PNPM_EXEC_PATH.length === 0) {
+  throw new Error('play-test-game.mjs must be run via pnpm (use `pnpm test-game:play`).');
+}
 
-execSync('pnpm --filter @idle-engine/shell-desktop... build', { stdio: 'inherit' });
+const SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 
-execSync('pnpm --filter @idle-engine/shell-desktop exec electron ./dist/main.js', {
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    IDLE_ENGINE_GAME: 'test-game',
-  },
-});
+const runPnpm = (args, env = {}) => {
+  execFileSync(process.execPath, [PNPM_EXEC_PATH, ...args], {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      ...env,
+      PATH: SAFE_PATH,
+    },
+  });
+};
+
+runPnpm(['generate']);
+runPnpm(['--filter', '@idle-engine/shell-desktop...', 'build']);
+runPnpm(
+  ['--filter', '@idle-engine/shell-desktop', 'exec', 'electron', './dist/main.js'],
+  { IDLE_ENGINE_GAME: 'test-game' },
+);
