@@ -1,21 +1,24 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
-const PNPM_EXEC_PATH = process.env.npm_execpath;
-if (typeof PNPM_EXEC_PATH !== 'string' || PNPM_EXEC_PATH.length === 0) {
-  throw new Error('play-test-game.mjs must be run via pnpm (use `pnpm test-game:play`).');
+function getPnpmCommand() {
+  return process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 }
 
-const SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
-
 const runPnpm = (args, env = {}) => {
-  execFileSync(process.execPath, [PNPM_EXEC_PATH, ...args], {
+  const result = spawnSync(getPnpmCommand(), args, {
     stdio: 'inherit',
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       ...env,
-      PATH: SAFE_PATH,
     },
   });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`pnpm ${args[0]} failed with exit code ${result.status}`);
+  }
 };
 
 runPnpm(['generate']);

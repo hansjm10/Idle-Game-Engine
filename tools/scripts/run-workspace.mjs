@@ -31,7 +31,10 @@ function splitArgs(args) {
 }
 
 function runCommand(command, args) {
-  const result = spawnSync(command, args, { stdio: 'inherit' });
+  const result = spawnSync(command, args, {
+    stdio: 'inherit',
+    shell: process.platform === 'win32'
+  });
   if (result.error) {
     console.error(result.error instanceof Error ? result.error.message : String(result.error));
     return 1;
