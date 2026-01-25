@@ -8,17 +8,25 @@ Use this as a fast lookup. For narrative guidance and full examples, see
 
 ## Required tsconfig.json settings
 
-Content packs must include these settings in `tsconfig.json` for proper type exports:
+Content packs must include these settings in `tsconfig.json` for proper module
+resolution and type exports:
 
 ```json
 {
   "compilerOptions": {
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
   }
 }
 ```
+
+> **Why `NodeNext`?** The content compiler generates ESM-compatible imports with
+> explicit `.js` extensions. `NodeNext` module resolution allows TypeScript to
+> resolve these `.js` imports to their corresponding `.ts` source files.
 
 See `packages/content-sample/tsconfig.json` for the complete template.
 
