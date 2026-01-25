@@ -426,6 +426,19 @@ describe('compile-utils pure functions', () => {
       const packs = result.packs as SummaryPack[];
       expect(packs[0].balance).toBeDefined();
     });
+
+    it('keeps sort comparator stable for identical slugs', () => {
+      const failures: ValidationFailureSummaryEntry[] = [
+        { packSlug: 'same', path: '/path/a', message: 'Error A' },
+        { packSlug: 'same', path: '/path/b', message: 'Error B' },
+      ];
+
+      const result = createValidationFailureSummary(failures);
+      const packs = result.packs as SummaryPack[];
+      expect(packs).toHaveLength(2);
+      expect(packs[0]?.slug).toBe('same');
+      expect(packs[1]?.slug).toBe('same');
+    });
   });
 
   describe('createValidationFailureRunSummary', () => {

@@ -16,6 +16,7 @@ import {
   logManifestResult,
   logUnhandledCliError,
   parseCliArgs,
+  printUsage,
   startWatch,
 } from './compile.js';
 
@@ -52,6 +53,34 @@ describe('compile CLI helpers', () => {
     expect(() => parseCliArgs(['--summary'])).toThrowError(
       'Missing value for --summary',
     );
+  });
+
+  it('prints usage and exits when --help is provided', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {
+        throw new Error('process.exit');
+      }) as never);
+
+    expect(() => parseCliArgs(['--help'])).toThrow('process.exit');
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+
+    exitSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  it('prints usage text', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    printUsage();
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(logSpy.mock.calls[0]?.[0]).toContain('Usage: pnpm --filter @idle-engine/content-validation-cli run compile');
+
+    logSpy.mockRestore();
   });
 
   it('formats watch log payloads with stable keys', () => {
@@ -342,5 +371,51 @@ describe('compile CLI helpers', () => {
     onSpy.mockRestore();
     watchSpy.mockRestore();
     vi.useRealTimers();
+  });
+
+  it('closes watchers and exits on SIGINT/SIGTERM', async () => {
+    const onMock = vi.fn();
+    const close = vi.fn().mockResolvedValue(undefined);
+    const watcher = {
+      on: onMock,
+      close,
+    } as unknown as FSWatcher;
+
+    const watchSpy = vi.spyOn(chokidar, 'watch').mockReturnValue(watcher);
+    const handlers = new Map<string, () => void | Promise<void>>();
+    const onSpy = vi.spyOn(process, 'on').mockImplementation(((event: string, handler: () => void) => {
+      handlers.set(event, handler);
+      return process;
+    }) as typeof process.on);
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+
+    const execute = vi.fn().mockResolvedValue({
+      success: true,
+      drift: false,
+      runSummary: undefined,
+    } satisfies PipelineOutcome);
+
+    await startWatch(
+      {
+        check: false,
+        clean: false,
+        pretty: false,
+        watch: true,
+        summary: undefined,
+        cwd: undefined,
+      } satisfies CliOptions,
+      execute,
+      '/workspace',
+    );
+
+    await handlers.get('SIGINT')?.();
+    await handlers.get('SIGTERM')?.();
+
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+
+    exitSpy.mockRestore();
+    onSpy.mockRestore();
+    watchSpy.mockRestore();
   });
 });

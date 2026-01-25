@@ -56,7 +56,7 @@ jobs:
         run: pnpm --filter @idle-engine/core test:schema-compat
 
       - name: Build (except docs)
-        run: pnpm -r --filter "!@idle-engine/docs" run build
+        run: pnpm build --filter "!@idle-engine/docs"
 
       - name: Verify dist/ in sync
         run: node tools/scripts/verify-dist-sync.mjs
@@ -97,6 +97,35 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
+
+  windows-build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    env:
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.1
+          run_install: false
+          standalone: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (except docs)
+        run: pnpm build --filter "!@idle-engine/docs"
 
   performance-report:
     name: Performance Report
