@@ -3,6 +3,9 @@ import { createWebGpuRenderer } from '@idle-engine/renderer-webgpu';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 import type { WebGpuRenderer } from '@idle-engine/renderer-webgpu';
 
+import { createShellAssetLoader } from './shell-assets.js';
+import { SHELL_ASSET_MANIFEST } from './shell-manifest.js';
+
 const output = document.querySelector<HTMLPreElement>('#output');
 const canvas = document.querySelector<HTMLCanvasElement>('#canvas');
 
@@ -280,6 +283,13 @@ async function run(): Promise<void> {
           void recover(error.reason ?? 'unknown');
         },
       });
+
+      const assetLoader = createShellAssetLoader({
+        fontFamily: 'monospace',
+        baseFontSizePx: 16,
+      });
+      await renderer.loadAssets(SHELL_ASSET_MANIFEST, assetLoader);
+
       renderFrame = 0;
       webgpuStatus = 'WebGPU ok (recovered).';
       updateOutput();
@@ -298,6 +308,13 @@ async function run(): Promise<void> {
         void recover(error.reason ?? 'unknown');
       },
     });
+
+    const assetLoader = createShellAssetLoader({
+      fontFamily: 'monospace',
+      baseFontSizePx: 16,
+    });
+    await renderer.loadAssets(SHELL_ASSET_MANIFEST, assetLoader);
+
     webgpuStatus = 'WebGPU ok.';
     updateOutput();
     animationFrame = requestAnimationFrame(render);
