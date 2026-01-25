@@ -83,6 +83,41 @@ files, breaking type checking for consumers.
 See `packages/content-sample/tsconfig.json` for the canonical reference
 implementation.
 
+### ESLint Configuration
+
+Content packs must include an `eslint.config.js` file to enable linting with
+ESLint 9.x. Without this file, the `pnpm lint` script will fail with
+`ESLint couldn't find an eslint.config.(js|mjs|cjs) file`.
+
+**Required `eslint.config.js` template:**
+
+```javascript
+import { createConfig } from '@idle-engine/config-eslint';
+
+export default createConfig({
+  restrictCoreInternals: 'error',
+});
+```
+
+The `createConfig()` function from `@idle-engine/config-eslint` provides a
+complete ESLint flat configuration with TypeScript-ESLint integration and
+consistent type imports enforcement.
+
+**`restrictCoreInternals` option:**
+
+| Value | Use case |
+| --- | --- |
+| `'error'` | Content packs and game/app-facing packages—prevents accidental dependency on `@idle-engine/core/internals` |
+| `'warn'` | Engine tooling where internals usage may be intentional |
+| `false` | Core packages that legitimately need internal access |
+
+> **Note**: Content packs should always use `'error'` to ensure they depend
+> only on the public API surface of `@idle-engine/core`.
+
+See `packages/content-sample/eslint.config.js` for the canonical reference
+implementation and `packages/config-eslint/README.md` for the full API
+documentation.
+
 ### Author checklist
 
 - [ ] Create a new workspace package (for example `packages/<pack-slug>`) with a
@@ -91,6 +126,9 @@ implementation.
 - [ ] Configure `tsconfig.json` with required declaration settings (`declaration`,
   `declarationMap`, `sourceMap`)—see the TypeScript Configuration section above
   or copy from `packages/content-sample/tsconfig.json`.
+- [ ] Create `eslint.config.js` with `restrictCoreInternals: 'error'`—see the
+  ESLint Configuration section above or copy from
+  `packages/content-sample/eslint.config.js`.
 - [ ] Copy the latest `pnpm` scripts from the sample pack so `pnpm generate`,
   `pnpm lint`, and tests stay aligned.
 - [ ] Treat `content/compiled/` and `src/generated/` as generated outputs—never
