@@ -22,6 +22,21 @@ Content packs must include these settings in `tsconfig.json` for proper type exp
 
 See `packages/content-sample/tsconfig.json` for the complete template.
 
+## Required eslint.config.js
+
+Content packs must include an `eslint.config.js` file for ESLint 9.x flat config:
+
+```javascript
+import { createConfig } from '@idle-engine/config-eslint';
+
+export default createConfig({
+  restrictCoreInternals: 'error',
+});
+```
+
+Use `'error'` for content packs, `'warn'` for tooling, or `false` to disable.
+See `docs/content-dsl-usage-guidelines.md` for full details.
+
 ## Quick start (createGame)
 
 Once you have a normalized content pack, bootstrap a runtime with the high-level factory:
