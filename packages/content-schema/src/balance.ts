@@ -761,6 +761,15 @@ const collectAchievementTrackResourceReferences = (
       generator?.produces.forEach((entry) => resources.add(entry.resourceId));
       return resources;
     }
+    case 'generator-count': {
+      const resources = new Set<string>();
+      const generatorIds = track.generatorIds ?? [...lookup.generators.keys()];
+      generatorIds.forEach((generatorId) => {
+        const generator = lookup.generators.get(generatorId);
+        generator?.produces.forEach((entry) => resources.add(entry.resourceId));
+      });
+      return resources;
+    }
     case 'upgrade-owned': {
       const upgrade = lookup.upgrades.get(track.upgradeId);
       return upgrade ? collectUpgradeResourceReferences(upgrade, lookup) : new Set();

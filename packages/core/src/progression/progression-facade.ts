@@ -175,6 +175,7 @@ export class ProgressionFacade implements ProgressionCoordinator {
       achievements: options.content.achievements,
       initialState: initialState?.achievements,
       createFormulaEvaluationContext: this.createFormulaEvaluationContext,
+      generatorIds: options.content.generators.map((generator) => generator.id),
       onError: this.onError,
       getCustomMetricValue: options.getCustomMetricValue,
     });

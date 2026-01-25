@@ -61,6 +61,14 @@ const trackSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('generator-count'),
+      threshold: numericFormulaSchema,
+      comparator: comparatorSchema,
+      generatorIds: z.array(contentIdSchema).optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('upgrade-owned'),
       upgradeId: contentIdSchema,
       purchases: numericFormulaSchema.optional(),
@@ -233,6 +241,8 @@ const resolveProgressTarget = ({
       return track.threshold;
     case 'generator-level':
       return track.level;
+    case 'generator-count':
+      return track.threshold;
     case 'upgrade-owned':
       return track.purchases ?? ONE_FORMULA;
     case 'custom-metric':

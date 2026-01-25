@@ -5,20 +5,20 @@ import {
   achievementDefinitionSchema,
 } from '../achievements.js';
 
-describe('achievementDefinitionSchema', () => {
-  const baseAchievement = {
-    id: 'first-prestige',
-    name: { default: 'First Prestige', variants: {} },
-    description: { default: 'Prestige once.', variants: {} },
-    category: 'prestige',
-    tier: 'bronze',
-    track: {
-      kind: 'resource',
-      resourceId: 'prestige-points',
-      threshold: { kind: 'constant', value: 10 },
-    },
-  } as const;
+const baseAchievement = {
+  id: 'first-prestige',
+  name: { default: 'First Prestige', variants: {} },
+  description: { default: 'Prestige once.', variants: {} },
+  category: 'prestige',
+  tier: 'bronze',
+  track: {
+    kind: 'resource',
+    resourceId: 'prestige-points',
+    threshold: { kind: 'constant', value: 10 },
+  },
+} as const;
 
+describe('achievementDefinitionSchema', () => {
   it('derives progress target from the primary track when omitted', () => {
     const definition = achievementDefinitionSchema.parse({
       ...baseAchievement,
@@ -30,6 +30,28 @@ describe('achievementDefinitionSchema', () => {
     });
   });
 
+  it('derives progress target from generator-count threshold when omitted', () => {
+    const definition = achievementDefinitionSchema.parse({
+      ...baseAchievement,
+      id: 'generator-count',
+      track: {
+        kind: 'generator-count',
+        threshold: { kind: 'constant', value: 5 },
+      },
+    });
+
+    expect(definition.progress.target).toEqual({
+      kind: 'constant',
+      value: 5,
+    });
+    expect(definition.track).toEqual(
+      expect.objectContaining({
+        kind: 'generator-count',
+        comparator: 'gte',
+      }),
+    );
+  });
+
   it('requires repeatable configuration when progress mode is repeatable', () => {
     expect(() =>
       achievementDefinitionSchema.parse({
@@ -37,6 +59,50 @@ describe('achievementDefinitionSchema', () => {
         progress: { mode: 'repeatable' },
       }),
     ).toThrowError(/repeatable achievements must define/i);
+  });
+
+  it('uses explicit progress targets when provided', () => {
+    const definition = achievementDefinitionSchema.parse({
+      ...baseAchievement,
+      progress: {
+        target: { kind: 'linear', base: 1, slope: 1 },
+      },
+    });
+
+    expect(definition.progress.target).toEqual({
+      kind: 'linear',
+      base: 1,
+      slope: 1,
+    });
+  });
+
+  it('rejects constant progress targets that are not greater than 0', () => {
+    expect(() =>
+      achievementDefinitionSchema.parse({
+        ...baseAchievement,
+        progress: {
+          target: { kind: 'constant', value: 0 },
+        },
+      }),
+    ).toThrowError(/must be greater than 0/i);
+  });
+
+  it('defaults repeatable rewardScaling to a unit formula when omitted', () => {
+    const definition = achievementDefinitionSchema.parse({
+      ...baseAchievement,
+      id: 'repeatable-default-scaling',
+      progress: {
+        mode: 'repeatable',
+        repeatable: {
+          resetWindow: { kind: 'constant', value: 1 },
+        },
+      },
+    });
+
+    expect(definition.progress.repeatable).toEqual({
+      resetWindow: { kind: 'constant', value: 1 },
+      rewardScaling: { kind: 'constant', value: 1 },
+    });
   });
 
   it('rejects repeatable configuration when the mode is not repeatable', () => {
@@ -114,5 +180,22 @@ describe('achievementCollectionSchema', () => {
         },
       ]),
     ).toThrowError(/duplicate achievement id/i);
+  });
+
+  it('sorts achievements by displayOrder, then id', () => {
+    const collection = achievementCollectionSchema.parse([
+      {
+        ...baseAchievement,
+        id: 'ordered-second',
+        displayOrder: 2,
+      },
+      {
+        ...baseAchievement,
+        id: 'ordered-first',
+        displayOrder: 1,
+      },
+    ]);
+
+    expect(collection.map((entry) => entry.id)).toEqual(['ordered-first', 'ordered-second']);
   });
 });

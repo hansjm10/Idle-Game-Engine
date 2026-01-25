@@ -67,6 +67,26 @@ export const validateAchievements = (state: CrossReferenceState) => {
       );
       ensureFormulaReferencesAtPath(track.level, [...trackPath, 'level'], ctx, formulaMaps);
     },
+    'generator-count': (
+      track: AchievementTrackByKind<'generator-count'>,
+      trackPath: readonly (string | number)[],
+      achievementId: string,
+    ) => {
+      track.generatorIds?.forEach((generatorId, generatorIdIndex) => {
+        ensureContentReference(
+          generatorIndex,
+          generatorId,
+          [...trackPath, 'generatorIds', generatorIdIndex],
+          `Achievement "${achievementId}" references unknown generator "${generatorId}".`,
+        );
+      });
+      ensureFormulaReferencesAtPath(
+        track.threshold,
+        [...trackPath, 'threshold'],
+        ctx,
+        formulaMaps,
+      );
+    },
     'upgrade-owned': (
       track: AchievementTrackByKind<'upgrade-owned'>,
       trackPath: readonly (string | number)[],

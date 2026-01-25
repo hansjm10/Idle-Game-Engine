@@ -4,6 +4,7 @@ import { createProgressionCoordinator } from '../../internals.js';
 import {
   createAchievementDefinition,
   createContentPack,
+  createGeneratorDefinition,
   createResourceDefinition,
   createUpgradeDefinition,
   literalOne,
@@ -294,5 +295,187 @@ describe('Achievement track types', () => {
     coordinator.updateForStep(1);
     const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
     expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+
+  it('tracks generator-count achievements by summing generator levels', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const cursor = createGeneratorDefinition('generator.cursor', { name: 'Cursor' });
+    const grandma = createGeneratorDefinition('generator.grandma', { name: 'Grandma' });
+
+    const totalAchievement = createAchievementDefinition('achievement.total-generators', {
+      track: {
+        kind: 'generator-count' as const,
+        threshold: { kind: 'constant' as const, value: 5 },
+        comparator: 'gte' as const,
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: { kind: 'constant' as const, value: 5 },
+      },
+    });
+
+    const cursorAchievement = createAchievementDefinition('achievement.cursor-generators', {
+      track: {
+        kind: 'generator-count' as const,
+        generatorIds: [cursor.id],
+        threshold: { kind: 'constant' as const, value: 3 },
+        comparator: 'gte' as const,
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: { kind: 'constant' as const, value: 3 },
+      },
+    });
+
+    const gtAchievement = createAchievementDefinition('achievement.total-generators-gt', {
+      track: {
+        kind: 'generator-count' as const,
+        threshold: { kind: 'constant' as const, value: 1 },
+        comparator: 'gt' as const,
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: { kind: 'constant' as const, value: 1 },
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      generators: [cursor, grandma],
+      achievements: [totalAchievement, cursorAchievement, gtAchievement],
+    });
+
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+    });
+
+    coordinator.updateForStep(0);
+    expect(buildProgressionSnapshot(0, 0, coordinator.state).achievements?.[0]?.completions).toBe(0);
+
+    coordinator.incrementGeneratorOwned(grandma.id, 1);
+    coordinator.updateForStep(1);
+    const snapshot1 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+    expect(snapshot1.achievements?.[1]?.completions).toBe(0);
+    expect(snapshot1.achievements?.[2]?.completions).toBe(0);
+
+    coordinator.incrementGeneratorOwned(grandma.id, 1);
+    coordinator.updateForStep(2);
+    const snapshot2 = buildProgressionSnapshot(2, 200, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(0);
+    expect(snapshot2.achievements?.[1]?.completions).toBe(0);
+    expect(snapshot2.achievements?.[2]?.completions).toBe(1);
+
+    coordinator.incrementGeneratorOwned(cursor.id, 2);
+    coordinator.updateForStep(3);
+    const snapshot3 = buildProgressionSnapshot(3, 300, coordinator.state);
+    expect(snapshot3.achievements?.[0]?.progress).toBe(4);
+    expect(snapshot3.achievements?.[1]?.progress).toBe(2);
+    expect(snapshot3.achievements?.[0]?.completions).toBe(0);
+    expect(snapshot3.achievements?.[1]?.completions).toBe(0);
+
+    coordinator.incrementGeneratorOwned(cursor.id, 1);
+    coordinator.updateForStep(4);
+    const snapshot4 = buildProgressionSnapshot(4, 400, coordinator.state);
+    expect(snapshot4.achievements?.[0]?.completions).toBe(1);
+    expect(snapshot4.achievements?.[1]?.completions).toBe(1);
+    expect(snapshot4.achievements?.[2]?.completions).toBe(1);
+  });
+
+  it('ignores achievement emitEvent rewards when no event publisher is provided', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const emitEventAchievement = createAchievementDefinition('achievement.emit-event', {
+      track: {
+        kind: 'script' as const,
+        scriptId: 'script.test-condition',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+      reward: {
+        kind: 'emitEvent' as const,
+        eventId: 'runtime:test',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [emitEventAchievement],
+    });
+
+    let scriptResult = false;
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      evaluateScriptCondition: () => scriptResult,
+    });
+
+    coordinator.updateForStep(0);
+    const snapshot1 = buildProgressionSnapshot(0, 0, coordinator.state);
+    expect(snapshot1.achievements?.[0]?.completions).toBe(0);
+
+    scriptResult = true;
+    coordinator.updateForStep(1);
+    const snapshot2 = buildProgressionSnapshot(1, 100, coordinator.state);
+    expect(snapshot2.achievements?.[0]?.completions).toBe(1);
+  });
+
+  it('reports errors when achievement event publishers throw', () => {
+    const energy = createResourceDefinition('resource.energy', {
+      name: 'Energy',
+      startAmount: 0,
+    });
+
+    const emitEventAchievement = createAchievementDefinition('achievement.emit-event', {
+      track: {
+        kind: 'script' as const,
+        scriptId: 'script.test-condition',
+      },
+      progress: {
+        mode: 'oneShot' as const,
+        target: literalOne,
+      },
+      reward: {
+        kind: 'emitEvent' as const,
+        eventId: 'runtime:test',
+      },
+    });
+
+    const pack = createContentPack({
+      resources: [energy],
+      achievements: [emitEventAchievement],
+    });
+
+    let scriptResult = false;
+    const errors: Error[] = [];
+    const coordinator = createProgressionCoordinator({
+      content: pack,
+      stepDurationMs: 100,
+      evaluateScriptCondition: () => scriptResult,
+      onError: (error) => errors.push(error),
+    });
+
+    scriptResult = true;
+    coordinator.updateForStep(1, {
+      events: {
+        publish: () => {
+          throw new Error('boom');
+        },
+      },
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain('Achievement event publish failed for "runtime:test"');
+    expect(errors[0]?.message).toContain('boom');
   });
 });

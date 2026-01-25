@@ -197,6 +197,16 @@ describe('validateCrossReferences', () => {
           },
         },
         {
+          id: 'achievement:generator-count-track',
+          ...baseAchievement,
+          track: {
+            kind: 'generator-count',
+            generatorIds: ['generator:missing-aggregate'],
+            threshold: { kind: 'constant', value: 1 },
+            comparator: 'gte',
+          },
+        },
+        {
           id: 'achievement:upgrade-track',
           ...baseAchievement,
           track: {
@@ -253,6 +263,11 @@ describe('validateCrossReferences', () => {
         expect.objectContaining({
           message: expect.stringContaining(
             'unknown generator "generator:missing"',
+          ),
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining(
+            'unknown generator "generator:missing-aggregate"',
           ),
         }),
         expect.objectContaining({
