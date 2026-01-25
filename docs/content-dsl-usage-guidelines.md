@@ -43,13 +43,56 @@ Start from the structure maintained in `packages/content-sample`:
 - Runtime-facing re-exports live in `src/index.ts`, mirroring
   `packages/content-sample/src/index.ts`.
 
+### TypeScript Configuration
+
+Content packs must include specific TypeScript declaration settings in their
+`tsconfig.json` to ensure proper `.d.ts` file generation. Without these
+settings, the `"types"` field in `package.json` will point to non-existent
+files, breaking type checking for consumers.
+
+**Required settings:**
+
+| Setting | Value | Purpose |
+| --- | --- | --- |
+| `declaration` | `true` | Generates `.d.ts` type declaration files in `dist/` |
+| `declarationMap` | `true` | Enables "Go to Definition" to navigate to source `.ts` files |
+| `sourceMap` | `true` | Enables debugging with original TypeScript source |
+
+**Recommended `tsconfig.json` template:**
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
+}
+```
+
+> **Why these settings are not in `tsconfig.base.json`**: The base config
+> intentionally omits declaration settings because not all packages require
+> them. Content packs must explicitly enable declarations to generate the
+> `.d.ts` files that consuming packages depend on.
+
+See `packages/content-sample/tsconfig.json` for the canonical reference
+implementation.
+
 ### Author checklist
 
 - [ ] Create a new workspace package (for example `packages/<pack-slug>`) with a
   `content/` directory that mirrors the layout in
   `packages/content-sample/README.md`.
-- [ ] Copy the latest `pnpm` scripts and TypeScript config from the sample pack
-  so `pnpm generate`, `pnpm lint`, and tests stay aligned.
+- [ ] Configure `tsconfig.json` with required declaration settings (`declaration`,
+  `declarationMap`, `sourceMap`)—see the TypeScript Configuration section above
+  or copy from `packages/content-sample/tsconfig.json`.
+- [ ] Copy the latest `pnpm` scripts from the sample pack so `pnpm generate`,
+  `pnpm lint`, and tests stay aligned.
 - [ ] Treat `content/compiled/` and `src/generated/` as generated outputs—never
   hand-edit them; always re-run `pnpm generate` after source edits.
 - [ ] Commit the generated artifacts alongside `content/pack.json` so consumers
