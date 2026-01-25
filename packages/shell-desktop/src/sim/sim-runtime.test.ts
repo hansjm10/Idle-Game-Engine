@@ -6,6 +6,8 @@ import { createSimRuntime } from './sim-runtime.js';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type { Command } from '@idle-engine/core';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
+import type { ShellControlEvent } from '../ipc.js';
+import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 describe('shell-desktop sim runtime', () => {
   it('emits per-step frames with deterministic timing', () => {
@@ -197,6 +199,8 @@ describe('shell-desktop sim runtime (test-game)', () => {
       expect(sim.serialize).toBeTypeOf('function');
       expect(sim.hydrate).toBeTypeOf('function');
       expect(sim.hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE)).toBe(true);
+      expect(sim.hasCommandHandler(RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE)).toBe(true);
+      expect(sim.hasCommandHandler('UNKNOWN')).toBe(false);
 
       const result = sim.tick(20);
       expect(result.frames.length).toBeGreaterThan(0);
@@ -204,6 +208,267 @@ describe('shell-desktop sim runtime (test-game)', () => {
       const frame = result.frames.at(-1);
       expect(frame?.frame.schemaVersion).toBe(RENDERER_CONTRACT_SCHEMA_VERSION);
       expect(frame?.frame.contentHash).toBe(testGameContentArtifactHash);
+    } finally {
+      if (originalGameMode === undefined) {
+        delete process.env.IDLE_ENGINE_GAME;
+      } else {
+        process.env.IDLE_ENGINE_GAME = originalGameMode;
+      }
+    }
+  });
+
+  it('formats large gold values with deterministic suffixes', () => {
+    const originalGameMode = process.env.IDLE_ENGINE_GAME;
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const findGoldLine = (frame: { draws: Array<{ kind?: string; text?: string }> }): string => {
+      const gold = frame.draws.find((draw) => draw.kind === 'text' && typeof draw.text === 'string' && draw.text.startsWith('Gold:'));
+      expect(gold).toBeDefined();
+      return (gold as { text: string }).text;
+    };
+
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+      sim.enqueueCommands([
+        {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          priority: CommandPriority.PLAYER,
+          payload: { resourceId: 'test-game.gold', amount: 1234 },
+          timestamp: 0,
+          step: sim.getNextStep(),
+        },
+      ]);
+
+      const first = sim.tick(10).frames.at(-1);
+      expect(first).toBeDefined();
+      expect(findGoldLine(first!)).toContain('1.23k');
+
+      sim.enqueueCommands([
+        {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          priority: CommandPriority.PLAYER,
+          payload: { resourceId: 'test-game.gold', amount: 1_998_766 },
+          timestamp: 0,
+          step: sim.getNextStep(),
+        },
+      ]);
+
+      const second = sim.tick(10).frames.at(-1);
+      expect(second).toBeDefined();
+      expect(findGoldLine(second!)).toContain('2.00m');
+
+      sim.enqueueCommands([
+        {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          priority: CommandPriority.PLAYER,
+          payload: { resourceId: 'test-game.gold', amount: 2_998_000_000 },
+          timestamp: 0,
+          step: sim.getNextStep(),
+        },
+      ]);
+
+      const third = sim.tick(10).frames.at(-1);
+      expect(third).toBeDefined();
+      expect(findGoldLine(third!)).toContain('3.00b');
+    } finally {
+      if (originalGameMode === undefined) {
+        delete process.env.IDLE_ENGINE_GAME;
+      } else {
+        process.env.IDLE_ENGINE_GAME = originalGameMode;
+      }
+    }
+  });
+
+  it('handles UI click hit-testing via passthrough control events', () => {
+    const originalGameMode = process.env.IDLE_ENGINE_GAME;
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const findCollectGoldButton = (frame: RenderCommandBuffer) => {
+      const draw = frame.draws.find(
+        (candidate) =>
+          candidate.kind === 'rect' &&
+          candidate.passId === 'ui' &&
+          candidate.width === 180 &&
+          candidate.height === 20,
+      );
+      expect(draw).toBeDefined();
+      return draw as Extract<RenderCommandBuffer['draws'][number], { kind: 'rect' }>;
+    };
+
+    const findGoldLine = (frame: RenderCommandBuffer): string => {
+      const gold = frame.draws.find((draw) => draw.kind === 'text' && draw.text.startsWith('Gold:'));
+      expect(gold).toBeDefined();
+      return (gold as { text: string }).text;
+    };
+
+    const enqueueControlEvent = (sim: ReturnType<typeof createSimRuntime>, event: ShellControlEvent): void => {
+      sim.enqueueCommands([
+        {
+          type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
+          priority: CommandPriority.PLAYER,
+          payload: { event },
+          timestamp: 0,
+          step: sim.getNextStep(),
+        },
+      ]);
+    };
+
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 16, maxStepsPerFrame: 50 });
+
+      const initialFrame = sim.tick(16).frames.at(-1);
+      expect(initialFrame).toBeDefined();
+      const initialButton = findCollectGoldButton(initialFrame!);
+      const insideX = initialButton.x + 1;
+      const insideY = initialButton.y + 1;
+
+      enqueueControlEvent(sim, { intent: 'mouse-down', phase: 'start', metadata: { x: insideX, y: insideY } });
+      const pressedFrame = sim.tick(16).frames.at(-1);
+      expect(pressedFrame).toBeDefined();
+      expect(findCollectGoldButton(pressedFrame!).colorRgba).toBe(0x8a_2a_4f_ff);
+
+      enqueueControlEvent(sim, { intent: 'mouse-up', phase: 'end', metadata: { x: 0, y: 0 } });
+      const releasedOutsideFrame = sim.tick(16).frames.at(-1);
+      expect(releasedOutsideFrame).toBeDefined();
+      expect(findCollectGoldButton(releasedOutsideFrame!).colorRgba).toBe(0x18_2a_44_ff);
+      expect(findGoldLine(releasedOutsideFrame!)).toContain('Gold: 0.00');
+
+      enqueueControlEvent(sim, { intent: 'mouse-move', phase: 'repeat', metadata: { x: insideX, y: insideY } });
+      const hoveredFrame = sim.tick(16).frames.at(-1);
+      expect(hoveredFrame).toBeDefined();
+      expect(findCollectGoldButton(hoveredFrame!).colorRgba).toBe(0x2a_4f_8a_ff);
+
+      enqueueControlEvent(sim, { intent: 'mouse-down', phase: 'start', metadata: { x: insideX, y: insideY } });
+      const pressedAgainFrame = sim.tick(16).frames.at(-1);
+      expect(pressedAgainFrame).toBeDefined();
+      expect(findCollectGoldButton(pressedAgainFrame!).colorRgba).toBe(0x8a_2a_4f_ff);
+
+      enqueueControlEvent(sim, { intent: 'mouse-up', phase: 'end', metadata: { x: insideX, y: insideY } });
+      const clickedFrame = sim.tick(16).frames.at(-1);
+      expect(clickedFrame).toBeDefined();
+      expect(findCollectGoldButton(clickedFrame!).colorRgba).toBe(0x2a_4f_8a_ff);
+      expect(findGoldLine(clickedFrame!)).toContain('Gold: 1.00');
+
+      enqueueControlEvent(sim, { intent: 'mouse-move', phase: 'repeat', metadata: { x: 0, y: 0 } });
+      const clearedHoverFrame = sim.tick(16).frames.at(-1);
+      expect(clearedHoverFrame).toBeDefined();
+      expect(findCollectGoldButton(clearedHoverFrame!).colorRgba).toBe(0x18_2a_44_ff);
+    } finally {
+      if (originalGameMode === undefined) {
+        delete process.env.IDLE_ENGINE_GAME;
+      } else {
+        process.env.IDLE_ENGINE_GAME = originalGameMode;
+      }
+    }
+  });
+
+  it('rejects hydrating saves that are behind the current step', () => {
+    const originalGameMode = process.env.IDLE_ENGINE_GAME;
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 20, maxStepsPerFrame: 50 });
+      const save = sim.serialize?.();
+      expect(save).toBeDefined();
+
+      sim.tick(60);
+
+      expect(() => sim.hydrate?.(save)).toThrow(/Cannot hydrate a save from step/);
+    } finally {
+      if (originalGameMode === undefined) {
+        delete process.env.IDLE_ENGINE_GAME;
+      } else {
+        process.env.IDLE_ENGINE_GAME = originalGameMode;
+      }
+    }
+  });
+
+  it('drops invalid commands from the queue', () => {
+    const originalGameMode = process.env.IDLE_ENGINE_GAME;
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    try {
+      const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+      sim.enqueueCommands([{} as unknown as Command]);
+
+      const result = sim.tick(10);
+      expect(result.frames.length).toBeGreaterThan(0);
+    } finally {
+      if (originalGameMode === undefined) {
+        delete process.env.IDLE_ENGINE_GAME;
+      } else {
+        process.env.IDLE_ENGINE_GAME = originalGameMode;
+      }
+    }
+  });
+
+  it('hydrates later-step saves by fast-forwarding and resets UI input state', () => {
+    const originalGameMode = process.env.IDLE_ENGINE_GAME;
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const findCollectGoldButton = (frame: RenderCommandBuffer) => {
+      const draw = frame.draws.find(
+        (candidate) =>
+          candidate.kind === 'rect' &&
+          candidate.passId === 'ui' &&
+          candidate.width === 180 &&
+          candidate.height === 20,
+      );
+      expect(draw).toBeDefined();
+      return draw as Extract<RenderCommandBuffer['draws'][number], { kind: 'rect' }>;
+    };
+
+    const findGoldLine = (frame: RenderCommandBuffer): string => {
+      const gold = frame.draws.find((draw) => draw.kind === 'text' && draw.text.startsWith('Gold:'));
+      expect(gold).toBeDefined();
+      return (gold as { text: string }).text;
+    };
+
+    const enqueueControlEvent = (sim: ReturnType<typeof createSimRuntime>, event: ShellControlEvent): void => {
+      sim.enqueueCommands([
+        {
+          type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
+          priority: CommandPriority.PLAYER,
+          payload: { event },
+          timestamp: 0,
+          step: sim.getNextStep(),
+        },
+      ]);
+    };
+
+    try {
+      const source = createSimRuntime({ stepSizeMs: 20, maxStepsPerFrame: 50 });
+      source.enqueueCommands([
+        {
+          type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+          priority: CommandPriority.PLAYER,
+          payload: { resourceId: 'test-game.gold', amount: 42 },
+          timestamp: 0,
+          step: source.getNextStep(),
+        },
+      ]);
+      source.tick(60);
+      const save = source.serialize?.();
+      expect(save).toBeDefined();
+
+      const target = createSimRuntime({ stepSizeMs: 20, maxStepsPerFrame: 50 });
+      const initialFrame = target.tick(20).frames.at(-1);
+      expect(initialFrame).toBeDefined();
+      const collectButton = findCollectGoldButton(initialFrame!);
+      const insideX = collectButton.x + 1;
+      const insideY = collectButton.y + 1;
+
+      enqueueControlEvent(target, { intent: 'mouse-move', phase: 'repeat', metadata: { x: insideX, y: insideY } });
+      const hoveredFrame = target.tick(20).frames.at(-1);
+      expect(hoveredFrame).toBeDefined();
+      expect(findCollectGoldButton(hoveredFrame!).colorRgba).toBe(0x2a_4f_8a_ff);
+
+      target.hydrate?.(save);
+      const hydratedFrame = target.tick(20).frames.at(-1);
+      expect(hydratedFrame).toBeDefined();
+      expect(findCollectGoldButton(hydratedFrame!).colorRgba).toBe(0x18_2a_44_ff);
+      expect(findGoldLine(hydratedFrame!)).toContain('Gold: 42.0');
     } finally {
       if (originalGameMode === undefined) {
         delete process.env.IDLE_ENGINE_GAME;

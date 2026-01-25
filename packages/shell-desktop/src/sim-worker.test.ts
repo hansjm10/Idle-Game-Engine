@@ -279,6 +279,38 @@ describe('shell-desktop sim worker', () => {
     expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'serialized', requestId: 'req-error', error: 'boom' });
   });
 
+  it('stringifies non-Error exceptions when serialization fails', async () => {
+    const runtimeWithThrowingSerialize = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      serialize: vi.fn(() => {
+        throw 'kaboom';
+      }),
+      getStepSizeMs: vi.fn(() => 16),
+      getNextStep: vi.fn(() => 0),
+    };
+
+    const createSimRuntime = vi.fn(() => runtimeWithThrowingSerialize);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'serialize', requestId: 'req-1' });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'serialized', requestId: 'req-1', error: 'kaboom' });
+  });
+
   it('hydrates saves by replacing runtimes, restoring the old runtime on errors', async () => {
     const runtime = {
       tick: vi.fn(),
@@ -328,6 +360,54 @@ describe('shell-desktop sim worker', () => {
     expect(runtime.tick).toHaveBeenCalledWith(1);
   });
 
+  it('stringifies non-Error exceptions when hydration fails and restores the previous runtime', async () => {
+    const runtime = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      hydrate: vi.fn(),
+      getStepSizeMs: vi.fn(() => 16),
+      getNextStep: vi.fn(() => 0),
+    };
+    const replacement = {
+      ...runtime,
+      hydrate: vi.fn(() => {
+        throw 'hydrate kaboom';
+      }),
+      getStepSizeMs: vi.fn(() => 22),
+      getNextStep: vi.fn(() => 7),
+    };
+
+    const createSimRuntime = vi.fn()
+      .mockReturnValueOnce(runtime)
+      .mockReturnValueOnce(replacement);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'hydrate', requestId: 'req-1', save: { version: 1 } });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'hydrated',
+      requestId: 'req-1',
+      success: false,
+      error: 'hydrate kaboom',
+    });
+
+    messageHandler?.({ kind: 'tick', deltaMs: 1 });
+    expect(runtime.tick).toHaveBeenCalledWith(1);
+  });
+
   it('emits hydrate errors when the runtime does not support hydration', async () => {
     const createSimRuntime = vi.fn(() => ({
       tick: vi.fn(),
@@ -358,6 +438,77 @@ describe('shell-desktop sim worker', () => {
       success: false,
       error: 'Hydrate is not supported by this runtime.',
     });
+  });
+
+  it('ignores hydrate requests with invalid request ids', async () => {
+    const createSimRuntime = vi.fn();
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'hydrate', requestId: '' });
+    messageHandler?.({ kind: 'hydrate', requestId: 123, save: { version: 1 } });
+
+    expect(createSimRuntime).not.toHaveBeenCalled();
+    expect(parentPort.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('restores the previous runtime when the replacement does not support hydration', async () => {
+    const runtimeWithHydrate = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      hydrate: vi.fn(),
+      getStepSizeMs: vi.fn(() => 16),
+      getNextStep: vi.fn(() => 0),
+    };
+    const replacementWithoutHydrate = {
+      tick: vi.fn(),
+      enqueueCommands: vi.fn(),
+      getStepSizeMs: vi.fn(() => 22),
+      getNextStep: vi.fn(() => 7),
+    };
+
+    const createSimRuntime = vi.fn()
+      .mockReturnValueOnce(runtimeWithHydrate)
+      .mockReturnValueOnce(replacementWithoutHydrate);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    messageHandler?.({ kind: 'hydrate', requestId: 'req-1', save: { version: 1 } });
+
+    expect(parentPort.postMessage).toHaveBeenCalledWith({
+      kind: 'hydrated',
+      requestId: 'req-1',
+      success: false,
+      error: 'Hydrate is not supported by this runtime.',
+    });
+
+    messageHandler?.({ kind: 'tick', deltaMs: 1 });
+    expect(runtimeWithHydrate.tick).toHaveBeenCalledWith(1);
+    expect(replacementWithoutHydrate.tick).not.toHaveBeenCalled();
   });
 
   it('emits worker errors when handlers throw', async () => {

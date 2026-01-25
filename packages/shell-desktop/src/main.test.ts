@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 
+const readFile = vi.fn();
+const writeFile = vi.fn();
+
+vi.mock('node:fs/promises', () => ({
+  readFile,
+  writeFile,
+}));
+
 let monotonicNowSequence: number[] = [];
 
 const monotonicNowMs = vi.fn(() => {
@@ -29,6 +37,7 @@ const app = {
   commandLine: { appendSwitch: vi.fn() },
   whenReady: vi.fn(() => Promise.resolve()),
   on: vi.fn(),
+  getPath: vi.fn(() => '/userData'),
   quit: vi.fn(),
   exit: vi.fn(),
 };
@@ -141,6 +150,7 @@ vi.mock('./monotonic-time.js', () => ({
 describe('shell-desktop main process entrypoint', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalEnableUnsafeWebGpu = process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU;
+  const originalGameMode = process.env.IDLE_ENGINE_GAME;
 
   beforeEach(() => {
     vi.resetModules();
@@ -162,6 +172,12 @@ describe('shell-desktop main process entrypoint', () => {
     } else {
       process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU = originalEnableUnsafeWebGpu;
     }
+
+    if (originalGameMode === undefined) {
+      delete process.env.IDLE_ENGINE_GAME;
+    } else {
+      process.env.IDLE_ENGINE_GAME = originalGameMode;
+    }
   });
 
   afterEach(() => {
@@ -177,6 +193,12 @@ describe('shell-desktop main process entrypoint', () => {
       delete process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU;
     } else {
       process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU = originalEnableUnsafeWebGpu;
+    }
+
+    if (originalGameMode === undefined) {
+      delete process.env.IDLE_ENGINE_GAME;
+    } else {
+      process.env.IDLE_ENGINE_GAME = originalGameMode;
     }
   });
 
@@ -734,6 +756,218 @@ describe('shell-desktop main process entrypoint', () => {
     expect(consoleError).toHaveBeenCalled();
 
     consoleError.mockRestore();
+  });
+
+  it('saves and loads test game state via menu actions in test-game mode', async () => {
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    writeFile.mockResolvedValueOnce(undefined);
+    readFile.mockResolvedValueOnce(JSON.stringify({ saveVersion: 1 }));
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const template = Menu.buildFromTemplate.mock.calls[0]?.[0] as unknown as Array<{ label?: string; submenu?: unknown }>;
+      const gameMenu = template.find((entry) => entry.label === 'Game') as undefined | { submenu?: unknown };
+      const gameSubmenu = gameMenu?.submenu as undefined | Array<{ label?: string; click?: () => void }>;
+      expect(gameSubmenu).toBeDefined();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      const offlineCatchupOneHour = gameSubmenu?.find((entry) => entry.label === 'Offline catch-up (1h)');
+      expect(offlineCatchupOneHour?.click).toBeTypeOf('function');
+      worker?.postMessage.mockClear();
+      offlineCatchupOneHour?.click?.();
+      expect(worker?.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'enqueueCommands',
+          commands: expect.arrayContaining([expect.objectContaining({ type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP })]),
+        }),
+      );
+
+      const saveEntry = gameSubmenu?.find((entry) => entry.label === 'Save');
+      expect(saveEntry?.click).toBeTypeOf('function');
+
+      worker?.postMessage.mockClear();
+      saveEntry?.click?.();
+
+      const serializeCall = worker?.postMessage.mock.calls.find(
+        (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+      );
+      expect(serializeCall).toBeDefined();
+      const requestId = (serializeCall?.[0] as { requestId?: string }).requestId;
+      expect(requestId).toBeTypeOf('string');
+
+      worker?.emitMessage({ kind: 'serialized', requestId, save: { saved: true } });
+      await flushMicrotasks();
+
+      expect(writeFile).toHaveBeenCalledWith(
+        '/userData/test-game-save.json',
+        expect.stringContaining('"saved": true'),
+        'utf8',
+      );
+
+      const loadEntry = gameSubmenu?.find((entry) => entry.label === 'Load');
+      expect(loadEntry?.click).toBeTypeOf('function');
+
+      worker?.postMessage.mockClear();
+      loadEntry?.click?.();
+      await flushMicrotasks();
+
+      expect(readFile).toHaveBeenCalledWith('/userData/test-game-save.json', 'utf8');
+
+      const hydrateCall = worker?.postMessage.mock.calls.find(
+        (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+      );
+      expect(hydrateCall).toBeDefined();
+      const hydrateRequestId = (hydrateCall?.[0] as { requestId?: string }).requestId;
+      expect(hydrateRequestId).toBeTypeOf('string');
+
+      worker?.emitMessage({ kind: 'hydrated', requestId: hydrateRequestId, success: true, stepSizeMs: 8, nextStep: 42 });
+      await flushMicrotasks();
+
+      expect(consoleInfo).toHaveBeenCalledWith(expect.stringContaining('Saved test game state'));
+      expect(consoleInfo).toHaveBeenCalledWith(expect.stringContaining('Loaded test game state'));
+    } finally {
+      consoleError.mockRestore();
+      consoleInfo.mockRestore();
+    }
+  });
+
+  it('logs an error when the sim worker returns a serialized response without a payload', async () => {
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const template = Menu.buildFromTemplate.mock.calls[0]?.[0] as unknown as Array<{ label?: string; submenu?: unknown }>;
+      const gameMenu = template.find((entry) => entry.label === 'Game') as undefined | { submenu?: unknown };
+      const gameSubmenu = gameMenu?.submenu as undefined | Array<{ label?: string; click?: () => void }>;
+      expect(gameSubmenu).toBeDefined();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      const saveEntry = gameSubmenu?.find((entry) => entry.label === 'Save');
+      expect(saveEntry?.click).toBeTypeOf('function');
+
+      worker?.postMessage.mockClear();
+      saveEntry?.click?.();
+
+      const serializeCall = worker?.postMessage.mock.calls.find(
+        (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+      );
+      expect(serializeCall).toBeDefined();
+      const requestId = (serializeCall?.[0] as { requestId?: string }).requestId;
+      expect(requestId).toBeTypeOf('string');
+
+      worker?.emitMessage({ kind: 'serialized', requestId });
+      await flushMicrotasks();
+
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to save test game state'),
+        expect.objectContaining({ message: expect.stringContaining('did not return a save payload') }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('treats save/load requests after sim worker failure as errors', async () => {
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    readFile.mockResolvedValueOnce(JSON.stringify({ version: 1 }));
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const template = Menu.buildFromTemplate.mock.calls[0]?.[0] as unknown as Array<{ label?: string; submenu?: unknown }>;
+      const gameMenu = template.find((entry) => entry.label === 'Game') as undefined | { submenu?: unknown };
+      const gameSubmenu = gameMenu?.submenu as undefined | Array<{ label?: string; click?: () => void }>;
+      expect(gameSubmenu).toBeDefined();
+
+      const saveEntry = gameSubmenu?.find((entry) => entry.label === 'Save');
+      const loadEntry = gameSubmenu?.find((entry) => entry.label === 'Load');
+      expect(saveEntry?.click).toBeTypeOf('function');
+      expect(loadEntry?.click).toBeTypeOf('function');
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+      worker?.emitExit(1);
+      consoleError.mockClear();
+
+      saveEntry?.click?.();
+      await flushMicrotasks();
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to save test game state'),
+        expect.objectContaining({ message: 'Sim worker is not available.' }),
+      );
+
+      loadEntry?.click?.();
+      await flushMicrotasks();
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to load test game state'),
+        expect.objectContaining({ message: 'Sim worker is not available.' }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('logs hydrate failures reported by the sim worker', async () => {
+    process.env.IDLE_ENGINE_GAME = 'test-game';
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    readFile.mockResolvedValueOnce(JSON.stringify({ version: 1 }));
+
+    try {
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const template = Menu.buildFromTemplate.mock.calls[0]?.[0] as unknown as Array<{ label?: string; submenu?: unknown }>;
+      const gameMenu = template.find((entry) => entry.label === 'Game') as undefined | { submenu?: unknown };
+      const gameSubmenu = gameMenu?.submenu as undefined | Array<{ label?: string; click?: () => void }>;
+      expect(gameSubmenu).toBeDefined();
+
+      const loadEntry = gameSubmenu?.find((entry) => entry.label === 'Load');
+      expect(loadEntry?.click).toBeTypeOf('function');
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      worker?.postMessage.mockClear();
+      loadEntry?.click?.();
+      await flushMicrotasks();
+
+      const hydrateCall = worker?.postMessage.mock.calls.find(
+        (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+      );
+      expect(hydrateCall).toBeDefined();
+      const requestId = (hydrateCall?.[0] as { requestId?: string }).requestId;
+      expect(requestId).toBeTypeOf('string');
+
+      worker?.emitMessage({ kind: 'hydrated', requestId: 'unknown', success: false, error: 'ignored' });
+      worker?.emitMessage({ kind: 'hydrated', requestId, success: false });
+      await flushMicrotasks();
+
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to load test game state'),
+        expect.objectContaining({ message: 'Sim worker failed to hydrate save.' }),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('does not enable WebGPU switch in packaged mode without an explicit override', async () => {
