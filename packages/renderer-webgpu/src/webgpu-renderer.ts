@@ -706,9 +706,13 @@ const GPU_BUFFER_USAGE: {
     UNIFORM: 64,
   };
 
-const GPU_TEXTURE_USAGE: { readonly COPY_DST: number; readonly TEXTURE_BINDING: number } =
-  (globalThis as unknown as { GPUTextureUsage?: { COPY_DST: number; TEXTURE_BINDING: number } })
-    .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
+const GPU_TEXTURE_USAGE: { readonly COPY_DST: number; readonly TEXTURE_BINDING: number; readonly RENDER_ATTACHMENT: number } =
+  (globalThis as unknown as { GPUTextureUsage?: { COPY_DST: number; TEXTURE_BINDING: number; RENDER_ATTACHMENT: number } })
+    .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
+
+function getCopyExternalImageToTextureDestinationUsage(baseUsage: number): number {
+  return baseUsage | GPU_TEXTURE_USAGE.COPY_DST | GPU_TEXTURE_USAGE.RENDER_ATTACHMENT;
+}
 
 interface WebGpuBitmapFontRuntimeGlyph {
   readonly uv: SpriteUvRect;
@@ -1430,7 +1434,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     const atlasTexture = this.device.createTexture({
       size: [options.packed.atlasWidthPx, options.packed.atlasHeightPx, 1],
       format: 'rgba8unorm',
-      usage: GPU_TEXTURE_USAGE.TEXTURE_BINDING | GPU_TEXTURE_USAGE.COPY_DST,
+      usage: getCopyExternalImageToTextureDestinationUsage(GPU_TEXTURE_USAGE.TEXTURE_BINDING),
     });
 
     const sourceByAssetId = new Map<AssetId, GPUImageCopyExternalImageSource>();
@@ -2422,4 +2426,5 @@ export const __test__ = {
   getCanvasPixelSize,
   selectClearColor,
   getExternalImageSize,
+  getCopyExternalImageToTextureDestinationUsage,
 };

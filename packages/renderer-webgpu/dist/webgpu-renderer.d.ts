@@ -123,12 +123,14 @@ declare function getExternalImageSize(source: GPUImageCopyExternalImageSource): 
     width: number;
     height: number;
 };
+declare function getCopyExternalImageToTextureDestinationUsage(baseUsage: number): number;
 export declare function createWebGpuRenderer(canvas: HTMLCanvasElement, options?: WebGpuRendererCreateOptions): Promise<WebGpuRenderer>;
 export declare const __test__: {
     colorRgbaToGpuColor: typeof colorRgbaToGpuColor;
     getCanvasPixelSize: typeof getCanvasPixelSize;
     selectClearColor: typeof selectClearColor;
     getExternalImageSize: typeof getExternalImageSize;
+    getCopyExternalImageToTextureDestinationUsage: typeof getCopyExternalImageToTextureDestinationUsage;
 };
 export {};
 //# sourceMappingURL=webgpu-renderer.d.ts.map
