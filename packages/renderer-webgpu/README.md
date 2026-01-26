@@ -31,6 +31,19 @@ WebGPU renderer backend for the Idle Engine renderer contract, including determi
 - Requires a runtime with WebGPU enabled.
 - In Electron, WebGPU bring-up may require `enable-unsafe-webgpu` (see `@idle-engine/shell-desktop`).
 
+## Backend variance (`copyExternalImageToTexture`)
+
+The renderer uploads packed atlas entries using `GPUQueue.copyExternalImageToTexture(...)`. Some WebGPU implementations
+(notably Chrome's Dawn) may internally perform this copy via a render pass, which requires the destination texture to
+include `GPUTextureUsage.RENDER_ATTACHMENT` in addition to `GPUTextureUsage.COPY_DST`. For cross-backend compatibility,
+the atlas texture usage mask intentionally includes `RENDER_ATTACHMENT` even though the renderer never uses the atlas as a
+render target.
+
+References:
+- GPUWeb discussion: https://github.com/gpuweb/gpuweb/issues/3357
+- MDN: https://developer.mozilla.org/en-US/docs/Web/API/GPUQueue/copyExternalImageToTexture
+- WebGPU spec: https://gpuweb.github.io/gpuweb/#dom-gpuqueue-copyexternalimagetotexture
+
 ## Example
 
 ```ts

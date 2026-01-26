@@ -710,6 +710,16 @@ const GPU_TEXTURE_USAGE: { readonly COPY_DST: number; readonly TEXTURE_BINDING: 
   (globalThis as unknown as { GPUTextureUsage?: { COPY_DST: number; TEXTURE_BINDING: number; RENDER_ATTACHMENT: number } })
     .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
 
+/**
+ * Chrome's WebGPU implementation (Dawn) may validate `GPUQueue.copyExternalImageToTexture(...)` destinations as requiring
+ * `RENDER_ATTACHMENT` in addition to `COPY_DST` (it may internally perform the copy via a render pass). We include the
+ * superset of required bits here so atlas uploads remain portable across WebGPU backends.
+ *
+ * References:
+ * - https://github.com/gpuweb/gpuweb/issues/3357
+ * - https://developer.mozilla.org/en-US/docs/Web/API/GPUQueue/copyExternalImageToTexture
+ * - https://gpuweb.github.io/gpuweb/#dom-gpuqueue-copyexternalimagetotexture
+ */
 function getCopyExternalImageToTextureDestinationUsage(baseUsage: number): number {
   return baseUsage | GPU_TEXTURE_USAGE.COPY_DST | GPU_TEXTURE_USAGE.RENDER_ATTACHMENT;
 }
