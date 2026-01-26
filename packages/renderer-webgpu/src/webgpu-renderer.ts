@@ -329,7 +329,7 @@ const UI_GLOBALS_OFFSET = GLOBALS_UNIFORM_ALIGNMENT;
 const GLOBALS_BUFFER_SIZE = GLOBALS_UNIFORM_ALIGNMENT * 2;
 
 const QUAD_VERTEX_STRIDE_BYTES = 16;
-const INSTANCE_STRIDE_BYTES = 48;
+const INSTANCE_STRIDE_BYTES = 52;
 const INSTANCE_STRIDE_FLOATS = INSTANCE_STRIDE_BYTES / Float32Array.BYTES_PER_ELEMENT;
 
 type QuadInstanceColor = { readonly red: number; readonly green: number; readonly blue: number; readonly alpha: number };
@@ -371,7 +371,15 @@ class QuadInstanceWriter {
     this.buffer = next;
   }
 
-  writeInstance(x: number, y: number, width: number, height: number, uv: SpriteUvRect, color: QuadInstanceColor): void {
+  writeInstance(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    uv: SpriteUvRect,
+    color: QuadInstanceColor,
+    msdfPxRange = 1,
+  ): void {
     const nextLengthFloats = this.lengthFloats + INSTANCE_STRIDE_FLOATS;
     this.ensureCapacity(nextLengthFloats);
 
@@ -390,11 +398,20 @@ class QuadInstanceWriter {
     buffer[offset + 9] = color.green;
     buffer[offset + 10] = color.blue;
     buffer[offset + 11] = color.alpha;
+    buffer[offset + 12] = msdfPxRange;
 
     this.lengthFloats = nextLengthFloats;
   }
 
-  writeInstanceRgba(x: number, y: number, width: number, height: number, uv: SpriteUvRect, rgba: number | undefined): void {
+  writeInstanceRgba(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    uv: SpriteUvRect,
+    rgba: number | undefined,
+    msdfPxRange = 1,
+  ): void {
     const color = this.#scratchColor;
     if (rgba === undefined) {
       color.red = 1;
@@ -409,7 +426,7 @@ class QuadInstanceWriter {
       color.alpha = clampByte(packed & 0xff) / 255;
     }
 
-    this.writeInstance(x, y, width, height, uv, color);
+    this.writeInstance(x, y, width, height, uv, color, msdfPxRange);
   }
 
   get instanceCount(): number {
@@ -506,20 +523,22 @@ struct Globals {
 @group(1) @binding(0) var spriteSampler: sampler;
 @group(1) @binding(1) var spriteTexture: texture_2d<f32>;
 
-struct VertexInput {
-  @location(0) localPos: vec2<f32>,
-  @location(1) localUv: vec2<f32>,
-  @location(2) instancePosSize: vec4<f32>,
-  @location(3) instanceUvRect: vec4<f32>,
-  @location(4) instanceColor: vec4<f32>,
-}
+	struct VertexInput {
+	  @location(0) localPos: vec2<f32>,
+	  @location(1) localUv: vec2<f32>,
+	  @location(2) instancePosSize: vec4<f32>,
+	  @location(3) instanceUvRect: vec4<f32>,
+	  @location(4) instanceColor: vec4<f32>,
+	  @location(5) instanceMsdfPxRange: f32,
+	}
 
-struct VertexOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) uv: vec2<f32>,
-  @location(1) color: vec4<f32>,
-  @location(2) uvRect: vec4<f32>,
-}
+	struct VertexOutput {
+	  @builtin(position) position: vec4<f32>,
+	  @location(0) uv: vec2<f32>,
+	  @location(1) color: vec4<f32>,
+	  @location(2) uvRect: vec4<f32>,
+	  @location(3) msdfPxRange: f32,
+	}
 
 fn median3(a: f32, b: f32, c: f32) -> f32 {
   return max(min(a, b), min(max(a, b), c));
@@ -536,34 +555,37 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
   let uv = mix(input.instanceUvRect.xy, input.instanceUvRect.zw, input.localUv);
 
-  var out: VertexOutput;
-  out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
-  out.uv = uv;
-  out.color = input.instanceColor;
-  out.uvRect = input.instanceUvRect;
-  return out;
-}
+	  var out: VertexOutput;
+	  out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
+	  out.uv = uv;
+	  out.color = input.instanceColor;
+	  out.uvRect = input.instanceUvRect;
+	  out.msdfPxRange = input.instanceMsdfPxRange;
+	  return out;
+	}
 
 @fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-  let texSize = vec2<f32>(textureDimensions(spriteTexture));
-  let halfTexel = vec2<f32>(0.5) / texSize;
+	fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+	  let texSize = vec2<f32>(textureDimensions(spriteTexture));
+	  let halfTexel = vec2<f32>(0.5) / texSize;
 
-  let uvRectMin = input.uvRect.xy;
-  let uvRectMax = input.uvRect.zw;
-  let uvRectSize = max(vec2<f32>(0.0), uvRectMax - uvRectMin);
-  let inset = min(halfTexel, uvRectSize * 0.5);
+	  let uvRectMin = input.uvRect.xy;
+	  let uvRectMax = input.uvRect.zw;
+	  let uvRectSize = max(vec2<f32>(0.0), uvRectMax - uvRectMin);
+	  let inset = min(halfTexel, uvRectSize * 0.5);
 
-  let uv = clamp(input.uv, uvRectMin + inset, uvRectMax - inset);
-  let texel = textureSample(spriteTexture, spriteSampler, uv);
+	  let uv = clamp(input.uv, uvRectMin + inset, uvRectMax - inset);
+	  let texel = textureSample(spriteTexture, spriteSampler, uv);
 
-  let sd = median3(texel.r, texel.g, texel.b) - 0.5;
-  let w = fwidth(sd);
-  let alpha = smoothstep(-w, w, sd);
+	  let sd = median3(texel.r, texel.g, texel.b) - 0.5;
+	  let unitRange = vec2<f32>(input.msdfPxRange) / texSize;
+	  let screenTexSize = vec2<f32>(1.0) / fwidth(input.uv);
+	  let screenPxRange = max(0.5 * dot(unitRange, screenTexSize), 1.0);
+	  let alpha = clamp(sd * screenPxRange + 0.5, 0.0, 1.0);
 
-  return vec4<f32>(input.color.rgb, input.color.a * alpha);
-}
-`;
+	  return vec4<f32>(input.color.rgb, input.color.a * alpha);
+	}
+	`;
 
 const RECT_SHADER = `
 struct Globals {
@@ -1134,6 +1156,7 @@ function appendBitmapTextInstances(options: {
   readonly font: WebGpuBitmapFontRuntime;
   readonly scale: number;
   readonly tabAdvancePx: number;
+  readonly msdfPxRange: number;
   readonly color: QuadInstanceColor;
 }): number {
   const pen = { x: 0, y: 0 };
@@ -1162,7 +1185,7 @@ function appendBitmapTextInstances(options: {
       const glyphW = glyph.widthPx * options.scale;
       const glyphH = glyph.heightPx * options.scale;
 
-      options.batchInstances.writeInstance(glyphX, glyphY, glyphW, glyphH, glyph.uv, options.color);
+      options.batchInstances.writeInstance(glyphX, glyphY, glyphW, glyphH, glyph.uv, options.color, options.msdfPxRange);
       appended += 1;
     }
 
@@ -1594,11 +1617,11 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     this.#msdfPipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
-      vertex: {
-        module: msdfShaderModule,
-        entryPoint: 'vs_main',
-        buffers: [
-          {
+	      vertex: {
+	        module: msdfShaderModule,
+	        entryPoint: 'vs_main',
+	        buffers: [
+	          {
             arrayStride: QUAD_VERTEX_STRIDE_BYTES,
             stepMode: 'vertex',
             attributes: [
@@ -1606,17 +1629,18 @@ class WebGpuRendererImpl implements WebGpuRenderer {
               { shaderLocation: 1, offset: 8, format: 'float32x2' },
             ],
           },
-          {
-            arrayStride: INSTANCE_STRIDE_BYTES,
-            stepMode: 'instance',
-            attributes: [
-              { shaderLocation: 2, offset: 0, format: 'float32x4' },
-              { shaderLocation: 3, offset: 16, format: 'float32x4' },
-              { shaderLocation: 4, offset: 32, format: 'float32x4' },
-            ],
-          },
-        ],
-      },
+	          {
+	            arrayStride: INSTANCE_STRIDE_BYTES,
+	            stepMode: 'instance',
+	            attributes: [
+	              { shaderLocation: 2, offset: 0, format: 'float32x4' },
+	              { shaderLocation: 3, offset: 16, format: 'float32x4' },
+	              { shaderLocation: 4, offset: 32, format: 'float32x4' },
+	              { shaderLocation: 5, offset: 48, format: 'float32' },
+	            ],
+	          },
+	        ],
+	      },
       fragment: {
         module: msdfShaderModule,
         entryPoint: 'fs_main',
@@ -2198,6 +2222,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       font,
       scale,
       tabAdvancePx,
+      msdfPxRange: font.msdfPxRange ?? 1,
       color: { red, green, blue, alpha },
     });
   }
