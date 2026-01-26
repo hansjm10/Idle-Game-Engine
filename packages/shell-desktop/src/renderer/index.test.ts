@@ -483,6 +483,241 @@ describe('shell-desktop renderer entrypoint', () => {
     beforeUnloadHandler?.();
   });
 
+  it('strips image/text draws until renderer assets are loaded', async () => {
+    let frameListener: ((frame: unknown) => void) | undefined;
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
+    });
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    const frame = {
+      frame: { step: 1, simTimeMs: 2 },
+      draws: [
+        { kind: 'image' },
+        'keep-me',
+        { kind: 'text' },
+        { kind: 'rect', colorRgba: 0xff_ff_ff_ff },
+      ],
+    };
+    frameListener?.(frame);
+
+    const renderer = (await createWebGpuRenderer.mock.results[0]?.value) as unknown as {
+      render: ReturnType<typeof vi.fn>;
+    };
+
+    const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+    rafCallbacks.delete(id);
+    callback(0);
+
+    expect(frame.draws).toHaveLength(4);
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+
+    const rendered = renderer.render.mock.calls[0]?.[0] as { draws?: unknown };
+    expect(Array.isArray(rendered.draws)).toBe(true);
+    expect((rendered.draws as unknown[]).map((draw) => (draw as { kind?: string })?.kind)).not.toContain('image');
+    expect((rendered.draws as unknown[]).map((draw) => (draw as { kind?: string })?.kind)).not.toContain('text');
+    expect(rendered.draws).toHaveLength(2);
+    expect((rendered.draws as unknown[])[0]).toBe('keep-me');
+    expect((rendered.draws as unknown[])[1]).toMatchObject({ kind: 'rect' });
+  });
+
+  it('loads font assets and renders text draws once assets are loaded', async () => {
+    let frameListener: ((frame: unknown) => void) | undefined;
+    let loadedFont: unknown;
+
+    const renderer = {
+      loadAssets: vi.fn(async (_manifest: unknown, loaders: { loadFont: (assetId: string, contentHash: string) => Promise<unknown> }) => {
+        loadedFont = await loaders.loadFont('ui-font', 'deadbeef');
+      }),
+      render: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    createWebGpuRenderer.mockResolvedValueOnce(renderer);
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          readAsset: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((handler: (frame: unknown) => void) => {
+      frameListener = handler;
+      return vi.fn();
+    });
+
+    idleEngine.readAsset = vi.fn(async (url: string) => {
+      if (url.endsWith('renderer-assets.manifest.json')) {
+        return new TextEncoder()
+          .encode(JSON.stringify({ schemaVersion: 4, assets: [{ id: 'ui-font', kind: 'font', contentHash: 'deadbeef' }] }))
+          .buffer;
+      }
+      if (url.includes('/fonts/ui-font/font.json')) {
+        return new TextEncoder()
+          .encode(
+            JSON.stringify({
+              schemaVersion: 1,
+              id: 'ui-font',
+              technique: 'msdf',
+              baseFontSizePx: 42,
+              lineHeightPx: 50,
+              glyphs: [
+                null,
+                {
+                  codePoint: 65,
+                  x: 0,
+                  y: 0,
+                  width: 4,
+                  height: 5,
+                  xOffsetPx: 0,
+                  yOffsetPx: 0,
+                  xAdvancePx: 6,
+                },
+              ],
+              fallbackCodePoint: 65,
+              msdf: { pxRange: 3 },
+            }),
+          )
+          .buffer;
+      }
+      if (url.includes('/fonts/ui-font/atlas.png')) {
+        return new Uint8Array([1, 2, 3]).buffer;
+      }
+      throw new Error(`Unexpected asset read: ${url}`);
+    });
+
+    const bitmap = { kind: 'bitmap' };
+    (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap = vi.fn(async () => bitmap);
+
+    try {
+      await import('./index.js');
+      await flushMicrotasks();
+
+      expect(renderer.loadAssets).toHaveBeenCalledTimes(1);
+      expect(loadedFont).toMatchObject({
+        image: bitmap,
+        baseFontSizePx: 42,
+        lineHeightPx: 50,
+        fallbackCodePoint: 65,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+      });
+      expect((loadedFont as { glyphs?: unknown })?.glyphs).toHaveLength(1);
+
+      const frame = {
+        frame: { step: 7, simTimeMs: 112 },
+        draws: [{ kind: 'text', content: 'hello' }],
+      };
+      frameListener?.(frame);
+
+      const [id, callback] = rafCallbacks.entries().next().value as [number, FrameRequestCallback];
+      rafCallbacks.delete(id);
+      callback(0);
+
+      expect(renderer.render).toHaveBeenCalledTimes(1);
+      const rendered = renderer.render.mock.calls[0]?.[0] as { draws?: unknown };
+      expect(rendered.draws).toEqual([{ kind: 'text', content: 'hello' }]);
+    } finally {
+      delete (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+    }
+  });
+
+  it('loads font assets with encoded ids containing reserved characters', async () => {
+    let loadedFont: unknown;
+    const assetId = 'ui/font:100%';
+    const encodedAssetId = encodeURIComponent(encodeURIComponent(assetId));
+
+    const renderer = {
+      loadAssets: vi.fn(async (_manifest: unknown, loaders: { loadFont: (id: string, contentHash: string) => Promise<unknown> }) => {
+        loadedFont = await loaders.loadFont(assetId, 'deadbeef');
+      }),
+      render: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    createWebGpuRenderer.mockResolvedValueOnce(renderer);
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          readAsset: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((_handler: (frame: unknown) => void) => vi.fn());
+
+    idleEngine.readAsset = vi.fn(async (url: string) => {
+      if (url.endsWith('renderer-assets.manifest.json')) {
+        return new TextEncoder()
+          .encode(JSON.stringify({ schemaVersion: 4, assets: [{ id: assetId, kind: 'font', contentHash: 'deadbeef' }] }))
+          .buffer;
+      }
+      if (url.includes(`/fonts/${encodedAssetId}/font.json`)) {
+        return new TextEncoder()
+          .encode(
+            JSON.stringify({
+              schemaVersion: 1,
+              id: assetId,
+              technique: 'msdf',
+              baseFontSizePx: 42,
+              lineHeightPx: 50,
+              glyphs: [],
+              msdf: { pxRange: 3 },
+            }),
+          )
+          .buffer;
+      }
+      if (url.includes(`/fonts/${encodedAssetId}/atlas.png`)) {
+        return new Uint8Array([1, 2, 3]).buffer;
+      }
+      throw new Error(`Unexpected asset read: ${url}`);
+    });
+
+    const bitmap = { kind: 'bitmap' };
+    (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap = vi.fn(async () => bitmap);
+
+    try {
+      await import('./index.js');
+      await flushMicrotasks();
+
+      expect(renderer.loadAssets).toHaveBeenCalledTimes(1);
+      expect(loadedFont).toMatchObject({
+        image: bitmap,
+        baseFontSizePx: 42,
+        lineHeightPx: 50,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+      });
+      expect(idleEngine.readAsset).toHaveBeenCalledWith(
+        expect.stringContaining(`/fonts/${encodedAssetId}/font.json`),
+      );
+      expect(idleEngine.readAsset).toHaveBeenCalledWith(
+        expect.stringContaining(`/fonts/${encodedAssetId}/atlas.png`),
+      );
+    } finally {
+      delete (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+    }
+  });
+
   it('uses the latest frame values in fallback render buffers', async () => {
     let frameListener: ((frame: unknown) => void) | undefined;
 

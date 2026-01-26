@@ -1438,11 +1438,11 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
 
-      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-        const instances = getWriteBufferFloat32Payload(call);
-        if (!instances || instances.byteLength !== 96) {
-          return false;
-        }
+	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+	        const instances = getWriteBufferFloat32Payload(call);
+	        if (!instances || instances.byteLength !== 104) {
+	          return false;
+	        }
 
         return (
           instances[0] === 10 &&
@@ -1461,13 +1461,13 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected sprite instance buffer payload to be readable.');
       }
 
-      expect(instances.slice(4, 8)).toEqual(expectedUv);
-      expect(instances.slice(8, 12)).toEqual(
-        new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
-      );
-      expect(instances.slice(16, 20)).toEqual(expectedUv);
-      expect(instances.slice(20, 24)).toEqual(new Float32Array([1, 1, 1, 1]));
-    });
+	      expect(instances.slice(4, 8)).toEqual(expectedUv);
+	      expect(instances.slice(8, 12)).toEqual(
+	        new Float32Array([0x12 / 255, 0x34 / 255, 0x56 / 255, 0x80 / 255]),
+	      );
+	      expect(instances.slice(17, 21)).toEqual(expectedUv);
+	      expect(instances.slice(21, 25)).toEqual(new Float32Array([1, 1, 1, 1]));
+	    });
 
     it('renders ui image draws without applying world fixed-point scaling', async () => {
       const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
@@ -1513,11 +1513,11 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
 
-      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-        const instances = getWriteBufferFloat32Payload(call);
-        if (!instances || instances.byteLength !== 48) {
-          return false;
-        }
+	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+	        const instances = getWriteBufferFloat32Payload(call);
+	        if (!instances || instances.byteLength !== 52) {
+	          return false;
+	        }
 
         return (
           instances[0] === 10 &&
@@ -1583,14 +1583,14 @@ describe('renderer-webgpu', () => {
 
       const firstPayload = firstWrite[2] as Float32Array;
       const secondPayload = secondWrite[2] as Float32Array;
-      const firstSize = firstWrite[4] as number;
-      const secondSize = secondWrite[4] as number;
+	      const firstSize = firstWrite[4] as number;
+	      const secondSize = secondWrite[4] as number;
 
-      expect(firstSize).toBe(96);
-      expect(secondSize).toBe(96);
-      expect(firstPayload.byteLength).toBeGreaterThan(firstSize);
-      expect(secondPayload).toBe(firstPayload);
-    });
+	      expect(firstSize).toBe(104);
+	      expect(secondSize).toBe(104);
+	      expect(firstPayload.byteLength).toBeGreaterThan(firstSize);
+	      expect(secondPayload).toBe(firstPayload);
+	    });
 
     it('flushes quad batches when encountering unknown draw kinds', async () => {
       const { canvas, drawIndexed } = createStubWebGpuEnvironment();
@@ -1685,8 +1685,8 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected a quad instance upload to be recorded.');
       }
 
-      const usedBytes = instanceWrite[4] as number;
-      expect(usedBytes).toBe(22 * 48);
+	      const usedBytes = instanceWrite[4] as number;
+	      expect(usedBytes).toBe(22 * 52);
 
       const payload = instanceWrite[2] as Float32Array;
       expect(payload.byteLength).toBeGreaterThan(usedBytes);
@@ -1696,12 +1696,12 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected quad instance buffer payload to be readable.');
       }
 
-      expect(instances.length).toBe((22 * 48) / Float32Array.BYTES_PER_ELEMENT);
-      expect(instances[0]).toBe(0);
-      expect(instances[12]).toBe(1);
-      expect(instances[120]).toBe(10);
-      expect(instances[252]).toBe(21);
-    });
+	      expect(instances.length).toBe((22 * 52) / Float32Array.BYTES_PER_ELEMENT);
+	      expect(instances[0]).toBe(0);
+	      expect(instances[13]).toBe(1);
+	      expect(instances[130]).toBe(10);
+	      expect(instances[273]).toBe(21);
+	    });
 
     it('destroys the previous GPU instance buffer when growing', async () => {
       const { canvas, createBuffer } = createStubWebGpuEnvironment();
@@ -1903,11 +1903,11 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
 
-      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-        const instances = getWriteBufferFloat32Payload(call);
-        if (!instances || instances.byteLength !== 48) {
-          return false;
-        }
+	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+	        const instances = getWriteBufferFloat32Payload(call);
+	        if (!instances || instances.byteLength !== 52) {
+	          return false;
+	        }
 
         return (
           instances[0] === 10 &&
@@ -2168,6 +2168,30 @@ describe('renderer-webgpu', () => {
       );
     });
 
+    it('rejects msdf fonts missing msdf.pxRange', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:bad-msdf' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        technique: 'msdf',
+        glyphs: [],
+      }));
+
+      await expect(renderer.loadAssets(manifest, { loadImage, loadFont })).rejects.toThrow(
+        'msdf.pxRange',
+      );
+    });
+
     it('rejects bitmap fonts containing duplicate glyph codePoints', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -2423,11 +2447,11 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 2, 0, 0, 0);
 
-      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-        const instances = getWriteBufferFloat32Payload(call);
-        if (!instances || instances.byteLength !== 96) {
-          return false;
-        }
+	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+	        const instances = getWriteBufferFloat32Payload(call);
+	        if (!instances || instances.byteLength !== 104) {
+	          return false;
+	        }
 
         return instances[0] === 10 && instances[1] === 20;
       });
@@ -2441,9 +2465,171 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected bitmap text instance buffer payload to be readable.');
       }
 
-      expect(instances.slice(4, 8)).toEqual(expectedUvA);
-      expect(instances.slice(16, 20)).toEqual(expectedUvB);
-    });
+	      expect(instances.slice(4, 8)).toEqual(expectedUvA);
+	      expect(instances.slice(17, 21)).toEqual(expectedUvB);
+	    });
+
+	    it('renders msdf text using the msdf pipeline', async () => {
+	      const { canvas, device, beginRenderPass } = createStubWebGpuEnvironment();
+
+      const spritePipeline = {} as unknown as GPURenderPipeline;
+      const msdfPipeline = {} as unknown as GPURenderPipeline;
+      const rectPipeline = {} as unknown as GPURenderPipeline;
+      (device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn> }).createRenderPipeline =
+        vi
+          .fn()
+          .mockImplementationOnce(() => spritePipeline)
+          .mockImplementationOnce(() => msdfPipeline)
+          .mockImplementationOnce(() => rectPipeline);
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:msdf' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 32, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      renderer.render({
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer);
+
+      const passEncoder = beginRenderPass.mock.results[0]?.value as unknown as {
+        setPipeline: ReturnType<typeof vi.fn>;
+      };
+      if (!passEncoder) {
+        throw new Error('Expected render pass encoder.');
+      }
+
+	      expect(passEncoder.setPipeline).toHaveBeenCalledWith(msdfPipeline);
+	    });
+
+	    it('writes msdf.pxRange into msdf text instances', async () => {
+	      const { canvas, writeBuffer } = createStubWebGpuEnvironment();
+
+	      const renderer = await createWebGpuRenderer(canvas);
+
+	      const fontAssetId = 'font:msdf' as AssetId;
+	      const manifest = {
+	        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+	        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+	      } satisfies AssetManifest;
+
+	      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+	      const loadFont = vi.fn(async () => ({
+	        image: { width: 32, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+	        baseFontSizePx: 8,
+	        lineHeightPx: 8,
+	        technique: 'msdf',
+	        msdf: { pxRange: 4 },
+	        glyphs: [
+	          {
+	            codePoint: 0x41,
+	            x: 0,
+	            y: 0,
+	            width: 8,
+	            height: 8,
+	            xOffsetPx: 0,
+	            yOffsetPx: 0,
+	            xAdvancePx: 8,
+	          },
+	        ],
+	      }));
+
+	      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+	      renderer.render({
+	        frame: {
+	          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+	          step: 0,
+	          simTimeMs: 0,
+	          contentHash: 'content:dev',
+	        },
+	        scene: {
+	          camera: { x: 0, y: 0, zoom: 1 },
+	        },
+	        passes: [{ id: 'ui' }],
+	        draws: [
+	          {
+	            kind: 'text',
+	            passId: 'ui',
+	            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+	            x: 10,
+	            y: 20,
+	            text: 'A',
+	            colorRgba: 0xff_ff_ff_ff,
+	            fontAssetId,
+	            fontSizePx: 8,
+	          },
+	        ],
+	      } satisfies RenderCommandBuffer);
+
+	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+	        const instances = getWriteBufferFloat32Payload(call);
+	        if (!instances || instances.byteLength !== 52) {
+	          return false;
+	        }
+
+	        return instances[0] === 10 && instances[1] === 20;
+	      });
+
+	      expect(instanceBufferWrite).toBeDefined();
+	      if (!instanceBufferWrite) {
+	        throw new Error('Expected an instance buffer upload for msdf text.');
+	      }
+
+	      const instances = getWriteBufferFloat32Payload(instanceBufferWrite);
+	      if (!instances) {
+	        throw new Error('Expected msdf text instance buffer payload to be readable.');
+	      }
+
+	      expect(instances[12]).toBe(4);
+	    });
 
     it('scales world-pass text draw coordinates from fixed point', async () => {
       const { canvas, drawIndexed, writeBuffer } = createStubWebGpuEnvironment();
@@ -2510,11 +2696,11 @@ describe('renderer-webgpu', () => {
       expect(drawIndexed).toHaveBeenCalledTimes(1);
       expect(drawIndexed).toHaveBeenCalledWith(6, 1, 0, 0, 0);
 
-      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
-        const instances = getWriteBufferFloat32Payload(call);
-        if (!instances || instances.byteLength !== 48) {
-          return false;
-        }
+	      const instanceBufferWrite = writeBuffer.mock.calls.find((call) => {
+	        const instances = getWriteBufferFloat32Payload(call);
+	        if (!instances || instances.byteLength !== 52) {
+	          return false;
+	        }
 
         return instances[0] === 10 && instances[1] === 20;
       });

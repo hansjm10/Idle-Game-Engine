@@ -16,6 +16,7 @@ import {
 const textEncoder = new TextEncoder();
 
 const EMPTY_MODULES: SerializedNormalizedModules = {
+  fonts: Object.freeze([]) as SerializedNormalizedModules['fonts'],
   resources: Object.freeze([]) as SerializedNormalizedModules['resources'],
   entities: Object.freeze([]) as SerializedNormalizedModules['entities'],
   generators: Object.freeze([]) as SerializedNormalizedModules['generators'],
@@ -149,6 +150,7 @@ function resolveSerializedModules(
   }
 
   return {
+    fonts: pack.fonts,
     resources: pack.resources,
     entities: pack.entities,
     generators: pack.generators,

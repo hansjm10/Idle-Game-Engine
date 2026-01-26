@@ -6,6 +6,7 @@ export {
   type ContentPackValidator,
   type NormalizedContentPack,
   type NormalizedMetadata,
+  type NormalizedFontAsset,
   type NormalizedResource,
   type NormalizedEntity,
   type NormalizedGenerator,
@@ -52,6 +53,7 @@ export * from './modules/prestige.js';
 export * from './modules/transforms.js';
 export * from './modules/runtime-events.js';
 export * from './modules/dependencies.js';
+export * from './modules/fonts.js';
 
 export * from './runtime-compat.js';
 

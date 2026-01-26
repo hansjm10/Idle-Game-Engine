@@ -62,6 +62,7 @@ export function createModuleIndices(
   pack: NormalizedContentPack,
 ): ModuleIndexTables {
   return {
+    fonts: buildIndex(pack.fonts),
     resources: buildIndex(pack.resources),
     entities: buildIndex(pack.entities),
     generators: buildIndex(pack.generators),

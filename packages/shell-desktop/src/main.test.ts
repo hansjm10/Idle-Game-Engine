@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
@@ -79,6 +81,14 @@ vi.mock('electron', () => ({
   BrowserWindow,
   ipcMain,
   Menu,
+}));
+
+const fsPromises = {
+  readFile: vi.fn(async () => Buffer.from([1, 2, 3])),
+};
+
+vi.mock('node:fs', () => ({
+  promises: fsPromises,
 }));
 
 class Worker {
@@ -197,6 +207,36 @@ describe('shell-desktop main process entrypoint', () => {
     await expect(handler?.({}, null)).rejects.toThrow(TypeError);
     await expect(handler?.({}, [])).rejects.toThrow(TypeError);
   }, 15000);
+
+  it('restricts readAsset to compiled assets', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const handlerCall = ipcMain.handle.mock.calls.find(
+      (call) => call[0] === IPC_CHANNELS.readAsset,
+    );
+    expect(handlerCall).toBeDefined();
+
+    const handler = handlerCall?.[1] as undefined | ((event: unknown, request: unknown) => Promise<unknown>);
+    expect(handler).toBeTypeOf('function');
+
+    const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+    const compiledRoot = path.join(repoRoot, 'packages/content-sample/content/compiled');
+    const allowedPath = path.join(
+      compiledRoot,
+      '@idle-engine/sample-pack.assets/renderer-assets.manifest.json',
+    );
+    const allowedUrl = pathToFileURL(allowedPath).toString();
+
+    const disallowedPath = path.join(repoRoot, 'packages/shell-desktop/src/main.ts');
+    const disallowedUrl = pathToFileURL(disallowedPath).toString();
+
+    await expect(handler?.({}, { url: disallowedUrl })).rejects.toThrow(TypeError);
+
+    const result = await handler?.({}, { url: allowedUrl });
+    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(fsPromises.readFile).toHaveBeenCalledWith(allowedPath);
+  });
 
   it('recreates the sim worker when activated with no open windows', async () => {
     await import('./main.js');
