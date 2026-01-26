@@ -107,7 +107,7 @@ function normalizeCodePointRanges(ranges: readonly CodePointRange[]): readonly C
   for (const range of sorted) {
     const [start, end] = range;
     const lastIndex = merged.length - 1;
-    const last = merged.at(-1);
+    const last = merged.slice(-1)[0];
     if (!last) {
       merged.push([start, end]);
       continue;
