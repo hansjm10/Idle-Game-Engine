@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-issue-845-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">renderer: improve bitmap font asset pipeline for production use (Issue 845) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/issue-845-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="renderer: improve bitmap font asset pipeline for production use (Issue 845) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/issue-845-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-845-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-845-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.9dde9cf7.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.10c5d50d.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a class="navbar__item navbar__link" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><main class="docMainContainer_BJhZ docMainContainerEnhanced_qZTj"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>renderer: improve bitmap font asset pipeline for production use (Issue 845)</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Introduce build-time (MSDF) font atlas generation + renderer support for production-quality text</li>
+<li class=""><strong>Authors</strong>: Ralph (AI agent)</li>
+<li class=""><strong>Reviewers</strong>: @hansjm10</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-01-25</li>
+<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/845" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/845</a></li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p>Standardize a production-ready font pipeline by moving font atlas generation from runtime into a deterministic build step, driven by a content-pack font specification. The build step generates per-font atlas images + glyph metrics (prefer MSDF for crisp scaling), while <code>@idle-engine/renderer-webgpu</code> gains MSDF shader support and <code>@idle-engine/shell-desktop</code> loads the prebuilt font assets (keeping the current runtime generation as an explicit dev fallback).</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Background</strong>:<!-- -->
+<ul>
+<li class="">The renderer contract supports <code>AssetManifest</code> entries of kind <code>font</code> (<code>packages/renderer-contract/src/types.ts</code>), but does not define how fonts are produced or stored.</li>
+<li class=""><code>@idle-engine/renderer-webgpu</code> renders <code>text</code> draws using bitmap fonts supplied by the host via <code>assets.loadFont(...)</code> (<code>packages/renderer-webgpu/src/webgpu-renderer.ts</code>). A font is currently modeled as an image plus glyph rectangles/metrics (<code>WebGpuBitmapFont</code> / <code>WebGpuBitmapFontGlyph</code>).</li>
+<li class="">Issue 845 references a PR that rasterizes fonts at runtime (using <code>OffscreenCanvas</code>) as a quick fix for <code>shell-desktop</code>, but this is not an adequate long-term production approach.</li>
+</ul>
+</li>
+<li class=""><strong>Problem</strong>:<!-- -->
+<ul>
+<li class="">Runtime rasterization increases startup time, adds platform constraints (renderer-process APIs, font availability), and risks non-determinism (OS font differences, hinting/kerning differences, etc.).</li>
+<li class="">Plain bitmap atlases do not scale well across UI zoom levels; crisp text typically requires distance-field rendering (SDF/MSDF) or multiple baked sizes.</li>
+<li class="">There is no canonical content-pack schema or build artifact format for fonts, so hosts must implement bespoke loaders and ad hoc hashing/manifest wiring.</li>
+</ul>
+</li>
+<li class=""><strong>Forces</strong>:<!-- -->
+<ul>
+<li class="">Determinism and replay friendliness: text layout and glyph metrics must be stable across machines.</li>
+<li class="">Cross-platform build and CI: font generation must be reproducible and not require fragile manual setup.</li>
+<li class="">Renderer simplicity: avoid large API churn in <code>@idle-engine/renderer-contract</code> and keep <code>RenderCommandBuffer</code> unchanged.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Goals</strong>:<!-- -->
+<ol>
+<li class="">Define a content-pack font specification that can drive build-time font atlas generation (glyph set, sizing, technique).</li>
+<li class="">Add a build step (invoked via <code>pnpm generate</code> / content compilation flow) that emits deterministic font atlas artifacts:<!-- -->
+<ul>
+<li class="">atlas image (e.g., PNG),</li>
+<li class="">glyph metrics metadata (JSON),</li>
+<li class="">stable <code>contentHash</code> inputs for <code>AssetManifest</code> entries.</li>
+</ul>
+</li>
+<li class="">Add MSDF text rendering support to <code>@idle-engine/renderer-webgpu</code> while preserving existing bitmap font behavior.</li>
+<li class="">Update <code>@idle-engine/shell-desktop</code> to load prebuilt font assets and only use runtime generation as a dev/debug fallback.</li>
+<li class="">Add tests and docs so the pipeline is maintainable and hard to misuse.</li>
+</ol>
+</li>
+<li class=""><strong>Non-Goals</strong>:<!-- -->
+<ul>
+<li class="">Full text shaping/kerning/bi-di layout (the renderer currently iterates code points and lays out sequentially).</li>
+<li class="">A complete “all assets” pipeline (sprite sheets, shaders, etc.) beyond what is necessary to support fonts.</li>
+<li class="">Runtime remote font downloads or OS font fallback.</li>
+<li class="">Shipping a full-featured font editor UI.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Primary Stakeholders</strong>:<!-- -->
+<ul>
+<li class="">Renderer maintainers (<code>packages/renderer-webgpu</code>, <code>packages/renderer-contract</code>)</li>
+<li class="">Content pipeline maintainers (<code>packages/content-schema</code>, <code>packages/content-compiler</code>, <code>tools/</code>)</li>
+<li class="">Shell maintainers (<code>packages/shell-desktop</code>)</li>
+<li class="">Content authors (need a simple, predictable way to declare fonts + glyph coverage)</li>
+</ul>
+</li>
+<li class=""><strong>Agent Roles</strong>:<!-- -->
+<ul>
+<li class=""><strong>Schema Agent</strong>: Add/validate the font asset schema for content packs.</li>
+<li class=""><strong>Font Pipeline Agent</strong>: Implement build-time font atlas generation and artifact emission.</li>
+<li class=""><strong>Renderer Agent</strong>: Implement MSDF shader path in <code>@idle-engine/renderer-webgpu</code>.</li>
+<li class=""><strong>Shell Agent</strong>: Load font artifacts and wire <code>assets.loadFont(...)</code> + <code>AssetManifest</code> plumbing.</li>
+<li class=""><strong>Docs/Test Agent</strong>: Update docs and add regression tests.</li>
+</ul>
+</li>
+<li class=""><strong>Affected Packages/Services</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/content-schema</code> (new schema for font specs; validation)</li>
+<li class=""><code>packages/content-compiler</code> (invoke font pipeline + emit artifacts)</li>
+<li class=""><code>packages/renderer-webgpu</code> (MSDF shader support; font technique support)</li>
+<li class=""><code>packages/shell-desktop</code> (asset loader + runtime fallback behavior)</li>
+<li class=""><code>tools/</code> (new font compiler wrapper or embedded generator tooling)</li>
+</ul>
+</li>
+<li class=""><strong>Compatibility Considerations</strong>:<!-- -->
+<ul>
+<li class="">Keep renderer contract stable: no changes to <code>RenderCommandBuffer</code> are required.</li>
+<li class=""><code>WebGpuBitmapFont</code> changes (if any) must be additive (e.g., optional <code>technique</code>), so existing hosts remain compatible.</li>
+<li class="">Packs without font declarations must continue to compile and run unchanged.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class="">Renderer contract types:<!-- -->
+<ul>
+<li class=""><code>AssetManifest</code> supports <code>AssetKind = &#x27;image&#x27; | &#x27;font&#x27; | &#x27;spriteSheet&#x27; | &#x27;shader&#x27;</code> (<code>packages/renderer-contract/src/types.ts</code>).</li>
+</ul>
+</li>
+<li class="">WebGPU renderer text pipeline:<!-- -->
+<ul>
+<li class="">Hosts supply fonts through <code>WebGpuRendererAssets.loadFont(...)</code> as <code>{ image, baseFontSizePx, lineHeightPx, glyphs, fallbackCodePoint? }</code>.</li>
+<li class="">The renderer packs the font image into the global atlas, then computes per-glyph UVs by combining the packed atlas rect with glyph sub-rects (<code>buildBitmapFontRuntimeGlyph(...)</code> in <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code>).</li>
+<li class=""><code>text</code> draws render as instanced quads using the same pipeline as sprites (<code>#handleTextDraw(...)</code> calls <code>appendBitmapTextInstances(...)</code>).</li>
+<li class="">There is no MSDF/SDF shader path; text is effectively “alpha bitmap tinted by draw color”.</li>
+</ul>
+</li>
+<li class="">Content pipeline:<!-- -->
+<ul>
+<li class=""><code>packages/content-schema</code> pack schema is strict and does not define fonts/assets today (<code>packages/content-schema/src/pack/schema.ts</code>).</li>
+<li class=""><code>docs/content-compiler-design.md</code> explicitly scoped asset bundling/binary assets out of the initial compiler milestone.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Narrative</strong>:<!-- -->
+<ol>
+<li class="">Content packs declare fonts (source TTF/OTF, glyph ranges, base size, technique).</li>
+<li class="">A build-time tool generates deterministic font artifacts per declared font:<!-- -->
+<ul>
+<li class="">MSDF atlas image + glyph metrics JSON (preferred), or</li>
+<li class="">classic bitmap alpha atlas image + glyph metrics JSON (fallback option).</li>
+</ul>
+</li>
+<li class="">The build step also produces a stable <code>AssetManifest</code> fragment (or a pack-local assets manifest) that includes <code>font</code> entries with <code>contentHash</code> derived from artifact content (e.g., SHA-256 of bytes).</li>
+<li class="">Hosts (starting with <code>shell-desktop</code>) load the assets manifest and implement <code>assets.loadFont(...)</code> by reading the generated font metadata + decoding the atlas image.</li>
+<li class=""><code>@idle-engine/renderer-webgpu</code> renders bitmap fonts as today, and renders MSDF fonts via a dedicated MSDF text pipeline/shader.</li>
+</ol>
+</li>
+<li class=""><strong>Diagram</strong>: TBD</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Runtime Changes</strong>
+<ul>
+<li class="">Extend the in-memory font model returned by <code>assets.loadFont(...)</code> to support MSDF metadata in an additive way. Proposed shape:<!-- -->
+<ul>
+<li class=""><code>technique?: &#x27;bitmap&#x27; | &#x27;msdf&#x27;</code> (default: <code>&#x27;bitmap&#x27;</code>)</li>
+<li class=""><code>msdf?: { pxRange: number }</code> (required when <code>technique === &#x27;msdf&#x27;</code>)</li>
+</ul>
+</li>
+<li class="">Add a new MSDF render pipeline in <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code>:<!-- -->
+<ul>
+<li class="">A WGSL fragment shader that samples the atlas (RGB MSDF), computes signed distance via <code>median(r, g, b)</code>, and derives alpha using <code>fwidth</code>-based smoothing.</li>
+<li class="">Batching rule: MSDF text draws must not be batched with sprite/image draws unless the pipeline/shader is the same. Introduce a separate batch kind (e.g., <code>msdfText</code>) or flush on technique boundaries.</li>
+</ul>
+</li>
+<li class="">Keep the existing bitmap path unchanged for hosts that supply bitmap atlases.</li>
+</ul>
+</li>
+<li class=""><strong>Data &amp; Schemas</strong>
+<ul>
+<li class="">Add a font declaration schema for content packs. Minimal proposed authoring schema (exact location TBD):<!-- -->
+<div class="language-json codeBlockContainer_QSSF theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_YGpJ"><pre tabindex="0" class="prism-code language-json codeBlock_Ap7y thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_zA5F"><span class="token-line" style="color:#393A34"><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token property" style="color:#36acaa">&quot;fonts&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;id&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;game.ui-font&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;source&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;fonts/inter.ttf&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;baseSizePx&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">32</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;lineHeightPx&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">40</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;codePointRanges&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token punctuation" style="color:#393A34">[</span><span class="token number" style="color:#36acaa">32</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">126</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">[</span><span class="token number" style="color:#36acaa">8192</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">8303</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;technique&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token string" style="color:#e3116c">&quot;msdf&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">      </span><span class="token property" style="color:#36acaa">&quot;fallbackCodePoint&quot;</span><span class="token operator" style="color:#393A34">:</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">65533</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><br></span></code></pre></div></div>
+<!-- -->Notes:<!-- -->
+<ul>
+<li class=""><code>id</code> becomes the renderer <code>AssetId</code> for <code>AssetManifest</code> (<code>kind: &#x27;font&#x27;</code>).</li>
+<li class=""><code>codePointRanges</code> must be normalized and validated (ascending, non-overlapping, within Unicode range).</li>
+<li class=""><code>lineHeightPx</code> can be explicit or derived by the generator (TBD; see Open Questions).</li>
+</ul>
+</li>
+<li class="">Define a compiled font artifact format that is easy for hosts to load. Proposed:<!-- -->
+<ul>
+<li class=""><code>*.font.json</code> containing:<!-- -->
+<ul>
+<li class=""><code>baseFontSizePx</code>, <code>lineHeightPx</code>, <code>glyphs[]</code>, <code>fallbackCodePoint?</code></li>
+<li class=""><code>technique</code> + technique-specific fields (e.g., <code>msdf.pxRange</code>)</li>
+<li class=""><code>imageFile</code> (relative path) or a convention-based filename.</li>
+</ul>
+</li>
+<li class=""><code>*.png</code> (or <code>.webp</code>) atlas image emitted by the generator.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>APIs &amp; Contracts</strong>
+<ul>
+<li class="">Keep <code>@idle-engine/renderer-contract</code> unchanged.</li>
+<li class="">Update <code>@idle-engine/renderer-webgpu</code> public types (<code>WebGpuBitmapFont</code>) additively if MSDF metadata is carried there.</li>
+<li class="">Document the “bitmap font artifact” contract clearly (JSON schema + examples).</li>
+</ul>
+</li>
+<li class=""><strong>Tooling &amp; Automation</strong>
+<ul>
+<li class="">Implement a new build step invoked from the content pipeline:<!-- -->
+<ul>
+<li class="">Option A (preferred): integrate into <code>packages/content-compiler</code> as an additional artifact stage (“assets”) alongside JSON/module emission.</li>
+<li class="">Option B: introduce a dedicated CLI under <code>tools/</code> (e.g., <code>tools/font-atlas-cli</code>) that <code>content-compiler</code> invokes.</li>
+</ul>
+</li>
+<li class="">Use a dedicated MSDF generator (candidates: <code>msdfgen</code>, <code>msdf-atlas-gen</code>) pinned to a known version and configured to avoid non-deterministic outputs (TBD).</li>
+<li class="">Emit stable hashes for <code>AssetManifest</code> entries by hashing artifact bytes (image + metadata).</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Deployment</strong>:<!-- -->
+<ul>
+<li class="">CI must run the font generation step as part of <code>pnpm generate</code> (or equivalent) so generated artifacts are always present for packaging.</li>
+<li class="">Decide whether generated font artifacts are committed (like other compiled content outputs) or generated in CI only (TBD; align with existing “generated artifacts checked in” pattern).</li>
+</ul>
+</li>
+<li class=""><strong>Telemetry &amp; Observability</strong>:<!-- -->
+<ul>
+<li class="">Log structured build-step events only (no noisy console output in tests); runtime telemetry is out of scope.</li>
+</ul>
+</li>
+<li class=""><strong>Security &amp; Compliance</strong>:<!-- -->
+<ul>
+<li class="">Treat font compilation as local file IO only; do not fetch remote assets during build.</li>
+<li class="">Ensure the tool does not execute arbitrary paths from untrusted packs when run in CI (validate <code>source</code> paths resolve within the pack root).</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td><code>spike(fonts): research MSDF tooling</code></td><td>Evaluate <code>msdfgen</code> vs <code>msdf-atlas-gen</code> (quality, determinism, packaging)</td><td>Font Pipeline Agent</td><td>None</td><td>Recommendation + pinned tool/version + example output checked</td></tr><tr><td><code>feat(content-schema): add font asset spec</code></td><td>Add schema + validation for font declarations in content packs</td><td>Schema Agent</td><td>Tooling decision</td><td>Packs validate; docs updated; tests added</td></tr><tr><td><code>feat(content-compiler): generate font atlas artifacts</code></td><td>Implement build-time generation + deterministic artifacts (image + JSON)</td><td>Font Pipeline Agent</td><td>Schema</td><td><code>pnpm generate</code> emits artifacts; deterministic in <code>--check</code> mode</td></tr><tr><td><code>feat(renderer-webgpu): MSDF text shader</code></td><td>Add MSDF pipeline and technique-based dispatch for text draws</td><td>Renderer Agent</td><td>Tooling decision</td><td>MSDF text renders; bitmap fonts unchanged; tests pass</td></tr><tr><td><code>feat(shell-desktop): load prebuilt font assets</code></td><td>Implement font asset loader and wire <code>assets.loadFont(...)</code></td><td>Shell Agent</td><td>Compiler artifacts</td><td>Shell loads font assets; runtime generation is fallback only</td></tr><tr><td><code>docs: document font pipeline + authoring</code></td><td>Document schema, artifact format, and usage guidance</td><td>Docs/Test Agent</td><td>Schema + tooling</td><td>Docs added; example pack updated (optional)</td></tr><tr><td><code>chore: deprecate runtime font generation</code></td><td>Mark runtime font generation as deprecated (dev fallback)</td><td>Shell Agent</td><td>Shell loading</td><td>Deprecated path gated + documented</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1</strong>: Tooling decision + content schema for font declarations.</li>
+<li class=""><strong>Phase 2</strong>: Build-time atlas generation + emitted artifacts + manifest hashing.</li>
+<li class=""><strong>Phase 3</strong>: Renderer MSDF pipeline + shell asset loading + docs.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Hand-off Package</strong>:<!-- -->
+<ul>
+<li class="">Issue 845 body (requirements and target files).</li>
+<li class="">Renderer font contracts: <code>packages/renderer-contract/src/types.ts</code>, <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code></li>
+<li class="">Content pack schema entrypoint: <code>packages/content-schema/src/pack/schema.ts</code></li>
+<li class="">Content compiler scope constraints: <code>docs/content-compiler-design.md</code> (revisit non-goals for assets)</li>
+</ul>
+</li>
+<li class=""><strong>Communication Cadence</strong>: Single reviewer checkpoint at the end of each phase; keep Issue 845 updated with decision notes.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Context Packets</strong>:<!-- -->
+<ul>
+<li class="">Read Issue 845 and <code>docs/desktop-shell-webgpu-renderer-replay-design-issue-778.md</code> for determinism constraints.</li>
+<li class="">Inspect <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code> text batching (<code>#handleTextDraw</code>, <code>appendBitmapTextInstances</code>).</li>
+<li class="">Inspect <code>packages/content-schema/src/pack/schema.ts</code> to understand current strict pack schema.</li>
+</ul>
+</li>
+<li class=""><strong>Prompting &amp; Constraints</strong>:<!-- -->
+<ul>
+<li class="">Prefer additive API changes; keep <code>RenderCommandBuffer</code> stable.</li>
+<li class="">Keep outputs deterministic: stable glyph ordering, stable atlas packing, stable JSON serialization.</li>
+<li class="">Do not edit checked-in <code>dist/**</code> by hand.</li>
+</ul>
+</li>
+<li class=""><strong>Safety Rails</strong>:<!-- -->
+<ul>
+<li class="">Validate that font <code>source</code> paths resolve inside the pack directory.</li>
+<li class="">Impose sane caps (max glyph count, atlas size) and fail with actionable errors.</li>
+<li class="">Avoid shipping OS-font dependent runtime paths as the default.</li>
+</ul>
+</li>
+<li class=""><strong>Validation Hooks</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm test --filter @idle-engine/renderer-webgpu</code></li>
+<li class=""><code>pnpm test --filter @idle-engine/content-schema</code></li>
+<li class=""><code>pnpm test --filter @idle-engine/content-compiler</code></li>
+<li class=""><code>pnpm lint</code></li>
+<li class=""><code>pnpm generate --check</code> (once the font step is wired into the generate pipeline)</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>Keep runtime font atlas generation (OffscreenCanvas)</strong>:<!-- -->
+<ul>
+<li class="">Pros: no build tooling; quick iteration.</li>
+<li class="">Cons: startup cost, platform dependence, weaker determinism; rejected for production.</li>
+</ul>
+</li>
+<li class=""><strong>Use DOM/CSS text rendering</strong>:<!-- -->
+<ul>
+<li class="">Rejected: undermines determinism and replay goals; mismatched across environments (see Issue 778).</li>
+</ul>
+</li>
+<li class=""><strong>Prebaked bitmap atlases only (no MSDF)</strong>:<!-- -->
+<ul>
+<li class="">Viable fallback, but scaling quality is poor; could be Phase 1 while MSDF lands.</li>
+</ul>
+</li>
+<li class=""><strong>Single-channel SDF instead of MSDF</strong>:<!-- -->
+<ul>
+<li class="">Lower memory and simpler shader, but worse corner fidelity; keep as an option if MSDF tooling proves brittle.</li>
+</ul>
+</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Content schema tests: validate font declarations (range normalization, duplicate IDs, invalid paths).</li>
+<li class="">Content compiler tests: ensure generated artifacts are deterministic (byte-identical) under <code>--check</code> and stable ordering rules.</li>
+<li class="">Renderer tests: add WebGPU-stub tests that:<!-- -->
+<ul>
+<li class="">validate MSDF technique selects the MSDF pipeline,</li>
+<li class="">validate bitmap fonts remain on the existing sprite pipeline,</li>
+<li class="">validate technique metadata validation (e.g., missing <code>msdf.pxRange</code>).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Performance</strong>:<!-- -->
+<ul>
+<li class="">Measure build-time font generation cost on CI and keep a baseline (TBD thresholds).</li>
+<li class="">Ensure runtime startup is improved vs runtime generation by removing font rasterization work.</li>
+</ul>
+</li>
+<li class=""><strong>Tooling / A11y</strong>:<!-- -->
+<ul>
+<li class="">Manual smoke test in <code>shell-desktop</code>: render sample UI text at multiple <code>fontSizePx</code> values and validate crispness and stability under zoom.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>MSDF tooling availability and cross-platform support</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: pin versions; prefer distributable binaries or WASM; add CI checks that fail with actionable install instructions.</li>
+</ul>
+</li>
+<li class=""><strong>Non-deterministic atlas output across OS/architectures</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: lock tool version and flags; ensure glyph ordering is explicit; consider generating artifacts only in CI and committing results (TBD).</li>
+</ul>
+</li>
+<li class=""><strong>Renderer complexity / batching regressions</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: keep bitmap path unchanged; isolate MSDF pipeline; add regression tests around batching boundaries.</li>
+</ul>
+</li>
+<li class=""><strong>Atlas size explosion for large code point ranges</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: enforce caps; encourage authoring narrow ranges; support multi-page output as follow-up if needed.</li>
+</ul>
+</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Milestones</strong>:<!-- -->
+<ol>
+<li class="">Land schema + tooling decision (no runtime changes yet).</li>
+<li class="">Land build-time font generation + artifact format + manifest hashing.</li>
+<li class="">Land renderer MSDF shader support.</li>
+<li class="">Land shell-desktop asset loading and deprecate runtime generation by default.</li>
+</ol>
+</li>
+<li class=""><strong>Migration Strategy</strong>:<!-- -->
+<ul>
+<li class="">Existing hosts that provide bitmap fonts remain supported.</li>
+<li class="">Packs can adopt the new <code>fonts</code> spec incrementally; missing fonts should produce clear errors when text draws reference absent <code>fontAssetId</code>s.</li>
+</ul>
+</li>
+<li class=""><strong>Communication</strong>:<!-- -->
+<ul>
+<li class="">Update Issue 845 with the chosen generator tool/version and an example artifact output snapshot.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
+<ol>
+<li class="">Where should font declarations live: extend <code>pack.json</code> (new <code>fonts</code> field) vs a dedicated <code>assets.json</code> file within each pack?</li>
+<li class="">Which generator tool is preferred (<code>msdfgen</code>, <code>msdf-atlas-gen</code>, or another), and how do we package it for CI + contributors?</li>
+<li class="">Should <code>lineHeightPx</code> be authored, derived from font metrics, or both (authored override)?</li>
+<li class="">Do we need per-font MSDF parameters beyond <code>pxRange</code> (e.g., edge threshold), and if so how are they surfaced to the shader deterministically?</li>
+<li class="">Should the build step emit an <code>AssetManifest</code> for all assets or a “fonts-only” manifest initially?</li>
+<li class="">Are generated font artifacts committed to the repo (like other compiler outputs) or generated in CI/packaging only?</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ul>
+<li class="">Extend the asset pipeline beyond fonts (images/sprite sheets/shaders) once the basic “assets manifest + hashing” approach is proven.</li>
+<li class="">Add advanced text features (kerning/shaping, fallback fonts) if required by localization goals.</li>
+<li class="">Add a replay/inspection harness that can validate text rendering determinism using packed fonts and known RCB fixtures.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class="">Issue 845: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/845" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/845</a></li>
+<li class="">Renderer contract asset kinds: <code>packages/renderer-contract/src/types.ts</code></li>
+<li class="">WebGPU renderer font + text handling: <code>packages/renderer-webgpu/src/webgpu-renderer.ts</code></li>
+<li class="">Determinism constraints (text + assets): <code>docs/desktop-shell-webgpu-renderer-replay-design-issue-778.md</code></li>
+<li class="">Content pack schema entrypoint: <code>packages/content-schema/src/pack/schema.ts</code></li>
+<li class="">Content compiler design scope: <code>docs/content-compiler-design.md</code></li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Atlas</strong>: A single packed texture containing multiple images (and font atlas images) used for batching and fewer texture binds.</li>
+<li class=""><strong>Bitmap font</strong>: A font rendered to pixels ahead of time; scaling up typically blurs or pixelates.</li>
+<li class=""><strong>SDF/MSDF</strong>: Signed Distance Field / Multi-channel Signed Distance Field. Encodes distance to glyph edges so text can scale crisply in a shader.</li>
+<li class=""><strong><code>pxRange</code></strong>: The pixel distance range encoded into an SDF/MSDF atlas; required to convert sampled values into coverage.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-01-25</td><td>Ralph (AI agent)</td><td>Initial draft for Issue 845</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/issue-845-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
