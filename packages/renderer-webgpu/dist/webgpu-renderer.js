@@ -465,7 +465,20 @@ const GPU_BUFFER_USAGE = globalThis
     UNIFORM: 64,
 };
 const GPU_TEXTURE_USAGE = globalThis
-    .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4 };
+    .GPUTextureUsage ?? { COPY_DST: 2, TEXTURE_BINDING: 4, RENDER_ATTACHMENT: 16 };
+/**
+ * Chrome's WebGPU implementation (Dawn) may validate `GPUQueue.copyExternalImageToTexture(...)` destinations as requiring
+ * `RENDER_ATTACHMENT` in addition to `COPY_DST` (it may internally perform the copy via a render pass). We include the
+ * superset of required bits here so atlas uploads remain portable across WebGPU backends.
+ *
+ * References:
+ * - https://github.com/gpuweb/gpuweb/issues/3357
+ * - https://developer.mozilla.org/en-US/docs/Web/API/GPUQueue/copyExternalImageToTexture
+ * - https://gpuweb.github.io/gpuweb/#dom-gpuqueue-copyexternalimagetotexture
+ */
+function getCopyExternalImageToTextureDestinationUsage(baseUsage) {
+    return baseUsage | GPU_TEXTURE_USAGE.COPY_DST | GPU_TEXTURE_USAGE.RENDER_ATTACHMENT;
+}
 function buildInsetUvRange(options) {
     if (!Number.isFinite(options.atlasSizePx) || options.atlasSizePx <= 0) {
         return { t0: 0, t1: 0 };
@@ -612,7 +625,7 @@ function getSortedRenderableAtlasEntries(manifest) {
     for (let index = 1; index < atlasEntries.length; index += 1) {
         const previous = atlasEntries[index - 1];
         const current = atlasEntries[index];
-        if (previous && current && previous.id === current.id) {
+        if (previous?.id === current?.id) {
             throw new Error(`AssetManifest contains duplicate AssetId: ${current.id}`);
         }
     }
@@ -1051,7 +1064,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const atlasTexture = this.device.createTexture({
         size: [options.packed.atlasWidthPx, options.packed.atlasHeightPx, 1],
         format: 'rgba8unorm',
-        usage: GPU_TEXTURE_USAGE.TEXTURE_BINDING | GPU_TEXTURE_USAGE.COPY_DST,
+        usage: getCopyExternalImageToTextureDestinationUsage(GPU_TEXTURE_USAGE.TEXTURE_BINDING),
     });
     const sourceByAssetId = new Map();
     for (const { entry, source } of options.loadedSources) {
@@ -1714,5 +1727,6 @@ export const __test__ = {
     getCanvasPixelSize,
     selectClearColor,
     getExternalImageSize,
+    getCopyExternalImageToTextureDestinationUsage,
 };
 //# sourceMappingURL=webgpu-renderer.js.map
