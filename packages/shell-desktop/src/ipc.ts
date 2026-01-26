@@ -4,6 +4,7 @@ export const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
 
 export const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
+  readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
@@ -18,6 +19,10 @@ export type PingRequest = {
 export type PingResponse = {
   message: string;
 };
+
+export type ReadAssetRequest = Readonly<{
+  url: string;
+}>;
 
 export type ShellControlEventPhase = 'start' | 'repeat' | 'end';
 
@@ -56,10 +61,15 @@ export type IpcInvokeMap = {
     request: PingRequest;
     response: PingResponse;
   };
+  [IPC_CHANNELS.readAsset]: {
+    request: ReadAssetRequest;
+    response: ArrayBuffer;
+  };
 };
 
 export type IdleEngineApi = {
   ping: (message: string) => Promise<string>;
+  readAsset: (url: string) => Promise<ArrayBuffer>;
   sendControlEvent: (event: ShellControlEvent) => void;
   onFrame: (handler: (frame: ShellFramePayload) => void) => () => void;
   onSimStatus: (handler: (status: ShellSimStatusPayload) => void) => () => void;

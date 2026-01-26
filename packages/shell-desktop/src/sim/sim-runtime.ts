@@ -2,7 +2,7 @@ import { IdleEngineRuntime, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
 import type { Command, RuntimeCommandPayloads } from '@idle-engine/core';
-import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
+import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export type SimRuntimeOptions = Readonly<{
   stepSizeMs?: number;
@@ -34,6 +34,8 @@ type DemoState = {
   resourceCount: number;
   lastCollectedStep: number | null;
 };
+
+const SAMPLE_FONT_ASSET_ID = 'sample-pack.ui-font' as AssetId;
 
 const clampByte = (value: number): number => Math.min(255, Math.max(0, Math.floor(value)));
 
@@ -159,6 +161,17 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
           width: fillWidth,
           height: meterHeight,
           colorRgba: state.lastCollectedStep === step ? 0x8a_2a_4f_ff : 0x2a_4f_8a_ff,
+        },
+        {
+          kind: 'text',
+          passId: 'ui',
+          sortKey: { sortKeyHi: 0, sortKeyLo: 3 },
+          x: panelX + 16,
+          y: panelY + 16,
+          text: `Resources: ${state.resourceCount}`,
+          colorRgba: 0xff_ff_ff_ff,
+          fontAssetId: SAMPLE_FONT_ASSET_ID,
+          fontSizePx: 18,
         },
       ],
     };

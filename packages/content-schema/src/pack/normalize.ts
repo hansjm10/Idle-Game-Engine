@@ -18,6 +18,7 @@ import type {
   NormalizedContentPack,
   NormalizedContentPackModules,
   NormalizedEntity,
+  NormalizedFontAsset,
   NormalizedGenerator,
   NormalizedMetadata,
   NormalizedMetric,
@@ -90,6 +91,16 @@ export const normalizeContentPack = (
   const { normalize, normalizeOptional } = createLocalizedValueNormalizer(
     normalizedMetadata,
     context.warningSink,
+  );
+
+  const normalizedFonts = freezeArray(
+    pack.fonts.map(
+      (font) =>
+        freezeObject({
+          ...font,
+          msdf: freezeObject({ ...font.msdf }),
+        }) as NormalizedFontAsset,
+    ),
   );
 
   const normalizedResources = freezeArray(
@@ -222,6 +233,7 @@ export const normalizeContentPack = (
 
   const normalizedModules: NormalizedContentPackModules = {
     metadata: normalizedMetadata,
+    fonts: normalizedFonts,
     resources: normalizedResources,
     entities: normalizedEntities,
     generators: normalizedGenerators,
@@ -235,6 +247,7 @@ export const normalizeContentPack = (
   };
 
   const lookup = freezeObject({
+    fonts: freezeMap(normalizedModules.fonts),
     resources: freezeMap(normalizedModules.resources),
     entities: freezeMap(normalizedModules.entities),
     generators: freezeMap(normalizedModules.generators),
@@ -248,6 +261,7 @@ export const normalizeContentPack = (
   });
 
   const serializedLookup = freezeObject({
+    fontById: freezeRecord(normalizedModules.fonts),
     resourceById: freezeRecord(normalizedModules.resources),
     entityById: freezeRecord(normalizedModules.entities),
     generatorById: freezeRecord(normalizedModules.generators),

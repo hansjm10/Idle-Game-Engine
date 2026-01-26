@@ -90,12 +90,26 @@ export interface WebGpuBitmapFontGlyph {
   readonly xAdvancePx: number;
 }
 
+export type WebGpuFontTechnique = 'bitmap' | 'msdf';
+
 export interface WebGpuBitmapFont {
   readonly image: GPUImageCopyExternalImageSource;
   readonly baseFontSizePx: number;
   readonly lineHeightPx: number;
   readonly glyphs: readonly WebGpuBitmapFontGlyph[];
   readonly fallbackCodePoint?: number;
+  /**
+   * Rendering technique used for this font atlas.
+   *
+   * Defaults to `'bitmap'` when omitted.
+   */
+  readonly technique?: WebGpuFontTechnique;
+  /**
+   * MSDF configuration required when `technique === 'msdf'`.
+   */
+  readonly msdf?: {
+    readonly pxRange: number;
+  };
 }
 
 export interface WebGpuRendererAssets {
@@ -479,6 +493,78 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 }
 `;
 
+const MSDF_SHADER = `
+struct Globals {
+  viewportSize: vec2<f32>,
+  devicePixelRatio: f32,
+  _pad0: f32,
+  camera: vec3<f32>,
+  _pad1: f32,
+}
+
+@group(0) @binding(0) var<uniform> globals: Globals;
+@group(1) @binding(0) var spriteSampler: sampler;
+@group(1) @binding(1) var spriteTexture: texture_2d<f32>;
+
+struct VertexInput {
+  @location(0) localPos: vec2<f32>,
+  @location(1) localUv: vec2<f32>,
+  @location(2) instancePosSize: vec4<f32>,
+  @location(3) instanceUvRect: vec4<f32>,
+  @location(4) instanceColor: vec4<f32>,
+}
+
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) uv: vec2<f32>,
+  @location(1) color: vec4<f32>,
+  @location(2) uvRect: vec4<f32>,
+}
+
+fn median3(a: f32, b: f32, c: f32) -> f32 {
+  return max(min(a, b), min(max(a, b), c));
+}
+
+@vertex
+fn vs_main(input: VertexInput) -> VertexOutput {
+  let localPx = input.instancePosSize.xy + input.localPos * input.instancePosSize.zw;
+  let cameraPx = (localPx - globals.camera.xy) * globals.camera.z;
+  let posPx = cameraPx * globals.devicePixelRatio;
+
+  let ndcX = (posPx.x / globals.viewportSize.x) * 2.0 - 1.0;
+  let ndcY = 1.0 - (posPx.y / globals.viewportSize.y) * 2.0;
+
+  let uv = mix(input.instanceUvRect.xy, input.instanceUvRect.zw, input.localUv);
+
+  var out: VertexOutput;
+  out.position = vec4<f32>(ndcX, ndcY, 0.0, 1.0);
+  out.uv = uv;
+  out.color = input.instanceColor;
+  out.uvRect = input.instanceUvRect;
+  return out;
+}
+
+@fragment
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+  let texSize = vec2<f32>(textureDimensions(spriteTexture));
+  let halfTexel = vec2<f32>(0.5) / texSize;
+
+  let uvRectMin = input.uvRect.xy;
+  let uvRectMax = input.uvRect.zw;
+  let uvRectSize = max(vec2<f32>(0.0), uvRectMax - uvRectMin);
+  let inset = min(halfTexel, uvRectSize * 0.5);
+
+  let uv = clamp(input.uv, uvRectMin + inset, uvRectMax - inset);
+  let texel = textureSample(spriteTexture, spriteSampler, uv);
+
+  let sd = median3(texel.r, texel.g, texel.b) - 0.5;
+  let w = fwidth(sd);
+  let alpha = smoothstep(-w, w, sd);
+
+  return vec4<f32>(input.color.rgb, input.color.a * alpha);
+}
+`;
+
 const RECT_SHADER = `
 struct Globals {
   viewportSize: vec2<f32>,
@@ -612,6 +698,8 @@ interface WebGpuBitmapFontRuntimeGlyph {
 }
 
 interface WebGpuBitmapFontRuntime {
+  readonly technique: WebGpuFontTechnique;
+  readonly msdfPxRange: number | undefined;
   readonly baseFontSizePx: number;
   readonly lineHeightPx: number;
   readonly glyphByCodePoint: Map<number, WebGpuBitmapFontRuntimeGlyph>;
@@ -780,6 +868,24 @@ function buildBitmapFontRuntime(options: {
     );
   }
 
+  const technique = options.font.technique ?? 'bitmap';
+  if (technique !== 'bitmap' && technique !== 'msdf') {
+    throw new Error(
+      `Font ${options.fontAssetId} has invalid technique ${String(options.font.technique)}.`,
+    );
+  }
+
+  let msdfPxRange: number | undefined;
+  if (technique === 'msdf') {
+    const pxRange = options.font.msdf?.pxRange;
+    if (typeof pxRange !== 'number' || !Number.isFinite(pxRange) || pxRange <= 0) {
+      throw new Error(
+        `Font ${options.fontAssetId} is missing a valid msdf.pxRange value.`,
+      );
+    }
+    msdfPxRange = pxRange;
+  }
+
   const glyphByCodePoint = new Map<number, WebGpuBitmapFontRuntimeGlyph>();
 
   for (const glyph of options.font.glyphs) {
@@ -802,6 +908,8 @@ function buildBitmapFontRuntime(options: {
   const fallbackGlyph = pickBitmapFontFallbackGlyph({ font: options.font, glyphByCodePoint });
 
   return {
+    technique,
+    msdfPxRange,
     baseFontSizePx,
     lineHeightPx,
     glyphByCodePoint,
@@ -967,16 +1075,18 @@ function buildBitmapFontRuntimeState(options: {
   };
 }
 
-type WebGpuQuadBatchKind = 'rect' | 'image';
+type WebGpuQuadBatchKind = 'rect' | 'image' | 'msdfText';
 
 interface WebGpuQuadRenderState {
   readonly passEncoder: GPURenderPassEncoder;
   readonly atlasUvByAssetId: ReadonlyMap<AssetId, SpriteUvRect> | undefined;
   readonly textureBindGroup: GPUBindGroup | undefined;
+  readonly msdfTextureBindGroup: GPUBindGroup | undefined;
   readonly bitmapFontByAssetId: ReadonlyMap<AssetId, WebGpuBitmapFontRuntime> | undefined;
   readonly defaultBitmapFontAssetId: AssetId | undefined;
 
   readonly spritePipeline: GPURenderPipeline;
+  readonly msdfPipeline: GPURenderPipeline;
   readonly rectPipeline: GPURenderPipeline;
   readonly vertexBuffer: GPUBuffer;
   readonly indexBuffer: GPUBuffer;
@@ -1079,8 +1189,10 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   readonly #worldFixedPointInvScale: number;
 
   #spritePipeline: GPURenderPipeline | undefined;
+  #msdfPipeline: GPURenderPipeline | undefined;
   #rectPipeline: GPURenderPipeline | undefined;
   #spriteSampler: GPUSampler | undefined;
+  #msdfSampler: GPUSampler | undefined;
   #spriteUniformBuffer: GPUBuffer | undefined;
   #worldGlobalsBindGroup: GPUBindGroup | undefined;
   #uiGlobalsBindGroup: GPUBindGroup | undefined;
@@ -1091,6 +1203,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   readonly #retiredInstanceBuffers: GPUBuffer[] = [];
   #spriteTextureBindGroupLayout: GPUBindGroupLayout | undefined;
   #spriteTextureBindGroup: GPUBindGroup | undefined;
+  #msdfTextureBindGroup: GPUBindGroup | undefined;
   #atlasTexture: GPUTexture | undefined;
   readonly #quadInstanceWriter = new QuadInstanceWriter();
 
@@ -1321,10 +1434,9 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     return atlasTexture;
   }
 
-  #createSpriteAtlasBindGroup(atlasTexture: GPUTexture): GPUBindGroup {
+  #createAtlasBindGroup(atlasTexture: GPUTexture, sampler: GPUSampler | undefined): GPUBindGroup {
     const atlasView = atlasTexture.createView();
     const textureBindGroupLayout = this.#spriteTextureBindGroupLayout;
-    const sampler = this.#spriteSampler;
     if (!textureBindGroupLayout || !sampler) {
       throw new Error('Sprite pipeline missing texture bindings.');
     }
@@ -1365,7 +1477,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     const previousAtlasTexture = this.#atlasTexture;
     const atlasTexture = this.#createAtlasTextureAndUpload({ packed, loadedSources });
-    this.#spriteTextureBindGroup = this.#createSpriteAtlasBindGroup(atlasTexture);
+    this.#spriteTextureBindGroup = this.#createAtlasBindGroup(atlasTexture, this.#spriteSampler);
+    this.#msdfTextureBindGroup = this.#createAtlasBindGroup(atlasTexture, this.#msdfSampler);
     this.#atlasTexture = atlasTexture;
     this.#safeDestroyTexture(previousAtlasTexture);
 
@@ -1390,7 +1503,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
   }
 
   #ensureSpritePipeline(): void {
-    if (this.#spritePipeline && this.#rectPipeline) {
+    if (this.#spritePipeline && this.#rectPipeline && this.#msdfPipeline && this.#spriteSampler && this.#msdfSampler) {
       return;
     }
 
@@ -1477,6 +1590,60 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       },
     });
 
+    const msdfShaderModule = this.device.createShaderModule({ code: MSDF_SHADER });
+
+    this.#msdfPipeline = this.device.createRenderPipeline({
+      layout: pipelineLayout,
+      vertex: {
+        module: msdfShaderModule,
+        entryPoint: 'vs_main',
+        buffers: [
+          {
+            arrayStride: QUAD_VERTEX_STRIDE_BYTES,
+            stepMode: 'vertex',
+            attributes: [
+              { shaderLocation: 0, offset: 0, format: 'float32x2' },
+              { shaderLocation: 1, offset: 8, format: 'float32x2' },
+            ],
+          },
+          {
+            arrayStride: INSTANCE_STRIDE_BYTES,
+            stepMode: 'instance',
+            attributes: [
+              { shaderLocation: 2, offset: 0, format: 'float32x4' },
+              { shaderLocation: 3, offset: 16, format: 'float32x4' },
+              { shaderLocation: 4, offset: 32, format: 'float32x4' },
+            ],
+          },
+        ],
+      },
+      fragment: {
+        module: msdfShaderModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format: this.format,
+            blend: {
+              color: {
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+              alpha: {
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+                operation: 'add',
+              },
+            },
+          },
+        ],
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'none',
+      },
+    });
+
     const rectPipelineLayout = this.device.createPipelineLayout({
       bindGroupLayouts: [uniformBindGroupLayout],
     });
@@ -1537,6 +1704,13 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#spriteSampler = this.device.createSampler({
       magFilter: 'nearest',
       minFilter: 'nearest',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+    });
+
+    this.#msdfSampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
       addressModeU: 'clamp-to-edge',
       addressModeV: 'clamp-to-edge',
     });
@@ -1683,6 +1857,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
   #getQuadPipelinesOrThrow(): {
     readonly spritePipeline: GPURenderPipeline;
+    readonly msdfPipeline: GPURenderPipeline;
     readonly rectPipeline: GPURenderPipeline;
     readonly vertexBuffer: GPUBuffer;
     readonly indexBuffer: GPUBuffer;
@@ -1692,6 +1867,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#ensureSpritePipeline();
 
     const spritePipeline = this.#spritePipeline;
+    const msdfPipeline = this.#msdfPipeline;
     const rectPipeline = this.#rectPipeline;
     const vertexBuffer = this.#spriteVertexBuffer;
     const indexBuffer = this.#spriteIndexBuffer;
@@ -1700,6 +1876,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     if (
       !spritePipeline ||
+      !msdfPipeline ||
       !rectPipeline ||
       !vertexBuffer ||
       !indexBuffer ||
@@ -1711,6 +1888,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     return {
       spritePipeline,
+      msdfPipeline,
       rectPipeline,
       vertexBuffer,
       indexBuffer,
@@ -1737,6 +1915,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
 
     const atlasUvByAssetId = this.#atlasUvByAssetId;
     const textureBindGroup = this.#spriteTextureBindGroup;
+    const msdfTextureBindGroup = this.#msdfTextureBindGroup;
     const bitmapFontByAssetId = this.#bitmapFontByAssetId;
     const defaultBitmapFontAssetId = this.#defaultBitmapFontAssetId;
 
@@ -1769,6 +1948,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       passEncoder,
       atlasUvByAssetId,
       textureBindGroup,
+      msdfTextureBindGroup,
       bitmapFontByAssetId,
       defaultBitmapFontAssetId,
       ...pipelines,
@@ -1831,6 +2011,12 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       }
       state.passEncoder.setPipeline(state.spritePipeline);
       state.passEncoder.setBindGroup(1, state.textureBindGroup);
+    } else if (kind === 'msdfText') {
+      if (!state.msdfTextureBindGroup) {
+        throw new Error('Sprite pipeline missing MSDF texture bind group.');
+      }
+      state.passEncoder.setPipeline(state.msdfPipeline);
+      state.passEncoder.setBindGroup(1, state.msdfTextureBindGroup);
     } else {
       state.passEncoder.setPipeline(state.rectPipeline);
     }
@@ -1976,7 +2162,6 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     passId: RenderPassId,
     draw: Extract<OrderedDraw['draw'], { kind: 'text' }>,
   ): void {
-    this.#ensureQuadBatch(state, 'image', passId);
     const coordScale = passId === 'world' ? this.#worldFixedPointInvScale : 1;
 
     const fontAssetId = draw.fontAssetId ?? state.defaultBitmapFontAssetId;
@@ -1988,6 +2173,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     if (!font) {
       throw new Error(`Unknown fontAssetId: ${fontAssetId}`);
     }
+
+    this.#ensureQuadBatch(state, font.technique === 'msdf' ? 'msdfText' : 'image', passId);
 
     const scale = draw.fontSizePx / font.baseFontSizePx;
     if (!Number.isFinite(scale) || scale <= 0) {
@@ -2078,6 +2265,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#safeDestroyTexture(this.#atlasTexture);
     this.#atlasTexture = undefined;
     this.#spriteTextureBindGroup = undefined;
+    this.#msdfTextureBindGroup = undefined;
     this.#spriteTextureBindGroupLayout = undefined;
 
     this.#flushRetiredInstanceBuffers();
@@ -2094,8 +2282,10 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     this.#uiGlobalsBindGroup = undefined;
 
     this.#spritePipeline = undefined;
+    this.#msdfPipeline = undefined;
     this.#rectPipeline = undefined;
     this.#spriteSampler = undefined;
+    this.#msdfSampler = undefined;
 
     this.#atlasLayout = undefined;
     this.#atlasLayoutHash = undefined;

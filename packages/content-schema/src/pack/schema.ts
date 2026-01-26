@@ -9,6 +9,7 @@ import type {
 import type {
   EntityDefinition,
 } from '../modules/entities.js';
+import type { FontAsset } from '../modules/fonts.js';
 import type { Generator } from '../modules/generators.js';
 import type { Metadata } from '../modules/metadata.js';
 import type { MetricDefinition } from '../modules/metrics.js';
@@ -32,6 +33,7 @@ import {
 import {
   entityCollectionSchema,
 } from '../modules/entities.js';
+import { fontCollectionSchema } from '../modules/fonts.js';
 import { generatorCollectionSchema } from '../modules/generators.js';
 import { metadataSchema } from '../modules/metadata.js';
 import { metricCollectionSchema } from '../modules/metrics.js';
@@ -49,6 +51,7 @@ import { upgradeCollectionSchema } from '../modules/upgrades.js';
 
 export interface ParsedContentPack {
   readonly metadata: Metadata;
+  readonly fonts: readonly FontAsset[];
   readonly resources: readonly Resource[];
   readonly entities: readonly EntityDefinition[];
   readonly generators: readonly Generator[];
@@ -64,6 +67,7 @@ export interface ParsedContentPack {
 const baseContentPackSchema: z.ZodType<ParsedContentPack, z.ZodTypeDef, unknown> = z
   .object({
     metadata: metadataSchema,
+    fonts: fontCollectionSchema.default([]),
     resources: resourceCollectionSchema.default([]),
     entities: entityCollectionSchema.default([]),
     generators: generatorCollectionSchema.default([]),

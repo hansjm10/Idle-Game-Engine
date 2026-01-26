@@ -20,6 +20,7 @@ import type {
   RuntimeEventContribution,
 } from '../modules/runtime-events.js';
 import type { TransformDefinition } from '../modules/transforms.js';
+import type { FontAsset } from '../modules/fonts.js';
 
 type PackId = z.infer<typeof packSlugSchema>;
 type ContentId = z.infer<typeof contentIdSchema>;
@@ -37,9 +38,11 @@ export type NormalizedAutomation = AutomationDefinition;
 export type NormalizedTransform = TransformDefinition;
 export type NormalizedPrestigeLayer = PrestigeLayerDefinition;
 export type NormalizedRuntimeEventContribution = RuntimeEventContribution;
+export type NormalizedFontAsset = FontAsset;
 
 export type NormalizedContentPackModules = {
   readonly metadata: NormalizedMetadata;
+  readonly fonts: readonly NormalizedFontAsset[];
   readonly resources: readonly NormalizedResource[];
   readonly entities: readonly NormalizedEntity[];
   readonly generators: readonly NormalizedGenerator[];
@@ -54,6 +57,7 @@ export type NormalizedContentPackModules = {
 
 export interface NormalizedContentPack extends NormalizedContentPackModules {
   readonly lookup: {
+    readonly fonts: ReadonlyMap<ContentId, NormalizedFontAsset>;
     readonly resources: ReadonlyMap<ContentId, NormalizedResource>;
     readonly entities: ReadonlyMap<ContentId, NormalizedEntity>;
     readonly generators: ReadonlyMap<ContentId, NormalizedGenerator>;
@@ -66,6 +70,7 @@ export interface NormalizedContentPack extends NormalizedContentPackModules {
     readonly runtimeEvents: ReadonlyMap<ContentId, NormalizedRuntimeEventContribution>;
   };
   readonly serializedLookup: {
+    readonly fontById: Readonly<Record<string, NormalizedFontAsset>>;
     readonly resourceById: Readonly<Record<string, NormalizedResource>>;
     readonly entityById: Readonly<Record<string, NormalizedEntity>>;
     readonly generatorById: Readonly<Record<string, NormalizedGenerator>>;

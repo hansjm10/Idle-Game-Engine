@@ -2168,6 +2168,30 @@ describe('renderer-webgpu', () => {
       );
     });
 
+    it('rejects msdf fonts missing msdf.pxRange', async () => {
+      const { canvas } = createStubWebGpuEnvironment();
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:bad-msdf' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        technique: 'msdf',
+        glyphs: [],
+      }));
+
+      await expect(renderer.loadAssets(manifest, { loadImage, loadFont })).rejects.toThrow(
+        'msdf.pxRange',
+      );
+    });
+
     it('rejects bitmap fonts containing duplicate glyph codePoints', async () => {
       const { canvas } = createStubWebGpuEnvironment();
       const renderer = await createWebGpuRenderer(canvas);
@@ -2443,6 +2467,86 @@ describe('renderer-webgpu', () => {
 
       expect(instances.slice(4, 8)).toEqual(expectedUvA);
       expect(instances.slice(16, 20)).toEqual(expectedUvB);
+    });
+
+    it('renders msdf text using the msdf pipeline', async () => {
+      const { canvas, device, beginRenderPass } = createStubWebGpuEnvironment();
+
+      const spritePipeline = {} as unknown as GPURenderPipeline;
+      const msdfPipeline = {} as unknown as GPURenderPipeline;
+      const rectPipeline = {} as unknown as GPURenderPipeline;
+      (device as unknown as { createRenderPipeline: ReturnType<typeof vi.fn> }).createRenderPipeline =
+        vi
+          .fn()
+          .mockImplementationOnce(() => spritePipeline)
+          .mockImplementationOnce(() => msdfPipeline)
+          .mockImplementationOnce(() => rectPipeline);
+
+      const renderer = await createWebGpuRenderer(canvas);
+
+      const fontAssetId = 'font:msdf' as AssetId;
+      const manifest = {
+        schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+        assets: [{ id: fontAssetId, kind: 'font', contentHash: 'hash:font' }],
+      } satisfies AssetManifest;
+
+      const loadImage = vi.fn(async () => ({ width: 8, height: 8 } as unknown as GPUImageCopyExternalImageSource));
+      const loadFont = vi.fn(async () => ({
+        image: { width: 32, height: 8 } as unknown as GPUImageCopyExternalImageSource,
+        baseFontSizePx: 8,
+        lineHeightPx: 8,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+        glyphs: [
+          {
+            codePoint: 0x41,
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+            xAdvancePx: 8,
+          },
+        ],
+      }));
+
+      await renderer.loadAssets(manifest, { loadImage, loadFont });
+
+      renderer.render({
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
+        passes: [{ id: 'ui' }],
+        draws: [
+          {
+            kind: 'text',
+            passId: 'ui',
+            sortKey: { sortKeyHi: 0, sortKeyLo: 0 },
+            x: 10,
+            y: 20,
+            text: 'A',
+            colorRgba: 0xff_ff_ff_ff,
+            fontAssetId,
+            fontSizePx: 8,
+          },
+        ],
+      } satisfies RenderCommandBuffer);
+
+      const passEncoder = beginRenderPass.mock.results[0]?.value as unknown as {
+        setPipeline: ReturnType<typeof vi.fn>;
+      };
+      if (!passEncoder) {
+        throw new Error('Expected render pass encoder.');
+      }
+
+      expect(passEncoder.setPipeline).toHaveBeenCalledWith(msdfPipeline);
     });
 
     it('scales world-pass text draw coordinates from fixed point', async () => {

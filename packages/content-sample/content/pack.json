@@ -23,6 +23,14 @@
       }
     ]
   },
+  "fonts": [
+    {
+      "id": "sample-pack.ui-font",
+      "source": "fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf",
+      "baseSizePx": 32,
+      "msdf": { "pxRange": 4 }
+    }
+  ],
   "resources": [
     {
       "id": "sample-pack.energy",

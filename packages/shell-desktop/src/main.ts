@@ -1,4 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { promises as fsPromises } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
@@ -19,6 +21,7 @@ if (enableUnsafeWebGpu) {
 
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
+const repoRootPath = fileURLToPath(new URL('../../../', import.meta.url));
 
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
@@ -50,6 +53,19 @@ function assertPingRequest(
   const message = (request as { message?: unknown }).message;
   if (typeof message !== 'string') {
     throw new TypeError('Invalid ping request: expected { message: string }');
+  }
+}
+
+function assertReadAssetRequest(
+  request: unknown,
+): asserts request is IpcInvokeMap[typeof IPC_CHANNELS.readAsset]['request'] {
+  if (typeof request !== 'object' || request === null || Array.isArray(request)) {
+    throw new TypeError('Invalid read asset request: expected an object');
+  }
+
+  const url = (request as { url?: unknown }).url;
+  if (typeof url !== 'string' || url.trim().length === 0) {
+    throw new TypeError('Invalid read asset request: expected { url: string }');
   }
 }
 
@@ -344,6 +360,30 @@ function registerIpcHandlers(): void {
     async (_event, request: unknown) => {
       assertPingRequest(request);
       return { message: request.message } satisfies IpcInvokeMap[typeof IPC_CHANNELS.ping]['response'];
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.readAsset,
+    async (_event, request: unknown) => {
+      assertReadAssetRequest(request);
+
+      const assetUrl = new URL(request.url);
+      if (assetUrl.protocol !== 'file:') {
+        throw new TypeError('Invalid asset url: expected a file:// URL.');
+      }
+
+      const assetPath = path.resolve(fileURLToPath(assetUrl));
+      const relativePath = path.relative(repoRootPath, assetPath);
+      if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+        throw new TypeError('Invalid asset url: path must be inside the repository.');
+      }
+
+      const buffer = await fsPromises.readFile(assetPath);
+      return buffer.buffer.slice(
+        buffer.byteOffset,
+        buffer.byteOffset + buffer.byteLength,
+      );
     },
   );
 

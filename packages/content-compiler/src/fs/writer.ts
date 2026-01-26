@@ -2,27 +2,35 @@ import { randomUUID } from 'node:crypto';
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 
+import canonicalize from 'canonicalize';
+
+import { generateMsdfFontAssetFiles } from '../artifacts/fonts.js';
 import { createGeneratedModuleSource } from '../artifacts/module.js';
 import type {
   ArtifactWriterOptions,
+  ArtifactFileKind,
   FileWriteOperation,
   PackArtifactResult,
   WorkspaceArtifactWriteResult,
   WorkspaceFS,
 } from '../types.js';
+import type { NormalizedFontAsset } from '@idle-engine/content-schema';
 
 interface ArtifactPaths {
   readonly jsonPath: string;
   readonly modulePath: string;
+  readonly assetsDir: string;
 }
 
 interface ExistingArtifactsRecord {
   readonly json: Set<string>;
   readonly module: Set<string>;
+  readonly assets: Set<string>;
 }
 
 const JSON_SUFFIX = '.normalized.json';
 const MODULE_SUFFIX = '.generated.ts';
+const ASSETS_SUFFIX = '.assets';
 
 export async function writeWorkspaceArtifacts(
   workspace: WorkspaceFS,
@@ -55,6 +63,15 @@ export async function writeWorkspaceArtifacts(
         createOperation(result.packSlug, 'module', paths.modulePath, moduleAction),
       );
 
+      await writePackAssets({
+        packSlug: result.packSlug,
+        manifestPath: result.document.absolutePath,
+        fonts: result.normalizedPack.fonts,
+        assetsDir: paths.assetsDir,
+        options,
+        operations,
+      });
+
       markHandled(existingArtifacts, result.packSlug, paths);
     } else {
       const jsonAction = await removeFile(paths.jsonPath, options);
@@ -68,6 +85,13 @@ export async function writeWorkspaceArtifacts(
       if (moduleAction !== undefined) {
         operations.push(
           createOperation(result.packSlug, 'module', paths.modulePath, moduleAction),
+        );
+      }
+
+      const assetsAction = await removeDirectory(paths.assetsDir, options);
+      if (assetsAction !== undefined) {
+        operations.push(
+          createOperation(result.packSlug, 'asset', paths.assetsDir, assetsAction),
         );
       }
 
@@ -145,6 +169,160 @@ async function removeFile(
   return 'deleted';
 }
 
+async function removeDirectory(
+  targetPath: string,
+  options: ArtifactWriterOptions,
+): Promise<'deleted' | 'would-delete' | undefined> {
+  const stats = await fsPromises.stat(targetPath).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
+  });
+
+  if (!stats) {
+    return undefined;
+  }
+
+  if (!stats.isDirectory()) {
+    return removeFile(targetPath, options);
+  }
+
+  if (options.check) {
+    return 'would-delete';
+  }
+
+  await fsPromises.rm(targetPath, { recursive: true, force: true });
+  return 'deleted';
+}
+
+function stableJson(value: unknown): string {
+  const result = canonicalize(value);
+  if (typeof result !== 'string') {
+    throw new Error('Failed to canonicalize renderer asset manifest.');
+  }
+  return result;
+}
+
+async function writePackAssets(input: Readonly<{
+  packSlug: string;
+  manifestPath: string;
+  fonts: readonly NormalizedFontAsset[];
+  assetsDir: string;
+  options: ArtifactWriterOptions;
+  operations: FileWriteOperation[];
+}>): Promise<void> {
+  if (input.fonts.length === 0) {
+    const action = await removeDirectory(input.assetsDir, input.options);
+    if (action !== undefined) {
+      input.operations.push(
+        createOperation(input.packSlug, 'asset', input.assetsDir, action),
+      );
+    }
+    return;
+  }
+
+  const manifestDir = path.dirname(input.manifestPath);
+  const fontsRoot = path.join(input.assetsDir, 'fonts');
+  const expectedFontDirs = new Set<string>();
+  const assets: Array<{ id: string; kind: 'font'; contentHash: string }> = [];
+
+  for (const font of input.fonts) {
+    const encodedId = encodeURIComponent(font.id);
+    const fontDir = path.join(fontsRoot, encodedId);
+    expectedFontDirs.add(path.resolve(fontDir));
+
+    const sourcePath = path.resolve(manifestDir, font.source);
+    const relative = path.relative(manifestDir, sourcePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error(`Font ${font.id} source escapes pack root: ${font.source}`);
+    }
+
+    const generated = await generateMsdfFontAssetFiles({
+      font,
+      sourcePath,
+    });
+
+    assets.push({
+      id: font.id,
+      kind: 'font',
+      contentHash: generated.contentHash,
+    });
+
+    const atlasPath = path.join(fontDir, 'atlas.png');
+    const metadataPath = path.join(fontDir, 'font.json');
+
+    const atlasAction = await writeFileInternal(atlasPath, generated.atlasPng, input.options);
+    input.operations.push(
+      createOperation(input.packSlug, 'asset', atlasPath, atlasAction),
+    );
+
+    const metadataContent = toBuffer(ensureTrailingNewline(generated.metadataJson));
+    const metadataAction = await writeFileInternal(metadataPath, metadataContent, input.options);
+    input.operations.push(
+      createOperation(input.packSlug, 'asset', metadataPath, metadataAction),
+    );
+  }
+
+  assets.sort((left, right) => left.id.localeCompare(right.id));
+
+  const rendererManifest = {
+    schemaVersion: 4,
+    assets,
+  };
+  const manifestJson = stableJson(rendererManifest);
+  const rendererManifestPath = path.join(input.assetsDir, 'renderer-assets.manifest.json');
+  const rendererManifestAction = await writeFileInternal(
+    rendererManifestPath,
+    toBuffer(`${manifestJson}\n`),
+    input.options,
+  );
+  input.operations.push(
+    createOperation(input.packSlug, 'asset', rendererManifestPath, rendererManifestAction),
+  );
+
+  await pruneStaleFontDirs({
+    packSlug: input.packSlug,
+    fontsRoot,
+    expectedFontDirs,
+    options: input.options,
+    operations: input.operations,
+  });
+}
+
+async function pruneStaleFontDirs(input: Readonly<{
+  packSlug: string;
+  fontsRoot: string;
+  expectedFontDirs: ReadonlySet<string>;
+  options: ArtifactWriterOptions;
+  operations: FileWriteOperation[];
+}>): Promise<void> {
+  const entries = await readDirSafe(input.fontsRoot);
+  for (const entry of entries) {
+    const entryPath = path.resolve(path.join(input.fontsRoot, entry.name));
+    if (!entry.isDirectory()) {
+      const action = await removeFile(entryPath, input.options);
+      if (action !== undefined) {
+        input.operations.push(
+          createOperation(input.packSlug, 'asset', entryPath, action),
+        );
+      }
+      continue;
+    }
+
+    if (input.expectedFontDirs.has(entryPath)) {
+      continue;
+    }
+
+    const action = await removeDirectory(entryPath, input.options);
+    if (action !== undefined) {
+      input.operations.push(
+        createOperation(input.packSlug, 'asset', entryPath, action),
+      );
+    }
+  }
+}
+
 async function pruneStaleArtifacts(
   artifacts: Map<string, ExistingArtifactsRecord>,
   options: ArtifactWriterOptions,
@@ -164,12 +342,19 @@ async function pruneStaleArtifacts(
         operations.push(createOperation(slug, 'module', modulePath, action));
       }
     }
+
+    for (const assetsDir of record.assets) {
+      const action = await removeDirectory(assetsDir, options);
+      if (action !== undefined) {
+        operations.push(createOperation(slug, 'asset', assetsDir, action));
+      }
+    }
   }
 }
 
 function createOperation(
   slug: string,
-  kind: 'json' | 'module',
+  kind: ArtifactFileKind,
   targetPath: string,
   action: FileWriteOperation['action'],
 ): FileWriteOperation {
@@ -186,11 +371,13 @@ function resolveArtifactPaths(result: PackArtifactResult): ArtifactPaths {
   const packageRoot = path.dirname(manifestDir);
   const compiledDir = path.join(manifestDir, 'compiled');
   const jsonPath = path.join(compiledDir, `${result.packSlug}${JSON_SUFFIX}`);
+  const assetsDir = path.join(compiledDir, `${result.packSlug}${ASSETS_SUFFIX}`);
   const moduleDir = path.join(packageRoot, 'src', 'generated');
   const modulePath = path.join(moduleDir, `${result.packSlug}${MODULE_SUFFIX}`);
 
   return {
     jsonPath: path.resolve(jsonPath),
+    assetsDir: path.resolve(assetsDir),
     modulePath: path.resolve(modulePath),
   };
 }
@@ -216,6 +403,13 @@ async function collectExistingArtifacts(
       const slug = slugFromArtifactPath(compiledDir, filePath, JSON_SUFFIX);
       const record = ensureRecord(artifacts, slug);
       record.json.add(filePath);
+    }
+
+    const assetsDirs = await collectArtifactDirectories(compiledDir, ASSETS_SUFFIX);
+    for (const dirPath of assetsDirs) {
+      const slug = slugFromArtifactPath(compiledDir, dirPath, ASSETS_SUFFIX);
+      const record = ensureRecord(artifacts, slug);
+      record.assets.add(dirPath);
     }
 
     const generatedFiles = await collectArtifactFiles(generatedDir, MODULE_SUFFIX);
@@ -259,6 +453,37 @@ async function collectArtifactFiles(
   return files;
 }
 
+async function collectArtifactDirectories(
+  rootDirectory: string,
+  suffix: string,
+): Promise<string[]> {
+  const dirs: string[] = [];
+  const pending: string[] = [rootDirectory];
+
+  while (pending.length > 0) {
+    const currentDir = pending.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    const entries = await readDirSafe(currentDir);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.name.endsWith(suffix)) {
+        dirs.push(path.resolve(entryPath));
+        continue;
+      }
+      pending.push(entryPath);
+    }
+  }
+
+  return dirs;
+}
+
 function slugFromArtifactPath(
   rootDirectory: string,
   artifactPath: string,
@@ -278,6 +503,7 @@ function ensureRecord(
     record = {
       json: new Set(),
       module: new Set(),
+      assets: new Set(),
     };
     artifacts.set(slug, record);
   }
@@ -295,7 +521,8 @@ function markHandled(
   }
   record.json.delete(paths.jsonPath);
   record.module.delete(paths.modulePath);
-  if (record.json.size === 0 && record.module.size === 0) {
+  record.assets.delete(paths.assetsDir);
+  if (record.json.size === 0 && record.module.size === 0 && record.assets.size === 0) {
     artifacts.delete(slug);
   }
 }

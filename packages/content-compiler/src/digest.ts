@@ -20,6 +20,7 @@ interface DigestSource {
 function extractModules(input: DigestInput): SerializedNormalizedModules {
   if ('resources' in input) {
     return {
+      fonts: input.fonts,
       resources: input.resources,
       entities: input.entities,
       generators: input.generators,
@@ -51,6 +52,7 @@ export function computeContentDigest(input: DigestInput): SerializedContentDiges
   const { metadata, modules } = toDigestSource(input);
   const digestInput = {
     metadata,
+    fonts: modules.fonts,
     resources: modules.resources,
     entities: modules.entities,
     generators: modules.generators,

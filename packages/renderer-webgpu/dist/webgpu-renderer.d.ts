@@ -42,12 +42,25 @@ export interface WebGpuBitmapFontGlyph {
     readonly yOffsetPx: number;
     readonly xAdvancePx: number;
 }
+export type WebGpuFontTechnique = 'bitmap' | 'msdf';
 export interface WebGpuBitmapFont {
     readonly image: GPUImageCopyExternalImageSource;
     readonly baseFontSizePx: number;
     readonly lineHeightPx: number;
     readonly glyphs: readonly WebGpuBitmapFontGlyph[];
     readonly fallbackCodePoint?: number;
+    /**
+     * Rendering technique used for this font atlas.
+     *
+     * Defaults to `'bitmap'` when omitted.
+     */
+    readonly technique?: WebGpuFontTechnique;
+    /**
+     * MSDF configuration required when `technique === 'msdf'`.
+     */
+    readonly msdf?: {
+        readonly pxRange: number;
+    };
 }
 export interface WebGpuRendererAssets {
     loadImage(assetId: AssetId, contentHash: Sha256Hex): Promise<GPUImageCopyExternalImageSource>;

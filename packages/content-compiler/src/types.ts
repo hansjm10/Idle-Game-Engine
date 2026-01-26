@@ -4,6 +4,7 @@ import type {
   NormalizedAutomation,
   NormalizedContentPack as SchemaNormalizedContentPack,
   NormalizedEntity,
+  NormalizedFontAsset,
   NormalizedGenerator,
   NormalizedMetadata,
   NormalizedMetric,
@@ -96,6 +97,7 @@ export interface RehydrateOptions {
 export type SerializedContentSchemaWarning = ContentSchemaWarning;
 
 export const MODULE_NAMES = [
+  'fonts',
   'resources',
   'entities',
   'generators',
@@ -111,6 +113,7 @@ export const MODULE_NAMES = [
 export type ModuleName = (typeof MODULE_NAMES)[number];
 
 interface ModuleTypeMap {
+  readonly fonts: NormalizedFontAsset;
   readonly resources: NormalizedResource;
   readonly entities: NormalizedEntity;
   readonly generators: NormalizedGenerator;
@@ -155,6 +158,7 @@ export interface SerializedPackArtifact {
 }
 
 export interface ModuleIndexTables {
+  readonly fonts: ReadonlyMap<string, number>;
   readonly resources: ReadonlyMap<string, number>;
   readonly entities: ReadonlyMap<string, number>;
   readonly generators: ReadonlyMap<string, number>;
@@ -225,7 +229,7 @@ export interface ArtifactWriterOptions {
   readonly clean?: boolean;
 }
 
-export type ArtifactFileKind = 'json' | 'module';
+export type ArtifactFileKind = 'json' | 'module' | 'asset';
 
 export type ArtifactFileAction =
   | 'written'

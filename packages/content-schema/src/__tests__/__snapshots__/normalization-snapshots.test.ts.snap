@@ -224,14 +224,14 @@ exports[`Normalization Snapshots > normalizes resource ordering deterministicall
 
 exports[`Normalization Snapshots > produces consistent digest hashes for equivalent packs > digest-format 1`] = `
 {
-  "hash": "fnv1a-ef656c29",
+  "hash": "fnv1a-79365a45",
   "version": 1,
 }
 `;
 
 exports[`Normalization Snapshots > produces deterministic output for comprehensive pack > pack-digest 1`] = `
 {
-  "hash": "fnv1a-2fc55ff1",
+  "hash": "fnv1a-fdba21b7",
   "version": 1,
 }
 `;
@@ -280,7 +280,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
   ],
   "automations": [],
   "digest": {
-    "hash": "fnv1a-2fc55ff1",
+    "hash": "fnv1a-fdba21b7",
     "version": 1,
   },
   "entities": [
@@ -367,6 +367,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
       "visible": true,
     },
   ],
+  "fonts": [],
   "generators": [
     {
       "baseUnlock": {
@@ -533,6 +534,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "visible": true,
       },
     },
+    "fonts": Map {},
     "generators": Map {
       "solar-panel" => {
         "baseUnlock": {
@@ -954,6 +956,7 @@ exports[`Normalization Snapshots > produces deterministic output for comprehensi
         "visible": true,
       },
     },
+    "fontById": {},
     "generatorById": {
       "solar-panel": {
         "baseUnlock": {

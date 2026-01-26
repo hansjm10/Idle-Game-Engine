@@ -19,7 +19,7 @@ import {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-const createSchemaDocument = () =>
+  const createSchemaDocument = () =>
   ({
     metadata: {
       id: 'test-pack',
@@ -29,6 +29,7 @@ const createSchemaDocument = () =>
       defaultLocale: 'en-US',
       supportedLocales: ['en-US'],
     },
+    fonts: [],
     resources: [],
     entities: [],
     generators: [],
@@ -45,6 +46,7 @@ const { pack: baseSchemaPack } = parseContentPack(createSchemaDocument());
 const BASE_METADATA = baseSchemaPack.metadata;
 
 const EMPTY_MODULES: SerializedNormalizedModules = {
+  fonts: [] as SerializedNormalizedModules['fonts'],
   resources: [] as SerializedNormalizedModules['resources'],
   entities: [] as SerializedNormalizedModules['entities'],
   generators: [] as SerializedNormalizedModules['generators'],
@@ -61,6 +63,7 @@ function createModules(
   overrides: Partial<SerializedNormalizedModules> = {},
 ): SerializedNormalizedModules {
   return {
+    fonts: overrides.fonts ?? EMPTY_MODULES.fonts,
     resources: overrides.resources ?? EMPTY_MODULES.resources,
     entities: overrides.entities ?? EMPTY_MODULES.entities,
     generators: overrides.generators ?? EMPTY_MODULES.generators,

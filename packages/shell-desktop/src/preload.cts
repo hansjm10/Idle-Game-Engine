@@ -8,6 +8,7 @@ const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
 
 const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
+  readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
@@ -25,6 +26,7 @@ const idleEngineApi: IdleEngineApi = {
     const response = await invoke(IPC_CHANNELS.ping, { message });
     return response.message;
   },
+  readAsset: async (url) => invoke(IPC_CHANNELS.readAsset, { url }),
   sendControlEvent: (event) => {
     ipcRenderer.send(IPC_CHANNELS.controlEvent, event);
   },
