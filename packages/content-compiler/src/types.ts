@@ -138,7 +138,7 @@ export type SerializableNormalizedContentPackInput = SchemaNormalizedContentPack
   readonly modules?: SerializedNormalizedModules;
 };
 
-export const SERIALIZED_PACK_FORMAT_VERSION = 1;
+export const SERIALIZED_PACK_FORMAT_VERSION = 2;
 
 export type SerializedContentDigest = NormalizedContentPack['digest'];
 
@@ -150,6 +150,20 @@ export interface SerializedNormalizedContentPack {
   readonly digest: SerializedContentDigest;
   readonly artifactHash: string;
 }
+
+export interface SerializedNormalizedContentPackV1 {
+  readonly formatVersion: 1;
+  readonly metadata: NormalizedMetadata;
+  readonly warnings: readonly SerializedContentSchemaWarning[];
+  readonly modules: Omit<SerializedNormalizedModules, 'fonts'> &
+    Partial<Pick<SerializedNormalizedModules, 'fonts'>>;
+  readonly digest: SerializedContentDigest;
+  readonly artifactHash: string;
+}
+
+export type SupportedSerializedNormalizedContentPack =
+  | SerializedNormalizedContentPack
+  | SerializedNormalizedContentPackV1;
 
 export interface SerializedPackArtifact {
   readonly serialized: SerializedNormalizedContentPack;

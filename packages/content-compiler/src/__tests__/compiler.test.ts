@@ -13,6 +13,7 @@ import {
   type SerializedContentDigest,
   type SerializedContentSchemaWarning,
   type SerializedNormalizedContentPack,
+  type SupportedSerializedNormalizedContentPack,
   type SerializedNormalizedModules,
 } from '../types.js';
 
@@ -279,6 +280,20 @@ describe('content compiler scaffolding', () => {
     expect(() => rehydrateNormalizedPack(unsupported)).toThrow(
       /Unsupported serialized content pack format/,
     );
+  });
+
+  it('rehydrates legacy format packs missing fonts', () => {
+    const serialized = createSerializedPack();
+    const { fonts: _fonts, ...modulesWithoutFonts } = serialized.modules;
+    const legacy = Object.freeze({
+      ...serialized,
+      formatVersion: 1,
+      modules: modulesWithoutFonts,
+    }) as unknown as SupportedSerializedNormalizedContentPack;
+
+    const pack = rehydrateNormalizedPack(legacy);
+
+    expect(pack.modules.fonts).toEqual([]);
   });
 
   it('rejects module entries missing identifiers during rehydration', () => {
