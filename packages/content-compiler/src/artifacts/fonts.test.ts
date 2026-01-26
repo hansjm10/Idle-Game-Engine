@@ -6,7 +6,7 @@ import type { NormalizedFontAsset } from '@idle-engine/content-schema';
 
 function createFont(overrides: Partial<NormalizedFontAsset> = {}): NormalizedFontAsset {
   return {
-    id: 'test-font',
+    id: 'test-font' as NormalizedFontAsset['id'],
     source: 'fonts/test.ttf',
     baseSizePx: 16,
     codePointRanges: [[65, 66]],
@@ -78,7 +78,7 @@ describe('content-compiler font artifacts', () => {
     const { generateMsdfFontAssetFiles } = await import('./fonts.js');
 
     const font = createFont({
-      id: 'ui-font',
+      id: 'ui-font' as NormalizedFontAsset['id'],
       baseSizePx: 42,
       codePointRanges: [[65, 66]],
       msdf: { pxRange: 7 },
@@ -298,4 +298,3 @@ describe('content-compiler font artifacts', () => {
     ).rejects.toThrow(/Failed to canonicalize font metadata/);
   });
 });
-
