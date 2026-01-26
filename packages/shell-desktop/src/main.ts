@@ -22,6 +22,10 @@ if (enableUnsafeWebGpu) {
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
 const repoRootPath = fileURLToPath(new URL('../../../', import.meta.url));
+const compiledAssetsRootPath = path.resolve(
+  repoRootPath,
+  'packages/content-sample/content/compiled',
+);
 
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
@@ -374,9 +378,9 @@ function registerIpcHandlers(): void {
       }
 
       const assetPath = path.resolve(fileURLToPath(assetUrl));
-      const relativePath = path.relative(repoRootPath, assetPath);
+      const relativePath = path.relative(compiledAssetsRootPath, assetPath);
       if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-        throw new TypeError('Invalid asset url: path must be inside the repository.');
+        throw new TypeError('Invalid asset url: path must be inside compiled assets.');
       }
 
       const buffer = await fsPromises.readFile(assetPath);

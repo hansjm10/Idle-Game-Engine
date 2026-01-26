@@ -638,6 +638,86 @@ describe('shell-desktop renderer entrypoint', () => {
     }
   });
 
+  it('loads font assets with encoded ids containing reserved characters', async () => {
+    let loadedFont: unknown;
+    const assetId = 'ui/font:100%';
+    const encodedAssetId = encodeURIComponent(encodeURIComponent(assetId));
+
+    const renderer = {
+      loadAssets: vi.fn(async (_manifest: unknown, loaders: { loadFont: (id: string, contentHash: string) => Promise<unknown> }) => {
+        loadedFont = await loaders.loadFont(assetId, 'deadbeef');
+      }),
+      render: vi.fn(),
+      resize: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    createWebGpuRenderer.mockResolvedValueOnce(renderer);
+
+    const idleEngine = (
+      globalThis as unknown as {
+        idleEngine: {
+          onFrame: ReturnType<typeof vi.fn>;
+          readAsset: ReturnType<typeof vi.fn>;
+        };
+      }
+    ).idleEngine;
+
+    idleEngine.onFrame.mockImplementation((_handler: (frame: unknown) => void) => vi.fn());
+
+    idleEngine.readAsset = vi.fn(async (url: string) => {
+      if (url.endsWith('renderer-assets.manifest.json')) {
+        return new TextEncoder()
+          .encode(JSON.stringify({ schemaVersion: 4, assets: [{ id: assetId, kind: 'font', contentHash: 'deadbeef' }] }))
+          .buffer;
+      }
+      if (url.includes(`/fonts/${encodedAssetId}/font.json`)) {
+        return new TextEncoder()
+          .encode(
+            JSON.stringify({
+              schemaVersion: 1,
+              id: assetId,
+              technique: 'msdf',
+              baseFontSizePx: 42,
+              lineHeightPx: 50,
+              glyphs: [],
+              msdf: { pxRange: 3 },
+            }),
+          )
+          .buffer;
+      }
+      if (url.includes(`/fonts/${encodedAssetId}/atlas.png`)) {
+        return new Uint8Array([1, 2, 3]).buffer;
+      }
+      throw new Error(`Unexpected asset read: ${url}`);
+    });
+
+    const bitmap = { kind: 'bitmap' };
+    (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap = vi.fn(async () => bitmap);
+
+    try {
+      await import('./index.js');
+      await flushMicrotasks();
+
+      expect(renderer.loadAssets).toHaveBeenCalledTimes(1);
+      expect(loadedFont).toMatchObject({
+        image: bitmap,
+        baseFontSizePx: 42,
+        lineHeightPx: 50,
+        technique: 'msdf',
+        msdf: { pxRange: 3 },
+      });
+      expect(idleEngine.readAsset).toHaveBeenCalledWith(
+        expect.stringContaining(`/fonts/${encodedAssetId}/font.json`),
+      );
+      expect(idleEngine.readAsset).toHaveBeenCalledWith(
+        expect.stringContaining(`/fonts/${encodedAssetId}/atlas.png`),
+      );
+    } finally {
+      delete (globalThis as unknown as { createImageBitmap?: unknown }).createImageBitmap;
+    }
+  });
+
   it('uses the latest frame values in fallback render buffers', async () => {
     let frameListener: ((frame: unknown) => void) | undefined;
 

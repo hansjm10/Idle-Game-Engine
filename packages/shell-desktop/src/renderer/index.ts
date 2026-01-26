@@ -187,7 +187,7 @@ async function loadSamplePackFont(
   assetId: AssetId,
   _contentHash: Sha256Hex,
 ): Promise<WebGpuBitmapFont> {
-  const encodedAssetId = encodeURIComponent(assetId);
+  const encodedAssetId = encodeURIComponent(encodeURIComponent(assetId));
   const fontRootUrl = new URL(`fonts/${encodedAssetId}/`, SAMPLE_PACK_ASSETS_ROOT_URL);
   const [metadataCandidate, atlasImage] = await Promise.all([
     readAssetJson(api, new URL('font.json', fontRootUrl)),
