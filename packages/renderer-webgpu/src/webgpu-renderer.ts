@@ -955,7 +955,7 @@ function getSortedRenderableAtlasEntries(manifest: AssetManifest): ManifestAsset
   for (let index = 1; index < atlasEntries.length; index += 1) {
     const previous = atlasEntries[index - 1];
     const current = atlasEntries[index];
-    if (previous && current && previous.id === current.id) {
+    if (previous?.id === current?.id) {
       throw new Error(`AssetManifest contains duplicate AssetId: ${current.id}`);
     }
   }
