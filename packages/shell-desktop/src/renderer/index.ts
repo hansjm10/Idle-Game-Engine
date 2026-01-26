@@ -137,7 +137,7 @@ function parseFontMetadata(
     baseFontSizePx,
     lineHeightPx,
     glyphs,
-    ...(fallbackCodePoint !== undefined ? { fallbackCodePoint } : {}),
+    ...(fallbackCodePoint === undefined ? {} : { fallbackCodePoint }),
     msdf: { pxRange },
   };
 }
@@ -201,9 +201,9 @@ async function loadSamplePackFont(
     baseFontSizePx: metadata.baseFontSizePx,
     lineHeightPx: metadata.lineHeightPx,
     glyphs: metadata.glyphs,
-    ...(metadata.fallbackCodePoint !== undefined
-      ? { fallbackCodePoint: metadata.fallbackCodePoint }
-      : {}),
+    ...(metadata.fallbackCodePoint === undefined
+      ? {}
+      : { fallbackCodePoint: metadata.fallbackCodePoint }),
     technique: metadata.technique,
     msdf: metadata.msdf,
   };

@@ -199,7 +199,7 @@ async function removeDirectory(
 function stableJson(value: unknown): string {
   const result = canonicalize(value);
   if (typeof result !== 'string') {
-    throw new Error('Failed to canonicalize renderer asset manifest.');
+    throw new TypeError('Failed to canonicalize renderer asset manifest.');
   }
   return result;
 }
@@ -328,27 +328,27 @@ async function pruneStaleArtifacts(
   options: ArtifactWriterOptions,
   operations: FileWriteOperation[],
 ): Promise<void> {
+  const pruneArtifactSet = async (
+    slug: string,
+    kind: ArtifactFileKind,
+    targets: Iterable<string>,
+    remover: (
+      targetPath: string,
+      options: ArtifactWriterOptions,
+    ) => Promise<'deleted' | 'would-delete' | undefined>,
+  ): Promise<void> => {
+    for (const targetPath of targets) {
+      const action = await remover(targetPath, options);
+      if (action !== undefined) {
+        operations.push(createOperation(slug, kind, targetPath, action));
+      }
+    }
+  };
+
   for (const [slug, record] of artifacts.entries()) {
-    for (const jsonPath of record.json) {
-      const action = await removeFile(jsonPath, options);
-      if (action !== undefined) {
-        operations.push(createOperation(slug, 'json', jsonPath, action));
-      }
-    }
-
-    for (const modulePath of record.module) {
-      const action = await removeFile(modulePath, options);
-      if (action !== undefined) {
-        operations.push(createOperation(slug, 'module', modulePath, action));
-      }
-    }
-
-    for (const assetsDir of record.assets) {
-      const action = await removeDirectory(assetsDir, options);
-      if (action !== undefined) {
-        operations.push(createOperation(slug, 'asset', assetsDir, action));
-      }
-    }
+    await pruneArtifactSet(slug, 'json', record.json, removeFile);
+    await pruneArtifactSet(slug, 'module', record.module, removeFile);
+    await pruneArtifactSet(slug, 'asset', record.assets, removeDirectory);
   }
 }
 

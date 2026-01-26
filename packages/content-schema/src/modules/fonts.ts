@@ -52,7 +52,7 @@ function isSafeRelativePosixPath(value: string): boolean {
   }
 
   const segments = value.split('/');
-  if (segments.some((segment) => segment === '..')) {
+  if (segments.includes('..')) {
     return false;
   }
 
@@ -106,7 +106,8 @@ function normalizeCodePointRanges(ranges: readonly CodePointRange[]): readonly C
 
   for (const range of sorted) {
     const [start, end] = range;
-    const last = merged[merged.length - 1];
+    const lastIndex = merged.length - 1;
+    const last = merged.at(-1);
     if (!last) {
       merged.push([start, end]);
       continue;
@@ -114,7 +115,7 @@ function normalizeCodePointRanges(ranges: readonly CodePointRange[]): readonly C
 
     const [lastStart, lastEnd] = last;
     if (start <= lastEnd + 1) {
-      merged[merged.length - 1] = [lastStart, Math.max(lastEnd, end)];
+      merged[lastIndex] = [lastStart, Math.max(lastEnd, end)];
       continue;
     }
 
@@ -160,15 +161,16 @@ export const fontCollectionSchema = z
     const seen = new Map<string, number>();
     fonts.forEach((font, index) => {
       const existingIndex = seen.get(font.id);
-      if (existingIndex !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [index, 'id'],
-          message: `Duplicate font id "${font.id}" also defined at index ${existingIndex}.`,
-        });
-      } else {
+      if (existingIndex === undefined) {
         seen.set(font.id, index);
+        return;
       }
+
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, 'id'],
+        message: `Duplicate font id "${font.id}" also defined at index ${existingIndex}.`,
+      });
     });
   })
   .transform((fonts) =>

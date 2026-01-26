@@ -72,9 +72,7 @@ const require = createRequire(import.meta.url);
 let cachedGenerateBmfont: GenerateBmfontFn | undefined;
 
 function getGenerateBmfont(): GenerateBmfontFn {
-  if (!cachedGenerateBmfont) {
-    cachedGenerateBmfont = require('msdf-bmfont-xml') as GenerateBmfontFn;
-  }
+  cachedGenerateBmfont ??= require('msdf-bmfont-xml') as GenerateBmfontFn;
   return cachedGenerateBmfont;
 }
 
@@ -87,7 +85,7 @@ const MAX_GLYPHS_PER_FONT = 4096;
 function stableJson(value: unknown): string {
   const result = canonicalize(value);
   if (typeof result !== 'string') {
-    throw new Error('Failed to canonicalize font metadata.');
+    throw new TypeError('Failed to canonicalize font metadata.');
   }
   return result;
 }
@@ -135,7 +133,7 @@ function extractFiniteNumber(
 ): number {
   const value = record[key];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new Error(`Invalid ${label}: expected a finite number.`);
+    throw new TypeError(`Invalid ${label}: expected a finite number.`);
   }
   return value;
 }
@@ -153,7 +151,7 @@ function parseBmfontJson(fontId: string, rawJson: string): GeneratedFontMetadata
 
   const chars = (parsed as { chars?: unknown }).chars;
   if (!Array.isArray(chars)) {
-    throw new Error(`Invalid BMFont JSON for ${fontId}: missing chars list.`);
+    throw new TypeError(`Invalid BMFont JSON for ${fontId}: missing chars list.`);
   }
 
   const lineHeightPx = extractFiniteNumber(common as Record<string, unknown>, 'lineHeight', `${fontId}.common.lineHeight`);
@@ -246,7 +244,7 @@ export async function generateMsdfFontAssetFiles(options: Readonly<{
     ...parsedMetadata,
     baseFontSizePx: options.font.baseSizePx,
     msdf: { pxRange: options.font.msdf.pxRange },
-    ...(fallbackCodePoint !== undefined ? { fallbackCodePoint } : {}),
+    fallbackCodePoint,
   };
 
   const metadataJson = stableJson(metadata);
