@@ -103,23 +103,23 @@ function normalizeCodePointRanges(ranges: readonly CodePointRange[]): readonly C
 
   const sorted = [...ranges].sort((left, right) => left[0] - right[0] || left[1] - right[1]);
   const merged: CodePointRange[] = [];
+  let current: CodePointRange | undefined;
 
-  for (const range of sorted) {
-    const [start, end] = range;
-    const lastIndex = merged.length - 1;
-    const last = merged.slice(-1)[0];
-    if (!last) {
-      merged.push([start, end]);
+  for (const [start, end] of sorted) {
+    if (!current) {
+      current = [start, end];
+      merged.push(current);
       continue;
     }
 
-    const [lastStart, lastEnd] = last;
-    if (start <= lastEnd + 1) {
-      merged[lastIndex] = [lastStart, Math.max(lastEnd, end)];
+    const currentEnd = current[1];
+    if (start <= currentEnd + 1) {
+      current[1] = Math.max(currentEnd, end);
       continue;
     }
 
-    merged.push([start, end]);
+    current = [start, end];
+    merged.push(current);
   }
 
   return Object.freeze(merged);

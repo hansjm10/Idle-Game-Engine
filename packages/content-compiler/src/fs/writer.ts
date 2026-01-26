@@ -28,6 +28,8 @@ interface ExistingArtifactsRecord {
   readonly assets: Set<string>;
 }
 
+type ArtifactRemovalResult = 'deleted' | 'would-delete' | undefined;
+
 const JSON_SUFFIX = '.normalized.json';
 const MODULE_SUFFIX = '.generated.ts';
 const ASSETS_SUFFIX = '.assets';
@@ -157,7 +159,7 @@ async function writeFileInternal(
 async function removeFile(
   targetPath: string,
   options: ArtifactWriterOptions,
-): Promise<'deleted' | 'would-delete' | undefined> {
+): Promise<ArtifactRemovalResult> {
   const exists = await fileExists(targetPath);
   if (!exists) {
     return undefined;
@@ -172,7 +174,7 @@ async function removeFile(
 async function removeDirectory(
   targetPath: string,
   options: ArtifactWriterOptions,
-): Promise<'deleted' | 'would-delete' | undefined> {
+): Promise<ArtifactRemovalResult> {
   const stats = await fsPromises.stat(targetPath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return undefined;
@@ -335,7 +337,7 @@ async function pruneStaleArtifacts(
     remover: (
       targetPath: string,
       options: ArtifactWriterOptions,
-    ) => Promise<'deleted' | 'would-delete' | undefined>,
+    ) => Promise<ArtifactRemovalResult>,
   ): Promise<void> => {
     for (const targetPath of targets) {
       const action = await remover(targetPath, options);
