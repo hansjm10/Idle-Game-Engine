@@ -3,8 +3,12 @@ import type { ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import type { AddressInfo } from 'node:net';
+import { registerInputTools } from './input-tools.js';
+import type { InputMcpController } from './input-tools.js';
 import { registerSimTools } from './sim-tools.js';
 import type { SimMcpController } from './sim-tools.js';
+import { registerWindowTools } from './window-tools.js';
+import type { WindowMcpController } from './window-tools.js';
 
 export type ShellDesktopMcpServer = Readonly<{
   sseUrl: URL;
@@ -14,6 +18,8 @@ export type ShellDesktopMcpServer = Readonly<{
 type ShellDesktopMcpServerOptions = Readonly<{
   port?: number;
   sim?: SimMcpController;
+  window?: WindowMcpController;
+  input?: InputMcpController;
 }>;
 
 const MCP_SERVER_INFO = {
@@ -57,7 +63,9 @@ function getRequestedPort(argv: readonly string[], env: NodeJS.ProcessEnv): numb
   return DEFAULT_MCP_PORT;
 }
 
-function createShellDesktopMcpServer(options: Readonly<{ sim?: SimMcpController }>): McpServer {
+function createShellDesktopMcpServer(
+  options: Readonly<{ sim?: SimMcpController; window?: WindowMcpController; input?: InputMcpController }>,
+): McpServer {
   const server = new McpServer(MCP_SERVER_INFO);
 
   server.registerTool(
@@ -78,6 +86,14 @@ function createShellDesktopMcpServer(options: Readonly<{ sim?: SimMcpController 
 
   if (options.sim) {
     registerSimTools(server, options.sim);
+  }
+
+  if (options.window) {
+    registerWindowTools(server, options.window);
+  }
+
+  if (options.input) {
+    registerInputTools(server, options.input);
   }
 
   return server;
@@ -128,7 +144,11 @@ export async function startShellDesktopMcpServer(
     }
 
     if (req.method === 'GET' && requestUrl.pathname === MCP_SSE_PATH) {
-      const server = createShellDesktopMcpServer({ sim: options.sim });
+      const server = createShellDesktopMcpServer({
+        sim: options.sim,
+        window: options.window,
+        input: options.input,
+      });
       const transport = new SSEServerTransport(MCP_MESSAGE_PATH, res);
       const sessionId = transport.sessionId;
       sessions.set(sessionId, { transport, server });
@@ -206,7 +226,13 @@ export async function startShellDesktopMcpServer(
 }
 
 export async function maybeStartShellDesktopMcpServer(
-  options: Readonly<{ argv?: readonly string[]; env?: NodeJS.ProcessEnv; sim?: SimMcpController }> = {},
+  options: Readonly<{
+    argv?: readonly string[];
+    env?: NodeJS.ProcessEnv;
+    sim?: SimMcpController;
+    window?: WindowMcpController;
+    input?: InputMcpController;
+  }> = {},
 ): Promise<ShellDesktopMcpServer | undefined> {
   const argv = options.argv ?? process.argv;
   const env = options.env ?? process.env;
@@ -216,7 +242,12 @@ export async function maybeStartShellDesktopMcpServer(
   }
 
   const port = getRequestedPort(argv, env);
-  const server = await startShellDesktopMcpServer({ port, sim: options.sim });
+  const server = await startShellDesktopMcpServer({
+    port,
+    sim: options.sim,
+    window: options.window,
+    input: options.input,
+  });
 
   if (env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console

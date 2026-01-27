@@ -8,7 +8,9 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
+import type { InputMcpController } from './mcp/input-tools.js';
 import type { SimMcpController, SimMcpStatus } from './mcp/sim-tools.js';
+import type { WindowMcpController } from './mcp/window-tools.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
@@ -491,6 +493,69 @@ const simMcpController: SimMcpController = {
   },
 };
 
+const getMainWindowOrThrow = (): BrowserWindow => {
+  if (!mainWindow) {
+    throw new Error('Main window is not ready.');
+  }
+
+  return mainWindow;
+};
+
+const windowMcpController: WindowMcpController = {
+  getInfo: () => {
+    const window = getMainWindowOrThrow();
+    const devToolsOpen = window.webContents.isDevToolsOpened?.() ?? false;
+    return {
+      bounds: window.getBounds(),
+      url: window.webContents.getURL(),
+      devToolsOpen,
+    };
+  },
+  resize: (width, height) => {
+    const window = getMainWindowOrThrow();
+    window.setSize(width, height);
+    const devToolsOpen = window.webContents.isDevToolsOpened?.() ?? false;
+    return {
+      bounds: window.getBounds(),
+      url: window.webContents.getURL(),
+      devToolsOpen,
+    };
+  },
+  setDevTools: (action) => {
+    const window = getMainWindowOrThrow();
+
+    if (action === 'open') {
+      window.webContents.openDevTools({ mode: 'detach' });
+    } else if (action === 'close') {
+      window.webContents.closeDevTools();
+    } else {
+      const isOpen = window.webContents.isDevToolsOpened?.() ?? false;
+      if (isOpen) {
+        window.webContents.closeDevTools();
+      } else {
+        window.webContents.openDevTools({ mode: 'detach' });
+      }
+    }
+
+    return { devToolsOpen: window.webContents.isDevToolsOpened?.() ?? false };
+  },
+  captureScreenshotPng: async () => {
+    const window = getMainWindowOrThrow();
+    const image = await window.webContents.capturePage();
+    return image.toPNG();
+  },
+};
+
+const inputMcpController: InputMcpController = {
+  sendControlEvent: (event) => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.sendControlEvent(event);
+  },
+};
+
 function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.ping,
@@ -613,7 +678,11 @@ app
     registerIpcHandlers();
     if (enableMcpServer) {
       const { maybeStartShellDesktopMcpServer } = await import('./mcp/mcp-server.js');
-      mcpServer = await maybeStartShellDesktopMcpServer({ sim: simMcpController });
+      mcpServer = await maybeStartShellDesktopMcpServer({
+        sim: simMcpController,
+        window: windowMcpController,
+        input: inputMcpController,
+      });
     }
     mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow);
