@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
+import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 
 let monotonicNowSequence: number[] = [];
 
@@ -148,9 +149,16 @@ vi.mock('./monotonic-time.js', () => ({
   monotonicNowMs,
 }));
 
+const maybeStartShellDesktopMcpServer = vi.fn(async () => undefined as ShellDesktopMcpServer | undefined);
+
+vi.mock('./mcp/mcp-server.js', () => ({
+  maybeStartShellDesktopMcpServer,
+}));
+
 describe('shell-desktop main process entrypoint', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalEnableUnsafeWebGpu = process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU;
+  const originalEnableMcpServer = process.env.IDLE_ENGINE_ENABLE_MCP_SERVER;
 
   beforeEach(() => {
     vi.resetModules();
@@ -172,6 +180,12 @@ describe('shell-desktop main process entrypoint', () => {
     } else {
       process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU = originalEnableUnsafeWebGpu;
     }
+
+    if (originalEnableMcpServer === undefined) {
+      delete process.env.IDLE_ENGINE_ENABLE_MCP_SERVER;
+    } else {
+      process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = originalEnableMcpServer;
+    }
   });
 
   afterEach(() => {
@@ -188,6 +202,12 @@ describe('shell-desktop main process entrypoint', () => {
     } else {
       process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU = originalEnableUnsafeWebGpu;
     }
+
+    if (originalEnableMcpServer === undefined) {
+      delete process.env.IDLE_ENGINE_ENABLE_MCP_SERVER;
+    } else {
+      process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = originalEnableMcpServer;
+    }
   });
 
   it('registers the ping IPC handler and enables WebGPU switch', async () => {
@@ -195,6 +215,7 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
 
     expect(app.commandLine.appendSwitch).toHaveBeenCalledWith('enable-unsafe-webgpu');
+    expect(maybeStartShellDesktopMcpServer).not.toHaveBeenCalled();
 
     const handlerCall = ipcMain.handle.mock.calls.find((call) => call[0] === IPC_CHANNELS.ping);
     expect(handlerCall).toBeDefined();
@@ -207,6 +228,15 @@ describe('shell-desktop main process entrypoint', () => {
     await expect(handler?.({}, null)).rejects.toThrow(TypeError);
     await expect(handler?.({}, [])).rejects.toThrow(TypeError);
   }, 15000);
+
+  it('starts the MCP server when enabled', async () => {
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    expect(maybeStartShellDesktopMcpServer).toHaveBeenCalledTimes(1);
+  });
 
   it('restricts readAsset to compiled assets', async () => {
     await import('./main.js');

@@ -1,0 +1,89 @@
+{
+  "project": "Idle-Game-Engine",
+  "branchName": "issue/857-design",
+  "issue": {
+    "number": 857
+  },
+  "pullRequest": {
+    "number": 860,
+    "url": "https://github.com/hansjm10/Idle-Game-Engine/pull/860"
+  },
+  "designDocPath": "docs/issue-857-design.md",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "feat(shell-desktop): add embedded MCP server scaffold",
+      "summary": "Add an embedded MCP server module to the Electron main process with explicit enablement flags and an initial transport (SSE recommended) plus a minimal capabilities/health tool.",
+      "acceptanceCriteria": [
+        "MCP server starts when enabled and remains disabled by default.",
+        "Server binds to localhost and exposes at least one tool (health/capabilities).",
+        "Unit tests cover enable/disable behavior and tool registration."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "T2",
+      "title": "feat(shell-desktop): implement sim/* MCP tools",
+      "summary": "Implement simulation control tools (status, lifecycle, pause/resume/step, enqueue) by bridging MCP handlers to the sim worker controller and deterministic command normalization.",
+      "acceptanceCriteria": [
+        "Implements sim/status, sim/start, sim/stop, sim/pause, sim/resume, sim/step, and sim/enqueue.",
+        "Invalid inputs are rejected with clear errors.",
+        "Sim control remains deterministic (timestamps derived from step and stepSizeMs).",
+        "Unit tests cover lifecycle behavior and enqueue normalization."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "T3",
+      "title": "feat(shell-desktop): implement window/* + input/* MCP tools",
+      "summary": "Expose window inspection/screenshot/resize/devtools and input injection via MCP, reusing existing shell control-event semantics where possible.",
+      "acceptanceCriteria": [
+        "Implements window/info, window/resize, window/devtools, and window/screenshot.",
+        "Implements input/controlEvent (and optional key/mouse helpers if needed).",
+        "Screenshot returns PNG data (base64 or bytes) and is bounded to avoid excessive memory use.",
+        "Handlers are local-only and are covered by unit tests."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "T4",
+      "title": "feat(shell-desktop): implement asset/* MCP tools",
+      "summary": "Implement asset listing/reading tools scoped to the compiled assets root with robust path traversal protection.",
+      "acceptanceCriteria": [
+        "Implements asset/list and asset/read limited to the compiled assets root.",
+        "Path traversal attempts are rejected.",
+        "Unit tests cover listing, reading, and traversal protection."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "T5",
+      "title": "docs(shell-desktop): document MCP setup + example workflows",
+      "summary": "Document how to enable/connect to the MCP server (Claude Desktop/Cursor) and provide example prompts for regression testing, debugging, and content iteration.",
+      "acceptanceCriteria": [
+        "Docs include a quickstart for enabling MCP and connecting from common clients.",
+        "Docs include example prompts/workflows for regression testing and debugging.",
+        "Design doc references remain accurate if implementation scope changes."
+      ],
+      "status": "done"
+    }
+  ],
+  "status": {
+    "implemented": true,
+    "taskStage": "implement",
+    "currentTaskId": null,
+    "tasksComplete": true,
+    "prCreated": true,
+    "prDescriptionReady": true,
+    "reviewClean": true,
+    "reviewPasses": 3,
+    "reviewCleanPasses": 3,
+    "ciClean": true,
+    "ciPasses": 1,
+    "coverageClean": true,
+    "coverageNeedsFix": false,
+    "coveragePasses": 1,
+    "sonarClean": true
+  },
+  "notes": "PR: https://github.com/hansjm10/Idle-Game-Engine/pull/860"
+}
