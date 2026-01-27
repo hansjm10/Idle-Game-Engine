@@ -85,16 +85,40 @@ const assertOptionalPositiveInt = (value: unknown, message: string): number | un
 
 const toPosixPath = (value: string): string => value.split(path.sep).join('/');
 
-const resolveWithinRoot = (rootPath: string, relativePath: string, message: string): string => {
-  const targetPath = path.resolve(rootPath, relativePath);
+const isPathWithinRoot = (rootPath: string, targetPath: string): boolean => {
   const resolvedRelativePath = path.relative(rootPath, targetPath);
 
   if (resolvedRelativePath.startsWith('..') || path.isAbsolute(resolvedRelativePath)) {
+    return false;
+  }
+
+  return true;
+};
+
+const resolveLexicalWithinRoot = (rootPath: string, relativePath: string, message: string): string => {
+  const targetPath = path.resolve(rootPath, relativePath);
+
+  if (!isPathWithinRoot(rootPath, targetPath)) {
     throw new TypeError(message);
   }
 
   return targetPath;
 };
+
+async function resolveExistingWithinRoot(
+  rootPath: string,
+  relativePath: string,
+  message: string,
+): Promise<Readonly<{ targetPath: string; targetRealPath: string }>> {
+  const targetPath = resolveLexicalWithinRoot(rootPath, relativePath, message);
+  const targetRealPath = await fsPromises.realpath(targetPath);
+
+  if (!isPathWithinRoot(rootPath, targetRealPath)) {
+    throw new TypeError(message);
+  }
+
+  return { targetPath, targetRealPath };
+}
 
 async function listAssets(
   rootPath: string,
@@ -107,20 +131,20 @@ async function listAssets(
     maxEntries: number;
   }>,
 ): Promise<Readonly<{ entries: AssetMcpEntry[]; truncated: boolean }>> {
-  const targetPath = resolveWithinRoot(
+  const { targetRealPath } = await resolveExistingWithinRoot(
     rootPath,
     relativePath,
     'Invalid asset path: path must be inside compiled assets root.',
   );
 
-  const stat = await fsPromises.stat(targetPath);
+  const stat = await fsPromises.stat(targetRealPath);
   if (!stat.isDirectory()) {
     throw new TypeError('Invalid asset/list path: expected a directory within compiled assets root.');
   }
 
   const entries: AssetMcpEntry[] = [];
   let truncated = false;
-  const queue: string[] = [targetPath];
+  const queue: string[] = [targetRealPath];
 
   while (queue.length > 0) {
     const currentDir = queue.shift();
@@ -132,15 +156,15 @@ async function listAssets(
     dirents.sort((a, b) => a.name.localeCompare(b.name));
 
     for (const dirent of dirents) {
-      const childPath = path.join(currentDir, dirent.name);
-      const childRelativePath = toPosixPath(path.relative(rootPath, childPath));
-      entries.push({ path: childRelativePath, kind: dirent.isDirectory() ? 'dir' : 'file' });
-
       if (entries.length >= maxEntries) {
         truncated = true;
         queue.length = 0;
         break;
       }
+
+      const childPath = path.join(currentDir, dirent.name);
+      const childRelativePath = toPosixPath(path.relative(rootPath, childPath));
+      entries.push({ path: childRelativePath, kind: dirent.isDirectory() ? 'dir' : 'file' });
 
       if (recursive && dirent.isDirectory()) {
         queue.push(childPath);
@@ -154,23 +178,43 @@ async function listAssets(
 async function readAsset(
   rootPath: string,
   relativePath: string,
+  maxBytes: number,
 ): Promise<Readonly<{ path: string; buffer: Buffer }>> {
-  const targetPath = resolveWithinRoot(
+  const { targetPath, targetRealPath } = await resolveExistingWithinRoot(
     rootPath,
     relativePath,
     'Invalid asset path: path must be inside compiled assets root.',
   );
 
-  const stat = await fsPromises.stat(targetPath);
+  const stat = await fsPromises.stat(targetRealPath);
   if (!stat.isFile()) {
     throw new TypeError('Invalid asset/read path: expected a file within compiled assets root.');
   }
 
-  const buffer = await fsPromises.readFile(targetPath);
-  return { path: toPosixPath(path.relative(rootPath, targetPath)), buffer };
+  if (stat.size > maxBytes) {
+    throw new Error(`asset/read exceeded maxBytes (${stat.size} > ${maxBytes})`);
+  }
+
+  const fileHandle = await fsPromises.open(targetRealPath, 'r');
+  try {
+    const buffer = Buffer.alloc(stat.size);
+    const { bytesRead } = await fileHandle.read(buffer, 0, stat.size, 0);
+    return { path: toPosixPath(path.relative(rootPath, targetPath)), buffer: buffer.subarray(0, bytesRead) };
+  } finally {
+    await fileHandle.close();
+  }
 }
 
 export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpController): void {
+  let compiledAssetsRootRealPathPromise: Promise<string> | undefined;
+  const getCompiledAssetsRootRealPath = (): Promise<string> => {
+    if (!compiledAssetsRootRealPathPromise) {
+      compiledAssetsRootRealPathPromise = fsPromises.realpath(controller.compiledAssetsRootPath);
+    }
+
+    return compiledAssetsRootRealPathPromise;
+  };
+
   server.registerTool(
     'asset/list',
     {
@@ -192,7 +236,8 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
           'Invalid asset/list payload: expected { maxEntries?: integer >= 1 }',
         ) ?? 500;
 
-      const { entries, truncated } = await listAssets(controller.compiledAssetsRootPath, requestedPath, {
+      const rootRealPath = await getCompiledAssetsRootRealPath();
+      const { entries, truncated } = await listAssets(rootRealPath, requestedPath, {
         recursive,
         maxEntries,
       });
@@ -224,11 +269,8 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
           'Invalid asset/read payload: expected { maxBytes?: integer >= 1 }',
         ) ?? 5_000_000;
 
-      const { path: resolvedPath, buffer } = await readAsset(controller.compiledAssetsRootPath, requestedPath);
-
-      if (buffer.byteLength > maxBytes) {
-        throw new Error(`asset/read exceeded maxBytes (${buffer.byteLength} > ${maxBytes})`);
-      }
+      const rootRealPath = await getCompiledAssetsRootRealPath();
+      const { path: resolvedPath, buffer } = await readAsset(rootRealPath, requestedPath, maxBytes);
 
       return buildTextResult({
         ok: true,
@@ -239,4 +281,3 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
     },
   );
 }
-

@@ -98,5 +98,103 @@ describe('shell-desktop MCP asset tools', () => {
 
     await expect(readHandler?.({ path: '../../nope.txt' })).rejects.toThrow(/inside/i);
   });
-});
 
+  it('rejects asset/read requests that escape the root via symlinks', async () => {
+    const externalDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idle-engine-asset-tools-external-'));
+    const externalFile = path.join(externalDir, 'outside.txt');
+    await fsPromises.writeFile(externalFile, 'external', 'utf8');
+    await fsPromises.symlink(externalFile, path.join(rootDir, 'outside-link.txt'));
+
+    const tools = new Map<string, ToolHandler>();
+    const server = {
+      registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
+        tools.set(name, handler);
+      }),
+    };
+
+    registerAssetTools(server, { compiledAssetsRootPath: rootDir });
+
+    const readHandler = tools.get('asset/read');
+    await expect(readHandler?.({ path: 'outside-link.txt' })).rejects.toThrow(/inside/i);
+
+    await fsPromises.rm(externalDir, { recursive: true, force: true });
+  });
+
+  it('rejects asset/list requests that escape the root via symlinks', async () => {
+    const externalDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idle-engine-asset-tools-external-'));
+    await fsPromises.mkdir(path.join(externalDir, 'dir'));
+    await fsPromises.writeFile(path.join(externalDir, 'dir', 'outside.txt'), 'external', 'utf8');
+    await fsPromises.symlink(path.join(externalDir, 'dir'), path.join(rootDir, 'outside-dir'));
+
+    const tools = new Map<string, ToolHandler>();
+    const server = {
+      registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
+        tools.set(name, handler);
+      }),
+    };
+
+    registerAssetTools(server, { compiledAssetsRootPath: rootDir });
+
+    const listHandler = tools.get('asset/list');
+    await expect(listHandler?.({ path: 'outside-dir' })).rejects.toThrow(/inside/i);
+
+    await fsPromises.rm(externalDir, { recursive: true, force: true });
+  });
+
+  it('sets asset/list truncated only when entries are omitted', async () => {
+    const tools = new Map<string, ToolHandler>();
+
+    const server = {
+      registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
+        tools.set(name, handler);
+      }),
+    };
+
+    registerAssetTools(server, { compiledAssetsRootPath: rootDir });
+
+    const listHandler = tools.get('asset/list');
+    const full = parseToolJson(await listHandler?.({ maxEntries: 2 })) as { entries?: unknown; truncated?: unknown };
+    expect(full.entries).toEqual([
+      { path: 'allowed.txt', kind: 'file' },
+      { path: 'nested', kind: 'dir' },
+    ]);
+    expect(full.truncated).toBe(false);
+
+    const truncated = parseToolJson(await listHandler?.({ maxEntries: 1 })) as { entries?: unknown; truncated?: unknown };
+    expect(truncated.entries).toEqual([{ path: 'allowed.txt', kind: 'file' }]);
+    expect(truncated.truncated).toBe(true);
+
+    const recursiveFull = parseToolJson(
+      await listHandler?.({ recursive: true, maxEntries: 3 }),
+    ) as { entries?: unknown; truncated?: unknown };
+    expect(recursiveFull.entries).toEqual([
+      { path: 'allowed.txt', kind: 'file' },
+      { path: 'nested', kind: 'dir' },
+      { path: 'nested/inner.txt', kind: 'file' },
+    ]);
+    expect(recursiveFull.truncated).toBe(false);
+  });
+
+  it('enforces asset/read maxBytes without reading oversized files', async () => {
+    const oversizedPath = path.join(rootDir, 'oversized.bin');
+    await fsPromises.writeFile(oversizedPath, Buffer.alloc(8, 1));
+
+    const tools = new Map<string, ToolHandler>();
+    const server = {
+      registerTool: vi.fn((name: string, _definition: unknown, handler: ToolHandler) => {
+        tools.set(name, handler);
+      }),
+    };
+
+    registerAssetTools(server, { compiledAssetsRootPath: rootDir });
+
+    const readHandler = tools.get('asset/read');
+    const readFileSpy = vi.spyOn(fsPromises, 'readFile').mockImplementation(async () => {
+      throw new Error('readFile should not be called for oversized files');
+    });
+
+    await expect(readHandler?.({ path: 'oversized.bin', maxBytes: 4 })).rejects.toThrow(/maxBytes/i);
+
+    readFileSpy.mockRestore();
+  });
+});
