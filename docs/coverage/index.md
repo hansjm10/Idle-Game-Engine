@@ -10,10 +10,10 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 ## Overall Coverage
 | Metric | Covered | Total | % |
 | --- | --- | --- | --- |
-| Statements | 42120 | 46284 | 91.00% |
-| Branches | 8784 | 10212 | 86.02% |
-| Functions | 2194 | 2342 | 93.68% |
-| Lines | 42120 | 46284 | 91.00% |
+| Statements | 42279 | 46533 | 90.86% |
+| Branches | 8820 | 10255 | 86.01% |
+| Functions | 2200 | 2361 | 93.18% |
+| Lines | 42279 | 46533 | 90.86% |
 
 ## Coverage by Package
 | Package | Statements | Branches | Functions | Lines |
@@ -23,9 +23,9 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 | @idle-engine/content-schema | 8846 / 9915 (89.22%) | 1276 / 1494 (85.41%) | 313 / 343 (91.25%) | 8846 / 9915 (89.22%) |
 | @idle-engine/content-validation-cli | 2045 / 2200 (92.95%) | 480 / 545 (88.07%) | 94 / 103 (91.26%) | 2045 / 2200 (92.95%) |
 | @idle-engine/controls | 228 / 230 (99.13%) | 67 / 69 (97.10%) | 14 / 14 (100.00%) | 228 / 230 (99.13%) |
-| @idle-engine/core | 24746 / 27325 (90.56%) | 5462 / 6475 (84.36%) | 1435 / 1534 (93.55%) | 24746 / 27325 (90.56%) |
+| @idle-engine/core | 24746 / 27325 (90.56%) | 5463 / 6476 (84.36%) | 1435 / 1534 (93.55%) | 24746 / 27325 (90.56%) |
 | @idle-engine/renderer-contract | 516 / 523 (98.66%) | 134 / 138 (97.10%) | 27 / 27 (100.00%) | 516 / 523 (98.66%) |
 | @idle-engine/renderer-debug | 870 / 876 (99.32%) | 255 / 266 (95.86%) | 49 / 49 (100.00%) | 870 / 876 (99.32%) |
-| @idle-engine/renderer-webgpu | 1942 / 1964 (98.88%) | 523 / 533 (98.12%) | 97 / 98 (98.98%) | 1942 / 1964 (98.88%) |
-| @idle-engine/shell-desktop | 1198 / 1301 (92.08%) | 293 / 317 (92.43%) | 63 / 68 (92.65%) | 1198 / 1301 (92.08%) |
+| @idle-engine/renderer-webgpu | 1942 / 1964 (98.88%) | 524 / 534 (98.13%) | 97 / 98 (98.98%) | 1942 / 1964 (98.88%) |
+| @idle-engine/shell-desktop | 1357 / 1550 (87.55%) | 327 / 358 (91.34%) | 69 / 87 (79.31%) | 1357 / 1550 (87.55%) |
 | idle-engine-monorepo | 16 / 16 (100.00%) | 2 / 2 (100.00%) | 0 / 0 (0.00%) | 16 / 16 (100.00%) |

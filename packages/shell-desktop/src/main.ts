@@ -8,6 +8,7 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
+import type { SimMcpController, SimMcpStatus } from './mcp/sim-tools.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
@@ -151,9 +152,17 @@ type SimWorkerOutboundMessage =
 
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
+  enqueueCommands: (commands: readonly Command[]) => void;
+  pause: () => void;
+  resume: () => void;
+  step: (steps: number) => void;
+  getStatus: () => SimMcpStatus;
   dispose: () => void;
 }>;
 
+const buildStoppedSimStatus = (): SimMcpStatus => ({ state: 'stopped', stepSizeMs: 16, nextStep: 0 });
+
+let mainWindow: BrowserWindow | undefined;
 let simWorkerController: SimWorkerController | undefined;
 let mcpServer: ShellDesktopMcpServer | undefined;
 
@@ -162,8 +171,11 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   let isDisposing = false;
   let hasFailed = false;
+  let isReady = false;
+  let isPaused = false;
 
   type ShellSimFailureStatusPayload = Extract<ShellSimStatusPayload, { kind: 'stopped' | 'crashed' }>;
+  let lastFailure: ShellSimFailureStatusPayload | undefined;
 
   let stepSizeMs = 16;
   let nextStep = 0;
@@ -207,6 +219,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
 
     hasFailed = true;
+    lastFailure = status;
     stopTickLoop();
 
     // eslint-disable-next-line no-console
@@ -234,7 +247,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   };
 
   const startTickLoop = (): void => {
-    if (tickTimer || hasFailed || isDisposing) {
+    if (tickTimer || hasFailed || isDisposing || isPaused || !isReady) {
       return;
     }
 
@@ -256,6 +269,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     if (message.kind === 'ready') {
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
+      isReady = true;
       startTickLoop();
       return;
     }
@@ -351,8 +365,68 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     safePostMessage({ kind: 'enqueueCommands', commands: [passthroughCommand] });
   };
 
+  const enqueueCommands = (commands: readonly Command[]): void => {
+    safePostMessage({ kind: 'enqueueCommands', commands });
+  };
+
+  const pause = (): void => {
+    if (hasFailed || isDisposing) {
+      return;
+    }
+
+    isPaused = true;
+    stopTickLoop();
+  };
+
+  const resume = (): void => {
+    if (hasFailed || isDisposing) {
+      return;
+    }
+
+    isPaused = false;
+    startTickLoop();
+  };
+
+  const step = (steps: number): void => {
+    if (!Number.isFinite(steps) || Math.floor(steps) !== steps || steps < 1) {
+      throw new TypeError('Invalid sim step count: expected integer >= 1');
+    }
+
+    if (!isReady) {
+      throw new Error('Sim is not ready to step yet.');
+    }
+
+    isPaused = true;
+    stopTickLoop();
+
+    safePostMessage({ kind: 'tick', deltaMs: steps * stepSizeMs });
+  };
+
+  const getStatus = (): SimMcpStatus => {
+    if (lastFailure) {
+      return {
+        state: lastFailure.kind,
+        reason: lastFailure.reason,
+        exitCode: lastFailure.exitCode,
+        stepSizeMs,
+        nextStep,
+      };
+    }
+
+    if (isDisposing) {
+      return { state: 'stopped', stepSizeMs, nextStep };
+    }
+
+    if (!isReady) {
+      return { state: 'starting', stepSizeMs, nextStep };
+    }
+
+    return { state: isPaused ? 'paused' : 'running', stepSizeMs, nextStep };
+  };
+
   const dispose = (): void => {
     isDisposing = true;
+    isPaused = true;
     stopTickLoop();
     void worker.terminate().catch((error: unknown) => {
       // eslint-disable-next-line no-console
@@ -360,8 +434,62 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     });
   };
 
-  return { sendControlEvent, dispose };
+  return { sendControlEvent, enqueueCommands, pause, resume, step, getStatus, dispose };
 }
+
+const simMcpController: SimMcpController = {
+  getStatus: () => simWorkerController?.getStatus() ?? buildStoppedSimStatus(),
+  start: () => {
+    if (simWorkerController) {
+      return simWorkerController.getStatus();
+    }
+
+    if (!mainWindow) {
+      throw new Error('Main window is not ready; cannot start simulation.');
+    }
+
+    simWorkerController = createSimWorkerController(mainWindow);
+    return simWorkerController.getStatus();
+  },
+  stop: () => {
+    const current = simWorkerController?.getStatus();
+    simWorkerController?.dispose();
+    simWorkerController = undefined;
+    return current ? { ...current, state: 'stopped' } : buildStoppedSimStatus();
+  },
+  pause: () => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.pause();
+    return simWorkerController.getStatus();
+  },
+  resume: () => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.resume();
+    return simWorkerController.getStatus();
+  },
+  step: (steps) => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.step(steps);
+    return simWorkerController.getStatus();
+  },
+  enqueue: (commands) => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.enqueueCommands(commands);
+    return { enqueued: commands.length };
+  },
+};
 
 function registerIpcHandlers(): void {
   ipcMain.handle(
@@ -485,9 +613,9 @@ app
     registerIpcHandlers();
     if (enableMcpServer) {
       const { maybeStartShellDesktopMcpServer } = await import('./mcp/mcp-server.js');
-      mcpServer = await maybeStartShellDesktopMcpServer();
+      mcpServer = await maybeStartShellDesktopMcpServer({ sim: simMcpController });
     }
-    const mainWindow = await createMainWindow();
+    mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow);
   })
   .catch((error: unknown) => {
@@ -500,6 +628,7 @@ app
 app.on('window-all-closed', () => {
   simWorkerController?.dispose();
   simWorkerController = undefined;
+  mainWindow = undefined;
   if (process.platform !== 'darwin') {
     void mcpServer?.close().catch((error: unknown) => {
       // eslint-disable-next-line no-console
@@ -521,8 +650,9 @@ app.on('before-quit', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     void createMainWindow()
-      .then((mainWindow) => {
-        simWorkerController = createSimWorkerController(mainWindow);
+      .then((createdWindow) => {
+        mainWindow = createdWindow;
+        simWorkerController = createSimWorkerController(createdWindow);
       })
       .catch((error: unknown) => {
         // eslint-disable-next-line no-console

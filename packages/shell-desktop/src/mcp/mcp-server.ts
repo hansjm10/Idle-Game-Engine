@@ -3,6 +3,8 @@ import type { ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import type { AddressInfo } from 'node:net';
+import { registerSimTools } from './sim-tools.js';
+import type { SimMcpController } from './sim-tools.js';
 
 export type ShellDesktopMcpServer = Readonly<{
   sseUrl: URL;
@@ -11,6 +13,7 @@ export type ShellDesktopMcpServer = Readonly<{
 
 type ShellDesktopMcpServerOptions = Readonly<{
   port?: number;
+  sim?: SimMcpController;
 }>;
 
 const MCP_SERVER_INFO = {
@@ -54,7 +57,7 @@ function getRequestedPort(argv: readonly string[], env: NodeJS.ProcessEnv): numb
   return DEFAULT_MCP_PORT;
 }
 
-function createShellDesktopMcpServer(): McpServer {
+function createShellDesktopMcpServer(options: Readonly<{ sim?: SimMcpController }>): McpServer {
   const server = new McpServer(MCP_SERVER_INFO);
 
   server.registerTool(
@@ -72,6 +75,10 @@ function createShellDesktopMcpServer(): McpServer {
       ],
     }),
   );
+
+  if (options.sim) {
+    registerSimTools(server, options.sim);
+  }
 
   return server;
 }
@@ -121,7 +128,7 @@ export async function startShellDesktopMcpServer(
     }
 
     if (req.method === 'GET' && requestUrl.pathname === MCP_SSE_PATH) {
-      const server = createShellDesktopMcpServer();
+      const server = createShellDesktopMcpServer({ sim: options.sim });
       const transport = new SSEServerTransport(MCP_MESSAGE_PATH, res);
       const sessionId = transport.sessionId;
       sessions.set(sessionId, { transport, server });
@@ -199,15 +206,17 @@ export async function startShellDesktopMcpServer(
 }
 
 export async function maybeStartShellDesktopMcpServer(
-  argv: readonly string[] = process.argv,
-  env: NodeJS.ProcessEnv = process.env,
+  options: Readonly<{ argv?: readonly string[]; env?: NodeJS.ProcessEnv; sim?: SimMcpController }> = {},
 ): Promise<ShellDesktopMcpServer | undefined> {
+  const argv = options.argv ?? process.argv;
+  const env = options.env ?? process.env;
+
   if (!isShellDesktopMcpServerEnabled(argv, env)) {
     return undefined;
   }
 
   const port = getRequestedPort(argv, env);
-  const server = await startShellDesktopMcpServer({ port });
+  const server = await startShellDesktopMcpServer({ port, sim: options.sim });
 
   if (env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console
