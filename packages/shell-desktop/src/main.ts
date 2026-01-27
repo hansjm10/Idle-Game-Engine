@@ -7,6 +7,7 @@ import { createControlCommands } from '@idle-engine/controls';
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
+import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
@@ -18,6 +19,9 @@ const enableUnsafeWebGpu = isDev || process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU
 if (enableUnsafeWebGpu) {
   app.commandLine.appendSwitch('enable-unsafe-webgpu');
 }
+
+const enableMcpServer = process.env.IDLE_ENGINE_ENABLE_MCP_SERVER === '1'
+  || process.argv.includes('--enable-mcp-server');
 
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
@@ -151,6 +155,7 @@ type SimWorkerController = Readonly<{
 }>;
 
 let simWorkerController: SimWorkerController | undefined;
+let mcpServer: ShellDesktopMcpServer | undefined;
 
 function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerController {
   const worker = new Worker(new URL('./sim-worker.js', import.meta.url));
@@ -478,6 +483,10 @@ app
   .then(async () => {
     installAppMenu();
     registerIpcHandlers();
+    if (enableMcpServer) {
+      const { maybeStartShellDesktopMcpServer } = await import('./mcp/mcp-server.js');
+      mcpServer = await maybeStartShellDesktopMcpServer();
+    }
     const mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow);
   })
@@ -492,8 +501,21 @@ app.on('window-all-closed', () => {
   simWorkerController?.dispose();
   simWorkerController = undefined;
   if (process.platform !== 'darwin') {
+    void mcpServer?.close().catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    });
+    mcpServer = undefined;
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  void mcpServer?.close().catch((error: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error(error);
+  });
+  mcpServer = undefined;
 });
 
 app.on('activate', () => {
