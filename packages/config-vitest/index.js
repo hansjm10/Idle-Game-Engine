@@ -37,13 +37,13 @@ export function createVitestConfig(overrides = {}) {
 }
 
 export function createBrowserVitestConfig(overrides = {}) {
-  return mergeConfig(
+  const browserConfig = mergeConfig(
     BASE_CONFIG,
     defineConfig({
       test: {
         environment: 'jsdom'
       }
-    }),
-    overrides
+    })
   );
+  return mergeConfig(browserConfig, overrides);
 }
