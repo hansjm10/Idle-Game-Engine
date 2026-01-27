@@ -1,4 +1,5 @@
 import http from 'node:http';
+import type { ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import type { AddressInfo } from 'node:net';
@@ -82,27 +83,56 @@ export async function startShellDesktopMcpServer(
 
   const sessions = new Map<string, Readonly<{ transport: SSEServerTransport; server: McpServer }>>();
 
-  const httpServer = http.createServer((req, res) => {
-    const urlText = req.url;
-    if (!urlText) {
-      res.writeHead(400).end('Missing request URL.');
+  const safeEndResponse = (res: ServerResponse, statusCode: number, message: string): void => {
+    if (res.writableEnded) {
       return;
     }
 
-    const requestUrl = new URL(urlText, 'http://localhost');
+    if (!res.headersSent) {
+      res.writeHead(statusCode);
+    }
+
+    res.end(message);
+  };
+
+  const closeSession = async (sessionId: string): Promise<void> => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+
+    sessions.delete(sessionId);
+    await Promise.allSettled([session.server.close(), session.transport.close()]);
+  };
+
+  const httpServer = http.createServer((req, res) => {
+    const urlText = req.url;
+    if (!urlText) {
+      safeEndResponse(res, 400, 'Missing request URL.');
+      return;
+    }
+
+    let requestUrl: URL;
+    try {
+      requestUrl = new URL(urlText, 'http://localhost');
+    } catch {
+      safeEndResponse(res, 400, 'Invalid request URL.');
+      return;
+    }
 
     if (req.method === 'GET' && requestUrl.pathname === MCP_SSE_PATH) {
       const server = createShellDesktopMcpServer();
       const transport = new SSEServerTransport(MCP_MESSAGE_PATH, res);
-      sessions.set(transport.sessionId, { transport, server });
+      const sessionId = transport.sessionId;
+      sessions.set(sessionId, { transport, server });
 
       transport.onclose = () => {
-        sessions.delete(transport.sessionId);
+        void closeSession(sessionId);
       };
 
       void server.connect(transport).catch((error: unknown) => {
-        sessions.delete(transport.sessionId);
-        res.writeHead(500).end(String(error));
+        safeEndResponse(res, 500, String(error));
+        void closeSession(sessionId);
       });
 
       return;
@@ -111,21 +141,27 @@ export async function startShellDesktopMcpServer(
     if (req.method === 'POST' && requestUrl.pathname === MCP_MESSAGE_PATH) {
       const sessionId = requestUrl.searchParams.get('sessionId');
       if (!sessionId) {
-        res.writeHead(400).end('Missing sessionId.');
+        safeEndResponse(res, 400, 'Missing sessionId.');
         return;
       }
 
       const session = sessions.get(sessionId);
       if (!session) {
-        res.writeHead(404).end('Unknown sessionId.');
+        safeEndResponse(res, 404, 'Unknown sessionId.');
         return;
       }
 
-      void session.transport.handlePostMessage(req, res);
+      try {
+        void session.transport.handlePostMessage(req, res).catch((error: unknown) => {
+          safeEndResponse(res, 500, String(error));
+        });
+      } catch (error) {
+        safeEndResponse(res, 500, String(error));
+      }
       return;
     }
 
-    res.writeHead(404).end('Not found.');
+    safeEndResponse(res, 404, 'Not found.');
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -145,11 +181,7 @@ export async function startShellDesktopMcpServer(
   const sseUrl = new URL(MCP_SSE_PATH, baseUrl);
 
   const close = async (): Promise<void> => {
-    await Promise.allSettled(
-      [...sessions.values()].map(async ({ server, transport }) => {
-        await Promise.allSettled([server.close(), transport.close()]);
-      }),
-    );
+    await Promise.allSettled([...sessions.keys()].map((sessionId) => closeSession(sessionId)));
     sessions.clear();
 
     await new Promise<void>((resolve, reject) => {
@@ -184,4 +216,3 @@ export async function maybeStartShellDesktopMcpServer(
 
   return server;
 }
-
