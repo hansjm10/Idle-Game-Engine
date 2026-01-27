@@ -8,6 +8,7 @@ import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
+import type { AssetMcpController } from './mcp/asset-tools.js';
 import type { InputMcpController } from './mcp/input-tools.js';
 import type { SimMcpController, SimMcpStatus } from './mcp/sim-tools.js';
 import type { WindowMcpController } from './mcp/window-tools.js';
@@ -33,6 +34,10 @@ const compiledAssetsRootPath = path.resolve(
   repoRootPath,
   'packages/content-sample/content/compiled',
 );
+
+const assetMcpController: AssetMcpController = {
+  compiledAssetsRootPath,
+};
 
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
@@ -682,6 +687,7 @@ app
         sim: simMcpController,
         window: windowMcpController,
         input: inputMcpController,
+        asset: assetMcpController,
       });
     }
     mainWindow = await createMainWindow();

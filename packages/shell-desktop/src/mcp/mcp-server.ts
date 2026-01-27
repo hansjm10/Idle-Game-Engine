@@ -3,6 +3,8 @@ import type { ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import type { AddressInfo } from 'node:net';
+import { registerAssetTools } from './asset-tools.js';
+import type { AssetMcpController } from './asset-tools.js';
 import { registerInputTools } from './input-tools.js';
 import type { InputMcpController } from './input-tools.js';
 import { registerSimTools } from './sim-tools.js';
@@ -20,6 +22,7 @@ type ShellDesktopMcpServerOptions = Readonly<{
   sim?: SimMcpController;
   window?: WindowMcpController;
   input?: InputMcpController;
+  asset?: AssetMcpController;
 }>;
 
 const MCP_SERVER_INFO = {
@@ -64,7 +67,12 @@ function getRequestedPort(argv: readonly string[], env: NodeJS.ProcessEnv): numb
 }
 
 function createShellDesktopMcpServer(
-  options: Readonly<{ sim?: SimMcpController; window?: WindowMcpController; input?: InputMcpController }>,
+  options: Readonly<{
+    sim?: SimMcpController;
+    window?: WindowMcpController;
+    input?: InputMcpController;
+    asset?: AssetMcpController;
+  }>,
 ): McpServer {
   const server = new McpServer(MCP_SERVER_INFO);
 
@@ -94,6 +102,10 @@ function createShellDesktopMcpServer(
 
   if (options.input) {
     registerInputTools(server, options.input);
+  }
+
+  if (options.asset) {
+    registerAssetTools(server, options.asset);
   }
 
   return server;
@@ -148,6 +160,7 @@ export async function startShellDesktopMcpServer(
         sim: options.sim,
         window: options.window,
         input: options.input,
+        asset: options.asset,
       });
       const transport = new SSEServerTransport(MCP_MESSAGE_PATH, res);
       const sessionId = transport.sessionId;
@@ -232,6 +245,7 @@ export async function maybeStartShellDesktopMcpServer(
     sim?: SimMcpController;
     window?: WindowMcpController;
     input?: InputMcpController;
+    asset?: AssetMcpController;
   }> = {},
 ): Promise<ShellDesktopMcpServer | undefined> {
   const argv = options.argv ?? process.argv;
@@ -247,6 +261,7 @@ export async function maybeStartShellDesktopMcpServer(
     sim: options.sim,
     window: options.window,
     input: options.input,
+    asset: options.asset,
   });
 
   if (env.NODE_ENV !== 'test') {
