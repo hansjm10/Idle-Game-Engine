@@ -8,12 +8,14 @@
       "import": "./index.js"
     }
   },
+  "scripts": {
+    "test": "vitest run"
+  },
   "dependencies": {
-    "vitest": "^3.0.0",
+    "jsdom": "^24.0.0",
     "vitest-llm-reporter": "^1.2.0"
   },
   "peerDependencies": {
-    "vitest": "^3.0.0",
-    "vitest-llm-reporter": "^1.2.0"
+    "vitest": "^3.0.0"
   }
 }
