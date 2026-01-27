@@ -189,12 +189,13 @@ describe('shell-desktop MCP asset tools', () => {
     registerAssetTools(server, { compiledAssetsRootPath: rootDir });
 
     const readHandler = tools.get('asset/read');
-    const readFileSpy = vi.spyOn(fsPromises, 'readFile').mockImplementation(async () => {
-      throw new Error('readFile should not be called for oversized files');
+    const openSpy = vi.spyOn(fsPromises, 'open').mockImplementation(async () => {
+      throw new Error('open should not be called for oversized files');
     });
 
     await expect(readHandler?.({ path: 'oversized.bin', maxBytes: 4 })).rejects.toThrow(/maxBytes/i);
 
-    readFileSpy.mockRestore();
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
   });
 });

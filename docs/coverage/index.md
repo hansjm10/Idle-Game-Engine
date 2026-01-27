@@ -11,7 +11,7 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 | Metric | Covered | Total | % |
 | --- | --- | --- | --- |
 | Statements | 42666 | 47008 | 90.76% |
-| Branches | 8919 | 10378 | 85.94% |
+| Branches | 8920 | 10379 | 85.94% |
 | Functions | 2228 | 2395 | 93.03% |
 | Lines | 42666 | 47008 | 90.76% |
 
@@ -26,6 +26,6 @@ Run `pnpm coverage:md` from the repository root to regenerate this page after mo
 | @idle-engine/core | 24746 / 27325 (90.56%) | 5462 / 6475 (84.36%) | 1435 / 1534 (93.55%) | 24746 / 27325 (90.56%) |
 | @idle-engine/renderer-contract | 516 / 523 (98.66%) | 134 / 138 (97.10%) | 27 / 27 (100.00%) | 516 / 523 (98.66%) |
 | @idle-engine/renderer-debug | 870 / 876 (99.32%) | 255 / 266 (95.86%) | 49 / 49 (100.00%) | 870 / 876 (99.32%) |
-| @idle-engine/renderer-webgpu | 1942 / 1964 (98.88%) | 523 / 533 (98.12%) | 97 / 98 (98.98%) | 1942 / 1964 (98.88%) |
+| @idle-engine/renderer-webgpu | 1942 / 1964 (98.88%) | 524 / 534 (98.13%) | 97 / 98 (98.98%) | 1942 / 1964 (98.88%) |
 | @idle-engine/shell-desktop | 1744 / 2025 (86.12%) | 428 / 483 (88.61%) | 97 / 121 (80.17%) | 1744 / 2025 (86.12%) |
 | idle-engine-monorepo | 16 / 16 (100.00%) | 2 / 2 (100.00%) | 0 / 0 (0.00%) | 16 / 16 (100.00%) |
