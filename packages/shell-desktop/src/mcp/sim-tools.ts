@@ -26,7 +26,11 @@ type TextToolResult = {
 };
 
 type ToolRegistrar = Readonly<{
-  registerTool: (name: string, config: any, handler: any) => void;
+  registerTool: (
+    name: string,
+    config: Readonly<{ title: string; description: string }>,
+    handler: (...args: unknown[]) => Promise<TextToolResult>,
+  ) => void;
 }>;
 
 const buildTextResult = (value: unknown): TextToolResult => ({
@@ -53,6 +57,31 @@ const assertOptionalFiniteNumber = (value: unknown, message: string): number | u
   return value;
 };
 
+const assertOptionalCommandPriority = (value: unknown): CommandPriority | undefined => {
+  const candidate = assertOptionalFiniteNumber(
+    value,
+    'Invalid sim/enqueue command: expected { priority?: number }',
+  );
+
+  if (candidate === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isInteger(candidate)) {
+    throw new TypeError('Invalid sim/enqueue command: expected { priority?: 0 | 1 | 2 }');
+  }
+
+  if (
+    candidate !== CommandPriority.SYSTEM &&
+    candidate !== CommandPriority.PLAYER &&
+    candidate !== CommandPriority.AUTOMATION
+  ) {
+    throw new TypeError('Invalid sim/enqueue command: expected { priority?: 0 | 1 | 2 }');
+  }
+
+  return candidate as CommandPriority;
+};
+
 const normalizeCommandForEnqueue = (
   candidate: unknown,
   options: Readonly<{ stepSizeMs: number; nextStep: number }>,
@@ -69,10 +98,7 @@ const normalizeCommandForEnqueue = (
     'Invalid sim/enqueue command: expected { step?: number }',
   );
 
-  const priorityCandidate = assertOptionalFiniteNumber(
-    record['priority'],
-    'Invalid sim/enqueue command: expected { priority?: number }',
-  );
+  const priorityCandidate = assertOptionalCommandPriority(record['priority']);
 
   const requestId = record['requestId'];
   if (requestId !== undefined && typeof requestId !== 'string') {

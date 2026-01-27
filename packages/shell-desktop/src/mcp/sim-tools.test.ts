@@ -183,6 +183,7 @@ describe('shell-desktop MCP sim tools', () => {
     await expect(enqueueHandler?.({ commands: [{}] })).rejects.toThrow(/type/);
     await expect(enqueueHandler?.({ commands: [{ type: 'ok', step: 'nope' }] })).rejects.toThrow(/step/);
     await expect(enqueueHandler?.({ commands: [{ type: 'ok', priority: 'nope' }] })).rejects.toThrow(/priority/);
+    await expect(enqueueHandler?.({ commands: [{ type: 'ok', priority: 99 }] })).rejects.toThrow(/priority/);
 
     const stepHandler = tools.get('sim/step');
     await expect(stepHandler?.({ steps: 0 })).rejects.toThrow(/steps/);
