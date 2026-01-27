@@ -36,6 +36,16 @@
         "default": "./dist/internals.js"
       }
     },
+    "./harness": {
+      "browser": {
+        "types": "./dist/harness.browser.d.ts",
+        "default": "./dist/harness.browser.js"
+      },
+      "default": {
+        "types": "./dist/harness.d.ts",
+        "default": "./dist/harness.js"
+      }
+    },
     "./prometheus": {
       "types": "./dist/prometheus.d.ts",
       "default": "./dist/prometheus.js"

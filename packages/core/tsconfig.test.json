@@ -4,6 +4,9 @@
     "noEmit": true,
     "rootDir": "../..",
     "paths": {
+      "@idle-engine/core/harness": [
+        "packages/core/src/harness.ts"
+      ],
       "@idle-engine/content-schema": [
         "packages/content-schema/src/index.ts",
         "packages/content-schema/src/index.d.ts"
