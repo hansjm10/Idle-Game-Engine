@@ -85,7 +85,7 @@ Embed an MCP server in the Electron main process and bridge its tools to existin
 
 ```
 AI Client (Claude/Cursor)
-  │  MCP (stdio or SSE)
+  │  MCP (SSE/HTTP on localhost)
   ▼
 Electron main process
   - MCP server + tool handlers
@@ -98,9 +98,7 @@ Sim worker (node:worker_threads)
   - Optional debug/state RPC
 ```
 
-Transport is configurable:
-1. **SSE/HTTP on localhost** (recommended for “attach to a running app” workflows).
-2. **stdio** (optional) for clients that prefer spawning a process as the MCP server.
+Transport (current implementation): **SSE/HTTP on localhost** (recommended for “attach to a running app” workflows). Stdio is not implemented yet.
 
 ### 6.2 Detailed Design
 - **Runtime Changes**:
@@ -127,15 +125,16 @@ Transport is configurable:
   - `sim/pause` / `sim/resume` / `sim/step`: deterministic control of the tick loop.
   - `sim/enqueue`: enqueue runtime commands (validated + normalized similarly to `normalizeCommand` in `packages/shell-desktop/src/sim/sim-runtime.ts`).
   - `input/controlEvent`: send a `ShellControlEvent` through the same path as IPC (`packages/shell-desktop/src/ipc.ts`), ensuring parity with UI events.
-  - `window/info` / `window/resize` / `window/devtools` / `window/screenshot`: wrap `BrowserWindow` operations (screenshot returns base64 PNG and optionally writes to a controlled output dir).
+  - `window/info` / `window/resize` / `window/devtools` / `window/screenshot`: wrap `BrowserWindow` operations (screenshot returns bounded base64 PNG).
   - `asset/list` / `asset/read`: list/read assets limited to the compiled assets root (reuse the path traversal checks in `packages/shell-desktop/src/main.ts`’s `readAsset` handler logic).
   - (Phase 2) `state/get` / `state/query`: debug snapshot + path query for small state surfaces.
   - (Phase 2) `replay/*`: list/load/save/scrub/compare using existing replay formats from `packages/core/src/replay/*` and a shell-local replay directory.
 - **Tooling & Automation**:
   - Enable/disable via explicit env/flag (examples):
-    - `IDLE_ENGINE_ENABLE_MCP=1`
-    - `IDLE_ENGINE_MCP_TRANSPORT=sse|stdio`
+    - `IDLE_ENGINE_ENABLE_MCP_SERVER=1`
     - `IDLE_ENGINE_MCP_PORT=...` (SSE)
+    - `--enable-mcp-server`
+    - `--mcp-port=...`
   - Add an internal audit log (dev only) for tool invocations (tool name + sanitized args + timestamp).
 
 ### 6.3 Operational Considerations
@@ -216,7 +215,7 @@ Transport is configurable:
 4. Iterate on state/replay tools once shell runtime IO surfaces stabilize.
 
 ## 13. Open Questions
-1. **Transport**: Do we prioritize SSE-only first, or must we deliver stdio from day one for Claude Desktop compatibility?
+1. **Transport**: SSE on localhost is implemented; do we need an additional transport (stdio/Streamable HTTP) for broader client compatibility?
 2. **Auth model**: Is a session token required even for localhost? How is it communicated (console vs UI)?
 3. **State surface**: What is the “blessed” debug state snapshot for `shell-desktop` today (demo state vs progression snapshot vs diagnostics timeline)?
 4. **Replay storage**: Where should replays live (repo-local dev folder vs `app.getPath('userData')`) and what is the default format (JSONL per `packages/core/src/replay/*`)?
@@ -245,4 +244,3 @@ Transport is configurable:
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-01-27 | Ralph (AI) | Initial draft. |
-
