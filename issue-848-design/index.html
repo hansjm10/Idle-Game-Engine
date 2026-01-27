@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-issue-848-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">shell-desktop: add supported runtime harness API (Issue 848) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/issue-848-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="shell-desktop: add supported runtime harness API (Issue 848) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/issue-848-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-848-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-848-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.c184be66.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.2103ae5e.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a class="navbar__item navbar__link" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><main class="docMainContainer_BJhZ docMainContainerEnhanced_qZTj"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>shell-desktop: add supported runtime harness API (Issue 848)</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Add a supported public runtime harness surface for shells/test runners</li>
+<li class=""><strong>Authors</strong>: Codex (AI)</li>
+<li class=""><strong>Reviewers</strong>: @hansjm10</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-01-26</li>
+<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/848" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/848</a> (triggered by test-game shell work in #841)</li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p><code>@idle-engine/shell-desktop</code> and other host/test harnesses sometimes need lower-level runtime wiring primitives (coordinator construction, deterministic snapshot building, and save parsing/hydration) that are currently only directly importable via <code>@idle-engine/core/internals</code>. This defeats the repository’s <code>restrictCoreInternals</code> guardrails and makes shells brittle to internal refactors. This design introduces a supported, explicit “harness” entry point (<code>@idle-engine/core/harness</code>) that re-exports a small set of integration helpers (save format loader + snapshot builder, plus types), enabling shells to stop depending on <code>core/internals</code> while keeping the stable <code>@idle-engine/core</code> surface intentionally small.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Background</strong>:<!-- -->
+<ul>
+<li class="">The engine exposes a stable entry point (<code>@idle-engine/core</code>) and an unstable internal entry point (<code>@idle-engine/core/internals</code>). <code>@idle-engine/config-eslint</code> can enforce this split via <code>restrictCoreInternals</code>.</li>
+<li class="">The high-level <code>createGame(...)</code> façade already uses internal helpers like <code>loadGameStateSaveFormat(...)</code> and <code>buildProgressionSnapshot(...)</code> (see <code>packages/core/src/game.ts</code>), but those helpers are not themselves part of the stable exports.</li>
+</ul>
+</li>
+<li class=""><strong>Problem</strong>:<!-- -->
+<ul>
+<li class="">Shells and test harnesses that need:<!-- -->
+<ul>
+<li class="">deterministic snapshot building (i.e., caller-supplied timestamps, not <code>Date.now()</code>),</li>
+<li class="">validation + migration for unknown save payloads (JSON loaded from disk/IndexedDB),</li>
+<li class="">or custom wiring around <code>createGameRuntime</code> / <code>wireGameRuntime</code>
+must currently import helpers from <code>@idle-engine/core/internals</code> (or duplicate logic).</li>
+</ul>
+</li>
+<li class="">This defeats <code>no-restricted-imports</code> for app-facing packages and couples shells to internal module organization.</li>
+</ul>
+</li>
+<li class=""><strong>Forces</strong>:<!-- -->
+<ul>
+<li class="">Keep the stable public API (<code>@idle-engine/core</code>) intentionally small (per <code>packages/core/README.md</code>).</li>
+<li class="">Provide a supported path for hosts/shells without forcing them to opt into “internals” (no stability guarantees).</li>
+<li class="">Preserve deterministic simulation expectations (especially for CI + test harnesses).</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Goals</strong>:<!-- -->
+<ul>
+<li class="">Provide a supported public entry point for host/shell/test-harness integrations that need save parsing + deterministic snapshot helpers.</li>
+<li class="">Enable <code>@idle-engine/shell-desktop</code> to avoid <code>@idle-engine/core/internals</code> and remove any eslint escape hatches.</li>
+<li class="">Keep determinism-first workflows ergonomic (callers can supply timestamps derived from step/stepSizeMs).</li>
+<li class="">Keep the stable <code>@idle-engine/core</code> entry point small by making the harness surface explicit.</li>
+</ul>
+</li>
+<li class=""><strong>Non-Goals</strong>:<!-- -->
+<ul>
+<li class="">Replacing <code>createGame(...)</code> or redesigning the runtime wiring model.</li>
+<li class="">Changing the save schema or migration system.</li>
+<li class="">Extracting a new package unless the subpath export approach proves insufficient.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Primary Stakeholders</strong>:<!-- -->
+<ul>
+<li class="">Runtime/core maintainers (<code>packages/core</code>)</li>
+<li class="">Shell maintainers (<code>packages/shell-desktop</code>, future shells)</li>
+<li class="">Tooling maintainers (<code>tools/*</code> consumers that may also benefit from a supported harness surface)</li>
+</ul>
+</li>
+<li class=""><strong>Agent Roles</strong>:<!-- -->
+<ul>
+<li class=""><strong>Docs Agent</strong>: Maintain this design doc and keep references current.</li>
+<li class=""><strong>Core API Agent</strong>: Implement <code>@idle-engine/core/harness</code> and ensure exports/types are correct for both browser + Node resolution.</li>
+<li class=""><strong>Shell Migration Agent</strong>: Update <code>@idle-engine/shell-desktop</code> to use the supported harness API and remove eslint disables.</li>
+<li class=""><strong>Test Agent</strong>: Add focused unit tests that prevent the harness entry point from regressing.</li>
+</ul>
+</li>
+<li class=""><strong>Affected Packages/Services</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/core</code> (new subpath export + source entrypoint)</li>
+<li class=""><code>packages/shell-desktop</code> (import migration; remove eslint escape hatch)</li>
+<li class="">(Optional) <code>tools/runtime-sim</code>, <code>tools/economy-verification</code> (follow-up migration away from <code>core/internals</code>)</li>
+</ul>
+</li>
+<li class=""><strong>Compatibility Considerations</strong>:<!-- -->
+<ul>
+<li class="">Additive change: new subpath export only; no breaking changes to existing entry points.</li>
+<li class="">Keep <code>@idle-engine/core/internals</code> semantics unchanged for engine contributors.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class=""><code>@idle-engine/core</code> exports runtime wiring (<code>IdleEngineRuntime</code>, <code>createGameRuntime</code>, <code>wireGameRuntime</code>) and the high-level <code>createGame(...)</code> façade (<code>packages/core/src/index.browser.ts</code>).</li>
+<li class=""><code>createGame(...)</code> implements:<!-- -->
+<ul>
+<li class=""><code>hydrate(save: unknown)</code> by calling <code>loadGameStateSaveFormat(save)</code> (save validation + migration).</li>
+<li class=""><code>getSnapshot()</code> by calling <code>buildProgressionSnapshot(step, Date.now(), coordinator.state)</code> (non-deterministic timestamp).
+These helpers live in <code>packages/core/src/game-state-save.ts</code> and <code>packages/core/src/progression.ts</code> but are not exposed on the stable entry point.</li>
+</ul>
+</li>
+<li class="">Consumers that need the same primitives (especially deterministic snapshot timestamps, or save parsing when using <code>createGameRuntime</code> directly) have no supported import path besides <code>@idle-engine/core/internals</code>.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<ul>
+<li class="">Add a new, browser-safe harness entry point: <code>@idle-engine/core/harness</code>.</li>
+<li class="">Export a minimal set of integration helpers that shells/test harnesses need:<!-- -->
+<ul>
+<li class="">Save parsing/validation + migration: <code>loadGameStateSaveFormat</code> (and related types)</li>
+<li class="">Deterministic snapshot building: <code>buildProgressionSnapshot</code> (and related types)</li>
+</ul>
+</li>
+<li class="">Keep the stable entry point (<code>@idle-engine/core</code>) unchanged; harness is an opt-in “advanced integration” surface that remains supported and documented.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Runtime Changes</strong>:<!-- -->
+<ul>
+<li class="">Add new entrypoint modules under <code>packages/core/src/</code>:<!-- -->
+<ul>
+<li class=""><code>harness.browser.ts</code>: browser-safe exports</li>
+<li class=""><code>harness.ts</code>: Node entrypoint that re-exports <code>harness.browser</code> (mirrors the existing <code>internals.ts</code> pattern)</li>
+</ul>
+</li>
+<li class="">Update <code>packages/core/package.json</code> <code>exports</code> map to include <code>./harness</code> (both <code>browser</code> and <code>default</code> conditions), emitting <code>dist/harness(.browser).js</code> and <code>.d.ts</code> via the existing <code>tsc</code> build.</li>
+</ul>
+</li>
+<li class=""><strong>Data &amp; Schemas</strong>:<!-- -->
+<ul>
+<li class="">No save schema changes. The harness entry point exposes the existing save loader API that already supports schema migrations.</li>
+</ul>
+</li>
+<li class=""><strong>APIs &amp; Contracts</strong>:<!-- -->
+<ul>
+<li class=""><code>@idle-engine/core/harness</code> exports:<!-- -->
+<ul>
+<li class=""><code>loadGameStateSaveFormat(value, options?)</code> for validating + migrating unknown save payloads into <code>GameStateSaveFormat</code>.</li>
+<li class=""><code>buildProgressionSnapshot(step, nowMs, state)</code> for deterministic snapshot materialization.</li>
+<li class="">The narrow set of types needed by these helpers (type exports only).</li>
+</ul>
+</li>
+<li class="">Shells can then:<!-- -->
+<ul>
+<li class="">parse a save from disk via <code>loadGameStateSaveFormat(JSON.parse(fileContents))</code>,</li>
+<li class="">hydrate the wired runtime via <code>GameRuntimeWiring.hydrate(parsedSave, { currentStep: parsedSave.runtime.step })</code>,</li>
+<li class="">and build snapshots using a deterministic clock (e.g., <code>nowMs = step * stepSizeMs</code>).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Tooling &amp; Automation</strong>:<!-- -->
+<ul>
+<li class="">No eslint rule changes required: <code>@idle-engine/config-eslint</code> only restricts <code>@idle-engine/core/internals</code>, so <code>@idle-engine/core/harness</code> is automatically permitted.</li>
+<li class="">Add a small unit test in <code>packages/core</code> that imports from <code>@idle-engine/core/harness</code> and smoke-checks the main exports (prevents export-map drift).</li>
+<li class="">Update documentation (<code>packages/core/README.md</code> and/or <code>docs/idle-engine-design.md</code>) to list and describe the harness entry point.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Deployment</strong>: Additive API surface; consumers can migrate incrementally.</li>
+<li class=""><strong>Telemetry &amp; Observability</strong>: N/A.</li>
+<li class=""><strong>Security &amp; Compliance</strong>: No new data classes; harness exposes existing save validation and snapshot builders.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td><code>feat(core): add @idle-engine/core/harness entrypoint</code></td><td>Add new <code>harness(.browser)</code> entrypoint(s) and export map wiring; re-export save loader + snapshot builder and required types.</td><td>Core API Agent</td><td>Doc approval</td><td><code>@idle-engine/core/harness</code> is importable (Node + browser conditions); exports include <code>loadGameStateSaveFormat</code> and <code>buildProgressionSnapshot</code>; build passes without editing <code>dist/**</code> by hand.</td></tr><tr><td><code>refactor(shell-desktop): migrate runtime harness imports</code></td><td>Update shell/test harness code to use <code>@idle-engine/core/harness</code> (and/or stable <code>@idle-engine/core</code>) instead of <code>@idle-engine/core/internals</code>; remove eslint disables.</td><td>Shell Migration Agent</td><td>Core harness entrypoint</td><td>No <code>@idle-engine/core/internals</code> imports remain in <code>packages/shell-desktop</code>; any eslint escape hatches for <code>no-restricted-imports</code> are removed; <code>pnpm test --filter @idle-engine/shell-desktop</code> passes.</td></tr><tr><td><code>test(core): add harness export smoke coverage</code></td><td>Add a minimal Vitest suite that imports the harness entry point and verifies key exports exist and behave at a basic level.</td><td>Test Agent</td><td>Core harness entrypoint</td><td>New test fails if the harness export map breaks; test runs deterministically with no console noise.</td></tr><tr><td><code>docs(core): document harness entrypoint</code></td><td>Document the new supported harness surface and when to use it vs <code>@idle-engine/core</code> vs <code>@idle-engine/core/internals</code>.</td><td>Docs Agent</td><td>Core harness entrypoint</td><td><code>packages/core/README.md</code> lists <code>@idle-engine/core/harness</code> and describes intended usage; design doc references stay current.</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1</strong>: Implement <code>@idle-engine/core/harness</code>, migrate <code>shell-desktop</code>, add tests, and document the new entry point (single PR is preferred).</li>
+<li class=""><strong>Phase 2</strong> (optional): Migrate tooling that currently imports from <code>@idle-engine/core/internals</code> to <code>@idle-engine/core/harness</code> where appropriate; leave true contributor-only tooling on <code>internals</code>.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Hand-off Package</strong>:<!-- -->
+<ul>
+<li class="">Issue 848 body for context and acceptance criteria.</li>
+<li class="">Existing internal helpers:<!-- -->
+<ul>
+<li class="">Save loader: <code>packages/core/src/game-state-save.ts</code> (<code>loadGameStateSaveFormat</code>)</li>
+<li class="">Snapshot builder: <code>packages/core/src/progression.ts</code> (<code>buildProgressionSnapshot</code>)</li>
+</ul>
+</li>
+<li class="">Existing façade that already uses these helpers: <code>packages/core/src/game.ts</code></li>
+<li class="">Consumer package: <code>packages/shell-desktop</code></li>
+</ul>
+</li>
+<li class=""><strong>Communication Cadence</strong>: One reviewer pass after the harness API is proposed; confirm naming + export set before finishing the migration.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Context Packets</strong>:<!-- -->
+<ul>
+<li class="">Review <code>packages/core/README.md</code> and <code>docs/idle-engine-design.md</code> entry point conventions (<code>core</code> vs <code>core/internals</code>).</li>
+<li class="">Inspect <code>packages/core/src/game.ts</code> to understand current save/snapshot behavior and determinism implications.</li>
+</ul>
+</li>
+<li class=""><strong>Prompting &amp; Constraints</strong>:<!-- -->
+<ul>
+<li class="">Do not edit checked-in <code>dist/**</code> outputs by hand.</li>
+<li class="">Keep exports minimal and “harness-focused” to avoid growing an accidental second stable API.</li>
+<li class="">Use type-only exports (<code>export type { ... }</code>) for types; the repo enforces <code>consistent-type-imports/exports</code>.</li>
+<li class="">Avoid console output in tests (Vitest LLM reporter expects clean output).</li>
+</ul>
+</li>
+<li class=""><strong>Safety Rails</strong>:<!-- -->
+<ul>
+<li class="">Prefer additive exports over changing existing stable API behavior.</li>
+<li class="">Avoid exporting broad internal modules (e.g., don’t re-export <code>internals</code> wholesale).</li>
+</ul>
+</li>
+<li class=""><strong>Validation Hooks</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm lint</code></li>
+<li class=""><code>pnpm test --filter @idle-engine/core</code></li>
+<li class=""><code>pnpm test --filter @idle-engine/shell-desktop</code></li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Export the helpers directly from <code>@idle-engine/core</code></strong>:<!-- -->
+<ul>
+<li class="">Pros: simplest for consumers.</li>
+<li class="">Cons: grows the stable entry point and blurs the public vs advanced boundary.</li>
+</ul>
+</li>
+<li class=""><strong>Create a new package (e.g., <code>@idle-engine/runtime-harness</code>)</strong>:<!-- -->
+<ul>
+<li class="">Pros: clear dependency and stability boundary; avoids adding more subpath exports on core.</li>
+<li class="">Cons: more monorepo overhead (new package, build outputs, versioning) for what is primarily a curated re-export surface.</li>
+</ul>
+</li>
+<li class=""><strong>Use <code>createGame(...)</code> everywhere</strong>:<!-- -->
+<ul>
+<li class="">Pros: already stable; already performs save parsing and snapshot building.</li>
+<li class="">Cons: <code>createGame.getSnapshot()</code> currently uses <code>Date.now()</code> and hides some knobs needed for deterministic shells/harnesses; also forces the higher-level command façade where lower-level wiring is desired.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Add a new <code>packages/core/src/harness.test.ts</code> (or colocated <code>*.test.ts</code>) that imports from <code>@idle-engine/core/harness</code> and asserts:<!-- -->
+<ul>
+<li class=""><code>loadGameStateSaveFormat</code> loads a minimal valid save (or throws on invalid shape).</li>
+<li class=""><code>buildProgressionSnapshot</code> returns a snapshot with expected step/time fields for a small coordinator state fixture.</li>
+</ul>
+</li>
+<li class="">Run:<!-- -->
+<ul>
+<li class=""><code>pnpm test --filter @idle-engine/core</code></li>
+<li class=""><code>pnpm test --filter @idle-engine/shell-desktop</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Performance</strong>: N/A (exports only).</li>
+<li class=""><strong>Tooling / A11y</strong>: N/A.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>API creep</strong>: Harness becomes a dumping ground of semi-public internals.<!-- -->
+<ul>
+<li class="">Mitigation: Keep the export list narrowly focused on shell/test harness needs; document intended usage.</li>
+</ul>
+</li>
+<li class=""><strong>Stability expectations</strong>: Consumers might assume harness is as stable as the base entry point.<!-- -->
+<ul>
+<li class="">Mitigation: Document stability expectations explicitly in <code>packages/core/README.md</code> and JSDoc tags on <code>harness</code> entrypoint(s).</li>
+</ul>
+</li>
+<li class=""><strong>Export map drift</strong>: Subpath exports can break with build output or tooling changes.<!-- -->
+<ul>
+<li class="">Mitigation: Add an explicit unit test importing <code>@idle-engine/core/harness</code> to catch broken exports in CI.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Milestones</strong>:<!-- -->
+<ul>
+<li class="">Add <code>@idle-engine/core/harness</code> entrypoint and document it.</li>
+<li class="">Migrate <code>@idle-engine/shell-desktop</code> away from <code>@idle-engine/core/internals</code>.</li>
+<li class="">Optional: migrate additional shells/tools where appropriate.</li>
+</ul>
+</li>
+<li class=""><strong>Migration Strategy</strong>:<!-- -->
+<ul>
+<li class="">No schema migrations required; existing save migration behavior is reused by exporting <code>loadGameStateSaveFormat</code>.</li>
+<li class="">Keep <code>@idle-engine/core/internals</code> available for engine contributors and true internal tooling.</li>
+</ul>
+</li>
+<li class=""><strong>Communication</strong>:<!-- -->
+<ul>
+<li class="">Update Issue 848 with the final chosen entrypoint name and a short example snippet for shells (import paths + deterministic timestamp pattern).</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
+<ol>
+<li class="">Entry point name: <code>@idle-engine/core/harness</code> vs <code>@idle-engine/core/testing</code> vs <code>@idle-engine/core/shell</code>?</li>
+<li class="">Export set: should the harness also export <code>createProgressionCoordinator</code> (for custom wiring) or remain focused on save/snapshot helpers only?</li>
+<li class="">Stability tag: should <code>harness</code> be documented as <code>stable</code> or <code>experimental-but-supported</code>?</li>
+<li class="">Do we want to adjust <code>createGame.getSnapshot()</code> to allow injecting a deterministic clock (follow-up), or keep determinism as a harness-only concern?</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ul>
+<li class="">Consider a small deterministic “clock policy” helper (e.g., <code>stepToSimTimeMs(step, stepSizeMs)</code>) if multiple shells duplicate it.</li>
+<li class="">Migrate selected tooling (<code>tools/runtime-sim</code>, <code>tools/economy-verification</code>) off <code>core/internals</code> if they only use the harness subset.</li>
+<li class="">If the harness surface grows substantially, revisit extracting it into a dedicated <code>@idle-engine/runtime-harness</code> package.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class="">Issue 848: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/848" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/848</a></li>
+<li class="">Entry point conventions: <code>packages/core/README.md</code>, <code>docs/idle-engine-design.md</code></li>
+<li class="">Save parsing + migrations: <code>packages/core/src/game-state-save.ts</code> (<code>loadGameStateSaveFormat</code>)</li>
+<li class="">Snapshot building: <code>packages/core/src/progression.ts</code> (<code>buildProgressionSnapshot</code>)</li>
+<li class="">Existing façade usage: <code>packages/core/src/game.ts</code> (<code>hydrate</code>, <code>getSnapshot</code>)</li>
+<li class="">ESLint restriction: <code>packages/config-eslint/index.js</code> (<code>restrictCoreInternals</code>)</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Harness</strong>: A supported integration surface used by shells, simulations, and tests to wire runtimes, parse saves, and materialize snapshots without depending on unstable engine internals.</li>
+<li class=""><strong>Shell</strong>: A host application (desktop/web) embedding the engine runtime and renderer.</li>
+<li class=""><strong>Deterministic time</strong>: A clock model where “now” is derived from simulation step/stepSizeMs, not wall clock (<code>Date.now()</code>).</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-01-26</td><td>Codex (AI)</td><td>Initial draft for Issue 848.</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/issue-848-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
