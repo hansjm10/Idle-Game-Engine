@@ -147,10 +147,7 @@ async function listAssets(
   const queue: string[] = [targetRealPath];
 
   while (queue.length > 0) {
-    const currentDir = queue.shift();
-    if (!currentDir) {
-      continue;
-    }
+    const currentDir = queue.shift()!;
 
     const dirents = await fsPromises.readdir(currentDir, { withFileTypes: true });
     dirents.sort((a, b) => a.name.localeCompare(b.name));
@@ -208,9 +205,7 @@ async function readAsset(
 export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpController): void {
   let compiledAssetsRootRealPathPromise: Promise<string> | undefined;
   const getCompiledAssetsRootRealPath = (): Promise<string> => {
-    if (!compiledAssetsRootRealPathPromise) {
-      compiledAssetsRootRealPathPromise = fsPromises.realpath(controller.compiledAssetsRootPath);
-    }
+    compiledAssetsRootRealPathPromise ??= fsPromises.realpath(controller.compiledAssetsRootPath);
 
     return compiledAssetsRootRealPathPromise;
   };

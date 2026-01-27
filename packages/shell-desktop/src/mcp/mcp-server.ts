@@ -1,8 +1,7 @@
 import http from 'node:http';
 import type { ServerResponse } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import type { AddressInfo } from 'node:net';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerAssetTools } from './asset-tools.js';
 import type { AssetMcpController } from './asset-tools.js';
 import { registerInputTools } from './input-tools.js';
@@ -13,7 +12,7 @@ import { registerWindowTools } from './window-tools.js';
 import type { WindowMcpController } from './window-tools.js';
 
 export type ShellDesktopMcpServer = Readonly<{
-  sseUrl: URL;
+  url: URL;
   close: () => Promise<void>;
 }>;
 
@@ -33,8 +32,7 @@ const MCP_SERVER_INFO = {
 const DEFAULT_MCP_PORT = 8570;
 const MCP_HOST = '127.0.0.1';
 
-const MCP_SSE_PATH = '/mcp/sse';
-const MCP_MESSAGE_PATH = '/mcp/message';
+const MCP_HTTP_PATH = '/mcp/sse';
 
 export function isShellDesktopMcpServerEnabled(
   argv: readonly string[] = process.argv,
@@ -116,7 +114,14 @@ export async function startShellDesktopMcpServer(
 ): Promise<ShellDesktopMcpServer> {
   const port = options.port ?? DEFAULT_MCP_PORT;
 
-  const sessions = new Map<string, Readonly<{ transport: SSEServerTransport; server: McpServer }>>();
+  const server = createShellDesktopMcpServer({
+    sim: options.sim,
+    window: options.window,
+    input: options.input,
+    asset: options.asset,
+  });
+  const transport = new StreamableHTTPServerTransport();
+  await server.connect(transport);
 
   const safeEndResponse = (res: ServerResponse, statusCode: number, message: string): void => {
     if (res.writableEnded) {
@@ -128,16 +133,6 @@ export async function startShellDesktopMcpServer(
     }
 
     res.end(message);
-  };
-
-  const closeSession = async (sessionId: string): Promise<void> => {
-    const session = sessions.get(sessionId);
-    if (!session) {
-      return;
-    }
-
-    sessions.delete(sessionId);
-    await Promise.allSettled([session.server.close(), session.transport.close()]);
   };
 
   const httpServer = http.createServer((req, res) => {
@@ -155,49 +150,10 @@ export async function startShellDesktopMcpServer(
       return;
     }
 
-    if (req.method === 'GET' && requestUrl.pathname === MCP_SSE_PATH) {
-      const server = createShellDesktopMcpServer({
-        sim: options.sim,
-        window: options.window,
-        input: options.input,
-        asset: options.asset,
-      });
-      const transport = new SSEServerTransport(MCP_MESSAGE_PATH, res);
-      const sessionId = transport.sessionId;
-      sessions.set(sessionId, { transport, server });
-
-      transport.onclose = () => {
-        void closeSession(sessionId);
-      };
-
-      void server.connect(transport).catch((error: unknown) => {
+    if (requestUrl.pathname === MCP_HTTP_PATH) {
+      transport.handleRequest(req, res).catch((error: unknown) => {
         safeEndResponse(res, 500, String(error));
-        void closeSession(sessionId);
       });
-
-      return;
-    }
-
-    if (req.method === 'POST' && requestUrl.pathname === MCP_MESSAGE_PATH) {
-      const sessionId = requestUrl.searchParams.get('sessionId');
-      if (!sessionId) {
-        safeEndResponse(res, 400, 'Missing sessionId.');
-        return;
-      }
-
-      const session = sessions.get(sessionId);
-      if (!session) {
-        safeEndResponse(res, 404, 'Unknown sessionId.');
-        return;
-      }
-
-      try {
-        void session.transport.handlePostMessage(req, res).catch((error: unknown) => {
-          safeEndResponse(res, 500, String(error));
-        });
-      } catch (error) {
-        safeEndResponse(res, 500, String(error));
-      }
       return;
     }
 
@@ -217,12 +173,11 @@ export async function startShellDesktopMcpServer(
     throw new Error('Failed to resolve MCP server address.');
   }
 
-  const baseUrl = new URL(`http://${MCP_HOST}:${(address as AddressInfo).port}`);
-  const sseUrl = new URL(MCP_SSE_PATH, baseUrl);
+  const baseUrl = new URL(`http://${MCP_HOST}:${address.port}`);
+  const url = new URL(MCP_HTTP_PATH, baseUrl);
 
   const close = async (): Promise<void> => {
-    await Promise.allSettled([...sessions.keys()].map((sessionId) => closeSession(sessionId)));
-    sessions.clear();
+    await Promise.allSettled([server.close(), transport.close()]);
 
     await new Promise<void>((resolve, reject) => {
       httpServer.close((error) => {
@@ -235,7 +190,7 @@ export async function startShellDesktopMcpServer(
     });
   };
 
-  return { sseUrl, close };
+  return { url, close };
 }
 
 export async function maybeStartShellDesktopMcpServer(
@@ -266,7 +221,7 @@ export async function maybeStartShellDesktopMcpServer(
 
   if (env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console
-    console.log(`[shell-desktop] MCP server listening at ${server.sseUrl.toString()}`);
+    console.log(`[shell-desktop] MCP server listening at ${server.url.toString()}`);
   }
 
   return server;

@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { startShellDesktopMcpServer } from './mcp-server.js';
 
@@ -23,25 +23,6 @@ async function readResponseBody(response: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-async function waitForCondition(
-  predicate: () => boolean,
-  { timeoutMs = 750, pollMs = 10 }: Readonly<{ timeoutMs?: number; pollMs?: number }> = {},
-): Promise<void> {
-  const timeoutAt = Date.now() + timeoutMs;
-
-  while (Date.now() < timeoutAt) {
-    if (predicate()) {
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, pollMs);
-    });
-  }
-
-  throw new Error('Timed out waiting for condition');
-}
-
 describe('shell-desktop MCP server', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];
 
@@ -54,7 +35,7 @@ describe('shell-desktop MCP server', () => {
     servers.push(server);
 
     const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
-    const transport = new SSEClientTransport(server.sseUrl);
+    const transport = new StreamableHTTPClientTransport(server.url);
     await client.connect(transport);
 
     const tools = await client.listTools();
@@ -76,10 +57,10 @@ describe('shell-desktop MCP server', () => {
       uncaughtExceptions.push(error);
     };
 
-    process.once('uncaughtException', onUncaughtException);
+      process.once('uncaughtException', onUncaughtException);
 
     try {
-      const port = Number.parseInt(server.sseUrl.port, 10);
+      const port = Number.parseInt(server.url.port, 10);
       const response = await new Promise<IncomingMessage>((resolve, reject) => {
         const request = http.request(
           {
@@ -116,11 +97,16 @@ describe('shell-desktop MCP server', () => {
 
     process.on('unhandledRejection', onUnhandledRejection);
 
-    const handlePostMessageSpy = vi
-      .spyOn(SSEServerTransport.prototype, 'handlePostMessage')
-      .mockImplementation(async (_request, response) => {
-        response.writeHead(500).end('boom');
-        throw new Error('boom');
+    const handleRequestOriginal = StreamableHTTPServerTransport.prototype.handleRequest;
+    const handleRequestSpy = vi
+      .spyOn(StreamableHTTPServerTransport.prototype, 'handleRequest')
+      .mockImplementation(async function (this: StreamableHTTPServerTransport, request, response, parsedBody) {
+        if (request.method === 'POST') {
+          response.writeHead(500).end('boom');
+          throw new Error('boom');
+        }
+
+        return handleRequestOriginal.call(this, request, response, parsedBody);
       });
 
     try {
@@ -128,7 +114,7 @@ describe('shell-desktop MCP server', () => {
       servers.push(server);
 
       const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
-      const transport = new SSEClientTransport(server.sseUrl);
+      const transport = new StreamableHTTPClientTransport(server.url);
       await client.connect(transport).catch(() => undefined);
       await client.close().catch(() => undefined);
 
@@ -139,23 +125,16 @@ describe('shell-desktop MCP server', () => {
       expect(unhandledRejections).toHaveLength(0);
     } finally {
       process.off('unhandledRejection', onUnhandledRejection);
-      handlePostMessageSpy.mockRestore();
+      handleRequestSpy.mockRestore();
     }
   });
 
-  it('closes per-session resources when SSE disconnects', async () => {
+  it('closes server resources when stopped', async () => {
     const serverCloseSpy = vi.spyOn(McpServer.prototype, 'close');
-    const transportCloseSpy = vi.spyOn(SSEServerTransport.prototype, 'close');
+    const transportCloseSpy = vi.spyOn(StreamableHTTPServerTransport.prototype, 'close');
 
     const server = await startShellDesktopMcpServer({ port: 0 });
-    servers.push(server);
-
-    const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
-    const transport = new SSEClientTransport(server.sseUrl);
-    await client.connect(transport);
-    await client.close();
-
-    await waitForCondition(() => serverCloseSpy.mock.calls.length > 0 && transportCloseSpy.mock.calls.length > 0);
+    await server.close();
 
     expect(serverCloseSpy).toHaveBeenCalled();
     expect(transportCloseSpy).toHaveBeenCalled();

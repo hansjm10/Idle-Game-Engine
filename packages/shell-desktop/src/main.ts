@@ -705,7 +705,7 @@ app.on('window-all-closed', () => {
   simWorkerController = undefined;
   mainWindow = undefined;
   if (process.platform !== 'darwin') {
-    void mcpServer?.close().catch((error: unknown) => {
+    mcpServer?.close().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.error(error);
     });
@@ -715,7 +715,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  void mcpServer?.close().catch((error: unknown) => {
+  mcpServer?.close().catch((error: unknown) => {
     // eslint-disable-next-line no-console
     console.error(error);
   });
