@@ -89,10 +89,10 @@ sidebar_position: 99
   - New internal module: `packages/shell-desktop/src/sim/worker-protocol.ts`.
   - Contract definitions (TypeScript, structural at runtime):
     - Inbound messages (main -> worker):
-      - `SimWorkerInitMessage`: `{ kind: 'init', stepSizeMs?: number, maxStepsPerFrame?: number }`
+      - `SimWorkerInitMessage`: `{ kind: 'init', stepSizeMs: number, maxStepsPerFrame: number }`
       - `SimWorkerTickMessage`: `{ kind: 'tick', deltaMs: number }`
       - `SimWorkerEnqueueCommandsMessage`: `{ kind: 'enqueueCommands', commands: readonly Command[] }`
-      - `SimWorkerShutdownMessage`: `{ kind: 'shutdown' }` (currently used by `sim-worker.test.ts`; main process does not need to send it yet)
+      - `SimWorkerShutdownMessage`: `{ kind: 'shutdown' }` (supported for unit tests and potential future graceful shutdown; production `main.ts` currently uses `worker.terminate()`)
       - `SimWorkerInboundMessage`: union of the above.
     - Outbound messages (worker -> main):
       - `SimWorkerReadyMessage`: `{ kind: 'ready', stepSizeMs: number, nextStep: number }`
@@ -103,6 +103,8 @@ sidebar_position: 99
     - Use `import type { ... }` for type-only imports (`Command`, `RenderCommandBuffer`) to satisfy `@typescript-eslint/consistent-type-imports`.
     - Keep local imports using `.js` specifiers (consistent with existing `packages/shell-desktop/src/*` patterns), e.g. `import type { SimWorkerOutboundMessage } from './sim/worker-protocol.js'`.
     - `main.ts` must not include any `kind === 'frames'` branch after migration; `SimWorkerFramesMessage` must not exist.
+    - `SimWorkerInitMessage` is a required main->worker configuration message in production. The worker must treat `stepSizeMs` and `maxStepsPerFrame` as required, finite numbers with `stepSizeMs >= 1` and `maxStepsPerFrame >= 1`; missing/invalid values should be treated as a protocol error (emit `{ kind: 'error', ... }` and do not emit `ready`).
+    - If the worker receives `tick` / `enqueueCommands` before any successful `init`, it may lazily create a runtime using core defaults (`stepSizeMs = 100`, `maxStepsPerFrame = 50`). This path is primarily exercised by unit tests.
 - **Tooling & Automation**:
   - No new tooling required. Ensure the package test suite still runs under existing Vitest config.
 
@@ -192,9 +194,9 @@ sidebar_position: 99
 - **Migration Strategy**: N/A (internal protocol shipped together).
 - **Communication**: Mention in PR description that `frames` was removed as dead code and that `frame` is the canonical outbound message.
 
-## 13. Open Questions
-- Should the shared protocol explicitly include `shutdown` as a supported main->worker message (even though the main process does not currently send it), or should `sim-worker.test.ts` be updated to treat it as an internal-only message?
-- Should `SimWorkerInitMessage.stepSizeMs` / `maxStepsPerFrame` be required in the protocol (matching main’s usage) or remain optional (matching worker flexibility)?
+## 13. Resolved Decisions (from design review)
+- **`shutdown`**: Included in `SimWorkerInboundMessage`. Expected sender is unit tests (and optionally future production code). Current production `main.ts` shutdown continues to use `worker.terminate()`; no change to that behavior is required for this issue.
+- **`init` fields**: `SimWorkerInitMessage.stepSizeMs` and `maxStepsPerFrame` are required in the shared protocol type. In production, `main.ts` must send a valid `init` before starting the tick loop. The worker treats missing/invalid values as a protocol error (emit `{ kind: 'error', ... }` and do not emit `ready`).
 
 ## 14. Follow-Up Work
 - Add optional runtime type-guard helpers (e.g., `isSimWorkerOutboundMessage`) if future debugging indicates malformed messages are a recurring source of crashes.
@@ -213,4 +215,3 @@ sidebar_position: 99
 | Date       | Author | Change Summary |
 |------------|--------|----------------|
 | 2026-02-03 | Codex (AI) | Initial draft |
-
