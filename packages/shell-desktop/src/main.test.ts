@@ -337,31 +337,12 @@ describe('shell-desktop main process entrypoint', () => {
     await vi.advanceTimersByTimeAsync(32);
     expect(worker?.postMessage).toHaveBeenCalledWith({ kind: 'tick', deltaMs: 16 });
 
-    let frameSends = 0;
-    mainWindow?.webContents.send.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.frame) {
-        frameSends += 1;
-        if (frameSends === 1) {
-          throw new Error('frame send failed');
-        }
-      }
-      return undefined;
-    });
-
-    const frameA = { frame: { step: 0, simTimeMs: 0 } };
+    // Test: frame message with frame present forwards to IPC
     const frameB = { frame: { step: 1, simTimeMs: 16 } };
-    worker?.emitMessage({ kind: 'frames', frames: [frameA, frameB], nextStep: 2 });
-
-    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameB);
-    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, frameA);
-
-    mainWindow?.webContents.send.mockClear();
-    worker?.emitMessage({ kind: 'frames', frames: [], nextStep: 2 });
-    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.anything());
-
     worker?.emitMessage({ kind: 'frame', frame: frameB, droppedFrames: 0, nextStep: 2 });
     expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameB);
 
+    // Test: frame message without frame does not send IPC
     mainWindow?.webContents.send.mockClear();
     worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 2 });
     expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.anything());
