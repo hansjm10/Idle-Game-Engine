@@ -103,8 +103,12 @@ sidebar_position: 99
     - Use `import type { ... }` for type-only imports (`Command`, `RenderCommandBuffer`) to satisfy `@typescript-eslint/consistent-type-imports`.
     - Keep local imports using `.js` specifiers (consistent with existing `packages/shell-desktop/src/*` patterns), e.g. `import type { SimWorkerOutboundMessage } from './sim/worker-protocol.js'`.
     - `main.ts` must not include any `kind === 'frames'` branch after migration; `SimWorkerFramesMessage` must not exist.
-    - `SimWorkerInitMessage` is a required main->worker configuration message in production. The worker must treat `stepSizeMs` and `maxStepsPerFrame` as required, finite numbers with `stepSizeMs >= 1` and `maxStepsPerFrame >= 1`; missing/invalid values should be treated as a protocol error (emit `{ kind: 'error', ... }` and do not emit `ready`).
-    - If the worker receives `tick` / `enqueueCommands` before any successful `init`, it may lazily create a runtime using core defaults (`stepSizeMs = 100`, `maxStepsPerFrame = 50`). This path is primarily exercised by unit tests.
+    - `SimWorkerInitMessage` is a required main->worker configuration message in production. Runtime semantics for malformed payloads are still defined because the worker receives `unknown` at runtime:
+      - Validation: `stepSizeMs` and `maxStepsPerFrame` must each be a finite number `>= 1`.
+      - On invalid/missing `stepSizeMs`/`maxStepsPerFrame`: emit `{ kind: 'error', error: string }` and do not emit `ready` for that message. The worker does not modify any existing runtime configuration.
+      - Error string stability for invalid `init`: `error` must contain the stable substring `protocol:init` and the offending field name (`stepSizeMs` or `maxStepsPerFrame`). (Tests should assert these substrings rather than the full error string.)
+      - Recovery: after an invalid `init`, a later valid `init` is accepted; it creates/replaces the runtime and emits `ready`.
+    - If the worker receives `tick` / `enqueueCommands` before any valid `init`, it lazily creates a runtime using core defaults (`stepSizeMs = 100`, `maxStepsPerFrame = 50`). This remains true even if an earlier `init` was invalid (invalid `init` does not initialize the runtime).
 - **Tooling & Automation**:
   - No new tooling required. Ensure the package test suite still runs under existing Vitest config.
 
@@ -175,9 +179,12 @@ sidebar_position: 99
       - When `frame` is present, main forwards it to `IPC_CHANNELS.frame`.
       - When `frame` is absent, main does not send any frame IPC.
       - When forwarding throws, main logs an error (existing test remains valid).
-  - Update `packages/shell-desktop/src/sim-worker.test.ts` (optional type coverage):
-    - Import protocol types for message payloads to ensure compile-time contract adherence.
-    - Keep runtime behavior assertions unchanged (ready, frame coalescing, error emission).
+  - Update `packages/shell-desktop/src/sim-worker.test.ts`:
+    - Compile-time: import protocol types for message payloads to ensure contract adherence.
+    - Runtime: add explicit coverage for `init` validation semantics:
+      - Missing fields: `init` missing `stepSizeMs` and/or `maxStepsPerFrame` emits `{ kind: 'error' }` with `error` containing `protocol:init` and the missing field name; no `ready` is emitted.
+      - Invalid values: non-finite values (`NaN`, `Infinity`) and `<= 0` values for either field emit `{ kind: 'error' }` with `error` containing `protocol:init` and the offending field name; no `ready` is emitted.
+      - Post-invalid behavior: after an invalid `init`, a `tick` still produces `frame` output (default-runtime path), and a later valid `init` emits `ready` and proceeds normally.
 - **Performance**: N/A (no algorithmic changes).
 - **Tooling / A11y**: N/A.
 
@@ -196,7 +203,7 @@ sidebar_position: 99
 
 ## 13. Resolved Decisions (from design review)
 - **`shutdown`**: Included in `SimWorkerInboundMessage`. Expected sender is unit tests (and optionally future production code). Current production `main.ts` shutdown continues to use `worker.terminate()`; no change to that behavior is required for this issue.
-- **`init` fields**: `SimWorkerInitMessage.stepSizeMs` and `maxStepsPerFrame` are required in the shared protocol type. In production, `main.ts` must send a valid `init` before starting the tick loop. The worker treats missing/invalid values as a protocol error (emit `{ kind: 'error', ... }` and do not emit `ready`).
+- **`init` fields**: `SimWorkerInitMessage.stepSizeMs` and `maxStepsPerFrame` are required in the shared protocol type. In production, `main.ts` must send a valid `init` before starting the tick loop. For malformed runtime payloads, invalid/missing fields emit `{ kind: 'error', ... }` (with stable `protocol:init` + field-name substrings), do not emit `ready` for that `init`, and do not change any existing runtime configuration; subsequent `tick`/`enqueueCommands` run against the existing runtime (or defaults if none exists) until a valid `init` arrives.
 
 ## 14. Follow-Up Work
 - Add optional runtime type-guard helpers (e.g., `isSimWorkerOutboundMessage`) if future debugging indicates malformed messages are a recurring source of crashes.
