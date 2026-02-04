@@ -623,10 +623,25 @@ describe('shell-desktop main process entrypoint', () => {
     controlEventHandler?.({}, { intent: 'collect', phase: 'start', metadata: [] });
     controlEventHandler?.({}, { intent: '', phase: 'start' });
     controlEventHandler?.({}, { intent: 'collect', phase: 'nope' });
+    // Invalid: value is present but not finite (NaN)
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: NaN });
+    // Invalid: value is present but not finite (Infinity)
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: Infinity });
+    // Invalid: value is present but not finite (-Infinity)
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: -Infinity });
+    // Invalid: value is present but not a number
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: 'not-a-number' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
     controlEventHandler?.({}, { intent: 'collect', phase: 'end' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
+
+    // Valid: ShellControlEvent with a valid finite value is still processed
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: 42.5 });
+    expect(worker?.postMessage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
+
+    // Reset for next tests
+    worker?.postMessage.mockClear();
 
     // Note: passthrough SHELL_CONTROL_EVENT is no longer emitted from renderer inputs (issue #850)
     const passthroughEvent = {
@@ -760,6 +775,24 @@ describe('shell-desktop main process entrypoint', () => {
     inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-down', phase: 'repeat', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
     // Invalid: wheel event with wrong phase
     inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'start', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with phase not matching intent (mouse-down with repeat instead of start)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'repeat', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with phase not matching intent (mouse-move with start instead of repeat)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-move', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with phase not matching intent (mouse-up with repeat instead of end)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-up', phase: 'repeat', x: 0, y: 0, button: 0, buttons: 0, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-integer button (float)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0.5, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with button outside range (< -1)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: -2, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with button outside range (> 32)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 33, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-integer buttons (float)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1.5, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with buttons outside range (< 0)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: -1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with buttons outside range (> 0xFFFF)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 0x10000, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
 
     const enqueueCallsAfter = worker?.postMessage.mock.calls.filter(
       (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',

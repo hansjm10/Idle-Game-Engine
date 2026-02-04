@@ -79,9 +79,16 @@ function isShellControlEvent(value: unknown): value is ShellControlEvent {
   }
   const intent = (value as { intent?: unknown }).intent;
   const phase = (value as { phase?: unknown }).phase;
+  const controlValue = (value as { value?: unknown }).value;
   const metadata = (value as { metadata?: unknown }).metadata;
   if (typeof intent !== 'string' || intent.trim().length === 0) {
     return false;
+  }
+  // If value is present, it must be finite
+  if (controlValue !== undefined) {
+    if (typeof controlValue !== 'number' || !Number.isFinite(controlValue)) {
+      return false;
+    }
   }
   if (metadata !== undefined) {
     if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
@@ -109,6 +116,11 @@ function isValidInputEventModifiers(value: unknown): value is { alt: boolean; ct
 
 /**
  * Validates if a value is a valid PointerInputEvent.
+ *
+ * In addition to basic shape validation, this function enforces:
+ * - phase must match intent: mouse-down→start, mouse-move→repeat, mouse-up→end
+ * - button must be an integer in range -1..32
+ * - buttons must be an integer in range 0..0xFFFF
  */
 function isValidPointerInputEvent(value: unknown): value is InputEvent {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -126,16 +138,27 @@ function isValidPointerInputEvent(value: unknown): value is InputEvent {
   if (!validPhases.includes(obj.phase as string)) {
     return false;
   }
+  // Validate phase matches intent per design: mouse-down→start, mouse-move→repeat, mouse-up→end
+  const intentPhaseMap: Record<string, string> = {
+    'mouse-down': 'start',
+    'mouse-move': 'repeat',
+    'mouse-up': 'end',
+  };
+  if (intentPhaseMap[obj.intent as string] !== obj.phase) {
+    return false;
+  }
   if (typeof obj.x !== 'number' || !Number.isFinite(obj.x)) {
     return false;
   }
   if (typeof obj.y !== 'number' || !Number.isFinite(obj.y)) {
     return false;
   }
-  if (typeof obj.button !== 'number' || !Number.isFinite(obj.button)) {
+  // button must be an integer in range -1..32
+  if (typeof obj.button !== 'number' || !Number.isInteger(obj.button) || obj.button < -1 || obj.button > 32) {
     return false;
   }
-  if (typeof obj.buttons !== 'number' || !Number.isFinite(obj.buttons)) {
+  // buttons must be an integer in range 0..0xFFFF
+  if (typeof obj.buttons !== 'number' || !Number.isInteger(obj.buttons) || obj.buttons < 0 || obj.buttons > 0xFFFF) {
     return false;
   }
   const validPointerTypes = ['mouse', 'pen', 'touch'];
