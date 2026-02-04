@@ -1,4 +1,8 @@
-import { IdleEngineRuntime, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import {
+  IdleEngineRuntime,
+  RUNTIME_COMMAND_TYPES,
+  type InputEventCommandPayload,
+} from '@idle-engine/core';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
 import type { Command, RuntimeCommandPayloads } from '@idle-engine/core';
@@ -28,6 +32,16 @@ type CollectResourcePayload =
 type ShellControlEventCommandPayload = Readonly<{
   event: ShellControlEvent;
 }>;
+
+/**
+ * Demo UI hit-test region (matches buildFrame panel rect).
+ */
+const DEMO_UI_PANEL = {
+  x: 16,
+  y: 16,
+  width: 320,
+  height: 72,
+} as const;
 
 type DemoState = {
   tickCount: number;
@@ -187,6 +201,36 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   });
 
   dispatcher.register(SHELL_CONTROL_EVENT_COMMAND_TYPE, (_payload: ShellControlEventCommandPayload) => undefined);
+
+  dispatcher.register(RUNTIME_COMMAND_TYPES.INPUT_EVENT, (payload: InputEventCommandPayload, context) => {
+    // Fail-fast on unknown schema version (sim worker crashes)
+    if (payload.schemaVersion !== 1) {
+      throw new Error(`Unsupported InputEventCommandPayload schemaVersion: ${payload.schemaVersion}`);
+    }
+
+    const { event } = payload;
+
+    // Only handle pointer mouse-down events for demo UI hit-testing
+    if (event.kind !== 'pointer' || event.intent !== 'mouse-down') {
+      return;
+    }
+
+    // Hit-test against the demo UI panel
+    const { x, y } = event;
+    const inBounds =
+      x >= DEMO_UI_PANEL.x &&
+      x < DEMO_UI_PANEL.x + DEMO_UI_PANEL.width &&
+      y >= DEMO_UI_PANEL.y &&
+      y < DEMO_UI_PANEL.y + DEMO_UI_PANEL.height;
+
+    if (!inBounds) {
+      return;
+    }
+
+    // In-bounds click: trigger the same effect as COLLECT_RESOURCE
+    state.resourceCount += 1;
+    state.lastCollectedStep = context.step;
+  });
 
   const hasCommandHandler = (type: string): boolean => dispatcher.getHandler(type) !== undefined;
 
