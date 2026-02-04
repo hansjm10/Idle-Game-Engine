@@ -307,48 +307,25 @@ describe('shell-desktop sim runtime', () => {
       modifiers: { alt: false, ctrl: false, meta: false, shift: false },
     };
 
-    // Capture errors thrown during command execution by spying on Error constructor
-    const thrownErrorMessages: string[] = [];
-    const OriginalError = globalThis.Error;
-    class ErrorSpy extends OriginalError {
-      constructor(message?: string) {
-        super(message);
-        if (message) {
-          thrownErrorMessages.push(message);
-        }
-      }
-    }
-    globalThis.Error = ErrorSpy as typeof Error;
+    // Enqueue INPUT_EVENT with schemaVersion: 2 (mismatch - should cause handler to throw)
+    const invalidPayload = {
+      schemaVersion: 2,
+      event: pointerEvent,
+    } as unknown as InputEventCommandPayload;
 
-    try {
-      // Enqueue INPUT_EVENT with schemaVersion: 2 (mismatch - should cause handler to throw)
-      const invalidPayload = {
-        schemaVersion: 2,
-        event: pointerEvent,
-      } as unknown as InputEventCommandPayload;
+    const command: Command = {
+      type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+      priority: CommandPriority.PLAYER,
+      payload: invalidPayload,
+      timestamp: 0,
+      step: sim.getNextStep(),
+    };
 
-      const command: Command = {
-        type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
-        priority: CommandPriority.PLAYER,
-        payload: invalidPayload,
-        timestamp: 0,
-        step: sim.getNextStep(),
-      };
+    sim.enqueueCommands([command]);
 
-      sim.enqueueCommands([command]);
-
-      // Tick to process the command - the INPUT_EVENT handler throws on schemaVersion !== 1
-      // (CommandDispatcher catches the throw internally)
-      sim.tick(10);
-    } finally {
-      globalThis.Error = OriginalError;
-    }
-
-    // Verify the handler threw the expected error
-    // This proves the actual registered handler (at sim-runtime.ts:207-208) threw
-    expect(thrownErrorMessages).toContain(
-      'Unsupported InputEventCommandPayload schemaVersion: 2',
-    );
+    // Tick to process the command - the INPUT_EVENT handler throws on schemaVersion !== 1
+    // The error is rethrown from tick() to crash the worker (fatal error)
+    expect(() => sim.tick(10)).toThrow('Unsupported InputEventCommandPayload schemaVersion: 2');
   });
 
   it('INPUT_EVENT with schemaVersion mismatch does not trigger resource collection (handler throws before hit-test)', () => {
@@ -416,21 +393,8 @@ describe('shell-desktop sim runtime', () => {
     sim2.enqueueCommands([invalidCommand]);
 
     // Tick to process the command - the handler throws before hit-testing
-    // (CommandDispatcher catches the throw and records an error)
-    const resultAfterInvalid = sim2.tick(10);
-
-    // Verify no resource increase happened (handler threw before hit-test)
-    const fillRectAfterInvalid = resultAfterInvalid.frames[0]?.draws.find(
-      (draw) =>
-        draw.kind === 'rect' &&
-        draw.passId === 'ui' &&
-        draw.sortKey.sortKeyHi === 0 &&
-        draw.sortKey.sortKeyLo === 2,
-    );
-    expect(fillRectAfterInvalid).toMatchObject({
-      width: 0, // No resource collection - handler threw
-      colorRgba: 0x2a_4f_8a_ff, // Default color (no collection this step)
-    });
+    // The error is now fatal and rethrown from tick() to crash the worker
+    expect(() => sim2.tick(10)).toThrow('Unsupported InputEventCommandPayload schemaVersion: 2');
   });
 
 });

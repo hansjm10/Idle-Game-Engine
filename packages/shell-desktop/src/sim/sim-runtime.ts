@@ -251,6 +251,22 @@ export function createSimRuntime(options: SimRuntimeOptions = {}): SimRuntime {
   const tick = (deltaMs: number): SimTickResult => {
     frameQueue.length = 0;
     runtime.tick(deltaMs);
+
+    // Check for fatal command execution failures and rethrow them.
+    // This ensures schemaVersion mismatches in INPUT_EVENT handlers crash the worker.
+    const failures = runtime.drainCommandFailures();
+    for (const failure of failures) {
+      if (
+        failure.error.code === 'COMMAND_EXECUTION_FAILED' &&
+        failure.type === RUNTIME_COMMAND_TYPES.INPUT_EVENT
+      ) {
+        const originalError =
+          (failure.error.details as { error?: string } | undefined)?.error ??
+          failure.error.message;
+        throw new Error(originalError);
+      }
+    }
+
     return {
       frames: Array.from(frameQueue),
       nextStep: runtime.getNextExecutableStep(),
