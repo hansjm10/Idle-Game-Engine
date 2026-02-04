@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
-import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
-import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE, type IpcInvokeMap, type ShellControlEvent, type ShellSimStatusPayload } from './ipc.js';
+import { CommandPriority, RUNTIME_COMMAND_TYPES, type InputEvent, type InputEventCommandPayload } from '@idle-engine/core';
+import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -91,11 +91,137 @@ function isShellControlEvent(value: unknown): value is ShellControlEvent {
   return phase === 'start' || phase === 'repeat' || phase === 'end';
 }
 
-const shouldPassthroughControlEvent = (event: ShellControlEvent): boolean =>
-  event.metadata?.['passthrough'] === true;
+/**
+ * Validates if a value is a valid InputEventModifiers object.
+ */
+function isValidInputEventModifiers(value: unknown): value is { alt: boolean; ctrl: boolean; meta: boolean; shift: boolean } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.alt === 'boolean' &&
+    typeof obj.ctrl === 'boolean' &&
+    typeof obj.meta === 'boolean' &&
+    typeof obj.shift === 'boolean'
+  );
+}
+
+/**
+ * Validates if a value is a valid PointerInputEvent.
+ */
+function isValidPointerInputEvent(value: unknown): value is InputEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  if (obj.kind !== 'pointer') {
+    return false;
+  }
+  const validIntents = ['mouse-down', 'mouse-up', 'mouse-move'];
+  if (!validIntents.includes(obj.intent as string)) {
+    return false;
+  }
+  const validPhases = ['start', 'repeat', 'end'];
+  if (!validPhases.includes(obj.phase as string)) {
+    return false;
+  }
+  if (typeof obj.x !== 'number' || !Number.isFinite(obj.x)) {
+    return false;
+  }
+  if (typeof obj.y !== 'number' || !Number.isFinite(obj.y)) {
+    return false;
+  }
+  if (typeof obj.button !== 'number' || !Number.isFinite(obj.button)) {
+    return false;
+  }
+  if (typeof obj.buttons !== 'number' || !Number.isFinite(obj.buttons)) {
+    return false;
+  }
+  const validPointerTypes = ['mouse', 'pen', 'touch'];
+  if (!validPointerTypes.includes(obj.pointerType as string)) {
+    return false;
+  }
+  return isValidInputEventModifiers(obj.modifiers);
+}
+
+/**
+ * Validates if a value is a valid WheelInputEvent.
+ */
+function isValidWheelInputEvent(value: unknown): value is InputEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  if (obj.kind !== 'wheel') {
+    return false;
+  }
+  if (obj.intent !== 'mouse-wheel') {
+    return false;
+  }
+  if (obj.phase !== 'repeat') {
+    return false;
+  }
+  if (typeof obj.x !== 'number' || !Number.isFinite(obj.x)) {
+    return false;
+  }
+  if (typeof obj.y !== 'number' || !Number.isFinite(obj.y)) {
+    return false;
+  }
+  if (typeof obj.deltaX !== 'number' || !Number.isFinite(obj.deltaX)) {
+    return false;
+  }
+  if (typeof obj.deltaY !== 'number' || !Number.isFinite(obj.deltaY)) {
+    return false;
+  }
+  if (typeof obj.deltaZ !== 'number' || !Number.isFinite(obj.deltaZ)) {
+    return false;
+  }
+  const validDeltaModes = [0, 1, 2];
+  if (!validDeltaModes.includes(obj.deltaMode as number)) {
+    return false;
+  }
+  return isValidInputEventModifiers(obj.modifiers);
+}
+
+/**
+ * Validates if a value is a valid InputEvent (pointer or wheel).
+ */
+function isValidInputEvent(value: unknown): value is InputEvent {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const kind = (value as { kind?: unknown }).kind;
+  if (kind === 'pointer') {
+    return isValidPointerInputEvent(value);
+  }
+  if (kind === 'wheel') {
+    return isValidWheelInputEvent(value);
+  }
+  return false;
+}
+
+/**
+ * Validates if a value is a valid ShellInputEventEnvelope.
+ *
+ * The schemaVersion must be exactly 1; unknown versions are dropped
+ * at the IPC boundary (not enqueued).
+ */
+function isValidShellInputEventEnvelope(value: unknown): value is ShellInputEventEnvelope {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const obj = value as Record<string, unknown>;
+  // Only schemaVersion 1 is supported; unknown versions are dropped
+  if (obj.schemaVersion !== 1) {
+    return false;
+  }
+  return isValidInputEvent(obj.event);
+}
 
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
+  sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
   dispose: () => void;
 }>;
 
@@ -262,22 +388,35 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     const commands = createControlCommands(DEMO_CONTROL_SCHEME, event, context);
     if (commands.length > 0) {
       safePostMessage({ kind: 'enqueueCommands', commands });
-      return;
     }
+    // Note: passthrough SHELL_CONTROL_EVENT is no longer emitted from renderer inputs.
+    // Legacy passthrough behavior is removed per issue #850.
+  };
 
-    if (!shouldPassthroughControlEvent(event)) {
-      return;
-    }
-
-    const passthroughCommand: Command<{ event: ShellControlEvent }> = {
-      type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
-      payload: { event },
-      priority: context.priority,
-      timestamp: context.timestamp,
-      step: context.step,
+  /**
+   * Enqueues an INPUT_EVENT command for a validated input event envelope.
+   *
+   * The command uses:
+   * - type: RUNTIME_COMMAND_TYPES.INPUT_EVENT
+   * - priority: CommandPriority.PLAYER
+   * - step: current nextStep snapshot
+   * - timestamp: step * stepSizeMs
+   * - payload: { schemaVersion: 1, event: <validated event> }
+   * - requestId: omitted
+   */
+  const sendInputEvent = (envelope: ShellInputEventEnvelope): void => {
+    const inputEventCommand: Command<InputEventCommandPayload> = {
+      type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+      payload: {
+        schemaVersion: envelope.schemaVersion,
+        event: envelope.event,
+      },
+      priority: CommandPriority.PLAYER,
+      timestamp: nextStep * stepSizeMs,
+      step: nextStep,
     };
 
-    safePostMessage({ kind: 'enqueueCommands', commands: [passthroughCommand] });
+    safePostMessage({ kind: 'enqueueCommands', commands: [inputEventCommand] });
   };
 
   const dispose = (): void => {
@@ -289,7 +428,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     });
   };
 
-  return { sendControlEvent, dispose };
+  return { sendControlEvent, sendInputEvent, dispose };
 }
 
 function registerIpcHandlers(): void {
@@ -330,6 +469,16 @@ function registerIpcHandlers(): void {
       return;
     }
     simWorkerController?.sendControlEvent(event);
+  });
+
+  ipcMain.on(IPC_CHANNELS.inputEvent, (_event, envelope: unknown) => {
+    // Invalid envelopes are dropped (no enqueueCommands)
+    if (!isValidShellInputEventEnvelope(envelope)) {
+      return;
+    }
+    // When sim is not running (stopped/crashed/disposing), input events are ignored
+    // This is handled by safePostMessage inside sendInputEvent, which checks hasFailed/isDisposing
+    simWorkerController?.sendInputEvent(envelope);
   });
 }
 

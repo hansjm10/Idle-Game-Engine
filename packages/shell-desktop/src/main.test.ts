@@ -628,19 +628,28 @@ describe('shell-desktop main process entrypoint', () => {
     controlEventHandler?.({}, { intent: 'collect', phase: 'end' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
+    // Note: passthrough SHELL_CONTROL_EVENT is no longer emitted from renderer inputs (issue #850)
     const passthroughEvent = {
       intent: 'mouse-move',
       phase: 'repeat',
       metadata: { x: 12, y: 34, passthrough: true },
     };
+    const enqueueCallsBeforePassthrough = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
     controlEventHandler?.({}, passthroughEvent);
-    expect(worker?.postMessage).toHaveBeenCalledWith(
+    // Passthrough events that don't match bindings no longer enqueue SHELL_CONTROL_EVENT
+    const enqueueCallsAfterPassthrough = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterPassthrough).toBe(enqueueCallsBeforePassthrough);
+    // Verify no SHELL_CONTROL_EVENT was enqueued
+    expect(worker?.postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'enqueueCommands',
         commands: expect.arrayContaining([
           expect.objectContaining({
             type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
-            payload: { event: passthroughEvent },
           }),
         ]),
       }),
@@ -694,6 +703,363 @@ describe('shell-desktop main process entrypoint', () => {
     expect(consoleError).toHaveBeenCalled();
 
     consoleError.mockRestore();
+  });
+
+  it('drops invalid input event payloads without enqueuing commands', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const enqueueCallsBefore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Invalid: null
+    inputEventHandler?.({}, null);
+    // Invalid: array
+    inputEventHandler?.({}, []);
+    // Invalid: missing schemaVersion
+    inputEventHandler?.({}, { event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wrong schemaVersion (2 instead of 1)
+    inputEventHandler?.({}, { schemaVersion: 2, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: missing event
+    inputEventHandler?.({}, { schemaVersion: 1 });
+    // Invalid: event is null
+    inputEventHandler?.({}, { schemaVersion: 1, event: null });
+    // Invalid: event has unknown kind
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'unknown', intent: 'test', phase: 'start' } });
+    // Invalid: pointer event with invalid intent
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'invalid', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-finite x
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: NaN, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-finite y
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: Infinity, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with invalid pointerType
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'stylus', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with invalid phase
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'invalid', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with missing modifiers
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse' } });
+    // Invalid: pointer event with incomplete modifiers
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false } } });
+    // Invalid: wheel event with non-finite deltaX
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'repeat', x: 0, y: 0, deltaX: NaN, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wheel event with invalid deltaMode
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'repeat', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 3, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wheel event with wrong intent
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-down', phase: 'repeat', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wheel event with wrong phase
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'start', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+
+    const enqueueCallsAfter = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // No commands should have been enqueued
+    expect(enqueueCallsAfter).toBe(enqueueCallsBefore);
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('enqueues INPUT_EVENT commands for valid pointer events', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 5 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    inputEventHandler?.({}, validPointerDown);
+
+    expect(worker?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'enqueueCommands',
+        commands: [
+          expect.objectContaining({
+            type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+            payload: {
+              schemaVersion: 1,
+              event: validPointerDown.event,
+            },
+            priority: 1, // CommandPriority.PLAYER
+            step: 5,
+            timestamp: 80, // 5 * 16
+          }),
+        ],
+      }),
+    );
+
+    // Verify requestId is NOT included (should be omitted)
+    const lastEnqueueCall = worker?.postMessage.mock.calls
+      .filter((call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands')
+      .pop();
+    const inputEventCommand = (lastEnqueueCall?.[0] as { commands?: Array<{ requestId?: unknown }> })?.commands?.[0];
+    expect(inputEventCommand).not.toHaveProperty('requestId');
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('enqueues INPUT_EVENT commands for valid wheel events', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 20, nextStep: 3 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validWheelEvent = {
+      schemaVersion: 1,
+      event: {
+        kind: 'wheel',
+        intent: 'mouse-wheel',
+        phase: 'repeat',
+        x: 50,
+        y: 75,
+        deltaX: 0,
+        deltaY: -100,
+        deltaZ: 0,
+        deltaMode: 0,
+        modifiers: { alt: true, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    inputEventHandler?.({}, validWheelEvent);
+
+    expect(worker?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'enqueueCommands',
+        commands: [
+          expect.objectContaining({
+            type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+            payload: {
+              schemaVersion: 1,
+              event: validWheelEvent.event,
+            },
+            priority: 1, // CommandPriority.PLAYER
+            step: 3,
+            timestamp: 60, // 3 * 20
+          }),
+        ],
+      }),
+    );
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('ignores input events when sim is stopped or crashed', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 10,
+        y: 20,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    // Input events work before crash
+    const enqueueCallsBefore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterFirst = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterFirst).toBe(enqueueCallsBefore + 1);
+
+    // Simulate worker crash
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // Input events should be ignored after crash (no more enqueueCommands)
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterCrash = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterCrash).toBe(enqueueCallsAfterFirst);
+
+    consoleError.mockRestore();
+  });
+
+  it('ignores input events when sim is disposing', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 10,
+        y: 20,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    // Input events work before dispose
+    const enqueueCallsBefore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterFirst = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterFirst).toBe(enqueueCallsBefore + 1);
+
+    // Trigger dispose by closing windows
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    // Input events should be ignored after dispose (no more enqueueCommands)
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterDispose = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterDispose).toBe(enqueueCallsAfterFirst);
+  });
+
+  it('does not enqueue SHELL_CONTROL_EVENT from input events', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    // Send several valid input events
+    const events = [
+      { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+      { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-move', phase: 'repeat', x: 10, y: 20, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+      { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-up', phase: 'end', x: 10, y: 20, button: 0, buttons: 0, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+      { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'repeat', x: 50, y: 50, deltaX: 0, deltaY: -10, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+    ];
+
+    for (const event of events) {
+      inputEventHandler?.({}, event);
+    }
+
+    // Verify no SHELL_CONTROL_EVENT commands were enqueued (acceptance criterion #4)
+    const allEnqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+
+    for (const call of allEnqueueCalls) {
+      const commands = (call[0] as { commands?: Array<{ type?: string }> }).commands ?? [];
+      for (const command of commands) {
+        expect(command.type).not.toBe(SHELL_CONTROL_EVENT_COMMAND_TYPE);
+      }
+    }
+
+    // Verify all commands are INPUT_EVENT
+    const inputEventCount = allEnqueueCalls.reduce((count, call) => {
+      const commands = (call[0] as { commands?: Array<{ type?: string }> }).commands ?? [];
+      return count + commands.filter((cmd) => cmd.type === RUNTIME_COMMAND_TYPES.INPUT_EVENT).length;
+    }, 0);
+    expect(inputEventCount).toBe(events.length);
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
   });
 
   it('installs the application menu with macOS roles on darwin', async () => {
