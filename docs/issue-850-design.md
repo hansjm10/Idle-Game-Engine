@@ -178,9 +178,11 @@ N/A
 | `INPUT_EVENT` (new) | `InputEventCommandPayload` | Electron main process (`idle-engine:input-event` handler; 1:1 for valid pointer/wheel events) | UI/controls systems inside sim runtime | command is produced for every valid pointer/wheel input-event; handler/worker errors are **fatal** (see workflow) |
 
 ### Validation Rules
-All validation is **synchronous** at the IPC boundary (main process). When validation fails:
+All renderer-provided validation is **synchronous** at the IPC boundary (main process). When validation fails:
 - IPC invoke endpoints reject with a thrown `TypeError` (Promise rejects in renderer).
 - IPC send endpoints are dropped (no acknowledgment); main may log in dev builds.
+
+Separately, the sim-side `INPUT_EVENT` command handler validates `InputEventCommandPayload.schemaVersion` for commands originating from restores/replays; non-`1` is treated as a fatal incompatibility (crash).
 
 | Field | Type | Constraints | Error |
 |------|------|-------------|-------|
@@ -215,9 +217,19 @@ All validation is **synchronous** at the IPC boundary (main process). When valid
 - **Migration**: Pointer/wheel inputs are forwarded by the desktop shell as a 1:1 `INPUT_EVENT` runtime command (`InputEventCommandPayload.event`). Any system that previously consumed `SHELL_CONTROL_EVENT.payload.event.metadata` must consume `InputEventCommandPayload.event` instead. `idle-engine:control-event` remains binding-driven; unbound control intents remain dropped (no passthrough).
 - **Versioning**: `ShellInputEventEnvelope.schemaVersion` starts at `1`. Main must reject unknown versions (drop) and may support `N-1` during migrations. `INPUT_EVENT` payload is versioned via `InputEventCommandPayload.schemaVersion` (also `1`).
 
+#### Main-produced `INPUT_EVENT` command fields
+When Electron main receives a valid `ShellInputEventEnvelope`, it enqueues exactly one runtime command with the following fields:
+- `type`: `RUNTIME_COMMAND_TYPES.INPUT_EVENT`
+- `priority`: `CommandPriority.PLAYER`
+- `step`: snapshot of the controller’s current `nextStep` when the IPC message is processed
+- `timestamp`: `step * stepSizeMs` (aligned to sim tick time; not wall-clock time)
+- `payload`: `{ schemaVersion: 1, event }` where `event` is the validated `InputEvent`
+- `requestId`: not set (left `undefined`)
+
 #### Type contracts (wire-level)
 ```ts
-// Canonical input-event types used by both IPC and runtime payloads live in @idle-engine/core.
+// Canonical input-event types (InputEvent, InputEventCommandPayload) live in @idle-engine/core.
+// ShellControlEvent remains a shell-desktop-only IPC contract in packages/shell-desktop/src/ipc.ts.
 export type ShellControlEvent = Readonly<{
   intent: string;
   phase: 'start' | 'repeat' | 'end';
@@ -300,9 +312,19 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | `packages/core/src/input-event.ts` | `InputEvent.deltaMode` | `0 \| 1 \| 2` | yes (kind:wheel) | n/a | must be one of the listed literals |
 | `packages/core/src/command.ts` | `RUNTIME_COMMAND_TYPES.INPUT_EVENT` | `string` | yes | n/a | must equal `INPUT_EVENT` |
 | `packages/core/src/command.ts` | `RuntimeCommandPayloads.INPUT_EVENT` | `InputEventCommandPayload` | yes | n/a | payload must be JSON-serializable |
-| `packages/core/src/command.ts` | `InputEventCommandPayload.schemaVersion` | `1` | yes | `1` (when encoding) | reject if not exactly `1` (handler must validate) |
+| `packages/core/src/command.ts` | `InputEventCommandPayload.schemaVersion` | `1` | yes | `1` (when encoding) | validated by the sim-side `INPUT_EVENT` handler; unknown versions crash the sim worker |
 | `packages/core/src/command.ts` | `InputEventCommandPayload.event` | `InputEvent` | yes | n/a | must satisfy the same variant constraints as IPC `ShellInputEventEnvelope.event` |
 | `packages/shell-desktop/src/ipc.ts` | `ShellControlEvent.metadata` (legacy; passthrough ignored) | `Record<string, unknown>` | no | `undefined` | `metadata.passthrough` is ignored; pointer/wheel metadata must not be relied on |
+
+### Command Authorization (`COMMAND_AUTHORIZATIONS`)
+The `INPUT_EVENT` command is only allowed in the player priority lane so that UI interactions cannot be synthesized by automation.
+- `COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.INPUT_EVENT].allowedPriorities`: `[CommandPriority.PLAYER]`
+- `COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.INPUT_EVENT].rationale`: Input events represent player-originated shell interactions; automation must not inject UI inputs.
+- `COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.INPUT_EVENT].unauthorizedEvent`: `UnauthorizedInputEventCommand`
+
+### Version Validation (`schemaVersion`)
+- **IPC (wire-level)**: `ShellInputEventEnvelope.schemaVersion` is validated in Electron main in the `IPC_CHANNELS.inputEvent` handler. Non-`1` payloads are dropped (no worker enqueue).
+- **Runtime (command payload)**: `InputEventCommandPayload.schemaVersion` is validated by the sim-side handler for `RUNTIME_COMMAND_TYPES.INPUT_EVENT` before reading `payload.event`. If the version is not `1`, the handler throws and the sim worker transitions to `error`/`crashed` (fail-fast for incompatible replays/snapshots).
 
 ### Field Definitions
 **`IPC_CHANNELS.inputEvent`**
@@ -420,8 +442,9 @@ T6 → depends on T3, T4, T5
 - Acceptance Criteria:
   1. `@idle-engine/core` exports `RUNTIME_COMMAND_TYPES.INPUT_EVENT`.
   2. `RuntimeCommandPayloads['INPUT_EVENT']` is strongly typed as `{ schemaVersion: 1; event: InputEvent }`.
-  3. `pnpm --filter @idle-engine/core typecheck` passes.
-  4. `pnpm --filter @idle-engine/core test` passes.
+  3. `COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.INPUT_EVENT].allowedPriorities` is exactly `[CommandPriority.PLAYER]` (and `unauthorizedEvent === 'UnauthorizedInputEventCommand'`).
+  4. `pnpm --filter @idle-engine/core typecheck` passes.
+  5. `pnpm --filter @idle-engine/core test` passes.
 - Dependencies: None
 - Verification: `pnpm --filter @idle-engine/core test`
 
@@ -462,8 +485,9 @@ T6 → depends on T3, T4, T5
   1. Invalid `ShellInputEventEnvelope` payloads are dropped (no worker messages posted).
   2. When sim is not running (`sim.stopped`/`sim.crashed`/disposing), input events are ignored.
   3. Valid pointer/wheel input events enqueue exactly one `INPUT_EVENT` command with `payload.schemaVersion === 1` and the validated event copied into payload.
-  4. No code path enqueues `SHELL_CONTROL_EVENT` in response to renderer inputs.
-  5. `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts` passes.
+  4. Enqueued `INPUT_EVENT` commands have `priority === CommandPriority.PLAYER`, `step === nextStep` (snapshotted at receive time), `timestamp === step * stepSizeMs`, and `requestId === undefined`.
+  5. No code path enqueues `SHELL_CONTROL_EVENT` in response to renderer inputs.
+  6. `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts` passes.
 - Dependencies: T2
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
 
@@ -476,8 +500,9 @@ T6 → depends on T3, T4, T5
   1. `createSimRuntime().hasCommandHandler(RUNTIME_COMMAND_TYPES.INPUT_EVENT) === true`.
   2. An `INPUT_EVENT` with `kind:'pointer'`, `intent:'mouse-down'`, and `x/y` inside the demo UI hit-test region triggers the same next-frame UI change as a `COLLECT_RESOURCE` command (resource count increases).
   3. An `INPUT_EVENT` outside the hit-test region does not trigger `COLLECT_RESOURCE`.
-  4. `createSimRuntime().hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE) === true` (legacy restore compatibility).
-  5. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
+  4. If an `INPUT_EVENT` command payload has `schemaVersion !== 1`, the handler throws (sim worker crashes; fail-fast for incompatible replays/snapshots).
+  5. `createSimRuntime().hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE) === true` (legacy restore compatibility).
+  6. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
 - Dependencies: T1
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts`
 
