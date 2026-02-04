@@ -593,4 +593,91 @@ describe('shell-desktop sim worker', () => {
     expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'error', error: 'boom' });
     expect(parentPort.postMessage).toHaveBeenCalledWith({ kind: 'error', error: 'kaboom' });
   });
+
+  it('emits error when INPUT_EVENT with schemaVersion !== 1 is processed during tick', async () => {
+    // Create a mock runtime that throws when tick is called after enqueuing
+    // an INPUT_EVENT with invalid schemaVersion
+    let enqueuedCommands: unknown[] = [];
+    const runtime = {
+      tick: vi.fn(() => {
+        // Check if we have an enqueued INPUT_EVENT with schemaVersion !== 1
+        // This simulates the behavior of the real runtime throwing on schemaVersion mismatch
+        for (const cmd of enqueuedCommands) {
+          const command = cmd as { type?: string; payload?: { schemaVersion?: number } };
+          if (
+            command.type === 'INPUT_EVENT' &&
+            command.payload?.schemaVersion !== 1
+          ) {
+            throw new Error(
+              `Unsupported InputEventCommandPayload schemaVersion: ${command.payload?.schemaVersion}`,
+            );
+          }
+        }
+        return { frames: [{ id: 'frame' }], nextStep: 1 };
+      }),
+      enqueueCommands: vi.fn((commands: unknown[]) => {
+        enqueuedCommands = [...enqueuedCommands, ...commands];
+      }),
+      getStepSizeMs: vi.fn(() => 16),
+      getNextStep: vi.fn(() => 0),
+    };
+    const createSimRuntime = vi.fn(() => runtime);
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    // Initialize the worker
+    messageHandler?.({ kind: 'init', stepSizeMs: 16, maxStepsPerFrame: 10 });
+    expect(parentPort.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'ready' }),
+    );
+    parentPort.postMessage.mockClear();
+
+    // Enqueue an INPUT_EVENT command with schemaVersion: 2 (invalid)
+    messageHandler?.({
+      kind: 'enqueueCommands',
+      commands: [
+        {
+          type: 'INPUT_EVENT',
+          priority: 1, // CommandPriority.PLAYER
+          step: 0,
+          timestamp: 0,
+          payload: {
+            schemaVersion: 2, // Invalid - should cause a throw
+            event: {
+              kind: 'pointer',
+              intent: 'mouse-down',
+              phase: 'start',
+              x: 20,
+              y: 20,
+              button: 0,
+              buttons: 1,
+            },
+          },
+        },
+      ],
+    });
+
+    // Tick to process the command - this should trigger the throw in the INPUT_EVENT handler
+    messageHandler?.({ kind: 'tick', deltaMs: 16 });
+
+    // The worker should emit an error with the schemaVersion mismatch message
+    expect(parentPort.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'error',
+        error: expect.stringContaining('schemaVersion'),
+      }),
+    );
+  });
 });

@@ -14,6 +14,7 @@ import type {
   ImmutableTypedArraySnapshot,
   TypedArray,
 } from './immutable-snapshots.js';
+import type { InputEventCommandPayload } from './input-event.js';
 
 export interface Command<TPayload = unknown> {
   readonly type: string;
@@ -122,6 +123,7 @@ export const RUNTIME_COMMAND_TYPES = Object.freeze({
   ASSIGN_ENTITY_TO_MISSION: 'ASSIGN_ENTITY_TO_MISSION',
   RETURN_ENTITY_FROM_MISSION: 'RETURN_ENTITY_FROM_MISSION',
   ADD_ENTITY_EXPERIENCE: 'ADD_ENTITY_EXPERIENCE',
+  INPUT_EVENT: 'INPUT_EVENT',
 } as const);
 
 export type RuntimeCommandType =
@@ -294,6 +296,7 @@ export interface RuntimeCommandPayloads {
   readonly ASSIGN_ENTITY_TO_MISSION: AssignEntityToMissionPayload;
   readonly RETURN_ENTITY_FROM_MISSION: ReturnEntityFromMissionPayload;
   readonly ADD_ENTITY_EXPERIENCE: AddEntityExperiencePayload;
+  readonly INPUT_EVENT: InputEventCommandPayload;
 }
 
 /**
@@ -446,5 +449,12 @@ export const COMMAND_AUTHORIZATIONS: Readonly<
     rationale:
       'Experience grants are system-driven or automation-driven; manual grants are not permitted.',
     unauthorizedEvent: 'UnauthorizedEntityExperienceGrant',
+  },
+  INPUT_EVENT: {
+    type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+    allowedPriorities: Object.freeze([CommandPriority.PLAYER]),
+    rationale:
+      'Input events represent player-originated shell interactions; automation must not inject UI inputs.',
+    unauthorizedEvent: 'UnauthorizedInputEventCommand',
   },
 });
