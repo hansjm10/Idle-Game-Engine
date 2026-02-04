@@ -4,10 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
-import { CommandPriority, RUNTIME_COMMAND_TYPES, type InputEvent, type InputEventCommandPayload, type RuntimeCommand } from '@idle-engine/core';
+import {
+  CommandPriority,
+  RUNTIME_COMMAND_TYPES,
+  type Command,
+  type InputEvent,
+  type InputEventCommandPayload,
+  type RuntimeCommand,
+} from '@idle-engine/core';
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
-import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
 import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';

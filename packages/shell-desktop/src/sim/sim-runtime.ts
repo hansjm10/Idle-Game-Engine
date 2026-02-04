@@ -1,11 +1,12 @@
 import {
   IdleEngineRuntime,
   RUNTIME_COMMAND_TYPES,
+  type Command,
   type InputEventCommandPayload,
+  type RuntimeCommandPayloads,
 } from '@idle-engine/core';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
-import type { Command, RuntimeCommandPayloads } from '@idle-engine/core';
 import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export type SimRuntimeOptions = Readonly<{
