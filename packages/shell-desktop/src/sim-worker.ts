@@ -21,8 +21,8 @@ const emit = (message: SimWorkerOutboundMessage): void => {
   parentPort?.postMessage(message);
 };
 
-const isFinitePositive = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isFinite(value) && value > 0;
+const isFiniteAtLeastOne = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 1;
 
 parentPort.on('message', (message: unknown) => {
   try {
@@ -35,13 +35,13 @@ parentPort.on('message', (message: unknown) => {
       const init = message as { stepSizeMs?: unknown; maxStepsPerFrame?: unknown };
 
       // Validate stepSizeMs
-      if (!isFinitePositive(init.stepSizeMs)) {
+      if (!isFiniteAtLeastOne(init.stepSizeMs)) {
         emit({ kind: 'error', error: 'protocol:init invalid stepSizeMs' });
         return;
       }
 
       // Validate maxStepsPerFrame
-      if (!isFinitePositive(init.maxStepsPerFrame)) {
+      if (!isFiniteAtLeastOne(init.maxStepsPerFrame)) {
         emit({ kind: 'error', error: 'protocol:init invalid maxStepsPerFrame' });
         return;
       }

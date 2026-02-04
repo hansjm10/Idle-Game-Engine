@@ -241,6 +241,68 @@ describe('shell-desktop sim worker', () => {
     expect(parentPort.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'ready' }));
   });
 
+  it('emits error with protocol:init for stepSizeMs values between 0 and 1 (e.g., 0.5)', async () => {
+    const createSimRuntime = vi.fn();
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    // Test 0.5 (between 0 and 1)
+    messageHandler?.({ kind: 'init', stepSizeMs: 0.5, maxStepsPerFrame: 10 } as SimWorkerInboundMessage);
+
+    const errorCall = parentPort.postMessage.mock.calls.find(
+      (call) => (call[0] as SimWorkerOutboundMessage).kind === 'error',
+    );
+    expect(errorCall).toBeDefined();
+    const errorMessage = (errorCall?.[0] as { error?: string })?.error ?? '';
+    expect(errorMessage).toContain('protocol:init');
+    expect(errorMessage).toContain('stepSizeMs');
+
+    expect(parentPort.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'ready' }));
+  });
+
+  it('emits error with protocol:init for maxStepsPerFrame values between 0 and 1 (e.g., 0.5)', async () => {
+    const createSimRuntime = vi.fn();
+
+    let messageHandler: MessageHandler;
+    const parentPort = {
+      on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+        messageHandler = handler;
+      }),
+      postMessage: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock('node:worker_threads', () => ({ parentPort }));
+    vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+    await import('./sim-worker.js');
+
+    // Test 0.5 (between 0 and 1)
+    messageHandler?.({ kind: 'init', stepSizeMs: 16, maxStepsPerFrame: 0.5 } as SimWorkerInboundMessage);
+
+    const errorCall = parentPort.postMessage.mock.calls.find(
+      (call) => (call[0] as SimWorkerOutboundMessage).kind === 'error',
+    );
+    expect(errorCall).toBeDefined();
+    const errorMessage = (errorCall?.[0] as { error?: string })?.error ?? '';
+    expect(errorMessage).toContain('protocol:init');
+    expect(errorMessage).toContain('maxStepsPerFrame');
+
+    expect(parentPort.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'ready' }));
+  });
+
   it('emits error with protocol:init for negative or zero maxStepsPerFrame values', async () => {
     const createSimRuntime = vi.fn();
 
