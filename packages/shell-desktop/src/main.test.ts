@@ -1166,4 +1166,115 @@ describe('shell-desktop main process entrypoint', () => {
 
     expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
   });
+
+  it('drops input events received before worker ready handshake', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 10,
+        y: 20,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    // Send input event BEFORE ready - should be dropped
+    const enqueueCallsBeforeReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterPreReadyInput = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should NOT have enqueued (dropped because not ready)
+    expect(enqueueCallsAfterPreReadyInput).toBe(enqueueCallsBeforeReady);
+
+    // Now emit ready
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Send input event AFTER ready - should be accepted
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterPostReadyInput = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should have enqueued (accepted because ready)
+    expect(enqueueCallsAfterPostReadyInput).toBe(enqueueCallsAfterPreReadyInput + 1);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('drops control events received before worker ready handshake', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    expect(controlEventCall).toBeDefined();
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validControlEvent = { intent: 'collect', phase: 'start' };
+
+    // Send control event BEFORE ready - should be dropped
+    const enqueueCallsBeforeReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    controlEventHandler?.({}, validControlEvent);
+
+    const enqueueCallsAfterPreReadyControl = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should NOT have enqueued (dropped because not ready)
+    expect(enqueueCallsAfterPreReadyControl).toBe(enqueueCallsBeforeReady);
+
+    // Now emit ready
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Send control event AFTER ready - should be accepted
+    controlEventHandler?.({}, validControlEvent);
+
+    const enqueueCallsAfterPostReadyControl = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should have enqueued (accepted because ready)
+    expect(enqueueCallsAfterPostReadyControl).toBe(enqueueCallsAfterPreReadyControl + 1);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
 });

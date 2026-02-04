@@ -255,6 +255,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   let isDisposing = false;
   let hasFailed = false;
+  let isReady = false;
 
   type ShellSimFailureStatusPayload = Extract<ShellSimStatusPayload, { kind: 'stopped' | 'crashed' }>;
 
@@ -349,6 +350,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     if (message.kind === 'ready') {
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
+      isReady = true;
       startTickLoop();
       return;
     }
@@ -402,6 +404,11 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   });
 
   const sendControlEvent = (event: ShellControlEvent): void => {
+    // Drop control events until worker is ready (design workflow rule)
+    if (!isReady) {
+      return;
+    }
+
     const context = {
       step: nextStep,
       timestamp: nextStep * stepSizeMs,
@@ -428,6 +435,11 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
    * - requestId: omitted
    */
   const sendInputEvent = (envelope: ShellInputEventEnvelope): void => {
+    // Drop input events until worker is ready (design workflow rule)
+    if (!isReady) {
+      return;
+    }
+
     const inputEventCommand: Command<InputEventCommandPayload> = {
       type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
       payload: {
