@@ -256,7 +256,114 @@ export type InputEventCommandPayload = Readonly<{
 ```
 
 ## 4. Data
-[To be completed in design_data phase]
+
+This feature introduces a **typed, versioned input-event schema** for desktop-shell forwarded inputs and a **typed runtime command payload** for replayable input events. No new on-disk files are created; the only persisted surface area is via existing save/snapshot/replay mechanisms that already serialize command-queue entries as JSON.
+
+### Schema Changes
+| Location | Field | Type | Required | Default | Constraints |
+|----------|-------|------|----------|---------|-------------|
+| `packages/shell-desktop/src/ipc.ts` | `IPC_CHANNELS.inputEvent` | `string` | yes | n/a | must equal `idle-engine:input-event` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.schemaVersion` | `1` | yes | `1` (when encoding) | reject/drop if not exactly `1` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.event` | `ShellInputEvent` | yes | n/a | reject/drop if missing or not an object |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.kind` | `'control' \| 'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.control.intent` | `string` | yes | n/a | non-empty after trim |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.control.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must be one of the listed literals |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.control.value` | `number` | no | `undefined` | if present: finite (`Number.isFinite`) |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.intent` | `'pointer.down' \| 'pointer.up' \| 'pointer.move'` | yes | n/a | must be one of the listed literals |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must match intent (`down→start`, `move→repeat`, `up→end`) |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.button` | `number` | yes | n/a | integer; range `-1..32` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.buttons` | `number` | yes | n/a | integer; range `0..0xFFFF` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes | n/a | must be one of the listed literals |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.alt` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.ctrl` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.meta` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.shift` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.intent` | `'pointer.wheel'` | yes | n/a | must equal `pointer.wheel` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.phase` | `'repeat'` | yes | n/a | must equal `repeat` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaX` | `number` | yes | n/a | finite |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaY` | `number` | yes | n/a | finite |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaZ` | `number` | yes | n/a | finite |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaMode` | `0 \| 1 \| 2` | yes | n/a | must be one of the listed literals |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.alt` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.ctrl` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.meta` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.shift` | `boolean` | yes | n/a | - |
+| `packages/core/src/command.ts` | `RUNTIME_COMMAND_TYPES.INPUT_EVENT` | `string` | yes | n/a | must equal `INPUT_EVENT` |
+| `packages/core/src/command.ts` | `RuntimeCommandPayloads.INPUT_EVENT` | `InputEventCommandPayload` | yes | n/a | payload must be JSON-serializable |
+| `packages/core/src/command.ts` | `InputEventCommandPayload.schemaVersion` | `1` | yes | `1` (when encoding) | reject if not exactly `1` (handler must validate) |
+| `packages/core/src/command.ts` | `InputEventCommandPayload.event` | `ShellInputEvent` | yes | n/a | must satisfy the same variant constraints as IPC `ShellInputEvent` |
+| `packages/shell-desktop/src/ipc.ts` | `ShellControlEvent.metadata` (deprecated semantics) | `Record<string, unknown>` | no | `undefined` | `metadata.passthrough` is ignored; pointer/wheel metadata must not be relied on |
+
+### Field Definitions
+**`IPC_CHANNELS.inputEvent`**
+- Purpose: Stable channel name for sending typed input events across the Electron IPC boundary (renderer → main).
+- Set by: `packages/shell-desktop` IPC contract definition.
+- Read by: Renderer sender and main-process receiver.
+
+**`ShellInputEventEnvelope.schemaVersion`**
+- Purpose: Wire-level version gate for input-event payloads.
+- Set by: Desktop renderer when emitting an input event.
+- Read by: Desktop main process when validating inbound input events.
+- Derived: Constant `1` for this feature’s initial rollout.
+
+**`ShellInputEventEnvelope.event`**
+- Purpose: Carries the typed input event (control/pointer/wheel) across IPC.
+- Set by: Desktop renderer input capture layer.
+- Read by: Desktop main input mapper (mapping to runtime commands).
+- References: No foreign keys; `intent` strings are matched against control/binding intent strings but are not strong references.
+
+**`ShellInputEvent.*` (variants)**
+- Purpose: Lossless-but-minimal representation of the input needed for deterministic UI/control handling.
+- Set by: Desktop renderer (source-of-truth is the browser/DOM event data).
+- Read by: Desktop main mapper; optionally embedded into `INPUT_EVENT` runtime commands for sim-side consumption.
+- Derived fields:
+  - `pointer.phase` is derived from `pointer.intent` (`down→start`, `move→repeat`, `up→end`) and must remain consistent; mismatches are rejected.
+  - `wheel.phase` is always `repeat`.
+- Ordering dependencies: None stored in the payload; ordering is defined by IPC delivery order and the main-process enqueue policy (commands are scheduled at the runtime’s next executable step).
+
+**`InputEventCommandPayload.schemaVersion`**
+- Purpose: Version gate for runtime command payload evolution independent of IPC evolution.
+- Set by: Desktop main process when producing an `INPUT_EVENT` command.
+- Read by: Sim-side command handler(s) that consume `INPUT_EVENT`.
+- Derived: Constant `1` for this feature’s initial rollout.
+
+**`InputEventCommandPayload.event`**
+- Purpose: The replayable input event attached to an `INPUT_EVENT` runtime command.
+- Set by: Desktop main process (copied from a validated `ShellInputEventEnvelope.event`).
+- Read by: Sim-side controls/UI input system(s).
+- References: No foreign keys; `intent` is a semantic identifier only.
+
+**`ShellControlEvent.metadata` (deprecated semantics)**
+- Purpose: Legacy extensibility hook for `idle-engine:control-event`; retained for backwards compatibility with existing control scheme resolvers that read arbitrary metadata.
+- Set by: Legacy control-event senders (renderer or other callers).
+- Read by: Control scheme payload resolvers; desktop shell no longer uses `metadata.passthrough` to forward raw events.
+
+### Migrations
+| Change | Existing Data | Migration | Rollback |
+|--------|---------------|-----------|----------|
+| Add IPC input-event envelope (`ShellInputEventEnvelope`, `IPC_CHANNELS.inputEvent`) | No records exist; channel absent | Add new IPC channel and validate on receive; absence means no typed input events are sent | Remove channel; renderer falls back to legacy control events only |
+| Add runtime command type `INPUT_EVENT` with `InputEventCommandPayload` | Existing command queues/snapshots contain no `INPUT_EVENT` entries | Add command handler(s) for `INPUT_EVENT`; producers emit only when a mapping explicitly targets it | Remove handler and stop emitting `INPUT_EVENT` |
+| Deprecate passthrough forwarding and `SHELL_CONTROL_EVENT` production | Older saves/snapshots *may* contain `SHELL_CONTROL_EVENT` entries | Do not emit `SHELL_CONTROL_EVENT` going forward. For compatibility, either (a) keep a no-op handler registered for `SHELL_CONTROL_EVENT`, or (b) drop unsupported command types during restore via `CommandQueue.restoreFromSave({ isCommandTypeSupported })` | Restore legacy behavior only by reintroducing passthrough forwarding and emitting `SHELL_CONTROL_EVENT` (not recommended) |
+
+### Artifacts
+| Artifact | Location | Created | Updated | Deleted |
+|----------|----------|---------|---------|---------|
+| IPC input-event message | Electron IPC message on `idle-engine:input-event` | When renderer captures input | Never (immutable) | After message delivery/GC (ephemeral) |
+| `INPUT_EVENT` command | In-memory command queue entry | When main maps a validated `ShellInputEvent` to `INPUT_EVENT` | Never (immutable) | When dequeued/executed or queue is cleared on restart |
+| Serialized `INPUT_EVENT` payload | `SerializedCommandQueueV1.entries[].payload` (inside `GameStateSnapshot.commandQueue`) | When a snapshot/save captures the command queue | Never (immutable) | When the snapshot/save is discarded by the caller |
+
+### Artifact Lifecycle
+| Scenario | Artifact Behavior |
+|----------|-------------------|
+| Success | IPC message is validated; 0..N runtime commands are created and enqueued (including optional `INPUT_EVENT`); queued commands execute at tick boundaries and are then removed. |
+| Failure | Invalid IPC payloads are dropped (no commands created). Valid payloads that map to 0 commands produce no artifacts beyond transient validation work. |
+| Crash recovery | Renderer→main IPC messages in flight are lost. Any `INPUT_EVENT` commands not yet dequeued are lost if the runtime/controller is restarted without persisting the queue; if a snapshot/save captured them, they persist only within that snapshot/save. |
 
 ## 5. Tasks
 [To be completed in design_plan phase]
