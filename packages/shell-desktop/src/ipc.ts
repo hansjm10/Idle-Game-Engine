@@ -35,14 +35,14 @@ export type ShellControlEvent = Readonly<{
   /**
    * Optional extra event data passed through the IPC boundary.
    *
-   * Reserved keys used by the desktop shell:
-   * - `passthrough: true`: if the active control scheme produces no commands for
-   *   the event, the main process may enqueue a `SHELL_CONTROL_EVENT` command
-   *   containing the raw event.
+   * **Note:** The desktop shell does not emit `SHELL_CONTROL_EVENT` from renderer
+   * inputs. The `metadata.passthrough` key has no effect; pointer/wheel events are
+   * sent exclusively via the `idle-engine:input-event` channel (see
+   * {@link ShellInputEventEnvelope}). Control events received on
+   * `idle-engine:control-event` are processed by the control scheme mapping only.
    *
-   * Pointer events emitted by the desktop renderer include metadata such as:
-   * - `x`, `y` (canvas-relative coordinates), `button`, `buttons`, `pointerType`,
-   *   `modifiers` and (for wheel) `deltaX`, `deltaY`, `deltaZ`, `deltaMode`.
+   * Legacy code may still include metadata keys such as `x`, `y`, `button`, etc.,
+   * but they are not used for command generation.
    */
   metadata?: Readonly<Record<string, unknown>>;
 }>;
