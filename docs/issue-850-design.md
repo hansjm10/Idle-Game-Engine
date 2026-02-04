@@ -16,6 +16,23 @@ The desktop shell currently forwards unmatched control/pointer events as an ad-h
 - [ ] Keep pointer-driven UI interactions working in the test-game desktop shell.
 - [ ] Define a well-typed, serializable payload shape for forwarded input events (including pointer events).
 
+### Pointer/UI Preservation (Concrete Rules)
+To preserve existing pointer-driven UI behavior while removing implicit passthrough:
+- The renderer sends typed input events for canvas pointer + wheel interactions on `IPC_CHANNELS.inputEvent`.
+- The main process validates and **always** enqueues exactly one `INPUT_EVENT` runtime command per valid pointer/wheel input event (no control-scheme binding required).
+- `idle-engine:control-event` remains for non-pointer controls (e.g., Space → `collect`) and is mapped via `@idle-engine/controls` bindings; there is no passthrough fallback.
+
+**Intent mapping (kept stable):** existing `mouse-*` intent strings are preserved as-is in the new typed schema:
+- `mouse-down` → `InputEvent.kind:'pointer'`, `intent:'mouse-down'`, `phase:'start'`
+- `mouse-move` → `InputEvent.kind:'pointer'`, `intent:'mouse-move'`, `phase:'repeat'`
+- `mouse-up` → `InputEvent.kind:'pointer'`, `intent:'mouse-up'`, `phase:'end'`
+- `mouse-wheel` → `InputEvent.kind:'wheel'`, `intent:'mouse-wheel'`, `phase:'repeat'`
+
+Implementation touchpoints (exact files):
+- `packages/core/src/command.ts`, `packages/core/src/input-event.ts`
+- `packages/shell-desktop/src/ipc.ts`, `packages/shell-desktop/src/preload.cts`
+- `packages/shell-desktop/src/renderer/index.ts`, `packages/shell-desktop/src/main.ts`
+
 ### Non-Goals
 - Add support for every possible input device/event type (gamepad, multi-touch gestures, etc.) beyond what is needed to preserve existing pointer UI behavior.
 - Redesign the renderer/UI system or change unrelated runtime command queue semantics.
@@ -170,23 +187,23 @@ All validation is **synchronous** at the IPC boundary (main process). When valid
 | `ReadAssetRequest.url` | string | required, non-empty; must parse as URL; must be `file:`; must resolve inside compiled assets root | `TypeError("Invalid read asset request: expected { url: string }")`, `TypeError("Invalid asset url: expected a file:// URL.")`, `TypeError("Invalid asset url: path must be inside compiled assets.")`, or URL parse `TypeError` |
 | `ShellInputEventEnvelope.schemaVersion` | number | required; must equal `1` | drop input event |
 | `ShellInputEventEnvelope.event` | object | required | drop input event |
-| `ShellInputEvent.kind` | string | required; one of `control`, `pointer`, `wheel` | drop input event |
-| `ShellInputEvent.control.intent` | string | required; non-empty | drop input event |
-| `ShellInputEvent.control.phase` | string | required; one of `start`, `repeat`, `end` | drop input event |
-| `ShellInputEvent.control.value` | number | optional; if present must be finite | drop input event |
-| `ShellInputEvent.pointer.intent` | string | required; one of `pointer.down`, `pointer.up`, `pointer.move` | drop input event |
-| `ShellInputEvent.pointer.phase` | string | required; must match intent (`pointer.down → start`, `pointer.move → repeat`, `pointer.up → end`) | drop input event |
-| `ShellInputEvent.pointer.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
-| `ShellInputEvent.pointer.button` | number | required; integer; range `-1..32` | drop input event |
-| `ShellInputEvent.pointer.buttons` | number | required; integer; range `0..0xFFFF` | drop input event |
-| `ShellInputEvent.pointer.pointerType` | string | required; one of `mouse`, `pen`, `touch` | drop input event |
-| `ShellInputEvent.pointer.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
-| `ShellInputEvent.wheel.intent` | string | required; must equal `pointer.wheel` | drop input event |
-| `ShellInputEvent.wheel.phase` | string | required; must equal `repeat` | drop input event |
-| `ShellInputEvent.wheel.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
-| `ShellInputEvent.wheel.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
-| `ShellInputEvent.wheel.deltaX/Y/Z` | number | required; finite | drop input event |
-| `ShellInputEvent.wheel.deltaMode` | number | required; one of `0`, `1`, `2` | drop input event |
+| `InputEvent.kind` | string | required; one of `control`, `pointer`, `wheel` | drop input event |
+| `InputEvent.control.intent` | string | required; non-empty | drop input event |
+| `InputEvent.control.phase` | string | required; one of `start`, `repeat`, `end` | drop input event |
+| `InputEvent.control.value` | number | optional; if present must be finite | drop input event |
+| `InputEvent.pointer.intent` | string | required; one of `mouse-down`, `mouse-up`, `mouse-move` | drop input event |
+| `InputEvent.pointer.phase` | string | required; must match intent (`mouse-down → start`, `mouse-move → repeat`, `mouse-up → end`) | drop input event |
+| `InputEvent.pointer.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
+| `InputEvent.pointer.button` | number | required; integer; range `-1..32` | drop input event |
+| `InputEvent.pointer.buttons` | number | required; integer; range `0..0xFFFF` | drop input event |
+| `InputEvent.pointer.pointerType` | string | required; one of `mouse`, `pen`, `touch` | drop input event |
+| `InputEvent.pointer.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
+| `InputEvent.wheel.intent` | string | required; must equal `mouse-wheel` | drop input event |
+| `InputEvent.wheel.phase` | string | required; must equal `repeat` | drop input event |
+| `InputEvent.wheel.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
+| `InputEvent.wheel.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
+| `InputEvent.wheel.deltaX/Y/Z` | number | required; finite | drop input event |
+| `InputEvent.wheel.deltaMode` | number | required; one of `0`, `1`, `2` | drop input event |
 
 ### UI Interactions (if applicable)
 | Action | Request | Loading State | Success | Error |
@@ -202,6 +219,7 @@ All validation is **synchronous** at the IPC boundary (main process). When valid
 
 #### Type contracts (wire-level)
 ```ts
+// Canonical input-event types used by both IPC and runtime payloads live in @idle-engine/core.
 export type ShellControlEvent = Readonly<{
   intent: string;
   phase: 'start' | 'repeat' | 'end';
@@ -213,12 +231,7 @@ export type ShellControlEvent = Readonly<{
   metadata?: Readonly<Record<string, unknown>>;
 }>;
 
-export type ShellInputEventEnvelope = Readonly<{
-  schemaVersion: 1;
-  event: ShellInputEvent;
-}>;
-
-export type ShellInputEvent =
+export type InputEvent =
   | Readonly<{
       kind: 'control';
       intent: string;
@@ -227,7 +240,7 @@ export type ShellInputEvent =
     }>
   | Readonly<{
       kind: 'pointer';
-      intent: 'pointer.down' | 'pointer.up' | 'pointer.move';
+      intent: 'mouse-down' | 'mouse-up' | 'mouse-move';
       phase: 'start' | 'repeat' | 'end';
       x: number;
       y: number;
@@ -238,7 +251,7 @@ export type ShellInputEvent =
     }>
   | Readonly<{
       kind: 'wheel';
-      intent: 'pointer.wheel';
+      intent: 'mouse-wheel';
       phase: 'repeat';
       x: number;
       y: number;
@@ -249,9 +262,15 @@ export type ShellInputEvent =
       modifiers: Readonly<{ alt: boolean; ctrl: boolean; meta: boolean; shift: boolean }>;
     }>;
 
+// IPC envelope lives in packages/shell-desktop but references the canonical InputEvent type.
+export type ShellInputEventEnvelope = Readonly<{
+  schemaVersion: 1;
+  event: InputEvent;
+}>;
+
 export type InputEventCommandPayload = Readonly<{
   schemaVersion: 1;
-  event: ShellInputEvent;
+  event: InputEvent;
 }>;
 ```
 
@@ -264,40 +283,40 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 |----------|-------|------|----------|---------|-------------|
 | `packages/shell-desktop/src/ipc.ts` | `IPC_CHANNELS.inputEvent` | `string` | yes | n/a | must equal `idle-engine:input-event` |
 | `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.schemaVersion` | `1` | yes | `1` (when encoding) | reject/drop if not exactly `1` |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.event` | `ShellInputEvent` | yes | n/a | reject/drop if missing or not an object |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.kind` | `'control' \| 'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.control.intent` | `string` | yes | n/a | non-empty after trim |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.control.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must be one of the listed literals |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.control.value` | `number` | no | `undefined` | if present: finite (`Number.isFinite`) |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.intent` | `'pointer.down' \| 'pointer.up' \| 'pointer.move'` | yes | n/a | must be one of the listed literals |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must match intent (`down→start`, `move→repeat`, `up→end`) |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.button` | `number` | yes | n/a | integer; range `-1..32` |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.buttons` | `number` | yes | n/a | integer; range `0..0xFFFF` |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes | n/a | must be one of the listed literals |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.alt` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.ctrl` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.meta` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.pointer.modifiers.shift` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.intent` | `'pointer.wheel'` | yes | n/a | must equal `pointer.wheel` |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.phase` | `'repeat'` | yes | n/a | must equal `repeat` |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaX` | `number` | yes | n/a | finite |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaY` | `number` | yes | n/a | finite |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaZ` | `number` | yes | n/a | finite |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.deltaMode` | `0 \| 1 \| 2` | yes | n/a | must be one of the listed literals |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.alt` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.ctrl` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.meta` | `boolean` | yes | n/a | - |
-| `packages/shell-desktop/src/ipc.ts` | `ShellInputEvent.wheel.modifiers.shift` | `boolean` | yes | n/a | - |
+| `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.event` | `InputEvent` | yes | n/a | reject/drop if missing or not an object |
+| `packages/core/src/input-event.ts` | `InputEvent.kind` | `'control' \| 'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.control.intent` | `string` | yes | n/a | non-empty after trim |
+| `packages/core/src/input-event.ts` | `InputEvent.control.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.control.value` | `number` | no | `undefined` | if present: finite (`Number.isFinite`) |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.intent` | `'mouse-down' \| 'mouse-up' \| 'mouse-move'` | yes | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must match intent (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.button` | `number` | yes | n/a | integer; range `-1..32` |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.buttons` | `number` | yes | n/a | integer; range `0..0xFFFF` |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.alt` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.ctrl` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.meta` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.shift` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.intent` | `'mouse-wheel'` | yes | n/a | must equal `mouse-wheel` |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.phase` | `'repeat'` | yes | n/a | must equal `repeat` |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaX` | `number` | yes | n/a | finite |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaY` | `number` | yes | n/a | finite |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaZ` | `number` | yes | n/a | finite |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaMode` | `0 \| 1 \| 2` | yes | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.alt` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.ctrl` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.meta` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.shift` | `boolean` | yes | n/a | - |
 | `packages/core/src/command.ts` | `RUNTIME_COMMAND_TYPES.INPUT_EVENT` | `string` | yes | n/a | must equal `INPUT_EVENT` |
 | `packages/core/src/command.ts` | `RuntimeCommandPayloads.INPUT_EVENT` | `InputEventCommandPayload` | yes | n/a | payload must be JSON-serializable |
 | `packages/core/src/command.ts` | `InputEventCommandPayload.schemaVersion` | `1` | yes | `1` (when encoding) | reject if not exactly `1` (handler must validate) |
-| `packages/core/src/command.ts` | `InputEventCommandPayload.event` | `ShellInputEvent` | yes | n/a | must satisfy the same variant constraints as IPC `ShellInputEvent` |
+| `packages/core/src/command.ts` | `InputEventCommandPayload.event` | `InputEvent` | yes | n/a | must satisfy the same variant constraints as IPC `ShellInputEventEnvelope.event` |
 | `packages/shell-desktop/src/ipc.ts` | `ShellControlEvent.metadata` (deprecated semantics) | `Record<string, unknown>` | no | `undefined` | `metadata.passthrough` is ignored; pointer/wheel metadata must not be relied on |
 
 ### Field Definitions
@@ -316,14 +335,15 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 - Purpose: Carries the typed input event (control/pointer/wheel) across IPC.
 - Set by: Desktop renderer input capture layer.
 - Read by: Desktop main input mapper (mapping to runtime commands).
+- Type ownership: `event` is the canonical `InputEvent` type from `@idle-engine/core` (core owns the variant definitions).
 - References: No foreign keys; `intent` strings are matched against control/binding intent strings but are not strong references.
 
-**`ShellInputEvent.*` (variants)**
+**`InputEvent.*` (variants)**
 - Purpose: Lossless-but-minimal representation of the input needed for deterministic UI/control handling.
 - Set by: Desktop renderer (source-of-truth is the browser/DOM event data).
 - Read by: Desktop main mapper; optionally embedded into `INPUT_EVENT` runtime commands for sim-side consumption.
 - Derived fields:
-  - `pointer.phase` is derived from `pointer.intent` (`down→start`, `move→repeat`, `up→end`) and must remain consistent; mismatches are rejected.
+  - `pointer.phase` is derived from `pointer.intent` (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) and must remain consistent; mismatches are rejected.
   - `wheel.phase` is always `repeat`.
 - Ordering dependencies: None stored in the payload; ordering is defined by IPC delivery order and the main-process enqueue policy (commands are scheduled at the runtime’s next executable step).
 
@@ -349,13 +369,13 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 |--------|---------------|-----------|----------|
 | Add IPC input-event envelope (`ShellInputEventEnvelope`, `IPC_CHANNELS.inputEvent`) | No records exist; channel absent | Add new IPC channel and validate on receive; absence means no typed input events are sent | Remove channel; renderer falls back to legacy control events only |
 | Add runtime command type `INPUT_EVENT` with `InputEventCommandPayload` | Existing command queues/snapshots contain no `INPUT_EVENT` entries | Add command handler(s) for `INPUT_EVENT`; producers emit only when a mapping explicitly targets it | Remove handler and stop emitting `INPUT_EVENT` |
-| Deprecate passthrough forwarding and `SHELL_CONTROL_EVENT` production | Older saves/snapshots *may* contain `SHELL_CONTROL_EVENT` entries | Do not emit `SHELL_CONTROL_EVENT` going forward. For compatibility, either (a) keep a no-op handler registered for `SHELL_CONTROL_EVENT`, or (b) drop unsupported command types during restore via `CommandQueue.restoreFromSave({ isCommandTypeSupported })` | Restore legacy behavior only by reintroducing passthrough forwarding and emitting `SHELL_CONTROL_EVENT` (not recommended) |
+| Deprecate passthrough forwarding and `SHELL_CONTROL_EVENT` production | Older saves/snapshots *may* contain `SHELL_CONTROL_EVENT` entries | Do not emit `SHELL_CONTROL_EVENT` going forward. For compatibility, **keep a no-op handler registered for `SHELL_CONTROL_EVENT` in the demo sim runtime** so restores do not produce `UnknownCommandType` errors (`packages/shell-desktop/src/sim/sim-runtime.ts`). | Restore legacy behavior only by reintroducing passthrough forwarding and emitting `SHELL_CONTROL_EVENT` (not recommended) |
 
 ### Artifacts
 | Artifact | Location | Created | Updated | Deleted |
 |----------|----------|---------|---------|---------|
 | IPC input-event message | Electron IPC message on `idle-engine:input-event` | When renderer captures input | Never (immutable) | After message delivery/GC (ephemeral) |
-| `INPUT_EVENT` command | In-memory command queue entry | When main maps a validated `ShellInputEvent` to `INPUT_EVENT` | Never (immutable) | When dequeued/executed or queue is cleared on restart |
+| `INPUT_EVENT` command | In-memory command queue entry | When main maps a validated `InputEvent` to `INPUT_EVENT` | Never (immutable) | When dequeued/executed or queue is cleared on restart |
 | Serialized `INPUT_EVENT` payload | `SerializedCommandQueueV1.entries[].payload` (inside `GameStateSnapshot.commandQueue`) | When a snapshot/save captures the command queue | Never (immutable) | When the snapshot/save is discarded by the caller |
 
 ### Artifact Lifecycle
@@ -422,7 +442,7 @@ T6 → depends on T3, T4, T5
 **T2: Add IPC channel + API**
 - Summary: Add the new IPC channel constant and a typed renderer→main send surface for input events.
 - Files:
-  - `packages/shell-desktop/src/ipc.ts` - add `IPC_CHANNELS.inputEvent` and define `ShellInputEventEnvelope` (schemaVersion `1`) plus `IdleEngineApi.sendInputEvent`.
+  - `packages/shell-desktop/src/ipc.ts` - add `IPC_CHANNELS.inputEvent` and define `ShellInputEventEnvelope` (schemaVersion `1`) referencing `InputEvent` from `@idle-engine/core`; add `IdleEngineApi.sendInputEvent`.
   - `packages/shell-desktop/src/ipc.test.ts` - assert the new stable identifier (`idle-engine:input-event`).
   - `packages/shell-desktop/src/preload.cts` - expose `sendInputEvent` and route it via `ipcRenderer.send(IPC_CHANNELS.inputEvent, envelope)`.
   - `packages/shell-desktop/src/preload.test.ts` - verify `sendInputEvent` exists and forwards to `ipcRenderer.send`.
@@ -437,7 +457,7 @@ T6 → depends on T3, T4, T5
 **T3: Send typed input events**
 - Summary: Replace pointer/wheel “passthrough metadata” forwarding with explicit typed input events.
 - Files:
-  - `packages/shell-desktop/src/renderer/index.ts` - build and send `ShellInputEventEnvelope` for `pointer.down/up/move` and `pointer.wheel`; keep pointer-move RAF coalescing.
+  - `packages/shell-desktop/src/renderer/index.ts` - build and send `ShellInputEventEnvelope` for `mouse-down`, `mouse-up`, `mouse-move`, and `mouse-wheel`; keep pointer-move RAF coalescing.
   - `packages/shell-desktop/src/renderer/index.test.ts` - update expectations to assert `sendInputEvent` calls (not `sendControlEvent` metadata passthrough).
 - Acceptance Criteria:
   1. Pointer down/up/move events produce `ShellInputEventEnvelope` with `schemaVersion: 1` and `event.kind: 'pointer'`.
@@ -462,13 +482,14 @@ T6 → depends on T3, T4, T5
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
 
 **T5: Handle `INPUT_EVENT` in sim**
-- Summary: Ensure the shell-desktop demo sim runtime has a registered handler for `INPUT_EVENT` so replays/restores remain stable, even if it is initially a no-op.
+- Summary: Ensure the shell-desktop demo sim runtime has a registered handler for `INPUT_EVENT` so replays/restores remain stable, even if it is initially a no-op. Keep legacy `SHELL_CONTROL_EVENT` registered as a no-op to support restores of older snapshots without `UnknownCommandType` errors.
 - Files:
   - `packages/shell-desktop/src/sim/sim-runtime.ts` - register a dispatcher handler for `RUNTIME_COMMAND_TYPES.INPUT_EVENT` (no-op placeholder is acceptable for the demo runtime).
-  - `packages/shell-desktop/src/sim/sim-runtime.test.ts` - assert `INPUT_EVENT` is registered; keep or remove the legacy `SHELL_CONTROL_EVENT` handler explicitly per the migration decision.
+  - `packages/shell-desktop/src/sim/sim-runtime.test.ts` - assert `INPUT_EVENT` is registered; assert `SHELL_CONTROL_EVENT` remains registered as a no-op for legacy restores.
 - Acceptance Criteria:
   1. `createSimRuntime().hasCommandHandler(RUNTIME_COMMAND_TYPES.INPUT_EVENT) === true`.
-  2. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
+  2. `createSimRuntime().hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE) === true` (legacy restore compatibility).
+  3. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
 - Dependencies: T1
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts`
 
