@@ -79,6 +79,7 @@ describe('shell-desktop renderer entrypoint', () => {
     (globalThis as unknown as { idleEngine?: unknown }).idleEngine = {
       ping: vi.fn(async () => 'pong'),
       sendControlEvent: vi.fn(),
+      sendInputEvent: vi.fn(),
       onFrame: vi.fn(() => vi.fn()),
       onSimStatus: vi.fn(() => vi.fn()),
     };
@@ -290,9 +291,112 @@ describe('shell-desktop renderer entrypoint', () => {
     );
   });
 
+  it('sends typed input events for pointer down/up with schemaVersion 1', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    pointerDownHandler?.({
+      clientX: 30,
+      clientY: 45,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+    } as PointerEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 30 - canvasRect.left,
+        y: 45 - canvasRect.top,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: true },
+      },
+    });
+
+    pointerUpHandler?.({
+      clientX: 50,
+      clientY: 60,
+      button: 1,
+      buttons: 0,
+      pointerType: 'pen',
+      altKey: false,
+      ctrlKey: false,
+      metaKey: true,
+      shiftKey: false,
+    } as PointerEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-up',
+        phase: 'end',
+        x: 50 - canvasRect.left,
+        y: 60 - canvasRect.top,
+        button: 1,
+        buttons: 0,
+        pointerType: 'pen',
+        modifiers: { alt: false, ctrl: false, meta: true, shift: false },
+      },
+    });
+  });
+
+  it('sends typed input events for wheel with schemaVersion 1 and finite deltas', async () => {
+    const idleEngine = (
+      globalThis as unknown as { idleEngine: { sendInputEvent: ReturnType<typeof vi.fn> } }
+    ).idleEngine;
+
+    await import('./index.js');
+    await flushMicrotasks();
+
+    wheelHandler?.({
+      clientX: 40,
+      clientY: 55,
+      button: 0,
+      buttons: 0,
+      deltaX: 1,
+      deltaY: 2,
+      deltaZ: 0,
+      deltaMode: 0,
+      altKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+    } as WheelEvent);
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'wheel',
+        intent: 'mouse-wheel',
+        phase: 'repeat',
+        x: 40 - canvasRect.left,
+        y: 55 - canvasRect.top,
+        deltaX: 1,
+        deltaY: 2,
+        deltaZ: 0,
+        deltaMode: 0,
+        modifiers: { alt: false, ctrl: true, meta: false, shift: false },
+      },
+    });
+  });
+
   it('coalesces pointer move events to one per frame', async () => {
     const idleEngine = (
-      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn> } }
+      globalThis as unknown as { idleEngine: { sendControlEvent: ReturnType<typeof vi.fn>; sendInputEvent: ReturnType<typeof vi.fn> } }
     ).idleEngine;
 
     await import('./index.js');
@@ -325,6 +429,7 @@ describe('shell-desktop renderer entrypoint', () => {
     } as PointerEvent);
 
     expect(idleEngine.sendControlEvent).not.toHaveBeenCalled();
+    expect(idleEngine.sendInputEvent).not.toHaveBeenCalled();
 
     const rafEntries = Array.from(rafCallbacks.entries());
     const [moveId, moveCallback] = rafEntries[rafEntries.length - 1] as [number, FrameRequestCallback];
@@ -344,6 +449,22 @@ describe('shell-desktop renderer entrypoint', () => {
         }),
       }),
     );
+
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledTimes(1);
+    expect(idleEngine.sendInputEvent).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-move',
+        phase: 'repeat',
+        x: 36 - canvasRect.left,
+        y: 50 - canvasRect.top,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    });
   });
 
   it('ignores empty pointer move flushes and forwards pointer-up events', async () => {
