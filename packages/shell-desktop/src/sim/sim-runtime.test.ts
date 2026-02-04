@@ -292,4 +292,86 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
+  it('throws on INPUT_EVENT with schemaVersion mismatch (e.g. schemaVersion: 2) - handler fails before hit-test', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    // First, verify that a valid in-bounds click DOES increase the resource count
+    const validPointerEvent: PointerInputEvent = {
+      kind: 'pointer',
+      intent: 'mouse-down',
+      phase: 'start',
+      x: 20,
+      y: 20,
+      button: 0,
+      buttons: 1,
+      pointerType: 'mouse',
+      modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+    };
+
+    const validPayload: InputEventCommandPayload = {
+      schemaVersion: 1,
+      event: validPointerEvent,
+    };
+
+    const validCommand: Command = {
+      type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+      priority: CommandPriority.PLAYER,
+      payload: validPayload,
+      timestamp: 0,
+      step: sim.getNextStep(),
+    };
+
+    sim.enqueueCommands([validCommand]);
+    const resultAfterValid = sim.tick(10);
+
+    // With schemaVersion 1, in-bounds click triggers resource collection
+    const fillRectAfterValid = resultAfterValid.frames[0]?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+    expect(fillRectAfterValid).toMatchObject({
+      width: 14, // Resource count increased
+    });
+
+    // Now create a new runtime and test schemaVersion mismatch
+    const sim2 = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    // Use schemaVersion 2 to simulate a mismatch (incompatible replay/snapshot)
+    // The same in-bounds coords that would normally trigger collection
+    const invalidPayload = {
+      schemaVersion: 2,
+      event: validPointerEvent,
+    } as unknown as InputEventCommandPayload;
+
+    const invalidCommand: Command = {
+      type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+      priority: CommandPriority.PLAYER,
+      payload: invalidPayload,
+      timestamp: 0,
+      step: sim2.getNextStep(),
+    };
+
+    sim2.enqueueCommands([invalidCommand]);
+
+    // Tick to process the command - the handler throws before hit-testing
+    // (CommandDispatcher catches the throw and records an error)
+    const resultAfterInvalid = sim2.tick(10);
+
+    // Verify no resource increase happened (handler threw before hit-test)
+    const fillRectAfterInvalid = resultAfterInvalid.frames[0]?.draws.find(
+      (draw) =>
+        draw.kind === 'rect' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 2,
+    );
+    expect(fillRectAfterInvalid).toMatchObject({
+      width: 0, // No resource collection - handler threw
+      colorRgba: 0x2a_4f_8a_ff, // Default color (no collection this step)
+    });
+  });
+
 });
