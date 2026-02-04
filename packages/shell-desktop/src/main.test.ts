@@ -1539,4 +1539,186 @@ describe('shell-desktop main process entrypoint', () => {
 
     consoleError.mockRestore();
   });
+
+  it('ignores worker frame messages after controller disposal', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so the worker is running
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Clear calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+
+    // Trigger disposal by closing windows
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    // Now emit a stale frame message from the worker after disposal
+    const staleFrame = { frame: { step: 99, simTimeMs: 1000 } };
+    worker?.emitMessage({ kind: 'frame', frame: staleFrame, droppedFrames: 0, nextStep: 100 });
+    await flushMicrotasks();
+
+    // Verify no frame IPC was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.frame,
+      expect.anything(),
+    );
+
+    // Verify no sim-status IPC was sent either
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.anything(),
+    );
+  });
+
+  it('ignores worker ready messages after controller disposal', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Clear calls after initial 'starting' status
+    mainWindow?.webContents.send.mockClear();
+
+    // Trigger disposal by closing windows (before ready)
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    // Now emit a stale ready message from the worker after disposal
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Verify no 'running' sim-status was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Verify no tick messages were sent (tick loop should not have started)
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCalls).toHaveLength(0);
+  });
+
+  it('ignores worker frame messages after crash', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16, 32]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so the worker is running
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Trigger a crash
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // Clear calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+
+    // Now emit a stale frame message from the worker after crash
+    const staleFrame = { frame: { step: 99, simTimeMs: 1000 } };
+    worker?.emitMessage({ kind: 'frame', frame: staleFrame, droppedFrames: 0, nextStep: 100 });
+    await flushMicrotasks();
+
+    // Verify no frame IPC was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.frame,
+      expect.anything(),
+    );
+
+    // Verify no sim-status IPC was sent either
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.anything(),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it('ignores worker ready messages after crash', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so the worker is running
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Trigger a crash
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // Clear calls to isolate the test (crash already sent 'crashed' status)
+    mainWindow?.webContents.send.mockClear();
+
+    // Now emit a stale ready message from the worker after crash
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Verify no 'running' sim-status was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Record tick calls count after crash but before stale ready
+    const tickCallsBeforeStaleReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ).length ?? 0;
+
+    // Verify tick loop was not restarted by the stale ready message
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCallsAfterStaleReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ).length ?? 0;
+
+    // The tick loop was already stopped by the crash, and the stale ready should not restart it
+    // No new tick calls should have been made
+    expect(tickCallsAfterStaleReady).toBe(tickCallsBeforeStaleReady);
+
+    consoleError.mockRestore();
+  });
 });

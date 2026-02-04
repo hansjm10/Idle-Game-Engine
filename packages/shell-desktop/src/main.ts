@@ -350,6 +350,11 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   sendSimStatus({ kind: 'starting' });
 
   worker.on('message', (message: SimWorkerOutboundMessage) => {
+    // Ignore worker messages after disposal or failure to avoid stale frames/status after restart
+    if (isDisposing || hasFailed) {
+      return;
+    }
+
     if (message.kind === 'ready') {
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
