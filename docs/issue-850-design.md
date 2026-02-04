@@ -504,9 +504,20 @@ T6 → depends on T3, T4, T5
 - [ ] Types check: `pnpm typecheck`
 - [ ] Lint passes: `pnpm lint`
 - [ ] All tests pass: `pnpm test`
-- [ ] New/updated tests run in CI:
-  - `pnpm --filter @idle-engine/core test`
-  - `pnpm --filter @idle-engine/shell-desktop test`
+- [ ] New/updated test files pass:
+  - `packages/core/src/input-event.test.ts`
+  - `packages/shell-desktop/src/ipc.test.ts`
+  - `packages/shell-desktop/src/preload.test.ts`
+  - `packages/shell-desktop/src/renderer/index.test.ts`
+  - `packages/shell-desktop/src/main.test.ts`
+  - `packages/shell-desktop/src/sim/sim-runtime.test.ts`
+- [ ] Targeted test runs (while iterating):
+  - `pnpm --filter @idle-engine/core test -- src/input-event.test.ts`
+  - `pnpm --filter @idle-engine/shell-desktop test -- src/ipc.test.ts`
+  - `pnpm --filter @idle-engine/shell-desktop test -- src/preload.test.ts`
+  - `pnpm --filter @idle-engine/shell-desktop test -- src/renderer/index.test.ts`
+  - `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
+  - `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts`
 - [ ] Coverage markdown regenerated: `pnpm coverage:md`
 
 ### Manual Verification (desktop shell)
