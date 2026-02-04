@@ -61,9 +61,9 @@ This feature changes the **input event workflow** so that pointer/UI interaction
 | sim.initializing | Sim worker is spawned; init message sent; waiting for `ready`. Input events are ignored. | App is ready and sim worker controller is created (or restarted). |
 | sim.running.input.idle | Sim tick loop is active; no pending input work. | Worker sends `ready`; tick loop starts; nested input state initialized. |
 | sim.running.input.pointer_move_coalescing | Renderer is coalescing pointer-move events to one per animation frame. | Renderer receives pointer-move and schedules a RAF flush. |
-| sim.running.input.processing | Main process is validating an input event and mapping it to runtime command(s). | Main receives a candidate input event from renderer IPC. |
-| sim.running.input.enqueued | Command(s) were accepted for delivery to the sim worker. | Mapping produced ≥1 command and `worker.postMessage({ kind: 'enqueueCommands' ... })` succeeds. |
-| sim.running.input.dropped | Input event was valid but produced no commands (and is not forwarded). | Mapping produced 0 commands for the event. |
+| sim.running.input.processing | Main process is validating an input message and preparing runtime command(s). | Main receives a candidate input message from renderer IPC. |
+| sim.running.input.enqueued | Command(s) were accepted for delivery to the sim worker. | For `idle-engine:input-event`: a valid pointer/wheel envelope produced exactly one `INPUT_EVENT` and `worker.postMessage({ kind: 'enqueueCommands' ... })` succeeds. For `idle-engine:control-event`: mapping produced ≥1 command and `postMessage` succeeds. |
+| sim.running.input.dropped | Control event was valid but produced no commands (unbound). | `idle-engine:control-event` mapping produced 0 commands for the event. |
 | sim.running.input.rejected | Input event was invalid and is not processed. | Input event fails schema/shape validation at IPC boundary. |
 | sim.disposing | Sim worker controller is shutting down; tick loop stopped; no further input accepted. | Window reload/close, or app shutdown triggers controller dispose. |
 | sim.terminated | Sim worker controller is fully disposed; no worker thread is owned. | Worker is terminated/closed and controller resources are released. |
@@ -77,14 +77,15 @@ This feature changes the **input event workflow** so that pointer/UI interaction
 | shell.booting | `app.whenReady()` rejects. | shell.startup_failed | `console.error(error)`; `app.exit(1)`. |
 | sim.initializing | Worker sends `kind:'ready'`. | sim.running.input.idle | Persist `stepSizeMs` + `nextStep`; start tick interval; begin accepting input events. |
 | sim.initializing | Worker sends `kind:'error'` OR emits `error`/`messageerror` OR exits non-zero. | sim.crashed | Stop tick interval; log failure; notify renderer via `simStatus` IPC; terminate worker. |
-| sim.running.input.idle | Renderer sends a non-coalesced input event (e.g. pointer-down/up, wheel, key). | sim.running.input.processing | Snapshot current `nextStep`/`stepSizeMs`; begin validation + mapping. |
+| sim.running.input.idle | Renderer sends a non-coalesced input message (pointer-down/up, wheel, key). | sim.running.input.processing | Snapshot current `nextStep`/`stepSizeMs`; begin validation and command preparation. |
 | sim.running.input.idle | Renderer sends pointer-move; renderer schedules RAF coalescing. | sim.running.input.pointer_move_coalescing | Store latest pointer-move; overwrite older move; ensure exactly one RAF is scheduled. |
-| sim.running.input.pointer_move_coalescing | RAF flush runs with a pending pointer-move. | sim.running.input.processing | Emit exactly one pointer-move input event for the latest pending move; begin validation + mapping. |
+| sim.running.input.pointer_move_coalescing | RAF flush runs with a pending pointer-move. | sim.running.input.processing | Emit exactly one pointer-move input event for the latest pending move; begin validation and command preparation. |
 | sim.running.input.pointer_move_coalescing | RAF flush runs with no pending pointer-move. | sim.running.input.idle | No-op (state returns to idle). |
 | sim.running.input.processing | Input event fails IPC validation / schema checks. | sim.running.input.rejected | Drop event; optionally log (dev-only); do not enqueue commands. |
-| sim.running.input.processing | Input event is valid; mapping produces 0 commands. | sim.running.input.dropped | Drop event; do not enqueue commands. |
-| sim.running.input.processing | Input event is valid; mapping produces ≥1 command; `postMessage` succeeds. | sim.running.input.enqueued | Send `enqueueCommands` to worker; no acknowledgment is required. |
-| sim.running.input.processing | Mapping throws OR `postMessage` throws. | sim.crashed | Treat as fatal bridge failure: stop tick interval; log error; notify renderer via `simStatus`; terminate worker. |
+| sim.running.input.processing | Control event is valid; mapping produces 0 commands (unbound). | sim.running.input.dropped | Drop event; do not enqueue commands. |
+| sim.running.input.processing | Input-event envelope is valid (pointer/wheel) and `postMessage` succeeds. | sim.running.input.enqueued | Enqueue exactly one `INPUT_EVENT` command for the validated event; no acknowledgment is required. |
+| sim.running.input.processing | Control event is valid; mapping produces ≥1 command and `postMessage` succeeds. | sim.running.input.enqueued | Send `enqueueCommands` to worker; no acknowledgment is required. |
+| sim.running.input.processing | Handler/mapping throws OR `postMessage` throws. | sim.crashed | Treat as fatal bridge failure: stop tick interval; log error; notify renderer via `simStatus`; terminate worker. |
 | sim.running.input.enqueued | After `postMessage` returns. | sim.running.input.idle | Clear per-event temporary state; await next input. |
 | sim.running.input.dropped | Immediately after dropping. | sim.running.input.idle | Clear per-event temporary state; await next input. |
 | sim.running.input.rejected | Immediately after rejecting. | sim.running.input.idle | Clear per-event temporary state; await next input. |
@@ -102,7 +103,7 @@ This feature changes the **input event workflow** so that pointer/UI interaction
 
 **Handlers**:
 - **Global worker/bridge failure handler**: any worker error condition funnels into a single “fail closed” action (stop tick loop, log, send `simStatus`, terminate worker, ignore future input) and transitions to `sim.crashed`/`sim.stopped`.
-- **Per-input-event handling**: IPC payload validation and mapping outcomes transition only within `sim.running.input.*` (reject/drop/enqueue), unless a fatal bridge error occurs.
+- **Per-input-event handling**: IPC payload validation and enqueue/mapping outcomes transition only within `sim.running.input.*` (reject/drop/enqueue), unless a fatal bridge error occurs.
 
 | State | Error | Recovery State | Actions |
 |-------|-------|----------------|---------|
@@ -114,8 +115,8 @@ This feature changes the **input event workflow** so that pointer/UI interaction
 | sim.running.input.idle | Renderer sends malformed input payload. | sim.running.input.idle | Drop event at IPC boundary (no state change); do not enqueue commands. |
 | sim.running.input.pointer_move_coalescing | RAF is cancelled (e.g., renderer navigation) before flush. | sim.running.input.idle | Drop pending pointer-move; do not enqueue commands. |
 | sim.running.input.processing | IPC payload is not a valid input event shape. | sim.running.input.rejected | Drop event; optionally log in dev to aid diagnosis. |
-| sim.running.input.processing | Mapping produces 0 commands (including “unbound” pointer events). | sim.running.input.dropped | Drop event silently (no implicit forwarding). |
-| sim.running.input.processing | Mapping throws (e.g., payload resolver throws). | sim.crashed | Treat as fatal bridge failure; log error; stop tick; send `simStatus` (crashed); terminate worker. |
+| sim.running.input.processing | Control-event mapping produces 0 commands (unbound). | sim.running.input.dropped | Drop event silently (no implicit forwarding). |
+| sim.running.input.processing | Handler/mapping throws (e.g., payload resolver throws). | sim.crashed | Treat as fatal bridge failure; log error; stop tick; send `simStatus` (crashed); terminate worker. |
 | sim.running.input.processing | `worker.postMessage` throws. | sim.crashed | Treat as fatal bridge failure; log error; stop tick; send `simStatus` (crashed); terminate worker. |
 | sim.running.input.enqueued | None (postMessage has no acknowledgment). | sim.running.input.idle | No-op. |
 | sim.running.input.dropped | None (event already dropped). | sim.running.input.idle | No-op. |
@@ -152,7 +153,7 @@ This section defines the **contract surface** for input events across:
 |--------|------|-------|---------|--------|
 | IPC invoke | `idle-engine:ping` | `{ message: string }` | resolves `{ message: string }` | rejects if `message` is not a string |
 | IPC invoke | `idle-engine:read-asset` | `{ url: string }` | resolves `ArrayBuffer` | rejects if url is invalid, non-`file:`, or escapes compiled asset root |
-| IPC send | `idle-engine:input-event` | `ShellInputEventEnvelope` | none (fire-and-forget) | dropped if payload is invalid, sim is not running, or mapping produces 0 commands; **fatal** if mapping throws or worker delivery throws |
+| IPC send | `idle-engine:input-event` | `ShellInputEventEnvelope` | none (fire-and-forget) | dropped if payload is invalid or sim is not running; enqueues exactly one `INPUT_EVENT` per valid pointer/wheel event; **fatal** if handler throws or worker delivery throws |
 | IPC send | `idle-engine:control-event` (deprecated) | `ShellControlEvent` | none (fire-and-forget) | dropped if payload is invalid, sim is not running, or mapping produces 0 commands; **fatal** if mapping throws or worker delivery throws |
 | IPC event | `idle-engine:frame` | `ShellFramePayload` | pushed to listeners | delivery may fail if renderer is not ready (main logs and continues) |
 | IPC event | `idle-engine:sim-status` | `ShellSimStatusPayload` | pushed to listeners | delivery may fail if renderer is not ready (main logs and continues) |
@@ -174,7 +175,7 @@ N/A
 ### Runtime Commands
 | Command Type | Payload | Producer | Consumers | Errors |
 |-------------|---------|----------|-----------|--------|
-| `INPUT_EVENT` (new) | `InputEventCommandPayload` | Main input mapper via explicit bindings | UI/controls systems inside sim runtime | command is not produced unless mapping matches; mapping/worker errors are **fatal** (see workflow) |
+| `INPUT_EVENT` (new) | `InputEventCommandPayload` | Electron main process (`idle-engine:input-event` handler; 1:1 for valid pointer/wheel events) | UI/controls systems inside sim runtime | command is produced for every valid pointer/wheel input-event; handler/worker errors are **fatal** (see workflow) |
 
 ### Validation Rules
 All validation is **synchronous** at the IPC boundary (main process). When validation fails:
@@ -187,34 +188,27 @@ All validation is **synchronous** at the IPC boundary (main process). When valid
 | `ReadAssetRequest.url` | string | required, non-empty; must parse as URL; must be `file:`; must resolve inside compiled assets root | `TypeError("Invalid read asset request: expected { url: string }")`, `TypeError("Invalid asset url: expected a file:// URL.")`, `TypeError("Invalid asset url: path must be inside compiled assets.")`, or URL parse `TypeError` |
 | `ShellInputEventEnvelope.schemaVersion` | number | required; must equal `1` | drop input event |
 | `ShellInputEventEnvelope.event` | object | required | drop input event |
-| `InputEvent.kind` | string | required; one of `control`, `pointer`, `wheel` | drop input event |
-| `InputEvent.control.intent` | string | required; non-empty | drop input event |
-| `InputEvent.control.phase` | string | required; one of `start`, `repeat`, `end` | drop input event |
-| `InputEvent.control.value` | number | optional; if present must be finite | drop input event |
-| `InputEvent.pointer.intent` | string | required; one of `mouse-down`, `mouse-up`, `mouse-move` | drop input event |
-| `InputEvent.pointer.phase` | string | required; must match intent (`mouse-down → start`, `mouse-move → repeat`, `mouse-up → end`) | drop input event |
-| `InputEvent.pointer.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
-| `InputEvent.pointer.button` | number | required; integer; range `-1..32` | drop input event |
-| `InputEvent.pointer.buttons` | number | required; integer; range `0..0xFFFF` | drop input event |
-| `InputEvent.pointer.pointerType` | string | required; one of `mouse`, `pen`, `touch` | drop input event |
-| `InputEvent.pointer.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
-| `InputEvent.wheel.intent` | string | required; must equal `mouse-wheel` | drop input event |
-| `InputEvent.wheel.phase` | string | required; must equal `repeat` | drop input event |
-| `InputEvent.wheel.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
-| `InputEvent.wheel.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
-| `InputEvent.wheel.deltaX/Y/Z` | number | required; finite | drop input event |
-| `InputEvent.wheel.deltaMode` | number | required; one of `0`, `1`, `2` | drop input event |
+| `InputEvent.kind` | string | required; one of `pointer`, `wheel` | drop input event |
+| `InputEvent.intent` | string | required; if `kind:'pointer'`: one of `mouse-down`, `mouse-up`, `mouse-move`; if `kind:'wheel'`: must equal `mouse-wheel` | drop input event |
+| `InputEvent.phase` | string | required; if `kind:'pointer'`: must match intent (`mouse-down → start`, `mouse-move → repeat`, `mouse-up → end`); if `kind:'wheel'`: must equal `repeat` | drop input event |
+| `InputEvent.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
+| `InputEvent.button` | number | required when `kind:'pointer'`; integer; range `-1..32` | drop input event |
+| `InputEvent.buttons` | number | required when `kind:'pointer'`; integer; range `0..0xFFFF` | drop input event |
+| `InputEvent.pointerType` | string | required when `kind:'pointer'`; one of `mouse`, `pen`, `touch` | drop input event |
+| `InputEvent.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
+| `InputEvent.deltaX/Y/Z` | number | required when `kind:'wheel'`; finite | drop input event |
+| `InputEvent.deltaMode` | number | required when `kind:'wheel'`; one of `0`, `1`, `2` | drop input event |
 
 ### UI Interactions (if applicable)
 | Action | Request | Loading State | Success | Error |
 |--------|---------|---------------|---------|-------|
-| Press Space (demo “collect”) | `IPC send idle-engine:control-event` (or `input-event` with `kind:'control'`) | none | Sim enqueues `COLLECT_RESOURCE` and UI updates on next frame | if sim is stopped/crashed: input is ignored; status text indicates “Reload to restart” |
-| Pointer down/up/move on canvas | `IPC send idle-engine:input-event` (`kind:'pointer'`) | none | Explicit bindings may enqueue `INPUT_EVENT` commands; UI responds deterministically at tick boundaries | invalid payload is dropped; if mapping/bridge crashes, renderer receives `sim-status: crashed` |
-| Mouse wheel on canvas | `IPC send idle-engine:input-event` (`kind:'wheel'`) | none | Explicit bindings may enqueue `INPUT_EVENT` commands | same as above |
+| Press Space (demo “collect”) | `IPC send idle-engine:control-event` | none | Sim enqueues `COLLECT_RESOURCE` and UI updates on next frame | if sim is stopped/crashed: input is ignored; status text indicates “Reload to restart” |
+| Pointer down/up/move on canvas | `IPC send idle-engine:input-event` (`kind:'pointer'`) | none | Main enqueues exactly one `INPUT_EVENT` command per valid pointer event; UI responds deterministically at tick boundaries | invalid payload is dropped; if handler/bridge crashes, renderer receives `sim-status: crashed` |
+| Mouse wheel on canvas | `IPC send idle-engine:input-event` (`kind:'wheel'`) | none | Main enqueues exactly one `INPUT_EVENT` command per valid wheel event | same as above |
 
 #### Contract gates
 - **Breaking change**: Yes, behaviorally. `metadata.passthrough` no longer causes implicit forwarding, and `SHELL_CONTROL_EVENT` commands are no longer emitted.
-- **Migration**: Implement explicit bindings that map pointer/wheel inputs to `INPUT_EVENT` (or other typed) runtime commands. Any system that previously consumed `SHELL_CONTROL_EVENT.payload.event.metadata` must consume `InputEventCommandPayload.event` instead.
+- **Migration**: Pointer/wheel inputs are forwarded by the desktop shell as a 1:1 `INPUT_EVENT` runtime command (`InputEventCommandPayload.event`). Any system that previously consumed `SHELL_CONTROL_EVENT.payload.event.metadata` must consume `InputEventCommandPayload.event` instead. `idle-engine:control-event` remains binding-driven; unbound control intents remain dropped (no passthrough).
 - **Versioning**: `ShellInputEventEnvelope.schemaVersion` starts at `1`. Main must reject unknown versions (drop) and may support `N-1` during migrations. `INPUT_EVENT` payload is versioned via `InputEventCommandPayload.schemaVersion` (also `1`).
 
 #### Type contracts (wire-level)
@@ -232,12 +226,6 @@ export type ShellControlEvent = Readonly<{
 }>;
 
 export type InputEvent =
-  | Readonly<{
-      kind: 'control';
-      intent: string;
-      phase: 'start' | 'repeat' | 'end';
-      value?: number;
-    }>
   | Readonly<{
       kind: 'pointer';
       intent: 'mouse-down' | 'mouse-up' | 'mouse-move';
@@ -284,35 +272,23 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | `packages/shell-desktop/src/ipc.ts` | `IPC_CHANNELS.inputEvent` | `string` | yes | n/a | must equal `idle-engine:input-event` |
 | `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.schemaVersion` | `1` | yes | `1` (when encoding) | reject/drop if not exactly `1` |
 | `packages/shell-desktop/src/ipc.ts` | `ShellInputEventEnvelope.event` | `InputEvent` | yes | n/a | reject/drop if missing or not an object |
-| `packages/core/src/input-event.ts` | `InputEvent.kind` | `'control' \| 'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
-| `packages/core/src/input-event.ts` | `InputEvent.control.intent` | `string` | yes | n/a | non-empty after trim |
-| `packages/core/src/input-event.ts` | `InputEvent.control.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must be one of the listed literals |
-| `packages/core/src/input-event.ts` | `InputEvent.control.value` | `number` | no | `undefined` | if present: finite (`Number.isFinite`) |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.intent` | `'mouse-down' \| 'mouse-up' \| 'mouse-move'` | yes | n/a | must be one of the listed literals |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | must match intent (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.button` | `number` | yes | n/a | integer; range `-1..32` |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.buttons` | `number` | yes | n/a | integer; range `0..0xFFFF` |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes | n/a | must be one of the listed literals |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.alt` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.ctrl` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.meta` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.pointer.modifiers.shift` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.intent` | `'mouse-wheel'` | yes | n/a | must equal `mouse-wheel` |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.phase` | `'repeat'` | yes | n/a | must equal `repeat` |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaX` | `number` | yes | n/a | finite |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaY` | `number` | yes | n/a | finite |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaZ` | `number` | yes | n/a | finite |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.deltaMode` | `0 \| 1 \| 2` | yes | n/a | must be one of the listed literals |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.alt` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.ctrl` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.meta` | `boolean` | yes | n/a | - |
-| `packages/core/src/input-event.ts` | `InputEvent.wheel.modifiers.shift` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.kind` | `'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.intent` | `'mouse-down' \| 'mouse-up' \| 'mouse-move' \| 'mouse-wheel'` | yes | n/a | if `kind:'pointer'`: must be one of `mouse-down`/`mouse-up`/`mouse-move`; if `kind:'wheel'`: must equal `mouse-wheel` |
+| `packages/core/src/input-event.ts` | `InputEvent.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | if `kind:'pointer'`: must match intent (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`); if `kind:'wheel'`: must equal `repeat` |
+| `packages/core/src/input-event.ts` | `InputEvent.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.button` | `number` | yes (kind:pointer) | n/a | integer; range `-1..32` |
+| `packages/core/src/input-event.ts` | `InputEvent.buttons` | `number` | yes (kind:pointer) | n/a | integer; range `0..0xFFFF` |
+| `packages/core/src/input-event.ts` | `InputEvent.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes (kind:pointer) | n/a | must be one of the listed literals |
+| `packages/core/src/input-event.ts` | `InputEvent.modifiers` | `{ alt, ctrl, meta, shift }` | yes | n/a | object with all four boolean keys present |
+| `packages/core/src/input-event.ts` | `InputEvent.modifiers.alt` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.modifiers.ctrl` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.modifiers.meta` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.modifiers.shift` | `boolean` | yes | n/a | - |
+| `packages/core/src/input-event.ts` | `InputEvent.deltaX` | `number` | yes (kind:wheel) | n/a | finite |
+| `packages/core/src/input-event.ts` | `InputEvent.deltaY` | `number` | yes (kind:wheel) | n/a | finite |
+| `packages/core/src/input-event.ts` | `InputEvent.deltaZ` | `number` | yes (kind:wheel) | n/a | finite |
+| `packages/core/src/input-event.ts` | `InputEvent.deltaMode` | `0 \| 1 \| 2` | yes (kind:wheel) | n/a | must be one of the listed literals |
 | `packages/core/src/command.ts` | `RUNTIME_COMMAND_TYPES.INPUT_EVENT` | `string` | yes | n/a | must equal `INPUT_EVENT` |
 | `packages/core/src/command.ts` | `RuntimeCommandPayloads.INPUT_EVENT` | `InputEventCommandPayload` | yes | n/a | payload must be JSON-serializable |
 | `packages/core/src/command.ts` | `InputEventCommandPayload.schemaVersion` | `1` | yes | `1` (when encoding) | reject if not exactly `1` (handler must validate) |
@@ -332,9 +308,9 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 - Derived: Constant `1` for this feature’s initial rollout.
 
 **`ShellInputEventEnvelope.event`**
-- Purpose: Carries the typed input event (control/pointer/wheel) across IPC.
+- Purpose: Carries the typed pointer/wheel input event across IPC.
 - Set by: Desktop renderer input capture layer.
-- Read by: Desktop main input mapper (mapping to runtime commands).
+- Read by: Desktop main input handler (enqueues runtime commands).
 - Type ownership: `event` is the canonical `InputEvent` type from `@idle-engine/core` (core owns the variant definitions).
 - References: No foreign keys; `intent` strings are matched against control/binding intent strings but are not strong references.
 
@@ -343,8 +319,8 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 - Set by: Desktop renderer (source-of-truth is the browser/DOM event data).
 - Read by: Desktop main mapper; optionally embedded into `INPUT_EVENT` runtime commands for sim-side consumption.
 - Derived fields:
-  - `pointer.phase` is derived from `pointer.intent` (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) and must remain consistent; mismatches are rejected.
-  - `wheel.phase` is always `repeat`.
+  - If `kind:'pointer'`, `phase` is derived from `intent` (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) and must remain consistent; mismatches are rejected.
+  - If `kind:'wheel'`, `phase` is always `repeat`.
 - Ordering dependencies: None stored in the payload; ordering is defined by IPC delivery order and the main-process enqueue policy (commands are scheduled at the runtime’s next executable step).
 
 **`InputEventCommandPayload.schemaVersion`**
@@ -368,7 +344,7 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | Change | Existing Data | Migration | Rollback |
 |--------|---------------|-----------|----------|
 | Add IPC input-event envelope (`ShellInputEventEnvelope`, `IPC_CHANNELS.inputEvent`) | No records exist; channel absent | Add new IPC channel and validate on receive; absence means no typed input events are sent | Remove channel; renderer falls back to legacy control events only |
-| Add runtime command type `INPUT_EVENT` with `InputEventCommandPayload` | Existing command queues/snapshots contain no `INPUT_EVENT` entries | Add command handler(s) for `INPUT_EVENT`; producers emit only when a mapping explicitly targets it | Remove handler and stop emitting `INPUT_EVENT` |
+| Add runtime command type `INPUT_EVENT` with `InputEventCommandPayload` | Existing command queues/snapshots contain no `INPUT_EVENT` entries | Add command handler(s) for `INPUT_EVENT`; the desktop main process emits exactly one `INPUT_EVENT` per validated pointer/wheel input-event IPC message | Remove handler and stop emitting `INPUT_EVENT` |
 | Deprecate passthrough forwarding and `SHELL_CONTROL_EVENT` production | Older saves/snapshots *may* contain `SHELL_CONTROL_EVENT` entries | Do not emit `SHELL_CONTROL_EVENT` going forward. For compatibility, **keep a no-op handler registered for `SHELL_CONTROL_EVENT` in the demo sim runtime** so restores do not produce `UnknownCommandType` errors (`packages/shell-desktop/src/sim/sim-runtime.ts`). | Restore legacy behavior only by reintroducing passthrough forwarding and emitting `SHELL_CONTROL_EVENT` (not recommended) |
 
 ### Artifacts
@@ -381,8 +357,8 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 ### Artifact Lifecycle
 | Scenario | Artifact Behavior |
 |----------|-------------------|
-| Success | IPC message is validated; 0..N runtime commands are created and enqueued (including optional `INPUT_EVENT`); queued commands execute at tick boundaries and are then removed. |
-| Failure | Invalid IPC payloads are dropped (no commands created). Valid payloads that map to 0 commands produce no artifacts beyond transient validation work. |
+| Success | For `idle-engine:input-event` (pointer/wheel): IPC message is validated and exactly one `INPUT_EVENT` command is created and enqueued; queued commands execute at tick boundaries and are then removed. For `idle-engine:control-event`: 0..N commands may be created/enqueued depending on bindings. |
+| Failure | Invalid IPC payloads are dropped (no commands created). Unbound control events (binding produces 0 commands) produce no artifacts beyond transient mapping work. |
 | Crash recovery | Renderer→main IPC messages in flight are lost. Any `INPUT_EVENT` commands not yet dequeued are lost if the runtime/controller is restarted without persisting the queue; if a snapshot/save captured them, they persist only within that snapshot/save. |
 
 ## 5. Tasks
