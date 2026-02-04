@@ -154,7 +154,7 @@ This section defines the **contract surface** for input events across:
 | IPC invoke | `idle-engine:ping` | `{ message: string }` | resolves `{ message: string }` | rejects if `message` is not a string |
 | IPC invoke | `idle-engine:read-asset` | `{ url: string }` | resolves `ArrayBuffer` | rejects if url is invalid, non-`file:`, or escapes compiled asset root |
 | IPC send | `idle-engine:input-event` | `ShellInputEventEnvelope` | none (fire-and-forget) | dropped if payload is invalid or sim is not running; enqueues exactly one `INPUT_EVENT` per valid pointer/wheel event; **fatal** if handler throws or worker delivery throws |
-| IPC send | `idle-engine:control-event` (deprecated) | `ShellControlEvent` | none (fire-and-forget) | dropped if payload is invalid, sim is not running, or mapping produces 0 commands; **fatal** if mapping throws or worker delivery throws |
+| IPC send | `idle-engine:control-event` | `ShellControlEvent` | none (fire-and-forget) | dropped if payload is invalid, sim is not running, or mapping produces 0 commands; **fatal** if mapping throws or worker delivery throws; `metadata.passthrough` has no effect |
 | IPC event | `idle-engine:frame` | `ShellFramePayload` | pushed to listeners | delivery may fail if renderer is not ready (main logs and continues) |
 | IPC event | `idle-engine:sim-status` | `ShellSimStatusPayload` | pushed to listeners | delivery may fail if renderer is not ready (main logs and continues) |
 | Worker postMessage | `SimWorkerInboundMessage.kind=enqueueCommands` | `{ kind:'enqueueCommands', commands: Command[] }` | enqueued for future ticks | **fatal** if `postMessage` throws → transition to `sim.crashed` and stop accepting input |
@@ -186,12 +186,16 @@ All validation is **synchronous** at the IPC boundary (main process). When valid
 |------|------|-------------|-------|
 | `PingRequest.message` | string | required | `TypeError("Invalid ping request: expected { message: string }")` |
 | `ReadAssetRequest.url` | string | required, non-empty; must parse as URL; must be `file:`; must resolve inside compiled assets root | `TypeError("Invalid read asset request: expected { url: string }")`, `TypeError("Invalid asset url: expected a file:// URL.")`, `TypeError("Invalid asset url: path must be inside compiled assets.")`, or URL parse `TypeError` |
+| `ShellControlEvent.intent` | string | required; non-empty after trim | drop control event |
+| `ShellControlEvent.phase` | string | required; one of `start`, `repeat`, `end` | drop control event |
+| `ShellControlEvent.value` | number | optional; if present must be finite | drop control event |
+| `ShellControlEvent.metadata` | object | optional; if present must be a non-null object and not an array; keys are not validated; `metadata.passthrough` is ignored | drop control event |
 | `ShellInputEventEnvelope.schemaVersion` | number | required; must equal `1` | drop input event |
 | `ShellInputEventEnvelope.event` | object | required | drop input event |
 | `InputEvent.kind` | string | required; one of `pointer`, `wheel` | drop input event |
 | `InputEvent.intent` | string | required; if `kind:'pointer'`: one of `mouse-down`, `mouse-up`, `mouse-move`; if `kind:'wheel'`: must equal `mouse-wheel` | drop input event |
 | `InputEvent.phase` | string | required; if `kind:'pointer'`: must match intent (`mouse-down → start`, `mouse-move → repeat`, `mouse-up → end`); if `kind:'wheel'`: must equal `repeat` | drop input event |
-| `InputEvent.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
+| `InputEvent.x/y` | number | required; finite; canvas-relative CSS pixel coordinates derived as `clientX/Y - canvas.getBoundingClientRect().left/top` | drop input event |
 | `InputEvent.button` | number | required when `kind:'pointer'`; integer; range `-1..32` | drop input event |
 | `InputEvent.buttons` | number | required when `kind:'pointer'`; integer; range `0..0xFFFF` | drop input event |
 | `InputEvent.pointerType` | string | required when `kind:'pointer'`; one of `mouse`, `pen`, `touch` | drop input event |
@@ -219,8 +223,13 @@ export type ShellControlEvent = Readonly<{
   phase: 'start' | 'repeat' | 'end';
   value?: number;
   /**
-   * Deprecated. `passthrough` is ignored and must not be relied on.
-   * Typed input events are sent via `ShellInputEventEnvelope`.
+   * Optional extra event data passed through the IPC boundary.
+   *
+   * The main process validates only that `metadata` is a plain object when present
+   * (non-null, non-array) and does not validate keys.
+   *
+   * Reserved keys:
+   * - `passthrough`: ignored and has no effect.
    */
   metadata?: Readonly<Record<string, unknown>>;
 }>;
@@ -275,8 +284,8 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | `packages/core/src/input-event.ts` | `InputEvent.kind` | `'pointer' \| 'wheel'` | yes | n/a | must be one of the listed literals |
 | `packages/core/src/input-event.ts` | `InputEvent.intent` | `'mouse-down' \| 'mouse-up' \| 'mouse-move' \| 'mouse-wheel'` | yes | n/a | if `kind:'pointer'`: must be one of `mouse-down`/`mouse-up`/`mouse-move`; if `kind:'wheel'`: must equal `mouse-wheel` |
 | `packages/core/src/input-event.ts` | `InputEvent.phase` | `'start' \| 'repeat' \| 'end'` | yes | n/a | if `kind:'pointer'`: must match intent (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`); if `kind:'wheel'`: must equal `repeat` |
-| `packages/core/src/input-event.ts` | `InputEvent.x` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
-| `packages/core/src/input-event.ts` | `InputEvent.y` | `number` | yes | n/a | finite; canvas-relative CSS pixel coordinate |
+| `packages/core/src/input-event.ts` | `InputEvent.x` | `number` | yes | n/a | finite; canvas-relative CSS pixels (`clientX - canvas.getBoundingClientRect().left`) |
+| `packages/core/src/input-event.ts` | `InputEvent.y` | `number` | yes | n/a | finite; canvas-relative CSS pixels (`clientY - canvas.getBoundingClientRect().top`) |
 | `packages/core/src/input-event.ts` | `InputEvent.button` | `number` | yes (kind:pointer) | n/a | integer; range `-1..32` |
 | `packages/core/src/input-event.ts` | `InputEvent.buttons` | `number` | yes (kind:pointer) | n/a | integer; range `0..0xFFFF` |
 | `packages/core/src/input-event.ts` | `InputEvent.pointerType` | `'mouse' \| 'pen' \| 'touch'` | yes (kind:pointer) | n/a | must be one of the listed literals |
@@ -293,7 +302,7 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | `packages/core/src/command.ts` | `RuntimeCommandPayloads.INPUT_EVENT` | `InputEventCommandPayload` | yes | n/a | payload must be JSON-serializable |
 | `packages/core/src/command.ts` | `InputEventCommandPayload.schemaVersion` | `1` | yes | `1` (when encoding) | reject if not exactly `1` (handler must validate) |
 | `packages/core/src/command.ts` | `InputEventCommandPayload.event` | `InputEvent` | yes | n/a | must satisfy the same variant constraints as IPC `ShellInputEventEnvelope.event` |
-| `packages/shell-desktop/src/ipc.ts` | `ShellControlEvent.metadata` (deprecated semantics) | `Record<string, unknown>` | no | `undefined` | `metadata.passthrough` is ignored; pointer/wheel metadata must not be relied on |
+| `packages/shell-desktop/src/ipc.ts` | `ShellControlEvent.metadata` (legacy; passthrough ignored) | `Record<string, unknown>` | no | `undefined` | `metadata.passthrough` is ignored; pointer/wheel metadata must not be relied on |
 
 ### Field Definitions
 **`IPC_CHANNELS.inputEvent`**
@@ -321,6 +330,7 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 - Derived fields:
   - If `kind:'pointer'`, `phase` is derived from `intent` (`mouse-down→start`, `mouse-move→repeat`, `mouse-up→end`) and must remain consistent; mismatches are rejected.
   - If `kind:'wheel'`, `phase` is always `repeat`.
+  - `x/y` are derived in the renderer in **CSS pixels** as `clientX/Y - canvas.getBoundingClientRect().left/top` (no devicePixelRatio scaling).
 - Ordering dependencies: None stored in the payload; ordering is defined by IPC delivery order and the main-process enqueue policy (commands are scheduled at the runtime’s next executable step).
 
 **`InputEventCommandPayload.schemaVersion`**
@@ -335,10 +345,10 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 - Read by: Sim-side controls/UI input system(s).
 - References: No foreign keys; `intent` is a semantic identifier only.
 
-**`ShellControlEvent.metadata` (deprecated semantics)**
-- Purpose: Legacy extensibility hook for `idle-engine:control-event`; retained for backwards compatibility with existing control scheme resolvers that read arbitrary metadata.
+**`ShellControlEvent.metadata` (legacy; passthrough ignored)**
+- Purpose: Extensibility hook for `idle-engine:control-event`; retained for backwards compatibility with existing control scheme resolvers that read arbitrary metadata.
 - Set by: Legacy control-event senders (renderer or other callers).
-- Read by: Control scheme payload resolvers; desktop shell no longer uses `metadata.passthrough` to forward raw events.
+- Read by: Control scheme payload resolvers; desktop shell ignores `metadata.passthrough` and does not forward raw pointer/wheel metadata via `SHELL_CONTROL_EVENT`.
 
 ### Migrations
 | Change | Existing Data | Migration | Rollback |
@@ -395,7 +405,7 @@ T6 → depends on T3, T4, T5
 | T2 | Add IPC channel + API | Introduce `idle-engine:input-event` IPC channel and expose `sendInputEvent` on the preload bridge. | `packages/shell-desktop/src/ipc.ts` | IPC channel + types exist; preload exposes `sendInputEvent`; shell-desktop IPC/preload tests pass. |
 | T3 | Send typed input events | Update desktop renderer to send typed pointer/wheel events via `sendInputEvent` (with RAF coalescing for moves). | `packages/shell-desktop/src/renderer/index.ts` | Pointer/wheel events call `sendInputEvent` with schemaVersion `1`; renderer unit tests pass. |
 | T4 | Validate + enqueue input events | Add main-process validation for `ShellInputEventEnvelope` and enqueue `INPUT_EVENT` commands; remove passthrough + stop emitting `SHELL_CONTROL_EVENT`. | `packages/shell-desktop/src/main.ts` | Invalid input-event IPC payloads are dropped; valid pointer/wheel events enqueue `INPUT_EVENT`; `SHELL_CONTROL_EVENT` is never enqueued; main tests pass. |
-| T5 | Handle `INPUT_EVENT` in sim | Register an `INPUT_EVENT` handler in the demo sim runtime (no-op initially) and keep legacy compatibility behavior explicit. | `packages/shell-desktop/src/sim/sim-runtime.ts` | Sim runtime has a handler for `INPUT_EVENT`; sim-runtime tests pass. |
+| T5 | Consume `INPUT_EVENT` for demo UI | Migrate demo pointer/UI handling from legacy `SHELL_CONTROL_EVENT` passthrough to `INPUT_EVENT` so canvas UI interactions remain functional; keep legacy compatibility explicit. | `packages/shell-desktop/src/sim/sim-runtime.ts` | Sim consumes `INPUT_EVENT` for click-to-collect; sim-runtime tests pass. |
 | T6 | Integrate + regenerate coverage | Run workspace checks, update any remaining references, and regenerate `docs/coverage/index.md`. | `docs/coverage/index.md` | `pnpm typecheck/lint/test` pass and coverage markdown is regenerated. |
 
 ### Task Details
@@ -457,15 +467,17 @@ T6 → depends on T3, T4, T5
 - Dependencies: T2
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
 
-**T5: Handle `INPUT_EVENT` in sim**
-- Summary: Ensure the shell-desktop demo sim runtime has a registered handler for `INPUT_EVENT` so replays/restores remain stable, even if it is initially a no-op. Keep legacy `SHELL_CONTROL_EVENT` registered as a no-op to support restores of older snapshots without `UnknownCommandType` errors.
+**T5: Consume `INPUT_EVENT` for demo UI**
+- Summary: Migrate demo pointer/UI interaction handling away from legacy passthrough (`SHELL_CONTROL_EVENT.payload.event.metadata.*`) to `INPUT_EVENT.payload.event.*` so canvas UI clicks continue to work deterministically. Keep `SHELL_CONTROL_EVENT` registered as a no-op to support restores of older snapshots without `UnknownCommandType` errors.
 - Files:
-  - `packages/shell-desktop/src/sim/sim-runtime.ts` - register a dispatcher handler for `RUNTIME_COMMAND_TYPES.INPUT_EVENT` (no-op placeholder is acceptable for the demo runtime).
-  - `packages/shell-desktop/src/sim/sim-runtime.test.ts` - assert `INPUT_EVENT` is registered; assert `SHELL_CONTROL_EVENT` remains registered as a no-op for legacy restores.
+  - `packages/shell-desktop/src/sim/sim-runtime.ts` - register a dispatcher handler for `RUNTIME_COMMAND_TYPES.INPUT_EVENT` and implement demo hit-testing for pointer `mouse-down` so clicking the on-canvas UI triggers `COLLECT_RESOURCE` (same gameplay effect as Space/collect). Hit-test region is the existing UI panel rect: `x=16, y=16, width=320, height=72` (matches `buildFrame`).
+  - `packages/shell-desktop/src/sim/sim-runtime.test.ts` - assert `INPUT_EVENT` is registered and that an in-bounds `mouse-down` `INPUT_EVENT` produces the same visible UI effect as `COLLECT_RESOURCE`; assert `SHELL_CONTROL_EVENT` remains registered as a no-op for legacy restores.
 - Acceptance Criteria:
   1. `createSimRuntime().hasCommandHandler(RUNTIME_COMMAND_TYPES.INPUT_EVENT) === true`.
-  2. `createSimRuntime().hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE) === true` (legacy restore compatibility).
-  3. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
+  2. An `INPUT_EVENT` with `kind:'pointer'`, `intent:'mouse-down'`, and `x/y` inside the demo UI hit-test region triggers the same next-frame UI change as a `COLLECT_RESOURCE` command (resource count increases).
+  3. An `INPUT_EVENT` outside the hit-test region does not trigger `COLLECT_RESOURCE`.
+  4. `createSimRuntime().hasCommandHandler(SHELL_CONTROL_EVENT_COMMAND_TYPE) === true` (legacy restore compatibility).
+  5. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
 - Dependencies: T1
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts`
 
@@ -500,5 +512,6 @@ T6 → depends on T3, T4, T5
 ### Manual Verification (desktop shell)
 - [ ] Run `pnpm --filter @idle-engine/shell-desktop start` and verify:
   - Pressing Space triggers the existing “collect” behavior (resource count increases).
+  - Clicking the on-canvas UI triggers the same “collect” behavior (resource count increases).
   - Pointer down/move/up and wheel inputs do not crash the app (inputs are accepted or ignored deterministically depending on sim state).
   - Reloading the window restarts the sim controller (input ignored while initializing, then accepted once running).
