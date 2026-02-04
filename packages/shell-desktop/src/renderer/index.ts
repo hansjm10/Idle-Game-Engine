@@ -336,30 +336,6 @@ async function run(): Promise<void> {
     shift: event.shiftKey,
   });
 
-  const buildPointerMetadataBase = (event: MouseEvent): Readonly<Record<string, unknown>> => {
-    const rect = canvasElement.getBoundingClientRect();
-    return {
-      passthrough: true,
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-      button: event.button,
-      buttons: event.buttons,
-      modifiers: buildPointerModifiers(event),
-    };
-  };
-
-  const sendPointerControlEvent = (
-    intent: string,
-    phase: 'start' | 'repeat' | 'end',
-    metadata: Readonly<Record<string, unknown>>,
-  ): void => {
-    idleEngineApi.sendControlEvent({
-      intent,
-      phase,
-      metadata,
-    });
-  };
-
   const buildPointerInputEvent = (
     intent: PointerInputEvent['intent'],
     phase: PointerInputEvent['phase'],
@@ -404,10 +380,6 @@ async function run(): Promise<void> {
     phase: PointerInputEvent['phase'],
     event: PointerEvent,
   ): void => {
-    sendPointerControlEvent(intent, phase, {
-      ...buildPointerMetadataBase(event),
-      pointerType: event.pointerType,
-    });
     sendTypedInputEvent({
       schemaVersion: 1,
       event: buildPointerInputEvent(intent, phase, event),
@@ -415,13 +387,6 @@ async function run(): Promise<void> {
   };
 
   const sendWheelEvent = (event: WheelEvent): void => {
-    sendPointerControlEvent('mouse-wheel', 'repeat', {
-      ...buildPointerMetadataBase(event),
-      deltaX: event.deltaX,
-      deltaY: event.deltaY,
-      deltaZ: event.deltaZ,
-      deltaMode: event.deltaMode,
-    });
     sendTypedInputEvent({
       schemaVersion: 1,
       event: buildWheelInputEvent(event),
