@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { createControlCommands } from '@idle-engine/controls';
-import { CommandPriority, RUNTIME_COMMAND_TYPES, type InputEvent, type InputEventCommandPayload } from '@idle-engine/core';
+import { CommandPriority, RUNTIME_COMMAND_TYPES, type InputEvent, type InputEventCommandPayload, type RuntimeCommand } from '@idle-engine/core';
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import type { Command } from '@idle-engine/core';
@@ -420,7 +420,17 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       priority: CommandPriority.PLAYER,
     };
 
-    const commands = createControlCommands(DEMO_CONTROL_SCHEME, event, context);
+    let commands: readonly RuntimeCommand[];
+    try {
+      commands = createControlCommands(DEMO_CONTROL_SCHEME, event, context);
+    } catch (error: unknown) {
+      // Treat control-event mapping exceptions as fatal bridge failures per issue #850 design doc.
+      // Transition to sim-status crashed, stop the tick loop, and terminate the worker.
+      const reason = error instanceof Error ? error.message : String(error);
+      handleWorkerFailure({ kind: 'crashed', reason }, error);
+      return;
+    }
+
     if (commands.length > 0) {
       safePostMessage({ kind: 'enqueueCommands', commands });
     }

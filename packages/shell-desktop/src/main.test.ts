@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 
 let monotonicNowSequence: number[] = [];
@@ -147,6 +148,22 @@ vi.mock('node:worker_threads', () => ({
 vi.mock('./monotonic-time.js', () => ({
   monotonicNowMs,
 }));
+
+// Use a lazy reference to the real createControlCommands so it can be mocked per-test
+let realCreateControlCommands: typeof CreateControlCommandsFn;
+
+const createControlCommandsMock = vi.fn((...args: Parameters<typeof CreateControlCommandsFn>) => {
+  return realCreateControlCommands(...args);
+});
+
+vi.mock('@idle-engine/controls', async (importOriginal) => {
+  const actual = await importOriginal() as { createControlCommands: typeof CreateControlCommandsFn };
+  realCreateControlCommands = actual.createControlCommands;
+  return {
+    ...actual,
+    createControlCommands: createControlCommandsMock,
+  };
+});
 
 describe('shell-desktop main process entrypoint', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -1411,5 +1428,115 @@ describe('shell-desktop main process entrypoint', () => {
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
+  });
+
+  it('treats createControlCommands exceptions as fatal and emits sim-status crashed', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so control events are accepted
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Clear previous calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+    worker?.postMessage.mockClear();
+
+    // Mock createControlCommands to throw an error
+    createControlCommandsMock.mockImplementationOnce(() => {
+      throw new Error('control-event mapping failed');
+    });
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    expect(controlEventCall).toBeDefined();
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    // Send a valid control event that will trigger the exception
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    await flushMicrotasks();
+
+    // Verify sim-status 'crashed' was sent
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed', reason: 'control-event mapping failed' }),
+    );
+
+    // Verify no commands were enqueued after the exception
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCalls).toHaveLength(0);
+
+    // Verify ticking is stopped by advancing time and checking no tick messages
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCalls).toHaveLength(0);
+
+    // Verify subsequent control events are also dropped (sim is in failed state)
+    createControlCommandsMock.mockReturnValueOnce([]);
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    await flushMicrotasks();
+
+    const enqueueCallsAfter = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCallsAfter).toHaveLength(0);
+
+    consoleError.mockRestore();
+  });
+
+  it('treats createControlCommands non-Error exceptions as fatal with stringified reason', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so control events are accepted
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Clear previous calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+
+    // Mock createControlCommands to throw a non-Error value
+    createControlCommandsMock.mockImplementationOnce(() => {
+      throw 'string error from createControlCommands';
+    });
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    expect(controlEventCall).toBeDefined();
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    // Send a valid control event that will trigger the exception
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    await flushMicrotasks();
+
+    // Verify sim-status 'crashed' was sent with stringified reason
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed', reason: 'string error from createControlCommands' }),
+    );
+
+    consoleError.mockRestore();
   });
 });
