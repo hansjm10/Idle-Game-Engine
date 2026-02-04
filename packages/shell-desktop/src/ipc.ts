@@ -1,3 +1,4 @@
+import type { InputEvent } from '@idle-engine/core';
 import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
 
 export const IDLE_ENGINE_API_KEY = 'idleEngine' as const;
@@ -6,6 +7,7 @@ export const IPC_CHANNELS = {
   ping: 'idle-engine:ping',
   readAsset: 'idle-engine:read-asset',
   controlEvent: 'idle-engine:control-event',
+  inputEvent: 'idle-engine:input-event',
   frame: 'idle-engine:frame',
   simStatus: 'idle-engine:sim-status',
 } as const;
@@ -45,6 +47,21 @@ export type ShellControlEvent = Readonly<{
   metadata?: Readonly<Record<string, unknown>>;
 }>;
 
+/**
+ * Typed envelope for input events sent from renderer to main.
+ *
+ * The `schemaVersion` field gates IPC-level compatibility:
+ * - Version 1 is the initial release (issue #850).
+ * - Unknown versions are dropped at the IPC boundary (not enqueued).
+ *
+ * The `event` field uses the canonical `InputEvent` type from `@idle-engine/core`
+ * to avoid shell->core dependency issues.
+ */
+export type ShellInputEventEnvelope = Readonly<{
+  schemaVersion: 1;
+  event: InputEvent;
+}>;
+
 export type ShellFramePayload = RenderCommandBuffer;
 
 export type ShellSimStatusPayload =
@@ -71,6 +88,7 @@ export type IdleEngineApi = {
   ping: (message: string) => Promise<string>;
   readAsset: (url: string) => Promise<ArrayBuffer>;
   sendControlEvent: (event: ShellControlEvent) => void;
+  sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
   onFrame: (handler: (frame: ShellFramePayload) => void) => () => void;
   onSimStatus: (handler: (status: ShellSimStatusPayload) => void) => () => void;
 };
