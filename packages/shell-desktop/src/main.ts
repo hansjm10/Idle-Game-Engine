@@ -346,11 +346,16 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
 
+  // Emit sim-status 'starting' when the worker controller is created
+  sendSimStatus({ kind: 'starting' });
+
   worker.on('message', (message: SimWorkerOutboundMessage) => {
     if (message.kind === 'ready') {
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
       isReady = true;
+      // Emit sim-status 'running' when the worker is ready
+      sendSimStatus({ kind: 'running' });
       startTickLoop();
       return;
     }

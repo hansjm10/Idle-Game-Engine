@@ -590,13 +590,24 @@ describe('shell-desktop main process entrypoint', () => {
     const worker = Worker.instances[0];
     expect(worker).toBeDefined();
 
+    // Clear calls from controller creation (starting status)
+    mainWindow?.webContents.send.mockClear();
+
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
 
     worker?.emitExit(0);
 
-    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.simStatus, expect.anything());
+    // During disposal, worker exit should not trigger stopped/crashed status
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'stopped' }),
+    );
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed' }),
+    );
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
@@ -1271,6 +1282,130 @@ describe('shell-desktop main process entrypoint', () => {
 
     // Should have enqueued (accepted because ready)
     expect(enqueueCallsAfterPostReadyControl).toBe(enqueueCallsAfterPreReadyControl + 1);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('sends sim-status starting when sim worker controller is created', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    // Verify sim-status 'starting' was sent when the controller was created
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'starting' },
+    );
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('sends sim-status running when worker emits ready', async () => {
+    setMonotonicNowSequence([0]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Clear previous calls to isolate the ready message test
+    mainWindow?.webContents.send.mockClear();
+
+    // Emit ready from worker
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Verify sim-status 'running' was sent
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('sends sim-status starting when worker controller is recreated on reload', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    // Clear calls after initial creation
+    mainWindow?.webContents.send.mockClear();
+
+    // Trigger recreation by simulating a page reload (did-finish-load)
+    const didFinishLoadCall = mainWindow?.webContents.on.mock.calls.find((call) => call[0] === 'did-finish-load');
+    expect(didFinishLoadCall).toBeDefined();
+    const didFinishLoadHandler = didFinishLoadCall?.[1] as undefined | (() => void);
+    didFinishLoadHandler?.();
+    await flushMicrotasks();
+
+    // Verify sim-status 'starting' was sent when the new controller was created
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'starting' },
+    );
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+
+    consoleError.mockRestore();
+  });
+
+  it('sends sim-status transitions in order: starting, running', async () => {
+    setMonotonicNowSequence([0]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Collect all sim-status calls
+    const simStatusCalls = mainWindow?.webContents.send.mock.calls
+      .filter((call) => call[0] === IPC_CHANNELS.simStatus)
+      .map((call) => call[1] as { kind: string });
+
+    // Should have 'starting' from creation
+    expect(simStatusCalls).toContainEqual({ kind: 'starting' });
+
+    // Emit ready from worker
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Collect all sim-status calls again
+    const allSimStatusCalls = mainWindow?.webContents.send.mock.calls
+      .filter((call) => call[0] === IPC_CHANNELS.simStatus)
+      .map((call) => call[1] as { kind: string });
+
+    // Should have both 'starting' and 'running' in order
+    expect(allSimStatusCalls).toEqual([
+      { kind: 'starting' },
+      { kind: 'running' },
+    ]);
 
     // Cleanup
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
