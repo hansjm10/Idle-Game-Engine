@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-issue-849-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">shell-desktop: centralize sim-worker protocol types (Issue 849) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/issue-849-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="shell-desktop: centralize sim-worker protocol types (Issue 849) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/issue-849-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-849-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-849-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.aa8ca513.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.4d4cb8d0.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a class="navbar__item navbar__link" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><main class="docMainContainer_BJhZ docMainContainerEnhanced_qZTj"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>shell-desktop: centralize sim-worker protocol types (Issue 849)</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Centralize sim-worker protocol types to prevent drift</li>
+<li class=""><strong>Authors</strong>: Codex (AI)</li>
+<li class=""><strong>Reviewers</strong>: @hansjm10</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-02-03</li>
+<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/849" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/849</a></li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p><code>@idle-engine/shell-desktop</code> currently defines the sim-worker message protocol in multiple places (<code>main.ts</code>, <code>sim-worker.ts</code>, and tests), which has led to protocol drift (<code>frames</code> vs <code>frame</code>) and dead branches in the main process. This design centralizes the protocol in a single shared module (<code>packages/shell-desktop/src/sim/worker-protocol.ts</code>), standardizes the outbound frame payload to the existing coalesced <code>frame</code> message (with <code>droppedFrames</code>), and updates main/worker/tests to import the shared types so future changes cannot silently diverge.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Background</strong>:<!-- -->
+<ul>
+<li class="">The desktop shell’s sim runs in a Node worker thread (<code>packages/shell-desktop/src/sim-worker.ts</code>) and communicates with the main process (<code>packages/shell-desktop/src/main.ts</code>) using <code>worker_threads</code> message passing.</li>
+<li class="">Recent refactors (e.g., frame coalescing in the worker) changed runtime behavior but did not fully converge the protocol types used in main/worker/tests.</li>
+</ul>
+</li>
+<li class=""><strong>Problem</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop/src/main.ts</code> defines an outbound message variant <code>{ kind: &#x27;frames&#x27;, frames: RenderCommandBuffer[], nextStep }</code> and contains a handler branch for it, but <code>packages/shell-desktop/src/sim-worker.ts</code> never emits it (only <code>{ kind: &#x27;frame&#x27;, frame?, droppedFrames, nextStep }</code>).</li>
+<li class=""><code>packages/shell-desktop/src/main.test.ts</code> still simulates both <code>frames</code> and <code>frame</code>, masking dead code paths and allowing drift to persist.</li>
+<li class="">This drift is brittle: it can hide broken behavior behind branches that are never exercised in production.</li>
+</ul>
+</li>
+<li class=""><strong>Forces</strong>:<!-- -->
+<ul>
+<li class="">Keep the sim loop deterministic and the protocol stable within the package.</li>
+<li class="">Maintain the current worker behavior (coalesced <code>frame</code> output) unless there is a compelling reason to reintroduce <code>frames</code>.</li>
+<li class="">Enforce type consistency without introducing runtime dependencies or circular imports.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Goals</strong>:<!-- -->
+<ul>
+<li class="">Define sim-worker inbound/outbound message types in exactly one module and reuse them from the main process, worker, and tests.</li>
+<li class="">Choose a single outbound “frame delivery” shape and remove dead branches in <code>packages/shell-desktop/src/main.ts</code>.</li>
+<li class="">Keep the chosen protocol explicit and test-covered so future changes require coordinated updates.</li>
+<li class="">Ensure <code>pnpm test --filter @idle-engine/shell-desktop</code> passes after implementation.</li>
+</ul>
+</li>
+<li class=""><strong>Non-Goals</strong>:<!-- -->
+<ul>
+<li class="">Changing simulation semantics (tick scheduling, frame generation, or command processing) beyond protocol type consolidation.</li>
+<li class="">Redesigning the renderer IPC surface (<code>IPC_CHANNELS.frame</code>, <code>IPC_CHANNELS.simStatus</code>).</li>
+<li class="">Introducing a cross-package protocol dependency (this remains internal to <code>@idle-engine/shell-desktop</code>).</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Primary Stakeholders</strong>:<!-- -->
+<ul>
+<li class="">Desktop shell maintainers (<code>packages/shell-desktop</code>)</li>
+<li class="">Runtime integration/test maintainers (tests in <code>packages/shell-desktop</code>)</li>
+</ul>
+</li>
+<li class=""><strong>Agent Roles</strong>:<!-- -->
+<ul>
+<li class=""><strong>Runtime/Shell Implementation Agent</strong>: Create the shared protocol module and migrate main/worker code to import it.</li>
+<li class=""><strong>Test Agent</strong>: Update unit tests to use the shared protocol and remove coverage for deleted protocol variants.</li>
+<li class=""><strong>Docs Agent</strong>: Keep this document and code references accurate during review.</li>
+</ul>
+</li>
+<li class=""><strong>Affected Packages/Services</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop</code> only:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop/src/main.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/main.test.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.test.ts</code> (type imports)</li>
+<li class="">New: <code>packages/shell-desktop/src/sim/worker-protocol.ts</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Compatibility Considerations</strong>:<!-- -->
+<ul>
+<li class="">This is an internal protocol inside the packaged desktop app; main and worker are shipped together, so removing <code>frames</code> does not introduce a compatibility matrix across releases.</li>
+<li class="">During development with hot reload, ensure both the worker script (<code>sim-worker.js</code>) and main process code are rebuilt together; the protocol module helps make divergence less likely.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class=""><code>packages/shell-desktop/src/main.ts</code> declares:<!-- -->
+<ul>
+<li class="">Inbound: <code>init</code>, <code>tick</code>, <code>enqueueCommands</code>.</li>
+<li class="">Outbound: <code>ready</code>, <code>frames</code>, <code>frame</code>, <code>error</code>.</li>
+<li class="">Runtime handler branches for <code>frames</code> and <code>frame</code> (both forward the last frame to <code>IPC_CHANNELS.frame</code>).</li>
+</ul>
+</li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.ts</code> declares its own protocol types:<!-- -->
+<ul>
+<li class="">Inbound: <code>init</code>, <code>tick</code>, <code>enqueueCommands</code>, <code>shutdown</code>.</li>
+<li class="">Outbound: <code>ready</code>, <code>frame</code>, <code>error</code>.</li>
+<li class="">On <code>tick</code>, it computes <code>droppedFrames = max(0, frames.length - 1)</code> and emits a single coalesced <code>frame</code> message with the last frame (or no <code>frame</code> field when none were produced).</li>
+</ul>
+</li>
+<li class=""><code>packages/shell-desktop/src/main.test.ts</code> still simulates <code>frames</code> messages even though they are never emitted by the worker implementation.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<ul>
+<li class="">Add a shared protocol module within <code>@idle-engine/shell-desktop</code>: <code>packages/shell-desktop/src/sim/worker-protocol.ts</code>.</li>
+<li class="">Move all sim-worker message type definitions into this module.</li>
+<li class="">Standardize the outbound “frame delivery” message to the existing coalesced <code>frame</code> shape:<!-- -->
+<ul>
+<li class=""><code>{ kind: &#x27;frame&#x27;, frame?: RenderCommandBuffer, droppedFrames: number, nextStep: number }</code></li>
+</ul>
+</li>
+<li class="">Remove the <code>frames</code> message shape from the protocol and delete the corresponding handler branch in <code>main.ts</code>.</li>
+<li class="">Update <code>main.ts</code>, <code>sim-worker.ts</code>, and tests to import the shared message types.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Runtime Changes</strong>:<!-- -->
+<ul>
+<li class="">No changes to sim runtime behavior.</li>
+<li class="">No changes to tick scheduling or coalescing logic; only type consolidation and dead-branch removal.</li>
+</ul>
+</li>
+<li class=""><strong>Data &amp; Schemas</strong>: N/A (no persisted data changes).</li>
+<li class=""><strong>APIs &amp; Contracts</strong>:<!-- -->
+<ul>
+<li class="">New internal module: <code>packages/shell-desktop/src/sim/worker-protocol.ts</code>.</li>
+<li class="">Contract definitions (TypeScript, structural at runtime):<!-- -->
+<ul>
+<li class="">Inbound messages (main -&gt; worker):<!-- -->
+<ul>
+<li class=""><code>SimWorkerInitMessage</code>: <code>{ kind: &#x27;init&#x27;, stepSizeMs: number, maxStepsPerFrame: number }</code></li>
+<li class=""><code>SimWorkerTickMessage</code>: <code>{ kind: &#x27;tick&#x27;, deltaMs: number }</code></li>
+<li class=""><code>SimWorkerEnqueueCommandsMessage</code>: <code>{ kind: &#x27;enqueueCommands&#x27;, commands: readonly Command[] }</code></li>
+<li class=""><code>SimWorkerShutdownMessage</code>: <code>{ kind: &#x27;shutdown&#x27; }</code> (supported for unit tests and potential future graceful shutdown; production <code>main.ts</code> currently uses <code>worker.terminate()</code>)</li>
+<li class=""><code>SimWorkerInboundMessage</code>: union of the above.</li>
+</ul>
+</li>
+<li class="">Outbound messages (worker -&gt; main):<!-- -->
+<ul>
+<li class=""><code>SimWorkerReadyMessage</code>: <code>{ kind: &#x27;ready&#x27;, stepSizeMs: number, nextStep: number }</code></li>
+<li class=""><code>SimWorkerFrameMessage</code>: <code>{ kind: &#x27;frame&#x27;, frame?: RenderCommandBuffer, droppedFrames: number, nextStep: number }</code></li>
+<li class=""><code>SimWorkerErrorMessage</code>: <code>{ kind: &#x27;error&#x27;, error: string }</code></li>
+<li class=""><code>SimWorkerOutboundMessage</code>: union of the above.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="">Implementation notes:<!-- -->
+<ul>
+<li class="">Use <code>import type { ... }</code> for type-only imports (<code>Command</code>, <code>RenderCommandBuffer</code>) to satisfy <code>@typescript-eslint/consistent-type-imports</code>.</li>
+<li class="">Keep local imports using <code>.js</code> specifiers (consistent with existing <code>packages/shell-desktop/src/*</code> patterns), e.g. <code>import type { SimWorkerOutboundMessage } from &#x27;./sim/worker-protocol.js&#x27;</code>.</li>
+<li class=""><code>main.ts</code> must not include any <code>kind === &#x27;frames&#x27;</code> branch after migration; <code>SimWorkerFramesMessage</code> must not exist.</li>
+<li class=""><code>SimWorkerInitMessage</code> is a required main-&gt;worker configuration message in production. Runtime semantics for malformed payloads are still defined because the worker receives <code>unknown</code> at runtime:<!-- -->
+<ul>
+<li class="">Validation: <code>stepSizeMs</code> and <code>maxStepsPerFrame</code> must each be a finite number <code>&gt;= 1</code>.</li>
+<li class="">On invalid/missing <code>stepSizeMs</code>/<code>maxStepsPerFrame</code>: emit <code>{ kind: &#x27;error&#x27;, error: string }</code> and do not emit <code>ready</code> for that message. The worker does not modify any existing runtime configuration.</li>
+<li class="">Error string stability for invalid <code>init</code>: <code>error</code> must contain the stable substring <code>protocol:init</code> and the offending field name (<code>stepSizeMs</code> or <code>maxStepsPerFrame</code>). (Tests should assert these substrings rather than the full error string.)</li>
+<li class="">Recovery: after an invalid <code>init</code>, a later valid <code>init</code> is accepted; it creates/replaces the runtime and emits <code>ready</code>.</li>
+</ul>
+</li>
+<li class="">If the worker receives <code>tick</code> / <code>enqueueCommands</code> before any valid <code>init</code>, it lazily creates a runtime using core defaults (<code>stepSizeMs = 100</code>, <code>maxStepsPerFrame = 50</code>). This remains true even if an earlier <code>init</code> was invalid (invalid <code>init</code> does not initialize the runtime).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Tooling &amp; Automation</strong>:<!-- -->
+<ul>
+<li class="">No new tooling required. Ensure the package test suite still runs under existing Vitest config.</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Deployment</strong>: No special deployment considerations; this is packaged with the desktop app.</li>
+<li class=""><strong>Telemetry &amp; Observability</strong>:<!-- -->
+<ul>
+<li class="">Keep existing error logging behavior in <code>main.ts</code> and <code>sim-worker.ts</code> unchanged.</li>
+<li class="">No additional console logging should be introduced (tests rely on clean output).</li>
+</ul>
+</li>
+<li class=""><strong>Security &amp; Compliance</strong>:<!-- -->
+<ul>
+<li class="">No new external inputs or PII surfaces are introduced.</li>
+<li class="">Message parsing continues to treat untrusted payloads defensively (existing <code>typeof message === &#x27;object&#x27;</code> checks in <code>sim-worker.ts</code> remain).</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td>feat(shell-desktop): add shared sim-worker protocol module</td><td>Introduce <code>worker-protocol.ts</code> defining inbound/outbound message types</td><td>Runtime/Shell Implementation Agent</td><td>Doc approved</td><td>Module added; exports cover all used message kinds; no <code>frames</code> type in protocol</td></tr><tr><td>refactor(shell-desktop): migrate main/worker to shared protocol</td><td>Replace inline protocol type declarations with imports; delete <code>frames</code> handler branch</td><td>Runtime/Shell Implementation Agent</td><td>Shared module merged</td><td><code>main.ts</code> no longer references <code>frames</code>; <code>sim-worker.ts</code> uses shared types; build passes</td></tr><tr><td>test(shell-desktop): update protocol tests</td><td>Remove <code>frames</code> simulations; update tests to compile against shared protocol types</td><td>Test Agent</td><td>Main/worker migration merged</td><td><code>pnpm test --filter @idle-engine/shell-desktop</code> passes; no <code>frames</code> message remains in tests</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1</strong>: Implement shared protocol module + migrate main/worker + update tests (single PR).</li>
+<li class=""><strong>Phase 2</strong>: (Optional follow-up) Add runtime-level validation helpers (type guards) if future protocol expansion warrants stricter checks.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Hand-off Package</strong>:<!-- -->
+<ul>
+<li class="">Files to modify:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop/src/sim/worker-protocol.ts</code> (new)</li>
+<li class=""><code>packages/shell-desktop/src/main.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/main.test.ts</code></li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.test.ts</code> (optional: type imports)</li>
+</ul>
+</li>
+<li class="">Core behavioral constraint: keep worker’s coalesced <code>frame</code> behavior unchanged.</li>
+</ul>
+</li>
+<li class=""><strong>Communication Cadence</strong>: Request review after tests pass for <code>@idle-engine/shell-desktop</code>.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Context Packets</strong>:<!-- -->
+<ul>
+<li class="">GitHub issue: #849</li>
+<li class="">Source files: <code>packages/shell-desktop/src/main.ts</code>, <code>packages/shell-desktop/src/sim-worker.ts</code></li>
+<li class="">Tests: <code>packages/shell-desktop/src/main.test.ts</code>, <code>packages/shell-desktop/src/sim-worker.test.ts</code></li>
+</ul>
+</li>
+<li class=""><strong>Prompting &amp; Constraints</strong>:<!-- -->
+<ul>
+<li class="">Keep TypeScript style consistent: ES modules, two-space indentation, <code>import type</code> usage.</li>
+<li class="">Do not edit generated <code>dist/</code> outputs.</li>
+<li class="">Avoid expanding scope to renderer IPC or runtime internals.</li>
+</ul>
+</li>
+<li class=""><strong>Safety Rails</strong>:<!-- -->
+<ul>
+<li class="">Do not introduce new runtime logging beyond existing <code>console.error</code> sites.</li>
+<li class="">Avoid changing tick-loop timing or message ordering semantics.</li>
+</ul>
+</li>
+<li class=""><strong>Validation Hooks</strong>:<!-- -->
+<ul>
+<li class=""><code>pnpm test --filter @idle-engine/shell-desktop</code></li>
+<li class="">(Optional) <code>pnpm lint --filter @idle-engine/shell-desktop</code> if available in workspace scripts.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Keep both <code>frames</code> and <code>frame</code> variants</strong>:<!-- -->
+<ul>
+<li class="">Pros: could support bulk frame delivery for debugging.</li>
+<li class="">Cons: increases surface area, encourages drift, and requires additional tests and runtime branches; violates the issue’s “no dead branch” goal.</li>
+</ul>
+</li>
+<li class=""><strong>Reintroduce <code>frames</code> intentionally (worker emits <code>frames</code>)</strong>:<!-- -->
+<ul>
+<li class="">Pros: more explicit about multiple frames per tick.</li>
+<li class="">Cons: renderer only needs the latest frame; the existing worker already computes <code>droppedFrames</code> and provides a coalesced shape; switching back would increase message size and introduce additional main-process logic.</li>
+</ul>
+</li>
+<li class=""><strong>Move protocol types into <code>ipc.ts</code></strong>:<!-- -->
+<ul>
+<li class="">Pros: fewer files.</li>
+<li class="">Cons: mixes renderer IPC surface with worker protocol; increases coupling and makes it harder to evolve independently.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Update <code>packages/shell-desktop/src/main.test.ts</code>:<!-- -->
+<ul>
+<li class="">Remove cases that emit <code>{ kind: &#x27;frames&#x27;, ... }</code>.</li>
+<li class="">Ensure forwarding behavior is still covered for <code>frame</code> messages:<!-- -->
+<ul>
+<li class="">When <code>frame</code> is present, main forwards it to <code>IPC_CHANNELS.frame</code>.</li>
+<li class="">When <code>frame</code> is absent, main does not send any frame IPC.</li>
+<li class="">When forwarding throws, main logs an error (existing test remains valid).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="">Update <code>packages/shell-desktop/src/sim-worker.test.ts</code>:<!-- -->
+<ul>
+<li class="">Compile-time: import protocol types for message payloads to ensure contract adherence.</li>
+<li class="">Runtime: add explicit coverage for <code>init</code> validation semantics:<!-- -->
+<ul>
+<li class="">Missing fields: <code>init</code> missing <code>stepSizeMs</code> and/or <code>maxStepsPerFrame</code> emits <code>{ kind: &#x27;error&#x27; }</code> with <code>error</code> containing <code>protocol:init</code> and the missing field name; no <code>ready</code> is emitted.</li>
+<li class="">Invalid values: non-finite values (<code>NaN</code>, <code>Infinity</code>) and <code>&lt;= 0</code> values for either field emit <code>{ kind: &#x27;error&#x27; }</code> with <code>error</code> containing <code>protocol:init</code> and the offending field name; no <code>ready</code> is emitted.</li>
+<li class="">Post-invalid behavior: after an invalid <code>init</code>, a <code>tick</code> still produces <code>frame</code> output (default-runtime path), and a later valid <code>init</code> emits <code>ready</code> and proceeds normally.</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Performance</strong>: N/A (no algorithmic changes).</li>
+<li class=""><strong>Tooling / A11y</strong>: N/A.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Risk</strong>: Removing <code>frames</code> breaks any hidden callers relying on that shape.<!-- -->
+<ul>
+<li class=""><strong>Mitigation</strong>: <code>frames</code> is not emitted by the worker implementation; update tests to match production behavior and keep the protocol internal to the package.</li>
+</ul>
+</li>
+<li class=""><strong>Risk</strong>: TS-only refactor accidentally changes runtime payload shapes.<!-- -->
+<ul>
+<li class=""><strong>Mitigation</strong>: Keep runtime emit sites unchanged; validate with existing unit tests; ensure message shapes in tests match actual worker emissions.</li>
+</ul>
+</li>
+<li class=""><strong>Risk</strong>: Future protocol additions drift again.<!-- -->
+<ul>
+<li class=""><strong>Mitigation</strong>: Require all additions to go through <code>worker-protocol.ts</code> and update main/worker/tests by importing from it.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Milestones</strong>: Single PR landing with protocol module + refactor + test updates.</li>
+<li class=""><strong>Migration Strategy</strong>: N/A (internal protocol shipped together).</li>
+<li class=""><strong>Communication</strong>: Mention in PR description that <code>frames</code> was removed as dead code and that <code>frame</code> is the canonical outbound message.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-resolved-decisions-from-design-review">13. Resolved Decisions (from design review)<a href="#13-resolved-decisions-from-design-review" class="hash-link" aria-label="Direct link to 13. Resolved Decisions (from design review)" title="Direct link to 13. Resolved Decisions (from design review)" translate="no">​</a></h2>
+<ul>
+<li class=""><strong><code>shutdown</code></strong>: Included in <code>SimWorkerInboundMessage</code>. Expected sender is unit tests (and optionally future production code). Current production <code>main.ts</code> shutdown continues to use <code>worker.terminate()</code>; no change to that behavior is required for this issue.</li>
+<li class=""><strong><code>init</code> fields</strong>: <code>SimWorkerInitMessage.stepSizeMs</code> and <code>maxStepsPerFrame</code> are required in the shared protocol type. In production, <code>main.ts</code> must send a valid <code>init</code> before starting the tick loop. For malformed runtime payloads, invalid/missing fields emit <code>{ kind: &#x27;error&#x27;, ... }</code> (with stable <code>protocol:init</code> + field-name substrings), do not emit <code>ready</code> for that <code>init</code>, and do not change any existing runtime configuration; subsequent <code>tick</code>/<code>enqueueCommands</code> run against the existing runtime (or defaults if none exists) until a valid <code>init</code> arrives.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ul>
+<li class="">Add optional runtime type-guard helpers (e.g., <code>isSimWorkerOutboundMessage</code>) if future debugging indicates malformed messages are a recurring source of crashes.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class="">GitHub issue: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/849" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/849</a></li>
+<li class=""><code>packages/shell-desktop/src/main.ts</code> (sim worker protocol types and message handler branches)</li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.ts</code> (current worker emission uses <code>kind: &#x27;frame&#x27;</code> only)</li>
+<li class=""><code>packages/shell-desktop/src/main.test.ts</code> (tests currently simulate both <code>frames</code> and <code>frame</code>)</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Coalesced frame</strong>: A protocol behavior where the worker may produce multiple render frames per tick but only sends the latest frame (plus a <code>droppedFrames</code> count) to avoid flooding the main/renderer.</li>
+<li class=""><strong>Protocol drift</strong>: When message type definitions used by different components diverge over time without coordinated changes.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-02-03</td><td>Codex (AI)</td><td>Initial draft</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/issue-849-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-resolved-decisions-from-design-review" class="table-of-contents__link toc-highlight">13. Resolved Decisions (from design review)</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
