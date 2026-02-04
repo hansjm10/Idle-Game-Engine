@@ -366,7 +366,142 @@ This feature introduces a **typed, versioned input-event schema** for desktop-sh
 | Crash recovery | Renderer→main IPC messages in flight are lost. Any `INPUT_EVENT` commands not yet dequeued are lost if the runtime/controller is restarted without persisting the queue; if a snapshot/save captured them, they persist only within that snapshot/save. |
 
 ## 5. Tasks
-[To be completed in design_plan phase]
+
+### Decomposition Gates
+1. **Smallest independently testable unit**: Add the `INPUT_EVENT` runtime command type + its payload types in `@idle-engine/core` (verifiable via `@idle-engine/core` typecheck/tests).
+2. **Dependencies**: Yes; shell-desktop IPC/types should depend on the core command/type additions, and main/renderer updates depend on the IPC surface existing.
+3. **Parallel work**: Yes; after the IPC surface exists, renderer capture (T3) and main mapping (T4) can proceed in parallel; sim-runtime wiring (T5) can proceed after core types land (T1).
+
+### Ordering Gates
+7. **Must be done first**: Define shared types + `INPUT_EVENT` command type in `@idle-engine/core` (T1).
+8. **Must be done last**: Integration checks + coverage/docs regeneration (T6).
+9. **Circular dependencies**: None in this breakdown; shared input-event types live in `@idle-engine/core` to avoid core↔shell cycles.
+
+### Infrastructure Gates
+10. **Build/config changes**: None expected beyond updating TypeScript sources and checked-in `dist/` outputs via existing `pnpm build` scripts.
+11. **New dependencies**: None.
+12. **Env vars/secrets**: None required; optional dev-only `IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU=1` remains unchanged.
+
+### Task Dependency Graph
+```
+T1 (no deps)
+T2 → depends on T1
+T3 → depends on T2
+T4 → depends on T2
+T5 → depends on T1
+T6 → depends on T3, T4, T5
+```
+
+### Task Breakdown
+| ID | Title | Summary | Files | Acceptance Criteria |
+|----|-------|---------|-------|---------------------|
+| T1 | Add `INPUT_EVENT` to core | Define shared typed input-event contracts and register `INPUT_EVENT` as a runtime command type. | `packages/core/src/command.ts` | Core exports `RUNTIME_COMMAND_TYPES.INPUT_EVENT` + typed payload; `pnpm --filter @idle-engine/core typecheck` passes. |
+| T2 | Add IPC channel + API | Introduce `idle-engine:input-event` IPC channel and expose `sendInputEvent` on the preload bridge. | `packages/shell-desktop/src/ipc.ts` | IPC channel + types exist; preload exposes `sendInputEvent`; shell-desktop IPC/preload tests pass. |
+| T3 | Send typed input events | Update desktop renderer to send typed pointer/wheel events via `sendInputEvent` (with RAF coalescing for moves). | `packages/shell-desktop/src/renderer/index.ts` | Pointer/wheel events call `sendInputEvent` with schemaVersion `1`; renderer unit tests pass. |
+| T4 | Validate + enqueue input events | Add main-process validation for `ShellInputEventEnvelope` and enqueue `INPUT_EVENT` commands; remove passthrough + stop emitting `SHELL_CONTROL_EVENT`. | `packages/shell-desktop/src/main.ts` | Invalid input-event IPC payloads are dropped; valid pointer/wheel events enqueue `INPUT_EVENT`; `SHELL_CONTROL_EVENT` is never enqueued; main tests pass. |
+| T5 | Handle `INPUT_EVENT` in sim | Register an `INPUT_EVENT` handler in the demo sim runtime (no-op initially) and keep legacy compatibility behavior explicit. | `packages/shell-desktop/src/sim/sim-runtime.ts` | Sim runtime has a handler for `INPUT_EVENT`; sim-runtime tests pass. |
+| T6 | Integrate + regenerate coverage | Run workspace checks, update any remaining references, and regenerate `docs/coverage/index.md`. | `docs/coverage/index.md` | `pnpm typecheck/lint/test` pass and coverage markdown is regenerated. |
+
+### Task Details
+
+**T1: Add `INPUT_EVENT` to core**
+- Summary: Introduce shared `InputEvent` types and the new `INPUT_EVENT` runtime command type with a versioned payload.
+- Files:
+  - `packages/core/src/command.ts` - add `RUNTIME_COMMAND_TYPES.INPUT_EVENT`, `InputEventCommandPayload`, and wire into `RuntimeCommandPayloads` + `COMMAND_AUTHORIZATIONS`.
+  - `packages/core/src/input-event.ts` - define `InputEvent`, `InputEventModifiers`, and related literals used by both IPC and runtime payloads.
+  - `packages/core/src/index.browser.ts` - export the new input-event types and payload type for consumers.
+  - `packages/core/src/input-event.test.ts` - add focused unit tests covering basic shape/serialization expectations (no IPC), if needed.
+- Acceptance Criteria:
+  1. `@idle-engine/core` exports `RUNTIME_COMMAND_TYPES.INPUT_EVENT`.
+  2. `RuntimeCommandPayloads['INPUT_EVENT']` is strongly typed as `{ schemaVersion: 1; event: InputEvent }`.
+  3. `pnpm --filter @idle-engine/core typecheck` passes.
+  4. `pnpm --filter @idle-engine/core test` passes.
+- Dependencies: None
+- Verification: `pnpm --filter @idle-engine/core test`
+
+**T2: Add IPC channel + API**
+- Summary: Add the new IPC channel constant and a typed renderer→main send surface for input events.
+- Files:
+  - `packages/shell-desktop/src/ipc.ts` - add `IPC_CHANNELS.inputEvent` and define `ShellInputEventEnvelope` (schemaVersion `1`) plus `IdleEngineApi.sendInputEvent`.
+  - `packages/shell-desktop/src/ipc.test.ts` - assert the new stable identifier (`idle-engine:input-event`).
+  - `packages/shell-desktop/src/preload.cts` - expose `sendInputEvent` and route it via `ipcRenderer.send(IPC_CHANNELS.inputEvent, envelope)`.
+  - `packages/shell-desktop/src/preload.test.ts` - verify `sendInputEvent` exists and forwards to `ipcRenderer.send`.
+- Acceptance Criteria:
+  1. `IPC_CHANNELS.inputEvent === 'idle-engine:input-event'`.
+  2. Preload exposes `idleEngine.sendInputEvent(...)` and it calls `ipcRenderer.send` on the correct channel.
+  3. `pnpm --filter @idle-engine/shell-desktop test -- src/ipc.test.ts` passes.
+  4. `pnpm --filter @idle-engine/shell-desktop test -- src/preload.test.ts` passes.
+- Dependencies: T1
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/preload.test.ts`
+
+**T3: Send typed input events**
+- Summary: Replace pointer/wheel “passthrough metadata” forwarding with explicit typed input events.
+- Files:
+  - `packages/shell-desktop/src/renderer/index.ts` - build and send `ShellInputEventEnvelope` for `pointer.down/up/move` and `pointer.wheel`; keep pointer-move RAF coalescing.
+  - `packages/shell-desktop/src/renderer/index.test.ts` - update expectations to assert `sendInputEvent` calls (not `sendControlEvent` metadata passthrough).
+- Acceptance Criteria:
+  1. Pointer down/up/move events produce `ShellInputEventEnvelope` with `schemaVersion: 1` and `event.kind: 'pointer'`.
+  2. Wheel events produce `ShellInputEventEnvelope` with `event.kind: 'wheel'` and finite deltas/deltaMode.
+  3. Pointer move events are still coalesced to one send per animation frame.
+  4. `pnpm --filter @idle-engine/shell-desktop test -- src/renderer/index.test.ts` passes.
+- Dependencies: T2
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/renderer/index.test.ts`
+
+**T4: Validate + enqueue input events**
+- Summary: Add a main-process handler for `idle-engine:input-event` that validates and enqueues typed `INPUT_EVENT` commands; remove passthrough forwarding + `SHELL_CONTROL_EVENT` emission.
+- Files:
+  - `packages/shell-desktop/src/main.ts` - add IPC receive handler for `IPC_CHANNELS.inputEvent`; implement synchronous shape validation; enqueue `INPUT_EVENT` commands on success; delete `shouldPassthroughControlEvent` and the `SHELL_CONTROL_EVENT` enqueue path.
+  - `packages/shell-desktop/src/main.test.ts` - update tests to assert `INPUT_EVENT` is enqueued and `SHELL_CONTROL_EVENT` is never produced, even if `metadata.passthrough` is set.
+- Acceptance Criteria:
+  1. Invalid `ShellInputEventEnvelope` payloads are dropped (no worker messages posted).
+  2. When sim is not running (`sim.stopped`/`sim.crashed`/disposing), input events are ignored.
+  3. Valid pointer/wheel input events enqueue exactly one `INPUT_EVENT` command with `payload.schemaVersion === 1` and the validated event copied into payload.
+  4. No code path enqueues `SHELL_CONTROL_EVENT` in response to renderer inputs.
+  5. `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts` passes.
+- Dependencies: T2
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
+
+**T5: Handle `INPUT_EVENT` in sim**
+- Summary: Ensure the shell-desktop demo sim runtime has a registered handler for `INPUT_EVENT` so replays/restores remain stable, even if it is initially a no-op.
+- Files:
+  - `packages/shell-desktop/src/sim/sim-runtime.ts` - register a dispatcher handler for `RUNTIME_COMMAND_TYPES.INPUT_EVENT` (no-op placeholder is acceptable for the demo runtime).
+  - `packages/shell-desktop/src/sim/sim-runtime.test.ts` - assert `INPUT_EVENT` is registered; keep or remove the legacy `SHELL_CONTROL_EVENT` handler explicitly per the migration decision.
+- Acceptance Criteria:
+  1. `createSimRuntime().hasCommandHandler(RUNTIME_COMMAND_TYPES.INPUT_EVENT) === true`.
+  2. `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts` passes.
+- Dependencies: T1
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts`
+
+**T6: Integrate + regenerate coverage**
+- Summary: Ensure the workspace compiles, lints, tests pass, and documentation coverage is regenerated after updating tests.
+- Files:
+  - `docs/coverage/index.md` - regenerated via `pnpm coverage:md` (do not edit manually).
+- Acceptance Criteria:
+  1. `pnpm typecheck` passes.
+  2. `pnpm lint` passes.
+  3. `pnpm test` passes.
+  4. `pnpm coverage:md` updates `docs/coverage/index.md` and the file is committed.
+- Dependencies: T3, T4, T5
+- Verification: `pnpm coverage:md`
 
 ## 6. Validation
-[To be completed in design_plan phase]
+
+### Pre-Implementation Checks
+- [ ] All dependencies installed: `pnpm install`
+- [ ] Types check: `pnpm typecheck`
+- [ ] Existing tests pass: `pnpm test`
+
+### Post-Implementation Checks
+- [ ] Types check: `pnpm typecheck`
+- [ ] Lint passes: `pnpm lint`
+- [ ] All tests pass: `pnpm test`
+- [ ] New/updated tests run in CI:
+  - `pnpm --filter @idle-engine/core test`
+  - `pnpm --filter @idle-engine/shell-desktop test`
+- [ ] Coverage markdown regenerated: `pnpm coverage:md`
+
+### Manual Verification (desktop shell)
+- [ ] Run `pnpm --filter @idle-engine/shell-desktop start` and verify:
+  - Pressing Space triggers the existing “collect” behavior (resource count increases).
+  - Pointer down/move/up and wheel inputs do not crash the app (inputs are accepted or ignored deterministically depending on sim state).
+  - Reloading the window restarts the sim controller (input ignored while initializing, then accepted once running).
