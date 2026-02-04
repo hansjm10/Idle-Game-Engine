@@ -10,7 +10,7 @@ import { monotonicNowMs } from './monotonic-time.js';
 import type { Command } from '@idle-engine/core';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
-import type { RenderCommandBuffer } from '@idle-engine/renderer-contract';
+import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
@@ -93,57 +93,6 @@ function isShellControlEvent(value: unknown): value is ShellControlEvent {
 
 const shouldPassthroughControlEvent = (event: ShellControlEvent): boolean =>
   event.metadata?.['passthrough'] === true;
-
-type SimWorkerInitMessage = Readonly<{
-  kind: 'init';
-  stepSizeMs: number;
-  maxStepsPerFrame: number;
-}>;
-
-type SimWorkerTickMessage = Readonly<{
-  kind: 'tick';
-  deltaMs: number;
-}>;
-
-type SimWorkerEnqueueCommandsMessage = Readonly<{
-  kind: 'enqueueCommands';
-  commands: readonly Command[];
-}>;
-
-type SimWorkerInboundMessage =
-  | SimWorkerInitMessage
-  | SimWorkerTickMessage
-  | SimWorkerEnqueueCommandsMessage;
-
-type SimWorkerReadyMessage = Readonly<{
-  kind: 'ready';
-  stepSizeMs: number;
-  nextStep: number;
-}>;
-
-type SimWorkerFramesMessage = Readonly<{
-  kind: 'frames';
-  frames: readonly RenderCommandBuffer[];
-  nextStep: number;
-}>;
-
-type SimWorkerFrameMessage = Readonly<{
-  kind: 'frame';
-  frame?: RenderCommandBuffer;
-  droppedFrames: number;
-  nextStep: number;
-}>;
-
-type SimWorkerErrorMessage = Readonly<{
-  kind: 'error';
-  error: string;
-}>;
-
-type SimWorkerOutboundMessage =
-  | SimWorkerReadyMessage
-  | SimWorkerFramesMessage
-  | SimWorkerFrameMessage
-  | SimWorkerErrorMessage;
 
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
@@ -252,21 +201,6 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
       startTickLoop();
-      return;
-    }
-
-    if (message.kind === 'frames') {
-      nextStep = message.nextStep;
-      const frame = message.frames.at(-1);
-      if (!frame) {
-        return;
-      }
-      try {
-        mainWindow.webContents.send(IPC_CHANNELS.frame, frame);
-      } catch (error: unknown) {
-        // eslint-disable-next-line no-console
-        console.error(error);
-      }
       return;
     }
 
