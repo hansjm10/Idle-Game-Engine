@@ -124,7 +124,136 @@ This feature changes the **input event workflow** so that pointer/UI interaction
 | Sim worker thread (Node `Worker`) | `init`, `tick`, `enqueueCommands`, `shutdown` messages; runtime config (`stepSizeMs`, `maxStepsPerFrame`). | Outbound messages: `ready`, `frame`, `error` back to main; no filesystem writes. | On `error`/`messageerror`/non-zero exit: transition to `sim.crashed` and terminate worker; on hang/unresponsiveness: no automatic transition, operator restarts via reload. |
 
 ## 3. Interfaces
-[To be completed in design_api phase]
+
+This section defines the **contract surface** for input events across:
+- Electron renderer ↔ Electron main (IPC)
+- Main ↔ sim worker (postMessage)
+- Main input mapping → runtime command queue
+
+### Endpoints
+| Method | Path | Input | Success | Errors |
+|--------|------|-------|---------|--------|
+| IPC invoke | `idle-engine:ping` | `{ message: string }` | resolves `{ message: string }` | rejects if `message` is not a string |
+| IPC invoke | `idle-engine:read-asset` | `{ url: string }` | resolves `ArrayBuffer` | rejects if url is invalid, non-`file:`, or escapes compiled asset root |
+| IPC send | `idle-engine:input-event` | `ShellInputEventEnvelope` | none (fire-and-forget) | dropped if payload is invalid, sim is not running, or mapping produces 0 commands; **fatal** if mapping throws or worker delivery throws |
+| IPC send | `idle-engine:control-event` (deprecated) | `ShellControlEvent` | none (fire-and-forget) | dropped if payload is invalid, sim is not running, or mapping produces 0 commands; **fatal** if mapping throws or worker delivery throws |
+| IPC event | `idle-engine:frame` | `ShellFramePayload` | pushed to listeners | delivery may fail if renderer is not ready (main logs and continues) |
+| IPC event | `idle-engine:sim-status` | `ShellSimStatusPayload` | pushed to listeners | delivery may fail if renderer is not ready (main logs and continues) |
+| Worker postMessage | `SimWorkerInboundMessage.kind=enqueueCommands` | `{ kind:'enqueueCommands', commands: Command[] }` | enqueued for future ticks | **fatal** if `postMessage` throws → transition to `sim.crashed` and stop accepting input |
+| Worker event | `SimWorkerOutboundMessage.kind=ready/frame/error` | see `SimWorkerOutboundMessage` | updates main state | invalid protocol messages are ignored during init; `error` is **fatal** (crash) |
+
+### CLI Commands (if applicable)
+N/A
+
+### Events (if applicable)
+| Event | Trigger | Payload | Consumers |
+|-------|---------|---------|-----------|
+| `idle-engine:frame` | Sim worker sends `kind:'frame'` and main forwards the frame. | `RenderCommandBuffer` | Electron renderer (`IdleEngineApi.onFrame`) |
+| `idle-engine:sim-status` | Main enters `starting`, `running`, `stopped`, or `crashed`. | `ShellSimStatusPayload` | Electron renderer (`IdleEngineApi.onSimStatus`) |
+| `sim-worker:ready` | Sim worker sends `kind:'ready'`. | `{ kind:'ready', stepSizeMs:number, nextStep:number }` | Electron main controller |
+| `sim-worker:frame` | Sim worker sends `kind:'frame'`. | `{ kind:'frame', frame?:RenderCommandBuffer, droppedFrames:number, nextStep:number }` | Electron main controller |
+| `sim-worker:error` | Sim worker sends `kind:'error'` or worker emits `error`/`messageerror`/non-zero exit. | `{ kind:'error', error:string }` plus worker error/exit metadata | Electron main controller (transitions to `sim.crashed`/`sim.stopped`) |
+
+### Runtime Commands
+| Command Type | Payload | Producer | Consumers | Errors |
+|-------------|---------|----------|-----------|--------|
+| `INPUT_EVENT` (new) | `InputEventCommandPayload` | Main input mapper via explicit bindings | UI/controls systems inside sim runtime | command is not produced unless mapping matches; mapping/worker errors are **fatal** (see workflow) |
+
+### Validation Rules
+All validation is **synchronous** at the IPC boundary (main process). When validation fails:
+- IPC invoke endpoints reject with a thrown `TypeError` (Promise rejects in renderer).
+- IPC send endpoints are dropped (no acknowledgment); main may log in dev builds.
+
+| Field | Type | Constraints | Error |
+|------|------|-------------|-------|
+| `PingRequest.message` | string | required | `TypeError("Invalid ping request: expected { message: string }")` |
+| `ReadAssetRequest.url` | string | required, non-empty; must parse as URL; must be `file:`; must resolve inside compiled assets root | `TypeError("Invalid read asset request: expected { url: string }")`, `TypeError("Invalid asset url: expected a file:// URL.")`, `TypeError("Invalid asset url: path must be inside compiled assets.")`, or URL parse `TypeError` |
+| `ShellInputEventEnvelope.schemaVersion` | number | required; must equal `1` | drop input event |
+| `ShellInputEventEnvelope.event` | object | required | drop input event |
+| `ShellInputEvent.kind` | string | required; one of `control`, `pointer`, `wheel` | drop input event |
+| `ShellInputEvent.control.intent` | string | required; non-empty | drop input event |
+| `ShellInputEvent.control.phase` | string | required; one of `start`, `repeat`, `end` | drop input event |
+| `ShellInputEvent.control.value` | number | optional; if present must be finite | drop input event |
+| `ShellInputEvent.pointer.intent` | string | required; one of `pointer.down`, `pointer.up`, `pointer.move` | drop input event |
+| `ShellInputEvent.pointer.phase` | string | required; must match intent (`pointer.down → start`, `pointer.move → repeat`, `pointer.up → end`) | drop input event |
+| `ShellInputEvent.pointer.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
+| `ShellInputEvent.pointer.button` | number | required; integer; range `-1..32` | drop input event |
+| `ShellInputEvent.pointer.buttons` | number | required; integer; range `0..0xFFFF` | drop input event |
+| `ShellInputEvent.pointer.pointerType` | string | required; one of `mouse`, `pen`, `touch` | drop input event |
+| `ShellInputEvent.pointer.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
+| `ShellInputEvent.wheel.intent` | string | required; must equal `pointer.wheel` | drop input event |
+| `ShellInputEvent.wheel.phase` | string | required; must equal `repeat` | drop input event |
+| `ShellInputEvent.wheel.x/y` | number | required; finite; canvas-relative CSS pixel coordinates | drop input event |
+| `ShellInputEvent.wheel.modifiers` | object | required; `{ alt, ctrl, meta, shift }` booleans | drop input event |
+| `ShellInputEvent.wheel.deltaX/Y/Z` | number | required; finite | drop input event |
+| `ShellInputEvent.wheel.deltaMode` | number | required; one of `0`, `1`, `2` | drop input event |
+
+### UI Interactions (if applicable)
+| Action | Request | Loading State | Success | Error |
+|--------|---------|---------------|---------|-------|
+| Press Space (demo “collect”) | `IPC send idle-engine:control-event` (or `input-event` with `kind:'control'`) | none | Sim enqueues `COLLECT_RESOURCE` and UI updates on next frame | if sim is stopped/crashed: input is ignored; status text indicates “Reload to restart” |
+| Pointer down/up/move on canvas | `IPC send idle-engine:input-event` (`kind:'pointer'`) | none | Explicit bindings may enqueue `INPUT_EVENT` commands; UI responds deterministically at tick boundaries | invalid payload is dropped; if mapping/bridge crashes, renderer receives `sim-status: crashed` |
+| Mouse wheel on canvas | `IPC send idle-engine:input-event` (`kind:'wheel'`) | none | Explicit bindings may enqueue `INPUT_EVENT` commands | same as above |
+
+#### Contract gates
+- **Breaking change**: Yes, behaviorally. `metadata.passthrough` no longer causes implicit forwarding, and `SHELL_CONTROL_EVENT` commands are no longer emitted.
+- **Migration**: Implement explicit bindings that map pointer/wheel inputs to `INPUT_EVENT` (or other typed) runtime commands. Any system that previously consumed `SHELL_CONTROL_EVENT.payload.event.metadata` must consume `InputEventCommandPayload.event` instead.
+- **Versioning**: `ShellInputEventEnvelope.schemaVersion` starts at `1`. Main must reject unknown versions (drop) and may support `N-1` during migrations. `INPUT_EVENT` payload is versioned via `InputEventCommandPayload.schemaVersion` (also `1`).
+
+#### Type contracts (wire-level)
+```ts
+export type ShellControlEvent = Readonly<{
+  intent: string;
+  phase: 'start' | 'repeat' | 'end';
+  value?: number;
+  /**
+   * Deprecated. `passthrough` is ignored and must not be relied on.
+   * Typed input events are sent via `ShellInputEventEnvelope`.
+   */
+  metadata?: Readonly<Record<string, unknown>>;
+}>;
+
+export type ShellInputEventEnvelope = Readonly<{
+  schemaVersion: 1;
+  event: ShellInputEvent;
+}>;
+
+export type ShellInputEvent =
+  | Readonly<{
+      kind: 'control';
+      intent: string;
+      phase: 'start' | 'repeat' | 'end';
+      value?: number;
+    }>
+  | Readonly<{
+      kind: 'pointer';
+      intent: 'pointer.down' | 'pointer.up' | 'pointer.move';
+      phase: 'start' | 'repeat' | 'end';
+      x: number;
+      y: number;
+      button: number;
+      buttons: number;
+      pointerType: 'mouse' | 'pen' | 'touch';
+      modifiers: Readonly<{ alt: boolean; ctrl: boolean; meta: boolean; shift: boolean }>;
+    }>
+  | Readonly<{
+      kind: 'wheel';
+      intent: 'pointer.wheel';
+      phase: 'repeat';
+      x: number;
+      y: number;
+      deltaX: number;
+      deltaY: number;
+      deltaZ: number;
+      deltaMode: 0 | 1 | 2;
+      modifiers: Readonly<{ alt: boolean; ctrl: boolean; meta: boolean; shift: boolean }>;
+    }>;
+
+export type InputEventCommandPayload = Readonly<{
+  schemaVersion: 1;
+  event: ShellInputEvent;
+}>;
+```
 
 ## 4. Data
 [To be completed in design_data phase]
