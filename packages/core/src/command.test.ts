@@ -72,9 +72,13 @@ describe('command', () => {
       );
     });
 
-    it('has 17 command types', () => {
+    it('has 18 command types', () => {
       const types = Object.keys(RUNTIME_COMMAND_TYPES);
-      expect(types.length).toBe(17);
+      expect(types.length).toBe(18);
+    });
+
+    it('contains INPUT_EVENT', () => {
+      expect(RUNTIME_COMMAND_TYPES.INPUT_EVENT).toBe('INPUT_EVENT');
     });
 
     it('all values are unique strings', () => {
@@ -161,6 +165,16 @@ describe('command', () => {
         expect(policy.allowedPriorities).toContain(CommandPriority.AUTOMATION);
         expect(policy.allowedPriorities).not.toContain(CommandPriority.PLAYER);
       });
+
+      it('INPUT_EVENT allows only PLAYER priority', () => {
+        const policy =
+          COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.INPUT_EVENT];
+        expect(policy.allowedPriorities).toEqual([CommandPriority.PLAYER]);
+        expect(policy.allowedPriorities).not.toContain(CommandPriority.SYSTEM);
+        expect(policy.allowedPriorities).not.toContain(
+          CommandPriority.AUTOMATION,
+        );
+      });
     });
 
     describe('unauthorized events', () => {
@@ -180,6 +194,12 @@ describe('command', () => {
         const policy =
           COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.PURCHASE_GENERATOR];
         expect(policy.unauthorizedEvent).toBeUndefined();
+      });
+
+      it('INPUT_EVENT has custom unauthorized event', () => {
+        const policy =
+          COMMAND_AUTHORIZATIONS[RUNTIME_COMMAND_TYPES.INPUT_EVENT];
+        expect(policy.unauthorizedEvent).toBe('UnauthorizedInputEventCommand');
       });
     });
   });
