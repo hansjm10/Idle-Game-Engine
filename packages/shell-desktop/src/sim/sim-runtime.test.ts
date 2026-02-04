@@ -292,22 +292,14 @@ describe('shell-desktop sim runtime', () => {
     });
   });
 
-  it('INPUT_EVENT handler throws on schemaVersion mismatch (e.g. schemaVersion: 2)', () => {
-    // To verify the handler throws, we directly test the handler logic.
-    // The INPUT_EVENT handler in createSimRuntime throws when schemaVersion !== 1.
-    // We reproduce the handler logic here to verify the throw behavior.
-    const inputEventHandler = (payload: InputEventCommandPayload): void => {
-      // This is the same validation logic from sim-runtime.ts INPUT_EVENT handler
-      if (payload.schemaVersion !== 1) {
-        throw new Error(`Unsupported InputEventCommandPayload schemaVersion: ${payload.schemaVersion}`);
-      }
-    };
+  it('INPUT_EVENT handler throws on schemaVersion mismatch (schemaVersion: 2)', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
-    const validPointerEvent: PointerInputEvent = {
+    const pointerEvent: PointerInputEvent = {
       kind: 'pointer',
       intent: 'mouse-down',
       phase: 'start',
-      x: 20,
+      x: 20, // In-bounds coords that would trigger collection if handler didn't throw
       y: 20,
       button: 0,
       buttons: 1,
@@ -315,19 +307,46 @@ describe('shell-desktop sim runtime', () => {
       modifiers: { alt: false, ctrl: false, meta: false, shift: false },
     };
 
-    // Valid schemaVersion 1 - should not throw
-    const validPayload: InputEventCommandPayload = {
-      schemaVersion: 1,
-      event: validPointerEvent,
-    };
-    expect(() => inputEventHandler(validPayload)).not.toThrow();
+    // Capture errors thrown during command execution by spying on Error constructor
+    const thrownErrorMessages: string[] = [];
+    const OriginalError = globalThis.Error;
+    class ErrorSpy extends OriginalError {
+      constructor(message?: string) {
+        super(message);
+        if (message) {
+          thrownErrorMessages.push(message);
+        }
+      }
+    }
+    globalThis.Error = ErrorSpy as typeof Error;
 
-    // Invalid schemaVersion 2 - should throw
-    const invalidPayload = {
-      schemaVersion: 2,
-      event: validPointerEvent,
-    } as unknown as InputEventCommandPayload;
-    expect(() => inputEventHandler(invalidPayload)).toThrow(
+    try {
+      // Enqueue INPUT_EVENT with schemaVersion: 2 (mismatch - should cause handler to throw)
+      const invalidPayload = {
+        schemaVersion: 2,
+        event: pointerEvent,
+      } as unknown as InputEventCommandPayload;
+
+      const command: Command = {
+        type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+        priority: CommandPriority.PLAYER,
+        payload: invalidPayload,
+        timestamp: 0,
+        step: sim.getNextStep(),
+      };
+
+      sim.enqueueCommands([command]);
+
+      // Tick to process the command - the INPUT_EVENT handler throws on schemaVersion !== 1
+      // (CommandDispatcher catches the throw internally)
+      sim.tick(10);
+    } finally {
+      globalThis.Error = OriginalError;
+    }
+
+    // Verify the handler threw the expected error
+    // This proves the actual registered handler (at sim-runtime.ts:207-208) threw
+    expect(thrownErrorMessages).toContain(
       'Unsupported InputEventCommandPayload schemaVersion: 2',
     );
   });
