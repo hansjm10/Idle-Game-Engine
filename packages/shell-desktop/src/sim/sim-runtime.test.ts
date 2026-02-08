@@ -328,6 +328,18 @@ describe('shell-desktop sim runtime', () => {
     expect(() => sim.tick(10)).toThrow('Unsupported InputEventCommandPayload schemaVersion: 2');
   });
 
+  it('does not expose serialize on the demo runtime', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(sim.serialize).toBeUndefined();
+  });
+
+  it('does not expose hydrate on the demo runtime', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(sim.hydrate).toBeUndefined();
+  });
+
   it('INPUT_EVENT with schemaVersion mismatch does not trigger resource collection (handler throws before hit-test)', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 

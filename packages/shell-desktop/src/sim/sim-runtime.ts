@@ -5,6 +5,7 @@ import {
   type InputEventCommandPayload,
   type RuntimeCommandPayloads,
 } from '@idle-engine/core';
+import type { GameStateSaveFormat } from '../runtime-harness.js';
 import { RENDERER_CONTRACT_SCHEMA_VERSION } from '@idle-engine/renderer-contract';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE, type ShellControlEvent } from '../ipc.js';
 import type { AssetId, RenderCommandBuffer } from '@idle-engine/renderer-contract';
@@ -25,6 +26,8 @@ export type SimRuntime = Readonly<{
   getStepSizeMs: () => number;
   getNextStep: () => number;
   hasCommandHandler: (type: string) => boolean;
+  serialize?: () => GameStateSaveFormat;
+  hydrate?: (save: GameStateSaveFormat) => void;
 }>;
 
 type CollectResourcePayload =
