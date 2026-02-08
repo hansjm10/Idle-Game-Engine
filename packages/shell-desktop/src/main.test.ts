@@ -149,6 +149,29 @@ vi.mock('./monotonic-time.js', () => ({
   monotonicNowMs,
 }));
 
+const writeSaveMock = vi.fn(async () => undefined);
+const readSaveMock = vi.fn(async (): Promise<Uint8Array | undefined> => undefined);
+
+vi.mock('./save-storage.js', () => ({
+  writeSave: writeSaveMock,
+  readSave: readSaveMock,
+}));
+
+const loadGameStateSaveFormatMock = vi.fn((data: unknown) => data);
+
+vi.mock('./runtime-harness.js', () => ({
+  loadGameStateSaveFormat: loadGameStateSaveFormatMock,
+}));
+
+let uuidCounter = 0;
+
+vi.mock('node:crypto', () => ({
+  randomUUID: () => {
+    uuidCounter += 1;
+    return `00000000-0000-0000-0000-${String(uuidCounter).padStart(12, '0')}`;
+  },
+}));
+
 // Use a lazy reference to the real createControlCommands so it can be mocked per-test
 let realCreateControlCommands: typeof CreateControlCommandsFn;
 
@@ -177,6 +200,8 @@ describe('shell-desktop main process entrypoint', () => {
     BrowserWindow.shouldRejectLoadFile = false;
     Worker.instances = [];
     monotonicNowSequence = [];
+
+    uuidCounter = 0;
 
     if (originalNodeEnv === undefined) {
       delete process.env.NODE_ENV;
@@ -1720,5 +1745,978 @@ describe('shell-desktop main process entrypoint', () => {
     expect(tickCallsAfterStaleReady).toBe(tickCallsBeforeStaleReady);
 
     consoleError.mockRestore();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // T5 — Dev menu, save/load/offline flows, protocol normalization
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Helper: finds the Dev submenu from the template passed to Menu.buildFromTemplate.
+   */
+  function findDevSubmenu(): Array<{ label?: string; accelerator?: string; enabled?: boolean; click?: () => void; type?: string }> {
+    const templateCall = Menu.buildFromTemplate.mock.calls[0];
+    expect(templateCall).toBeDefined();
+    const template = templateCall?.[0] as Array<{ label?: string; submenu?: unknown[] }>;
+    const devEntry = template.find((item) => item.label === 'Dev');
+    expect(devEntry).toBeDefined();
+    return devEntry?.submenu as Array<{ label?: string; accelerator?: string; enabled?: boolean; click?: () => void; type?: string }>;
+  }
+
+  it('installs a Dev menu with Save, Load, and Offline Catch-Up actions', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+
+    expect(saveItem).toBeDefined();
+    expect(saveItem?.accelerator).toBe('CmdOrCtrl+S');
+    expect(saveItem?.enabled).toBe(false);
+
+    expect(loadItem).toBeDefined();
+    expect(loadItem?.accelerator).toBe('CmdOrCtrl+O');
+    expect(loadItem?.enabled).toBe(false);
+
+    expect(catchupItem).toBeDefined();
+    expect(catchupItem?.enabled).toBe(false);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('enables Dev menu actions when v2 ready with capabilities is received', async () => {
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+
+    // Before ready: all disabled
+    expect(saveItem?.enabled).toBe(false);
+    expect(loadItem?.enabled).toBe(false);
+    expect(catchupItem?.enabled).toBe(false);
+
+    // Emit v2 ready with full capabilities
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: true },
+    });
+    await flushMicrotasks();
+
+    // After v2 ready: Save/Load and Offline Catch-Up enabled
+    expect(saveItem?.enabled).toBe(true);
+    expect(loadItem?.enabled).toBe(true);
+    expect(catchupItem?.enabled).toBe(true);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('normalizes legacy ready payloads to protocol v1 with disabled capabilities', async () => {
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    // Emit legacy ready (no protocolVersion, no capabilities)
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Should transition to running (legacy is valid)
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Dev menu items should remain disabled (legacy = no capabilities)
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+
+    expect(saveItem?.enabled).toBe(false);
+    expect(loadItem?.enabled).toBe(false);
+    expect(catchupItem?.enabled).toBe(false);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('enables only canSerialize actions when canOfflineCatchup is false', async () => {
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+
+    expect(saveItem?.enabled).toBe(true);
+    expect(loadItem?.enabled).toBe(true);
+    expect(catchupItem?.enabled).toBe(false);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('rejects malformed ready payload (unsupported protocolVersion) as worker failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    mainWindow?.webContents.send.mockClear();
+
+    // Emit ready with unsupported protocolVersion (3)
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 3,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: true },
+    } as unknown);
+    await flushMicrotasks();
+
+    // Should transition to crashed (not running)
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed' }),
+    );
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it('rejects ready with protocolVersion 2 but missing capabilities as worker failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    mainWindow?.webContents.send.mockClear();
+
+    // Emit v2 ready with no capabilities
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+    } as unknown);
+    await flushMicrotasks();
+
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed' }),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it('save flow: sends serialize, consumes matching saveData, writes via atomic storage', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit v2 ready with serialize capability
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    expect(saveItem?.enabled).toBe(true);
+
+    // Trigger save via click handler
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    // Verify serialize message was sent to worker
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCall).toBeDefined();
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+    expect(sentRequestId).toBeDefined();
+    expect(typeof sentRequestId).toBe('string');
+
+    // Save item should be disabled during operation
+    expect(saveItem?.enabled).toBe(false);
+
+    // Worker responds with saveData matching the requestId
+    const saveBytes = new Uint8Array([1, 2, 3, 4]);
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: saveBytes,
+    });
+    await flushMicrotasks();
+
+    // Verify writeSave was called with the data
+    expect(writeSaveMock).toHaveBeenCalledWith(saveBytes);
+
+    // Save item should be re-enabled after operation completes
+    expect(saveItem?.enabled).toBe(true);
+
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('save flow: handles saveData error response without worker-failed transition', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+
+    // Worker responds with error
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: false,
+      error: { code: 'SERIALIZE_FAILED', message: 'Serialization failed.', retriable: true },
+    });
+    await flushMicrotasks();
+
+    // writeSave should NOT have been called
+    expect(writeSaveMock).not.toHaveBeenCalled();
+
+    // Worker should NOT be in failed state (no crashed status beyond starting/running)
+    const crashedCalls = mainWindow?.webContents.send.mock.calls.filter(
+      (call) => call[0] === IPC_CHANNELS.simStatus && (call[1] as { kind?: string })?.kind === 'crashed',
+    );
+    expect(crashedCalls).toHaveLength(0);
+
+    // Save item should be re-enabled (recoverable)
+    expect(saveItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('save flow: times out when no matching saveData arrives', async () => {
+    vi.useFakeTimers();
+    // Provide enough monotonicNowMs values for tick loop calls during the 11s advance
+    const tickValues = Array.from({ length: 800 }, (_, i) => i * 16);
+    setMonotonicNowSequence(tickValues);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    expect(saveItem?.enabled).toBe(false);
+
+    // Advance past timeout (10s)
+    await vi.advanceTimersByTimeAsync(11_000);
+    await flushMicrotasks();
+
+    // Save item should be re-enabled after timeout
+    expect(saveItem?.enabled).toBe(true);
+
+    // Verify timeout was logged
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('timed out'),
+    );
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('ignores unmatched saveData responses without corrupting state', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+
+    // Trigger save
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+
+    // Send unmatched saveData response (wrong requestId)
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: 'wrong-request-id',
+      ok: true,
+      data: new Uint8Array([1, 2, 3]),
+    });
+    await flushMicrotasks();
+
+    // Should be ignored — writeSave not called, operation still locked
+    expect(writeSaveMock).not.toHaveBeenCalled();
+    expect(saveItem?.enabled).toBe(false);
+
+    // Warn should have been logged for unmatched response
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Ignoring unmatched saveData'),
+    );
+
+    // Now send the matching response
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: new Uint8Array([4, 5, 6]),
+    });
+    await flushMicrotasks();
+
+    expect(writeSaveMock).toHaveBeenCalled();
+    expect(saveItem?.enabled).toBe(true);
+
+    consoleWarn.mockRestore();
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('ignores duplicate saveData responses after the first match', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+
+    // First matching response — consumed
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: new Uint8Array([1]),
+    });
+    await flushMicrotasks();
+
+    expect(writeSaveMock).toHaveBeenCalledTimes(1);
+
+    // Duplicate response — ignored
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: new Uint8Array([2]),
+    });
+    await flushMicrotasks();
+
+    // writeSave still only called once
+    expect(writeSaveMock).toHaveBeenCalledTimes(1);
+
+    consoleWarn.mockRestore();
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('load flow: reads save, decodes, validates, sends hydrate, consumes matching hydrateResult', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const saveFormat = {
+      version: 1,
+      savedAt: 1000,
+      resources: {},
+      progression: {},
+      commandQueue: {},
+    };
+    const saveBytes = new TextEncoder().encode(JSON.stringify(saveFormat));
+    readSaveMock.mockResolvedValueOnce(saveBytes);
+    loadGameStateSaveFormatMock.mockReturnValueOnce(saveFormat);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    expect(loadItem?.enabled).toBe(true);
+
+    // Trigger load
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // readSave should have been called
+    expect(readSaveMock).toHaveBeenCalled();
+    expect(loadGameStateSaveFormatMock).toHaveBeenCalledWith(saveFormat);
+
+    // Verify hydrate message was sent to worker
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+    const hydrateMsg = hydrateCall?.[0] as { requestId?: string; save?: unknown };
+    expect(hydrateMsg.requestId).toBeDefined();
+    expect(hydrateMsg.save).toEqual(saveFormat);
+
+    // Worker responds with success
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: hydrateMsg.requestId!,
+      ok: true,
+      nextStep: 100,
+    });
+    await flushMicrotasks();
+
+    // Load item should be re-enabled
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('load flow: handles hydrateResult error without worker-failed transition', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
+    const saveBytes = new TextEncoder().encode(JSON.stringify(saveFormat));
+    readSaveMock.mockResolvedValueOnce(saveBytes);
+    loadGameStateSaveFormatMock.mockReturnValueOnce(saveFormat);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    const hydrateMsg = hydrateCall?.[0] as { requestId?: string };
+
+    // Worker responds with error
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: hydrateMsg.requestId!,
+      ok: false,
+      error: { code: 'HYDRATE_FAILED', message: 'Hydration failed.', retriable: true },
+    });
+    await flushMicrotasks();
+
+    // Not a worker failure — no crashed status
+    const crashedCalls = mainWindow?.webContents.send.mock.calls.filter(
+      (call) => call[0] === IPC_CHANNELS.simStatus && (call[1] as { kind?: string })?.kind === 'crashed',
+    );
+    expect(crashedCalls).toHaveLength(0);
+
+    // Load should be re-enabled (recoverable)
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('ignores unmatched hydrateResult responses without corrupting state', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
+    const saveBytes = new TextEncoder().encode(JSON.stringify(saveFormat));
+    readSaveMock.mockResolvedValueOnce(saveBytes);
+    loadGameStateSaveFormatMock.mockReturnValueOnce(saveFormat);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    const hydrateMsg = hydrateCall?.[0] as { requestId?: string };
+
+    // Send unmatched hydrateResult
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: 'wrong-id',
+      ok: true,
+      nextStep: 999,
+    });
+    await flushMicrotasks();
+
+    // Operation still locked (unmatched was ignored)
+    expect(loadItem?.enabled).toBe(false);
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Ignoring unmatched hydrateResult'),
+    );
+
+    // Now send matching response
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: hydrateMsg.requestId!,
+      ok: true,
+      nextStep: 50,
+    });
+    await flushMicrotasks();
+
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleWarn.mockRestore();
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('offline catch-up dispatch enqueues OFFLINE_CATCHUP with default resourceDeltas', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 5,
+      capabilities: { canSerialize: false, canOfflineCatchup: true },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+    expect(catchupItem?.enabled).toBe(true);
+
+    // Save/Load should be disabled (canSerialize = false)
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    expect(saveItem?.enabled).toBe(false);
+
+    // Trigger offline catch-up
+    catchupItem?.click?.();
+    await flushMicrotasks();
+
+    // Verify enqueueCommands with OFFLINE_CATCHUP command
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+
+    const catchupEnqueue = enqueueCalls?.find((call) => {
+      const msg = call[0] as { commands?: Array<{ type?: string }> };
+      return msg.commands?.some((cmd) => cmd.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP);
+    });
+    expect(catchupEnqueue).toBeDefined();
+
+    const catchupCmd = (catchupEnqueue?.[0] as { commands: Array<{ type: string; payload: unknown; priority: number }> }).commands.find(
+      (cmd) => cmd.type === RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+    );
+    expect(catchupCmd).toBeDefined();
+    expect(catchupCmd?.priority).toBe(0); // CommandPriority.SYSTEM
+    expect((catchupCmd?.payload as { resourceDeltas?: unknown })?.resourceDeltas).toEqual({});
+    expect(typeof (catchupCmd?.payload as { elapsedMs?: unknown })?.elapsedMs).toBe('number');
+    expect((catchupCmd?.payload as { elapsedMs?: number })?.elapsedMs).toBeGreaterThan(0);
+
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('disables dev menu actions after worker failure', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit v2 ready with capabilities
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: true },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+
+    // All enabled before failure
+    expect(saveItem?.enabled).toBe(true);
+    expect(loadItem?.enabled).toBe(true);
+    expect(catchupItem?.enabled).toBe(true);
+
+    // Worker crashes
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // All disabled after failure
+    expect(saveItem?.enabled).toBe(false);
+    expect(loadItem?.enabled).toBe(false);
+    expect(catchupItem?.enabled).toBe(false);
+
+    consoleError.mockRestore();
+  });
+
+  it('load flow: handles no save file gracefully', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // readSave returns undefined (no file)
+    readSaveMock.mockResolvedValueOnce(undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // No hydrate message should be sent (no file)
+    const hydrateCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCalls).toHaveLength(0);
+
+    // Load should be re-enabled
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('load flow: handles decode failure gracefully without sending hydrate', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // readSave returns invalid bytes (not valid JSON)
+    readSaveMock.mockResolvedValueOnce(new Uint8Array([0xFF, 0xFE]));
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // No hydrate message should be sent (decode failed)
+    const hydrateCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCalls).toHaveLength(0);
+
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('late saveData after operation cleared via timeout is ignored', async () => {
+    vi.useFakeTimers();
+    // Provide enough monotonicNowMs values for tick loop calls during the 11s advance
+    const tickValues = Array.from({ length: 800 }, (_, i) => i * 16);
+    setMonotonicNowSequence(tickValues);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+
+    // Advance past timeout
+    await vi.advanceTimersByTimeAsync(11_000);
+    await flushMicrotasks();
+
+    // Now send late saveData
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: new Uint8Array([1]),
+    });
+    await flushMicrotasks();
+
+    // writeSave should NOT have been called (late response)
+    expect(writeSaveMock).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
   });
 });

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import { promises as fsPromises } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
@@ -14,11 +15,16 @@ import {
 } from '@idle-engine/core';
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
+import { writeSave, readSave } from './save-storage.js';
+import { loadGameStateSaveFormat } from './runtime-harness.js';
+import type { GameStateSaveFormat } from './runtime-harness.js';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
-import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
+import type { SimWorkerCapabilities, SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
+
+const REQUEST_TIMEOUT_MS = 10_000;
 
 const enableUnsafeWebGpu = isDev || process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU === '1';
 if (enableUnsafeWebGpu) {
@@ -251,10 +257,42 @@ function isValidShellInputEventEnvelope(value: unknown): value is ShellInputEven
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
+  triggerSave: () => void;
+  triggerLoad: () => void;
+  triggerOfflineCatchup: () => void;
+  getCapabilities: () => SimWorkerCapabilities;
   dispose: () => void;
 }>;
 
 let simWorkerController: SimWorkerController | undefined;
+
+// Mutable dev menu item config objects. `installAppMenu()` inserts them into the
+// menu template; later code mutates `.enabled` to reflect capability & lock state.
+const devMenuSaveItem: MenuItemConstructorOptions = {
+  label: 'Save',
+  accelerator: 'CmdOrCtrl+S',
+  enabled: false,
+  click: () => { simWorkerController?.triggerSave(); },
+};
+
+const devMenuLoadItem: MenuItemConstructorOptions = {
+  label: 'Load',
+  accelerator: 'CmdOrCtrl+O',
+  enabled: false,
+  click: () => { simWorkerController?.triggerLoad(); },
+};
+
+const devMenuOfflineCatchupItem: MenuItemConstructorOptions = {
+  label: 'Offline Catch-Up',
+  enabled: false,
+  click: () => { simWorkerController?.triggerOfflineCatchup(); },
+};
+
+function refreshDevMenuState(caps: SimWorkerCapabilities, ready: boolean, locked: boolean): void {
+  devMenuSaveItem.enabled = ready && caps.canSerialize && !locked;
+  devMenuLoadItem.enabled = ready && caps.canSerialize && !locked;
+  devMenuOfflineCatchupItem.enabled = ready && caps.canOfflineCatchup && !locked;
+}
 
 function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerController {
   const worker = new Worker(new URL('./sim-worker.js', import.meta.url));
@@ -273,6 +311,26 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   const MAX_TICK_DELTA_MS = 250;
   let lastTickMs = 0;
   let tickTimer: NodeJS.Timeout | undefined;
+
+  // Capability cache: default disabled until ready
+  let capabilities: SimWorkerCapabilities = { canSerialize: false, canOfflineCatchup: false };
+
+  // Operation lock: only one save/load/catchup operation at a time
+  let operationLocked = false;
+  let activeSerializeRequestId: string | undefined;
+  let activeHydrateRequestId: string | undefined;
+  let operationTimeoutTimer: NodeJS.Timeout | undefined;
+
+  const clearOperationState = (): void => {
+    operationLocked = false;
+    activeSerializeRequestId = undefined;
+    activeHydrateRequestId = undefined;
+    if (operationTimeoutTimer) {
+      clearTimeout(operationTimeoutTimer);
+      operationTimeoutTimer = undefined;
+    }
+    refreshDevMenuState(capabilities, isReady && !hasFailed && !isDisposing, false);
+  };
 
   const clampTickDeltaMs = (rawDeltaMs: number): number => {
     if (!Number.isFinite(rawDeltaMs)) {
@@ -308,6 +366,8 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     hasFailed = true;
     stopTickLoop();
+    clearOperationState();
+    refreshDevMenuState(capabilities, false, false);
 
     // eslint-disable-next-line no-console
     console.error(status.kind === 'stopped' ? `[shell-desktop] Sim stopped: ${status.reason}` : `[shell-desktop] Sim crashed: ${status.reason}`, details);
@@ -350,6 +410,59 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     tickTimer.unref?.();
   };
 
+  /**
+   * Normalizes a ready message, handling both protocol v2 and legacy formats.
+   * Returns null if the ready payload is malformed/unsupported.
+   */
+  const normalizeReady = (message: Record<string, unknown>): {
+    stepSizeMs: number;
+    nextStep: number;
+    capabilities: SimWorkerCapabilities;
+  } | null => {
+    // Validate required fields
+    if (typeof message.stepSizeMs !== 'number' || !Number.isFinite(message.stepSizeMs) || message.stepSizeMs < 1) {
+      return null;
+    }
+    if (typeof message.nextStep !== 'number' || !Number.isFinite(message.nextStep)) {
+      return null;
+    }
+
+    const pv = message.protocolVersion;
+    const caps = message.capabilities;
+
+    // Legacy fallback: both protocolVersion and capabilities are missing
+    if (pv === undefined && caps === undefined) {
+      return {
+        stepSizeMs: message.stepSizeMs,
+        nextStep: message.nextStep,
+        capabilities: { canSerialize: false, canOfflineCatchup: false },
+      };
+    }
+
+    // Protocol v2: protocolVersion must be 2 with valid capabilities
+    if (pv === 2) {
+      if (
+        typeof caps === 'object' && caps !== null && !Array.isArray(caps) &&
+        typeof (caps as Record<string, unknown>).canSerialize === 'boolean' &&
+        typeof (caps as Record<string, unknown>).canOfflineCatchup === 'boolean'
+      ) {
+        return {
+          stepSizeMs: message.stepSizeMs,
+          nextStep: message.nextStep,
+          capabilities: {
+            canSerialize: (caps as { canSerialize: boolean }).canSerialize,
+            canOfflineCatchup: (caps as { canOfflineCatchup: boolean }).canOfflineCatchup,
+          },
+        };
+      }
+      // protocolVersion 2 but invalid capabilities
+      return null;
+    }
+
+    // Any other protocolVersion value (including 1 when explicitly set) is unsupported
+    return null;
+  };
+
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
 
   // Emit sim-status 'starting' when the worker controller is created
@@ -362,11 +475,22 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
 
     if (message.kind === 'ready') {
-      stepSizeMs = message.stepSizeMs;
-      nextStep = message.nextStep;
+      const normalized = normalizeReady(message as unknown as Record<string, unknown>);
+      if (!normalized) {
+        handleWorkerFailure(
+          { kind: 'crashed', reason: 'Invalid ready payload: protocol validation failed.' },
+          message,
+        );
+        return;
+      }
+
+      stepSizeMs = normalized.stepSizeMs;
+      nextStep = normalized.nextStep;
+      capabilities = normalized.capabilities;
       isReady = true;
       // Emit sim-status 'running' when the worker is ready
       sendSimStatus({ kind: 'running' });
+      refreshDevMenuState(capabilities, true, operationLocked);
       startTickLoop();
       return;
     }
@@ -382,6 +506,59 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
         // eslint-disable-next-line no-console
         console.error(error);
       }
+      return;
+    }
+
+    if (message.kind === 'saveData') {
+      // Request correlation: only consume matching requestId
+      if (!activeSerializeRequestId || message.requestId !== activeSerializeRequestId) {
+        // Unmatched/duplicate/late response — ignore
+        // eslint-disable-next-line no-console
+        console.warn(`[shell-desktop] Ignoring unmatched saveData response: ${message.requestId}`);
+        return;
+      }
+
+      // Clear operation state
+      const savedRequestId = activeSerializeRequestId;
+      clearOperationState();
+
+      if (!message.ok) {
+        // eslint-disable-next-line no-console
+        console.error(`[shell-desktop] Save failed: ${message.error.message}`);
+        return;
+      }
+
+      // Persist save data via atomic storage
+      void writeSave(message.data).then(() => {
+        // eslint-disable-next-line no-console
+        console.log(`[shell-desktop] Save complete (requestId: ${savedRequestId}).`);
+      }).catch((writeError: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error('[shell-desktop] Save write failed:', writeError);
+      });
+      return;
+    }
+
+    if (message.kind === 'hydrateResult') {
+      // Request correlation: only consume matching requestId
+      if (!activeHydrateRequestId || message.requestId !== activeHydrateRequestId) {
+        // Unmatched/duplicate/late response — ignore
+        // eslint-disable-next-line no-console
+        console.warn(`[shell-desktop] Ignoring unmatched hydrateResult response: ${message.requestId}`);
+        return;
+      }
+
+      clearOperationState();
+
+      if (!message.ok) {
+        // eslint-disable-next-line no-console
+        console.error(`[shell-desktop] Load hydrate failed: ${message.error.message}`);
+        return;
+      }
+
+      nextStep = message.nextStep;
+      // eslint-disable-next-line no-console
+      console.log(`[shell-desktop] Load complete (nextStep: ${message.nextStep}).`);
       return;
     }
 
@@ -480,16 +657,137 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     safePostMessage({ kind: 'enqueueCommands', commands: [inputEventCommand] });
   };
 
+  const triggerSave = (): void => {
+    if (!isReady || hasFailed || isDisposing || operationLocked || !capabilities.canSerialize) {
+      return;
+    }
+
+    operationLocked = true;
+    const requestId = randomUUID().replace(/-/g, '').slice(0, 32);
+    activeSerializeRequestId = requestId;
+    refreshDevMenuState(capabilities, true, true);
+
+    // Start timeout timer
+    operationTimeoutTimer = setTimeout(() => {
+      if (activeSerializeRequestId === requestId) {
+        // eslint-disable-next-line no-console
+        console.error(`[shell-desktop] Save request timed out waiting for requestId ${requestId}.`);
+        clearOperationState();
+      }
+    }, REQUEST_TIMEOUT_MS);
+    operationTimeoutTimer.unref?.();
+
+    safePostMessage({ kind: 'serialize', requestId });
+  };
+
+  const triggerLoad = (): void => {
+    if (!isReady || hasFailed || isDisposing || operationLocked || !capabilities.canSerialize) {
+      return;
+    }
+
+    operationLocked = true;
+    refreshDevMenuState(capabilities, true, true);
+
+    void (async () => {
+      try {
+        const saveBytes = await readSave();
+        if (!saveBytes || saveBytes.byteLength === 0) {
+          // eslint-disable-next-line no-console
+          console.error('[shell-desktop] Load failed: no save file found or file is empty.');
+          clearOperationState();
+          return;
+        }
+
+        // Decode save data (JSON parse from bytes)
+        let saveData: unknown;
+        try {
+          const jsonStr = new TextDecoder().decode(saveBytes);
+          saveData = JSON.parse(jsonStr);
+        } catch (decodeError: unknown) {
+          // eslint-disable-next-line no-console
+          console.error('[shell-desktop] Load failed: invalid save data format.', decodeError);
+          clearOperationState();
+          return;
+        }
+
+        // Validate and migrate save format
+        let validSave: GameStateSaveFormat;
+        try {
+          validSave = loadGameStateSaveFormat(saveData);
+        } catch (validationError: unknown) {
+          // eslint-disable-next-line no-console
+          console.error('[shell-desktop] Load failed: save data validation failed.', validationError);
+          clearOperationState();
+          return;
+        }
+
+        // Send hydrate request to worker
+        const requestId = randomUUID().replace(/-/g, '').slice(0, 32);
+        activeHydrateRequestId = requestId;
+
+        // Start timeout timer
+        operationTimeoutTimer = setTimeout(() => {
+          if (activeHydrateRequestId === requestId) {
+            // eslint-disable-next-line no-console
+            console.error(`[shell-desktop] Hydrate request timed out waiting for requestId ${requestId}.`);
+            clearOperationState();
+          }
+        }, REQUEST_TIMEOUT_MS);
+        operationTimeoutTimer.unref?.();
+
+        safePostMessage({ kind: 'hydrate', requestId, save: validSave });
+      } catch (loadError: unknown) {
+        // eslint-disable-next-line no-console
+        console.error('[shell-desktop] Load failed:', loadError);
+        clearOperationState();
+      }
+    })();
+  };
+
+  const triggerOfflineCatchup = (): void => {
+    if (!isReady || hasFailed || isDisposing || operationLocked || !capabilities.canOfflineCatchup) {
+      return;
+    }
+
+    // Build a default OFFLINE_CATCHUP command with 1 hour elapsed and empty resourceDeltas
+    const elapsedMs = 3_600_000; // 1 hour
+    const resourceDeltas: Record<string, number> = {};
+
+    const command: Command = {
+      type: RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP,
+      priority: CommandPriority.SYSTEM,
+      step: nextStep,
+      timestamp: nextStep * stepSizeMs,
+      payload: {
+        elapsedMs,
+        resourceDeltas,
+      },
+    };
+
+    try {
+      safePostMessage({ kind: 'enqueueCommands', commands: [command] });
+      // eslint-disable-next-line no-console
+      console.log('[shell-desktop] Offline catch-up queued.');
+    } catch (dispatchError: unknown) {
+      // eslint-disable-next-line no-console
+      console.error('[shell-desktop] Offline catch-up dispatch failed:', dispatchError);
+    }
+  };
+
+  const getCapabilities = (): SimWorkerCapabilities => capabilities;
+
   const dispose = (): void => {
     isDisposing = true;
     stopTickLoop();
+    clearOperationState();
+    refreshDevMenuState(capabilities, false, false);
     void worker.terminate().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.error(error);
     });
   };
 
-  return { sendControlEvent, sendInputEvent, dispose };
+  return { sendControlEvent, sendInputEvent, triggerSave, triggerLoad, triggerOfflineCatchup, getCapabilities, dispose };
 }
 
 function registerIpcHandlers(): void {
@@ -570,6 +868,15 @@ function installAppMenu(): void {
         ]
       : []),
     { label: 'View', submenu: viewSubmenu },
+    {
+      label: 'Dev',
+      submenu: [
+        devMenuSaveItem,
+        devMenuLoadItem,
+        { type: 'separator' },
+        devMenuOfflineCatchupItem,
+      ],
+    },
     { role: 'windowMenu' },
   ];
 
