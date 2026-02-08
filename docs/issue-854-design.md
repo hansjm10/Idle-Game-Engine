@@ -125,8 +125,8 @@ Desktop shell dev tooling for Save/Load and offline catch-up is tied to a specif
 | State | Description | Entry Condition |
 |-------|-------------|-----------------|
 | `main_bootstrap` | Main process initializes window, IPC, and menu scaffolding with capability-gated actions disabled. | Electron app enters ready flow and `createMainWindow()` begins. |
-| `worker_starting` | Main creates sim worker controller, sends `init`, and waits for `ready` with capabilities. | `main_bootstrap` completes controller construction. |
-| `running_idle` | Worker is ready, tick loop runs, and Save/Load/Offline Catch-Up actions are accepted only when capability flags allow them. | `worker_starting` receives valid `ready` payload. |
+| `worker_starting` | Main creates sim worker controller, sends `init`, and waits for `ready` (protocol v2 or legacy fallback payload). | `main_bootstrap` completes controller construction. |
+| `running_idle` | Worker is ready, tick loop runs, and Save/Load/Offline Catch-Up actions are accepted only when capability flags allow them. | `worker_starting` receives a valid `ready` payload and applies ready normalization rules. |
 | `save_request_pending` | Save operation is in-flight while waiting for worker serialization payload. | User triggers Save from `running_idle` and `canSerialize === true`. |
 | `save_atomic_write` | Main process writes save bytes atomically via temp-file + rename in userData directory. | `save_request_pending` receives serialized bytes. |
 | `load_reading_file` | Main process prompts for save file path and reads bytes from disk. | User triggers Load from `running_idle` and `canSerialize === true`. |
@@ -157,12 +157,19 @@ Desktop shell dev tooling for Save/Load and offline catch-up is tied to a specif
 | `worker_failed` | `app_terminating` |
 | `app_terminating` | `app_terminated` |
 
+### Ready Handshake Compatibility (Canonical)
+- Canonical v2 payload: `{ kind: 'ready'; protocolVersion: 2; stepSizeMs; nextStep; capabilities }`.
+- Canonical legacy fallback payload: `{ kind: 'ready'; stepSizeMs; nextStep }` (missing `protocolVersion` and `capabilities`).
+- Main normalization rule: when both `protocolVersion` and `capabilities` are missing, normalize to `protocolVersion: 1` with `capabilities = { canSerialize: false, canOfflineCatchup: false }`.
+- Any other `ready` shape (for example, missing `stepSizeMs`, malformed capability booleans, or unsupported protocol versions) is invalid and handled as startup failure.
+
 ### Transitions
 | From | Event/Condition | To | Side Effects |
 |------|-----------------|-----|--------------|
 | `main_bootstrap` | Window/controller creation succeeds | `worker_starting` | Create worker thread; send `init`; emit `simStatus: starting`; keep capability-gated menu items disabled. |
 | `main_bootstrap` | App quit/close requested before worker is ready | `app_terminating` | Skip runtime startup and begin shutdown path. |
-| `worker_starting` | Worker emits valid `ready` with capabilities | `running_idle` | Cache `stepSizeMs`/`nextStep`; cache `canSerialize`/`canOfflineCatchup`; emit `simStatus: running`; start tick loop; refresh menu enabled flags. |
+| `worker_starting` | Worker emits valid `ready` (v2 or legacy fallback) | `running_idle` | Normalize `ready` payload (`legacy -> protocolVersion: 1` + disabled capabilities), cache `stepSizeMs`/`nextStep` and capability flags; emit `simStatus: running`; start tick loop; refresh menu enabled flags. |
+| `worker_starting` | Worker emits malformed/unsupported `ready` payload | `worker_failed` | Treat as startup protocol failure; stop tick loop; terminate worker; emit `simStatus: crashed/stopped`; disable Save/Load/Offline menu items; log validation reason. |
 | `worker_starting` | Worker emits `error`/`messageerror`/`exit`, or no `ready` before `WORKER_READY_TIMEOUT_MS` | `worker_failed` | Stop tick loop; terminate worker; emit `simStatus: crashed/stopped`; disable Save/Load/Offline menu items; log reason. |
 | `worker_starting` | App quit/close requested | `app_terminating` | Stop waiting for ready; terminate worker if present. |
 | `running_idle` | Save action invoked and `canSerialize === true` | `save_request_pending` | Send worker `serialize` request; start serialize timeout timer; set operation lock. |
@@ -209,7 +216,7 @@ Desktop shell dev tooling for Save/Load and offline catch-up is tied to a specif
 | State | Error | Recovery State | Actions |
 |-------|-------|----------------|---------|
 | `main_bootstrap` | Window/controller init throws | `app_terminating` | Log startup failure and exit cleanly. |
-| `worker_starting` | Invalid init params, bad ready payload, worker crash, or ready timeout | `worker_failed` | Emit crashed/stopped status, disable actions, terminate worker, log root cause. |
+| `worker_starting` | Invalid init params, malformed/unsupported ready payload (excluding canonical legacy fallback), worker crash, or ready timeout | `worker_failed` | Emit crashed/stopped status, disable actions, terminate worker, log root cause. |
 | `running_idle` | `postMessage` throws or worker emits failure event | `worker_failed` | Invoke global worker-failure handler and stop tick loop. |
 | `save_request_pending` | Serialize timeout | `recoverable_error` | Clear lock/timer and report save timeout. |
 | `save_request_pending` | Worker failure during serialize | `worker_failed` | Abort operation and escalate to global worker-failure handling. |
@@ -263,30 +270,32 @@ This feature does not add CLI commands.
 ### Events
 | Event | Trigger | Payload | Consumers |
 |-------|---------|---------|-----------|
-| `ready` | Worker processes valid `init` and runtime is ready. | `{ kind: 'ready'; protocolVersion: 2; stepSizeMs: number; nextStep: number; capabilities: { canSerialize: boolean; canOfflineCatchup: boolean } }` | Main process (`SimWorkerController`) caches capability flags and enables/disables Dev menu actions. |
+| `ready` | Worker processes valid `init` and runtime is ready. | V2 payload: `{ kind: 'ready'; protocolVersion: 2; stepSizeMs: number; nextStep: number; capabilities: { canSerialize: boolean; canOfflineCatchup: boolean } }`. Legacy compatibility payload: `{ kind: 'ready'; stepSizeMs: number; nextStep: number }` (normalized by main to protocol v1 with both capabilities `false`). | Main process (`SimWorkerController`) normalizes readiness, caches capability flags, and enables/disables Dev menu actions. |
 | `saveData` | Worker completes a `serialize` request. | Success: `{ kind: 'saveData'; requestId: string; ok: true; data: Uint8Array }` or failure: `{ kind: 'saveData'; requestId: string; ok: false; error: InterfaceError }`. | Main process save flow (`save_request_pending` -> `save_atomic_write` or `recoverable_error`). |
 | `hydrateResult` | Worker completes a `hydrate` request. | Success: `{ kind: 'hydrateResult'; requestId: string; ok: true; nextStep: number }` or failure: `{ kind: 'hydrateResult'; requestId: string; ok: false; error: InterfaceError }`. | Main process load flow (`load_hydrating` -> `running_idle` or `recoverable_error`). |
 | `error` | Unhandled worker exception or protocol fault in worker. | `{ kind: 'error'; error: string }` | Main process failure handler transitions to `worker_failed`. |
 
 ### Validation Rules
-| Field | Type | Constraints | Error | Validation Mode |
-|-------|------|-------------|-------|-----------------|
-| `serialize.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | Sync |
-| `hydrate.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | Sync |
-| `hydrate.save` | `GameStateSaveFormat` object | Required; must pass `loadGameStateSaveFormat`; version must resolve to `1`. | `INVALID_SAVE_DATA` | Sync (worker), Async caller chain for file read/decode before worker call |
-| `hydrate.save.savedAt` | `number` | Required; finite; `>= 0`. | `INVALID_SAVE_DATA` | Sync |
-| `hydrate.save.resources` | `object` | Required key present. | `INVALID_SAVE_DATA` | Sync |
-| `hydrate.save.progression` | `object` | Required key present. | `INVALID_SAVE_DATA` | Sync |
-| `hydrate.save.commandQueue` | `object` | Required key present. | `INVALID_SAVE_DATA` | Sync |
-| `saveData.data` | `Uint8Array` | Required when `ok: true`; `byteLength > 0`. | `SERIALIZE_FAILED` | Sync |
-| `offlineCatchup.elapsedMs` | `number` | Required; finite; `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | Sync |
-| `offlineCatchup.resourceDeltas` | `Record<string, number>` | Required by shell contract; object only; no arrays; default `{}` when no deltas provided. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | Sync |
-| `offlineCatchup.maxElapsedMs` | `number` | Optional; if set, finite and `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | Sync |
-| `offlineCatchup.maxSteps` | `number` | Optional; if set, integer and `>= 1`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | Sync |
-| `saveFilePath` | absolute path | Resolved under `app.getPath('userData')`; save writes use temp file in same dir then rename. | `IO_ERROR` | Async |
-| `loadFileBytes` | `Uint8Array` | Required; non-empty; compression header must be supported before JSON parse. | `INVALID_SAVE_DATA` | Async decode + sync shape validation |
+| Field | Type | Constraints | Error | Message Template | Validation Mode |
+|-------|------|-------------|-------|------------------|-----------------|
+| `ready.protocolVersion` | `number \| undefined` | Optional; if present must be integer `1` or `2`; if omitted with omitted `ready.capabilities`, normalize to legacy protocol `1`. | `PROTOCOL_VALIDATION_FAILED` | `Invalid ready.protocolVersion: expected 1 or 2, received {actual}.` | Sync (main) |
+| `ready.capabilities` | `{ canSerialize: boolean; canOfflineCatchup: boolean } \| undefined` | Required when `ready.protocolVersion === 2`; optional only for legacy fallback path (protocol `1`/omitted). | `PROTOCOL_VALIDATION_FAILED` | `Invalid ready.capabilities: expected { canSerialize: boolean; canOfflineCatchup: boolean } for protocolVersion 2.` | Sync (main) |
+| `serialize.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | `Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.` | Sync |
+| `hydrate.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | `Invalid hydrate.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.` | Sync |
+| `hydrate.save` | `GameStateSaveFormat` object | Required; must pass `loadGameStateSaveFormat`; version must resolve to `1`. | `INVALID_SAVE_DATA` | `Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.` | Sync (worker), Async caller chain for file read/decode before worker call |
+| `hydrate.save.savedAt` | `number` | Required; finite; `>= 0`. | `INVALID_SAVE_DATA` | `Invalid hydrate.save.savedAt: expected finite number >= 0.` | Sync |
+| `hydrate.save.resources` | `object` | Required key present. | `INVALID_SAVE_DATA` | `Invalid hydrate.save.resources: expected object.` | Sync |
+| `hydrate.save.progression` | `object` | Required key present. | `INVALID_SAVE_DATA` | `Invalid hydrate.save.progression: expected object.` | Sync |
+| `hydrate.save.commandQueue` | `object` | Required key present. | `INVALID_SAVE_DATA` | `Invalid hydrate.save.commandQueue: expected object.` | Sync |
+| `saveData.data` | `Uint8Array` | Required when `ok: true`; `byteLength > 0`. | `SERIALIZE_FAILED` | `Invalid saveData.data: expected non-empty Uint8Array.` | Sync |
+| `offlineCatchup.elapsedMs` | `number` | Required; finite; `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | `Invalid offlineCatchup.elapsedMs: expected finite number > 0.` | Sync |
+| `offlineCatchup.resourceDeltas` | `Record<string, number>` | Required by shell contract; object only; no arrays; default `{}` when no deltas provided. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | `Invalid offlineCatchup.resourceDeltas: expected non-array object with numeric values.` | Sync |
+| `offlineCatchup.maxElapsedMs` | `number` | Optional; if set, finite and `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | `Invalid offlineCatchup.maxElapsedMs: expected finite number > 0 when provided.` | Sync |
+| `offlineCatchup.maxSteps` | `number` | Optional; if set, integer and `>= 1`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | `Invalid offlineCatchup.maxSteps: expected integer >= 1 when provided.` | Sync |
+| `saveFilePath` | absolute path | Resolved under `app.getPath('userData')`; save writes use temp file in same dir then rename. | `IO_ERROR` | `Invalid saveFilePath: expected absolute path under app.getPath('userData').` | Async |
+| `loadFileBytes` | `Uint8Array` | Required; non-empty; compression header must be supported before JSON parse. | `INVALID_SAVE_DATA` | `Invalid loadFileBytes: expected non-empty Uint8Array with supported compression header.` | Async decode + sync shape validation |
 
-Validation failure behavior is consistent across commands: return an operation result with `ok: false` and `error: InterfaceError` when the worker remains healthy; transition to `worker_failed` only for worker process-level failures.
+Validation failure behavior is consistent across commands: return an operation result with `ok: false` and `error: InterfaceError` when the worker remains healthy; transition to `worker_failed` only for worker process-level failures. Message strings are deterministic and must use the exact templates above (with placeholder substitution where applicable).
 
 ### Error Contract
 All command-level failures use the same error envelope:
@@ -310,9 +319,9 @@ type InterfaceError = Readonly<{
 ### Contract Compatibility
 | Gate | Decision |
 |------|----------|
-| Breaking change to existing interface? | **Yes, internal-only**: worker protocol `ready` payload adds required `protocolVersion` and `capabilities`; new `serialize`/`hydrate` message kinds are introduced. |
-| Migration path | Ship main-process and worker updates together in the same release. For one compatibility window, main treats missing `capabilities` as `{ canSerialize: false, canOfflineCatchup: false }` and treats missing `protocolVersion` as `1` before removing fallback. |
-| Versioning requirements | Worker protocol is versioned with `protocolVersion` in `ready`. This design targets protocol version `2`. Main rejects versions greater than `2` with a recoverable error and keeps capability-gated actions disabled. |
+| Breaking change to existing interface? | **Yes, internal-only with explicit legacy handling**: protocol v2 workers send `ready.protocolVersion` + `ready.capabilities`; main also accepts legacy `ready` payloads that omit both fields. |
+| Migration path | Ship main-process and worker updates together in the same release. Canonical compatibility behavior is fixed: missing `protocolVersion`/`capabilities` is treated as legacy protocol v1 with `{ canSerialize: false, canOfflineCatchup: false }`. |
+| Versioning requirements | Main accepts `ready.protocolVersion` values `1` and `2` (with omission normalized to `1`). Any other value is rejected as protocol validation failure during startup and transitions to `worker_failed`. |
 
 ### UI Interactions
 | Action | Request | Loading State | Success | Error |
@@ -362,22 +371,23 @@ T5 -> depends on T1, T3, T4
 ### Task Breakdown
 | ID | Title | Summary | Files | Acceptance Criteria |
 |----|-------|---------|-------|---------------------|
-| T1 | Define Worker Protocol v2 Contracts | Extend worker protocol types with capability signaling and save/load envelopes. | `packages/shell-desktop/src/sim/worker-protocol.ts` | `ready` includes protocol/capabilities, new `serialize`/`hydrate` request types exist, and `saveData`/`hydrateResult` envelopes use `InterfaceError`. |
+| T1 | Define Worker Protocol v2 Contracts | Extend worker protocol types with capability signaling and save/load envelopes. | `packages/shell-desktop/src/sim/worker-protocol.ts` | Protocol v2 `ready` includes protocol/capabilities; legacy `ready` compatibility shape (missing both fields) is modeled for main normalization; new `serialize`/`hydrate` request types and `saveData`/`hydrateResult` envelopes use `InterfaceError`. |
 | T2 | Extend Sim Runtime Capability Surface | Add optional serialize/hydrate hooks to `SimRuntime` while preserving demo runtime behavior. | `packages/shell-desktop/src/sim/sim-runtime.ts`, `packages/shell-desktop/src/sim/sim-runtime.test.ts` | Runtime type exposes optional methods; existing tick/input behavior remains unchanged in tests. |
-| T3 | Implement Worker Save/Load Handlers | Handle `serialize`/`hydrate` messages in worker and emit structured protocol v2 responses. | `packages/shell-desktop/src/sim-worker.ts`, `packages/shell-desktop/src/sim-worker.test.ts` | Worker emits protocol v2 `ready` with capabilities; serialize/hydrate success/failure paths covered by tests. |
+| T3 | Implement Worker Save/Load Handlers | Handle `serialize`/`hydrate` messages in worker and emit structured protocol v2 responses. | `packages/shell-desktop/src/sim-worker.ts`, `packages/shell-desktop/src/sim-worker.test.ts` | Worker emits protocol v2 `ready` with capabilities; serialize/hydrate success/failure paths and deterministic validation message templates are covered by tests. |
 | T4 | Add Atomic Save Storage Utility | Implement temp-write + rename persistence and stale temp cleanup for save files. | `packages/shell-desktop/src/save-storage.ts`, `packages/shell-desktop/src/save-storage.test.ts` | Save writes are atomic, cleanup is best-effort, and utility tests cover success/failure/cleanup behavior. |
-| T5 | Wire Main Save/Load + Dev Menu Actions | Integrate capability-gated Dev menu actions, request timeouts/locks, load decode/hydrate flow, and offline catch-up dispatch. | `packages/shell-desktop/src/main.ts`, `packages/shell-desktop/src/main.test.ts` | Dev menu actions gate correctly; save/load/offline flows handle success + recoverable errors + worker failures; compatibility fallback for protocol v1 ready payload is covered. |
+| T5 | Wire Main Save/Load + Dev Menu Actions | Integrate capability-gated Dev menu actions, request timeouts/locks, load decode/hydrate flow, and offline catch-up dispatch. | `packages/shell-desktop/src/main.ts`, `packages/shell-desktop/src/main.test.ts` | Dev menu actions gate correctly; save/load/offline flows handle success + recoverable errors + worker failures; canonical `ready` normalization fallback (missing protocol/capabilities => protocol v1 with disabled capabilities) is covered. |
 
 ### Task Details
 
 **T1: Define Worker Protocol v2 Contracts**
 - Summary: Introduce explicit protocol v2 message contracts and shared interface error envelope used by save/load operations.
 - Files:
-  - `packages/shell-desktop/src/sim/worker-protocol.ts` - add `protocolVersion`/`capabilities` to `ready`, new inbound `serialize`/`hydrate` messages, outbound `saveData`/`hydrateResult` messages, and `InterfaceError` union codes.
+  - `packages/shell-desktop/src/sim/worker-protocol.ts` - add protocol v2 `ready` (`protocolVersion`/`capabilities`), explicit legacy `ready` compatibility shape (missing both fields), new inbound `serialize`/`hydrate` messages, outbound `saveData`/`hydrateResult` messages, and `InterfaceError` union codes.
 - Acceptance Criteria:
-  1. `SimWorkerReadyMessage` requires `protocolVersion: 2` and `capabilities.canSerialize` + `capabilities.canOfflineCatchup`.
-  2. `SimWorkerInboundMessage` includes `{ kind: 'serialize'; requestId: string }` and `{ kind: 'hydrate'; requestId: string; save: GameStateSaveFormat }`.
-  3. `SimWorkerOutboundMessage` includes success/error variants for `saveData` and `hydrateResult` using `InterfaceError`.
+  1. Protocol v2 `SimWorkerReadyMessage` requires `protocolVersion: 2` and `capabilities.canSerialize` + `capabilities.canOfflineCatchup`.
+  2. Legacy compatibility `ready` shape (`{ kind: 'ready'; stepSizeMs; nextStep }`) is represented for main-process normalization to protocol v1 disabled capabilities.
+  3. `SimWorkerInboundMessage` includes `{ kind: 'serialize'; requestId: string }` and `{ kind: 'hydrate'; requestId: string; save: GameStateSaveFormat }`.
+  4. `SimWorkerOutboundMessage` includes success/error variants for `saveData` and `hydrateResult` using `InterfaceError`.
 - Dependencies: None
 - Verification: `pnpm --filter @idle-engine/shell-desktop typecheck`
 
@@ -402,7 +412,7 @@ T5 -> depends on T1, T3, T4
   1. `init` emits `ready` with `protocolVersion: 2` and capability flags derived from runtime.
   2. `serialize` emits `saveData` success with non-empty bytes when supported, otherwise `CAPABILITY_UNAVAILABLE`.
   3. `hydrate` emits `hydrateResult` success/error and does not break tick/enqueue/shutdown behavior.
-  4. Invalid request IDs or malformed payloads return `PROTOCOL_VALIDATION_FAILED`/`INVALID_SAVE_DATA` responses.
+  4. Invalid request IDs or malformed payloads return `PROTOCOL_VALIDATION_FAILED`/`INVALID_SAVE_DATA` responses with deterministic messages from Section 3 templates.
 - Dependencies: `T1`, `T2`
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim-worker.test.ts`
 
@@ -428,7 +438,8 @@ T5 -> depends on T1, T3, T4
   2. Save flow sends `serialize`, handles matching `saveData`, and persists bytes via atomic storage utility.
   3. Load flow reads selected file, decodes/validates save data, sends `hydrate`, and preserves current runtime on failure.
   4. Offline catch-up action enqueues `OFFLINE_CATCHUP` with validated payload and default `resourceDeltas: {}`.
-  5. Missing `protocolVersion`/`capabilities` in `ready` is treated as protocol v1 compatibility fallback with disabled capability-gated actions.
+  5. Missing `protocolVersion`/`capabilities` in `ready` is normalized to protocol v1 with disabled capability-gated actions.
+  6. Any other malformed/unsupported `ready` payload is rejected during startup and transitions to `worker_failed`.
 - Dependencies: `T1`, `T3`, `T4`
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
 
