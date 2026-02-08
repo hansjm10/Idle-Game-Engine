@@ -330,7 +330,128 @@ UI state gates:
 N/A - This feature does not add or modify data schemas.
 
 ## 5. Tasks
-[To be completed in design_plan phase]
+
+### Planning Gates
+1. **Smallest independently testable unit**: one protocol/flow slice per layer (protocol types, runtime capability surface, worker request handlers, atomic filesystem utility, main-process orchestration/menu gating), each with a targeted test command.
+2. **Dependencies between tasks**: yes. Worker handlers depend on protocol/runtime contracts, and main orchestration depends on worker protocol + atomic storage utility.
+3. **Parallelizable tasks**: yes. `T1`, `T2`, and `T4` can be implemented in parallel. `T3` can start after `T1` + `T2`. `T5` starts after `T1` + `T3` + `T4`.
+4. **Specific files per task**: listed in the breakdown and details for `T1`-`T5`.
+5. **Acceptance criteria per task**: listed as concrete, verifiable checks for `T1`-`T5`.
+6. **Verification command per task**: listed per task (package-scoped typecheck or Vitest file run).
+7. **What must be done first**: protocol/runtime contracts (`T1`, `T2`) because all request/response handling depends on stable message and capability types.
+8. **What must be done last**: main-process orchestration/menu/offline wiring (`T5`) after worker handlers and atomic storage utility exist.
+9. **Circular dependencies**: none. The dependency graph is a DAG: foundational contracts -> worker/storage -> main wiring.
+10. **Build/config changes needed**: none expected (`package.json`, `tsconfig`, workspace config unchanged).
+11. **New dependencies to install**: none expected (uses existing `@idle-engine/core`, Electron, and Node `fs` APIs).
+12. **Environment variables/secrets needed**: none.
+
+### Goal-to-Task Mapping
+- Goal: capability-based Save/Load enablement -> `T1`, `T2`, `T3`, `T5`
+- Goal: atomic save writes -> `T4`, `T5`
+- Goal: capability-based offline catch-up enablement -> `T3`, `T5`
+
+### Task Dependency Graph
+```
+T1 (no deps)
+T2 (no deps)
+T4 (no deps)
+T3 -> depends on T1, T2
+T5 -> depends on T1, T3, T4
+```
+
+### Task Breakdown
+| ID | Title | Summary | Files | Acceptance Criteria |
+|----|-------|---------|-------|---------------------|
+| T1 | Define Worker Protocol v2 Contracts | Extend worker protocol types with capability signaling and save/load envelopes. | `packages/shell-desktop/src/sim/worker-protocol.ts` | `ready` includes protocol/capabilities, new `serialize`/`hydrate` request types exist, and `saveData`/`hydrateResult` envelopes use `InterfaceError`. |
+| T2 | Extend Sim Runtime Capability Surface | Add optional serialize/hydrate hooks to `SimRuntime` while preserving demo runtime behavior. | `packages/shell-desktop/src/sim/sim-runtime.ts`, `packages/shell-desktop/src/sim/sim-runtime.test.ts` | Runtime type exposes optional methods; existing tick/input behavior remains unchanged in tests. |
+| T3 | Implement Worker Save/Load Handlers | Handle `serialize`/`hydrate` messages in worker and emit structured protocol v2 responses. | `packages/shell-desktop/src/sim-worker.ts`, `packages/shell-desktop/src/sim-worker.test.ts` | Worker emits protocol v2 `ready` with capabilities; serialize/hydrate success/failure paths covered by tests. |
+| T4 | Add Atomic Save Storage Utility | Implement temp-write + rename persistence and stale temp cleanup for save files. | `packages/shell-desktop/src/save-storage.ts`, `packages/shell-desktop/src/save-storage.test.ts` | Save writes are atomic, cleanup is best-effort, and utility tests cover success/failure/cleanup behavior. |
+| T5 | Wire Main Save/Load + Dev Menu Actions | Integrate capability-gated Dev menu actions, request timeouts/locks, load decode/hydrate flow, and offline catch-up dispatch. | `packages/shell-desktop/src/main.ts`, `packages/shell-desktop/src/main.test.ts` | Dev menu actions gate correctly; save/load/offline flows handle success + recoverable errors + worker failures; compatibility fallback for protocol v1 ready payload is covered. |
+
+### Task Details
+
+**T1: Define Worker Protocol v2 Contracts**
+- Summary: Introduce explicit protocol v2 message contracts and shared interface error envelope used by save/load operations.
+- Files:
+  - `packages/shell-desktop/src/sim/worker-protocol.ts` - add `protocolVersion`/`capabilities` to `ready`, new inbound `serialize`/`hydrate` messages, outbound `saveData`/`hydrateResult` messages, and `InterfaceError` union codes.
+- Acceptance Criteria:
+  1. `SimWorkerReadyMessage` requires `protocolVersion: 2` and `capabilities.canSerialize` + `capabilities.canOfflineCatchup`.
+  2. `SimWorkerInboundMessage` includes `{ kind: 'serialize'; requestId: string }` and `{ kind: 'hydrate'; requestId: string; save: GameStateSaveFormat }`.
+  3. `SimWorkerOutboundMessage` includes success/error variants for `saveData` and `hydrateResult` using `InterfaceError`.
+- Dependencies: None
+- Verification: `pnpm --filter @idle-engine/shell-desktop typecheck`
+
+**T2: Extend Sim Runtime Capability Surface**
+- Summary: Expand `SimRuntime` contract so worker can detect save/load capabilities while retaining current demo behavior.
+- Files:
+  - `packages/shell-desktop/src/sim/sim-runtime.ts` - add optional `serialize`/`hydrate` methods to `SimRuntime` type and keep existing command/tick behavior stable.
+  - `packages/shell-desktop/src/sim/sim-runtime.test.ts` - assert runtime API compatibility and no regressions in current command handling.
+- Acceptance Criteria:
+  1. `SimRuntime` type allows optional `serialize()` and `hydrate(save)` methods without breaking existing call sites.
+  2. Demo runtime continues to process `COLLECT_RESOURCE` and `INPUT_EVENT` exactly as before.
+  3. Existing `hasCommandHandler` behavior remains valid for capability detection tests.
+- Dependencies: None
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim/sim-runtime.test.ts`
+
+**T3: Implement Worker Save/Load Handlers**
+- Summary: Add worker-side request handling for serialize/hydrate and capability reporting in the `ready` message.
+- Files:
+  - `packages/shell-desktop/src/sim-worker.ts` - emit protocol v2 `ready`, validate request envelopes, call runtime serialize/hydrate when available, and return structured `InterfaceError` failures.
+  - `packages/shell-desktop/src/sim-worker.test.ts` - add tests for serialize/hydrate success, capability-unavailable failures, and malformed request rejection.
+- Acceptance Criteria:
+  1. `init` emits `ready` with `protocolVersion: 2` and capability flags derived from runtime.
+  2. `serialize` emits `saveData` success with non-empty bytes when supported, otherwise `CAPABILITY_UNAVAILABLE`.
+  3. `hydrate` emits `hydrateResult` success/error and does not break tick/enqueue/shutdown behavior.
+  4. Invalid request IDs or malformed payloads return `PROTOCOL_VALIDATION_FAILED`/`INVALID_SAVE_DATA` responses.
+- Dependencies: `T1`, `T2`
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/sim-worker.test.ts`
+
+**T4: Add Atomic Save Storage Utility**
+- Summary: Implement filesystem helpers for atomic writes, reads, and stale temp cleanup in the shell main process.
+- Files:
+  - `packages/shell-desktop/src/save-storage.ts` - add save path resolution under `app.getPath('userData')`, temp write + rename, and stale temp cleanup helper.
+  - `packages/shell-desktop/src/save-storage.test.ts` - add unit tests for atomic success path and cleanup on failure.
+- Acceptance Criteria:
+  1. Save writes always use temp file in the target directory followed by `rename`.
+  2. Failure during write/rename leaves previously committed save untouched and performs best-effort temp cleanup.
+  3. Startup cleanup removes stale temp files matching the save temp naming convention.
+- Dependencies: None
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/save-storage.test.ts`
+
+**T5: Wire Main Save/Load + Dev Menu Actions**
+- Summary: Integrate end-to-end main-process orchestration for save/load/offline dev tooling with capability-based gating.
+- Files:
+  - `packages/shell-desktop/src/main.ts` - add capability cache, request timeout/operation lock handling, save/load orchestration, offline catch-up dispatch, and Dev menu items with accelerators + enabled gating.
+  - `packages/shell-desktop/src/main.test.ts` - add/update tests for menu gating, save/load success/failure/timeouts, protocol compatibility fallback, and offline catch-up dispatch.
+- Acceptance Criteria:
+  1. Dev menu includes `Save`, `Load`, and `Offline Catch-Up` actions with `CmdOrCtrl+S`/`CmdOrCtrl+O` accelerators and correct enabled/disabled state.
+  2. Save flow sends `serialize`, handles matching `saveData`, and persists bytes via atomic storage utility.
+  3. Load flow reads selected file, decodes/validates save data, sends `hydrate`, and preserves current runtime on failure.
+  4. Offline catch-up action enqueues `OFFLINE_CATCHUP` with validated payload and default `resourceDeltas: {}`.
+  5. Missing `protocolVersion`/`capabilities` in `ready` is treated as protocol v1 compatibility fallback with disabled capability-gated actions.
+- Dependencies: `T1`, `T3`, `T4`
+- Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
 
 ## 6. Validation
-[To be completed in design_plan phase]
+
+### Pre-Implementation Checks
+- [ ] All dependencies installed: `pnpm install`
+- [ ] Types check baseline: `pnpm typecheck`
+- [ ] Existing tests baseline: `pnpm test`
+
+### Post-Implementation Checks
+- [ ] Types check: `pnpm typecheck`
+- [ ] Lint passes: `pnpm lint`
+- [ ] All tests pass: `pnpm test`
+- [ ] Targeted tests added/updated for:
+  - `packages/shell-desktop/src/sim/sim-runtime.test.ts`
+  - `packages/shell-desktop/src/sim-worker.test.ts`
+  - `packages/shell-desktop/src/save-storage.test.ts`
+  - `packages/shell-desktop/src/main.test.ts`
+- [ ] Coverage docs regenerated and tracked: `pnpm coverage:md` (includes updated `docs/coverage/index.md`)
+
+### Manual Verification (if applicable)
+- [ ] Start shell desktop (`pnpm --filter @idle-engine/shell-desktop start`) and confirm Dev menu exists with Save/Load/Offline Catch-Up actions.
+- [ ] Confirm Save/Load/Offline actions are disabled until worker `ready`, then enabled only for reported capabilities.
+- [ ] Trigger Save and verify a save file is written under `app.getPath('userData')` with no leftover temp file.
+- [ ] Trigger Load with an invalid/corrupt file and confirm recoverable error handling (no worker crash, runtime continues).
