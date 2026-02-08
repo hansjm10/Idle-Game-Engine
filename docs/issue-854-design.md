@@ -58,7 +58,7 @@ The desktop shell (`packages/shell-desktop`) needs Save/Load and offline catch-u
 
 3. **Add menu items to `installAppMenu()`**: A "Dev" menu with Save (Ctrl+S), Load (Ctrl+O), and Offline Catch-Up items. Items are `enabled` based on reported capabilities from the worker.
 
-4. **Atomic save writes in main process**: When save data arrives from the worker, write to `app.getPath('userData')/<save-filename>.save` using the temp+rename pattern from `content-compiler/src/fs/writer.ts`.
+4. **Atomic save writes in main process**: When save data arrives from the worker, write to canonical path `path.join(app.getPath('userData'), 'idle-engine-save.bin')` using temp+rename with temp files named `.tmp-idle-engine-save.bin-<randomUUID()>` in the same directory.
 
 5. **Use `hasCommandHandler(RUNTIME_COMMAND_TYPES.OFFLINE_CATCHUP)`** in the worker to detect offline catch-up support (already exposed on `SimRuntime`).
 
@@ -76,7 +76,7 @@ The desktop shell (`packages/shell-desktop`) needs Save/Load and offline catch-u
 
 - **Demo runtime lacks serialize/hydrate**: The current `sim-runtime.ts` is a bare demo that doesn't use `wireGameRuntime()`. Save/Load menu items will be correctly disabled for the demo, but **end-to-end testing requires either a test fixture with a wired runtime or the demo itself being upgraded**. Mitigation: Unit tests can mock the capability signaling; integration testing can use a minimal content pack.
 - **Worker message serialization for `Uint8Array`**: Electron `Worker.postMessage` supports transferable objects including `ArrayBuffer`. The `encodeGameStateSave` returns `Uint8Array` which backs an `ArrayBuffer`. Need to ensure proper transferable handling to avoid unnecessary copies. Mitigation: Use `worker.postMessage(msg, [msg.data.buffer])` transfer list.
-- **Save file location naming**: Without a game-mode identifier, save files need a naming convention. Options: use content pack ID, use a fixed name, or allow configuration. Mitigation: Start with a configurable save filename pattern (default to content pack ID if available, fallback to `idle-engine-save.bin`).
+- **Single-save artifact scope**: This design intentionally uses one canonical artifact (`idle-engine-save.bin`) in `app.getPath('userData')`, so multiple simultaneous pack-specific save slots are out of scope. Mitigation: keep constants centralized in `save-storage.ts` so a future multi-slot/path strategy can extend without protocol changes.
 - **Offline catch-up `resourceDeltas` parameter**: The issue asks whether `resourceDeltas` should be optional or populated. The core handler validates it must be an object but accepts `{}`. Mitigation: Shell tooling should default to `resourceDeltas: {}` which triggers time-credit-only offline catch-up.
 - **Race conditions during save**: If the user triggers Save while a tick is in progress, the serialized state should be consistent. Mitigation: The worker processes messages sequentially on its event loop, so a `serialize` message will be handled between ticks, guaranteeing a consistent snapshot.
 
@@ -263,8 +263,8 @@ This feature does not add CLI commands.
 ### Worker Commands
 | Command | Invocation Pattern | Input | Success | Errors |
 |---------|--------------------|-------|---------|--------|
-| `serialize` | `worker.postMessage({ kind: 'serialize', requestId })` | `{ kind: 'serialize'; requestId: string }` | Worker emits `{ kind: 'saveData', requestId, ok: true, data: Uint8Array }`. Main writes `data` atomically to disk. | Worker emits `{ kind: 'saveData', requestId, ok: false, error: InterfaceError }` on capability or serialize failure. Main treats missing response before `SERIALIZE_TIMEOUT_MS` as `REQUEST_TIMEOUT`. Worker `error`/`exit` triggers `worker_failed`. |
-| `hydrate` | `worker.postMessage({ kind: 'hydrate', requestId, save })` | `{ kind: 'hydrate'; requestId: string; save: GameStateSaveFormat }` | Worker emits `{ kind: 'hydrateResult', requestId, ok: true, nextStep: number }` and resumes normal ticking. | Worker emits `{ kind: 'hydrateResult', requestId, ok: false, error: InterfaceError }` when validation or hydrate fails. Main treats missing response before `HYDRATE_TIMEOUT_MS` as `REQUEST_TIMEOUT`. Worker `error`/`exit` triggers `worker_failed`. |
+| `serialize` | `worker.postMessage({ kind: 'serialize', requestId })` | `{ kind: 'serialize'; requestId: string }` | Worker emits `{ kind: 'saveData', requestId, ok: true, data: Uint8Array }`. Main writes `data` atomically to disk. | Worker emits `{ kind: 'saveData', requestId, ok: false, error: InterfaceError }` on capability or serialize failure. Main ignores unmatched/duplicate/late `saveData.requestId` values and waits for the active request until `SERIALIZE_TIMEOUT_MS` (`REQUEST_TIMEOUT`). Worker `error`/`exit` triggers `worker_failed`. |
+| `hydrate` | `worker.postMessage({ kind: 'hydrate', requestId, save })` | `{ kind: 'hydrate'; requestId: string; save: GameStateSaveFormat }` | Worker emits `{ kind: 'hydrateResult', requestId, ok: true, nextStep: number }` and resumes normal ticking. | Worker emits `{ kind: 'hydrateResult', requestId, ok: false, error: InterfaceError }` when validation or hydrate fails. Main ignores unmatched/duplicate/late `hydrateResult.requestId` values and waits for the active request until `HYDRATE_TIMEOUT_MS` (`REQUEST_TIMEOUT`). Worker `error`/`exit` triggers `worker_failed`. |
 | `enqueueCommands` (`OFFLINE_CATCHUP`) | `worker.postMessage({ kind: 'enqueueCommands', commands: [command] })` | `command = { type: 'OFFLINE_CATCHUP', priority: SYSTEM, step, timestamp, payload: { elapsedMs, resourceDeltas, maxElapsedMs?, maxSteps? } }` | Message is accepted and queued; effect is visible on subsequent `frame` events. | Main-side input validation failure prevents dispatch (`INVALID_OFFLINE_CATCHUP_REQUEST`). Worker-side invalid payload becomes a no-op in the handler; worker transport failure triggers `worker_failed`. |
 
 ### Events
@@ -275,6 +275,13 @@ This feature does not add CLI commands.
 | `hydrateResult` | Worker completes a `hydrate` request. | Success: `{ kind: 'hydrateResult'; requestId: string; ok: true; nextStep: number }` or failure: `{ kind: 'hydrateResult'; requestId: string; ok: false; error: InterfaceError }`. | Main process load flow (`load_hydrating` -> `running_idle` or `recoverable_error`). |
 | `error` | Unhandled worker exception or protocol fault in worker. | `{ kind: 'error'; error: string }` | Main process failure handler transitions to `worker_failed`. |
 
+### Request Correlation Rules (Canonical)
+- Main allows exactly one active save/load operation request at a time via operation lock (`serialize` or `hydrate`).
+- A `saveData` response is consumed only when `requestId` matches the active serialize request. Any unmatched, duplicate, or late `saveData` response is ignored and does not change state.
+- A `hydrateResult` response is consumed only when `requestId` matches the active hydrate request. Any unmatched, duplicate, or late `hydrateResult` response is ignored and does not change state.
+- Ignored unmatched/duplicate/late responses are logged at debug/warn level for diagnostics, but do not trigger `worker_failed`.
+- If no matching response arrives before timeout, main emits `REQUEST_TIMEOUT` and transitions to `recoverable_error`.
+
 ### Validation Rules
 | Field | Type | Constraints | Error | Message Template | Validation Mode |
 |-------|------|-------------|-------|------------------|-----------------|
@@ -282,6 +289,8 @@ This feature does not add CLI commands.
 | `ready.capabilities` | `{ canSerialize: boolean; canOfflineCatchup: boolean } \| undefined` | Required when `ready.protocolVersion === 2`; optional only for legacy fallback path (protocol `1`/omitted). | `PROTOCOL_VALIDATION_FAILED` | `Invalid ready.capabilities: expected { canSerialize: boolean; canOfflineCatchup: boolean } for protocolVersion 2.` | Sync (main) |
 | `serialize.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | `Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.` | Sync |
 | `hydrate.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | `Invalid hydrate.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.` | Sync |
+| `saveData.requestId` (main correlation) | `string` | Must equal the active serialize `requestId` while in `save_request_pending`; unmatched/duplicate/late responses are ignored and pending request remains active. | `REQUEST_TIMEOUT` (only if no matching response arrives in time) | `Save request timed out waiting for requestId {requestId}.` | Sync (main) + timeout timer |
+| `hydrateResult.requestId` (main correlation) | `string` | Must equal the active hydrate `requestId` while in `load_hydrating`; unmatched/duplicate/late responses are ignored and pending request remains active. | `REQUEST_TIMEOUT` (only if no matching response arrives in time) | `Hydrate request timed out waiting for requestId {requestId}.` | Sync (main) + timeout timer |
 | `hydrate.save` | `GameStateSaveFormat` object | Required; must pass `loadGameStateSaveFormat`; version must resolve to `1`. | `INVALID_SAVE_DATA` | `Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.` | Sync (worker), Async caller chain for file read/decode before worker call |
 | `hydrate.save.savedAt` | `number` | Required; finite; `>= 0`. | `INVALID_SAVE_DATA` | `Invalid hydrate.save.savedAt: expected finite number >= 0.` | Sync |
 | `hydrate.save.resources` | `object` | Required key present. | `INVALID_SAVE_DATA` | `Invalid hydrate.save.resources: expected object.` | Sync |
@@ -292,7 +301,8 @@ This feature does not add CLI commands.
 | `offlineCatchup.resourceDeltas` | `Record<string, number>` | Required by shell contract; object only; no arrays; default `{}` when no deltas provided. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | `Invalid offlineCatchup.resourceDeltas: expected non-array object with numeric values.` | Sync |
 | `offlineCatchup.maxElapsedMs` | `number` | Optional; if set, finite and `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | `Invalid offlineCatchup.maxElapsedMs: expected finite number > 0 when provided.` | Sync |
 | `offlineCatchup.maxSteps` | `number` | Optional; if set, integer and `>= 1`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | `Invalid offlineCatchup.maxSteps: expected integer >= 1 when provided.` | Sync |
-| `saveFilePath` | absolute path | Resolved under `app.getPath('userData')`; save writes use temp file in same dir then rename. | `IO_ERROR` | `Invalid saveFilePath: expected absolute path under app.getPath('userData').` | Async |
+| `saveFilePath` | absolute path | Must equal `path.join(app.getPath('userData'), 'idle-engine-save.bin')`; save writes use temp file in same dir then rename. | `IO_ERROR` | `Invalid saveFilePath: expected canonical path app.getPath('userData')/idle-engine-save.bin.` | Async |
+| `saveTempPath` | absolute path | Must be in `dirname(saveFilePath)` and match basename pattern `.tmp-idle-engine-save.bin-<uuid>`. | `IO_ERROR` | `Invalid saveTempPath: expected .tmp-idle-engine-save.bin-<uuid> in canonical save directory.` | Async |
 | `loadFileBytes` | `Uint8Array` | Required; non-empty; compression header must be supported before JSON parse. | `INVALID_SAVE_DATA` | `Invalid loadFileBytes: expected non-empty Uint8Array with supported compression header.` | Async decode + sync shape validation |
 
 Validation failure behavior is consistent across commands: return an operation result with `ok: false` and `error: InterfaceError` when the worker remains healthy; transition to `worker_failed` only for worker process-level failures. Message strings are deterministic and must use the exact templates above (with placeholder substitution where applicable).
@@ -336,7 +346,18 @@ UI state gates:
 - Any active operation lock disables all three actions until completion.
 
 ## 4. Data
-N/A - This feature does not add or modify data schemas.
+
+### Save Artifacts (Canonical)
+| Artifact | Canonical Value | Producer | Consumer | Notes |
+|----------|-----------------|----------|----------|-------|
+| Save directory | `app.getPath('userData')` | Main process save-storage utility | Save, load, startup cleanup flows | Existing Electron per-user directory; create on demand if missing. |
+| Committed save file | `path.join(app.getPath('userData'), 'idle-engine-save.bin')` | `save_atomic_write` success path | Load flow and manual inspection | Single canonical artifact for this issue scope. |
+| Temp save file | `path.join(app.getPath('userData'), '.tmp-idle-engine-save.bin-<randomUUID()>')` | `save_atomic_write` before rename | Atomic rename and cleanup paths | Must be same directory as committed file to preserve rename atomicity. |
+| Temp cleanup matcher | Basename prefix `.tmp-idle-engine-save.bin-` | Save `finally` cleanup + startup stale cleanup | Cleanup utility | Deletes only temp artifacts; never delete committed save file. |
+
+### Save Payload
+- Persisted bytes are the raw output of `encodeGameStateSave(...)` (`Uint8Array`) with no extra shell wrapper metadata.
+- Load flow decodes bytes with `decodeGameStateSave(...)` and validates/migrates with `loadGameStateSaveFormat(...)` before worker `hydrate`.
 
 ## 5. Tasks
 
@@ -374,8 +395,8 @@ T5 -> depends on T1, T3, T4
 | T1 | Define Worker Protocol v2 Contracts | Extend worker protocol types with capability signaling and save/load envelopes. | `packages/shell-desktop/src/sim/worker-protocol.ts` | Protocol v2 `ready` includes protocol/capabilities; legacy `ready` compatibility shape (missing both fields) is modeled for main normalization; new `serialize`/`hydrate` request types and `saveData`/`hydrateResult` envelopes use `InterfaceError`. |
 | T2 | Extend Sim Runtime Capability Surface | Add optional serialize/hydrate hooks to `SimRuntime` while preserving demo runtime behavior. | `packages/shell-desktop/src/sim/sim-runtime.ts`, `packages/shell-desktop/src/sim/sim-runtime.test.ts` | Runtime type exposes optional methods; existing tick/input behavior remains unchanged in tests. |
 | T3 | Implement Worker Save/Load Handlers | Handle `serialize`/`hydrate` messages in worker and emit structured protocol v2 responses. | `packages/shell-desktop/src/sim-worker.ts`, `packages/shell-desktop/src/sim-worker.test.ts` | Worker emits protocol v2 `ready` with capabilities; serialize/hydrate success/failure paths and deterministic validation message templates are covered by tests. |
-| T4 | Add Atomic Save Storage Utility | Implement temp-write + rename persistence and stale temp cleanup for save files. | `packages/shell-desktop/src/save-storage.ts`, `packages/shell-desktop/src/save-storage.test.ts` | Save writes are atomic, cleanup is best-effort, and utility tests cover success/failure/cleanup behavior. |
-| T5 | Wire Main Save/Load + Dev Menu Actions | Integrate capability-gated Dev menu actions, request timeouts/locks, load decode/hydrate flow, and offline catch-up dispatch. | `packages/shell-desktop/src/main.ts`, `packages/shell-desktop/src/main.test.ts` | Dev menu actions gate correctly; save/load/offline flows handle success + recoverable errors + worker failures; canonical `ready` normalization fallback (missing protocol/capabilities => protocol v1 with disabled capabilities) is covered. |
+| T4 | Add Atomic Save Storage Utility | Implement temp-write + rename persistence and stale temp cleanup for save files. | `packages/shell-desktop/src/save-storage.ts`, `packages/shell-desktop/src/save-storage.test.ts` | Save writes are atomic to canonical `idle-engine-save.bin`, cleanup is best-effort, and utility tests cover success/failure/cleanup behavior with canonical temp-file prefix matching. |
+| T5 | Wire Main Save/Load + Dev Menu Actions | Integrate capability-gated Dev menu actions, request timeouts/locks, response requestId correlation, load decode/hydrate flow, and offline catch-up dispatch. | `packages/shell-desktop/src/main.ts`, `packages/shell-desktop/src/main.test.ts` | Dev menu actions gate correctly; save/load/offline flows handle success + recoverable errors + worker failures; unmatched/duplicate/late response `requestId` events are ignored without state corruption and are covered by tests; canonical `ready` normalization fallback (missing protocol/capabilities => protocol v1 with disabled capabilities) is covered. |
 
 ### Task Details
 
@@ -419,27 +440,28 @@ T5 -> depends on T1, T3, T4
 **T4: Add Atomic Save Storage Utility**
 - Summary: Implement filesystem helpers for atomic writes, reads, and stale temp cleanup in the shell main process.
 - Files:
-  - `packages/shell-desktop/src/save-storage.ts` - add save path resolution under `app.getPath('userData')`, temp write + rename, and stale temp cleanup helper.
+  - `packages/shell-desktop/src/save-storage.ts` - add canonical save path resolution (`idle-engine-save.bin`) under `app.getPath('userData')`, temp write + rename, and stale temp cleanup helper using `.tmp-idle-engine-save.bin-` prefix.
   - `packages/shell-desktop/src/save-storage.test.ts` - add unit tests for atomic success path and cleanup on failure.
 - Acceptance Criteria:
-  1. Save writes always use temp file in the target directory followed by `rename`.
+  1. Save writes always target canonical `path.join(app.getPath('userData'), 'idle-engine-save.bin')` and use temp file in the same directory followed by `rename`.
   2. Failure during write/rename leaves previously committed save untouched and performs best-effort temp cleanup.
-  3. Startup cleanup removes stale temp files matching the save temp naming convention.
+  3. Startup cleanup removes stale temp files matching `.tmp-idle-engine-save.bin-` prefix.
 - Dependencies: None
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/save-storage.test.ts`
 
 **T5: Wire Main Save/Load + Dev Menu Actions**
-- Summary: Integrate end-to-end main-process orchestration for save/load/offline dev tooling with capability-based gating.
+- Summary: Integrate end-to-end main-process orchestration for save/load/offline dev tooling with capability-based gating and deterministic request/response correlation.
 - Files:
   - `packages/shell-desktop/src/main.ts` - add capability cache, request timeout/operation lock handling, save/load orchestration, offline catch-up dispatch, and Dev menu items with accelerators + enabled gating.
-  - `packages/shell-desktop/src/main.test.ts` - add/update tests for menu gating, save/load success/failure/timeouts, protocol compatibility fallback, and offline catch-up dispatch.
+  - `packages/shell-desktop/src/main.test.ts` - add/update tests for menu gating, save/load success/failure/timeouts, unmatched/duplicate/late response `requestId` handling, protocol compatibility fallback, and offline catch-up dispatch.
 - Acceptance Criteria:
   1. Dev menu includes `Save`, `Load`, and `Offline Catch-Up` actions with `CmdOrCtrl+S`/`CmdOrCtrl+O` accelerators and correct enabled/disabled state.
-  2. Save flow sends `serialize`, handles matching `saveData`, and persists bytes via atomic storage utility.
-  3. Load flow reads selected file, decodes/validates save data, sends `hydrate`, and preserves current runtime on failure.
+  2. Save flow sends `serialize`, consumes only matching `saveData.requestId`, and persists bytes via atomic storage utility.
+  3. Load flow reads selected file, decodes/validates save data, sends `hydrate`, consumes only matching `hydrateResult.requestId`, and preserves current runtime on failure.
   4. Offline catch-up action enqueues `OFFLINE_CATCHUP` with validated payload and default `resourceDeltas: {}`.
   5. Missing `protocolVersion`/`capabilities` in `ready` is normalized to protocol v1 with disabled capability-gated actions.
   6. Any other malformed/unsupported `ready` payload is rejected during startup and transitions to `worker_failed`.
+  7. Unmatched, duplicate, and late `saveData`/`hydrateResult` responses are ignored (diagnostic log only), and active operations only fail via timeout or explicit matching error response.
 - Dependencies: `T1`, `T3`, `T4`
 - Verification: `pnpm --filter @idle-engine/shell-desktop test -- src/main.test.ts`
 
@@ -464,5 +486,5 @@ T5 -> depends on T1, T3, T4
 ### Manual Verification (if applicable)
 - [ ] Start shell desktop (`pnpm --filter @idle-engine/shell-desktop start`) and confirm Dev menu exists with Save/Load/Offline Catch-Up actions.
 - [ ] Confirm Save/Load/Offline actions are disabled until worker `ready`, then enabled only for reported capabilities.
-- [ ] Trigger Save and verify a save file is written under `app.getPath('userData')` with no leftover temp file.
+- [ ] Trigger Save and verify `app.getPath('userData')/idle-engine-save.bin` is written with no leftover `.tmp-idle-engine-save.bin-*` temp files.
 - [ ] Trigger Load with an invalid/corrupt file and confirm recoverable error handling (no worker crash, runtime continues).
