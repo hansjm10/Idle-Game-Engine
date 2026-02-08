@@ -238,7 +238,93 @@ Error handling model: per-state handling with one global sink for worker process
 | `sim-worker` (Node worker thread) | Init config (`stepSizeMs`, `maxStepsPerFrame`), tick/enqueue commands, serialize/hydrate requests, offline catch-up command context. | Cannot write save files directly; only posts protocol messages (`ready`, `frame`, `saveData`, `hydrateResult`, `error`) to main process. | `error`/`messageerror`/`exit` => `worker_failed`; request hang => timeout transition (`recoverable_error` for operation timeouts, `worker_failed` for startup timeout). |
 
 ## 3. Interfaces
-[To be completed in design_api phase]
+
+### Endpoints
+| Method | Path | Input | Success | Errors |
+|--------|------|-------|---------|--------|
+| N/A | N/A | N/A | N/A | N/A |
+
+This feature does not add or modify HTTP endpoints.
+
+### CLI Commands
+| Command | Arguments | Options | Output |
+|---------|-----------|---------|--------|
+| N/A | N/A | N/A | N/A |
+
+This feature does not add CLI commands.
+
+### Worker Commands
+| Command | Invocation Pattern | Input | Success | Errors |
+|---------|--------------------|-------|---------|--------|
+| `serialize` | `worker.postMessage({ kind: 'serialize', requestId })` | `{ kind: 'serialize'; requestId: string }` | Worker emits `{ kind: 'saveData', requestId, ok: true, data: Uint8Array }`. Main writes `data` atomically to disk. | Worker emits `{ kind: 'saveData', requestId, ok: false, error: InterfaceError }` on capability or serialize failure. Main treats missing response before `SERIALIZE_TIMEOUT_MS` as `REQUEST_TIMEOUT`. Worker `error`/`exit` triggers `worker_failed`. |
+| `hydrate` | `worker.postMessage({ kind: 'hydrate', requestId, save })` | `{ kind: 'hydrate'; requestId: string; save: GameStateSaveFormat }` | Worker emits `{ kind: 'hydrateResult', requestId, ok: true, nextStep: number }` and resumes normal ticking. | Worker emits `{ kind: 'hydrateResult', requestId, ok: false, error: InterfaceError }` when validation or hydrate fails. Main treats missing response before `HYDRATE_TIMEOUT_MS` as `REQUEST_TIMEOUT`. Worker `error`/`exit` triggers `worker_failed`. |
+| `enqueueCommands` (`OFFLINE_CATCHUP`) | `worker.postMessage({ kind: 'enqueueCommands', commands: [command] })` | `command = { type: 'OFFLINE_CATCHUP', priority: SYSTEM, step, timestamp, payload: { elapsedMs, resourceDeltas, maxElapsedMs?, maxSteps? } }` | Message is accepted and queued; effect is visible on subsequent `frame` events. | Main-side input validation failure prevents dispatch (`INVALID_OFFLINE_CATCHUP_REQUEST`). Worker-side invalid payload becomes a no-op in the handler; worker transport failure triggers `worker_failed`. |
+
+### Events
+| Event | Trigger | Payload | Consumers |
+|-------|---------|---------|-----------|
+| `ready` | Worker processes valid `init` and runtime is ready. | `{ kind: 'ready'; protocolVersion: 2; stepSizeMs: number; nextStep: number; capabilities: { canSerialize: boolean; canOfflineCatchup: boolean } }` | Main process (`SimWorkerController`) caches capability flags and enables/disables Dev menu actions. |
+| `saveData` | Worker completes a `serialize` request. | Success: `{ kind: 'saveData'; requestId: string; ok: true; data: Uint8Array }` or failure: `{ kind: 'saveData'; requestId: string; ok: false; error: InterfaceError }`. | Main process save flow (`save_request_pending` -> `save_atomic_write` or `recoverable_error`). |
+| `hydrateResult` | Worker completes a `hydrate` request. | Success: `{ kind: 'hydrateResult'; requestId: string; ok: true; nextStep: number }` or failure: `{ kind: 'hydrateResult'; requestId: string; ok: false; error: InterfaceError }`. | Main process load flow (`load_hydrating` -> `running_idle` or `recoverable_error`). |
+| `error` | Unhandled worker exception or protocol fault in worker. | `{ kind: 'error'; error: string }` | Main process failure handler transitions to `worker_failed`. |
+
+### Validation Rules
+| Field | Type | Constraints | Error | Validation Mode |
+|-------|------|-------------|-------|-----------------|
+| `serialize.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | Sync |
+| `hydrate.requestId` | `string` | Required; 1-64 chars; pattern `^[A-Za-z0-9_-]+$`. | `PROTOCOL_VALIDATION_FAILED` | Sync |
+| `hydrate.save` | `GameStateSaveFormat` object | Required; must pass `loadGameStateSaveFormat`; version must resolve to `1`. | `INVALID_SAVE_DATA` | Sync (worker), Async caller chain for file read/decode before worker call |
+| `hydrate.save.savedAt` | `number` | Required; finite; `>= 0`. | `INVALID_SAVE_DATA` | Sync |
+| `hydrate.save.resources` | `object` | Required key present. | `INVALID_SAVE_DATA` | Sync |
+| `hydrate.save.progression` | `object` | Required key present. | `INVALID_SAVE_DATA` | Sync |
+| `hydrate.save.commandQueue` | `object` | Required key present. | `INVALID_SAVE_DATA` | Sync |
+| `saveData.data` | `Uint8Array` | Required when `ok: true`; `byteLength > 0`. | `SERIALIZE_FAILED` | Sync |
+| `offlineCatchup.elapsedMs` | `number` | Required; finite; `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | Sync |
+| `offlineCatchup.resourceDeltas` | `Record<string, number>` | Required by shell contract; object only; no arrays; default `{}` when no deltas provided. | `INVALID_OFFLINE_CATCHUP_REQUEST` (main) or handler no-op (worker) | Sync |
+| `offlineCatchup.maxElapsedMs` | `number` | Optional; if set, finite and `> 0`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | Sync |
+| `offlineCatchup.maxSteps` | `number` | Optional; if set, integer and `>= 1`. | `INVALID_OFFLINE_CATCHUP_REQUEST` | Sync |
+| `saveFilePath` | absolute path | Resolved under `app.getPath('userData')`; save writes use temp file in same dir then rename. | `IO_ERROR` | Async |
+| `loadFileBytes` | `Uint8Array` | Required; non-empty; compression header must be supported before JSON parse. | `INVALID_SAVE_DATA` | Async decode + sync shape validation |
+
+Validation failure behavior is consistent across commands: return an operation result with `ok: false` and `error: InterfaceError` when the worker remains healthy; transition to `worker_failed` only for worker process-level failures.
+
+### Error Contract
+All command-level failures use the same error envelope:
+
+```ts
+type InterfaceError = Readonly<{
+  code:
+    | 'PROTOCOL_VALIDATION_FAILED'
+    | 'CAPABILITY_UNAVAILABLE'
+    | 'SERIALIZE_FAILED'
+    | 'INVALID_SAVE_DATA'
+    | 'HYDRATE_FAILED'
+    | 'INVALID_OFFLINE_CATCHUP_REQUEST'
+    | 'REQUEST_TIMEOUT'
+    | 'IO_ERROR';
+  message: string;
+  retriable: boolean;
+}>;
+```
+
+### Contract Compatibility
+| Gate | Decision |
+|------|----------|
+| Breaking change to existing interface? | **Yes, internal-only**: worker protocol `ready` payload adds required `protocolVersion` and `capabilities`; new `serialize`/`hydrate` message kinds are introduced. |
+| Migration path | Ship main-process and worker updates together in the same release. For one compatibility window, main treats missing `capabilities` as `{ canSerialize: false, canOfflineCatchup: false }` and treats missing `protocolVersion` as `1` before removing fallback. |
+| Versioning requirements | Worker protocol is versioned with `protocolVersion` in `ready`. This design targets protocol version `2`. Main rejects versions greater than `2` with a recoverable error and keeps capability-gated actions disabled. |
+
+### UI Interactions
+| Action | Request | Loading State | Success | Error |
+|--------|---------|---------------|---------|-------|
+| `Dev > Save` (`CmdOrCtrl+S`) | Send worker `serialize` command; then write returned bytes atomically to userData save path. | Save menu item disabled while request is in flight; optional "Saving..." status in dev overlay/log. | "Save complete" status/log; action re-enabled. | Show error with `InterfaceError.message`; keep previous committed save file unchanged. |
+| `Dev > Load` (`CmdOrCtrl+O`) | Open file picker, read/decode/validate save, then send worker `hydrate`. | Load menu item disabled while file read/decode/hydrate is in flight. | "Load complete" status/log; runtime continues from hydrated step. | Show error for decode/validation/hydrate failure; runtime remains on pre-load state. |
+| `Dev > Offline Catch-Up` | Build and enqueue `OFFLINE_CATCHUP` command (`resourceDeltas: {}` by default). | Action disabled while dialog/input validation and dispatch are in flight. | "Offline catch-up queued" status/log; simulation advances on subsequent ticks. | Show validation/dispatch error; no command is enqueued. |
+
+UI state gates:
+- Save and Load are enabled only when `capabilities.canSerialize === true` and worker status is `running`.
+- Offline Catch-Up is enabled only when `capabilities.canOfflineCatchup === true` and worker status is `running`.
+- Any active operation lock disables all three actions until completion.
 
 ## 4. Data
 [To be completed in design_data phase]
