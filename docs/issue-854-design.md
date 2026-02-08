@@ -327,7 +327,7 @@ UI state gates:
 - Any active operation lock disables all three actions until completion.
 
 ## 4. Data
-[To be completed in design_data phase]
+N/A - This feature does not add or modify data schemas.
 
 ## 5. Tasks
 [To be completed in design_plan phase]
