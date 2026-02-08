@@ -120,7 +120,122 @@ Desktop shell dev tooling for Save/Load and offline catch-up is tied to a specif
 ---
 
 ## 2. Workflow
-[To be completed in design_workflow phase]
+
+### States
+| State | Description | Entry Condition |
+|-------|-------------|-----------------|
+| `main_bootstrap` | Main process initializes window, IPC, and menu scaffolding with capability-gated actions disabled. | Electron app enters ready flow and `createMainWindow()` begins. |
+| `worker_starting` | Main creates sim worker controller, sends `init`, and waits for `ready` with capabilities. | `main_bootstrap` completes controller construction. |
+| `running_idle` | Worker is ready, tick loop runs, and Save/Load/Offline Catch-Up actions are accepted only when capability flags allow them. | `worker_starting` receives valid `ready` payload. |
+| `save_request_pending` | Save operation is in-flight while waiting for worker serialization payload. | User triggers Save from `running_idle` and `canSerialize === true`. |
+| `save_atomic_write` | Main process writes save bytes atomically via temp-file + rename in userData directory. | `save_request_pending` receives serialized bytes. |
+| `load_reading_file` | Main process prompts for save file path and reads bytes from disk. | User triggers Load from `running_idle` and `canSerialize === true`. |
+| `load_decoding` | Main process decodes/parses save bytes and validates/migrates schema. | `load_reading_file` successfully reads bytes. |
+| `load_hydrating` | Hydrate request is in-flight while waiting for worker hydrate result. | `load_decoding` produces valid hydrated payload. |
+| `offline_catchup_dispatch` | Main builds and enqueues `OFFLINE_CATCHUP` command. | User triggers Offline Catch-Up from `running_idle` and `canOfflineCatchup === true`. |
+| `recoverable_error` | Operation-level failure surfaced to user while worker may still be alive; retry is allowed. | Any operation state reports non-fatal failure (I/O, decode, timeout, validation). |
+| `worker_failed` | Worker crashed/stopped or messaging is invalid; runtime session is no longer operational. | Any active state receives worker `error`, `exit`, or `messageerror`, or init timeout. |
+| `app_terminating` | Main is disposing worker/timers and exiting process. | Quit/close requested from any non-terminal state. |
+| `app_terminated` | Process is exited; no further transitions. | `app_terminating` completes disposal and exits. |
+
+### State Gates
+- **Initial state**: `main_bootstrap`, entered when Electron app ready flow starts for the first window.
+- **Terminal states**: `app_terminated` only. It is terminal because process exit ends all timers, worker threads, and menu actions.
+
+| Non-terminal State | All Possible Next States |
+|--------------------|--------------------------|
+| `main_bootstrap` | `worker_starting`, `app_terminating` |
+| `worker_starting` | `running_idle`, `worker_failed`, `app_terminating` |
+| `running_idle` | `save_request_pending`, `load_reading_file`, `offline_catchup_dispatch`, `running_idle`, `worker_failed`, `app_terminating` |
+| `save_request_pending` | `save_atomic_write`, `recoverable_error`, `worker_failed`, `app_terminating` |
+| `save_atomic_write` | `running_idle`, `recoverable_error`, `app_terminating` |
+| `load_reading_file` | `load_decoding`, `running_idle`, `recoverable_error`, `app_terminating` |
+| `load_decoding` | `load_hydrating`, `recoverable_error`, `app_terminating` |
+| `load_hydrating` | `running_idle`, `recoverable_error`, `worker_failed`, `app_terminating` |
+| `offline_catchup_dispatch` | `running_idle`, `recoverable_error`, `worker_failed`, `app_terminating` |
+| `recoverable_error` | `running_idle`, `worker_failed`, `app_terminating` |
+| `worker_failed` | `app_terminating` |
+| `app_terminating` | `app_terminated` |
+
+### Transitions
+| From | Event/Condition | To | Side Effects |
+|------|-----------------|-----|--------------|
+| `main_bootstrap` | Window/controller creation succeeds | `worker_starting` | Create worker thread; send `init`; emit `simStatus: starting`; keep capability-gated menu items disabled. |
+| `main_bootstrap` | App quit/close requested before worker is ready | `app_terminating` | Skip runtime startup and begin shutdown path. |
+| `worker_starting` | Worker emits valid `ready` with capabilities | `running_idle` | Cache `stepSizeMs`/`nextStep`; cache `canSerialize`/`canOfflineCatchup`; emit `simStatus: running`; start tick loop; refresh menu enabled flags. |
+| `worker_starting` | Worker emits `error`/`messageerror`/`exit`, or no `ready` before `WORKER_READY_TIMEOUT_MS` | `worker_failed` | Stop tick loop; terminate worker; emit `simStatus: crashed/stopped`; disable Save/Load/Offline menu items; log reason. |
+| `worker_starting` | App quit/close requested | `app_terminating` | Stop waiting for ready; terminate worker if present. |
+| `running_idle` | Save action invoked and `canSerialize === true` | `save_request_pending` | Send worker `serialize` request; start serialize timeout timer; set operation lock. |
+| `running_idle` | Load action invoked and `canSerialize === true` | `load_reading_file` | Open file picker; set operation lock. |
+| `running_idle` | Offline Catch-Up action invoked and `canOfflineCatchup === true` | `offline_catchup_dispatch` | Build `OFFLINE_CATCHUP` command with `resourceDeltas: {}` and enqueue to worker. |
+| `running_idle` | Action invoked but capability flag is false | `running_idle` | Ignore request (menu should already be disabled); optional debug log only. |
+| `running_idle` | Worker failure (`error`/`messageerror`/`exit`) | `worker_failed` | Run global worker-failure handler; emit stopped/crashed status; disable capability-gated actions. |
+| `running_idle` | App quit/close requested | `app_terminating` | Dispose controller; stop tick loop; terminate worker. |
+| `save_request_pending` | Worker returns serialized bytes (`saveData`) before timeout | `save_atomic_write` | Resolve target path under `app.getPath('userData')`; prepare temp path in same directory. |
+| `save_request_pending` | Serialize response timeout (`SERIALIZE_TIMEOUT_MS`) | `recoverable_error` | Clear op lock/timer; record timeout; surface Save failure without killing worker. |
+| `save_request_pending` | Worker failure (`error`/`messageerror`/`exit`) | `worker_failed` | Abort pending save; run worker-failure handler. |
+| `save_request_pending` | App quit/close requested | `app_terminating` | Cancel pending save and terminate worker. |
+| `save_atomic_write` | Temp write + rename succeed | `running_idle` | Commit save atomically; best-effort delete temp file; clear op lock; surface Save success signal. |
+| `save_atomic_write` | `writeFile`/`rename`/directory error | `recoverable_error` | Keep previous committed save untouched; best-effort cleanup temp file; clear op lock; log error. |
+| `save_atomic_write` | App quit/close requested | `app_terminating` | Best-effort temp cleanup then shutdown. |
+| `load_reading_file` | User cancels picker | `running_idle` | Clear op lock; no error state. |
+| `load_reading_file` | File read succeeds | `load_decoding` | Store bytes in memory for decode/hydrate pipeline. |
+| `load_reading_file` | File read fails (`ENOENT`, permission, I/O) | `recoverable_error` | Clear op lock; log read failure; surface Load failure. |
+| `load_reading_file` | App quit/close requested | `app_terminating` | Abort load flow and shutdown. |
+| `load_decoding` | Decode + schema validation/migration succeed | `load_hydrating` | Build hydrate payload for worker; start hydrate timeout timer. |
+| `load_decoding` | Decode/validation/migration fails | `recoverable_error` | Clear op lock; log parse/validation error; surface invalid-save failure. |
+| `load_decoding` | App quit/close requested | `app_terminating` | Abort decode flow and shutdown. |
+| `load_hydrating` | Worker returns hydrate success (`hydrateResult: ok`) before timeout | `running_idle` | Clear op lock/timer; refresh capability cache if returned; surface Load success signal. |
+| `load_hydrating` | Worker returns hydrate failure (`hydrateResult: error`) | `recoverable_error` | Clear op lock/timer; log hydrate rejection; surface Load failure. |
+| `load_hydrating` | Hydrate response timeout (`HYDRATE_TIMEOUT_MS`) | `recoverable_error` | Clear op lock/timer; log timeout; keep pre-load runtime state unchanged. |
+| `load_hydrating` | Worker failure (`error`/`messageerror`/`exit`) | `worker_failed` | Abort load flow; run worker-failure handler. |
+| `load_hydrating` | App quit/close requested | `app_terminating` | Abort hydrate flow and shutdown. |
+| `offline_catchup_dispatch` | Command enqueue succeeds | `running_idle` | Clear op lock; optionally emit completion status to renderer. |
+| `offline_catchup_dispatch` | Payload/command creation throws or enqueue fails | `recoverable_error` | Clear op lock; log tooling failure; surface operation error. |
+| `offline_catchup_dispatch` | Worker failure (`error`/`messageerror`/`exit`) | `worker_failed` | Abort catch-up flow; run worker-failure handler. |
+| `offline_catchup_dispatch` | App quit/close requested | `app_terminating` | Abort flow and shutdown. |
+| `recoverable_error` | User dismisses/retries and worker is still healthy | `running_idle` | Clear transient error UI/status; allow next operation. |
+| `recoverable_error` | Worker failure occurs while in error state | `worker_failed` | Escalate to global worker-failure state and disable actions. |
+| `recoverable_error` | App quit/close requested | `app_terminating` | Shutdown as normal. |
+| `worker_failed` | App quit/close requested | `app_terminating` | Final cleanup with worker already terminated/failed. |
+| `app_terminating` | Disposal complete and process exits | `app_terminated` | Stop timers, terminate worker, release resources, flush final logs. |
+
+### Transition Reversibility
+- Reversible transitions: Operation transitions that start in `running_idle` and return to `running_idle` (`save_*`, `load_*`, `offline_catchup_dispatch`, `recoverable_error`) are reversible by retrying the action.
+- Irreversible transitions: Any transition to `worker_failed`, `app_terminating`, or `app_terminated` is irreversible for the current runtime session.
+- Rollback model: Save rollback uses atomic rename semantics (old committed file remains valid if write fails). Load/hydrate rollback is logical only (runtime keeps pre-load state when hydrate fails/timeouts).
+
+### Error Handling
+| State | Error | Recovery State | Actions |
+|-------|-------|----------------|---------|
+| `main_bootstrap` | Window/controller init throws | `app_terminating` | Log startup failure and exit cleanly. |
+| `worker_starting` | Invalid init params, bad ready payload, worker crash, or ready timeout | `worker_failed` | Emit crashed/stopped status, disable actions, terminate worker, log root cause. |
+| `running_idle` | `postMessage` throws or worker emits failure event | `worker_failed` | Invoke global worker-failure handler and stop tick loop. |
+| `save_request_pending` | Serialize timeout | `recoverable_error` | Clear lock/timer and report save timeout. |
+| `save_request_pending` | Worker failure during serialize | `worker_failed` | Abort operation and escalate to global worker-failure handling. |
+| `save_atomic_write` | Temp write/rename/cleanup error | `recoverable_error` | Keep prior save, attempt temp cleanup, log filesystem error. |
+| `load_reading_file` | Read denied/missing/corrupt-bytes read failure | `recoverable_error` | Clear lock, log read error, report load failure. |
+| `load_decoding` | Decode failure, schema mismatch, migration failure | `recoverable_error` | Clear lock, log validation details, report invalid save. |
+| `load_hydrating` | Hydrate rejected or timeout | `recoverable_error` | Clear lock/timer and preserve current runtime state. |
+| `load_hydrating` | Worker failure during hydrate | `worker_failed` | Abort load and escalate to global worker-failure handling. |
+| `offline_catchup_dispatch` | Command build/enqueue failure | `recoverable_error` | Clear lock and report catch-up tooling failure. |
+| `offline_catchup_dispatch` | Worker failure during dispatch | `worker_failed` | Abort dispatch and escalate to global worker-failure handling. |
+| `recoverable_error` | Error while reporting error (UI/log path fails) | `worker_failed` | Escalate to fail-safe worker-failed mode; keep app closable. |
+| `worker_failed` | Additional worker events after failure | `worker_failed` | Ignore duplicate events; keep disabled state and await app termination. |
+| `app_terminating` | Worker terminate promise rejects | `app_terminating` | Log and continue shutdown (best effort). |
+| `app_terminated` | None (terminal) | `app_terminated` | No-op. |
+
+Error handling model: per-state handling with one global sink for worker process failures (`handleWorkerFailure`-equivalent behavior) so crash semantics are consistent regardless of source state.
+
+### Crash Recovery
+- **Detection**: On next startup, detect interrupted save by scanning the save directory for stale temp files matching the atomic-write prefix pattern used by Save; also detect incomplete session by absence of in-memory operation completion (always true after crash/cold start).
+- **Recovery state**: `worker_starting` (never resume inside `save_*`/`load_*` substates).
+- **Cleanup**: Remove stale temp save files, clear any persisted operation lock metadata (if present), reset capability cache to unknown, keep Save/Load/Offline menu items disabled until `ready` is received again.
+
+### Subprocesses (if applicable)
+| Subprocess | Receives | Can Write | Failure Handling |
+|------------|----------|-----------|------------------|
+| `sim-worker` (Node worker thread) | Init config (`stepSizeMs`, `maxStepsPerFrame`), tick/enqueue commands, serialize/hydrate requests, offline catch-up command context. | Cannot write save files directly; only posts protocol messages (`ready`, `frame`, `saveData`, `hydrateResult`, `error`) to main process. | `error`/`messageerror`/`exit` => `worker_failed`; request hang => timeout transition (`recoverable_error` for operation timeouts, `worker_failed` for startup timeout). |
 
 ## 3. Interfaces
 [To be completed in design_api phase]
