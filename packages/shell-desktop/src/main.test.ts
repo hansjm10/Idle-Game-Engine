@@ -2826,6 +2826,229 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('load flow: times out when no matching hydrateResult arrives', async () => {
+    vi.useFakeTimers();
+    // Provide enough monotonicNowMs values for tick loop calls during the 11s advance
+    const tickValues = Array.from({ length: 800 }, (_, i) => i * 16);
+    setMonotonicNowSequence(tickValues);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
+    const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
+    readSaveMock.mockResolvedValueOnce(saveBytes);
+    decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    expect(loadItem?.enabled).toBe(true);
+
+    // Trigger load
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // Load item should be disabled during operation
+    expect(loadItem?.enabled).toBe(false);
+
+    // Verify hydrate message was sent
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeDefined();
+
+    // Advance past timeout (10s) — no hydrateResult arrives
+    await vi.advanceTimersByTimeAsync(11_000);
+    await flushMicrotasks();
+
+    // Load item should be re-enabled after timeout
+    expect(loadItem?.enabled).toBe(true);
+
+    // Verify timeout was logged
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('timed out'),
+    );
+
+    // NOT a worker failure — no crashed status should have been sent
+    const crashedCalls = mainWindow?.webContents.send.mock.calls.filter(
+      (call) => call[0] === IPC_CHANNELS.simStatus && (call[1] as { kind?: string })?.kind === 'crashed',
+    );
+    expect(crashedCalls).toHaveLength(0);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('late hydrateResult after operation cleared via timeout is ignored', async () => {
+    vi.useFakeTimers();
+    // Provide enough monotonicNowMs values for tick loop calls during the 11s advance
+    const tickValues = Array.from({ length: 800 }, (_, i) => i * 16);
+    setMonotonicNowSequence(tickValues);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
+    const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
+    readSaveMock.mockResolvedValueOnce(saveBytes);
+    decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    const hydrateMsg = hydrateCall?.[0] as { requestId?: string };
+
+    // Advance past timeout
+    await vi.advanceTimersByTimeAsync(11_000);
+    await flushMicrotasks();
+
+    // Load should be re-enabled after timeout
+    expect(loadItem?.enabled).toBe(true);
+
+    // Now send late hydrateResult with the original requestId
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: hydrateMsg.requestId!,
+      ok: true,
+      nextStep: 999,
+    });
+    await flushMicrotasks();
+
+    // Late response should be ignored — logged as unmatched
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Ignoring unmatched hydrateResult'),
+    );
+
+    // Load item should still be enabled (state not corrupted)
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+    consoleWarn.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('ignores duplicate hydrateResult after first successful match', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
+    const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
+    readSaveMock.mockResolvedValueOnce(saveBytes);
+    decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    const hydrateMsg = hydrateCall?.[0] as { requestId?: string };
+
+    // First matching response — consumed
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: hydrateMsg.requestId!,
+      ok: true,
+      nextStep: 100,
+    });
+    await flushMicrotasks();
+
+    // Load should be re-enabled after successful hydration
+    expect(loadItem?.enabled).toBe(true);
+    expect(consoleLog).toHaveBeenCalledWith(
+      expect.stringContaining('Load complete'),
+    );
+
+    // Clear the log mock to track subsequent calls
+    consoleLog.mockClear();
+
+    // Duplicate response with same requestId — should be ignored
+    worker?.emitMessage({
+      kind: 'hydrateResult',
+      requestId: hydrateMsg.requestId!,
+      ok: true,
+      nextStep: 200,
+    });
+    await flushMicrotasks();
+
+    // Duplicate should be ignored — no additional "Load complete" log
+    expect(consoleLog).not.toHaveBeenCalledWith(
+      expect.stringContaining('Load complete'),
+    );
+
+    // State should not be corrupted — load still enabled
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleWarn.mockRestore();
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   describe('worker ready startup timeout', () => {
     it('transitions to worker_failed when no ready arrives before timeout', async () => {
       vi.useFakeTimers();
