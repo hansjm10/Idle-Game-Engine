@@ -284,6 +284,7 @@ const devMenuLoadItem: MenuItemConstructorOptions = {
 
 const devMenuOfflineCatchupItem: MenuItemConstructorOptions = {
   label: 'Offline Catch-Up',
+  accelerator: 'CmdOrCtrl+Shift+O',
   enabled: false,
   click: () => { simWorkerController?.triggerOfflineCatchup(); },
 };

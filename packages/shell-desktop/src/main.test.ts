@@ -1781,6 +1781,7 @@ describe('shell-desktop main process entrypoint', () => {
     expect(loadItem?.enabled).toBe(false);
 
     expect(catchupItem).toBeDefined();
+    expect(catchupItem?.accelerator).toBe('CmdOrCtrl+Shift+O');
     expect(catchupItem?.enabled).toBe(false);
 
     // Cleanup
