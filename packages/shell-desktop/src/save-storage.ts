@@ -67,9 +67,12 @@ export async function cleanupStaleTempFiles(): Promise<void> {
   let entries: string[];
   try {
     entries = await fsPromises.readdir(saveDir);
-  } catch {
-    // Directory may not exist on first launch; nothing to clean up.
-    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      // Directory may not exist on first launch; nothing to clean up.
+      return;
+    }
+    throw error;
   }
 
   for (const entry of entries) {

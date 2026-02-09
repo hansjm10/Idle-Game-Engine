@@ -186,6 +186,15 @@ describe('save-storage', () => {
       expect(fsPromises.unlink).not.toHaveBeenCalled();
     });
 
+    it('rethrows non-ENOENT readdir errors', async () => {
+      const { cleanupStaleTempFiles } = await import('./save-storage.js');
+      const permError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+      vi.mocked(fsPromises.readdir).mockRejectedValueOnce(permError);
+
+      await expect(cleanupStaleTempFiles()).rejects.toThrow('permission denied');
+      expect(fsPromises.unlink).not.toHaveBeenCalled();
+    });
+
     it('swallows unlink errors during cleanup', async () => {
       const { cleanupStaleTempFiles } = await import('./save-storage.js');
       vi.mocked(fsPromises.readdir).mockResolvedValueOnce([
