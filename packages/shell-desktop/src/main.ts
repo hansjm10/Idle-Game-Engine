@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { promises as fsPromises } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -15,7 +15,7 @@ import {
 } from '@idle-engine/core';
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
-import { writeSave, readSave, cleanupStaleTempFiles } from './save-storage.js';
+import { writeSave, cleanupStaleTempFiles } from './save-storage.js';
 import { decodeGameStateSave } from './runtime-harness.js';
 import type { GameStateSaveFormat } from './runtime-harness.js';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -743,10 +743,26 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     void (async () => {
       try {
-        const saveBytes = await readSave();
-        if (!saveBytes || saveBytes.byteLength === 0) {
+        // Open file picker for user to select a save file
+        const result = await dialog.showOpenDialog(mainWindow, {
+          title: 'Load Save File',
+          filters: [{ name: 'Save Files', extensions: ['bin'] }, { name: 'All Files', extensions: ['*'] }],
+          properties: ['openFile'],
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+          // User cancelled the picker — return to idle without error
+          clearOperationState();
+          return;
+        }
+
+        const selectedPath = result.filePaths[0]!;
+        const buffer = await fsPromises.readFile(selectedPath);
+        const saveBytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+        if (saveBytes.byteLength === 0) {
           // eslint-disable-next-line no-console
-          console.error('[shell-desktop] Load failed: no save file found or file is empty.');
+          console.error('[shell-desktop] Load failed: selected file is empty.');
           clearOperationState();
           return;
         }

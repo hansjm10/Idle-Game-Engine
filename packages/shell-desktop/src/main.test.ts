@@ -77,9 +77,14 @@ class BrowserWindow {
   }
 }
 
+const dialog = {
+  showOpenDialog: vi.fn(async () => ({ canceled: true as boolean, filePaths: [] as string[] })),
+};
+
 vi.mock('electron', () => ({
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
 }));
@@ -150,12 +155,10 @@ vi.mock('./monotonic-time.js', () => ({
 }));
 
 const writeSaveMock = vi.fn(async () => undefined);
-const readSaveMock = vi.fn(async (): Promise<Uint8Array | undefined> => undefined);
 const cleanupStaleTempFilesMock = vi.fn(async () => undefined);
 
 vi.mock('./save-storage.js', () => ({
   writeSave: writeSaveMock,
-  readSave: readSaveMock,
   cleanupStaleTempFiles: cleanupStaleTempFilesMock,
 }));
 
@@ -2465,7 +2468,8 @@ describe('shell-desktop main process entrypoint', () => {
       commandQueue: {},
     };
     const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
-    readSaveMock.mockResolvedValueOnce(saveBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(saveBytes));
     decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
@@ -2491,9 +2495,9 @@ describe('shell-desktop main process entrypoint', () => {
     loadItem?.click?.();
     await flushMicrotasks();
 
-    // readSave should have been called
-    expect(readSaveMock).toHaveBeenCalled();
-    expect(decodeGameStateSaveMock).toHaveBeenCalledWith(saveBytes);
+    // File picker and file read should have been called
+    expect(dialog.showOpenDialog).toHaveBeenCalled();
+    expect(decodeGameStateSaveMock).toHaveBeenCalled();
 
     // Verify hydrate message was sent to worker
     const hydrateCall = worker?.postMessage.mock.calls.find(
@@ -2530,7 +2534,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
     const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
-    readSaveMock.mockResolvedValueOnce(saveBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(saveBytes));
     decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
@@ -2592,7 +2597,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
     const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
-    readSaveMock.mockResolvedValueOnce(saveBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(saveBytes));
     decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
@@ -2661,7 +2667,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     // Provide corrupted bytes (invalid header byte for core binary codec)
     const corruptedBytes = new Uint8Array([0xFF, 0x00, 0x01, 0x02]);
-    readSaveMock.mockResolvedValueOnce(corruptedBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(corruptedBytes));
     decodeGameStateSaveMock.mockRejectedValueOnce(new Error('Unsupported save compression header: 255'));
 
     await import('./main.js');
@@ -2688,8 +2695,8 @@ describe('shell-desktop main process entrypoint', () => {
     loadItem?.click?.();
     await flushMicrotasks();
 
-    // readSave should have been called
-    expect(readSaveMock).toHaveBeenCalled();
+    // File picker should have been invoked
+    expect(dialog.showOpenDialog).toHaveBeenCalled();
 
     // Decode failure should be logged
     expect(consoleError).toHaveBeenCalledWith(
@@ -2821,12 +2828,10 @@ describe('shell-desktop main process entrypoint', () => {
     consoleError.mockRestore();
   });
 
-  it('load flow: handles no save file gracefully', async () => {
+  it('load flow: returns to idle when user cancels file picker', async () => {
     setMonotonicNowSequence([0]);
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    // readSave returns undefined (no file)
-    readSaveMock.mockResolvedValueOnce(undefined);
+    // dialog.showOpenDialog defaults to canceled: true (no mockResolvedValueOnce needed)
 
     await import('./main.js');
     await flushMicrotasks();
@@ -2848,11 +2853,116 @@ describe('shell-desktop main process entrypoint', () => {
     loadItem?.click?.();
     await flushMicrotasks();
 
-    // No hydrate message should be sent (no file)
+    // File picker should have been shown
+    expect(dialog.showOpenDialog).toHaveBeenCalled();
+
+    // No hydrate message should be sent (user cancelled)
     const hydrateCalls = worker?.postMessage.mock.calls.filter(
       (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
     );
     expect(hydrateCalls).toHaveLength(0);
+
+    // Load should be re-enabled (returned to idle)
+    expect(loadItem?.enabled).toBe(true);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('load flow: handles file read error gracefully', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // File picker returns a file, but reading it fails
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/no-access.bin'] });
+    fsPromises.readFile.mockRejectedValueOnce(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }));
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // File picker should have been invoked
+    expect(dialog.showOpenDialog).toHaveBeenCalled();
+
+    // No hydrate message should be sent (read failed)
+    const hydrateCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCalls).toHaveLength(0);
+
+    // Error should be logged
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('Load failed:'),
+      expect.anything(),
+    );
+
+    // Load should be re-enabled (recoverable)
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler2 = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler2?.();
+  });
+
+  it('load flow: handles empty selected file gracefully', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // File picker returns a file, but file is empty
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/empty.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.alloc(0));
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // No hydrate message should be sent (empty file)
+    const hydrateCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCalls).toHaveLength(0);
+
+    // Error should be logged
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('selected file is empty'),
+    );
 
     // Load should be re-enabled
     expect(loadItem?.enabled).toBe(true);
@@ -2861,16 +2971,18 @@ describe('shell-desktop main process entrypoint', () => {
 
     // Cleanup
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
-    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
-    windowAllClosedHandler?.();
+    const windowAllClosedHandler2 = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler2?.();
   });
 
   it('load flow: handles decode failure gracefully without sending hydrate', async () => {
     setMonotonicNowSequence([0]);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    // readSave returns invalid bytes (not valid for core binary codec)
-    readSaveMock.mockResolvedValueOnce(new Uint8Array([0xFF, 0xFE]));
+    // Provide corrupted bytes via file picker (not valid for core binary codec)
+    const invalidBytes = new Uint8Array([0xFF, 0xFE]);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/corrupt.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(invalidBytes));
     decodeGameStateSaveMock.mockRejectedValueOnce(new Error('Unsupported save compression header: 255'));
 
     await import('./main.js');
@@ -2976,7 +3088,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
     const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
-    readSaveMock.mockResolvedValueOnce(saveBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(saveBytes));
     decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
@@ -3050,7 +3163,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
     const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
-    readSaveMock.mockResolvedValueOnce(saveBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(saveBytes));
     decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
@@ -3118,7 +3232,8 @@ describe('shell-desktop main process entrypoint', () => {
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
     const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
-    readSaveMock.mockResolvedValueOnce(saveBytes);
+    dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['/fake/save.bin'] });
+    fsPromises.readFile.mockResolvedValueOnce(Buffer.from(saveBytes));
     decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
