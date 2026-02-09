@@ -159,10 +159,10 @@ vi.mock('./save-storage.js', () => ({
   cleanupStaleTempFiles: cleanupStaleTempFilesMock,
 }));
 
-const loadGameStateSaveFormatMock = vi.fn((data: unknown) => data);
+const decodeGameStateSaveMock = vi.fn(async (_bytes: Uint8Array) => ({}));
 
 vi.mock('./runtime-harness.js', () => ({
-  loadGameStateSaveFormat: loadGameStateSaveFormatMock,
+  decodeGameStateSave: decodeGameStateSaveMock,
 }));
 
 let uuidCounter = 0;
@@ -2286,9 +2286,9 @@ describe('shell-desktop main process entrypoint', () => {
       progression: {},
       commandQueue: {},
     };
-    const saveBytes = new TextEncoder().encode(JSON.stringify(saveFormat));
+    const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
     readSaveMock.mockResolvedValueOnce(saveBytes);
-    loadGameStateSaveFormatMock.mockReturnValueOnce(saveFormat);
+    decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
     await flushMicrotasks();
@@ -2315,7 +2315,7 @@ describe('shell-desktop main process entrypoint', () => {
 
     // readSave should have been called
     expect(readSaveMock).toHaveBeenCalled();
-    expect(loadGameStateSaveFormatMock).toHaveBeenCalledWith(saveFormat);
+    expect(decodeGameStateSaveMock).toHaveBeenCalledWith(saveBytes);
 
     // Verify hydrate message was sent to worker
     const hydrateCall = worker?.postMessage.mock.calls.find(
@@ -2351,9 +2351,9 @@ describe('shell-desktop main process entrypoint', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
-    const saveBytes = new TextEncoder().encode(JSON.stringify(saveFormat));
+    const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
     readSaveMock.mockResolvedValueOnce(saveBytes);
-    loadGameStateSaveFormatMock.mockReturnValueOnce(saveFormat);
+    decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
     await flushMicrotasks();
@@ -2413,9 +2413,9 @@ describe('shell-desktop main process entrypoint', () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     const saveFormat = { version: 1, savedAt: 1000, resources: {}, progression: {}, commandQueue: {} };
-    const saveBytes = new TextEncoder().encode(JSON.stringify(saveFormat));
+    const saveBytes = new Uint8Array([0x01, 0x02, 0x03]);
     readSaveMock.mockResolvedValueOnce(saveBytes);
-    loadGameStateSaveFormatMock.mockReturnValueOnce(saveFormat);
+    decodeGameStateSaveMock.mockResolvedValueOnce(saveFormat);
 
     await import('./main.js');
     await flushMicrotasks();
@@ -2475,6 +2475,71 @@ describe('shell-desktop main process entrypoint', () => {
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
+  });
+
+  it('load flow: handles corrupted binary save data with recoverable decode failure', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // Provide corrupted bytes (invalid header byte for core binary codec)
+    const corruptedBytes = new Uint8Array([0xFF, 0x00, 0x01, 0x02]);
+    readSaveMock.mockResolvedValueOnce(corruptedBytes);
+    decodeGameStateSaveMock.mockRejectedValueOnce(new Error('Unsupported save compression header: 255'));
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    expect(loadItem?.enabled).toBe(true);
+
+    // Trigger load with corrupted data
+    loadItem?.click?.();
+    await flushMicrotasks();
+
+    // readSave should have been called
+    expect(readSaveMock).toHaveBeenCalled();
+
+    // Decode failure should be logged
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('Load failed: save data decode/validation failed.'),
+      expect.anything(),
+    );
+
+    // No hydrate message should have been sent
+    const hydrateCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'hydrate',
+    );
+    expect(hydrateCall).toBeUndefined();
+
+    // Not a worker failure — no crashed status
+    const crashedCalls = mainWindow?.webContents.send.mock.calls.filter(
+      (call) => call[0] === IPC_CHANNELS.simStatus && (call[1] as { kind?: string })?.kind === 'crashed',
+    );
+    expect(crashedCalls).toHaveLength(0);
+
+    // Load should be re-enabled (recoverable)
+    expect(loadItem?.enabled).toBe(true);
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler2 = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler2?.();
   });
 
   it('offline catch-up dispatch enqueues OFFLINE_CATCHUP with default resourceDeltas', async () => {
@@ -2626,8 +2691,9 @@ describe('shell-desktop main process entrypoint', () => {
     setMonotonicNowSequence([0]);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    // readSave returns invalid bytes (not valid JSON)
+    // readSave returns invalid bytes (not valid for core binary codec)
     readSaveMock.mockResolvedValueOnce(new Uint8Array([0xFF, 0xFE]));
+    decodeGameStateSaveMock.mockRejectedValueOnce(new Error('Unsupported save compression header: 255'));
 
     await import('./main.js');
     await flushMicrotasks();

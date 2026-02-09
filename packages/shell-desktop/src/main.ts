@@ -16,7 +16,7 @@ import {
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
 import { writeSave, readSave, cleanupStaleTempFiles } from './save-storage.js';
-import { loadGameStateSaveFormat } from './runtime-harness.js';
+import { decodeGameStateSave } from './runtime-harness.js';
 import type { GameStateSaveFormat } from './runtime-harness.js';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
@@ -699,25 +699,13 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
           return;
         }
 
-        // Decode save data (JSON parse from bytes)
-        let saveData: unknown;
-        try {
-          const jsonStr = new TextDecoder().decode(saveBytes);
-          saveData = JSON.parse(jsonStr);
-        } catch (decodeError: unknown) {
-          // eslint-disable-next-line no-console
-          console.error('[shell-desktop] Load failed: invalid save data format.', decodeError);
-          clearOperationState();
-          return;
-        }
-
-        // Validate and migrate save format
+        // Decode and validate save data using core binary codec
         let validSave: GameStateSaveFormat;
         try {
-          validSave = loadGameStateSaveFormat(saveData);
-        } catch (validationError: unknown) {
+          validSave = await decodeGameStateSave(saveBytes);
+        } catch (decodeError: unknown) {
           // eslint-disable-next-line no-console
-          console.error('[shell-desktop] Load failed: save data validation failed.', validationError);
+          console.error('[shell-desktop] Load failed: save data decode/validation failed.', decodeError);
           clearOperationState();
           return;
         }

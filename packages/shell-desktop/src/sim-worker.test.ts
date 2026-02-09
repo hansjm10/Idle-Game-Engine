@@ -4,6 +4,8 @@ import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/wo
 
 type MessageHandler = ((message: unknown) => void) | undefined;
 
+const flushMicrotasks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 describe('shell-desktop sim worker', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -769,6 +771,7 @@ describe('shell-desktop sim worker', () => {
       parentPort.postMessage.mockClear();
 
       messageHandler?.({ kind: 'serialize', requestId: 'req-1' });
+      await flushMicrotasks();
 
       const saveCall = parentPort.postMessage.mock.calls.find(
         (call) => (call[0] as SimWorkerOutboundMessage).kind === 'saveData',
@@ -973,6 +976,7 @@ describe('shell-desktop sim worker', () => {
       parentPort.postMessage.mockClear();
 
       messageHandler?.({ kind: 'serialize', requestId: 'req-fail' });
+      await flushMicrotasks();
 
       expect(parentPort.postMessage).toHaveBeenCalledWith({
         kind: 'saveData',
@@ -984,6 +988,71 @@ describe('shell-desktop sim worker', () => {
           retriable: true,
         },
       });
+    });
+
+    it('produces bytes decodable by core decodeGameStateSave (binary roundtrip)', async () => {
+      const { decodeGameStateSave } = await import('./runtime-harness.js');
+      const mockSaveFormat = {
+        version: 1,
+        savedAt: 2000,
+        resources: { wood: 50 },
+        progression: { level: 2 },
+        automation: [],
+        transforms: [],
+        entities: { entities: [], instances: [], entityInstances: [] },
+        commandQueue: { commands: [] },
+        runtime: { step: 10 },
+      };
+      const createSimRuntime = vi.fn(() => ({
+        tick: vi.fn(),
+        enqueueCommands: vi.fn(),
+        getStepSizeMs: vi.fn(() => 16),
+        getNextStep: vi.fn(() => 0),
+        hasCommandHandler: vi.fn(() => false),
+        serialize: vi.fn(() => mockSaveFormat),
+        hydrate: vi.fn(),
+      }));
+
+      let messageHandler: MessageHandler;
+      const parentPort = {
+        on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+          messageHandler = handler;
+        }),
+        postMessage: vi.fn(),
+        close: vi.fn(),
+      };
+
+      vi.doMock('node:worker_threads', () => ({ parentPort }));
+      vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+      await import('./sim-worker.js');
+
+      messageHandler?.({ kind: 'init', stepSizeMs: 16, maxStepsPerFrame: 10 });
+      parentPort.postMessage.mockClear();
+
+      messageHandler?.({ kind: 'serialize', requestId: 'roundtrip-1' });
+      await flushMicrotasks();
+
+      const saveCall = parentPort.postMessage.mock.calls.find(
+        (call) => (call[0] as SimWorkerOutboundMessage).kind === 'saveData',
+      );
+      expect(saveCall).toBeDefined();
+      const saveMsg = saveCall?.[0] as {
+        kind: string;
+        ok: boolean;
+        data?: Uint8Array;
+      };
+      expect(saveMsg.ok).toBe(true);
+      expect(saveMsg.data).toBeInstanceOf(Uint8Array);
+
+      // Decode the produced bytes with the core codec
+      const decoded = await decodeGameStateSave(saveMsg.data!);
+      expect(decoded.version).toBe(1);
+      expect(decoded.savedAt).toBe(2000);
+      expect(decoded.resources).toEqual({ wood: 50 });
+      expect(decoded.progression).toEqual({ level: 2 });
+      expect(decoded.commandQueue).toEqual({ commands: [] });
+      expect(decoded.runtime.step).toBe(10);
     });
   });
 

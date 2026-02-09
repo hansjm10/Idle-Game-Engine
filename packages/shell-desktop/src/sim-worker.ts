@@ -3,6 +3,7 @@ import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { createSimRuntime } from './sim/sim-runtime.js';
 import type { SimRuntime } from './sim/sim-runtime.js';
 import type { SimWorkerOutboundMessage } from './sim/worker-protocol.js';
+import { encodeGameStateSave } from './runtime-harness.js';
 
 if (!parentPort) {
   throw new Error('shell-desktop sim worker requires parentPort');
@@ -142,43 +143,48 @@ parentPort.on('message', (message: unknown) => {
         return;
       }
 
-      try {
-        const saveFormat = activeRuntime.serialize();
-        const json = JSON.stringify(saveFormat);
-        const data = new TextEncoder().encode(json);
+      // Capture narrowed values before async boundary
+      const serializeFn = activeRuntime.serialize;
+      const reqId = msg.requestId;
 
-        if (data.byteLength === 0) {
+      void (async () => {
+        try {
+          const saveFormat = serializeFn();
+          const data = await encodeGameStateSave(saveFormat);
+
+          if (data.byteLength === 0) {
+            emit({
+              kind: 'saveData',
+              requestId: reqId,
+              ok: false,
+              error: {
+                code: 'SERIALIZE_FAILED',
+                message: 'Serialization produced empty data.',
+                retriable: true,
+              },
+            });
+            return;
+          }
+
           emit({
             kind: 'saveData',
-            requestId: msg.requestId,
+            requestId: reqId,
+            ok: true,
+            data,
+          });
+        } catch (serializeError: unknown) {
+          emit({
+            kind: 'saveData',
+            requestId: reqId,
             ok: false,
             error: {
               code: 'SERIALIZE_FAILED',
-              message: 'Serialization produced empty data.',
+              message: serializeError instanceof Error ? serializeError.message : String(serializeError),
               retriable: true,
             },
           });
-          return;
         }
-
-        emit({
-          kind: 'saveData',
-          requestId: msg.requestId,
-          ok: true,
-          data,
-        });
-      } catch (serializeError: unknown) {
-        emit({
-          kind: 'saveData',
-          requestId: msg.requestId,
-          ok: false,
-          error: {
-            code: 'SERIALIZE_FAILED',
-            message: serializeError instanceof Error ? serializeError.message : String(serializeError),
-            retriable: true,
-          },
-        });
-      }
+      })();
       return;
     }
 
