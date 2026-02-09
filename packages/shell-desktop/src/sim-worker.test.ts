@@ -1258,7 +1258,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          message: 'Invalid hydrate.save.savedAt: expected finite number >= 0.',
           retriable: false,
         },
       });
@@ -1300,7 +1300,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          message: 'Invalid hydrate.save.resources: expected object.',
           retriable: false,
         },
       });
@@ -1342,7 +1342,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          message: 'Invalid hydrate.save.progression: expected object.',
           retriable: false,
         },
       });
@@ -1384,7 +1384,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          message: 'Invalid hydrate.save.commandQueue: expected object.',
           retriable: false,
         },
       });
@@ -1470,6 +1470,7 @@ describe('shell-desktop sim worker', () => {
       parentPort.postMessage.mockClear();
 
       // Send a save without version and without legacy v0 shape keys (resources/progression/commandQueue)
+      // Field-specific validation catches missing resources before loadGameStateSaveFormat
       messageHandler?.({
         kind: 'hydrate',
         requestId: 'hyd-no-version',
@@ -1482,7 +1483,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          message: 'Invalid hydrate.save.resources: expected object.',
           retriable: false,
         },
       });

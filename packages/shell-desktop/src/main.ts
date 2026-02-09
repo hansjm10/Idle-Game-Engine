@@ -421,19 +421,24 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   /**
    * Normalizes a ready message, handling protocol v2, explicit v1, and legacy formats.
-   * Returns null if the ready payload is malformed/unsupported.
+   * Returns a result with `ok: true` and normalized fields on success,
+   * or `ok: false` with a deterministic failure `reason` on validation failure.
    */
   const normalizeReady = (message: Record<string, unknown>): {
+    ok: true;
     stepSizeMs: number;
     nextStep: number;
     capabilities: SimWorkerCapabilities;
-  } | null => {
+  } | {
+    ok: false;
+    reason: string;
+  } => {
     // Validate required fields
     if (typeof message.stepSizeMs !== 'number' || !Number.isFinite(message.stepSizeMs) || message.stepSizeMs < 1) {
-      return null;
+      return { ok: false, reason: 'Invalid ready payload: missing or invalid stepSizeMs.' };
     }
     if (typeof message.nextStep !== 'number' || !Number.isFinite(message.nextStep)) {
-      return null;
+      return { ok: false, reason: 'Invalid ready payload: missing or invalid nextStep.' };
     }
 
     const pv = message.protocolVersion;
@@ -442,6 +447,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     // Legacy fallback: both protocolVersion and capabilities are missing
     if (pv === undefined && caps === undefined) {
       return {
+        ok: true,
         stepSizeMs: message.stepSizeMs,
         nextStep: message.nextStep,
         capabilities: { canSerialize: false, canOfflineCatchup: false },
@@ -451,6 +457,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     // Explicit protocol v1: protocolVersion is 1, normalize to disabled capabilities
     if (pv === 1) {
       return {
+        ok: true,
         stepSizeMs: message.stepSizeMs,
         nextStep: message.nextStep,
         capabilities: { canSerialize: false, canOfflineCatchup: false },
@@ -465,6 +472,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
         typeof (caps as Record<string, unknown>).canOfflineCatchup === 'boolean'
       ) {
         return {
+          ok: true,
           stepSizeMs: message.stepSizeMs,
           nextStep: message.nextStep,
           capabilities: {
@@ -474,11 +482,11 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
         };
       }
       // protocolVersion 2 but invalid capabilities
-      return null;
+      return { ok: false, reason: 'Invalid ready.capabilities: expected { canSerialize: boolean; canOfflineCatchup: boolean } for protocolVersion 2.' };
     }
 
     // Any other protocolVersion value is unsupported
-    return null;
+    return { ok: false, reason: `Invalid ready.protocolVersion: expected 1 or 2, received ${String(pv)}.` };
   };
 
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
@@ -505,9 +513,9 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     if (message.kind === 'ready') {
       const normalized = normalizeReady(message as unknown as Record<string, unknown>);
-      if (!normalized) {
+      if (!normalized.ok) {
         handleWorkerFailure(
-          { kind: 'crashed', reason: 'Invalid ready payload: protocol validation failed.' },
+          { kind: 'crashed', reason: normalized.reason },
           message,
         );
         return;

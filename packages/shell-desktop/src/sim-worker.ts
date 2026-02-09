@@ -111,14 +111,13 @@ parentPort.on('message', (message: unknown) => {
       const msg = message as { requestId?: unknown };
 
       if (!isValidRequestId(msg.requestId)) {
-        const actual = typeof msg.requestId === 'string' ? `"${msg.requestId}"` : String(msg.requestId);
         emit({
           kind: 'saveData',
           requestId: typeof msg.requestId === 'string' ? msg.requestId : '',
           ok: false,
           error: {
             code: 'PROTOCOL_VALIDATION_FAILED',
-            message: `Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$, received ${actual}.`,
+            message: 'Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.',
             retriable: false,
           },
         });
@@ -156,7 +155,7 @@ parentPort.on('message', (message: unknown) => {
               ok: false,
               error: {
                 code: 'SERIALIZE_FAILED',
-                message: 'Serialization produced empty data.',
+                message: 'Invalid saveData.data: expected non-empty Uint8Array.',
                 retriable: true,
               },
             });
@@ -189,21 +188,97 @@ parentPort.on('message', (message: unknown) => {
       const msg = message as { requestId?: unknown; save?: unknown };
 
       if (!isValidRequestId(msg.requestId)) {
-        const actual = typeof msg.requestId === 'string' ? `"${msg.requestId}"` : String(msg.requestId);
         emit({
           kind: 'hydrateResult',
           requestId: typeof msg.requestId === 'string' ? msg.requestId : '',
           ok: false,
           error: {
             code: 'PROTOCOL_VALIDATION_FAILED',
-            message: `Invalid hydrate.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$, received ${actual}.`,
+            message: 'Invalid hydrate.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.',
             retriable: false,
           },
         });
         return;
       }
 
-      // Validate save payload through core load-format path
+      // Field-specific validation per design Section 3 templates
+      if (typeof msg.save !== 'object' || msg.save === null || Array.isArray(msg.save)) {
+        emit({
+          kind: 'hydrateResult',
+          requestId: msg.requestId,
+          ok: false,
+          error: {
+            code: 'INVALID_SAVE_DATA',
+            message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+            retriable: false,
+          },
+        });
+        return;
+      }
+
+      const saveObj = msg.save as Record<string, unknown>;
+
+      // Validate savedAt: required, finite, >= 0
+      if (typeof saveObj.savedAt !== 'number' || !Number.isFinite(saveObj.savedAt) || saveObj.savedAt < 0) {
+        emit({
+          kind: 'hydrateResult',
+          requestId: msg.requestId,
+          ok: false,
+          error: {
+            code: 'INVALID_SAVE_DATA',
+            message: 'Invalid hydrate.save.savedAt: expected finite number >= 0.',
+            retriable: false,
+          },
+        });
+        return;
+      }
+
+      // Validate resources: required key present, must be object
+      if (typeof saveObj.resources !== 'object' || saveObj.resources === null || Array.isArray(saveObj.resources)) {
+        emit({
+          kind: 'hydrateResult',
+          requestId: msg.requestId,
+          ok: false,
+          error: {
+            code: 'INVALID_SAVE_DATA',
+            message: 'Invalid hydrate.save.resources: expected object.',
+            retriable: false,
+          },
+        });
+        return;
+      }
+
+      // Validate progression: required key present, must be object
+      if (typeof saveObj.progression !== 'object' || saveObj.progression === null || Array.isArray(saveObj.progression)) {
+        emit({
+          kind: 'hydrateResult',
+          requestId: msg.requestId,
+          ok: false,
+          error: {
+            code: 'INVALID_SAVE_DATA',
+            message: 'Invalid hydrate.save.progression: expected object.',
+            retriable: false,
+          },
+        });
+        return;
+      }
+
+      // Validate commandQueue: required key present, must be object
+      if (typeof saveObj.commandQueue !== 'object' || saveObj.commandQueue === null || Array.isArray(saveObj.commandQueue)) {
+        emit({
+          kind: 'hydrateResult',
+          requestId: msg.requestId,
+          ok: false,
+          error: {
+            code: 'INVALID_SAVE_DATA',
+            message: 'Invalid hydrate.save.commandQueue: expected object.',
+            retriable: false,
+          },
+        });
+        return;
+      }
+
+      // Validate save payload through core load-format path (version resolution + migration)
       let validatedSave: ReturnType<typeof loadGameStateSaveFormat>;
       try {
         validatedSave = loadGameStateSaveFormat(msg.save);
