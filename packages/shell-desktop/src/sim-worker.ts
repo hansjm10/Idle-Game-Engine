@@ -3,7 +3,7 @@ import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import { createSimRuntime } from './sim/sim-runtime.js';
 import type { SimRuntime } from './sim/sim-runtime.js';
 import type { SimWorkerOutboundMessage } from './sim/worker-protocol.js';
-import { encodeGameStateSave } from './runtime-harness.js';
+import { encodeGameStateSave, loadGameStateSaveFormat } from './runtime-harness.js';
 
 if (!parentPort) {
   throw new Error('shell-desktop sim worker requires parentPort');
@@ -33,9 +33,6 @@ const isValidRequestId = (value: unknown): value is string =>
   value.length >= 1 &&
   value.length <= 64 &&
   REQUEST_ID_PATTERN.test(value);
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 parentPort.on('message', (message: unknown) => {
   try {
@@ -206,8 +203,11 @@ parentPort.on('message', (message: unknown) => {
         return;
       }
 
-      // Validate save payload structure
-      if (!isRecord(msg.save)) {
+      // Validate save payload through core load-format path
+      let validatedSave: ReturnType<typeof loadGameStateSaveFormat>;
+      try {
+        validatedSave = loadGameStateSaveFormat(msg.save);
+      } catch {
         emit({
           kind: 'hydrateResult',
           requestId: msg.requestId,
@@ -215,64 +215,6 @@ parentPort.on('message', (message: unknown) => {
           error: {
             code: 'INVALID_SAVE_DATA',
             message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
-            retriable: false,
-          },
-        });
-        return;
-      }
-
-      const save = msg.save as Record<string, unknown>;
-
-      if (typeof save.savedAt !== 'number' || !Number.isFinite(save.savedAt) || save.savedAt < 0) {
-        emit({
-          kind: 'hydrateResult',
-          requestId: msg.requestId,
-          ok: false,
-          error: {
-            code: 'INVALID_SAVE_DATA',
-            message: 'Invalid hydrate.save.savedAt: expected finite number >= 0.',
-            retriable: false,
-          },
-        });
-        return;
-      }
-
-      if (!isRecord(save.resources)) {
-        emit({
-          kind: 'hydrateResult',
-          requestId: msg.requestId,
-          ok: false,
-          error: {
-            code: 'INVALID_SAVE_DATA',
-            message: 'Invalid hydrate.save.resources: expected object.',
-            retriable: false,
-          },
-        });
-        return;
-      }
-
-      if (!isRecord(save.progression)) {
-        emit({
-          kind: 'hydrateResult',
-          requestId: msg.requestId,
-          ok: false,
-          error: {
-            code: 'INVALID_SAVE_DATA',
-            message: 'Invalid hydrate.save.progression: expected object.',
-            retriable: false,
-          },
-        });
-        return;
-      }
-
-      if (!isRecord(save.commandQueue)) {
-        emit({
-          kind: 'hydrateResult',
-          requestId: msg.requestId,
-          ok: false,
-          error: {
-            code: 'INVALID_SAVE_DATA',
-            message: 'Invalid hydrate.save.commandQueue: expected object.',
             retriable: false,
           },
         });
@@ -295,7 +237,7 @@ parentPort.on('message', (message: unknown) => {
       }
 
       try {
-        activeRuntime.hydrate(save as Parameters<NonNullable<SimRuntime['hydrate']>>[0]);
+        activeRuntime.hydrate(validatedSave);
         emit({
           kind: 'hydrateResult',
           requestId: msg.requestId,

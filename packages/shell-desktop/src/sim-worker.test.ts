@@ -1258,7 +1258,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save.savedAt: expected finite number >= 0.',
+          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
           retriable: false,
         },
       });
@@ -1300,7 +1300,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save.resources: expected object.',
+          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
           retriable: false,
         },
       });
@@ -1342,7 +1342,7 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save.progression: expected object.',
+          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
           retriable: false,
         },
       });
@@ -1384,10 +1384,112 @@ describe('shell-desktop sim worker', () => {
         ok: false,
         error: {
           code: 'INVALID_SAVE_DATA',
-          message: 'Invalid hydrate.save.commandQueue: expected object.',
+          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
           retriable: false,
         },
       });
+    });
+
+    it('returns INVALID_SAVE_DATA for unsupported save version', async () => {
+      const createSimRuntime = vi.fn(() => ({
+        tick: vi.fn(),
+        enqueueCommands: vi.fn(),
+        getStepSizeMs: vi.fn(() => 16),
+        getNextStep: vi.fn(() => 0),
+        hasCommandHandler: vi.fn(() => false),
+        serialize: vi.fn(),
+        hydrate: vi.fn(),
+      }));
+
+      let messageHandler: MessageHandler;
+      const parentPort = {
+        on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+          messageHandler = handler;
+        }),
+        postMessage: vi.fn(),
+        close: vi.fn(),
+      };
+
+      vi.doMock('node:worker_threads', () => ({ parentPort }));
+      vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+      await import('./sim-worker.js');
+
+      messageHandler?.({ kind: 'init', stepSizeMs: 16, maxStepsPerFrame: 10 });
+      parentPort.postMessage.mockClear();
+
+      // Send a save with version: 2 (unsupported — no migration path)
+      messageHandler?.({
+        kind: 'hydrate',
+        requestId: 'hyd-unsupported-ver',
+        save: { ...validSave, version: 2 },
+      });
+
+      expect(parentPort.postMessage).toHaveBeenCalledWith({
+        kind: 'hydrateResult',
+        requestId: 'hyd-unsupported-ver',
+        ok: false,
+        error: {
+          code: 'INVALID_SAVE_DATA',
+          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          retriable: false,
+        },
+      });
+
+      // Verify runtime.hydrate was NOT called
+      const runtimeInstance = createSimRuntime.mock.results[0]?.value as { hydrate: ReturnType<typeof vi.fn> };
+      expect(runtimeInstance.hydrate).not.toHaveBeenCalled();
+    });
+
+    it('returns INVALID_SAVE_DATA for save with unresolvable version (no version, no legacy shape)', async () => {
+      const createSimRuntime = vi.fn(() => ({
+        tick: vi.fn(),
+        enqueueCommands: vi.fn(),
+        getStepSizeMs: vi.fn(() => 16),
+        getNextStep: vi.fn(() => 0),
+        hasCommandHandler: vi.fn(() => false),
+        serialize: vi.fn(),
+        hydrate: vi.fn(),
+      }));
+
+      let messageHandler: MessageHandler;
+      const parentPort = {
+        on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+          messageHandler = handler;
+        }),
+        postMessage: vi.fn(),
+        close: vi.fn(),
+      };
+
+      vi.doMock('node:worker_threads', () => ({ parentPort }));
+      vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+
+      await import('./sim-worker.js');
+
+      messageHandler?.({ kind: 'init', stepSizeMs: 16, maxStepsPerFrame: 10 });
+      parentPort.postMessage.mockClear();
+
+      // Send a save without version and without legacy v0 shape keys (resources/progression/commandQueue)
+      messageHandler?.({
+        kind: 'hydrate',
+        requestId: 'hyd-no-version',
+        save: { savedAt: 1000 },
+      });
+
+      expect(parentPort.postMessage).toHaveBeenCalledWith({
+        kind: 'hydrateResult',
+        requestId: 'hyd-no-version',
+        ok: false,
+        error: {
+          code: 'INVALID_SAVE_DATA',
+          message: 'Invalid hydrate.save: expected GameStateSaveFormat that resolves to version 1.',
+          retriable: false,
+        },
+      });
+
+      // Verify runtime.hydrate was NOT called
+      const runtimeInstance = createSimRuntime.mock.results[0]?.value as { hydrate: ReturnType<typeof vi.fn> };
+      expect(runtimeInstance.hydrate).not.toHaveBeenCalled();
     });
 
     it('returns HYDRATE_FAILED when runtime.hydrate throws', async () => {
