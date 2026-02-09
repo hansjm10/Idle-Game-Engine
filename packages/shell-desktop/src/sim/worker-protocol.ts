@@ -97,7 +97,19 @@ export type SimWorkerReadyMessageV2 = Readonly<{
 }>;
 
 /**
- * Legacy ready shape (protocol v1 / pre-capability workers).
+ * Explicit protocol v1 ready shape.
+ * Includes `protocolVersion: 1` but no capability flags; main normalizes to
+ * `{ canSerialize: false, canOfflineCatchup: false }`.
+ */
+export type SimWorkerReadyMessageV1 = Readonly<{
+  kind: 'ready';
+  protocolVersion: 1;
+  stepSizeMs: number;
+  nextStep: number;
+}>;
+
+/**
+ * Legacy ready shape (pre-capability workers).
  * Missing `protocolVersion` and `capabilities`; main normalizes to
  * protocol v1 with `{ canSerialize: false, canOfflineCatchup: false }`.
  */
@@ -112,6 +124,7 @@ export type SimWorkerReadyMessageLegacy = Readonly<{
  */
 export type SimWorkerReadyMessage =
   | SimWorkerReadyMessageV2
+  | SimWorkerReadyMessageV1
   | SimWorkerReadyMessageLegacy;
 
 export type SimWorkerFrameMessage = Readonly<{

@@ -1868,6 +1868,43 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('accepts explicit protocolVersion 1 ready and normalizes to disabled capabilities', async () => {
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    // Emit explicit protocol v1 ready (protocolVersion: 1, no capabilities)
+    worker?.emitMessage({ kind: 'ready', protocolVersion: 1, stepSizeMs: 16, nextStep: 0 } as unknown);
+    await flushMicrotasks();
+
+    // Should transition to running (explicit v1 is valid)
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Dev menu items should remain disabled (v1 = no capabilities)
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    const loadItem = devSubmenu.find((item) => item.label === 'Load');
+    const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+
+    expect(saveItem?.enabled).toBe(false);
+    expect(loadItem?.enabled).toBe(false);
+    expect(catchupItem?.enabled).toBe(false);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('enables only canSerialize actions when canOfflineCatchup is false', async () => {
     setMonotonicNowSequence([0]);
     await import('./main.js');

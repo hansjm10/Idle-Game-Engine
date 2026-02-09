@@ -412,7 +412,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   };
 
   /**
-   * Normalizes a ready message, handling both protocol v2 and legacy formats.
+   * Normalizes a ready message, handling protocol v2, explicit v1, and legacy formats.
    * Returns null if the ready payload is malformed/unsupported.
    */
   const normalizeReady = (message: Record<string, unknown>): {
@@ -440,6 +440,15 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       };
     }
 
+    // Explicit protocol v1: protocolVersion is 1, normalize to disabled capabilities
+    if (pv === 1) {
+      return {
+        stepSizeMs: message.stepSizeMs,
+        nextStep: message.nextStep,
+        capabilities: { canSerialize: false, canOfflineCatchup: false },
+      };
+    }
+
     // Protocol v2: protocolVersion must be 2 with valid capabilities
     if (pv === 2) {
       if (
@@ -460,7 +469,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       return null;
     }
 
-    // Any other protocolVersion value (including 1 when explicitly set) is unsupported
+    // Any other protocolVersion value is unsupported
     return null;
   };
 
