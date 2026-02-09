@@ -1961,10 +1961,13 @@ describe('shell-desktop main process entrypoint', () => {
     } as unknown);
     await flushMicrotasks();
 
-    // Should transition to crashed (not running)
+    // Should transition to crashed (not running) with template-aligned reason
     expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
       IPC_CHANNELS.simStatus,
-      expect.objectContaining({ kind: 'crashed' }),
+      expect.objectContaining({
+        kind: 'crashed',
+        reason: 'Invalid ready.protocolVersion: expected 1 or 2, received 3.',
+      }),
     );
     expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
       IPC_CHANNELS.simStatus,
@@ -1999,7 +2002,10 @@ describe('shell-desktop main process entrypoint', () => {
 
     expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
       IPC_CHANNELS.simStatus,
-      expect.objectContaining({ kind: 'crashed' }),
+      expect.objectContaining({
+        kind: 'crashed',
+        reason: 'Invalid ready.capabilities: expected { canSerialize: boolean; canOfflineCatchup: boolean } for protocolVersion 2.',
+      }),
     );
 
     consoleError.mockRestore();

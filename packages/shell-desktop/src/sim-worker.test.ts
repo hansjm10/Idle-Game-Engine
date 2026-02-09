@@ -866,7 +866,7 @@ describe('shell-desktop sim worker', () => {
       };
       expect(saveMsg.ok).toBe(false);
       expect(saveMsg.error?.code).toBe('PROTOCOL_VALIDATION_FAILED');
-      expect(saveMsg.error?.message).toContain('serialize.requestId');
+      expect(saveMsg.error?.message).toBe('Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.');
     });
 
     it('returns PROTOCOL_VALIDATION_FAILED for invalid requestId (empty string)', async () => {
@@ -901,10 +901,11 @@ describe('shell-desktop sim worker', () => {
       const saveMsg = saveCall?.[0] as {
         kind: string;
         ok: boolean;
-        error?: { code: string };
+        error?: { code: string; message: string };
       };
       expect(saveMsg.ok).toBe(false);
       expect(saveMsg.error?.code).toBe('PROTOCOL_VALIDATION_FAILED');
+      expect(saveMsg.error?.message).toBe('Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.');
     });
 
     it('returns PROTOCOL_VALIDATION_FAILED for requestId with special characters', async () => {
@@ -939,10 +940,11 @@ describe('shell-desktop sim worker', () => {
       const saveMsg = saveCall?.[0] as {
         kind: string;
         ok: boolean;
-        error?: { code: string };
+        error?: { code: string; message: string };
       };
       expect(saveMsg.ok).toBe(false);
       expect(saveMsg.error?.code).toBe('PROTOCOL_VALIDATION_FAILED');
+      expect(saveMsg.error?.message).toBe('Invalid serialize.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.');
     });
 
     it('returns SERIALIZE_FAILED when runtime.serialize throws', async () => {
@@ -1053,6 +1055,63 @@ describe('shell-desktop sim worker', () => {
       expect(decoded.progression).toEqual({ level: 2 });
       expect(decoded.commandQueue).toEqual({ commands: [] });
       expect(decoded.runtime.step).toBe(10);
+    });
+
+    it('returns SERIALIZE_FAILED with exact template message when encoded bytes are empty', async () => {
+      const mockSaveFormat = {
+        version: 1,
+        savedAt: 1000,
+        resources: {},
+        progression: {},
+        commandQueue: {},
+      };
+      const createSimRuntime = vi.fn(() => ({
+        tick: vi.fn(),
+        enqueueCommands: vi.fn(),
+        getStepSizeMs: vi.fn(() => 16),
+        getNextStep: vi.fn(() => 0),
+        hasCommandHandler: vi.fn(() => false),
+        serialize: vi.fn(() => mockSaveFormat),
+        hydrate: vi.fn(),
+      }));
+
+      let messageHandler: MessageHandler;
+      const parentPort = {
+        on: vi.fn((_event: string, handler: (message: unknown) => void) => {
+          messageHandler = handler;
+        }),
+        postMessage: vi.fn(),
+        close: vi.fn(),
+      };
+
+      vi.doMock('node:worker_threads', () => ({ parentPort }));
+      vi.doMock('./sim/sim-runtime.js', () => ({ createSimRuntime }));
+      vi.doMock('./runtime-harness.js', async (importOriginal) => {
+        const actual = await importOriginal();
+        return {
+          ...(actual as Record<string, unknown>),
+          encodeGameStateSave: vi.fn().mockResolvedValue(new Uint8Array(0)),
+        };
+      });
+
+      await import('./sim-worker.js');
+
+      messageHandler?.({ kind: 'init', stepSizeMs: 16, maxStepsPerFrame: 10 });
+      parentPort.postMessage.mockClear();
+
+      messageHandler?.({ kind: 'serialize', requestId: 'req-empty' });
+      await flushMicrotasks();
+
+      expect(parentPort.postMessage).toHaveBeenCalledWith({
+        kind: 'saveData',
+        requestId: 'req-empty',
+        ok: false,
+        error: {
+          code: 'SERIALIZE_FAILED',
+          message: 'Invalid saveData.data: expected non-empty Uint8Array.',
+          retriable: true,
+        },
+      });
     });
   });
 
@@ -1183,7 +1242,7 @@ describe('shell-desktop sim worker', () => {
       };
       expect(hydrateMsg.ok).toBe(false);
       expect(hydrateMsg.error?.code).toBe('PROTOCOL_VALIDATION_FAILED');
-      expect(hydrateMsg.error?.message).toContain('hydrate.requestId');
+      expect(hydrateMsg.error?.message).toBe('Invalid hydrate.requestId: expected 1-64 chars matching ^[A-Za-z0-9_-]+$.');
     });
 
     it('returns INVALID_SAVE_DATA when save is not an object', async () => {
