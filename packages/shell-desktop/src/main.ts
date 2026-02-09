@@ -15,7 +15,7 @@ import {
 } from '@idle-engine/core';
 import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInputEventEnvelope, type ShellSimStatusPayload } from './ipc.js';
 import { monotonicNowMs } from './monotonic-time.js';
-import { writeSave, readSave } from './save-storage.js';
+import { writeSave, readSave, cleanupStaleTempFiles } from './save-storage.js';
 import { loadGameStateSaveFormat } from './runtime-harness.js';
 import type { GameStateSaveFormat } from './runtime-harness.js';
 import type { MenuItemConstructorOptions } from 'electron';
@@ -928,6 +928,15 @@ async function createMainWindow(): Promise<BrowserWindow> {
 app
   .whenReady()
   .then(async () => {
+    // Best-effort cleanup of stale temp save files from interrupted writes.
+    // Must run before save/load operations become available (i.e. before worker init).
+    try {
+      await cleanupStaleTempFiles();
+    } catch (cleanupError: unknown) {
+      // eslint-disable-next-line no-console
+      console.error('[shell-desktop] Stale temp cleanup failed (non-fatal):', cleanupError);
+    }
+
     installAppMenu();
     registerIpcHandlers();
     const mainWindow = await createMainWindow();

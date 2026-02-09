@@ -151,10 +151,12 @@ vi.mock('./monotonic-time.js', () => ({
 
 const writeSaveMock = vi.fn(async () => undefined);
 const readSaveMock = vi.fn(async (): Promise<Uint8Array | undefined> => undefined);
+const cleanupStaleTempFilesMock = vi.fn(async () => undefined);
 
 vi.mock('./save-storage.js', () => ({
   writeSave: writeSaveMock,
   readSave: readSaveMock,
+  cleanupStaleTempFiles: cleanupStaleTempFilesMock,
 }));
 
 const loadGameStateSaveFormatMock = vi.fn((data: unknown) => data);
@@ -2719,5 +2721,61 @@ describe('shell-desktop main process entrypoint', () => {
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
+  });
+
+  describe('startup stale temp cleanup', () => {
+    it('invokes cleanupStaleTempFiles before save/load operations can run', async () => {
+      // Track that cleanup is called before the worker is created (which enables save/load).
+      // At cleanup invocation time no worker instances should exist yet.
+      let workerCountAtCleanup = -1;
+      cleanupStaleTempFilesMock.mockImplementation(async () => {
+        workerCountAtCleanup = Worker.instances.length;
+      });
+
+      setMonotonicNowSequence([0]);
+      await import('./main.js');
+      await flushMicrotasks();
+
+      expect(cleanupStaleTempFilesMock).toHaveBeenCalledTimes(1);
+
+      // At cleanup time, no workers should have been created yet
+      expect(workerCountAtCleanup).toBe(0);
+
+      // After startup completes, a worker should exist (save/load operations are now possible)
+      expect(Worker.instances).toHaveLength(1);
+
+      // Cleanup
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+    });
+
+    it('handles cleanup failure as best-effort without crashing startup', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const cleanupError = new Error('permission denied');
+      cleanupStaleTempFilesMock.mockRejectedValueOnce(cleanupError);
+
+      setMonotonicNowSequence([0]);
+      await import('./main.js');
+      await flushMicrotasks();
+
+      // Startup should complete despite cleanup failure
+      expect(Worker.instances).toHaveLength(1);
+      expect(Worker.instances[0]?.postMessage).toHaveBeenCalled();
+
+      // Error should have been logged
+      expect(consoleError).toHaveBeenCalledWith(
+        '[shell-desktop] Stale temp cleanup failed (non-fatal):',
+        cleanupError,
+      );
+
+      consoleError.mockRestore();
+
+      // Cleanup
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+    });
   });
 });
