@@ -2826,6 +2826,139 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  describe('worker ready startup timeout', () => {
+    it('transitions to worker_failed when no ready arrives before timeout', async () => {
+      vi.useFakeTimers();
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const mainWindow = BrowserWindow.windows[0];
+      expect(mainWindow).toBeDefined();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      // Verify init was sent
+      expect(worker?.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'init' }),
+      );
+
+      // Worker never sends ready — advance past timeout (10s)
+      await vi.advanceTimersByTimeAsync(11_000);
+      await flushMicrotasks();
+
+      // Should have triggered worker failure: crashed status sent to renderer
+      expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.simStatus,
+        expect.objectContaining({ kind: 'crashed', reason: expect.stringContaining('timeout') }),
+      );
+
+      // Worker should be terminated
+      expect(worker?.terminate).toHaveBeenCalled();
+
+      // Dev menu items should remain disabled
+      const devSubmenu = findDevSubmenu();
+      const saveItem = devSubmenu.find((item) => item.label === 'Save');
+      const loadItem = devSubmenu.find((item) => item.label === 'Load');
+      const catchupItem = devSubmenu.find((item) => item.label === 'Offline Catch-Up');
+      expect(saveItem?.enabled).toBe(false);
+      expect(loadItem?.enabled).toBe(false);
+      expect(catchupItem?.enabled).toBe(false);
+
+      consoleError.mockRestore();
+    });
+
+    it('does not trigger false timeout when ready arrives before the deadline', async () => {
+      vi.useFakeTimers();
+      // Provide monotonicNowMs values for startTickLoop + several ticks during the 11s advance
+      const tickValues = Array.from({ length: 800 }, (_, i) => i * 16);
+      setMonotonicNowSequence(tickValues);
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const mainWindow = BrowserWindow.windows[0];
+      expect(mainWindow).toBeDefined();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      // Send valid ready before timeout elapses
+      worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+      await flushMicrotasks();
+
+      // Status should be 'running' now
+      expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.simStatus,
+        { kind: 'running' },
+      );
+
+      // Clear send mock to check no crash status arrives after timeout
+      mainWindow?.webContents.send.mockClear();
+
+      // Advance past the timeout period
+      await vi.advanceTimersByTimeAsync(11_000);
+      await flushMicrotasks();
+
+      // No crashed/stopped status should have been sent (timeout was cleared)
+      expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+        IPC_CHANNELS.simStatus,
+        expect.objectContaining({ kind: 'crashed' }),
+      );
+      expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+        IPC_CHANNELS.simStatus,
+        expect.objectContaining({ kind: 'stopped' }),
+      );
+
+      // Worker should NOT have been terminated by the timeout
+      expect(worker?.terminate).not.toHaveBeenCalled();
+
+      consoleError.mockRestore();
+
+      // Cleanup
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+    });
+
+    it('clears ready timeout when worker is disposed before ready arrives', async () => {
+      vi.useFakeTimers();
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      await import('./main.js');
+      await flushMicrotasks();
+
+      const mainWindow = BrowserWindow.windows[0];
+      expect(mainWindow).toBeDefined();
+
+      const worker = Worker.instances[0];
+      expect(worker).toBeDefined();
+
+      // Dispose via window-all-closed (before ready arrives)
+      const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+      const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+      windowAllClosedHandler?.();
+
+      // Clear send mock to verify no status after disposal
+      mainWindow?.webContents.send.mockClear();
+
+      // Advance past the timeout period
+      await vi.advanceTimersByTimeAsync(11_000);
+      await flushMicrotasks();
+
+      // No crashed/stopped status should have been sent (disposed clears the timeout)
+      expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+        IPC_CHANNELS.simStatus,
+        expect.objectContaining({ kind: 'crashed' }),
+      );
+
+      consoleError.mockRestore();
+    });
+  });
+
   describe('startup stale temp cleanup', () => {
     it('invokes cleanupStaleTempFiles before save/load operations can run', async () => {
       // Track that cleanup is called before the worker is created (which enables save/load).

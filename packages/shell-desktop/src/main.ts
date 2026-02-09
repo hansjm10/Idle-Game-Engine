@@ -25,6 +25,7 @@ import type { SimWorkerCapabilities, SimWorkerInboundMessage, SimWorkerOutboundM
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const WORKER_READY_TIMEOUT_MS = 10_000;
 
 const enableUnsafeWebGpu = isDev || process.env.IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU === '1';
 if (enableUnsafeWebGpu) {
@@ -316,6 +317,9 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   // Capability cache: default disabled until ready
   let capabilities: SimWorkerCapabilities = { canSerialize: false, canOfflineCatchup: false };
 
+  // Worker-ready startup timeout: cleared when valid ready payload is processed
+  let readyTimeoutTimer: NodeJS.Timeout | undefined;
+
   // Operation lock: only one save/load/catchup operation at a time
   let operationLocked = false;
   let activeSerializeRequestId: string | undefined;
@@ -366,6 +370,10 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
 
     hasFailed = true;
+    if (readyTimeoutTimer) {
+      clearTimeout(readyTimeoutTimer);
+      readyTimeoutTimer = undefined;
+    }
     stopTickLoop();
     clearOperationState();
     refreshDevMenuState(capabilities, false, false);
@@ -475,6 +483,17 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   safePostMessage({ kind: 'init', stepSizeMs, maxStepsPerFrame });
 
+  // Start worker-ready timeout immediately after init
+  readyTimeoutTimer = setTimeout(() => {
+    if (!isReady && !hasFailed && !isDisposing) {
+      handleWorkerFailure(
+        { kind: 'crashed', reason: 'Worker ready timeout: no valid ready message received.' },
+        undefined,
+      );
+    }
+  }, WORKER_READY_TIMEOUT_MS);
+  readyTimeoutTimer.unref?.();
+
   // Emit sim-status 'starting' when the worker controller is created
   sendSimStatus({ kind: 'starting' });
 
@@ -492,6 +511,12 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
           message,
         );
         return;
+      }
+
+      // Clear ready timeout — valid ready payload arrived in time
+      if (readyTimeoutTimer) {
+        clearTimeout(readyTimeoutTimer);
+        readyTimeoutTimer = undefined;
       }
 
       stepSizeMs = normalized.stepSizeMs;
@@ -776,6 +801,10 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   const dispose = (): void => {
     isDisposing = true;
+    if (readyTimeoutTimer) {
+      clearTimeout(readyTimeoutTimer);
+      readyTimeoutTimer = undefined;
+    }
     stopTickLoop();
     clearOperationState();
     refreshDevMenuState(capabilities, false, false);
