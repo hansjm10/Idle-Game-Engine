@@ -561,23 +561,33 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
         return;
       }
 
-      // Clear operation state
+      // Consume requestId immediately to reject duplicates, but keep
+      // operationLocked true through the entire disk-write phase so a
+      // second save cannot overlap and potentially overwrite newer data.
       const savedRequestId = activeSerializeRequestId;
-      clearOperationState();
+      activeSerializeRequestId = undefined;
+      if (operationTimeoutTimer) {
+        clearTimeout(operationTimeoutTimer);
+        operationTimeoutTimer = undefined;
+      }
 
       if (!message.ok) {
+        // Serialize failed — unlock immediately (no disk write pending)
+        clearOperationState();
         // eslint-disable-next-line no-console
         console.error(`[shell-desktop] Save failed: ${message.error.message}`);
         return;
       }
 
-      // Persist save data via atomic storage
+      // Persist save data via atomic storage; unlock only after write settles
       void writeSave(message.data).then(() => {
         // eslint-disable-next-line no-console
         console.log(`[shell-desktop] Save complete (requestId: ${savedRequestId}).`);
       }).catch((writeError: unknown) => {
         // eslint-disable-next-line no-console
         console.error('[shell-desktop] Save write failed:', writeError);
+      }).finally(() => {
+        clearOperationState();
       });
       return;
     }

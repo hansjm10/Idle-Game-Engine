@@ -2318,6 +2318,141 @@ describe('shell-desktop main process entrypoint', () => {
     windowAllClosedHandler?.();
   });
 
+  it('save flow: operation stays locked during disk write, blocking back-to-back saves', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    // Control when writeSave resolves so we can observe the lock during the write phase
+    let resolveWrite!: () => void;
+    writeSaveMock.mockImplementationOnce(() => new Promise<undefined>((resolve) => { resolveWrite = resolve as () => void; }));
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit v2 ready with serialize capability
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    expect(saveItem?.enabled).toBe(true);
+
+    // Trigger first save
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+
+    // Worker responds with saveData — triggers writeSave (now blocked on resolveWrite)
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: new Uint8Array([1, 2, 3]),
+    });
+    await flushMicrotasks();
+
+    // writeSave was called
+    expect(writeSaveMock).toHaveBeenCalledTimes(1);
+
+    // Save item should still be DISABLED — disk write is in progress
+    expect(saveItem?.enabled).toBe(false);
+
+    // A second save click should be a no-op (locked)
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    // No second serialize request should have been sent
+    const serializeCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    expect(serializeCalls).toHaveLength(1);
+
+    // Now let the first write complete
+    resolveWrite();
+    await flushMicrotasks();
+
+    // Save item should be re-enabled after write completes
+    expect(saveItem?.enabled).toBe(true);
+
+    consoleLog.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('save flow: operation unlocks after write failure', async () => {
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // Make writeSave reject
+    writeSaveMock.mockImplementationOnce(() => Promise.reject(new Error('disk full')));
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({
+      kind: 'ready',
+      protocolVersion: 2,
+      stepSizeMs: 16,
+      nextStep: 0,
+      capabilities: { canSerialize: true, canOfflineCatchup: false },
+    });
+    await flushMicrotasks();
+
+    const devSubmenu = findDevSubmenu();
+    const saveItem = devSubmenu.find((item) => item.label === 'Save');
+    expect(saveItem?.enabled).toBe(true);
+
+    saveItem?.click?.();
+    await flushMicrotasks();
+
+    const serializeCall = worker?.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'serialize',
+    );
+    const sentRequestId = (serializeCall?.[0] as { requestId?: string })?.requestId;
+
+    // Worker responds with successful saveData
+    worker?.emitMessage({
+      kind: 'saveData',
+      requestId: sentRequestId!,
+      ok: true,
+      data: new Uint8Array([1, 2, 3]),
+    });
+    await flushMicrotasks();
+
+    // writeSave was called and rejected
+    expect(writeSaveMock).toHaveBeenCalledTimes(1);
+
+    // Save item should be re-enabled even after write failure (via finally)
+    expect(saveItem?.enabled).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith('[shell-desktop] Save write failed:', expect.any(Error));
+
+    consoleError.mockRestore();
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
   it('load flow: reads save, decodes, validates, sends hydrate, consumes matching hydrateResult', async () => {
     setMonotonicNowSequence([0]);
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
