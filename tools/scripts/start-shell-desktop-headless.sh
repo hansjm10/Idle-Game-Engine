@@ -4,10 +4,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISPLAY_ID="${IDLE_ENGINE_XPRA_DISPLAY:-:121}"
 XPRA_SOCKET_DIR="${IDLE_ENGINE_XPRA_SOCKET_DIR:-$HOME/.xpra}"
+XPRA_BACKEND="${IDLE_ENGINE_XPRA_BACKEND:-xorg}"
 MCP_ENABLED="${IDLE_ENGINE_ENABLE_MCP_SERVER:-1}"
 MCP_PORT="${IDLE_ENGINE_MCP_PORT:-8570}"
 BUILD_BEFORE_START="${IDLE_ENGINE_BUILD_BEFORE_START:-1}"
 NO_SANDBOX="${IDLE_ENGINE_NO_SANDBOX:-1}"
+ENABLE_VULKAN_FEATURE="${IDLE_ENGINE_ENABLE_VULKAN_FEATURE:-1}"
+REQUIRE_HW_GL="${IDLE_ENGINE_REQUIRE_HW_GL:-1}"
+XORG_WRAPPER="$ROOT_DIR/tools/scripts/xpra-xorg-wrapper.sh"
 
 if ! command -v xpra >/dev/null 2>&1; then
   echo "xpra is required but was not found in PATH." >&2
@@ -31,16 +35,27 @@ mkdir -p "$XPRA_SOCKET_DIR"
 
 XPRA_LIST_OUTPUT="$(xpra list --socket-dir="$XPRA_SOCKET_DIR" 2>/dev/null || true)"
 if ! printf '%s\n' "$XPRA_LIST_OUTPUT" | grep -q "LIVE session at ${DISPLAY_ID}$"; then
+  XPRA_START_ARGS=(
+    "--daemon=yes"
+    "--socket-dir=$XPRA_SOCKET_DIR"
+    "--notifications=no"
+    "--pulseaudio=no"
+    "--mdns=no"
+    "--exit-with-children=no"
+    "--speaker=off"
+    "--microphone=off"
+    "--start=/bin/true"
+  )
+
+  if [[ "$XPRA_BACKEND" == "xorg" ]] && command -v Xorg >/dev/null 2>&1 && [[ -x "$XORG_WRAPPER" ]]; then
+    XPRA_START_ARGS+=("--xvfb=$XORG_WRAPPER")
+    echo "[shell-desktop] Starting xpra display $DISPLAY_ID with Xorg backend."
+  else
+    echo "[shell-desktop] Starting xpra display $DISPLAY_ID with Xvfb backend."
+  fi
+
   xpra start "$DISPLAY_ID" \
-    --daemon=yes \
-    --socket-dir="$XPRA_SOCKET_DIR" \
-    --notifications=no \
-    --pulseaudio=no \
-    --mdns=no \
-    --exit-with-children=no \
-    --speaker=off \
-    --microphone=off \
-    --start=/bin/true
+    "${XPRA_START_ARGS[@]}"
 fi
 
 ready=0
@@ -57,6 +72,21 @@ if [[ "$ready" != "1" ]]; then
   exit 1
 fi
 
+if command -v glxinfo >/dev/null 2>&1; then
+  GL_RENDERER_LINE="$(DISPLAY="$DISPLAY_ID" glxinfo -B 2>/dev/null | grep -m1 'OpenGL renderer string:' || true)"
+  if [[ -n "$GL_RENDERER_LINE" ]]; then
+    echo "[shell-desktop] ${GL_RENDERER_LINE}"
+  fi
+
+  if [[ "$REQUIRE_HW_GL" == "1" ]] && [[ "${GL_RENDERER_LINE,,}" == *"llvmpipe"* ]]; then
+    echo "Detected software renderer (llvmpipe) on $DISPLAY_ID; refusing to launch Electron." >&2
+    echo "Stop the display and restart with Xorg backend:" >&2
+    echo "  pnpm shell:desktop:headless:stop" >&2
+    echo "  IDLE_ENGINE_XPRA_BACKEND=xorg pnpm shell:desktop:headless" >&2
+    exit 1
+  fi
+fi
+
 if [[ "$BUILD_BEFORE_START" == "1" ]]; then
   (cd "$ROOT_DIR" && pnpm --filter @idle-engine/shell-desktop run build)
 fi
@@ -69,6 +99,9 @@ fi
 ELECTRON_ARGS=()
 if [[ "$NO_SANDBOX" == "1" ]]; then
   ELECTRON_ARGS+=("--no-sandbox")
+fi
+if [[ "$ENABLE_VULKAN_FEATURE" == "1" ]]; then
+  ELECTRON_ARGS+=("--enable-features=Vulkan")
 fi
 
 if [[ "$MCP_ENABLED" == "1" ]]; then

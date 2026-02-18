@@ -27,6 +27,8 @@ Then verify MCP connectivity:
 pnpm shell:desktop:mcp:smoke
 ```
 
+The headless launcher defaults to an Xorg-backed xpra display plus Chromium `Vulkan` feature enablement so WebGPU can use hardware adapters on Linux hosts.
+
 ## Content Authoring Docs
 - `docs/content-dsl-usage-guidelines.md` – end-to-end authoring guide with field tables and examples.
 - `docs/content-quick-reference.md` – condensed cheatsheet for content types, conditions, and formulas.

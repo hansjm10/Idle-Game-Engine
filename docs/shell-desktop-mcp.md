@@ -36,7 +36,9 @@ pnpm shell:desktop:headless
 
 This launcher:
 - starts or reuses an xpra display (`:121` by default),
+- uses an Xorg-backed xpra server by default (`IDLE_ENGINE_XPRA_BACKEND=xorg`) so Linux hosts can use hardware GL instead of llvmpipe,
 - runs Electron with `--no-sandbox` (needed on many rootless hosts),
+- enables the Chromium Vulkan feature (`--enable-features=Vulkan`) for Linux WebGPU adapter bring-up,
 - enables MCP by default (`http://127.0.0.1:8570/mcp/sse`).
 
 Smoke-test the MCP server from the same host:
@@ -50,6 +52,25 @@ Stop the xpra session:
 ```bash
 pnpm shell:desktop:headless:stop
 ```
+
+### Fast GPU checks
+
+Use these after launch to confirm hardware bring-up:
+
+Inside Electron DevTools:
+
+```js
+navigator.gpu
+const a = await navigator.gpu.requestAdapter(); a?.name
+```
+
+On the host CLI:
+
+```bash
+vulkaninfo --summary
+```
+
+Expected host signal: `GPU0` should report `Intel(R) Arc(tm) A310 Graphics (DG2)`.
 
 ### Configuration
 
