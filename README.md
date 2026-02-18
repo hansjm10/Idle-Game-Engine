@@ -13,6 +13,20 @@ This repository hosts the idle-game engine, reference content packs, presentatio
 
 Refer to the design document for roadmap and subsystem detail.
 
+## Desktop Shell (Headless + MCP)
+
+Run the Electron shell on a remote/headless Linux host via xpra:
+
+```bash
+pnpm shell:desktop:headless
+```
+
+Then verify MCP connectivity:
+
+```bash
+pnpm shell:desktop:mcp:smoke
+```
+
 ## Content Authoring Docs
 - `docs/content-dsl-usage-guidelines.md` – end-to-end authoring guide with field tables and examples.
 - `docs/content-quick-reference.md` – condensed cheatsheet for content types, conditions, and formulas.

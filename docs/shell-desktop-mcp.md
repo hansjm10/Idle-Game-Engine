@@ -26,6 +26,31 @@ By default the server listens on port `8570` and prints a line like:
 [shell-desktop] MCP server listening at http://127.0.0.1:8570/mcp/sse
 ```
 
+### Headless Linux (xpra)
+
+For remote/headless hosts, use the workspace launcher:
+
+```bash
+pnpm shell:desktop:headless
+```
+
+This launcher:
+- starts or reuses an xpra display (`:121` by default),
+- runs Electron with `--no-sandbox` (needed on many rootless hosts),
+- enables MCP by default (`http://127.0.0.1:8570/mcp/sse`).
+
+Smoke-test the MCP server from the same host:
+
+```bash
+pnpm shell:desktop:mcp:smoke
+```
+
+Stop the xpra session:
+
+```bash
+pnpm shell:desktop:headless:stop
+```
+
 ### Configuration
 
 - Enablement:

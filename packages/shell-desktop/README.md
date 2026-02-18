@@ -9,6 +9,27 @@ pnpm --filter @idle-engine/shell-desktop run build
 pnpm --filter @idle-engine/shell-desktop run start
 ```
 
+## Headless Remote Usage (xpra)
+
+For remote/headless Linux hosts, use the workspace helper that starts (or reuses) an xpra display and launches Electron with `--no-sandbox`:
+
+```bash
+pnpm shell:desktop:headless
+```
+
+Defaults:
+- xpra display: `:121`
+- MCP enabled: `1`
+- MCP port: `8570`
+
+Useful overrides:
+
+```bash
+IDLE_ENGINE_XPRA_DISPLAY=:122 IDLE_ENGINE_MCP_PORT=8571 pnpm shell:desktop:headless
+pnpm shell:desktop:mcp:smoke
+pnpm shell:desktop:headless:stop
+```
+
 ## WebGPU
 
 - Development runs enable Electron’s WebGPU bring-up switch automatically (see `enable-unsafe-webgpu` in `src/main.ts`).
