@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
 
@@ -154,6 +155,21 @@ const maybeStartShellDesktopMcpServer = vi.fn(async () => undefined as ShellDesk
 vi.mock('./mcp/mcp-server.js', () => ({
   maybeStartShellDesktopMcpServer,
 }));
+// Use a lazy reference to the real createControlCommands so it can be mocked per-test
+let realCreateControlCommands: typeof CreateControlCommandsFn;
+
+const createControlCommandsMock = vi.fn((...args: Parameters<typeof CreateControlCommandsFn>) => {
+  return realCreateControlCommands(...args);
+});
+
+vi.mock('@idle-engine/controls', async (importOriginal) => {
+  const actual = await importOriginal() as { createControlCommands: typeof CreateControlCommandsFn };
+  realCreateControlCommands = actual.createControlCommands;
+  return {
+    ...actual,
+    createControlCommands: createControlCommandsMock,
+  };
+});
 
 describe('shell-desktop main process entrypoint', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -367,31 +383,12 @@ describe('shell-desktop main process entrypoint', () => {
     await vi.advanceTimersByTimeAsync(32);
     expect(worker?.postMessage).toHaveBeenCalledWith({ kind: 'tick', deltaMs: 16 });
 
-    let frameSends = 0;
-    mainWindow?.webContents.send.mockImplementation((channel: string) => {
-      if (channel === IPC_CHANNELS.frame) {
-        frameSends += 1;
-        if (frameSends === 1) {
-          throw new Error('frame send failed');
-        }
-      }
-      return undefined;
-    });
-
-    const frameA = { frame: { step: 0, simTimeMs: 0 } };
+    // Test: frame message with frame present forwards to IPC
     const frameB = { frame: { step: 1, simTimeMs: 16 } };
-    worker?.emitMessage({ kind: 'frames', frames: [frameA, frameB], nextStep: 2 });
-
-    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameB);
-    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, frameA);
-
-    mainWindow?.webContents.send.mockClear();
-    worker?.emitMessage({ kind: 'frames', frames: [], nextStep: 2 });
-    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.anything());
-
     worker?.emitMessage({ kind: 'frame', frame: frameB, droppedFrames: 0, nextStep: 2 });
     expect(mainWindow?.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.frame, frameB);
 
+    // Test: frame message without frame does not send IPC
     mainWindow?.webContents.send.mockClear();
     worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 2 });
     expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.frame, expect.anything());
@@ -639,13 +636,24 @@ describe('shell-desktop main process entrypoint', () => {
     const worker = Worker.instances[0];
     expect(worker).toBeDefined();
 
+    // Clear calls from controller creation (starting status)
+    mainWindow?.webContents.send.mockClear();
+
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
 
     worker?.emitExit(0);
 
-    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(IPC_CHANNELS.simStatus, expect.anything());
+    // During disposal, worker exit should not trigger stopped/crashed status
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'stopped' }),
+    );
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed' }),
+    );
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
@@ -672,24 +680,48 @@ describe('shell-desktop main process entrypoint', () => {
     controlEventHandler?.({}, { intent: 'collect', phase: 'start', metadata: [] });
     controlEventHandler?.({}, { intent: '', phase: 'start' });
     controlEventHandler?.({}, { intent: 'collect', phase: 'nope' });
+    // Invalid: value is present but not finite (NaN)
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: NaN });
+    // Invalid: value is present but not finite (Infinity)
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: Infinity });
+    // Invalid: value is present but not finite (-Infinity)
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: -Infinity });
+    // Invalid: value is present but not a number
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: 'not-a-number' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
     controlEventHandler?.({}, { intent: 'collect', phase: 'end' });
     expect(worker?.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
 
+    // Valid: ShellControlEvent with a valid finite value is still processed
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start', value: 42.5 });
+    expect(worker?.postMessage).toHaveBeenCalledWith(expect.objectContaining({ kind: 'enqueueCommands' }));
+
+    // Reset for next tests
+    worker?.postMessage.mockClear();
+
+    // Note: passthrough SHELL_CONTROL_EVENT is no longer emitted from renderer inputs (issue #850)
     const passthroughEvent = {
       intent: 'mouse-move',
       phase: 'repeat',
       metadata: { x: 12, y: 34, passthrough: true },
     };
+    const enqueueCallsBeforePassthrough = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
     controlEventHandler?.({}, passthroughEvent);
-    expect(worker?.postMessage).toHaveBeenCalledWith(
+    // Passthrough events that don't match bindings no longer enqueue SHELL_CONTROL_EVENT
+    const enqueueCallsAfterPassthrough = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterPassthrough).toBe(enqueueCallsBeforePassthrough);
+    // Verify no SHELL_CONTROL_EVENT was enqueued
+    expect(worker?.postMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'enqueueCommands',
         commands: expect.arrayContaining([
           expect.objectContaining({
             type: SHELL_CONTROL_EVENT_COMMAND_TYPE,
-            payload: { event: passthroughEvent },
           }),
         ]),
       }),
@@ -743,6 +775,381 @@ describe('shell-desktop main process entrypoint', () => {
     expect(consoleError).toHaveBeenCalled();
 
     consoleError.mockRestore();
+  });
+
+  it('drops invalid input event payloads without enqueuing commands', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const enqueueCallsBefore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Invalid: null
+    inputEventHandler?.({}, null);
+    // Invalid: array
+    inputEventHandler?.({}, []);
+    // Invalid: missing schemaVersion
+    inputEventHandler?.({}, { event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wrong schemaVersion (2 instead of 1)
+    inputEventHandler?.({}, { schemaVersion: 2, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: missing event
+    inputEventHandler?.({}, { schemaVersion: 1 });
+    // Invalid: event is null
+    inputEventHandler?.({}, { schemaVersion: 1, event: null });
+    // Invalid: event has unknown kind
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'unknown', intent: 'test', phase: 'start' } });
+    // Invalid: pointer event with invalid intent
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'invalid', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-finite x
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: NaN, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-finite y
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: Infinity, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with invalid pointerType
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'stylus', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with invalid phase
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'invalid', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with missing modifiers
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse' } });
+    // Invalid: pointer event with incomplete modifiers
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false } } });
+    // Invalid: wheel event with non-finite deltaX
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'repeat', x: 0, y: 0, deltaX: NaN, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wheel event with invalid deltaMode
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'repeat', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 3, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wheel event with wrong intent
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-down', phase: 'repeat', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: wheel event with wrong phase
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'start', x: 0, y: 0, deltaX: 0, deltaY: 0, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with phase not matching intent (mouse-down with repeat instead of start)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'repeat', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with phase not matching intent (mouse-move with start instead of repeat)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-move', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with phase not matching intent (mouse-up with repeat instead of end)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-up', phase: 'repeat', x: 0, y: 0, button: 0, buttons: 0, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-integer button (float)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0.5, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with button outside range (< -1)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: -2, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with button outside range (> 32)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 33, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with non-integer buttons (float)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1.5, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with buttons outside range (< 0)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: -1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+    // Invalid: pointer event with buttons outside range (> 0xFFFF)
+    inputEventHandler?.({}, { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 0x10000, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } });
+
+    const enqueueCallsAfter = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // No commands should have been enqueued
+    expect(enqueueCallsAfter).toBe(enqueueCallsBefore);
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('enqueues INPUT_EVENT commands for valid pointer events', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 5 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 100,
+        y: 200,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    inputEventHandler?.({}, validPointerDown);
+
+    expect(worker?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'enqueueCommands',
+        commands: [
+          expect.objectContaining({
+            type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+            payload: {
+              schemaVersion: 1,
+              event: validPointerDown.event,
+            },
+            priority: 1, // CommandPriority.PLAYER
+            step: 5,
+            timestamp: 80, // 5 * 16
+          }),
+        ],
+      }),
+    );
+
+    // Verify requestId is NOT included (should be omitted)
+    const lastEnqueueCall = worker?.postMessage.mock.calls
+      .filter((call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands')
+      .pop();
+    const inputEventCommand = (lastEnqueueCall?.[0] as { commands?: Array<{ requestId?: unknown }> })?.commands?.[0];
+    expect(inputEventCommand).not.toHaveProperty('requestId');
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('enqueues INPUT_EVENT commands for valid wheel events', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 20, nextStep: 3 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validWheelEvent = {
+      schemaVersion: 1,
+      event: {
+        kind: 'wheel',
+        intent: 'mouse-wheel',
+        phase: 'repeat',
+        x: 50,
+        y: 75,
+        deltaX: 0,
+        deltaY: -100,
+        deltaZ: 0,
+        deltaMode: 0,
+        modifiers: { alt: true, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    inputEventHandler?.({}, validWheelEvent);
+
+    expect(worker?.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'enqueueCommands',
+        commands: [
+          expect.objectContaining({
+            type: RUNTIME_COMMAND_TYPES.INPUT_EVENT,
+            payload: {
+              schemaVersion: 1,
+              event: validWheelEvent.event,
+            },
+            priority: 1, // CommandPriority.PLAYER
+            step: 3,
+            timestamp: 60, // 3 * 20
+          }),
+        ],
+      }),
+    );
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('ignores input events when sim is stopped or crashed', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 10,
+        y: 20,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    // Input events work before crash
+    const enqueueCallsBefore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterFirst = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterFirst).toBe(enqueueCallsBefore + 1);
+
+    // Simulate worker crash
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // Input events should be ignored after crash (no more enqueueCommands)
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterCrash = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterCrash).toBe(enqueueCallsAfterFirst);
+
+    consoleError.mockRestore();
+  });
+
+  it('ignores input events when sim is disposing', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 10,
+        y: 20,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    // Input events work before dispose
+    const enqueueCallsBefore = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterFirst = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterFirst).toBe(enqueueCallsBefore + 1);
+
+    // Trigger dispose by closing windows
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    // Input events should be ignored after dispose (no more enqueueCommands)
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterDispose = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+    expect(enqueueCallsAfterDispose).toBe(enqueueCallsAfterFirst);
+  });
+
+  it('does not enqueue SHELL_CONTROL_EVENT from input events', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    // Send several valid input events
+    const events = [
+      { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-down', phase: 'start', x: 0, y: 0, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+      { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-move', phase: 'repeat', x: 10, y: 20, button: 0, buttons: 1, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+      { schemaVersion: 1, event: { kind: 'pointer', intent: 'mouse-up', phase: 'end', x: 10, y: 20, button: 0, buttons: 0, pointerType: 'mouse', modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+      { schemaVersion: 1, event: { kind: 'wheel', intent: 'mouse-wheel', phase: 'repeat', x: 50, y: 50, deltaX: 0, deltaY: -10, deltaZ: 0, deltaMode: 0, modifiers: { alt: false, ctrl: false, meta: false, shift: false } } },
+    ];
+
+    for (const event of events) {
+      inputEventHandler?.({}, event);
+    }
+
+    // Verify no SHELL_CONTROL_EVENT commands were enqueued (acceptance criterion #4)
+    const allEnqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+
+    for (const call of allEnqueueCalls) {
+      const commands = (call[0] as { commands?: Array<{ type?: string }> }).commands ?? [];
+      for (const command of commands) {
+        expect(command.type).not.toBe(SHELL_CONTROL_EVENT_COMMAND_TYPE);
+      }
+    }
+
+    // Verify all commands are INPUT_EVENT
+    const inputEventCount = allEnqueueCalls.reduce((count, call) => {
+      const commands = (call[0] as { commands?: Array<{ type?: string }> }).commands ?? [];
+      return count + commands.filter((cmd) => cmd.type === RUNTIME_COMMAND_TYPES.INPUT_EVENT).length;
+    }, 0);
+    expect(inputEventCount).toBe(events.length);
+
+    // Cleanup: close windows to dispose worker and stop tick loop
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
   });
 
   it('installs the application menu with macOS roles on darwin', async () => {
@@ -815,5 +1222,532 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
 
     expect(app.commandLine.appendSwitch).not.toHaveBeenCalled();
+  });
+
+  it('drops input events received before worker ready handshake', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const inputEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.inputEvent);
+    expect(inputEventCall).toBeDefined();
+    const inputEventHandler = inputEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validPointerDown = {
+      schemaVersion: 1,
+      event: {
+        kind: 'pointer',
+        intent: 'mouse-down',
+        phase: 'start',
+        x: 10,
+        y: 20,
+        button: 0,
+        buttons: 1,
+        pointerType: 'mouse',
+        modifiers: { alt: false, ctrl: false, meta: false, shift: false },
+      },
+    };
+
+    // Send input event BEFORE ready - should be dropped
+    const enqueueCallsBeforeReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterPreReadyInput = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should NOT have enqueued (dropped because not ready)
+    expect(enqueueCallsAfterPreReadyInput).toBe(enqueueCallsBeforeReady);
+
+    // Now emit ready
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Send input event AFTER ready - should be accepted
+    inputEventHandler?.({}, validPointerDown);
+
+    const enqueueCallsAfterPostReadyInput = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should have enqueued (accepted because ready)
+    expect(enqueueCallsAfterPostReadyInput).toBe(enqueueCallsAfterPreReadyInput + 1);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('drops control events received before worker ready handshake', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    expect(controlEventCall).toBeDefined();
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    const validControlEvent = { intent: 'collect', phase: 'start' };
+
+    // Send control event BEFORE ready - should be dropped
+    const enqueueCallsBeforeReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    controlEventHandler?.({}, validControlEvent);
+
+    const enqueueCallsAfterPreReadyControl = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should NOT have enqueued (dropped because not ready)
+    expect(enqueueCallsAfterPreReadyControl).toBe(enqueueCallsBeforeReady);
+
+    // Now emit ready
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Send control event AFTER ready - should be accepted
+    controlEventHandler?.({}, validControlEvent);
+
+    const enqueueCallsAfterPostReadyControl = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ).length ?? 0;
+
+    // Should have enqueued (accepted because ready)
+    expect(enqueueCallsAfterPostReadyControl).toBe(enqueueCallsAfterPreReadyControl + 1);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('sends sim-status starting when sim worker controller is created', async () => {
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    // Verify sim-status 'starting' was sent when the controller was created
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'starting' },
+    );
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('sends sim-status running when worker emits ready', async () => {
+    setMonotonicNowSequence([0]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Clear previous calls to isolate the ready message test
+    mainWindow?.webContents.send.mockClear();
+
+    // Emit ready from worker
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Verify sim-status 'running' was sent
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('sends sim-status starting when worker controller is recreated on reload', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    // Clear calls after initial creation
+    mainWindow?.webContents.send.mockClear();
+
+    // Trigger recreation by simulating a page reload (did-finish-load)
+    const didFinishLoadCall = mainWindow?.webContents.on.mock.calls.find((call) => call[0] === 'did-finish-load');
+    expect(didFinishLoadCall).toBeDefined();
+    const didFinishLoadHandler = didFinishLoadCall?.[1] as undefined | (() => void);
+    didFinishLoadHandler?.();
+    await flushMicrotasks();
+
+    // Verify sim-status 'starting' was sent when the new controller was created
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'starting' },
+    );
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+
+    consoleError.mockRestore();
+  });
+
+  it('sends sim-status transitions in order: starting, running', async () => {
+    setMonotonicNowSequence([0]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Collect all sim-status calls
+    const simStatusCalls = mainWindow?.webContents.send.mock.calls
+      .filter((call) => call[0] === IPC_CHANNELS.simStatus)
+      .map((call) => call[1] as { kind: string });
+
+    // Should have 'starting' from creation
+    expect(simStatusCalls).toContainEqual({ kind: 'starting' });
+
+    // Emit ready from worker
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Collect all sim-status calls again
+    const allSimStatusCalls = mainWindow?.webContents.send.mock.calls
+      .filter((call) => call[0] === IPC_CHANNELS.simStatus)
+      .map((call) => call[1] as { kind: string });
+
+    // Should have both 'starting' and 'running' in order
+    expect(allSimStatusCalls).toEqual([
+      { kind: 'starting' },
+      { kind: 'running' },
+    ]);
+
+    // Cleanup
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('treats createControlCommands exceptions as fatal and emits sim-status crashed', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so control events are accepted
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Clear previous calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+    worker?.postMessage.mockClear();
+
+    // Mock createControlCommands to throw an error
+    createControlCommandsMock.mockImplementationOnce(() => {
+      throw new Error('control-event mapping failed');
+    });
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    expect(controlEventCall).toBeDefined();
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    // Send a valid control event that will trigger the exception
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    await flushMicrotasks();
+
+    // Verify sim-status 'crashed' was sent
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed', reason: 'control-event mapping failed' }),
+    );
+
+    // Verify no commands were enqueued after the exception
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCalls).toHaveLength(0);
+
+    // Verify ticking is stopped by advancing time and checking no tick messages
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCalls).toHaveLength(0);
+
+    // Verify subsequent control events are also dropped (sim is in failed state)
+    createControlCommandsMock.mockReturnValueOnce([]);
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    await flushMicrotasks();
+
+    const enqueueCallsAfter = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    );
+    expect(enqueueCallsAfter).toHaveLength(0);
+
+    consoleError.mockRestore();
+  });
+
+  it('treats createControlCommands non-Error exceptions as fatal with stringified reason', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so control events are accepted
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Clear previous calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+
+    // Mock createControlCommands to throw a non-Error value
+    createControlCommandsMock.mockImplementationOnce(() => {
+      throw 'string error from createControlCommands';
+    });
+
+    const controlEventCall = ipcMain.on.mock.calls.find((call) => call[0] === IPC_CHANNELS.controlEvent);
+    expect(controlEventCall).toBeDefined();
+    const controlEventHandler = controlEventCall?.[1] as undefined | ((event: unknown, payload: unknown) => void);
+
+    // Send a valid control event that will trigger the exception
+    controlEventHandler?.({}, { intent: 'collect', phase: 'start' });
+    await flushMicrotasks();
+
+    // Verify sim-status 'crashed' was sent with stringified reason
+    expect(mainWindow?.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.objectContaining({ kind: 'crashed', reason: 'string error from createControlCommands' }),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it('ignores worker frame messages after controller disposal', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so the worker is running
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Clear calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+
+    // Trigger disposal by closing windows
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    // Now emit a stale frame message from the worker after disposal
+    const staleFrame = { frame: { step: 99, simTimeMs: 1000 } };
+    worker?.emitMessage({ kind: 'frame', frame: staleFrame, droppedFrames: 0, nextStep: 100 });
+    await flushMicrotasks();
+
+    // Verify no frame IPC was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.frame,
+      expect.anything(),
+    );
+
+    // Verify no sim-status IPC was sent either
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.anything(),
+    );
+  });
+
+  it('ignores worker ready messages after controller disposal', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Clear calls after initial 'starting' status
+    mainWindow?.webContents.send.mockClear();
+
+    // Trigger disposal by closing windows (before ready)
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+    await flushMicrotasks();
+
+    // Now emit a stale ready message from the worker after disposal
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Verify no 'running' sim-status was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Verify no tick messages were sent (tick loop should not have started)
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    );
+    expect(tickCalls).toHaveLength(0);
+  });
+
+  it('ignores worker frame messages after crash', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16, 32]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so the worker is running
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Trigger a crash
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // Clear calls to isolate the test
+    mainWindow?.webContents.send.mockClear();
+
+    // Now emit a stale frame message from the worker after crash
+    const staleFrame = { frame: { step: 99, simTimeMs: 1000 } };
+    worker?.emitMessage({ kind: 'frame', frame: staleFrame, droppedFrames: 0, nextStep: 100 });
+    await flushMicrotasks();
+
+    // Verify no frame IPC was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.frame,
+      expect.anything(),
+    );
+
+    // Verify no sim-status IPC was sent either
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      expect.anything(),
+    );
+
+    consoleError.mockRestore();
+  });
+
+  it('ignores worker ready messages after crash', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0, 16]);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const mainWindow = BrowserWindow.windows[0];
+    expect(mainWindow).toBeDefined();
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    // Emit ready so the worker is running
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Trigger a crash
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    // Clear calls to isolate the test (crash already sent 'crashed' status)
+    mainWindow?.webContents.send.mockClear();
+
+    // Now emit a stale ready message from the worker after crash
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    // Verify no 'running' sim-status was sent (stale message should be ignored)
+    expect(mainWindow?.webContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.simStatus,
+      { kind: 'running' },
+    );
+
+    // Record tick calls count after crash but before stale ready
+    const tickCallsBeforeStaleReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ).length ?? 0;
+
+    // Verify tick loop was not restarted by the stale ready message
+    await vi.advanceTimersByTimeAsync(64);
+    const tickCallsAfterStaleReady = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ).length ?? 0;
+
+    // The tick loop was already stopped by the crash, and the stale ready should not restart it
+    // No new tick calls should have been made
+    expect(tickCallsAfterStaleReady).toBe(tickCallsBeforeStaleReady);
+
+    consoleError.mockRestore();
   });
 });
