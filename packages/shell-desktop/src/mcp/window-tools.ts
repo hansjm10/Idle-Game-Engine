@@ -1,3 +1,6 @@
+import * as z from 'zod/v4';
+import type { AnySchema, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
+
 export type WindowMcpBounds = Readonly<{
   x: number;
   y: number;
@@ -27,7 +30,7 @@ type TextToolResult = {
 type ToolRegistrar = Readonly<{
   registerTool: (
     name: string,
-    config: Readonly<{ title: string; description: string }>,
+    config: Readonly<{ title: string; description: string; inputSchema?: AnySchema | ZodRawShapeCompat }>,
     handler: (...args: unknown[]) => Promise<TextToolResult>,
   ) => void;
 }>;
@@ -87,6 +90,10 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     {
       title: 'Window resize',
       description: 'Resizes the main window to the requested width/height.',
+      inputSchema: {
+        width: z.number(),
+        height: z.number(),
+      },
     },
     async (args: unknown) => {
       const record = assertObject(args, 'Invalid window/resize payload: expected an object');
@@ -108,6 +115,9 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     {
       title: 'Window devtools',
       description: 'Opens, closes, or toggles the main window devtools.',
+      inputSchema: {
+        action: z.enum(['open', 'close', 'toggle']),
+      },
     },
     async (args: unknown) => {
       const record = assertObject(args, 'Invalid window/devtools payload: expected an object');
@@ -121,6 +131,9 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     {
       title: 'Window screenshot',
       description: 'Captures a PNG screenshot of the main window web contents (bounded).',
+      inputSchema: {
+        maxBytes: z.number().optional(),
+      },
     },
     async (args: unknown) => {
       const record = assertObject(args, 'Invalid window/screenshot payload: expected an object');
@@ -146,4 +159,3 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
     },
   );
 }
-

@@ -1,5 +1,7 @@
 import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
+import type { AnySchema, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
+import * as z from 'zod/v4';
 
 export type AssetMcpController = Readonly<{
   compiledAssetsRootPath: string;
@@ -17,7 +19,7 @@ type TextToolResult = {
 type ToolRegistrar = Readonly<{
   registerTool: (
     name: string,
-    config: Readonly<{ title: string; description: string }>,
+    config: Readonly<{ title: string; description: string; inputSchema?: AnySchema | ZodRawShapeCompat }>,
     handler: (...args: unknown[]) => Promise<TextToolResult>,
   ) => void;
 }>;
@@ -215,6 +217,11 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
     {
       title: 'Asset list',
       description: 'Lists compiled assets under the configured assets root directory.',
+      inputSchema: {
+        path: z.string().optional(),
+        recursive: z.boolean().optional(),
+        maxEntries: z.number().optional(),
+      },
     },
     async (args: unknown) => {
       const record = assertObject(args, 'Invalid asset/list payload: expected an object');
@@ -250,6 +257,10 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
     {
       title: 'Asset read',
       description: 'Reads a compiled asset file from the configured assets root directory.',
+      inputSchema: {
+        path: z.string(),
+        maxBytes: z.number().optional(),
+      },
     },
     async (args: unknown) => {
       const record = assertObject(args, 'Invalid asset/read payload: expected an object');

@@ -7,6 +7,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { startShellDesktopMcpServer } from './mcp-server.js';
+import type { WindowMcpController } from './window-tools.js';
 
 async function readResponseBody(response: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -141,5 +142,62 @@ describe('shell-desktop MCP server', () => {
 
     serverCloseSpy.mockRestore();
     transportCloseSpy.mockRestore();
+  });
+
+  it('passes window tool arguments through streamable HTTP transport', async () => {
+    const resizeSpy = vi.fn<(width: number, height: number) => ReturnType<WindowMcpController['resize']>>(
+      (width, height) => ({
+        bounds: { x: 0, y: 0, width, height },
+        url: 'app://idle-engine',
+        devToolsOpen: false,
+      }),
+    );
+
+    const windowController: WindowMcpController = {
+      getInfo: () => ({
+        bounds: { x: 0, y: 0, width: 1200, height: 800 },
+        url: 'app://idle-engine',
+        devToolsOpen: false,
+      }),
+      resize: resizeSpy,
+      setDevTools: () => ({ devToolsOpen: false }),
+      captureScreenshotPng: async () => Buffer.from([1, 2, 3]),
+    };
+
+    const server = await startShellDesktopMcpServer({ port: 0, window: windowController });
+    servers.push(server);
+
+    const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(server.url);
+    await client.connect(transport);
+
+    const rawResult = await client.callTool(
+      {
+        name: 'window/resize',
+        arguments: { width: 640, height: 480 },
+      },
+      CallToolResultSchema,
+    );
+    const result = CallToolResultSchema.parse(rawResult);
+    expect(result.isError).not.toBe(true);
+    expect(result.content[0]).toMatchObject({ type: 'text' });
+
+    const firstContent = result.content[0];
+    if (firstContent?.type !== 'text') {
+      throw new Error('Expected text tool response');
+    }
+
+    const payload = JSON.parse(firstContent.text) as {
+      ok: boolean;
+      info: { bounds: { width: number; height: number } };
+    };
+
+    expect(payload).toMatchObject({
+      ok: true,
+      info: { bounds: { width: 640, height: 480 } },
+    });
+    expect(resizeSpy).toHaveBeenCalledWith(640, 480);
+
+    await client.close();
   });
 });

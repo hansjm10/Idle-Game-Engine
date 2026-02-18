@@ -1,4 +1,6 @@
 import type { ShellControlEvent } from '../ipc.js';
+import type { AnySchema, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
+import * as z from 'zod/v4';
 
 export type InputMcpController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
@@ -11,7 +13,7 @@ type TextToolResult = {
 type ToolRegistrar = Readonly<{
   registerTool: (
     name: string,
-    config: Readonly<{ title: string; description: string }>,
+    config: Readonly<{ title: string; description: string; inputSchema?: AnySchema | ZodRawShapeCompat }>,
     handler: (...args: unknown[]) => Promise<TextToolResult>,
   ) => void;
 }>;
@@ -85,6 +87,12 @@ export function registerInputTools(server: ToolRegistrar, controller: InputMcpCo
     {
       title: 'Input controlEvent',
       description: 'Injects a shell control event into the active simulation control scheme.',
+      inputSchema: {
+        intent: z.string(),
+        phase: z.enum(['start', 'repeat', 'end']),
+        value: z.number().optional(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      },
     },
     async (args: unknown) => {
       const event = assertControlEvent(args);

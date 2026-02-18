@@ -1,5 +1,7 @@
 import { CommandPriority } from '@idle-engine/core';
 import type { Command } from '@idle-engine/core';
+import type { AnySchema, ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
+import * as z from 'zod/v4';
 
 export type SimMcpStatusState = 'starting' | 'running' | 'paused' | 'stopped' | 'crashed';
 
@@ -28,7 +30,7 @@ type TextToolResult = {
 type ToolRegistrar = Readonly<{
   registerTool: (
     name: string,
-    config: Readonly<{ title: string; description: string }>,
+    config: Readonly<{ title: string; description: string; inputSchema?: AnySchema | ZodRawShapeCompat }>,
     handler: (...args: unknown[]) => Promise<TextToolResult>,
   ) => void;
 }>;
@@ -188,6 +190,9 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
     {
       title: 'Sim step',
       description: 'Advances the simulation by N steps while paused.',
+      inputSchema: {
+        steps: z.number().optional(),
+      },
     },
     async (args: unknown) => {
       const steps = parseStepCount(args);
@@ -200,6 +205,9 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
     {
       title: 'Sim enqueue',
       description: 'Enqueues runtime commands onto the simulation command queue deterministically.',
+      inputSchema: {
+        commands: z.array(z.unknown()),
+      },
     },
     async (args: unknown) => {
       const record = assertObject(args, 'Invalid sim/enqueue payload: expected an object');
