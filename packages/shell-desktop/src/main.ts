@@ -16,6 +16,11 @@ import { IPC_CHANNELS, type IpcInvokeMap, type ShellControlEvent, type ShellInpu
 import { monotonicNowMs } from './monotonic-time.js';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ControlScheme } from '@idle-engine/controls';
+import type { AssetMcpController } from './mcp/asset-tools.js';
+import type { InputMcpController } from './mcp/input-tools.js';
+import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
+import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController, type SimMcpStatus } from './mcp/sim-tools.js';
+import type { WindowMcpController } from './mcp/window-tools.js';
 import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
 
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
@@ -25,13 +30,24 @@ if (enableUnsafeWebGpu) {
   app.commandLine.appendSwitch('enable-unsafe-webgpu');
 }
 
+const enableMcpServer = process.env.IDLE_ENGINE_ENABLE_MCP_SERVER === '1'
+  || process.argv.includes('--enable-mcp-server');
+
 const preloadPath = fileURLToPath(new URL('./preload.cjs', import.meta.url));
 const rendererHtmlPath = fileURLToPath(new URL('./renderer/index.html', import.meta.url));
 const repoRootPath = fileURLToPath(new URL('../../../', import.meta.url));
-const compiledAssetsRootPath = path.resolve(
+const defaultCompiledAssetsRootPath = path.resolve(
   repoRootPath,
   'packages/content-sample/content/compiled',
 );
+const configuredCompiledAssetsRootPath = process.env.IDLE_ENGINE_COMPILED_ASSETS_ROOT;
+const compiledAssetsRootPath = configuredCompiledAssetsRootPath
+  ? path.resolve(configuredCompiledAssetsRootPath)
+  : defaultCompiledAssetsRootPath;
+
+const assetMcpController: AssetMcpController = {
+  compiledAssetsRootPath,
+};
 
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
@@ -251,10 +267,19 @@ function isValidShellInputEventEnvelope(value: unknown): value is ShellInputEven
 type SimWorkerController = Readonly<{
   sendControlEvent: (event: ShellControlEvent) => void;
   sendInputEvent: (envelope: ShellInputEventEnvelope) => void;
+  enqueueCommands: (commands: readonly Command[]) => void;
+  pause: () => void;
+  resume: () => void;
+  step: (steps: number) => Promise<SimMcpStatus>;
+  getStatus: () => SimMcpStatus;
   dispose: () => void;
 }>;
 
+const buildStoppedSimStatus = (): SimMcpStatus => ({ state: 'stopped', stepSizeMs: 16, nextStep: 0 });
+
+let mainWindow: BrowserWindow | undefined;
 let simWorkerController: SimWorkerController | undefined;
+let mcpServer: ShellDesktopMcpServer | undefined;
 
 function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerController {
   const worker = new Worker(new URL('./sim-worker.js', import.meta.url));
@@ -262,12 +287,20 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   let isDisposing = false;
   let hasFailed = false;
   let isReady = false;
+  let isPaused = false;
 
   type ShellSimFailureStatusPayload = Extract<ShellSimStatusPayload, { kind: 'stopped' | 'crashed' }>;
+  let lastFailure: ShellSimFailureStatusPayload | undefined;
 
   let stepSizeMs = 16;
   let nextStep = 0;
   const maxStepsPerFrame = 50;
+  type StepCompletionWaiter = Readonly<{
+    targetStep: number;
+    resolve: (status: SimMcpStatus) => void;
+    reject: (error: Error) => void;
+  }>;
+  let stepCompletionWaiters: StepCompletionWaiter[] = [];
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
@@ -292,6 +325,58 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
   };
 
+  const buildStatusSnapshot = (): SimMcpStatus => {
+    if (lastFailure) {
+      return {
+        state: lastFailure.kind,
+        reason: lastFailure.reason,
+        exitCode: lastFailure.exitCode,
+        stepSizeMs,
+        nextStep,
+      };
+    }
+
+    if (isDisposing) {
+      return { state: 'stopped', stepSizeMs, nextStep };
+    }
+
+    if (!isReady) {
+      return { state: 'starting', stepSizeMs, nextStep };
+    }
+
+    return { state: isPaused ? 'paused' : 'running', stepSizeMs, nextStep };
+  };
+
+  const rejectPendingStepCompletions = (error: Error): void => {
+    if (stepCompletionWaiters.length === 0) {
+      return;
+    }
+
+    const pending = stepCompletionWaiters;
+    stepCompletionWaiters = [];
+    for (const waiter of pending) {
+      waiter.reject(error);
+    }
+  };
+
+  const resolvePendingStepCompletions = (): void => {
+    if (stepCompletionWaiters.length === 0) {
+      return;
+    }
+
+    const statusSnapshot = buildStatusSnapshot();
+    const pending = stepCompletionWaiters;
+    stepCompletionWaiters = [];
+
+    for (const waiter of pending) {
+      if (nextStep >= waiter.targetStep) {
+        waiter.resolve(statusSnapshot);
+      } else {
+        stepCompletionWaiters.push(waiter);
+      }
+    }
+  };
+
   const sendSimStatus = (status: ShellSimStatusPayload): void => {
     try {
       mainWindow.webContents.send(IPC_CHANNELS.simStatus, status);
@@ -307,7 +392,9 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
 
     hasFailed = true;
+    lastFailure = status;
     stopTickLoop();
+    rejectPendingStepCompletions(new Error(`Sim ${status.kind}: ${status.reason}`));
 
     // eslint-disable-next-line no-console
     console.error(status.kind === 'stopped' ? `[shell-desktop] Sim stopped: ${status.reason}` : `[shell-desktop] Sim crashed: ${status.reason}`, details);
@@ -334,7 +421,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   };
 
   const startTickLoop = (): void => {
-    if (tickTimer || hasFailed || isDisposing) {
+    if (tickTimer || hasFailed || isDisposing || isPaused || !isReady) {
       return;
     }
 
@@ -365,6 +452,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
       isReady = true;
+      resolvePendingStepCompletions();
       // Emit sim-status 'running' when the worker is ready
       sendSimStatus({ kind: 'running' });
       startTickLoop();
@@ -373,6 +461,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     if (message.kind === 'frame') {
       nextStep = message.nextStep;
+      resolvePendingStepCompletions();
       if (!message.frame) {
         return;
       }
@@ -480,17 +569,209 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     safePostMessage({ kind: 'enqueueCommands', commands: [inputEventCommand] });
   };
 
+  const enqueueCommands = (commands: readonly Command[]): void => {
+    safePostMessage({ kind: 'enqueueCommands', commands });
+  };
+
+  const pause = (): void => {
+    if (hasFailed || isDisposing) {
+      return;
+    }
+
+    isPaused = true;
+    stopTickLoop();
+  };
+
+  const resume = (): void => {
+    if (hasFailed || isDisposing) {
+      return;
+    }
+
+    isPaused = false;
+    startTickLoop();
+  };
+
+  const step = async (steps: number): Promise<SimMcpStatus> => {
+    if (!Number.isFinite(steps) || Math.floor(steps) !== steps || steps < 1 || steps > SIM_MCP_MAX_STEP_COUNT) {
+      throw new TypeError(`Invalid sim step count: expected integer in [1, ${SIM_MCP_MAX_STEP_COUNT}]`);
+    }
+
+    if (hasFailed || isDisposing) {
+      throw new Error('Simulation is not running.');
+    }
+
+    if (!isReady) {
+      throw new Error('Sim is not ready to step yet.');
+    }
+
+    isPaused = true;
+    stopTickLoop();
+
+    const targetStep = (stepCompletionWaiters.at(-1)?.targetStep ?? nextStep) + steps;
+    const completionPromise = new Promise<SimMcpStatus>((resolve, reject) => {
+      stepCompletionWaiters.push({ targetStep, resolve, reject });
+    });
+
+    let remainingSteps = steps;
+    while (remainingSteps > 0 && !hasFailed && !isDisposing) {
+      const batchStepCount = Math.min(remainingSteps, maxStepsPerFrame);
+      safePostMessage({ kind: 'tick', deltaMs: batchStepCount * stepSizeMs });
+      remainingSteps -= batchStepCount;
+    }
+
+    resolvePendingStepCompletions();
+    return completionPromise;
+  };
+
+  const getStatus = (): SimMcpStatus => {
+    return buildStatusSnapshot();
+  };
+
   const dispose = (): void => {
     isDisposing = true;
+    isPaused = true;
     stopTickLoop();
+    rejectPendingStepCompletions(new Error('Simulation stopped before step completed.'));
     void worker.terminate().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.error(error);
     });
   };
 
-  return { sendControlEvent, sendInputEvent, dispose };
+  return { sendControlEvent, sendInputEvent, enqueueCommands, pause, resume, step, getStatus, dispose };
 }
+
+const simMcpController: SimMcpController = {
+  getStatus: () => simWorkerController?.getStatus() ?? buildStoppedSimStatus(),
+  start: () => {
+    if (simWorkerController) {
+      const currentStatus = simWorkerController.getStatus();
+      if (
+        currentStatus.state !== 'stopped' &&
+        currentStatus.state !== 'crashed'
+      ) {
+        return currentStatus;
+      }
+
+      simWorkerController.dispose();
+      simWorkerController = undefined;
+    }
+
+    if (!mainWindow) {
+      throw new Error('Main window is not ready; cannot start simulation.');
+    }
+
+    simWorkerController = createSimWorkerController(mainWindow);
+    return simWorkerController.getStatus();
+  },
+  stop: () => {
+    const current = simWorkerController?.getStatus();
+    simWorkerController?.dispose();
+    simWorkerController = undefined;
+    return current ? { ...current, state: 'stopped' } : buildStoppedSimStatus();
+  },
+  pause: () => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.pause();
+    return simWorkerController.getStatus();
+  },
+  resume: () => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.resume();
+    return simWorkerController.getStatus();
+  },
+  step: async (steps) => {
+    const controller = simWorkerController;
+    if (!controller) {
+      throw new Error('Simulation is not running.');
+    }
+
+    return controller.step(steps);
+  },
+  enqueue: (commands) => {
+    const controller = simWorkerController;
+    if (!controller) {
+      throw new Error('Simulation is not running.');
+    }
+
+    const status = controller.getStatus();
+    if (status.state === 'crashed' || status.state === 'stopped') {
+      throw new Error(`Simulation is ${status.state}; cannot enqueue commands.`);
+    }
+
+    controller.enqueueCommands(commands);
+    return { enqueued: commands.length };
+  },
+};
+
+const getMainWindowOrThrow = (): BrowserWindow => {
+  if (!mainWindow) {
+    throw new Error('Main window is not ready.');
+  }
+
+  return mainWindow;
+};
+
+const windowMcpController: WindowMcpController = {
+  getInfo: () => {
+    const window = getMainWindowOrThrow();
+    const devToolsOpen = window.webContents.isDevToolsOpened?.() ?? false;
+    return {
+      bounds: window.getBounds(),
+      url: window.webContents.getURL(),
+      devToolsOpen,
+    };
+  },
+  resize: (width, height) => {
+    const window = getMainWindowOrThrow();
+    window.setSize(width, height);
+    const devToolsOpen = window.webContents.isDevToolsOpened?.() ?? false;
+    return {
+      bounds: window.getBounds(),
+      url: window.webContents.getURL(),
+      devToolsOpen,
+    };
+  },
+  setDevTools: (action) => {
+    const window = getMainWindowOrThrow();
+
+    if (action === 'open') {
+      window.webContents.openDevTools({ mode: 'detach' });
+    } else if (action === 'close') {
+      window.webContents.closeDevTools();
+    } else {
+      const isOpen = window.webContents.isDevToolsOpened?.() ?? false;
+      if (isOpen) {
+        window.webContents.closeDevTools();
+      } else {
+        window.webContents.openDevTools({ mode: 'detach' });
+      }
+    }
+
+    return { devToolsOpen: window.webContents.isDevToolsOpened?.() ?? false };
+  },
+  captureScreenshotPng: async () => {
+    const window = getMainWindowOrThrow();
+    const image = await window.webContents.capturePage();
+    return image.toPNG();
+  },
+};
+
+const inputMcpController: InputMcpController = {
+  sendControlEvent: (event) => {
+    if (!simWorkerController) {
+      throw new Error('Simulation is not running.');
+    }
+
+    simWorkerController.sendControlEvent(event);
+  },
+};
 
 function registerIpcHandlers(): void {
   ipcMain.handle(
@@ -622,7 +903,16 @@ app
   .then(async () => {
     installAppMenu();
     registerIpcHandlers();
-    const mainWindow = await createMainWindow();
+    if (enableMcpServer) {
+      const { maybeStartShellDesktopMcpServer } = await import('./mcp/mcp-server.js');
+      mcpServer = await maybeStartShellDesktopMcpServer({
+        sim: simMcpController,
+        window: windowMcpController,
+        input: inputMcpController,
+        asset: assetMcpController,
+      });
+    }
+    mainWindow = await createMainWindow();
     simWorkerController = createSimWorkerController(mainWindow);
   })
   .catch((error: unknown) => {
@@ -635,16 +925,31 @@ app
 app.on('window-all-closed', () => {
   simWorkerController?.dispose();
   simWorkerController = undefined;
+  mainWindow = undefined;
   if (process.platform !== 'darwin') {
+    mcpServer?.close().catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    });
+    mcpServer = undefined;
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  mcpServer?.close().catch((error: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error(error);
+  });
+  mcpServer = undefined;
 });
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     void createMainWindow()
-      .then((mainWindow) => {
-        simWorkerController = createSimWorkerController(mainWindow);
+      .then((createdWindow) => {
+        mainWindow = createdWindow;
+        simWorkerController = createSimWorkerController(createdWindow);
       })
       .catch((error: unknown) => {
         // eslint-disable-next-line no-console
