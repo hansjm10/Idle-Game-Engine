@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-issue-857-design" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.9.2">
+<title data-rh="true">shell-desktop: embed MCP server for AI agent workflows (Issue 857) | Idle Engine Docs</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" name="twitter:image" content="https://hansjm10.github.io/Idle-Game-Engine/img/docusaurus-social-card.jpg"><meta data-rh="true" property="og:url" content="https://hansjm10.github.io/Idle-Game-Engine/issue-857-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="shell-desktop: embed MCP server for AI agent workflows (Issue 857) | Idle Engine Docs"><meta data-rh="true" name="description" content="Document Control"><meta data-rh="true" property="og:description" content="Document Control"><link data-rh="true" rel="icon" href="/Idle-Game-Engine/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://hansjm10.github.io/Idle-Game-Engine/issue-857-design"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-857-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://hansjm10.github.io/Idle-Game-Engine/issue-857-design" hreflang="x-default"><link rel="stylesheet" href="/Idle-Game-Engine/assets/css/styles.0ca8729c.css">
+<script src="/Idle-Game-Engine/assets/js/runtime~main.58d4b0a8.js" defer="defer"></script>
+<script src="/Idle-Game-Engine/assets/js/main.f9a98174.js" defer="defer"></script>
+</head>
+<body class="navigation-with-keyboard">
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/Idle-Game-Engine/img/logo.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_sIzO" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/Idle-Game-Engine/"><div class="navbar__logo"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--light_m26g"><img src="/Idle-Game-Engine/img/logo.svg" alt="Idle Engine Logo" class="themedComponent_yXCL themedComponent--dark_DQxa"></div><b class="navbar__title text--truncate">Idle Engine</b></a><a class="navbar__item navbar__link" href="/Idle-Game-Engine/">Docs</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_VTTy colorModeToggle_mrTp"><button class="clean-btn toggleButton_Qf8c toggleButtonDisabled_hCyI" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX lightToggleIcon_i4Ty"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX darkToggleIcon_B1fV"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_j9FX systemToggleIcon_d9Wq"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_xdO6"></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_fCXc"><div class="docsWrapper_oodB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_ZUBg" type="button"></button><div class="docRoot_zYbW"><main class="docMainContainer_BJhZ docMainContainerEnhanced_qZTj"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_NkVs"><div class="docItemContainer_WMJH"><article><div class="tocCollapsible_Kd7K theme-doc-toc-mobile tocMobile_Gv4l"><button type="button" class="clean-btn tocCollapsibleButton_ajnv">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>shell-desktop: embed MCP server for AI agent workflows (Issue 857)</h1></header>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="document-control">Document Control<a href="#document-control" class="hash-link" aria-label="Direct link to Document Control" title="Direct link to Document Control" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Title</strong>: Integrate an embedded MCP server into <code>@idle-engine/shell-desktop</code></li>
+<li class=""><strong>Authors</strong>: Ralph (AI)</li>
+<li class=""><strong>Reviewers</strong>: @hansjm10</li>
+<li class=""><strong>Status</strong>: Draft</li>
+<li class=""><strong>Last Updated</strong>: 2026-01-27</li>
+<li class=""><strong>Related Issues</strong>: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/857" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/857</a></li>
+<li class=""><strong>Execution Mode</strong>: AI-led</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="1-summary">1. Summary<a href="#1-summary" class="hash-link" aria-label="Direct link to 1. Summary" title="Direct link to 1. Summary" translate="no">​</a></h2>
+<p>Add an embedded Model Context Protocol (MCP) server to the Electron desktop shell (<code>@idle-engine/shell-desktop</code>) so AI agents (Claude Desktop, Cursor, etc.) can programmatically control the simulation, inject inputs, inspect state/diagnostics, capture screenshots, and interact with replays/assets during development and testing. The MCP server runs in the Electron main process, is opt-in (dev-only by default), exposes a constrained tool surface, and bridges to the sim worker and <code>BrowserWindow</code> APIs through typed handlers with unit test coverage.</p>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="2-context--problem-statement">2. Context &amp; Problem Statement<a href="#2-context--problem-statement" class="hash-link" aria-label="Direct link to 2. Context &amp; Problem Statement" title="Direct link to 2. Context &amp; Problem Statement" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Background</strong>:<!-- -->
+<ul>
+<li class="">The repo already has a first-party Electron shell and WebGPU renderer pathway (see <code>packages/shell-desktop/src/main.ts</code> and <code>docs/desktop-shell-webgpu-renderer-replay-design-issue-778.md</code>).</li>
+<li class="">The shell runs a sim worker (<code>node:worker_threads</code>) driven by a tick loop in the main process and forwards frames to the renderer via typed IPC (<code>packages/shell-desktop/src/ipc.ts</code>).</li>
+<li class="">The Model Context Protocol (MCP) is emerging as a standard for agent-to-tool integrations, with growing ecosystem support in agent UIs.</li>
+</ul>
+</li>
+<li class=""><strong>Problem</strong>:<!-- -->
+<ul>
+<li class="">There is no supported, automation-friendly API for external tools/agents to control the shell or introspect runtime state, which limits:<!-- -->
+<ul>
+<li class="">automated regression workflows (“drive sim → capture state/screenshot → assert”),</li>
+<li class="">interactive debug assistance (“inspect live state when issue reported”),</li>
+<li class="">AI-assisted content iteration (“preview changes quickly with scripted steps”).</li>
+</ul>
+</li>
+<li class="">Existing “Electron MCP servers” typically rely on Chrome DevTools Protocol (CDP) and remote-debug flags, which do not provide direct access to the shell’s typed IPC channels, sim worker messaging, or deterministic command queue.</li>
+</ul>
+</li>
+<li class=""><strong>Forces</strong>:<!-- -->
+<ul>
+<li class="">Preserve determinism: control APIs must not introduce nondeterministic side effects into simulation.</li>
+<li class="">Safety: the server must be local-only, opt-in, and constrained (no arbitrary file/process access).</li>
+<li class="">Keep the integration maintainable: tool inputs/outputs should be validated and testable without launching a full Electron UI.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="3-goals--non-goals">3. Goals &amp; Non-Goals<a href="#3-goals--non-goals" class="hash-link" aria-label="Direct link to 3. Goals &amp; Non-Goals" title="Direct link to 3. Goals &amp; Non-Goals" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Goals</strong>:<!-- -->
+<ol>
+<li class="">Provide an embedded MCP server in the Electron main process that can be enabled via flag/env var.</li>
+<li class="">Expose a type-validated tool surface for:<!-- -->
+<ul>
+<li class="">simulation lifecycle and stepping,</li>
+<li class="">command enqueueing / control-event injection,</li>
+<li class="">window inspection and screenshot capture,</li>
+<li class="">asset listing/reading (compiled assets only),</li>
+<li class="">(phase 2) replay IO and basic state inspection/query.</li>
+</ul>
+</li>
+<li class="">Ensure handlers are testable with existing <code>vitest</code> mocking patterns (similar to <code>packages/shell-desktop/src/main.test.ts</code>).</li>
+<li class="">Document how to configure common agent clients (Claude Desktop, Cursor) to connect.</li>
+</ol>
+</li>
+<li class=""><strong>Non-Goals</strong>:<!-- -->
+<ul>
+<li class="">Exposing privileged OS automation (global keyboard/mouse, filesystem writes outside controlled directories, process spawning).</li>
+<li class="">Running an always-on automation endpoint in production builds by default.</li>
+<li class="">Guaranteeing a stable “full game state schema” immediately; state surfaces may start as a debug snapshot and evolve.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="4-stakeholders-agents--impacted-surfaces">4. Stakeholders, Agents &amp; Impacted Surfaces<a href="#4-stakeholders-agents--impacted-surfaces" class="hash-link" aria-label="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" title="Direct link to 4. Stakeholders, Agents &amp; Impacted Surfaces" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Primary Stakeholders</strong>:<!-- -->
+<ul>
+<li class="">Shell maintainers (<code>packages/shell-desktop</code>)</li>
+<li class="">Runtime/core maintainers (<code>packages/core</code>) for command/replay/state abstractions</li>
+<li class="">Docs/tooling maintainers (agent integration docs; local dev workflows)</li>
+</ul>
+</li>
+<li class=""><strong>Agent Roles</strong>:<!-- -->
+<ul>
+<li class=""><strong>Runtime/Shell Agent</strong>: Implement MCP server lifecycle + bridging to shell components.</li>
+<li class=""><strong>Tool Handler Agent</strong>: Implement tool schemas + handlers (sim/window/input/state/replay/asset).</li>
+<li class=""><strong>Test Agent</strong>: Add deterministic unit tests for handlers and transport plumbing.</li>
+<li class=""><strong>Docs Agent</strong>: Document setup for agent clients and provide example prompts/workflows.</li>
+</ul>
+</li>
+<li class=""><strong>Affected Packages/Services</strong>:<!-- -->
+<ul>
+<li class=""><code>packages/shell-desktop</code> (new MCP server module and integration wiring)</li>
+<li class=""><code>packages/core</code> (potentially: expose additional replay/state helpers if needed)</li>
+<li class=""><code>docs/</code> (new design doc + connection/setup instructions)</li>
+</ul>
+</li>
+<li class=""><strong>Compatibility Considerations</strong>:<!-- -->
+<ul>
+<li class="">The server must be disabled by default and bound to <code>localhost</code> when enabled.</li>
+<li class="">Tool contracts should be versioned (server “capabilities” include a version string) so clients can adapt.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="5-current-state">5. Current State<a href="#5-current-state" class="hash-link" aria-label="Direct link to 5. Current State" title="Direct link to 5. Current State" translate="no">​</a></h2>
+<ul>
+<li class=""><code>packages/shell-desktop/src/main.ts</code>:<!-- -->
+<ul>
+<li class="">creates a sandboxed <code>BrowserWindow</code> and loads <code>renderer/index.html</code>.</li>
+<li class="">drives a <code>Worker</code> (<code>./sim-worker.js</code>) via a main-process tick loop (<code>setInterval</code>), forwarding <code>RenderCommandBuffer</code> frames to the renderer over IPC.</li>
+<li class="">handles IPC:<!-- -->
+<ul>
+<li class=""><code>ping</code> and <code>readAsset</code> as invoke handlers,</li>
+<li class=""><code>controlEvent</code> as a fire-and-forget event mapped into runtime commands.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><code>packages/shell-desktop/src/sim-worker.ts</code> and <code>packages/shell-desktop/src/sim/sim-runtime.ts</code>:<!-- -->
+<ul>
+<li class="">implement a simple sim runtime (<code>IdleEngineRuntime</code>) and accept <code>tick</code> + <code>enqueueCommands</code> messages.</li>
+<li class="">do not currently expose a request/response RPC for “get status/state” from the main process.</li>
+</ul>
+</li>
+<li class="">Tests exist for the main process behavior and IPC contracts (<code>packages/shell-desktop/src/main.test.ts</code>, <code>packages/shell-desktop/src/ipc.test.ts</code>) and demonstrate a mocking approach suitable for MCP tool handler tests.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="6-proposed-solution">6. Proposed Solution<a href="#6-proposed-solution" class="hash-link" aria-label="Direct link to 6. Proposed Solution" title="Direct link to 6. Proposed Solution" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="61-architecture-overview">6.1 Architecture Overview<a href="#61-architecture-overview" class="hash-link" aria-label="Direct link to 6.1 Architecture Overview" title="Direct link to 6.1 Architecture Overview" translate="no">​</a></h3>
+<p>Embed an MCP server in the Electron main process and bridge its tools to existing shell primitives:</p>
+<div class="language-text codeBlockContainer_QSSF theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_YGpJ"><pre tabindex="0" class="prism-code language-text codeBlock_Ap7y thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_zA5F"><span class="token-line" style="color:#393A34"><span class="token plain">AI Client (Claude/Cursor)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  │  MCP (SSE/HTTP on localhost)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  ▼</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">Electron main process</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  - MCP server + tool handlers</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  - BrowserWindow control (screenshot/devtools/resize)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  - Sim worker controller (pause/resume/step/enqueue)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  │</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  ▼</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">Sim worker (node:worker_threads)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  - Sim runtime (IdleEngineRuntime)</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">  - Optional debug/state RPC</span><br></span></code></pre></div></div>
+<p>Transport (current implementation): <strong>SSE/HTTP on localhost</strong> (recommended for “attach to a running app” workflows). Stdio is not implemented yet.</p>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="62-detailed-design">6.2 Detailed Design<a href="#62-detailed-design" class="hash-link" aria-label="Direct link to 6.2 Detailed Design" title="Direct link to 6.2 Detailed Design" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Runtime Changes</strong>:<!-- -->
+<ul>
+<li class="">Introduce a new module in <code>packages/shell-desktop/src/mcp/</code> that:<!-- -->
+<ul>
+<li class="">constructs an MCP server using <code>@modelcontextprotocol/sdk</code>,</li>
+<li class="">registers tools and their input/output schemas,</li>
+<li class="">binds handlers to a “shell context” object (main window + sim controller).</li>
+</ul>
+</li>
+<li class="">Extend the existing sim worker controller to support:<!-- -->
+<ul>
+<li class=""><code>pause</code>/<code>resume</code> by stopping/restarting the main-process tick loop,</li>
+<li class=""><code>step(n)</code> while paused by sending <code>tick</code> messages with deterministic <code>deltaMs</code> (<code>stepSizeMs * n</code> or repeated single-step ticks),</li>
+<li class=""><code>start</code>/<code>stop</code> by creating/terminating the sim worker and emitting sim status updates.</li>
+</ul>
+</li>
+<li class="">Add a minimal request/response RPC between main process and sim worker for debug/state queries:<!-- -->
+<ul>
+<li class=""><code>getStatus</code> → <code>{ stepSizeMs, nextStep, running, paused }</code></li>
+<li class=""><code>getDebugState</code> → JSON-friendly snapshot (initially demo-only, expandable).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>Data &amp; Schemas</strong>:<!-- -->
+<ul>
+<li class="">Define tool inputs/outputs as JSON-serializable shapes; treat “state snapshots” as debug-only payloads and avoid leaking internal object graphs.</li>
+<li class="">Add a server “capabilities” response (or tool) that includes:<!-- -->
+<ul>
+<li class=""><code>serverVersion</code>,</li>
+<li class="">supported tool list,</li>
+<li class="">feature flags (e.g., replay support enabled).</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class=""><strong>APIs &amp; Contracts</strong> (initial tool set; names stable, schemas versioned):<!-- -->
+<ul>
+<li class=""><code>sim/status</code>: current sim status + step/stepSizeMs.</li>
+<li class=""><code>sim/start</code> / <code>sim/stop</code>: worker lifecycle control (dev only).</li>
+<li class=""><code>sim/pause</code> / <code>sim/resume</code> / <code>sim/step</code>: deterministic control of the tick loop.</li>
+<li class=""><code>sim/enqueue</code>: enqueue runtime commands (validated + normalized similarly to <code>normalizeCommand</code> in <code>packages/shell-desktop/src/sim/sim-runtime.ts</code>).</li>
+<li class=""><code>input/controlEvent</code>: send a <code>ShellControlEvent</code> through the same path as IPC (<code>packages/shell-desktop/src/ipc.ts</code>), ensuring parity with UI events.</li>
+<li class=""><code>window/info</code> / <code>window/resize</code> / <code>window/devtools</code> / <code>window/screenshot</code>: wrap <code>BrowserWindow</code> operations (screenshot returns bounded base64 PNG).</li>
+<li class=""><code>asset/list</code> / <code>asset/read</code>: list/read assets limited to the compiled assets root (reuse the path traversal checks in <code>packages/shell-desktop/src/main.ts</code>’s <code>readAsset</code> handler logic).</li>
+<li class="">(Phase 2) <code>state/get</code> / <code>state/query</code>: debug snapshot + path query for small state surfaces.</li>
+<li class="">(Phase 2) <code>replay/*</code>: list/load/save/scrub/compare using existing replay formats from <code>packages/core/src/replay/*</code> and a shell-local replay directory.</li>
+</ul>
+</li>
+<li class=""><strong>Tooling &amp; Automation</strong>:<!-- -->
+<ul>
+<li class="">Enable/disable via explicit env/flag (examples):<!-- -->
+<ul>
+<li class=""><code>IDLE_ENGINE_ENABLE_MCP_SERVER=1</code></li>
+<li class=""><code>IDLE_ENGINE_MCP_PORT=...</code> (SSE)</li>
+<li class=""><code>--enable-mcp-server</code></li>
+<li class=""><code>--mcp-port=...</code></li>
+</ul>
+</li>
+<li class="">Add an internal audit log (dev only) for tool invocations (tool name + sanitized args + timestamp).</li>
+</ul>
+</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="63-operational-considerations">6.3 Operational Considerations<a href="#63-operational-considerations" class="hash-link" aria-label="Direct link to 6.3 Operational Considerations" title="Direct link to 6.3 Operational Considerations" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Deployment</strong>:<!-- -->
+<ul>
+<li class="">Dev-only default: enable MCP server automatically when <code>NODE_ENV=development</code> and the explicit env/flag is set.</li>
+<li class="">Production builds require explicit opt-in and bind to <code>localhost</code> only.</li>
+</ul>
+</li>
+<li class=""><strong>Telemetry &amp; Observability</strong>:<!-- -->
+<ul>
+<li class="">Log tool invocations (dev only) and optionally provide a <code>debug/logs</code> tool that returns recent entries (bounded).</li>
+</ul>
+</li>
+<li class=""><strong>Security &amp; Compliance</strong>:<!-- -->
+<ul>
+<li class="">Hard safety constraints:<!-- -->
+<ul>
+<li class="">bind to <code>127.0.0.1</code> only (SSE),</li>
+<li class="">strict allowlist of tool operations,</li>
+<li class="">constrain filesystem reads to compiled assets and constrained replay directories,</li>
+<li class="">no arbitrary command execution, no network proxying, no secrets export.</li>
+</ul>
+</li>
+<li class="">Optional: require a one-time session token printed to console (or shown in the UI) that clients must provide.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="7-work-breakdown--delivery-plan">7. Work Breakdown &amp; Delivery Plan<a href="#7-work-breakdown--delivery-plan" class="hash-link" aria-label="Direct link to 7. Work Breakdown &amp; Delivery Plan" title="Direct link to 7. Work Breakdown &amp; Delivery Plan" translate="no">​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="71-issue-map">7.1 Issue Map<a href="#71-issue-map" class="hash-link" aria-label="Direct link to 7.1 Issue Map" title="Direct link to 7.1 Issue Map" translate="no">​</a></h3>
+<table><thead><tr><th>Issue Title</th><th>Scope Summary</th><th>Proposed Assignee/Agent</th><th>Dependencies</th><th>Acceptance Criteria</th></tr></thead><tbody><tr><td><code>feat(shell-desktop): add embedded MCP server scaffold</code></td><td>Add MCP server module, feature flagging, and a transport (SSE recommended first) with a minimal “health/capabilities” tool.</td><td>Runtime/Shell Agent</td><td>Doc approval</td><td>MCP server starts when enabled; binds to localhost; exposes at least one tool; unit tests cover tool registration and enable/disable behavior.</td></tr><tr><td><code>feat(shell-desktop): implement sim/* MCP tools</code></td><td>Implement <code>sim/status</code>, <code>sim/start</code>, <code>sim/stop</code>, <code>sim/pause</code>, <code>sim/resume</code>, <code>sim/step</code>, <code>sim/enqueue</code> bridging to the sim worker controller.</td><td>Tool Handler Agent</td><td>MCP scaffold</td><td>Tools behave deterministically; invalid inputs are rejected; sim lifecycle is test-covered with worker/electron mocks.</td></tr><tr><td><code>feat(shell-desktop): implement window/* + input/* MCP tools</code></td><td>Implement window inspection/screenshot/resize/devtools and <code>input/controlEvent</code> (and optional key/mouse helpers).</td><td>Tool Handler Agent</td><td>MCP scaffold</td><td>Screenshot returns PNG bytes/base64; window operations are local-only; <code>input/controlEvent</code> matches existing IPC semantics; tests cover critical branches.</td></tr><tr><td><code>feat(shell-desktop): implement asset/* MCP tools</code></td><td>Implement <code>asset/list</code> and <code>asset/read</code> limited to compiled assets root with robust path traversal protection.</td><td>Tool Handler Agent</td><td>MCP scaffold</td><td>Assets can be enumerated and read; path traversal is rejected; behavior is unit tested.</td></tr><tr><td><code>docs(shell-desktop): document MCP setup + example workflows</code></td><td>Document enablement flags, Claude Desktop/Cursor config, and example prompts for regression, debugging, and content iteration.</td><td>Docs Agent</td><td>Core tools implemented</td><td>Docs include a minimal quickstart; example prompts are provided; design doc references updated if scope changes.</td></tr></tbody></table>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="72-milestones">7.2 Milestones<a href="#72-milestones" class="hash-link" aria-label="Direct link to 7.2 Milestones" title="Direct link to 7.2 Milestones" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Phase 1 (MVP)</strong>: MCP scaffold + <code>sim/*</code>, <code>window/*</code>, <code>input/*</code>, and <code>asset/*</code> tools with unit tests and docs.</li>
+<li class=""><strong>Phase 2</strong>: Add <code>state/*</code> (debug snapshot + query) and <code>replay/*</code> tools once the shell has a stable replay IO surface.</li>
+<li class=""><strong>Phase 3</strong>: Hardening (token auth, richer diagnostics), and optional stdio transport if client demand requires it.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_pQUT" id="73-coordination-notes">7.3 Coordination Notes<a href="#73-coordination-notes" class="hash-link" aria-label="Direct link to 7.3 Coordination Notes" title="Direct link to 7.3 Coordination Notes" translate="no">​</a></h3>
+<ul>
+<li class=""><strong>Hand-off Package</strong>:<!-- -->
+<ul>
+<li class="">Source: <code>packages/shell-desktop/src/main.ts</code>, <code>packages/shell-desktop/src/sim-worker.ts</code>, <code>packages/shell-desktop/src/ipc.ts</code>.</li>
+<li class="">Reference designs: <code>docs/desktop-shell-webgpu-renderer-replay-design-issue-778.md</code>, <code>docs/automation-system-api.md</code> (agent/tooling conventions).</li>
+</ul>
+</li>
+<li class=""><strong>Communication Cadence</strong>:<!-- -->
+<ul>
+<li class="">Keep tools small and ship in slices; each PR should include handler tests and docs updates as appropriate.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="8-agent-guidance--guardrails">8. Agent Guidance &amp; Guardrails<a href="#8-agent-guidance--guardrails" class="hash-link" aria-label="Direct link to 8. Agent Guidance &amp; Guardrails" title="Direct link to 8. Agent Guidance &amp; Guardrails" translate="no">​</a></h2>
+<ul>
+<li class="">Do not edit checked-in <code>dist/**</code> outputs by hand; rely on package build scripts.</li>
+<li class="">Keep simulation deterministic: <code>sim/step</code> and <code>sim/enqueue</code> must not depend on wall-clock time (derive timestamps from <code>step * stepSizeMs</code> like existing code).</li>
+<li class="">Prefer pure tool handlers with explicit validation and bounded outputs; avoid returning huge object graphs.</li>
+<li class="">Validation hooks:<!-- -->
+<ul>
+<li class=""><code>pnpm lint</code></li>
+<li class=""><code>pnpm test --filter @idle-engine/shell-desktop</code></li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="9-alternatives-considered">9. Alternatives Considered<a href="#9-alternatives-considered" class="hash-link" aria-label="Direct link to 9. Alternatives Considered" title="Direct link to 9. Alternatives Considered" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>External CDP-based automation</strong> (Playwright/CDP MCP servers): easy UI driving, but cannot directly access main-process APIs, sim worker wiring, or typed IPC; requires debug ports/flags.</li>
+<li class=""><strong>Separate MCP bridge process</strong> that talks to the app via custom IPC: keeps app cleaner but violates the “embedded” goal and adds operational complexity (discoverability, lifecycle coordination).</li>
+<li class=""><strong>Expose a bespoke HTTP API</strong>: simpler technically, but loses MCP ecosystem interoperability and tool schema conventions.</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="10-testing--validation-plan">10. Testing &amp; Validation Plan<a href="#10-testing--validation-plan" class="hash-link" aria-label="Direct link to 10. Testing &amp; Validation Plan" title="Direct link to 10. Testing &amp; Validation Plan" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Unit / Integration</strong>:<!-- -->
+<ul>
+<li class="">Add <code>packages/shell-desktop/src/mcp/*.test.ts</code> covering:<!-- -->
+<ul>
+<li class="">server enablement/disablement,</li>
+<li class="">tool schema validation,</li>
+<li class="">handler behavior with mocked <code>BrowserWindow</code>, <code>Worker</code>, and tick loop.</li>
+</ul>
+</li>
+<li class="">Add focused tests for path traversal protection (<code>asset/read</code>).</li>
+</ul>
+</li>
+<li class=""><strong>Performance</strong>:<!-- -->
+<ul>
+<li class="">Ensure screenshot capture and asset reads are bounded; avoid large memory spikes (cap screenshot size or provide downscale option).</li>
+</ul>
+</li>
+<li class=""><strong>Tooling / A11y</strong>:<!-- -->
+<ul>
+<li class="">N/A (developer tooling), but ensure no extra console noise in tests that could break <code>vitest-llm-reporter</code> output.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="11-risks--mitigations">11. Risks &amp; Mitigations<a href="#11-risks--mitigations" class="hash-link" aria-label="Direct link to 11. Risks &amp; Mitigations" title="Direct link to 11. Risks &amp; Mitigations" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>Security exposure</strong>: Even localhost endpoints can be abused (malware/other local processes).<!-- -->
+<ul>
+<li class="">Mitigation: opt-in flags, localhost bind, optional session token, strict allowlist.</li>
+</ul>
+</li>
+<li class=""><strong>API creep</strong>: tools expand to “do everything” and become unmaintainable.<!-- -->
+<ul>
+<li class="">Mitigation: phased roadmap; require design update for new tool categories.</li>
+</ul>
+</li>
+<li class=""><strong>Flaky tests / Electron coupling</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: keep handlers pure; mock Electron/Worker layers like existing <code>main.test.ts</code>.</li>
+</ul>
+</li>
+<li class=""><strong>State query ambiguity</strong>:<!-- -->
+<ul>
+<li class="">Mitigation: start with explicit debug snapshots and add stable state APIs only once schemas are ready.</li>
+</ul>
+</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="12-rollout-plan">12. Rollout Plan<a href="#12-rollout-plan" class="hash-link" aria-label="Direct link to 12. Rollout Plan" title="Direct link to 12. Rollout Plan" translate="no">​</a></h2>
+<ol>
+<li class="">Land MCP scaffold behind explicit enable flag.</li>
+<li class="">Add core tool set (<code>sim/*</code>, <code>window/*</code>, <code>input/*</code>, <code>asset/*</code>) with tests.</li>
+<li class="">Document setup for common clients and provide example workflows.</li>
+<li class="">Iterate on state/replay tools once shell runtime IO surfaces stabilize.</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="13-open-questions">13. Open Questions<a href="#13-open-questions" class="hash-link" aria-label="Direct link to 13. Open Questions" title="Direct link to 13. Open Questions" translate="no">​</a></h2>
+<ol>
+<li class=""><strong>Transport</strong>: SSE on localhost is implemented; do we need an additional transport (stdio/Streamable HTTP) for broader client compatibility?</li>
+<li class=""><strong>Auth model</strong>: Is a session token required even for localhost? How is it communicated (console vs UI)?</li>
+<li class=""><strong>State surface</strong>: What is the “blessed” debug state snapshot for <code>shell-desktop</code> today (demo state vs progression snapshot vs diagnostics timeline)?</li>
+<li class=""><strong>Replay storage</strong>: Where should replays live (repo-local dev folder vs <code>app.getPath(&#x27;userData&#x27;)</code>) and what is the default format (JSONL per <code>packages/core/src/replay/*</code>)?</li>
+<li class=""><strong>Tool scope</strong>: Which “proposed tools” are required for the initial acceptance criteria vs follow-up phases (especially <code>replay/*</code> and rich <code>state/*</code>)?</li>
+</ol>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="14-follow-up-work">14. Follow-Up Work<a href="#14-follow-up-work" class="hash-link" aria-label="Direct link to 14. Follow-Up Work" title="Direct link to 14. Follow-Up Work" translate="no">​</a></h2>
+<ul>
+<li class="">Add <code>state/*</code> tools once a stable, JSON-friendly debug snapshot is defined for the shell runtime.</li>
+<li class="">Add <code>replay/*</code> tools and integrate with the core replay pipeline (including compare tooling and visual regression hooks).</li>
+<li class="">Add richer diagnostics tools (<code>diagnostics/timeline</code>, command failures/outcomes) if needed for debugging workflows.</li>
+<li class="">Consider a “stdio bridge” helper if SSE is insufficient for some clients.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="15-references">15. References<a href="#15-references" class="hash-link" aria-label="Direct link to 15. References" title="Direct link to 15. References" translate="no">​</a></h2>
+<ul>
+<li class="">Issue: <a href="https://github.com/hansjm10/Idle-Game-Engine/issues/857" target="_blank" rel="noopener noreferrer" class="">https://github.com/hansjm10/Idle-Game-Engine/issues/857</a></li>
+<li class="">MCP: <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener noreferrer" class="">https://modelcontextprotocol.io/</a></li>
+<li class="">MCP TypeScript SDK: <a href="https://github.com/modelcontextprotocol/typescript-sdk" target="_blank" rel="noopener noreferrer" class="">https://github.com/modelcontextprotocol/typescript-sdk</a></li>
+<li class="">Electron security guide: <a href="https://www.electronjs.org/docs/latest/tutorial/security" target="_blank" rel="noopener noreferrer" class="">https://www.electronjs.org/docs/latest/tutorial/security</a></li>
+<li class="">Shell architecture: <code>packages/shell-desktop/src/main.ts</code>, <code>packages/shell-desktop/src/ipc.ts</code>, <code>packages/shell-desktop/src/sim-worker.ts</code></li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-a--glossary">Appendix A — Glossary<a href="#appendix-a--glossary" class="hash-link" aria-label="Direct link to Appendix A — Glossary" title="Direct link to Appendix A — Glossary" translate="no">​</a></h2>
+<ul>
+<li class=""><strong>MCP</strong>: Model Context Protocol; a standard for tool-based integrations with AI agents.</li>
+<li class=""><strong>SSE</strong>: Server-Sent Events; a simple HTTP streaming transport.</li>
+<li class=""><strong>CDP</strong>: Chrome DevTools Protocol; remote debugging/automation protocol for Chromium.</li>
+<li class=""><strong>IPC</strong>: Inter-process communication; here, Electron renderer ↔ main process messaging.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_pQUT" id="appendix-b--change-log">Appendix B — Change Log<a href="#appendix-b--change-log" class="hash-link" aria-label="Direct link to Appendix B — Change Log" title="Direct link to Appendix B — Change Log" translate="no">​</a></h2>
+<table><thead><tr><th>Date</th><th>Author</th><th>Change Summary</th></tr></thead><tbody><tr><td>2026-01-27</td><td>Ralph (AI)</td><td>Initial draft.</td></tr></tbody></table></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_zkN7"><a href="https://github.com/hansjm10/Idle-Game-Engine/edit/main/docs/../../docs/issue-857-design.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_URLU" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_DCA4"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"></nav></div></div><div class="col col--3"><div class="tableOfContents_7BTH thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#document-control" class="table-of-contents__link toc-highlight">Document Control</a></li><li><a href="#1-summary" class="table-of-contents__link toc-highlight">1. Summary</a></li><li><a href="#2-context--problem-statement" class="table-of-contents__link toc-highlight">2. Context &amp; Problem Statement</a></li><li><a href="#3-goals--non-goals" class="table-of-contents__link toc-highlight">3. Goals &amp; Non-Goals</a></li><li><a href="#4-stakeholders-agents--impacted-surfaces" class="table-of-contents__link toc-highlight">4. Stakeholders, Agents &amp; Impacted Surfaces</a></li><li><a href="#5-current-state" class="table-of-contents__link toc-highlight">5. Current State</a></li><li><a href="#6-proposed-solution" class="table-of-contents__link toc-highlight">6. Proposed Solution</a><ul><li><a href="#61-architecture-overview" class="table-of-contents__link toc-highlight">6.1 Architecture Overview</a></li><li><a href="#62-detailed-design" class="table-of-contents__link toc-highlight">6.2 Detailed Design</a></li><li><a href="#63-operational-considerations" class="table-of-contents__link toc-highlight">6.3 Operational Considerations</a></li></ul></li><li><a href="#7-work-breakdown--delivery-plan" class="table-of-contents__link toc-highlight">7. Work Breakdown &amp; Delivery Plan</a><ul><li><a href="#71-issue-map" class="table-of-contents__link toc-highlight">7.1 Issue Map</a></li><li><a href="#72-milestones" class="table-of-contents__link toc-highlight">7.2 Milestones</a></li><li><a href="#73-coordination-notes" class="table-of-contents__link toc-highlight">7.3 Coordination Notes</a></li></ul></li><li><a href="#8-agent-guidance--guardrails" class="table-of-contents__link toc-highlight">8. Agent Guidance &amp; Guardrails</a></li><li><a href="#9-alternatives-considered" class="table-of-contents__link toc-highlight">9. Alternatives Considered</a></li><li><a href="#10-testing--validation-plan" class="table-of-contents__link toc-highlight">10. Testing &amp; Validation Plan</a></li><li><a href="#11-risks--mitigations" class="table-of-contents__link toc-highlight">11. Risks &amp; Mitigations</a></li><li><a href="#12-rollout-plan" class="table-of-contents__link toc-highlight">12. Rollout Plan</a></li><li><a href="#13-open-questions" class="table-of-contents__link toc-highlight">13. Open Questions</a></li><li><a href="#14-follow-up-work" class="table-of-contents__link toc-highlight">14. Follow-Up Work</a></li><li><a href="#15-references" class="table-of-contents__link toc-highlight">15. References</a></li><li><a href="#appendix-a--glossary" class="table-of-contents__link toc-highlight">Appendix A — Glossary</a></li><li><a href="#appendix-b--change-log" class="table-of-contents__link toc-highlight">Appendix B — Change Log</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Docs</div><ul class="footer__items clean-list"><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/">Overview</a></li><li class="footer__item"><a class="footer__link-item" href="/Idle-Game-Engine/contributor-handbook">Contributor Handbook</a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">More</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine/issues" target="_blank" rel="noopener noreferrer" class="footer__link-item">Issue Tracker<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/hansjm10/Idle-Game-Engine" target="_blank" rel="noopener noreferrer" class="footer__link-item">GitHub<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_zgE_"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Copyright © 2026 Idle Engine.</div></div></div></footer></div>
+</body>
+</html>
