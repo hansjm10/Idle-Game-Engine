@@ -1493,8 +1493,9 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     const kind = state.batchKind;
     const passId = state.batchPassId;
     const instanceCount = state.batchInstances.instanceCount;
+    const usedFloats = state.batchInstances.lengthFloats;
     const usedBytes = state.batchInstances.usedByteLength;
-    if (!kind || !passId || instanceCount <= 0 || usedBytes <= 0) {
+    if (!kind || !passId || instanceCount <= 0 || usedFloats <= 0 || usedBytes <= 0) {
         __classPrivateFieldGet(this, _WebGpuRendererImpl_instances, "m", _WebGpuRendererImpl_resetQuadBatch).call(this, state);
         return;
     }
@@ -1507,7 +1508,8 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
     if (!instanceBuffer) {
         throw new Error('Sprite pipeline missing instance buffer.');
     }
-    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedBytes);
+    // For TypedArray uploads, WebGPU interprets `size` as element count, not bytes.
+    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedFloats);
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
     if (kind === 'image') {
         if (!state.textureBindGroup) {
