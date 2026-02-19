@@ -101,6 +101,30 @@ function pushDiagnosticsLog(
   }
 }
 
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value instanceof Error) {
+    return value.stack ?? `${value.name}: ${value.message}`;
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    try {
+      const jsonValue = JSON.stringify(value);
+      if (jsonValue !== undefined) {
+        return jsonValue;
+      }
+    } catch {
+      return '[Unserializable object]';
+    }
+    return Object.prototype.toString.call(value);
+  }
+
+  return String(value);
+}
+
 const DEMO_CONTROL_SCHEME: ControlScheme = {
   id: 'shell-desktop-demo',
   version: '1',
@@ -528,7 +552,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       metadata: details === undefined
         ? undefined
         : {
-            details: String(details),
+            details: stringifyUnknown(details),
             ...(status.exitCode === undefined ? {} : { exitCode: status.exitCode }),
           },
     });
@@ -552,7 +576,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     try {
       worker.postMessage(message);
     } catch (error: unknown) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof Error ? error.message : stringifyUnknown(error);
       handleWorkerFailure({ kind: 'crashed', reason }, error);
     }
   };
@@ -632,14 +656,14 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
   worker.on('error', (error: unknown) => {
     handleWorkerFailure(
-      { kind: 'crashed', reason: error instanceof Error ? error.message : String(error) },
+      { kind: 'crashed', reason: error instanceof Error ? error.message : stringifyUnknown(error) },
       error,
     );
   });
 
   worker.on('messageerror', (error: unknown) => {
     handleWorkerFailure(
-      { kind: 'crashed', reason: error instanceof Error ? error.message : String(error) },
+      { kind: 'crashed', reason: error instanceof Error ? error.message : stringifyUnknown(error) },
       error,
     );
   });
@@ -677,7 +701,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     } catch (error: unknown) {
       // Treat control-event mapping exceptions as fatal bridge failures per issue #850 design doc.
       // Transition to sim-status crashed, stop the tick loop, and terminate the worker.
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof Error ? error.message : stringifyUnknown(error);
       handleWorkerFailure({ kind: 'crashed', reason }, error);
       return;
     }
