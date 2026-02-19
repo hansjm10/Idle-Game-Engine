@@ -6,7 +6,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import { startShellDesktopMcpServer } from './mcp-server.js';
+import {
+  isShellDesktopMcpServerEnabled,
+  maybeStartShellDesktopMcpServer,
+  startShellDesktopMcpServer,
+} from './mcp-server.js';
 import type { WindowMcpController } from './window-tools.js';
 
 async function readResponseBody(response: IncomingMessage): Promise<string> {
@@ -44,6 +48,154 @@ describe('shell-desktop MCP server', () => {
 
   afterEach(async () => {
     await Promise.allSettled(servers.splice(0).map((server) => server.close()));
+  });
+
+  it('returns disabled state unless MCP is explicitly enabled', () => {
+    expect(isShellDesktopMcpServerEnabled(['node', 'app.js'], {})).toBe(false);
+    expect(isShellDesktopMcpServerEnabled(['node', 'app.js'], {
+      IDLE_ENGINE_ENABLE_MCP_SERVER: '1',
+    })).toBe(true);
+    expect(isShellDesktopMcpServerEnabled(['node', 'app.js', '--enable-mcp-server'], {})).toBe(true);
+  });
+
+  it('does not start when maybeStart is called without enablement', async () => {
+    const server = await maybeStartShellDesktopMcpServer({
+      argv: ['node', 'app.js'],
+      env: { NODE_ENV: 'test' },
+    });
+
+    expect(server).toBeUndefined();
+  });
+
+  it('starts when enabled via argv and supports ephemeral explicit ports', async () => {
+    const server = await maybeStartShellDesktopMcpServer({
+      argv: ['node', 'app.js', '--enable-mcp-server', '--mcp-port=0'],
+      env: { NODE_ENV: 'test' },
+    });
+
+    if (!server) {
+      throw new Error('Expected maybeStart to return a running server');
+    }
+
+    servers.push(server);
+    expect(server.url.hostname).toBe('127.0.0.1');
+    expect(server.url.pathname).toBe('/mcp/sse');
+  });
+
+  it('falls back to the next port when default MCP port is busy', async () => {
+    const blocker = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('busy');
+    });
+
+    let blockerListening = false;
+    await new Promise<void>((resolve, reject) => {
+      blocker.once('error', (error: unknown) => {
+        const code = error instanceof Error && 'code' in error
+          ? (error as NodeJS.ErrnoException).code
+          : undefined;
+        if (code === 'EADDRINUSE') {
+          resolve();
+          return;
+        }
+        reject(error);
+      });
+
+      blocker.listen({ host: '127.0.0.1', port: 8570 }, () => {
+        blockerListening = true;
+        resolve();
+      });
+    });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      const server = await maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: { NODE_ENV: 'production' },
+      });
+
+      if (!server) {
+        throw new Error('Expected maybeStart to return a running server');
+      }
+
+      servers.push(server);
+      expect(Number.parseInt(server.url.port, 10)).toBe(8571);
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[shell-desktop] MCP port 8570 is busy; using 8571 instead.',
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        `[shell-desktop] MCP server listening at ${server.url.toString()}`,
+      );
+    } finally {
+      warnSpy.mockRestore();
+      logSpy.mockRestore();
+
+      if (blockerListening) {
+        await new Promise<void>((resolve, reject) => {
+          blocker.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      }
+    }
+  });
+
+  it('throws when an explicit MCP port is already in use', async () => {
+    const blocker = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('busy');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      blocker.once('error', reject);
+      blocker.listen({ host: '127.0.0.1', port: 0 }, () => {
+        blocker.off('error', reject);
+        resolve();
+      });
+    });
+
+    const address = blocker.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected blocker server to expose a bound TCP address');
+    }
+
+    const busyPort = String(address.port);
+
+    try {
+      await expect(maybeStartShellDesktopMcpServer({
+        argv: ['node', 'app.js', '--enable-mcp-server'],
+        env: {
+          NODE_ENV: 'test',
+          IDLE_ENGINE_MCP_PORT: busyPort,
+        },
+      })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        blocker.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
+  });
+
+  it('rejects invalid explicit MCP ports', async () => {
+    await expect(maybeStartShellDesktopMcpServer({
+      argv: ['node', 'app.js', '--enable-mcp-server'],
+      env: {
+        NODE_ENV: 'test',
+        IDLE_ENGINE_MCP_PORT: '70000',
+      },
+    })).rejects.toThrow('Invalid MCP port: 70000');
   });
 
   it('exposes the health tool over streamable HTTP', async () => {
