@@ -19,7 +19,7 @@ export type SimMcpController = Readonly<{
   stop: () => SimMcpStatus;
   pause: () => SimMcpStatus;
   resume: () => SimMcpStatus;
-  step: (steps: number) => SimMcpStatus;
+  step: (steps: number) => Promise<SimMcpStatus>;
   enqueue: (commands: readonly Command[]) => Readonly<{ enqueued: number }>;
 }>;
 
@@ -191,7 +191,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
     },
     async (args: unknown) => {
       const steps = parseStepCount(args);
-      return buildTextResult({ ok: true, status: controller.step(steps) });
+      return buildTextResult({ ok: true, status: await controller.step(steps) });
     },
   );
 

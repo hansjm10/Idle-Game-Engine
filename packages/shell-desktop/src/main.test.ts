@@ -6,6 +6,7 @@ import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
+import type { SimMcpController } from './mcp/sim-tools.js';
 
 let monotonicNowSequence: number[] = [];
 
@@ -252,6 +253,101 @@ describe('shell-desktop main process entrypoint', () => {
     await flushMicrotasks();
 
     expect(maybeStartShellDesktopMcpServer).toHaveBeenCalledTimes(1);
+  });
+
+  it('steps simulation in bounded batches and returns status after worker progress', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const maybeStartCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<[{ sim?: SimMcpController }?]>;
+    const sim = maybeStartCalls[0]?.[0]?.sim;
+    if (!sim) {
+      throw new Error('Expected MCP sim controller to be registered');
+    }
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+
+    worker?.postMessage.mockClear();
+
+    const stepPromise = sim.step(120);
+
+    const tickCalls = worker?.postMessage.mock.calls
+      .map((call) => call[0] as { kind?: string; deltaMs?: number })
+      .filter((message) => message.kind === 'tick');
+
+    expect(tickCalls?.map((message) => message.deltaMs)).toEqual([800, 800, 320]);
+
+    let stepSettled = false;
+    void stepPromise.then(() => {
+      stepSettled = true;
+    });
+    await flushMicrotasks();
+    expect(stepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 50 });
+    await flushMicrotasks();
+    expect(stepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 100 });
+    await flushMicrotasks();
+    expect(stepSettled).toBe(false);
+
+    worker?.emitMessage({ kind: 'frame', droppedFrames: 0, nextStep: 120 });
+
+    await expect(stepPromise).resolves.toEqual({
+      state: 'paused',
+      stepSizeMs: 16,
+      nextStep: 120,
+    });
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('recreates the sim worker when sim.start is called after a crash', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const maybeStartCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<[{ sim?: SimMcpController }?]>;
+    const sim = maybeStartCalls[0]?.[0]?.sim;
+    if (!sim) {
+      throw new Error('Expected MCP sim controller to be registered');
+    }
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    expect(sim.getStatus().state).toBe('crashed');
+
+    const restartedStatus = sim.start();
+    expect(restartedStatus.state).toBe('starting');
+    expect(Worker.instances).toHaveLength(2);
+    expect(sim.getStatus().state).toBe('starting');
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+
+    consoleError.mockRestore();
   });
 
   it('restricts readAsset to compiled assets', async () => {

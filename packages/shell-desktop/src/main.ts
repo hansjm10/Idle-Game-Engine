@@ -270,7 +270,7 @@ type SimWorkerController = Readonly<{
   enqueueCommands: (commands: readonly Command[]) => void;
   pause: () => void;
   resume: () => void;
-  step: (steps: number) => void;
+  step: (steps: number) => Promise<SimMcpStatus>;
   getStatus: () => SimMcpStatus;
   dispose: () => void;
 }>;
@@ -295,6 +295,12 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   let stepSizeMs = 16;
   let nextStep = 0;
   const maxStepsPerFrame = 50;
+  type StepCompletionWaiter = Readonly<{
+    targetStep: number;
+    resolve: (status: SimMcpStatus) => void;
+    reject: (error: Error) => void;
+  }>;
+  let stepCompletionWaiters: StepCompletionWaiter[] = [];
 
   const tickIntervalMs = 16;
   const MAX_TICK_DELTA_MS = 250;
@@ -319,6 +325,58 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     }
   };
 
+  const buildStatusSnapshot = (): SimMcpStatus => {
+    if (lastFailure) {
+      return {
+        state: lastFailure.kind,
+        reason: lastFailure.reason,
+        exitCode: lastFailure.exitCode,
+        stepSizeMs,
+        nextStep,
+      };
+    }
+
+    if (isDisposing) {
+      return { state: 'stopped', stepSizeMs, nextStep };
+    }
+
+    if (!isReady) {
+      return { state: 'starting', stepSizeMs, nextStep };
+    }
+
+    return { state: isPaused ? 'paused' : 'running', stepSizeMs, nextStep };
+  };
+
+  const rejectPendingStepCompletions = (error: Error): void => {
+    if (stepCompletionWaiters.length === 0) {
+      return;
+    }
+
+    const pending = stepCompletionWaiters;
+    stepCompletionWaiters = [];
+    for (const waiter of pending) {
+      waiter.reject(error);
+    }
+  };
+
+  const resolvePendingStepCompletions = (): void => {
+    if (stepCompletionWaiters.length === 0) {
+      return;
+    }
+
+    const statusSnapshot = buildStatusSnapshot();
+    const pending = stepCompletionWaiters;
+    stepCompletionWaiters = [];
+
+    for (const waiter of pending) {
+      if (nextStep >= waiter.targetStep) {
+        waiter.resolve(statusSnapshot);
+      } else {
+        stepCompletionWaiters.push(waiter);
+      }
+    }
+  };
+
   const sendSimStatus = (status: ShellSimStatusPayload): void => {
     try {
       mainWindow.webContents.send(IPC_CHANNELS.simStatus, status);
@@ -336,6 +394,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     hasFailed = true;
     lastFailure = status;
     stopTickLoop();
+    rejectPendingStepCompletions(new Error(`Sim ${status.kind}: ${status.reason}`));
 
     // eslint-disable-next-line no-console
     console.error(status.kind === 'stopped' ? `[shell-desktop] Sim stopped: ${status.reason}` : `[shell-desktop] Sim crashed: ${status.reason}`, details);
@@ -393,6 +452,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
       stepSizeMs = message.stepSizeMs;
       nextStep = message.nextStep;
       isReady = true;
+      resolvePendingStepCompletions();
       // Emit sim-status 'running' when the worker is ready
       sendSimStatus({ kind: 'running' });
       startTickLoop();
@@ -401,6 +461,7 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
 
     if (message.kind === 'frame') {
       nextStep = message.nextStep;
+      resolvePendingStepCompletions();
       if (!message.frame) {
         return;
       }
@@ -530,9 +591,13 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     startTickLoop();
   };
 
-  const step = (steps: number): void => {
+  const step = async (steps: number): Promise<SimMcpStatus> => {
     if (!Number.isFinite(steps) || Math.floor(steps) !== steps || steps < 1) {
       throw new TypeError('Invalid sim step count: expected integer >= 1');
+    }
+
+    if (hasFailed || isDisposing) {
+      throw new Error('Simulation is not running.');
     }
 
     if (!isReady) {
@@ -542,35 +607,31 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
     isPaused = true;
     stopTickLoop();
 
-    safePostMessage({ kind: 'tick', deltaMs: steps * stepSizeMs });
+    const targetStep = (stepCompletionWaiters.at(-1)?.targetStep ?? nextStep) + steps;
+    const completionPromise = new Promise<SimMcpStatus>((resolve, reject) => {
+      stepCompletionWaiters.push({ targetStep, resolve, reject });
+    });
+
+    let remainingSteps = steps;
+    while (remainingSteps > 0 && !hasFailed && !isDisposing) {
+      const batchStepCount = Math.min(remainingSteps, maxStepsPerFrame);
+      safePostMessage({ kind: 'tick', deltaMs: batchStepCount * stepSizeMs });
+      remainingSteps -= batchStepCount;
+    }
+
+    resolvePendingStepCompletions();
+    return completionPromise;
   };
 
   const getStatus = (): SimMcpStatus => {
-    if (lastFailure) {
-      return {
-        state: lastFailure.kind,
-        reason: lastFailure.reason,
-        exitCode: lastFailure.exitCode,
-        stepSizeMs,
-        nextStep,
-      };
-    }
-
-    if (isDisposing) {
-      return { state: 'stopped', stepSizeMs, nextStep };
-    }
-
-    if (!isReady) {
-      return { state: 'starting', stepSizeMs, nextStep };
-    }
-
-    return { state: isPaused ? 'paused' : 'running', stepSizeMs, nextStep };
+    return buildStatusSnapshot();
   };
 
   const dispose = (): void => {
     isDisposing = true;
     isPaused = true;
     stopTickLoop();
+    rejectPendingStepCompletions(new Error('Simulation stopped before step completed.'));
     void worker.terminate().catch((error: unknown) => {
       // eslint-disable-next-line no-console
       console.error(error);
@@ -584,7 +645,16 @@ const simMcpController: SimMcpController = {
   getStatus: () => simWorkerController?.getStatus() ?? buildStoppedSimStatus(),
   start: () => {
     if (simWorkerController) {
-      return simWorkerController.getStatus();
+      const currentStatus = simWorkerController.getStatus();
+      if (
+        currentStatus.state !== 'stopped' &&
+        currentStatus.state !== 'crashed'
+      ) {
+        return currentStatus;
+      }
+
+      simWorkerController.dispose();
+      simWorkerController = undefined;
     }
 
     if (!mainWindow) {
@@ -616,13 +686,13 @@ const simMcpController: SimMcpController = {
     simWorkerController.resume();
     return simWorkerController.getStatus();
   },
-  step: (steps) => {
-    if (!simWorkerController) {
+  step: async (steps) => {
+    const controller = simWorkerController;
+    if (!controller) {
       throw new Error('Simulation is not running.');
     }
 
-    simWorkerController.step(steps);
-    return simWorkerController.getStatus();
+    return controller.step(steps);
   },
   enqueue: (commands) => {
     if (!simWorkerController) {

@@ -39,7 +39,7 @@ describe('shell-desktop MCP sim tools', () => {
       stop: () => ({ state: 'stopped', stepSizeMs: 16, nextStep: 0 }),
       pause: () => ({ state: 'paused', stepSizeMs: 16, nextStep: 0 }),
       resume: () => ({ state: 'running', stepSizeMs: 16, nextStep: 0 }),
-      step: () => ({ state: 'paused', stepSizeMs: 16, nextStep: 1 }),
+      step: async () => ({ state: 'paused', stepSizeMs: 16, nextStep: 1 }),
       enqueue: () => ({ enqueued: 0 }),
     });
 
@@ -63,7 +63,7 @@ describe('shell-desktop MCP sim tools', () => {
       stop: vi.fn(() => ({ state: 'stopped', stepSizeMs: 16, nextStep: 0 })),
       pause: vi.fn(() => ({ state: 'paused', stepSizeMs: 16, nextStep: 0 })),
       resume: vi.fn(() => ({ state: 'running', stepSizeMs: 16, nextStep: 0 })),
-      step: vi.fn((_steps: number) => ({ state: 'paused', stepSizeMs: 16, nextStep: 1 })),
+      step: vi.fn(async (_steps: number) => ({ state: 'paused', stepSizeMs: 16, nextStep: 1 })),
       enqueue: vi.fn((_commands: readonly Command[]) => ({ enqueued: 0 })),
     };
 
@@ -117,7 +117,7 @@ describe('shell-desktop MCP sim tools', () => {
       stop: () => ({ state: 'stopped', stepSizeMs: 20, nextStep: 10 }),
       pause: () => ({ state: 'paused', stepSizeMs: 20, nextStep: 10 }),
       resume: () => ({ state: 'running', stepSizeMs: 20, nextStep: 10 }),
-      step: () => ({ state: 'paused', stepSizeMs: 20, nextStep: 11 }),
+      step: async () => ({ state: 'paused', stepSizeMs: 20, nextStep: 11 }),
       enqueue,
     });
 
@@ -174,7 +174,7 @@ describe('shell-desktop MCP sim tools', () => {
       stop: () => ({ state: 'stopped', stepSizeMs: 20, nextStep: 10 }),
       pause: () => ({ state: 'paused', stepSizeMs: 20, nextStep: 10 }),
       resume: () => ({ state: 'running', stepSizeMs: 20, nextStep: 10 }),
-      step: () => ({ state: 'paused', stepSizeMs: 20, nextStep: 11 }),
+      step: async () => ({ state: 'paused', stepSizeMs: 20, nextStep: 11 }),
       enqueue: () => ({ enqueued: 0 }),
     });
 
