@@ -29,7 +29,7 @@ if ! is_running "$pid"; then
   exit 1
 fi
 
-if curl -sS --max-time 1 -o /dev/null "http://127.0.0.1:${MCP_PORT}/"; then
+if curl -f -sS --max-time 1 -o /dev/null "http://127.0.0.1:${MCP_PORT}/healthz"; then
   echo "[shell-desktop] MCP gateway daemon status: running (pid=$pid, endpoint=http://127.0.0.1:${MCP_PORT}/mcp/sse, log=$LOG_FILE)."
   exit 0
 fi

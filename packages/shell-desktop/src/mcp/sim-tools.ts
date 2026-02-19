@@ -24,6 +24,7 @@ export type SimMcpController = Readonly<{
 }>;
 
 export const SIM_MCP_MAX_STEP_COUNT = 10_000;
+export const SIM_STEP_TOOL_DESCRIPTION = 'Pauses the simulation if needed, then advances it by N steps deterministically.';
 
 type TextToolResult = {
   content: Array<{ type: 'text'; text: string }>;
@@ -188,7 +189,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
     'sim.step',
     {
       title: 'Sim step',
-      description: 'Advances the simulation by N steps while paused.',
+      description: SIM_STEP_TOOL_DESCRIPTION,
       inputSchema: SIM_STEP_ARGS_SCHEMA.shape,
     },
     async (args: unknown) => {

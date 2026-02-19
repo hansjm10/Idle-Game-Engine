@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { startShellDesktopMcpGateway } from './mcp-gateway.js';
 import { startShellDesktopMcpServer } from './mcp-server.js';
+import { SIM_MCP_MAX_STEP_COUNT } from './sim-tools.js';
 import type { WindowMcpController } from './window-tools.js';
 
 async function readResponseBody(response: IncomingMessage): Promise<string> {
@@ -110,6 +111,35 @@ describe('shell-desktop MCP gateway', () => {
     expect(payload.result?.serverInfo?.name).toBe('idle-engine-shell-desktop-gateway');
   });
 
+  it('exposes a /healthz endpoint for readiness checks', async () => {
+    const gateway = await startShellDesktopMcpGateway({
+      port: 0,
+      targetUrl: 'http://127.0.0.1:1/mcp/sse',
+      proxyTimeoutMs: 50,
+    });
+    closers.push(gateway.close);
+
+    const port = Number.parseInt(gateway.url.port, 10);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          method: 'GET',
+          path: '/healthz',
+        },
+        resolve,
+      );
+
+      request.on('error', reject);
+      request.end();
+    });
+
+    const body = await readResponseBody(response);
+    expect(response.statusCode).toBe(200);
+    expect(body).toBe('ok');
+  });
+
   it('returns fallback tools and health=false while backend is offline', async () => {
     const gateway = await startShellDesktopMcpGateway({
       port: 0,
@@ -127,6 +157,18 @@ describe('shell-desktop MCP gateway', () => {
     expect(toolNames).toContain('health');
     expect(toolNames).toContain('sim.status');
     expect(toolNames).toContain('window.resize');
+
+    const simStep = tools.tools.find((tool) => tool.name === 'sim.step');
+    expect(simStep?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        steps: {
+          type: 'integer',
+          minimum: 1,
+          maximum: SIM_MCP_MAX_STEP_COUNT,
+        },
+      },
+    });
 
     const healthRaw = await client.callTool({ name: 'health', arguments: {} }, CallToolResultSchema);
     const health = CallToolResultSchema.parse(healthRaw);

@@ -125,7 +125,6 @@ export async function startShellDesktopMcpServer(
     asset: options.asset,
   });
   const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
-  await server.connect(transport);
 
   const safeEndResponse = (res: ServerResponse, statusCode: number, message: string): void => {
     if (res.writableEnded) {
@@ -183,6 +182,21 @@ export async function startShellDesktopMcpServer(
     setAcceptHeader(req, nextAcceptValues.join(', '));
   };
 
+  const closeHttpServer = async (httpServer: http.Server): Promise<void> => {
+    await new Promise<void>((resolve, reject) => {
+      httpServer.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  };
+  const closeServerResources = async (): Promise<void> => {
+    await Promise.allSettled([server.close(), transport.close()]);
+  };
+
   const httpServer = http.createServer((req, res) => {
     const urlText = req.url;
     if (!urlText) {
@@ -209,37 +223,40 @@ export async function startShellDesktopMcpServer(
     safeEndResponse(res, 404, 'Not found.');
   });
 
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once('error', reject);
-    httpServer.listen({ host: MCP_HOST, port }, () => {
-      httpServer.off('error', reject);
-      resolve();
-    });
-  });
-
-  const address = httpServer.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Failed to resolve MCP server address.');
-  }
-
-  const baseUrl = new URL(`http://${MCP_HOST}:${address.port}`);
-  const url = new URL(MCP_HTTP_PATH, baseUrl);
-
-  const close = async (): Promise<void> => {
-    await Promise.allSettled([server.close(), transport.close()]);
+  try {
+    await server.connect(transport);
 
     await new Promise<void>((resolve, reject) => {
-      httpServer.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
+      httpServer.once('error', reject);
+      httpServer.listen({ host: MCP_HOST, port }, () => {
+        httpServer.off('error', reject);
         resolve();
       });
     });
-  };
 
-  return { url, close };
+    const address = httpServer.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Failed to resolve MCP server address.');
+    }
+
+    const baseUrl = new URL(`http://${MCP_HOST}:${address.port}`);
+    const url = new URL(MCP_HTTP_PATH, baseUrl);
+
+    const close = async (): Promise<void> => {
+      await closeServerResources();
+      await closeHttpServer(httpServer);
+    };
+
+    return { url, close };
+  } catch (error: unknown) {
+    await closeServerResources();
+
+    if (httpServer.listening) {
+      await closeHttpServer(httpServer);
+    }
+
+    throw error;
+  }
 }
 
 export async function maybeStartShellDesktopMcpServer(

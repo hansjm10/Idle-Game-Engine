@@ -1,6 +1,7 @@
 import http from 'node:http';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
+import { SIM_MCP_MAX_STEP_COUNT, SIM_STEP_TOOL_DESCRIPTION } from './sim-tools.js';
 
 export type ShellDesktopMcpGateway = Readonly<{
   url: URL;
@@ -40,6 +41,7 @@ type JsonRpcErrorPayload = Readonly<{
 
 const MCP_HTTP_PATH = '/mcp/sse';
 const MCP_HTTP_PATH_ALIAS = '/mcp';
+const GATEWAY_HEALTH_PATH = '/healthz';
 const DEFAULT_GATEWAY_HOST = '127.0.0.1';
 const DEFAULT_GATEWAY_PORT = 8570;
 const DEFAULT_PROXY_TIMEOUT_MS = 5000;
@@ -84,10 +86,10 @@ const FALLBACK_TOOLS = [
   },
   {
     name: 'sim.step',
-    description: 'Advances the simulation by N steps while paused.',
+    description: SIM_STEP_TOOL_DESCRIPTION,
     inputSchema: {
       type: 'object',
-      properties: { steps: { type: 'integer', minimum: 1 } },
+      properties: { steps: { type: 'integer', minimum: 1, maximum: SIM_MCP_MAX_STEP_COUNT } },
       additionalProperties: false,
     },
   },
@@ -522,6 +524,11 @@ async function handleGatewayRequest(
   }
 
   if (requestUrl.pathname !== MCP_HTTP_PATH && requestUrl.pathname !== MCP_HTTP_PATH_ALIAS) {
+    if (requestUrl.pathname === GATEWAY_HEALTH_PATH) {
+      safeEndResponse(res, 200, 'ok');
+      return;
+    }
+
     safeEndResponse(res, 404, 'Not found.');
     return;
   }

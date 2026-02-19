@@ -188,6 +188,47 @@ describe('shell-desktop MCP server', () => {
     }
   });
 
+  it('closes server resources when startup fails during listen', async () => {
+    const blocker = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('busy');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      blocker.once('error', reject);
+      blocker.listen({ host: '127.0.0.1', port: 0 }, () => {
+        blocker.off('error', reject);
+        resolve();
+      });
+    });
+
+    const address = blocker.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected blocker server to expose a bound TCP address');
+    }
+
+    const serverCloseSpy = vi.spyOn(McpServer.prototype, 'close');
+    const transportCloseSpy = vi.spyOn(StreamableHTTPServerTransport.prototype, 'close');
+
+    try {
+      await expect(startShellDesktopMcpServer({ port: address.port })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+      expect(serverCloseSpy).toHaveBeenCalled();
+      expect(transportCloseSpy).toHaveBeenCalled();
+    } finally {
+      serverCloseSpy.mockRestore();
+      transportCloseSpy.mockRestore();
+      await new Promise<void>((resolve, reject) => {
+        blocker.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
+  });
+
   it('rejects invalid explicit MCP ports', async () => {
     await expect(maybeStartShellDesktopMcpServer({
       argv: ['node', 'app.js', '--enable-mcp-server'],
