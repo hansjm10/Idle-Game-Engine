@@ -27,6 +27,12 @@ Then verify MCP connectivity:
 pnpm shell:desktop:mcp:smoke
 ```
 
+Run the PR test-game content pack behind the gateway (backend on `8571`):
+
+```bash
+pnpm test-game:mcp:gateway-backend
+```
+
 If your MCP client needs the endpoint to stay up before shell launch, run the always-on gateway:
 
 ```bash

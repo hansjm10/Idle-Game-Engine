@@ -122,6 +122,12 @@ Terminal B (start shell-desktop later, backend on 8571):
 pnpm shell:desktop:headless:gateway-backend
 ```
 
+To run the PR test-game pack instead of demo mode:
+
+```bash
+pnpm test-game:mcp:gateway-backend
+```
+
 Behavior:
 - Gateway on `8570` is always reachable.
 - `health` returns `ok: false` while shell-desktop backend is down.
