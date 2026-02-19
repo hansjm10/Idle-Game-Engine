@@ -6,7 +6,14 @@ DISPLAY_ID="${IDLE_ENGINE_XPRA_DISPLAY:-:121}"
 XPRA_SOCKET_DIR="${IDLE_ENGINE_XPRA_SOCKET_DIR:-$HOME/.xpra}"
 XPRA_BACKEND="${IDLE_ENGINE_XPRA_BACKEND:-xorg}"
 MCP_ENABLED="${IDLE_ENGINE_ENABLE_MCP_SERVER:-1}"
-MCP_PORT="${IDLE_ENGINE_MCP_PORT:-8570}"
+MCP_GATEWAY_MODE="${IDLE_ENGINE_MCP_GATEWAY_MODE:-0}"
+if [[ -n "${IDLE_ENGINE_MCP_PORT:-}" ]]; then
+  MCP_PORT="${IDLE_ENGINE_MCP_PORT}"
+elif [[ "$MCP_GATEWAY_MODE" == "1" ]]; then
+  MCP_PORT="8571"
+else
+  MCP_PORT="8570"
+fi
 BUILD_BEFORE_START="${IDLE_ENGINE_BUILD_BEFORE_START:-1}"
 NO_SANDBOX="${IDLE_ENGINE_NO_SANDBOX:-1}"
 ENABLE_VULKAN_FEATURE="${IDLE_ENGINE_ENABLE_VULKAN_FEATURE:-1}"
@@ -106,6 +113,9 @@ fi
 
 if [[ "$MCP_ENABLED" == "1" ]]; then
   echo "[shell-desktop] MCP endpoint: http://127.0.0.1:$MCP_PORT/mcp/sse"
+  if [[ "$MCP_GATEWAY_MODE" == "1" ]]; then
+    echo "[shell-desktop] Gateway mode enabled (expected gateway endpoint: http://127.0.0.1:8570/mcp/sse)"
+  fi
 fi
 
 echo "[shell-desktop] Launching on DISPLAY=$DISPLAY_ID (xpra socket dir: $XPRA_SOCKET_DIR)"

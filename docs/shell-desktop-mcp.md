@@ -26,6 +26,8 @@ By default the server listens on port `8570` and prints a line like:
 [shell-desktop] MCP server listening at http://127.0.0.1:8570/mcp/sse
 ```
 
+If port `8570` is already taken and you did not explicitly set `IDLE_ENGINE_MCP_PORT`/`--mcp-port`, the shell auto-falls back to `8571`.
+
 ### Headless Linux (xpra)
 
 For remote/headless hosts, use the workspace launcher:
@@ -80,8 +82,36 @@ Expected host signal: `GPU0` should report `Intel(R) Arc(tm) A310 Graphics (DG2)
 - Port override:
   - Env var: `IDLE_ENGINE_MCP_PORT=8571`
   - Arg: `--mcp-port=8571`
+- Headless gateway mode:
+  - Env var: `IDLE_ENGINE_MCP_GATEWAY_MODE=1` (defaults shell-desktop MCP port to `8571` when not explicitly set)
 
 The endpoint is `/mcp/sse` (with `/mcp` accepted as an alias for streamable-HTTP clients).
+
+## Always-On Gateway (Codex-friendly)
+
+If you want Codex/Cursor MCP startup to succeed even before shell-desktop is running, run the MCP gateway on `8570` and let shell-desktop use `8571`.
+
+Terminal A (keep running):
+
+```bash
+pnpm shell:desktop:mcp:gateway
+```
+
+Optional overrides for the gateway:
+- `IDLE_ENGINE_MCP_PORT` (gateway listen port, default `8570`)
+- `IDLE_ENGINE_MCP_BACKEND_PORT` (shell-desktop backend port, default `8571`)
+- `IDLE_ENGINE_MCP_BACKEND_URL` (full backend URL, overrides backend port)
+
+Terminal B (start shell-desktop later, backend on 8571):
+
+```bash
+pnpm shell:desktop:headless:gateway-backend
+```
+
+Behavior:
+- Gateway on `8570` is always reachable.
+- `health` returns `ok: false` while shell-desktop backend is down.
+- Once shell-desktop comes up on `8571`, the gateway proxies all MCP calls and `health` returns backend `ok: true`.
 
 ## Tool surface (MVP)
 

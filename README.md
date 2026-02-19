@@ -27,6 +27,13 @@ Then verify MCP connectivity:
 pnpm shell:desktop:mcp:smoke
 ```
 
+If your MCP client needs the endpoint to stay up before shell launch, run the always-on gateway:
+
+```bash
+pnpm shell:desktop:mcp:gateway
+pnpm shell:desktop:headless:gateway-backend
+```
+
 The headless launcher defaults to an Xorg-backed xpra display plus Chromium `Vulkan` feature enablement so WebGPU can use hardware adapters on Linux hosts.
 
 ## Content Authoring Docs

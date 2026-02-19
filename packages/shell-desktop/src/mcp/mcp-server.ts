@@ -50,19 +50,22 @@ function parsePort(value: string): number {
   return parsed;
 }
 
-function getRequestedPort(argv: readonly string[], env: NodeJS.ProcessEnv): number {
+function getRequestedPort(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Readonly<{ port: number; explicit: boolean }> {
   const envPort = env.IDLE_ENGINE_MCP_PORT;
   if (envPort !== undefined) {
-    return parsePort(envPort);
+    return { port: parsePort(envPort), explicit: true };
   }
 
   for (const arg of argv) {
     if (arg.startsWith('--mcp-port=')) {
-      return parsePort(arg.slice('--mcp-port='.length));
+      return { port: parsePort(arg.slice('--mcp-port='.length)), explicit: true };
     }
   }
 
-  return DEFAULT_MCP_PORT;
+  return { port: DEFAULT_MCP_PORT, explicit: false };
 }
 
 function createShellDesktopMcpServer(
@@ -256,14 +259,42 @@ export async function maybeStartShellDesktopMcpServer(
     return undefined;
   }
 
-  const port = getRequestedPort(argv, env);
-  const server = await startShellDesktopMcpServer({
-    port,
-    sim: options.sim,
-    window: options.window,
-    input: options.input,
-    asset: options.asset,
-  });
+  const requested = getRequestedPort(argv, env);
+
+  let server: ShellDesktopMcpServer;
+  try {
+    server = await startShellDesktopMcpServer({
+      port: requested.port,
+      sim: options.sim,
+      window: options.window,
+      input: options.input,
+      asset: options.asset,
+    });
+  } catch (error: unknown) {
+    const isPortBusy = error instanceof Error
+      && 'code' in error
+      && (error as NodeJS.ErrnoException).code === 'EADDRINUSE';
+
+    if (!requested.explicit && isPortBusy && requested.port < 65535) {
+      const fallbackPort = requested.port + 1;
+      server = await startShellDesktopMcpServer({
+        port: fallbackPort,
+        sim: options.sim,
+        window: options.window,
+        input: options.input,
+        asset: options.asset,
+      });
+
+      if (env.NODE_ENV !== 'test') {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[shell-desktop] MCP port ${requested.port} is busy; using ${fallbackPort} instead.`,
+        );
+      }
+    } else {
+      throw error;
+    }
+  }
 
   if (env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console

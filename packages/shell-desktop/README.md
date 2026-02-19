@@ -33,6 +33,13 @@ pnpm shell:desktop:mcp:smoke
 pnpm shell:desktop:headless:stop
 ```
 
+Always-on MCP gateway (for Codex/Cursor startup before shell launch):
+
+```bash
+pnpm shell:desktop:mcp:gateway
+pnpm shell:desktop:headless:gateway-backend
+```
+
 Quick GPU verification:
 
 ```bash
