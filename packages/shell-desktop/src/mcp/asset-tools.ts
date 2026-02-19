@@ -141,7 +141,7 @@ async function listAssets(
 
   const stat = await fsPromises.stat(targetRealPath);
   if (!stat.isDirectory()) {
-    throw new TypeError('Invalid asset/list path: expected a directory within compiled assets root.');
+    throw new TypeError('Invalid asset.list path: expected a directory within compiled assets root.');
   }
 
   const entries: AssetMcpEntry[] = [];
@@ -187,11 +187,11 @@ async function readAsset(
 
   const stat = await fsPromises.stat(targetRealPath);
   if (!stat.isFile()) {
-    throw new TypeError('Invalid asset/read path: expected a file within compiled assets root.');
+    throw new TypeError('Invalid asset.read path: expected a file within compiled assets root.');
   }
 
   if (stat.size > maxBytes) {
-    throw new Error(`asset/read exceeded maxBytes (${stat.size} > ${maxBytes})`);
+    throw new Error(`asset.read exceeded maxBytes (${stat.size} > ${maxBytes})`);
   }
 
   const fileHandle = await fsPromises.open(targetRealPath, 'r');
@@ -213,7 +213,7 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
   };
 
   server.registerTool(
-    'asset/list',
+    'asset.list',
     {
       title: 'Asset list',
       description: 'Lists compiled assets under the configured assets root directory.',
@@ -224,18 +224,18 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
       },
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid asset/list payload: expected an object');
+      const record = assertObject(args, 'Invalid asset.list payload: expected an object');
 
       const requestedPath =
-        assertOptionalString(record['path'], 'Invalid asset/list payload: expected { path?: string }') ?? '';
+        assertOptionalString(record['path'], 'Invalid asset.list payload: expected { path?: string }') ?? '';
 
       const recursive =
-        assertOptionalBoolean(record['recursive'], 'Invalid asset/list payload: expected { recursive?: boolean }') ?? false;
+        assertOptionalBoolean(record['recursive'], 'Invalid asset.list payload: expected { recursive?: boolean }') ?? false;
 
       const maxEntries =
         assertOptionalPositiveInt(
           record['maxEntries'],
-          'Invalid asset/list payload: expected { maxEntries?: integer >= 1 }',
+          'Invalid asset.list payload: expected { maxEntries?: integer >= 1 }',
         ) ?? 500;
 
       const rootRealPath = await getCompiledAssetsRootRealPath();
@@ -253,7 +253,7 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
   );
 
   server.registerTool(
-    'asset/read',
+    'asset.read',
     {
       title: 'Asset read',
       description: 'Reads a compiled asset file from the configured assets root directory.',
@@ -263,16 +263,16 @@ export function registerAssetTools(server: ToolRegistrar, controller: AssetMcpCo
       },
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid asset/read payload: expected an object');
+      const record = assertObject(args, 'Invalid asset.read payload: expected an object');
       const requestedPath = assertString(
         record['path'],
-        'Invalid asset/read payload: expected { path: string }',
+        'Invalid asset.read payload: expected { path: string }',
       );
 
       const maxBytes =
         assertOptionalPositiveInt(
           record['maxBytes'],
-          'Invalid asset/read payload: expected { maxBytes?: integer >= 1 }',
+          'Invalid asset.read payload: expected { maxBytes?: integer >= 1 }',
         ) ?? 5_000_000;
 
       const rootRealPath = await getCompiledAssetsRootRealPath();

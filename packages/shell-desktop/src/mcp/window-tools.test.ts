@@ -47,10 +47,10 @@ describe('shell-desktop MCP window tools', () => {
     } satisfies WindowMcpController);
 
     expect(Array.from(tools.keys()).sort()).toEqual([
-      'window/devtools',
-      'window/info',
-      'window/resize',
-      'window/screenshot',
+      'window.devtools',
+      'window.info',
+      'window.resize',
+      'window.screenshot',
     ]);
   });
 
@@ -80,19 +80,19 @@ describe('shell-desktop MCP window tools', () => {
 
     registerWindowTools(server, controller);
 
-    const infoHandler = tools.get('window/info');
+    const infoHandler = tools.get('window.info');
     await expect(infoHandler?.({})).resolves.toBeDefined();
     expect(controller.getInfo).toHaveBeenCalledTimes(1);
 
-    const resizeHandler = tools.get('window/resize');
+    const resizeHandler = tools.get('window.resize');
     await expect(resizeHandler?.({ width: 640, height: 480 })).resolves.toBeDefined();
     expect(controller.resize).toHaveBeenCalledWith(640, 480);
 
-    const devToolsHandler = tools.get('window/devtools');
+    const devToolsHandler = tools.get('window.devtools');
     await expect(devToolsHandler?.({ action: 'open' })).resolves.toBeDefined();
     expect(controller.setDevTools).toHaveBeenCalledWith('open');
 
-    const screenshotHandler = tools.get('window/screenshot');
+    const screenshotHandler = tools.get('window.screenshot');
     const rawScreenshot = await screenshotHandler?.({ maxBytes: 10 });
     expect(controller.captureScreenshotPng).toHaveBeenCalledTimes(1);
 
@@ -126,16 +126,16 @@ describe('shell-desktop MCP window tools', () => {
 
     registerWindowTools(server, controller);
 
-    const resizeHandler = tools.get('window/resize');
+    const resizeHandler = tools.get('window.resize');
     await expect(resizeHandler?.({})).rejects.toThrow(/width/);
     await expect(resizeHandler?.({ width: 0, height: 10 })).rejects.toThrow(/width/);
     await expect(resizeHandler?.({ width: 100, height: -1 })).rejects.toThrow(/height/);
 
-    const devToolsHandler = tools.get('window/devtools');
+    const devToolsHandler = tools.get('window.devtools');
     await expect(devToolsHandler?.({})).rejects.toThrow(/action/);
     await expect(devToolsHandler?.({ action: 'nope' })).rejects.toThrow(/action/);
 
-    const screenshotHandler = tools.get('window/screenshot');
+    const screenshotHandler = tools.get('window.screenshot');
     await expect(screenshotHandler?.({ maxBytes: 5 })).rejects.toThrow(/maxBytes/);
     await expect(screenshotHandler?.({ maxBytes: 0 })).rejects.toThrow(/maxBytes/);
   });

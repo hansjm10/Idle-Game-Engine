@@ -44,13 +44,13 @@ describe('shell-desktop MCP sim tools', () => {
     });
 
     expect(Array.from(tools.keys()).sort()).toEqual([
-      'sim/enqueue',
-      'sim/pause',
-      'sim/resume',
-      'sim/start',
-      'sim/status',
-      'sim/step',
-      'sim/stop',
+      'sim.enqueue',
+      'sim.pause',
+      'sim.resume',
+      'sim.start',
+      'sim.status',
+      'sim.step',
+      'sim.stop',
     ]);
   });
 
@@ -75,32 +75,32 @@ describe('shell-desktop MCP sim tools', () => {
 
     registerSimTools(server, sim as unknown as SimMcpController);
 
-    const statusHandler = tools.get('sim/status');
+    const statusHandler = tools.get('sim.status');
     await expect(statusHandler?.({})).resolves.toBeDefined();
     expect(sim.getStatus).toHaveBeenCalledTimes(1);
 
-    const startHandler = tools.get('sim/start');
+    const startHandler = tools.get('sim.start');
     await expect(startHandler?.({})).resolves.toBeDefined();
     expect(sim.start).toHaveBeenCalledTimes(1);
 
-    const pauseHandler = tools.get('sim/pause');
+    const pauseHandler = tools.get('sim.pause');
     await expect(pauseHandler?.({})).resolves.toBeDefined();
     expect(sim.pause).toHaveBeenCalledTimes(1);
 
-    const resumeHandler = tools.get('sim/resume');
+    const resumeHandler = tools.get('sim.resume');
     await expect(resumeHandler?.({})).resolves.toBeDefined();
     expect(sim.resume).toHaveBeenCalledTimes(1);
 
-    const stepHandler = tools.get('sim/step');
+    const stepHandler = tools.get('sim.step');
     await expect(stepHandler?.({ steps: 2 })).resolves.toBeDefined();
     expect(sim.step).toHaveBeenCalledWith(2);
 
-    const stopHandler = tools.get('sim/stop');
+    const stopHandler = tools.get('sim.stop');
     await expect(stopHandler?.({})).resolves.toBeDefined();
     expect(sim.stop).toHaveBeenCalledTimes(1);
   });
 
-  it('normalizes sim/enqueue commands deterministically', async () => {
+  it('normalizes sim.enqueue commands deterministically', async () => {
     const tools = new Map<string, ToolHandler>();
 
     const enqueue = vi.fn((_commands: readonly Command[]) => ({ enqueued: 0 }));
@@ -121,7 +121,7 @@ describe('shell-desktop MCP sim tools', () => {
       enqueue,
     });
 
-    const handler = tools.get('sim/enqueue');
+    const handler = tools.get('sim.enqueue');
     const rawResult = await handler?.({
       commands: [
         { type: 'A', payload: { ok: true } },
@@ -159,7 +159,7 @@ describe('shell-desktop MCP sim tools', () => {
     expect(parsedResult).toEqual(expect.objectContaining({ ok: true, enqueued: 3 }));
   });
 
-  it('rejects invalid sim/step and sim/enqueue payloads', async () => {
+  it('rejects invalid sim.step and sim.enqueue payloads', async () => {
     const tools = new Map<string, ToolHandler>();
 
     const server = {
@@ -178,14 +178,14 @@ describe('shell-desktop MCP sim tools', () => {
       enqueue: () => ({ enqueued: 0 }),
     });
 
-    const enqueueHandler = tools.get('sim/enqueue');
+    const enqueueHandler = tools.get('sim.enqueue');
     await expect(enqueueHandler?.({})).rejects.toThrow(/commands/);
     await expect(enqueueHandler?.({ commands: [{}] })).rejects.toThrow(/type/);
     await expect(enqueueHandler?.({ commands: [{ type: 'ok', step: 'nope' }] })).rejects.toThrow(/step/);
     await expect(enqueueHandler?.({ commands: [{ type: 'ok', priority: 'nope' }] })).rejects.toThrow(/priority/);
     await expect(enqueueHandler?.({ commands: [{ type: 'ok', priority: 99 }] })).rejects.toThrow(/priority/);
 
-    const stepHandler = tools.get('sim/step');
+    const stepHandler = tools.get('sim.step');
     await expect(stepHandler?.({ steps: 0 })).rejects.toThrow(/steps/);
     await expect(stepHandler?.({ steps: 1.5 })).rejects.toThrow(/steps/);
   });

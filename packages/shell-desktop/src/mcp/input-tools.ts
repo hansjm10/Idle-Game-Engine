@@ -48,28 +48,28 @@ const assertOptionalMetadata = (value: unknown): Readonly<Record<string, unknown
   }
 
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('Invalid input/controlEvent payload: expected { metadata?: object }');
+    throw new TypeError('Invalid input.controlEvent payload: expected { metadata?: object }');
   }
 
   return value as Readonly<Record<string, unknown>>;
 };
 
 const assertControlEvent = (args: unknown): ShellControlEvent => {
-  const record = assertObject(args, 'Invalid input/controlEvent payload: expected an object');
+  const record = assertObject(args, 'Invalid input.controlEvent payload: expected an object');
 
   const intent = record['intent'];
   if (typeof intent !== 'string' || intent.trim().length === 0) {
-    throw new TypeError('Invalid input/controlEvent payload: expected { intent: string }');
+    throw new TypeError('Invalid input.controlEvent payload: expected { intent: string }');
   }
 
   const phase = record['phase'];
   if (phase !== 'start' && phase !== 'repeat' && phase !== 'end') {
-    throw new TypeError('Invalid input/controlEvent payload: expected { phase: "start" | "repeat" | "end" }');
+    throw new TypeError('Invalid input.controlEvent payload: expected { phase: "start" | "repeat" | "end" }');
   }
 
   const value = assertOptionalFiniteNumber(
     record['value'],
-    'Invalid input/controlEvent payload: expected { value?: number }',
+    'Invalid input.controlEvent payload: expected { value?: number }',
   );
 
   const metadata = assertOptionalMetadata(record['metadata']);
@@ -83,7 +83,7 @@ const assertControlEvent = (args: unknown): ShellControlEvent => {
 
 export function registerInputTools(server: ToolRegistrar, controller: InputMcpController): void {
   server.registerTool(
-    'input/controlEvent',
+    'input.controlEvent',
     {
       title: 'Input controlEvent',
       description: 'Injects a shell control event into the active simulation control scheme.',

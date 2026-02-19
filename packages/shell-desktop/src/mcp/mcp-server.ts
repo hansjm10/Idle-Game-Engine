@@ -33,6 +33,7 @@ const DEFAULT_MCP_PORT = 8570;
 const MCP_HOST = '127.0.0.1';
 
 const MCP_HTTP_PATH = '/mcp/sse';
+const MCP_HTTP_PATH_ALIAS = '/mcp';
 
 export function isShellDesktopMcpServerEnabled(
   argv: readonly string[] = process.argv,
@@ -120,7 +121,7 @@ export async function startShellDesktopMcpServer(
     input: options.input,
     asset: options.asset,
   });
-  const transport = new StreamableHTTPServerTransport();
+  const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
   await server.connect(transport);
 
   const safeEndResponse = (res: ServerResponse, statusCode: number, message: string): void => {
@@ -133,6 +134,50 @@ export async function startShellDesktopMcpServer(
     }
 
     res.end(message);
+  };
+
+  const setAcceptHeader = (req: http.IncomingMessage, value: string): void => {
+    req.headers.accept = value;
+
+    if (Array.isArray(req.rawHeaders)) {
+      let updated = false;
+      for (let index = 0; index < req.rawHeaders.length; index += 2) {
+        if (req.rawHeaders[index]?.toLowerCase() !== 'accept') {
+          continue;
+        }
+        req.rawHeaders[index + 1] = value;
+        updated = true;
+      }
+
+      if (!updated) {
+        req.rawHeaders.push('accept', value);
+      }
+    }
+  };
+
+  const ensureCompatibleAcceptHeader = (req: http.IncomingMessage): void => {
+    if (req.method !== 'POST') {
+      return;
+    }
+
+    const rawAccept = req.headers.accept;
+    const accept = Array.isArray(rawAccept) ? rawAccept.join(', ') : rawAccept ?? '';
+    const normalizedAccept = accept.toLowerCase();
+
+    const hasJson = normalizedAccept.includes('application/json');
+    const hasSse = normalizedAccept.includes('text/event-stream');
+    if (hasJson && hasSse) {
+      return;
+    }
+
+    const nextAcceptValues = [accept.trim()].filter((value) => value.length > 0);
+    if (!hasJson) {
+      nextAcceptValues.push('application/json');
+    }
+    if (!hasSse) {
+      nextAcceptValues.push('text/event-stream');
+    }
+    setAcceptHeader(req, nextAcceptValues.join(', '));
   };
 
   const httpServer = http.createServer((req, res) => {
@@ -150,7 +195,8 @@ export async function startShellDesktopMcpServer(
       return;
     }
 
-    if (requestUrl.pathname === MCP_HTTP_PATH) {
+    if (requestUrl.pathname === MCP_HTTP_PATH || requestUrl.pathname === MCP_HTTP_PATH_ALIAS) {
+      ensureCompatibleAcceptHeader(req);
       transport.handleRequest(req, res).catch((error: unknown) => {
         safeEndResponse(res, 500, String(error));
       });

@@ -81,15 +81,15 @@ Expected host signal: `GPU0` should report `Intel(R) Arc(tm) A310 Graphics (DG2)
   - Env var: `IDLE_ENGINE_MCP_PORT=8571`
   - Arg: `--mcp-port=8571`
 
-The SSE endpoint is always `/mcp/sse`.
+The endpoint is `/mcp/sse` (with `/mcp` accepted as an alias for streamable-HTTP clients).
 
 ## Tool surface (MVP)
 
 - `health`: basic health/capabilities snapshot.
-- `sim/*`: `sim/status`, `sim/start`, `sim/stop`, `sim/pause`, `sim/resume`, `sim/step`, `sim/enqueue`.
-- `window/*`: `window/info`, `window/resize`, `window/devtools`, `window/screenshot` (bounded, returns base64 PNG).
-- `input/*`: `input/controlEvent` (reuses `ShellControlEvent` semantics).
-- `asset/*`: `asset/list`, `asset/read` (scoped to compiled assets root with traversal protection).
+- `sim`: `sim.status`, `sim.start`, `sim.stop`, `sim.pause`, `sim.resume`, `sim.step`, `sim.enqueue`.
+- `window`: `window.info`, `window.resize`, `window.devtools`, `window.screenshot` (bounded, returns base64 PNG).
+- `input`: `input.controlEvent` (reuses `ShellControlEvent` semantics).
+- `asset`: `asset.list`, `asset.read` (scoped to compiled assets root with traversal protection).
 
 ## Client setup
 
@@ -125,13 +125,13 @@ If your Claude Desktop build does not support remote MCP servers (or refuses `ht
 
 Prompt template:
 
-> Start the sim, pause it, step 120 frames, take a screenshot, and report `sim/status` plus the screenshot bytes count.
+> Start the sim, pause it, step 120 frames, take a screenshot, and report `sim.status` plus the screenshot bytes count.
 
 ### Debugging
 
 Prompt template:
 
-> Call `window/info`, open devtools via `window/devtools`, then `sim/status`. If the sim is running, pause it and step 1 frame. Summarize what changed.
+> Call `window.info`, open devtools via `window.devtools`, then `sim.status`. If the sim is running, pause it and step 1 frame. Summarize what changed.
 
 ### Content iteration
 

@@ -24,6 +24,21 @@ async function readResponseBody(response: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+const buildInitializeRequestBody = (): string =>
+  JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: {
+        name: 'shell-desktop-test-client',
+        version: '1.0.0',
+      },
+    },
+  });
+
 describe('shell-desktop MCP server', () => {
   const servers: Array<{ close: () => Promise<void> }> = [];
 
@@ -31,7 +46,7 @@ describe('shell-desktop MCP server', () => {
     await Promise.allSettled(servers.splice(0).map((server) => server.close()));
   });
 
-  it('exposes the health tool over SSE', async () => {
+  it('exposes the health tool over streamable HTTP', async () => {
     const server = await startShellDesktopMcpServer({ port: 0 });
     servers.push(server);
 
@@ -47,6 +62,41 @@ describe('shell-desktop MCP server', () => {
     expect(result.content[0]).toMatchObject({ type: 'text' });
 
     await client.close();
+  });
+
+  it('accepts initialization requests that only advertise application/json', async () => {
+    const server = await startShellDesktopMcpServer({ port: 0 });
+    servers.push(server);
+
+    const port = Number.parseInt(server.url.port, 10);
+    const response = await new Promise<IncomingMessage>((resolve, reject) => {
+      const request = http.request(
+        {
+          hostname: '127.0.0.1',
+          port,
+          method: 'POST',
+          path: server.url.pathname,
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+        },
+        resolve,
+      );
+
+      request.on('error', reject);
+      request.write(buildInitializeRequestBody());
+      request.end();
+    });
+
+    const body = await readResponseBody(response);
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('application/json');
+
+    const payload = JSON.parse(body) as {
+      result?: { protocolVersion?: string };
+    };
+    expect(payload.result?.protocolVersion).toBe('2025-06-18');
   });
 
   it('responds with 400 for malformed request URLs', async () => {
@@ -173,7 +223,7 @@ describe('shell-desktop MCP server', () => {
 
     const rawResult = await client.callTool(
       {
-        name: 'window/resize',
+        name: 'window.resize',
         arguments: { width: 640, height: 480 },
       },
       CallToolResultSchema,
@@ -197,6 +247,22 @@ describe('shell-desktop MCP server', () => {
       info: { bounds: { width: 640, height: 480 } },
     });
     expect(resizeSpy).toHaveBeenCalledWith(640, 480);
+
+    await client.close();
+  });
+
+  it('accepts streamable HTTP requests on /mcp alias path', async () => {
+    const server = await startShellDesktopMcpServer({ port: 0 });
+    servers.push(server);
+
+    const aliasUrl = new URL('/mcp', server.url);
+    const client = new Client({ name: 'shell-desktop-test-client', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(aliasUrl);
+    await client.connect(transport);
+
+    const rawResult = await client.callTool({ name: 'health', arguments: {} }, CallToolResultSchema);
+    const result = CallToolResultSchema.parse(rawResult);
+    expect(result.content[0]).toMatchObject({ type: 'text' });
 
     await client.close();
   });

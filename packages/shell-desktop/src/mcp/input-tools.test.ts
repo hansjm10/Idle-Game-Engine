@@ -23,7 +23,7 @@ const parseToolJson = (result: unknown): unknown => {
 };
 
 describe('shell-desktop MCP input tools', () => {
-  it('registers input/controlEvent', () => {
+  it('registers input.controlEvent', () => {
     const tools = new Map<string, ToolHandler>();
 
     const server = {
@@ -36,7 +36,7 @@ describe('shell-desktop MCP input tools', () => {
       sendControlEvent: (_event: ShellControlEvent) => undefined,
     } satisfies InputMcpController);
 
-    expect(Array.from(tools.keys()).sort()).toEqual(['input/controlEvent']);
+    expect(Array.from(tools.keys()).sort()).toEqual(['input.controlEvent']);
   });
 
   it('validates and forwards control events', async () => {
@@ -52,7 +52,7 @@ describe('shell-desktop MCP input tools', () => {
 
     registerInputTools(server, { sendControlEvent } as unknown as InputMcpController);
 
-    const handler = tools.get('input/controlEvent');
+    const handler = tools.get('input.controlEvent');
     const rawResult = await handler?.({ intent: 'collect', phase: 'start' });
 
     expect(sendControlEvent).toHaveBeenCalledWith({ intent: 'collect', phase: 'start' });
@@ -72,7 +72,7 @@ describe('shell-desktop MCP input tools', () => {
 
     registerInputTools(server, { sendControlEvent: () => undefined });
 
-    const handler = tools.get('input/controlEvent');
+    const handler = tools.get('input.controlEvent');
 
     await expect(handler?.({})).rejects.toThrow(/intent/);
     await expect(handler?.({ intent: '', phase: 'start' })).rejects.toThrow(/intent/);

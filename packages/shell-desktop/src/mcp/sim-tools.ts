@@ -62,7 +62,7 @@ const assertOptionalFiniteNumber = (value: unknown, message: string): number | u
 const assertOptionalCommandPriority = (value: unknown): CommandPriority | undefined => {
   const candidate = assertOptionalFiniteNumber(
     value,
-    'Invalid sim/enqueue command: expected { priority?: number }',
+    'Invalid sim.enqueue command: expected { priority?: number }',
   );
 
   if (candidate === undefined) {
@@ -70,7 +70,7 @@ const assertOptionalCommandPriority = (value: unknown): CommandPriority | undefi
   }
 
   if (!Number.isInteger(candidate)) {
-    throw new TypeError('Invalid sim/enqueue command: expected { priority?: 0 | 1 | 2 }');
+    throw new TypeError('Invalid sim.enqueue command: expected { priority?: 0 | 1 | 2 }');
   }
 
   if (
@@ -78,7 +78,7 @@ const assertOptionalCommandPriority = (value: unknown): CommandPriority | undefi
     candidate !== CommandPriority.PLAYER &&
     candidate !== CommandPriority.AUTOMATION
   ) {
-    throw new TypeError('Invalid sim/enqueue command: expected { priority?: 0 | 1 | 2 }');
+    throw new TypeError('Invalid sim.enqueue command: expected { priority?: 0 | 1 | 2 }');
   }
 
   return candidate as CommandPriority;
@@ -88,23 +88,23 @@ const normalizeCommandForEnqueue = (
   candidate: unknown,
   options: Readonly<{ stepSizeMs: number; nextStep: number }>,
 ): Command => {
-  const record = assertObject(candidate, 'Invalid sim/enqueue command: expected an object');
+  const record = assertObject(candidate, 'Invalid sim.enqueue command: expected an object');
 
   const type = record['type'];
   if (typeof type !== 'string' || type.trim().length === 0) {
-    throw new TypeError('Invalid sim/enqueue command: expected { type: string }');
+    throw new TypeError('Invalid sim.enqueue command: expected { type: string }');
   }
 
   const stepCandidate = assertOptionalFiniteNumber(
     record['step'],
-    'Invalid sim/enqueue command: expected { step?: number }',
+    'Invalid sim.enqueue command: expected { step?: number }',
   );
 
   const priorityCandidate = assertOptionalCommandPriority(record['priority']);
 
   const requestId = record['requestId'];
   if (requestId !== undefined && typeof requestId !== 'string') {
-    throw new TypeError('Invalid sim/enqueue command: expected { requestId?: string }');
+    throw new TypeError('Invalid sim.enqueue command: expected { requestId?: string }');
   }
 
   const step = Math.max(
@@ -124,24 +124,24 @@ const normalizeCommandForEnqueue = (
 };
 
 const parseStepCount = (args: unknown): number => {
-  const record = assertObject(args, 'Invalid sim/step payload: expected an object');
+  const record = assertObject(args, 'Invalid sim.step payload: expected an object');
   const candidate = record['steps'];
   if (candidate === undefined) {
     return 1;
   }
   if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
-    throw new TypeError('Invalid sim/step payload: expected { steps?: number }');
+    throw new TypeError('Invalid sim.step payload: expected { steps?: number }');
   }
   const steps = Math.floor(candidate);
   if (steps < 1 || steps !== candidate) {
-    throw new TypeError('Invalid sim/step payload: expected { steps: integer >= 1 }');
+    throw new TypeError('Invalid sim.step payload: expected { steps: integer >= 1 }');
   }
   return steps;
 };
 
 export function registerSimTools(server: ToolRegistrar, controller: SimMcpController): void {
   server.registerTool(
-    'sim/status',
+    'sim.status',
     {
       title: 'Sim status',
       description: 'Returns the current simulation status (step, step size, lifecycle state).',
@@ -150,7 +150,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
   );
 
   server.registerTool(
-    'sim/start',
+    'sim.start',
     {
       title: 'Sim start',
       description: 'Starts the simulation tick loop if it is not running.',
@@ -159,7 +159,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
   );
 
   server.registerTool(
-    'sim/stop',
+    'sim.stop',
     {
       title: 'Sim stop',
       description: 'Stops the simulation and disposes the worker.',
@@ -168,7 +168,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
   );
 
   server.registerTool(
-    'sim/pause',
+    'sim.pause',
     {
       title: 'Sim pause',
       description: 'Pauses the simulation tick loop while keeping the worker alive.',
@@ -177,7 +177,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
   );
 
   server.registerTool(
-    'sim/resume',
+    'sim.resume',
     {
       title: 'Sim resume',
       description: 'Resumes the simulation tick loop after pausing.',
@@ -186,7 +186,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
   );
 
   server.registerTool(
-    'sim/step',
+    'sim.step',
     {
       title: 'Sim step',
       description: 'Advances the simulation by N steps while paused.',
@@ -201,7 +201,7 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
   );
 
   server.registerTool(
-    'sim/enqueue',
+    'sim.enqueue',
     {
       title: 'Sim enqueue',
       description: 'Enqueues runtime commands onto the simulation command queue deterministically.',
@@ -210,10 +210,10 @@ export function registerSimTools(server: ToolRegistrar, controller: SimMcpContro
       },
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid sim/enqueue payload: expected an object');
+      const record = assertObject(args, 'Invalid sim.enqueue payload: expected an object');
       const rawCommands = record['commands'];
       if (!Array.isArray(rawCommands)) {
-        throw new TypeError('Invalid sim/enqueue payload: expected { commands: Command[] }');
+        throw new TypeError('Invalid sim.enqueue payload: expected { commands: Command[] }');
       }
 
       const status = controller.getStatus();

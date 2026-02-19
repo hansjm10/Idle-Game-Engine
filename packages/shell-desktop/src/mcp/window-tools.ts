@@ -72,12 +72,12 @@ const assertDevToolsAction = (value: unknown): WindowMcpDevToolsAction => {
   if (value === 'open' || value === 'close' || value === 'toggle') {
     return value;
   }
-  throw new TypeError('Invalid window/devtools payload: expected { action: "open" | "close" | "toggle" }');
+  throw new TypeError('Invalid window.devtools payload: expected { action: "open" | "close" | "toggle" }');
 };
 
 export function registerWindowTools(server: ToolRegistrar, controller: WindowMcpController): void {
   server.registerTool(
-    'window/info',
+    'window.info',
     {
       title: 'Window info',
       description: 'Returns basic information about the main window (bounds, url, devtools state).',
@@ -86,7 +86,7 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
   );
 
   server.registerTool(
-    'window/resize',
+    'window.resize',
     {
       title: 'Window resize',
       description: 'Resizes the main window to the requested width/height.',
@@ -96,14 +96,14 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
       },
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid window/resize payload: expected an object');
+      const record = assertObject(args, 'Invalid window.resize payload: expected an object');
       const width = assertPositiveInt(
         record['width'],
-        'Invalid window/resize payload: expected { width: integer >= 1, height: integer >= 1 }',
+        'Invalid window.resize payload: expected { width: integer >= 1, height: integer >= 1 }',
       );
       const height = assertPositiveInt(
         record['height'],
-        'Invalid window/resize payload: expected { width: integer >= 1, height: integer >= 1 }',
+        'Invalid window.resize payload: expected { width: integer >= 1, height: integer >= 1 }',
       );
 
       return buildTextResult({ ok: true, info: controller.resize(width, height) });
@@ -111,7 +111,7 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
   );
 
   server.registerTool(
-    'window/devtools',
+    'window.devtools',
     {
       title: 'Window devtools',
       description: 'Opens, closes, or toggles the main window devtools.',
@@ -120,14 +120,14 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
       },
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid window/devtools payload: expected an object');
+      const record = assertObject(args, 'Invalid window.devtools payload: expected an object');
       const action = assertDevToolsAction(record['action']);
       return buildTextResult({ ok: true, ...controller.setDevTools(action) });
     },
   );
 
   server.registerTool(
-    'window/screenshot',
+    'window.screenshot',
     {
       title: 'Window screenshot',
       description: 'Captures a PNG screenshot of the main window web contents (bounded).',
@@ -136,18 +136,18 @@ export function registerWindowTools(server: ToolRegistrar, controller: WindowMcp
       },
     },
     async (args: unknown) => {
-      const record = assertObject(args, 'Invalid window/screenshot payload: expected an object');
+      const record = assertObject(args, 'Invalid window.screenshot payload: expected an object');
 
       const maxBytes =
         assertOptionalPositiveInt(
           record['maxBytes'],
-          'Invalid window/screenshot payload: expected { maxBytes?: integer >= 1 }',
+          'Invalid window.screenshot payload: expected { maxBytes?: integer >= 1 }',
         ) ?? 5_000_000;
 
       const buffer = await controller.captureScreenshotPng();
 
       if (buffer.byteLength > maxBytes) {
-        throw new Error(`window/screenshot exceeded maxBytes (${buffer.byteLength} > ${maxBytes})`);
+        throw new Error(`window.screenshot exceeded maxBytes (${buffer.byteLength} > ${maxBytes})`);
       }
 
       return buildTextResult({
