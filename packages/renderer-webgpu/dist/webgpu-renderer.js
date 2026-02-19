@@ -1515,7 +1515,7 @@ _WebGpuRendererImpl_alphaMode = new WeakMap(), _WebGpuRendererImpl_onDeviceLost 
         throw new Error(`GPU instance buffer too small: usedBytes=${usedBytes}, gpuBufferSize=${__classPrivateFieldGet(this, _WebGpuRendererImpl_spriteInstanceBufferSize, "f")}`);
     }
     const instanceData = sourceBuffer.subarray(0, usedFloats);
-    this.device.queue.writeBuffer(instanceBuffer, 0, instanceData, 0, usedBytes);
+    this.device.queue.writeBuffer(instanceBuffer, 0, instanceData, 0, usedFloats);
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
     if (kind === 'image') {
         if (!state.textureBindGroup) {

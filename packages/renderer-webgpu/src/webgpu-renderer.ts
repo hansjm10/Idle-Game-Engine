@@ -2062,7 +2062,7 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     }
 
     const instanceData = sourceBuffer.subarray(0, usedFloats);
-    this.device.queue.writeBuffer(instanceBuffer, 0, instanceData, 0, usedBytes);
+    this.device.queue.writeBuffer(instanceBuffer, 0, instanceData, 0, usedFloats);
 
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
 

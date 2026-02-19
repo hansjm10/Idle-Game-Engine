@@ -352,7 +352,19 @@ describe('renderer-webgpu', () => {
 
       if (ArrayBuffer.isView(data)) {
         const view = data as ArrayBufferView;
-        const byteLength = size ?? view.byteLength - dataOffset;
+        const remainingBytes = view.byteLength - dataOffset;
+        const bytesPerElement = (() => {
+          const constructorRecord = view.constructor as { BYTES_PER_ELEMENT?: unknown };
+          const candidate = constructorRecord.BYTES_PER_ELEMENT;
+          return typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0
+            ? candidate
+            : 1;
+        })();
+        const byteLength = size === undefined
+          ? remainingBytes
+          : size <= remainingBytes / bytesPerElement
+            ? size * bytesPerElement
+            : size;
         return new Float32Array(
           view.buffer,
           view.byteOffset + dataOffset,
@@ -1599,9 +1611,9 @@ describe('renderer-webgpu', () => {
       const firstSize = firstWrite[4] as number;
       const secondSize = secondWrite[4] as number;
 
-      expect(firstSize).toBe(104);
-      expect(secondSize).toBe(104);
-      expect(firstPayload.byteLength).toBe(firstSize);
+      expect(firstSize).toBe(104 / Float32Array.BYTES_PER_ELEMENT);
+      expect(secondSize).toBe(104 / Float32Array.BYTES_PER_ELEMENT);
+      expect(firstPayload.byteLength).toBe(104);
       expect(secondPayload).toStrictEqual(firstPayload);
     });
 
@@ -1698,11 +1710,11 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected a quad instance upload to be recorded.');
       }
 
-      const usedBytes = instanceWrite[4] as number;
-      expect(usedBytes).toBe(22 * 52);
+      const usedFloats = instanceWrite[4] as number;
+      expect(usedFloats).toBe((22 * 52) / Float32Array.BYTES_PER_ELEMENT);
 
       const payload = instanceWrite[2] as Float32Array;
-      expect(payload.byteLength).toBe(usedBytes);
+      expect(payload.byteLength).toBe(22 * 52);
 
       const instances = getWriteBufferFloat32Payload(instanceWrite);
       if (!instances) {
