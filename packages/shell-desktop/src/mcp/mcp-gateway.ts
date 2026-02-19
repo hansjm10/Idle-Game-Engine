@@ -369,7 +369,7 @@ async function tryProxyRequest(
 }
 
 function getRequestId(payload: JsonRpcRequest): unknown {
-  return Object.prototype.hasOwnProperty.call(payload, 'id') ? payload.id : null;
+  return payload.id === undefined ? null : payload.id;
 }
 
 function buildFallbackHealthResult(targetUrl: URL): Readonly<{

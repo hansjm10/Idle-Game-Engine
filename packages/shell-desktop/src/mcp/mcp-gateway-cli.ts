@@ -40,8 +40,10 @@ async function main(): Promise<void> {
   await new Promise<void>(() => undefined);
 }
 
-void main().catch((error: unknown) => {
+try {
+  await main();
+} catch (error: unknown) {
   // eslint-disable-next-line no-console
   console.error(error);
   process.exit(1);
-});
+}

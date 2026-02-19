@@ -66,6 +66,7 @@ describe('shell-desktop MCP gateway', () => {
       proxyTimeoutMs: 50,
     });
     closers.push(gateway.close);
+    expect(gateway.url.protocol).toBe('http:');
   });
 
   it('supports initialize with application/json when backend is offline', async () => {

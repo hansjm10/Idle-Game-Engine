@@ -5,7 +5,10 @@ PID_FILE="${IDLE_ENGINE_MCP_GATEWAY_PID_FILE:-/tmp/idle-engine-shell-desktop-mcp
 
 is_running() {
   local pid="$1"
-  kill -0 "$pid" >/dev/null 2>&1
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
 }
 
 if [[ ! -f "$PID_FILE" ]]; then

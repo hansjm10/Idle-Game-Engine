@@ -27,7 +27,7 @@ const INPUT_CONTROL_EVENT_ARGS_SCHEMA = z.object({
     message: 'Invalid input.controlEvent payload: expected { intent: string }',
   }),
   phase: z.enum(['start', 'repeat', 'end']),
-  value: z.number().finite().optional(),
+  value: z.number().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 

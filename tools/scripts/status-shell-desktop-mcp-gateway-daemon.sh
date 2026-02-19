@@ -7,7 +7,10 @@ MCP_PORT="${IDLE_ENGINE_MCP_PORT:-8570}"
 
 is_running() {
   local pid="$1"
-  kill -0 "$pid" >/dev/null 2>&1
+  if kill -0 "$pid" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
 }
 
 if [[ ! -f "$PID_FILE" ]]; then
