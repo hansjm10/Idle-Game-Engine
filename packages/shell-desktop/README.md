@@ -69,6 +69,33 @@ const a = await navigator.gpu.requestAdapter(); a?.name
 - Packaged runs require an explicit override: set `IDLE_ENGINE_ENABLE_UNSAFE_WEBGPU=1` before launching.
 - The current renderer entrypoint presents a stable clear color and prints status lines (IPC + WebGPU) to the on-screen overlay.
 
+## Gap Audit Stress Profiles
+
+The demo sim runtime supports deterministic stress-profile switching via `sim.enqueue` (MCP):
+
+- `baseline`
+- `draw-burst`
+- `clip-stack`
+- `text-wall`
+- `mixed`
+
+Example command payload:
+
+```json
+{
+  "commands": [
+    {
+      "type": "DEMO_SET_STRESS_PROFILE",
+      "payload": { "profile": "mixed" }
+    }
+  ]
+}
+```
+
+Use MCP `window.screenshot` after each profile switch and keep evidence under:
+
+- `docs/evidence/shell-demo-gap-audit/screens/`
+
 ## Notes
 - The renderer process runs with `contextIsolation: true` and `nodeIntegration: false`; the preload exposes a minimal, typed API on `window.idleEngine`.
 - The build bundles `src/renderer/index.ts` into `dist/renderer/index.js` (so the renderer does not rely on `../../../*/dist/*` imports) and copies static assets via `tools/scripts/copy-renderer-assets.mjs`.

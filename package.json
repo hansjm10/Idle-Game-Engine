@@ -28,6 +28,7 @@
     "shell:desktop:mcp:gateway:daemon:stop": "bash tools/scripts/stop-shell-desktop-mcp-gateway-daemon.sh",
     "shell:desktop:mcp:gateway:daemon:status": "bash tools/scripts/status-shell-desktop-mcp-gateway-daemon.sh",
     "shell:desktop:mcp:smoke": "node tools/scripts/shell-desktop-mcp-smoke.mjs",
+    "shell:desktop:gap-audit": "node tools/scripts/shell-desktop-gap-audit.mjs",
     "core:tick-sim": "pnpm --filter @idle-engine/runtime-sim-cli run sim --",
     "core:economy-verify": "pnpm tsx tools/economy-verification/src/index.ts",
     "generate": "pnpm --filter @idle-engine/content-validation-cli run compile",

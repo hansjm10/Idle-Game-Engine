@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
-import { createSimRuntime } from './sim-runtime.js';
+import {
+  createSimRuntime,
+  DEMO_SET_STRESS_PROFILE_COMMAND_TYPE,
+} from './sim-runtime.js';
 import { SHELL_CONTROL_EVENT_COMMAND_TYPE } from '../ipc.js';
 import type { Command, InputEventCommandPayload, PointerInputEvent } from '@idle-engine/core';
 
@@ -186,6 +189,73 @@ describe('shell-desktop sim runtime', () => {
     const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
 
     expect(sim.hasCommandHandler(RUNTIME_COMMAND_TYPES.INPUT_EVENT)).toBe(true);
+  });
+
+  it('registers a handler for demo stress profile commands', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    expect(sim.hasCommandHandler(DEMO_SET_STRESS_PROFILE_COMMAND_TYPE)).toBe(true);
+  });
+
+  it('switches to draw-burst profile via demo command', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    const setProfileCommand: Command = {
+      type: DEMO_SET_STRESS_PROFILE_COMMAND_TYPE,
+      priority: CommandPriority.PLAYER,
+      payload: { profile: 'draw-burst' },
+      timestamp: 0,
+      step: sim.getNextStep(),
+    };
+
+    sim.enqueueCommands([setProfileCommand]);
+    const result = sim.tick(10);
+    const frame = result.frames[0];
+
+    const profileText = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'text' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 4,
+    );
+
+    expect(profileText).toMatchObject({
+      kind: 'text',
+      text: 'Profile: draw-burst',
+    });
+
+    const worldRects = frame?.draws.filter((draw) => draw.kind === 'rect' && draw.passId === 'world');
+    expect(worldRects?.length).toBeGreaterThan(20);
+  });
+
+  it('ignores invalid demo stress profile command payloads', () => {
+    const sim = createSimRuntime({ stepSizeMs: 10, maxStepsPerFrame: 50 });
+
+    const invalidCommand: Command = {
+      type: DEMO_SET_STRESS_PROFILE_COMMAND_TYPE,
+      priority: CommandPriority.PLAYER,
+      payload: { profile: 'invalid-profile' } as unknown as { profile: 'draw-burst' },
+      timestamp: 0,
+      step: sim.getNextStep(),
+    };
+
+    sim.enqueueCommands([invalidCommand]);
+    const result = sim.tick(10);
+    const frame = result.frames[0];
+
+    const profileText = frame?.draws.find(
+      (draw) =>
+        draw.kind === 'text' &&
+        draw.passId === 'ui' &&
+        draw.sortKey.sortKeyHi === 0 &&
+        draw.sortKey.sortKeyLo === 4,
+    );
+
+    expect(profileText).toMatchObject({
+      kind: 'text',
+      text: 'Profile: baseline',
+    });
   });
 
   it('triggers resource increase for in-bounds INPUT_EVENT (mouse-down at x=20,y=20)', () => {

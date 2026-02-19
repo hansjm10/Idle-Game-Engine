@@ -27,6 +27,12 @@ Then verify MCP connectivity:
 pnpm shell:desktop:mcp:smoke
 ```
 
+Capture the demo gap-audit screenshot set:
+
+```bash
+pnpm shell:desktop:gap-audit
+```
+
 If your MCP client needs the endpoint to stay up before shell launch, run the always-on gateway:
 
 ```bash

@@ -1,0 +1,93 @@
+{
+  "endpoint": "http://127.0.0.1:8570/mcp/sse",
+  "records": [
+    {
+      "stepId": "S01",
+      "filename": "010-baseline-startup-1280x720.png",
+      "notes": "startup baseline",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 9
+      },
+      "bytes": 22996
+    },
+    {
+      "stepId": "S02",
+      "filename": "020-resize-wide-1600x500.png",
+      "notes": "resize wide viewport",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 11
+      },
+      "bytes": 26310
+    },
+    {
+      "stepId": "S03",
+      "filename": "030-input-control-and-pointer.png",
+      "notes": "control and pointer collect parity",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 15
+      },
+      "bytes": 26751
+    },
+    {
+      "stepId": "S04",
+      "filename": "040-pause-step-clip-stack.png",
+      "notes": "paused deterministic stepping with clip-stack",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 21
+      },
+      "bytes": 24400
+    },
+    {
+      "stepId": "S05",
+      "filename": "050-draw-burst-enqueue.png",
+      "notes": "draw burst and command burst",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 25
+      },
+      "bytes": 26280
+    },
+    {
+      "stepId": "S06",
+      "filename": "060-text-wall-asset-tools.png",
+      "notes": "text wall profile and asset tool checks",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 28
+      },
+      "bytes": 24292
+    },
+    {
+      "stepId": "S07",
+      "filename": "070-stop-start-mixed.png",
+      "notes": "stop/start lifecycle recovery to mixed profile",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 5
+      },
+      "bytes": 22996
+    },
+    {
+      "stepId": "S08",
+      "filename": "080-long-run-drift-spot-check.png",
+      "notes": "long run drift spot-check",
+      "simStatus": {
+        "state": "paused",
+        "stepSizeMs": 16,
+        "nextStep": 125
+      },
+      "bytes": 23851
+    }
+  ]
+}
