@@ -249,8 +249,9 @@ describe('renderer-webgpu', () => {
       const queue = { submit, writeBuffer, copyExternalImageToTexture } as unknown as GPUQueue;
 
       const createBuffer = vi.fn(
-        () =>
+        (descriptor: GPUBufferDescriptor) =>
           ({
+            size: descriptor.size,
             destroy: vi.fn(),
           }) as unknown as GPUBuffer,
       );
@@ -352,6 +353,27 @@ describe('renderer-webgpu', () => {
 
       if (ArrayBuffer.isView(data)) {
         const view = data as ArrayBufferView;
+        const typedArray = view as ArrayBufferView & {
+          readonly BYTES_PER_ELEMENT?: number;
+          readonly length?: number;
+        };
+
+        if (
+          typeof typedArray.BYTES_PER_ELEMENT === 'number' &&
+          typedArray.BYTES_PER_ELEMENT > 0 &&
+          typeof typedArray.length === 'number'
+        ) {
+          const elementOffset = dataOffset;
+          const elementLength = size ?? typedArray.length - elementOffset;
+          const byteOffset = view.byteOffset + elementOffset * typedArray.BYTES_PER_ELEMENT;
+          const byteLength = elementLength * typedArray.BYTES_PER_ELEMENT;
+          return new Float32Array(
+            view.buffer,
+            byteOffset,
+            byteLength / Float32Array.BYTES_PER_ELEMENT,
+          );
+        }
+
         const byteLength = size ?? view.byteLength - dataOffset;
         return new Float32Array(
           view.buffer,
@@ -1583,14 +1605,15 @@ describe('renderer-webgpu', () => {
 
       const firstPayload = firstWrite[2] as Float32Array;
       const secondPayload = secondWrite[2] as Float32Array;
-	      const firstSize = firstWrite[4] as number;
-	      const secondSize = secondWrite[4] as number;
+      const firstSize = firstWrite[4] as number;
+      const secondSize = secondWrite[4] as number;
+      const expectedElementCount = 104 / Float32Array.BYTES_PER_ELEMENT;
 
-	      expect(firstSize).toBe(104);
-	      expect(secondSize).toBe(104);
-	      expect(firstPayload.byteLength).toBeGreaterThan(firstSize);
-	      expect(secondPayload).toBe(firstPayload);
-	    });
+      expect(firstSize).toBe(expectedElementCount);
+      expect(secondSize).toBe(expectedElementCount);
+      expect(firstPayload.byteLength).toBeGreaterThan(firstSize * Float32Array.BYTES_PER_ELEMENT);
+      expect(secondPayload).toBe(firstPayload);
+    });
 
     it('flushes quad batches when encountering unknown draw kinds', async () => {
       const { canvas, drawIndexed } = createStubWebGpuEnvironment();
@@ -1685,11 +1708,11 @@ describe('renderer-webgpu', () => {
         throw new Error('Expected a quad instance upload to be recorded.');
       }
 
-	      const usedBytes = instanceWrite[4] as number;
-	      expect(usedBytes).toBe(22 * 52);
+      const usedElementCount = instanceWrite[4] as number;
+      expect(usedElementCount).toBe((22 * 52) / Float32Array.BYTES_PER_ELEMENT);
 
       const payload = instanceWrite[2] as Float32Array;
-      expect(payload.byteLength).toBeGreaterThan(usedBytes);
+      expect(payload.byteLength).toBeGreaterThan(usedElementCount * Float32Array.BYTES_PER_ELEMENT);
 
       const instances = getWriteBufferFloat32Payload(instanceWrite);
       if (!instances) {
@@ -1698,10 +1721,62 @@ describe('renderer-webgpu', () => {
 
 	      expect(instances.length).toBe((22 * 52) / Float32Array.BYTES_PER_ELEMENT);
 	      expect(instances[0]).toBe(0);
-	      expect(instances[13]).toBe(1);
-	      expect(instances[130]).toBe(10);
-	      expect(instances[273]).toBe(21);
-	    });
+      expect(instances[13]).toBe(1);
+      expect(instances[130]).toBe(10);
+      expect(instances[273]).toBe(21);
+    });
+
+    it('uses typed-array element counts for quad instance uploads', async () => {
+      const { canvas, writeBuffer } = createStubWebGpuEnvironment();
+      writeBuffer.mockImplementation((buffer: GPUBuffer, _offset: number, data: BufferSource, dataOffset = 0, size?: number) => {
+        if (!(data instanceof Float32Array)) {
+          return;
+        }
+
+        const elementOffset = dataOffset;
+        const elementCount = size ?? data.length - elementOffset;
+        const bytesToWrite = elementCount * Float32Array.BYTES_PER_ELEMENT;
+        const destinationBytes = ((buffer as { size?: number }).size ?? Number.POSITIVE_INFINITY) - _offset;
+        if (bytesToWrite > destinationBytes) {
+          throw new Error("Failed to execute 'writeBuffer' on 'GPUQueue': Number of bytes to write is too large");
+        }
+      });
+
+      const renderer = await createWebGpuRenderer(canvas);
+      const draws: RenderCommandBuffer['draws'] = Array.from({ length: 22 }, (_value, index) => ({
+        kind: 'rect',
+        passId: 'ui',
+        sortKey: { sortKeyHi: 0, sortKeyLo: index },
+        x: index,
+        y: 0,
+        width: 1,
+        height: 1,
+        colorRgba: 0xff_ff_ff_ff,
+      }));
+
+      const rcb = {
+        frame: {
+          schemaVersion: RENDERER_CONTRACT_SCHEMA_VERSION,
+          step: 0,
+          simTimeMs: 0,
+          contentHash: 'content:dev',
+        },
+        scene: {
+          camera: { x: 0, y: 0, zoom: 1 },
+        },
+        passes: [{ id: 'ui' }],
+        draws,
+      } satisfies RenderCommandBuffer;
+
+      expect(() => renderer.render(rcb)).not.toThrow();
+
+      const instanceWrite = writeBuffer.mock.calls.find((call) => call[2] instanceof Float32Array);
+      expect(instanceWrite).toBeDefined();
+      if (!instanceWrite) {
+        throw new Error('Expected a quad instance upload to be recorded.');
+      }
+      expect(instanceWrite[4]).toBe((22 * 52) / Float32Array.BYTES_PER_ELEMENT);
+    });
 
     it('destroys the previous GPU instance buffer when growing', async () => {
       const { canvas, createBuffer } = createStubWebGpuEnvironment();

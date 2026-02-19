@@ -2020,9 +2020,10 @@ class WebGpuRendererImpl implements WebGpuRenderer {
     const kind = state.batchKind;
     const passId = state.batchPassId;
     const instanceCount = state.batchInstances.instanceCount;
+    const usedFloats = state.batchInstances.lengthFloats;
     const usedBytes = state.batchInstances.usedByteLength;
 
-    if (!kind || !passId || instanceCount <= 0 || usedBytes <= 0) {
+    if (!kind || !passId || instanceCount <= 0 || usedFloats <= 0 || usedBytes <= 0) {
       this.#resetQuadBatch(state);
       return;
     }
@@ -2039,7 +2040,8 @@ class WebGpuRendererImpl implements WebGpuRenderer {
       throw new Error('Sprite pipeline missing instance buffer.');
     }
 
-    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedBytes);
+    // For TypedArray uploads, WebGPU interprets `size` as element count, not bytes.
+    this.device.queue.writeBuffer(instanceBuffer, 0, state.batchInstances.buffer, 0, usedFloats);
 
     const globals = passId === 'world' ? state.worldGlobalsBindGroup : state.uiGlobalsBindGroup;
 
