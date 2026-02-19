@@ -42,6 +42,14 @@ pnpm shell:desktop:mcp:gateway
 pnpm shell:desktop:headless:gateway-backend
 ```
 
+Daemonized always-on mode (from repo root):
+
+```bash
+pnpm shell:desktop:mcp:gateway:daemon:start
+pnpm shell:desktop:mcp:gateway:daemon:status
+pnpm shell:desktop:mcp:gateway:daemon:stop
+```
+
 Quick GPU verification:
 
 ```bash

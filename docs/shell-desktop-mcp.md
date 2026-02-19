@@ -99,6 +99,18 @@ Terminal A (keep running):
 pnpm shell:desktop:mcp:gateway
 ```
 
+Background daemon mode (recommended for frequent Codex usage):
+
+```bash
+pnpm shell:desktop:mcp:gateway:daemon:start
+pnpm shell:desktop:mcp:gateway:daemon:status
+pnpm shell:desktop:mcp:gateway:daemon:stop
+```
+
+The daemon stores state in:
+- PID file: `/tmp/idle-engine-shell-desktop-mcp-gateway.pid`
+- Log file: `/tmp/idle-engine-shell-desktop-mcp-gateway.log`
+
 Optional overrides for the gateway:
 - `IDLE_ENGINE_MCP_PORT` (gateway listen port, default `8570`)
 - `IDLE_ENGINE_MCP_BACKEND_PORT` (shell-desktop backend port, default `8571`)

@@ -34,6 +34,14 @@ pnpm shell:desktop:mcp:gateway
 pnpm shell:desktop:headless:gateway-backend
 ```
 
+Daemonized always-on mode:
+
+```bash
+pnpm shell:desktop:mcp:gateway:daemon:start
+pnpm shell:desktop:mcp:gateway:daemon:status
+pnpm shell:desktop:mcp:gateway:daemon:stop
+```
+
 The headless launcher defaults to an Xorg-backed xpra display plus Chromium `Vulkan` feature enablement so WebGPU can use hardware adapters on Linux hosts.
 
 ## Content Authoring Docs
