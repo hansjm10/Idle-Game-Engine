@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CommandPriority } from '@idle-engine/core';
-import { registerSimTools, type SimMcpController } from './sim-tools.js';
+import { registerSimTools, SIM_MCP_MAX_STEP_COUNT, type SimMcpController } from './sim-tools.js';
 import type { Command } from '@idle-engine/core';
 
 type ToolHandler = (args: unknown) => Promise<unknown>;
@@ -188,5 +188,6 @@ describe('shell-desktop MCP sim tools', () => {
     const stepHandler = tools.get('sim.step');
     await expect(stepHandler?.({ steps: 0 })).rejects.toThrow(/steps/);
     await expect(stepHandler?.({ steps: 1.5 })).rejects.toThrow(/steps/);
+    await expect(stepHandler?.({ steps: SIM_MCP_MAX_STEP_COUNT + 1 })).rejects.toThrow(/steps/);
   });
 });

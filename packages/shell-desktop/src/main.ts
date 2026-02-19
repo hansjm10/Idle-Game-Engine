@@ -19,7 +19,7 @@ import type { ControlScheme } from '@idle-engine/controls';
 import type { AssetMcpController } from './mcp/asset-tools.js';
 import type { InputMcpController } from './mcp/input-tools.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
-import type { SimMcpController, SimMcpStatus } from './mcp/sim-tools.js';
+import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController, type SimMcpStatus } from './mcp/sim-tools.js';
 import type { WindowMcpController } from './mcp/window-tools.js';
 import type { SimWorkerInboundMessage, SimWorkerOutboundMessage } from './sim/worker-protocol.js';
 
@@ -592,8 +592,8 @@ function createSimWorkerController(mainWindow: BrowserWindow): SimWorkerControll
   };
 
   const step = async (steps: number): Promise<SimMcpStatus> => {
-    if (!Number.isFinite(steps) || Math.floor(steps) !== steps || steps < 1) {
-      throw new TypeError('Invalid sim step count: expected integer >= 1');
+    if (!Number.isFinite(steps) || Math.floor(steps) !== steps || steps < 1 || steps > SIM_MCP_MAX_STEP_COUNT) {
+      throw new TypeError(`Invalid sim step count: expected integer in [1, ${SIM_MCP_MAX_STEP_COUNT}]`);
     }
 
     if (hasFailed || isDisposing) {
@@ -695,11 +695,17 @@ const simMcpController: SimMcpController = {
     return controller.step(steps);
   },
   enqueue: (commands) => {
-    if (!simWorkerController) {
+    const controller = simWorkerController;
+    if (!controller) {
       throw new Error('Simulation is not running.');
     }
 
-    simWorkerController.enqueueCommands(commands);
+    const status = controller.getStatus();
+    if (status.state === 'crashed' || status.state === 'stopped') {
+      throw new Error(`Simulation is ${status.state}; cannot enqueue commands.`);
+    }
+
+    controller.enqueueCommands(commands);
     return { enqueued: commands.length };
   },
 };

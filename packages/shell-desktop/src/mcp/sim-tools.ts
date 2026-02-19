@@ -23,6 +23,8 @@ export type SimMcpController = Readonly<{
   enqueue: (commands: readonly Command[]) => Readonly<{ enqueued: number }>;
 }>;
 
+export const SIM_MCP_MAX_STEP_COUNT = 10_000;
+
 type TextToolResult = {
   content: Array<{ type: 'text'; text: string }>;
 };
@@ -40,7 +42,7 @@ const buildTextResult = (value: unknown): TextToolResult => ({
 });
 
 const SIM_STEP_ARGS_SCHEMA = z.object({
-  steps: z.number().int().min(1).optional(),
+  steps: z.number().int().min(1).max(SIM_MCP_MAX_STEP_COUNT).optional(),
 }).strict();
 
 const SIM_ENQUEUE_ARGS_SCHEMA = z.object({

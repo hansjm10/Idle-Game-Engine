@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
+import { CommandPriority, RUNTIME_COMMAND_TYPES } from '@idle-engine/core';
 import type { createControlCommands as CreateControlCommandsFn } from '@idle-engine/controls';
 import { IPC_CHANNELS, SHELL_CONTROL_EVENT_COMMAND_TYPE } from './ipc.js';
 import type { ShellDesktopMcpServer } from './mcp/mcp-server.js';
-import type { SimMcpController } from './mcp/sim-tools.js';
+import { SIM_MCP_MAX_STEP_COUNT, type SimMcpController } from './mcp/sim-tools.js';
 
 let monotonicNowSequence: number[] = [];
 
@@ -311,6 +311,89 @@ describe('shell-desktop main process entrypoint', () => {
     const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
     const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
     windowAllClosedHandler?.();
+  });
+
+  it('rejects sim.step values above the MCP step bound', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const maybeStartCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<[{ sim?: SimMcpController }?]>;
+    const sim = maybeStartCalls[0]?.[0]?.sim;
+    if (!sim) {
+      throw new Error('Expected MCP sim controller to be registered');
+    }
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+    worker?.postMessage.mockClear();
+
+    await expect(sim.step(SIM_MCP_MAX_STEP_COUNT + 1)).rejects.toThrow(
+      `Invalid sim step count: expected integer in [1, ${SIM_MCP_MAX_STEP_COUNT}]`,
+    );
+
+    const tickCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'tick',
+    ) ?? [];
+    expect(tickCalls).toHaveLength(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+  });
+
+  it('rejects sim.enqueue when the worker has crashed', async () => {
+    vi.useFakeTimers();
+    setMonotonicNowSequence([0]);
+    process.env.IDLE_ENGINE_ENABLE_MCP_SERVER = '1';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await import('./main.js');
+    await flushMicrotasks();
+
+    const maybeStartCalls = maybeStartShellDesktopMcpServer.mock.calls as unknown as Array<[{ sim?: SimMcpController }?]>;
+    const sim = maybeStartCalls[0]?.[0]?.sim;
+    if (!sim) {
+      throw new Error('Expected MCP sim controller to be registered');
+    }
+
+    const worker = Worker.instances[0];
+    expect(worker).toBeDefined();
+
+    worker?.emitMessage({ kind: 'ready', stepSizeMs: 16, nextStep: 0 });
+    await flushMicrotasks();
+    worker?.emitExit(1);
+    await flushMicrotasks();
+
+    expect(sim.getStatus().state).toBe('crashed');
+
+    worker?.postMessage.mockClear();
+    expect(() => sim.enqueue([
+      {
+        type: RUNTIME_COMMAND_TYPES.COLLECT_RESOURCE,
+        payload: { resourceId: 'demo', amount: 1 },
+        priority: CommandPriority.PLAYER,
+        step: 0,
+        timestamp: 0,
+      },
+    ])).toThrow('Simulation is crashed; cannot enqueue commands.');
+
+    const enqueueCalls = worker?.postMessage.mock.calls.filter(
+      (call) => (call[0] as { kind?: string } | undefined)?.kind === 'enqueueCommands',
+    ) ?? [];
+    expect(enqueueCalls).toHaveLength(0);
+
+    const windowAllClosedCall = app.on.mock.calls.find((call) => call[0] === 'window-all-closed');
+    const windowAllClosedHandler = windowAllClosedCall?.[1] as undefined | (() => void);
+    windowAllClosedHandler?.();
+
+    consoleError.mockRestore();
   });
 
   it('recreates the sim worker when sim.start is called after a crash', async () => {
