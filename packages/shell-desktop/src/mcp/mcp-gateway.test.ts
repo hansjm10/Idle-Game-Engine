@@ -59,6 +59,15 @@ describe('shell-desktop MCP gateway', () => {
     })).rejects.toThrow(/loopback/i);
   });
 
+  it('accepts bracketed IPv6 loopback backend URLs', async () => {
+    const gateway = await startShellDesktopMcpGateway({
+      port: 0,
+      targetUrl: 'http://[::1]:8571/mcp/sse',
+      proxyTimeoutMs: 50,
+    });
+    closers.push(gateway.close);
+  });
+
   it('supports initialize with application/json when backend is offline', async () => {
     const gateway = await startShellDesktopMcpGateway({
       port: 0,
